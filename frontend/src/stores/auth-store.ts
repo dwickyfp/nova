@@ -1,13 +1,11 @@
 import { create } from 'zustand'
 import { getCookie, setCookie, removeCookie } from '@/lib/cookies'
 
-const ACCESS_TOKEN = 'thisisjustarandomstring'
+const TOKEN_KEY = 'nova_access_token'
 
 interface AuthUser {
-  accountNo: string
-  email: string
-  role: string[]
-  exp: number
+  username: string
+  roles: string[]
 }
 
 interface AuthState {
@@ -22,8 +20,8 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>()((set) => {
-  const cookieState = getCookie(ACCESS_TOKEN)
-  const initToken = cookieState ? JSON.parse(cookieState) : ''
+  const stored = getCookie(TOKEN_KEY)
+  const initToken = stored || ''
   return {
     auth: {
       user: null,
@@ -32,17 +30,17 @@ export const useAuthStore = create<AuthState>()((set) => {
       accessToken: initToken,
       setAccessToken: (accessToken) =>
         set((state) => {
-          setCookie(ACCESS_TOKEN, JSON.stringify(accessToken))
+          setCookie(TOKEN_KEY, accessToken)
           return { ...state, auth: { ...state.auth, accessToken } }
         }),
       resetAccessToken: () =>
         set((state) => {
-          removeCookie(ACCESS_TOKEN)
+          removeCookie(TOKEN_KEY)
           return { ...state, auth: { ...state.auth, accessToken: '' } }
         }),
       reset: () =>
         set((state) => {
-          removeCookie(ACCESS_TOKEN)
+          removeCookie(TOKEN_KEY)
           return {
             ...state,
             auth: { ...state.auth, user: null, accessToken: '' },
