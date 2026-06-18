@@ -116,7 +116,7 @@ export function NavUser({ user }: NavUserProps) {
                   <SquareUser className='size-4' />
                   <span>{activeRole}</span>
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className='w-48'>
+                <DropdownMenuSubContent className='w-48' side='right' align='start' sideOffset={8}>
                   <div className='px-2 py-1.5'>
                     <div className='relative'>
                       <Search className='absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground' />
@@ -166,7 +166,7 @@ export function NavUser({ user }: NavUserProps) {
                   )}
                   <span>Appearance</span>
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className='w-36'>
+                <DropdownMenuSubContent className='w-36' side='right' align='start' sideOffset={8}>
                   {(['light', 'dark', 'system'] as const).map((t) => (
                     <DropdownMenuItem
                       key={t}
