@@ -1,0 +1,79 @@
+# ═══════════════════════════════════════════════════════════════
+# Nova Configuration
+# ═══════════════════════════════════════════════════════════════
+
+starrocks:
+  host: localhost      # Use 'starrocks-fe' in Docker network
+  port: 9030
+  http_port: 8030
+  user: root           # For system operations (Docker internal)
+  password: ""         # Root has no password (Docker internal only)
+
+redis:
+  host: localhost      # Use 'redis' in Docker network
+  port: 6379
+  password: ${REDIS_PASSWORD}
+  db: 0
+
+proxy:
+  enabled: true
+  host: "0.0.0.0"
+  port: 4406
+  max_connections: 100
+  connect_timeout: 10
+  read_timeout: 300
+
+auth:
+  session_ttl: 86400           # 24 hours
+  default_password: "nova"     # First login password
+  min_password_length: 8
+  max_login_attempts: 5
+  lockout_duration: 300        # 5 minutes
+
+storage:
+  connections:
+    production:
+      type: minio
+      endpoint: http://minio:9000
+      bucket: nova-stages
+      access_key: ${MINIO_ACCESS_KEY}
+      secret_key: ${MINIO_SECRET_KEY}
+      region: ""
+      path_style: true
+      ssl: false
+
+    backup:
+      type: minio
+      endpoint: http://minio:9000
+      bucket: nova-backup
+      access_key: ${MINIO_ACCESS_KEY}
+      secret_key: ${MINIO_SECRET_KEY}
+      region: ""
+      path_style: true
+      ssl: false
+
+    # ── Uncomment for AWS S3 ──
+    # aws_prod:
+    #   type: s3
+    #   endpoint: ""
+    #   bucket: my-s3-bucket
+    #   access_key: ${AWS_ACCESS_KEY_ID}
+    #   secret_key: ${AWS_SECRET_ACCESS_KEY}
+    #   region: us-east-1
+    #   path_style: false
+    #   ssl: true
+
+    # ── Uncomment for Azure Blob ──
+    # azure_backup:
+    #   type: azure_blob
+    #   endpoint: mystorageaccount
+    #   container: nova-backup
+    #   access_key: ${AZURE_STORAGE_KEY}
+    #   secret_key: ""
+
+    # ── Uncomment for GCS ──
+    # gcs_archive:
+    #   type: gcs
+    #   bucket: my-gcs-bucket
+    #   access_key: ${GCS_SERVICE_ACCOUNT_JSON}
+    #   secret_key: ""
