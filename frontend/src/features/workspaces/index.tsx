@@ -1383,13 +1383,13 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
 
   return (
     <div className='h-full overflow-auto'>
-      <table className='w-full border-collapse text-sm'>
+      <table className='w-full border-separate border-spacing-0 text-sm'>
         <thead className='sticky top-0 z-10 bg-muted'>
           <tr>
-            {queryResult.columns.map((column) => (
+            {queryResult.columns.map((column, colIndex) => (
               <th
                 key={column}
-                className='border border-border px-2 py-1.5 text-left font-semibold whitespace-nowrap'
+                className={`border-b border-r border-border px-2 py-1.5 text-left font-semibold whitespace-nowrap${colIndex === 0 ? ' border-l' : ''}`}
               >
                 {column}
               </th>
@@ -1402,7 +1402,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
               {row.map((cell, cellIndex) => (
                 <td
                   key={`${rowIndex}-${cellIndex}`}
-                  className='border border-border px-2 py-1 whitespace-nowrap'
+                  className={`border-b border-r border-border px-2 py-1 whitespace-nowrap${cellIndex === 0 ? ' border-l' : ''}`}
                 >
                   {cell === null ? (
                     <span className='text-muted-foreground italic'>NULL</span>
