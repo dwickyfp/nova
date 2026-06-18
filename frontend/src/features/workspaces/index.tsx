@@ -1382,7 +1382,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
   return (
     <div className='h-full overflow-auto'>
       <table className='w-full border-separate border-spacing-0 text-sm'>
-        <thead className='sticky top-0 z-10'>
+        <thead className='sticky top-0 z-10 bg-white'>
           <tr>
             {queryResult.columns.map((column, colIndex) => {
               const sample = queryResult.rows[0]?.[colIndex]
