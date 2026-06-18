@@ -185,7 +185,7 @@ export function WorkspacesPage() {
   const [schemasByDatabase, setSchemasByDatabase] = useState<
     Record<string, Array<{ name: string }>>
   >({})
-  const [resultsHeight, setResultsHeight] = useState(260)
+  const [resultsHeight, setResultsHeight] = useState(350)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(null)
   const [running, setRunning] = useState(false)
