@@ -3,7 +3,7 @@ import { getCookie, setCookie, removeCookie } from '@/lib/cookies'
 
 const TOKEN_KEY = 'nova_access_token'
 
-interface AuthUser {
+export interface AuthUser {
   username: string
   roles: string[]
 }

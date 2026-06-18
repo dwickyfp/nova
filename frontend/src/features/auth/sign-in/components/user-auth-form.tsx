@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from '@tanstack/react-router'
 import { Loader2, LogIn, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
-import { useAuthStore } from '@/stores/auth-store'
+import { type AuthUser, useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -51,6 +51,24 @@ function getSafeRedirectPath(redirectTo?: string): string {
   } catch {
     return '/'
   }
+}
+
+type LoginResult = {
+  status: 'AUTHENTICATED' | 'SETUP_REQUIRED'
+  access_token: string
+  user: string | AuthUser | null
+  roles?: string[]
+}
+
+function getAuthUser(result: LoginResult): AuthUser | null {
+  if (!result.user) return null
+  if (typeof result.user === 'string') {
+    return {
+      username: result.user,
+      roles: result.roles ?? [],
+    }
+  }
+  return result.user
 }
 
 // ── Component ────────────────────────────────────────────────
@@ -104,7 +122,7 @@ export function UserAuthForm({
         return
       }
 
-      const result = await res.json()
+      const result = (await res.json()) as LoginResult
 
       if (result.status === 'SETUP_REQUIRED') {
         // Switch to setup form
@@ -112,7 +130,7 @@ export function UserAuthForm({
         toast.info('First login — please set a new password.')
       } else if (result.status === 'AUTHENTICATED') {
         auth.setAccessToken(result.access_token)
-        if (result.user) auth.setUser(result.user)
+        auth.setUser(getAuthUser(result))
         navigate({ to: getSafeRedirectPath(redirectTo), replace: true })
         toast.success(`Welcome back, ${data.username}!`)
       }
@@ -160,9 +178,9 @@ export function UserAuthForm({
         })
 
         if (loginRes.ok) {
-          const loginResult = await loginRes.json()
+          const loginResult = (await loginRes.json()) as LoginResult
           auth.setAccessToken(loginResult.access_token)
-          if (loginResult.user) auth.setUser(loginResult.user)
+          auth.setUser(getAuthUser(loginResult))
           navigate({ to: getSafeRedirectPath(redirectTo), replace: true })
           toast.success('Password changed. Welcome to Nova!')
         } else {

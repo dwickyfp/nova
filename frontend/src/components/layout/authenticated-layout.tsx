@@ -1,6 +1,9 @@
+import { useEffect } from 'react'
 import { Outlet } from '@tanstack/react-router'
 import { getCookie } from '@/lib/cookies'
+import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 import { LayoutProvider } from '@/context/layout-provider'
 import { SearchProvider } from '@/context/search-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -13,6 +16,18 @@ type AuthenticatedLayoutProps = {
 
 export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   const defaultOpen = getCookie('sidebar_state') !== 'false'
+  const accessToken = useAuthStore((state) => state.auth.accessToken)
+  const user = useAuthStore((state) => state.auth.user)
+  const setUser = useAuthStore((state) => state.auth.setUser)
+
+  useEffect(() => {
+    if (!accessToken || user) return
+
+    void api
+      .get<{ username: string; roles: string[] }>('/auth/me')
+      .then(({ username, roles }) => setUser({ username, roles }))
+  }, [accessToken, setUser, user])
+
   return (
     <SearchProvider>
       <LayoutProvider>

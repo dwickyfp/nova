@@ -1,55 +1,38 @@
 import { useSearch } from '@tanstack/react-router'
-import { Logo } from '@/assets/logo'
-import { cn } from '@/lib/utils'
-import dashboardDark from './assets/dashboard-dark.png'
-import dashboardLight from './assets/dashboard-light.png'
+import { SignInVisual } from './components/sign-in-visual'
 import { UserAuthForm } from './components/user-auth-form'
 
 export function SignIn2() {
   const { redirect } = useSearch({ from: '/(auth)/sign-in' })
   return (
-    <div className='relative container grid h-svh flex-col items-center justify-center lg:max-w-none lg:grid-cols-2 lg:px-0'>
-      <div className='lg:p-8'>
-        <div className='mx-auto flex w-full flex-col justify-center space-y-2 py-8 sm:w-120 sm:p-8'>
-          <div className='mb-4 flex items-center justify-center'>
-            <Logo className='me-2' />
-            <h1 className='text-xl font-medium'>Nova</h1>
+    <div className='grid min-h-svh bg-background lg:grid-cols-2'>
+      <main className='relative flex min-h-svh items-center justify-center px-6 py-12 sm:px-10 lg:px-16'>
+        <div className='w-full max-w-sm'>
+          <div className='mb-2 flex items-center gap-3'>
+            <img
+              src='/images/nova-mark.svg'
+              alt=''
+              className='size-10'
+              aria-hidden='true'
+            />
+            <div className='leading-tight'>
+              <h1 className='text-lg font-bold tracking-tight'>Nova</h1>
+              <p className='text-xs font-medium text-muted-foreground'>
+                Powered by StarRocks
+              </p>
+            </div>
           </div>
-        </div>
-        <div className='mx-auto flex w-full max-w-sm flex-col justify-center space-y-2'>
-          <div className='flex flex-col space-y-2 text-start'>
-            <h2 className='text-lg font-semibold tracking-tight'>
+
+          <div className='flex flex-col space-y-2 text-start mb-8'>
+            <h2 className='text-2xl font-semibold tracking-tight'>
               Sign in to Nova
             </h2>
-            <p className='text-sm text-muted-foreground'>
-              Enter your StarRocks credentials to access the console.
-            </p>
           </div>
           <UserAuthForm redirectTo={redirect} />
         </div>
-      </div>
+      </main>
 
-      <div
-        className={cn(
-          'relative h-full overflow-hidden bg-muted max-lg:hidden',
-          '[&>img]:absolute [&>img]:top-[15%] [&>img]:left-20 [&>img]:h-full [&>img]:w-full [&>img]:object-cover [&>img]:object-top-left [&>img]:select-none'
-        )}
-      >
-        <img
-          src={dashboardLight}
-          className='dark:hidden'
-          width={1024}
-          height={1151}
-          alt='Nova'
-        />
-        <img
-          src={dashboardDark}
-          className='hidden dark:block'
-          width={1024}
-          height={1138}
-          alt='Nova'
-        />
-      </div>
+      <SignInVisual />
     </div>
   )
 }

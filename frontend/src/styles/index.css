@@ -85,3 +85,82 @@
     height: 0;
   }
 }
+
+@keyframes nova-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes nova-drift-left {
+  0%,
+  100% {
+    transform: translate(0);
+  }
+  50% {
+    transform: translate(-3px, -5px);
+  }
+}
+
+@keyframes nova-drift-right {
+  0%,
+  100% {
+    transform: translate(0);
+  }
+  50% {
+    transform: translate(3px, -5px);
+  }
+}
+
+@keyframes nova-rise {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: translateY(3px);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translateY(-5px);
+  }
+}
+
+.nova-core {
+  transform-origin: 330px 327px;
+  animation: nova-pulse 4.8s ease-in-out infinite;
+}
+
+.nova-wing-left {
+  animation: nova-drift-left 7s ease-in-out infinite;
+}
+
+.nova-wing-right {
+  animation: nova-drift-right 7s ease-in-out infinite;
+}
+
+.nova-tail,
+.nova-data-plane {
+  animation: nova-rise 6s ease-in-out infinite;
+}
+
+.nova-data-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: nova-pulse 3.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nova-core,
+  .nova-wing-left,
+  .nova-wing-right,
+  .nova-tail,
+  .nova-data-plane,
+  .nova-data-node {
+    animation: none;
+  }
+}
