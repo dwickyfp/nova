@@ -1568,7 +1568,10 @@ function MonacoSqlEditor({
       onMount={handleMount}
       options={{
         minimap: { enabled: false },
-        fontSize: 14,
+        fontSize: 13,
+        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+        fontLigatures: true,
+        fontWeight: '400',
         lineHeight: 22,
         automaticLayout: true,
         wordWrap: 'on',
