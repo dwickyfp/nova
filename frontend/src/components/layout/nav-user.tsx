@@ -137,7 +137,8 @@ export function NavUser({ user }: NavUserProps) {
                     filteredRoles.map((role) => (
                       <DropdownMenuItem
                         key={role}
-                        className={`gap-2 ${role === activeRole ? 'text-primary font-medium' : ''}`}
+                        className='gap-2'
+                        variant={role === activeRole ? 'destructive' : 'default'}
                         onSelect={() => {
                           // TODO: switch role via API
                         }}
