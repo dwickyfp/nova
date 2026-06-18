@@ -1,3 +1,4 @@
+import { useSearch } from '@tanstack/react-router'
 import { Logo } from '@/assets/logo'
 import { cn } from '@/lib/utils'
 import dashboardDark from './assets/dashboard-dark.png'
@@ -5,6 +6,7 @@ import dashboardLight from './assets/dashboard-light.png'
 import { UserAuthForm } from './components/user-auth-form'
 
 export function SignIn2() {
+  const { redirect } = useSearch({ from: '/(auth)/sign-in' })
   return (
     <div className='relative container grid h-svh flex-col items-center justify-center lg:max-w-none lg:grid-cols-2 lg:px-0'>
       <div className='lg:p-8'>
@@ -23,7 +25,7 @@ export function SignIn2() {
               Enter your StarRocks credentials to access the console.
             </p>
           </div>
-          <UserAuthForm />
+          <UserAuthForm redirectTo={redirect} />
         </div>
       </div>
 
