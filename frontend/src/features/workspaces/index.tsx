@@ -1382,16 +1382,28 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
   return (
     <div className='h-full overflow-auto'>
       <table className='w-full border-separate border-spacing-0 text-sm'>
-        <thead className='sticky top-0 z-10 bg-muted'>
+        <thead className='sticky top-0 z-10'>
           <tr>
-            {queryResult.columns.map((column, colIndex) => (
-              <th
-                key={column}
-                className={`border-b border-r border-border px-2 py-1.5 text-left font-semibold whitespace-nowrap${colIndex === 0 ? ' border-l' : ''}`}
-              >
-                {column}
-              </th>
-            ))}
+            {queryResult.columns.map((column, colIndex) => {
+              const sample = queryResult.rows[0]?.[colIndex]
+              const typeIcon = typeof sample === 'number' ? '#'
+                : typeof sample === 'boolean' ? '⊙'
+                : typeof sample === 'string'
+                  ? (String(sample).match(/^\d{4}-\d{2}-\d{2}/) ? '◷'
+                    : String(sample).match(/^[\d.,]+$/) ? '#'
+                    : 'A')
+                : sample === null ? '∅'
+                : '?'
+              return (
+                <th
+                  key={column}
+                  className={`border-b border-r border-border px-2 py-1.5 text-left font-normal whitespace-nowrap${colIndex === 0 ? ' border-l' : ''}`}
+                >
+                  <span className='mr-1.5 text-muted-foreground'>{typeIcon}</span>
+                  {column}
+                </th>
+              )
+            })}
           </tr>
         </thead>
         <tbody>
