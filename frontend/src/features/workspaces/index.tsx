@@ -615,10 +615,6 @@ export function WorkspacesPage() {
             </p>
           </div>
         </div>
-        <Button size='sm' onClick={() => runQuery()}>
-          <Play className='size-4' />
-          Run
-        </Button>
       </Header>
 
       <div className='flex min-h-0 flex-1 overflow-hidden border-t'>
