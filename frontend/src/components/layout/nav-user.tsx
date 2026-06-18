@@ -9,7 +9,7 @@ import {
   Monitor,
   Sun,
   Check,
-  Shield,
+  SquareUser,
   Search,
 } from 'lucide-react'
 import useDialogState from '@/hooks/use-dialog-state'
@@ -106,14 +106,14 @@ export function NavUser({ user }: NavUserProps) {
               <DropdownMenuSeparator />
 
               {/* ── Role switcher (submenu) ── */}
-              <div className='px-2 py-1'>
+              <div className='px-2 '>
                 <span className='text-[10px] font-medium uppercase tracking-wider text-muted-foreground'>
                   Switch Role
                 </span>
               </div>
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className='gap-2'>
-                  <Shield className='size-4' />
+                  <SquareUser className='size-4' />
                   <span>{activeRole}</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className='w-48'>
@@ -143,7 +143,7 @@ export function NavUser({ user }: NavUserProps) {
                           // For now, just show as selected
                         }}
                       >
-                        <Shield className='size-4' />
+                        <SquareUser className='size-4' />
                         <span className='flex-1'>{role}</span>
                         {role === activeRole && <Check className='size-4' />}
                       </DropdownMenuItem>
