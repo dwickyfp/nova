@@ -3,59 +3,64 @@
 # StarRocks 4.1.1 + MinIO + Redis (infrastructure only)
 # ═══════════════════════════════════════════════════════════════════
 #
-# Auth Model:
-#   root        → empty password, Docker internal only (FE↔BE), NOT exposed
-#   nova_admin  → default 'nova', first login forces password change
-#   Role:       ACCOUNTADMIN
-#
 # Services:
-#   minio           → S3-compatible object storage
-#   minio-init      → Auto-create buckets + service account
-#   redis           → Session store + cache
-#   starrocks-fe    → StarRocks Frontend
-#   starrocks-be    → StarRocks Backend
-#   starrocks-init  → Create NOVA_SYSTEM + users + roles
+#   - minio:          S3-compatible object storage (port 9000/9001)
+#   - minio-init:     Auto-creates buckets + service account
+#   - redis:          Session store + cache (port 6379)
+#   - starrocks-fe:   StarRocks Frontend (port 8030 HTTP, 9030 MySQL)
+#   - starrocks-be:   StarRocks Backend (port 8040 HTTP)
+#   - starrocks-init: Auto-creates NOVA_SYSTEM + admin + ACCOUNTADMIN
 #
-# Usage:
+# Quick Start:
 #   cp .env.example .env
 #   docker compose -f docker-compose-engine.yml up -d
 #
-# Ports (host-accessible):
-#   6379  → Redis (password-protected)
-#   8030  → StarRocks FE HTTP (Web UI, REST API)
-#   8040  → StarRocks BE HTTP
-#   9000  → MinIO S3 API
-#   9001  → MinIO Console
+# Access:
+#   StarRocks FE:    http://localhost:8030
+#   StarRocks BE:    http://localhost:8040
+#   MinIO Console:   http://localhost:9001  (minioadmin/minioadmin)
+#   MinIO API:       http://localhost:9000
+#   MySQL:           mysql -h localhost -P 9030 -u nova_admin -p
+#   Redis:           redis-cli -h localhost -p 6379 -a novaredis
 #
-# NOT exposed to host:
-#   9030  → StarRocks MySQL protocol (Docker internal only)
+# Auth Model:
+#   root       → empty password, Docker internal only (NOT exposed externally)
+#   nova_admin → default 'nova', forces password change on first login
+#   All login users ARE StarRocks users (no separate user table)
+#
+# NOVA_SYSTEM tables are grouped by prefixes because StarRocks namespaces
+# objects as catalog.database.table and does not provide nested schemas:
+#   CONFIG_*, ML_*, AUDIT_*, STAGE_*, LINEAGE_*, QUALITY_*, USAGE_*
 # ═══════════════════════════════════════════════════════════════════
+
+name: docker
 
 services:
 
-  # ──────────────────────────────────────────────────────────────
-  # MinIO — S3-Compatible Object Storage
-  # ──────────────────────────────────────────────────────────────
+  # ── MinIO (S3-compatible object storage) ──────────────────────────
   minio:
     image: minio/minio:latest
     container_name: nova-minio
-    hostname: minio
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     command: server /data --console-address ":9001"
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
       - minio_data:/data
+      - /usr/share/zoneinfo/Asia/Jakarta:/usr/share/zoneinfo/Asia/Jakarta:ro
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 5
+    networks:
+      - nova
 
-  # MinIO Init — Auto-create buckets + service account
+  # ── MinIO Init (auto-create buckets + service account) ────────────
   minio-init:
     image: minio/mc:latest
     container_name: nova-minio-init
@@ -63,182 +68,110 @@ services:
       minio:
         condition: service_healthy
     entrypoint: >
-      /bin/sh -c '
-      echo "Waiting for MinIO...";
-      until mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do
-        sleep 1;
-      done;
-      echo "Creating buckets...";
-      mc mb --ignore-existing myminio/nova-stages;
-      mc mb --ignore-existing myminio/nova-backup;
-      mc mb --ignore-existing myminio/starrocks-data;
-      echo "Creating service account...";
-      mc admin user svcacct add \
-        --access-key $${MINIO_ACCESS_KEY} \
-        --secret-key $${MINIO_SECRET_KEY} \
-        myminio $${MINIO_ROOT_USER} || true;
-      echo "Setting bucket policy...";
-      mc anonymous set download myminio/nova-stages || true;
-      echo "MinIO init complete!";
-      '
+      /bin/sh -c "
+      mc alias set nova http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+
+      mc mb --ignore-existing nova/stages;
+      mc mb --ignore-existing nova/exports;
+      mc mb --ignore-existing nova/temp;
+
+      mc admin user add nova $${MINIO_ACCESS_KEY} $${MINIO_SECRET_KEY};
+      mc admin policy attach nova readwrite --user $${MINIO_ACCESS_KEY};
+
+      echo 'MinIO init complete!';
+      "
     environment:
+      TZ: ${TZ:-Asia/Jakarta}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-AKIAIOSFODNN7EXAMPLE}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-nova}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-novasecret}
+    volumes:
+      - /usr/share/zoneinfo/Asia/Jakarta:/usr/share/zoneinfo/Asia/Jakarta:ro
+    networks:
+      - nova
 
-  # ──────────────────────────────────────────────────────────────
-  # Redis — Session Store + Cache (password-protected)
-  # ──────────────────────────────────────────────────────────────
+  # ── Redis (session store + cache) ─────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: nova-redis
-    hostname: redis
-    command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --requirepass ${REDIS_PASSWORD:-nova_redis_2026}
     ports:
       - "${REDIS_PORT:-6379}:6379"
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-novaredis}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-nova_redis_2026}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-novaredis}", "ping"]
       interval: 5s
-      timeout: 3s
-      retries: 10
+      timeout: 5s
+      retries: 5
+    networks:
+      - nova
 
-  # ──────────────────────────────────────────────────────────────
-  # StarRocks FE — Frontend (Query Planning, Metadata, Auth)
-  # ──────────────────────────────────────────────────────────────
+  # ── StarRocks FE (Frontend — query, metadata, auth) ──────────────
   starrocks-fe:
     image: starrocks/fe-ubuntu:4.1.1
     container_name: nova-starrocks-fe
     hostname: starrocks-fe
-    user: root
-    environment:
-      - HOST_TYPE=FQDN
-      - TZ=${TZ:-Asia/Jakarta}
-      - AWS_EC2_METADATA_DISABLED=true
-    command:
-      - /bin/bash
-      - -c
-      - |
-        cat >> /opt/starrocks/fe/conf/fe.conf << 'FECONF'
-
-        # ── UDF Support ──
-        enable_udf = true
-
-        # ── Replication (single BE = 1) ──
-        default_replication_num = 1
-
-        # ── Materialized Views ──
-        enable_materialized_view = true
-        enable_materialized_view_spill = true
-        enable_materialized_view_metrics_collect = true
-        enable_materialized_view_text_based_rewrite = true
-        enable_mv_automatic_active_check = true
-        enable_mv_automatic_inactive_by_base_table_changes = true
-
-        # ── Statistics ──
-        enable_statistic_collect = true
-        enable_auto_collect_statistics = true
-
-        # ── Query Queue ──
-        enable_query_queue_v2 = true
-
-        # ── Audit ──
-        enable_audit_sql = true
-
-        # ── Storage ──
-        enable_load_volume_from_conf = true
-        default_bucket_num = 48
-
-        # ── Connections ──
-        qe_max_connection = 4096
-
-        # ── Fast Schema Evolution ──
-        fast_schema_evolution = true
-
-        # ── Binlog (for CDC) ──
-        binlog_enable = true
-
-        # ── Security ──
-        enable_auth_check = true
-
-        # ── Pipeline Engine ──
-        enable_pipeline_level_shuffle = true
-
-        # ── AI/LLM ──
-        llm_max_queue_size = 128
-        llm_max_concurrent_queries = 64
-        llm_cache_size = 256
-
-        FECONF
-
-        /opt/starrocks/fe_entrypoint.sh starrocks-fe
     ports:
-      - "${FE_HTTP_PORT:-8030}:8030"      # HTTP / Web UI / REST API
-      - "${FE_RPC_PORT:-9020}:9020"        # RPC (Thrift)
-      # NOTE: 9030 NOT exposed to host — Docker internal only
-      # Users connect via Nova backend (port 8000/4406), not directly to StarRocks
+      - "8030:8030"   # HTTP API
+      - "9020:9020"   # FE edit log port
+      - "9030:9030"   # MySQL protocol (for backend dev)
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+      HOST_TYPE: FQDN
+      ENV_TYPE: docker_compose_deploy
+      ENABLE_DEBUG_SOCKET: "false"
+      JAVA_OPTS: "-Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
     volumes:
       - fe_meta:/opt/starrocks/fe/meta
       - fe_log:/opt/starrocks/fe/log
+      - ./fe.conf:/opt/starrocks/fe/conf/fe.conf:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["/opt/starrocks/fe_entrypoint.sh starrocks-fe && tail -F /opt/starrocks/fe/log/fe.log"]
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://root:@localhost:8030/api/health"]
-      interval: 5s
+      test: ["CMD", "mysql", "-h", "127.0.0.1", "-P", "9030", "-u", "root", "-e", "SELECT 1"]
+      interval: 10s
       timeout: 5s
       retries: 30
-      start_period: 30s
+      start_period: 120s
+    networks:
+      - nova
 
-  # ──────────────────────────────────────────────────────────────
-  # StarRocks BE — Backend (Storage, Execution, Compute)
-  # ──────────────────────────────────────────────────────────────
+  # ── StarRocks BE (Backend — storage, compute) ────────────────────
   starrocks-be:
     image: starrocks/be-ubuntu:4.1.1
     container_name: nova-starrocks-be
     hostname: starrocks-be
-    user: root
-    environment:
-      - HOST_TYPE=FQDN
-      - TZ=${TZ:-Asia/Jakarta}
-    command:
-      - /bin/bash
-      - -c
-      - |
-        cat >> /opt/starrocks/be/conf/be.conf << 'BECONF'
-
-        JAVA_OPTS = --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
-
-        storage_root_path = /opt/starrocks/be/storage
-        mem_limit = 90%
-        max_cumulative_compaction_num_singleton_deltas = 1000
-
-        BECONF
-
-        /opt/starrocks/be_entrypoint.sh starrocks-fe
-    ports:
-      - "${BE_HTTP_PORT:-8040}:8040"      # BE HTTP admin
-      - "${BE_HEARTBEAT_PORT:-9050}:9050"  # Heartbeat from FE
     depends_on:
       starrocks-fe:
         condition: service_healthy
+    ports:
+      - "8040:8040"   # HTTP API
+      - "9050:9050"   # Heartbeat port
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+      HOST_TYPE: FQDN
+      ENV_TYPE: docker_compose_deploy
+      ENABLE_DEBUG_SOCKET: "false"
     volumes:
       - be_storage:/opt/starrocks/be/storage
       - be_log:/opt/starrocks/be/log
+      - ./be.conf:/opt/starrocks/be/conf/be.conf:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["/opt/starrocks/be_entrypoint.sh starrocks-fe && tail -F /opt/starrocks/be/log/be.log"]
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8040"]
-      interval: 5s
+      test: ["CMD", "curl", "-s", "http://localhost:8040/api/health"]
+      interval: 10s
       timeout: 5s
       retries: 30
-      start_period: 30s
+      start_period: 120s
+    networks:
+      - nova
 
-  # ──────────────────────────────────────────────────────────────
-  # StarRocks Init — Create NOVA_SYSTEM + admin + ACCOUNTADMIN
-  # ──────────────────────────────────────────────────────────────
+  # ── StarRocks Init (auto-create NOVA_SYSTEM + admin) ─────────────
   starrocks-init:
     image: mysql:8.0
     container_name: nova-starrocks-init
@@ -247,382 +180,28 @@ services:
         condition: service_healthy
       starrocks-be:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c '
-      echo "Waiting for StarRocks to be ready...";
-      until mysql -h starrocks-fe -P 9030 -u root -e "SELECT 1" 2>/dev/null; do
-        sleep 2;
-      done;
+    entrypoint: ["/bin/bash", "/init-entrypoint.sh"]
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+    volumes:
+      - ./init-entrypoint.sh:/init-entrypoint.sh:ro
+      - ./init-nova.sql:/docker-entrypoint-initdb.d/init-nova.sql:ro
+    networks:
+      - nova
 
-      echo "Waiting for BE to be alive...";
-      until mysql -h starrocks-fe -P 9030 -u root -e "SHOW BACKENDS" 2>/dev/null | grep "Alive: true"; do
-        sleep 2;
-      done;
+networks:
+  nova:
 
-      echo "Configuring StarRocks...";
-
-      # ── Global Session Variables ──
-      mysql -h starrocks-fe -P 9030 -u root -e "
-        SET GLOBAL enable_pipeline_engine = true;
-        SET GLOBAL parallel_fragment_exec_instance_num = 1;
-        SET GLOBAL enable_profile = false;
-        SET GLOBAL query_timeout = 300;
-        SET GLOBAL exec_mem_limit = 2147483648;
-        SET GLOBAL batch_size = 4096;
-        SET GLOBAL enable_spill = true;
-        SET GLOBAL spill_mode = \"auto\";
-        SET GLOBAL enable_materialized_view_rewrite = true;
-        SET GLOBAL enable_query_rewrite = true;
-        SET GLOBAL enable_rule_based_materialized_view_rewrite = true;
-        SET GLOBAL enable_materialized_view_union_rewrite = true;
-        SET GLOBAL task_runs_concurrency = 4;
-        SET GLOBAL task_runs_queue_length = 500;
-        SET GLOBAL task_ttl_second = 86400;
-        SET GLOBAL task_runs_ttl_second = 86400;
-      " 2>/dev/null;
-
-      # ── Create ACCOUNTADMIN role (IMMUTABLE — never drop/revoke) ──
-      # This is the SUPER USER role — maximum privileges, cannot be restricted
-      mysql -h starrocks-fe -P 9030 -u root -e "
-        CREATE ROLE IF NOT EXISTS ACCOUNTADMIN;
-
-        -- ═══════════════════════════════════════════════════════════
-        -- Object-level privileges (ALL databases, tables, views, etc.)
-        -- ═══════════════════════════════════════════════════════════
-        GRANT ALL ON *.* TO ROLE ACCOUNTADMIN WITH GRANT OPTION;
-
-        -- ═══════════════════════════════════════════════════════════
-        -- System-level privileges (explicit — NOT covered by ALL ON *.*)
-        -- ═══════════════════════════════════════════════════════════
-
-        -- Cluster & node management (ALTER SYSTEM ADD/DROP FE/BE)
-        GRANT OPERATE ON SYSTEM TO ROLE ACCOUNTADMIN;
-
-        -- Resource groups (CPU isolation, query queues)
-        GRANT CREATE RESOURCE GROUP ON SYSTEM TO ROLE ACCOUNTADMIN;
-
-        -- External resources (Spark, etc.)
-        GRANT CREATE RESOURCE ON SYSTEM TO ROLE ACCOUNTADMIN;
-
-        -- External catalogs (Hive, Iceberg, Paimon, JDBC, Hudi, Delta)
-        GRANT CREATE EXTERNAL CATALOG ON SYSTEM TO ROLE ACCOUNTADMIN;
-
-        -- Backup & restore repositories
-        GRANT REPOSITORY ON SYSTEM TO ROLE ACCOUNTADMIN;
-
-        -- Storage volumes (shared-data mode)
-        GRANT CREATE STORAGE VOLUME ON SYSTEM TO ROLE ACCOUNTADMIN;
-
-        -- SQL blacklists
-        GRANT BLACKLIST ON SYSTEM TO ROLE ACCOUNTADMIN;
-
-        -- File management (UDF jars, etc.)
-        GRANT FILE ON SYSTEM TO ROLE ACCOUNTADMIN;
-
-        -- Security management (password policies, network policies)
-        GRANT SECURITY ON SYSTEM TO ROLE ACCOUNTADMIN;
-
-        -- ═══════════════════════════════════════════════════════════
-        -- Additional explicit grants for completeness
-        -- ═══════════════════════════════════════════════════════════
-        GRANT USAGE ON *.* TO ROLE ACCOUNTADMIN WITH GRANT OPTION;
-        GRANT SELECT ON *.* TO ROLE ACCOUNTADMIN WITH GRANT OPTION;
-      " 2>/dev/null;
-
-      # ── Create nova_admin user ──
-      mysql -h starrocks-fe -P 9030 -u root -e "
-        CREATE USER IF NOT EXISTS '\''nova_admin'\'' IDENTIFIED BY '\''nova'\'';
-        GRANT ROLE ACCOUNTADMIN TO USER '\''nova_admin'\'';
-      " 2>/dev/null;
-
-      # ── Create NOVA_SYSTEM database + all tables ──
-      mysql -h starrocks-fe -P 9030 -u root -e "
-        CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM;
-
-        -- ═══════════════════════════════════════════
-        -- CONFIG schema (user-facing CRUD)
-        -- ═══════════════════════════════════════════
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.STAGES (
-          id                    VARCHAR(64) PRIMARY KEY,
-          name                  VARCHAR(128) NOT NULL,
-          database_name         VARCHAR(128) NOT NULL,
-          schema_name           VARCHAR(128) NOT NULL,
-          storage_connection    VARCHAR(128) NOT NULL,
-          base_prefix           VARCHAR(512) NOT NULL,
-          created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
-          created_by            VARCHAR(128)
-        ) PRIMARY KEY(id)
-        DISTRIBUTED BY HASH(id) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.PINNED_QUERIES (
-          id              VARCHAR(64) PRIMARY KEY,
-          user_name       VARCHAR(128) NOT NULL,
-          name            VARCHAR(256) NOT NULL,
-          sql_text        TEXT NOT NULL,
-          database_name   VARCHAR(128),
-          schema_name     VARCHAR(128),
-          is_shared       BOOLEAN DEFAULT FALSE,
-          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-        ) PRIMARY KEY(id)
-        DISTRIBUTED BY HASH(id) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.USER_PREFERENCES (
-          user_name       VARCHAR(128),
-          pref_key        VARCHAR(128),
-          pref_value      TEXT,
-          updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (user_name, pref_key)
-        ) DISTRIBUTED BY HASH(user_name) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.AI_PROVIDERS (
-          id              VARCHAR(64) PRIMARY KEY,
-          name            VARCHAR(128) NOT NULL,
-          type            VARCHAR(32) NOT NULL,
-          endpoint        VARCHAR(512) NOT NULL,
-          api_key_env     VARCHAR(128),
-          default_params  TEXT,
-          is_active       BOOLEAN DEFAULT TRUE,
-          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-          created_by      VARCHAR(128)
-        ) PRIMARY KEY(id)
-        DISTRIBUTED BY HASH(id) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.AI_MODELS (
-          id              VARCHAR(64) PRIMARY KEY,
-          provider_id     VARCHAR(64) NOT NULL,
-          name            VARCHAR(128) NOT NULL,
-          display_name    VARCHAR(256),
-          type            VARCHAR(32) NOT NULL,
-          max_tokens      INT DEFAULT 4096,
-          default_params  TEXT,
-          is_active       BOOLEAN DEFAULT TRUE,
-          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-          created_by      VARCHAR(128)
-        ) PRIMARY KEY(id)
-        DISTRIBUTED BY HASH(provider_id) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.OBJECT_TAGS (
-          object_type     VARCHAR(32),
-          object_name     VARCHAR(512),
-          tag_key         VARCHAR(128),
-          tag_value       VARCHAR(512),
-          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-          created_by      VARCHAR(128),
-          PRIMARY KEY (object_type, object_name, tag_key)
-        ) DISTRIBUTED BY HASH(object_type) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.DASHBOARDS (
-          id              VARCHAR(64) PRIMARY KEY,
-          name            VARCHAR(256) NOT NULL,
-          description     TEXT,
-          is_shared       BOOLEAN DEFAULT FALSE,
-          created_by      VARCHAR(128),
-          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-        ) PRIMARY KEY(id)
-        DISTRIBUTED BY HASH(id) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.DASHBOARD_WIDGETS (
-          id              VARCHAR(64) PRIMARY KEY,
-          dashboard_id    VARCHAR(64),
-          title           VARCHAR(256),
-          sql_text        TEXT,
-          chart_type      VARCHAR(32),
-          x_axis          VARCHAR(64),
-          y_axis          VARCHAR(64),
-          position_x      INT,
-          position_y      INT,
-          width           INT DEFAULT 4,
-          height          INT DEFAULT 3,
-          refresh_seconds INT DEFAULT 300,
-          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-        ) PRIMARY KEY(id)
-        DISTRIBUTED BY HASH(id) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        -- ═══════════════════════════════════════════
-        -- ML schema (model metadata)
-        -- ═══════════════════════════════════════════
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML.MODELS (
-          model_id        VARCHAR(64) PRIMARY KEY,
-          model_name      VARCHAR(128) NOT NULL,
-          model_type      VARCHAR(32),
-          default_version VARCHAR(32),
-          created_at      DATETIME,
-          created_by      VARCHAR(128),
-          description     TEXT
-        ) PRIMARY KEY(model_id)
-        DISTRIBUTED BY HASH(model_id) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML.MODEL_VERSIONS (
-          version_id      VARCHAR(64) PRIMARY KEY,
-          model_name      VARCHAR(128),
-          version_name    VARCHAR(32),
-          training_sql    TEXT,
-          training_rows   BIGINT,
-          training_duration_ms INT,
-          metrics         TEXT,
-          artifact_path   VARCHAR(1024),
-          created_at      DATETIME,
-          created_by      VARCHAR(128)
-        ) PRIMARY KEY(version_id)
-        DISTRIBUTED BY HASH(version_id) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML.MODEL_ALIASES (
-          alias_name      VARCHAR(128),
-          model_name      VARCHAR(128),
-          version_name    VARCHAR(32),
-          updated_at      DATETIME,
-          PRIMARY KEY (alias_name, model_name)
-        ) DISTRIBUTED BY HASH(alias_name) BUCKETS 1
-        PROPERTIES(\"replication_num\"=\"1\", \"enable_persistent_index\"=\"true\");
-
-        -- ═══════════════════════════════════════════
-        -- AUDIT schema (append-only analytics)
-        -- ═══════════════════════════════════════════
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT.LOG (
-          log_id          BIGINT AUTO_INCREMENT,
-          timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
-          user_name       VARCHAR(128),
-          action          VARCHAR(64),
-          target          VARCHAR(512),
-          sql_text        TEXT,
-          rewritten_sql   TEXT,
-          status          VARCHAR(16),
-          duration_ms     INT,
-          rows_affected   BIGINT,
-          error_msg       TEXT,
-          client_ip       VARCHAR(45),
-          session_id      VARCHAR(64)
-        ) PRIMARY KEY(log_id)
-        DISTRIBUTED BY HASH(log_id) BUCKETS 4;
-
-        -- ═══════════════════════════════════════════
-        -- STAGE schema (file manifest)
-        -- ═══════════════════════════════════════════
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.STAGE.FILE_MANIFEST (
-          file_id         BIGINT AUTO_INCREMENT,
-          stage_id        VARCHAR(64),
-          stage_name      VARCHAR(128),
-          database_name   VARCHAR(128),
-          schema_name     VARCHAR(128),
-          file_path       VARCHAR(1024),
-          file_name       VARCHAR(256),
-          file_size       BIGINT,
-          format          VARCHAR(32),
-          etag            VARCHAR(128),
-          uploaded_by     VARCHAR(128),
-          uploaded_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
-          last_queried    DATETIME,
-          query_count     INT DEFAULT 0,
-          is_deleted      BOOLEAN DEFAULT FALSE
-        ) PRIMARY KEY(file_id)
-        DISTRIBUTED BY HASH(file_id) BUCKETS 2;
-
-        -- ═══════════════════════════════════════════
-        -- LINEAGE schema (data provenance)
-        -- ═══════════════════════════════════════════
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.LINEAGE.LOAD_HISTORY (
-          load_id         BIGINT AUTO_INCREMENT,
-          timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
-          load_label      VARCHAR(256),
-          source_type     VARCHAR(32),
-          source_path     VARCHAR(1024),
-          target_table    VARCHAR(256),
-          rows_loaded     BIGINT,
-          bytes_loaded    BIGINT,
-          duration_ms     INT,
-          status          VARCHAR(16),
-          error_msg       TEXT,
-          user_name       VARCHAR(128)
-        ) PRIMARY KEY(load_id)
-        DISTRIBUTED BY HASH(load_id) BUCKETS 4;
-
-        -- ═══════════════════════════════════════════
-        -- QUALITY schema (data health)
-        -- ═══════════════════════════════════════════
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUALITY.TABLE_STATS (
-          stat_id         BIGINT AUTO_INCREMENT,
-          table_fullname  VARCHAR(256),
-          snapshot_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
-          row_count       BIGINT,
-          data_size_bytes BIGINT,
-          column_count    INT,
-          partition_count INT,
-          null_pct        DOUBLE,
-          duplicate_pct   DOUBLE,
-          avg_row_bytes   DOUBLE,
-          freshness_hours DOUBLE
-        ) PRIMARY KEY(stat_id)
-        DISTRIBUTED BY HASH(stat_id) BUCKETS 2;
-
-        -- ═══════════════════════════════════════════
-        -- USAGE schema (query analytics)
-        -- ═══════════════════════════════════════════
-
-        CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.USAGE.QUERY_STATS (
-          stat_id         BIGINT AUTO_INCREMENT,
-          date            DATE,
-          user_name       VARCHAR(128),
-          query_count     INT,
-          success_count   INT,
-          error_count     INT,
-          total_rows_scanned BIGINT,
-          total_rows_returned BIGINT,
-          total_duration_ms BIGINT,
-          avg_duration_ms DOUBLE,
-          p50_duration_ms DOUBLE,
-          p95_duration_ms DOUBLE,
-          p99_duration_ms DOUBLE,
-          max_duration_ms INT
-        ) PRIMARY KEY(stat_id)
-        DISTRIBUTED BY HASH(stat_id) BUCKETS 2;
-      " 2>/dev/null;
-
-      echo "";
-      echo "═══════════════════════════════════════════════════";
-      echo "  Nova Engine Ready!";
-      echo "═══════════════════════════════════════════════════";
-      echo "  StarRocks FE:  http://localhost:8030";
-      echo "  StarRocks BE:  http://localhost:8040";
-      echo "  MinIO Console: http://localhost:9001";
-      echo "  MinIO API:     http://localhost:9000";
-      echo "  Redis:         localhost:6379 (password-protected)";
-      echo "  MySQL:         localhost:9030 (Docker internal only)";
-      echo "";
-      echo "  Admin:         nova_admin / nova";
-      echo "  Role:          ACCOUNTADMIN";
-      echo "  First login forces password change.";
-      echo "═══════════════════════════════════════════════════";
-      '
-
-# ──────────────────────────────────────────────────────────────
-# Volumes
-# ──────────────────────────────────────────────────────────────
 volumes:
-  minio_data:
-    driver: local
-  redis_data:
-    driver: local
   fe_meta:
-    driver: local
+    name: docker_fe_meta
   fe_log:
-    driver: local
+    name: docker_fe_log
   be_storage:
-    driver: local
+    name: docker_be_storage
   be_log:
-    driver: local
+    name: docker_be_log
+  minio_data:
+    name: docker_minio_data
+  redis_data:
+    name: docker_redis_data
