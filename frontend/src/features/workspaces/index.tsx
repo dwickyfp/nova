@@ -950,9 +950,7 @@ export function WorkspacesPage() {
                     )}
                   </div>
                   {!resultsCollapsed && (
-                    <ScrollArea className='min-h-0 flex-1'>
-                      <QueryResults queryResult={queryResult} />
-                    </ScrollArea>
+                    <QueryResults queryResult={queryResult} />
                   )}
                 </div>
               </div>
