@@ -182,6 +182,7 @@ export function UserAuthForm({
     return (
       <Form {...setupForm}>
         <form
+          key="setup-form"
           onSubmit={setupForm.handleSubmit(onSetupSubmit)}
           className={cn('grid gap-3', className)}
           {...props}
@@ -196,7 +197,7 @@ export function UserAuthForm({
               <FormItem>
                 <FormLabel>New Password</FormLabel>
                 <FormControl>
-                  <PasswordInput placeholder='Enter new password' {...field} />
+                  <Input type='password' placeholder='Enter new password' {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -209,7 +210,7 @@ export function UserAuthForm({
               <FormItem>
                 <FormLabel>Confirm Password</FormLabel>
                 <FormControl>
-                  <PasswordInput placeholder='Confirm new password' {...field} />
+                  <Input type='password' placeholder='Confirm new password' {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
