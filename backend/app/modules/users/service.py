@@ -58,10 +58,15 @@ class UserService:
 
                 users = []
                 for row in rows:
-                    username = row.get("User") or row.get("user") or list(row.values())[0]
-                    grants = await self._get_grants_for(cur, username)
-                    roles = self._parse_roles(grants)
-                    users.append({"username": str(username), "roles": roles})
+                    raw = row.get("User") or row.get("user") or list(row.values())[0]
+                    # StarRocks SHOW USERS returns "'root'@'%'" — extract just username
+                    username = self._parse_username(str(raw))
+                    try:
+                        grants = await self._get_grants_for(cur, username)
+                        roles = self._parse_roles(grants)
+                    except Exception:
+                        roles = []
+                    users.append({"username": username, "roles": roles})
                 return users
         finally:
             conn.close()
@@ -163,6 +168,20 @@ class UserService:
             conn.close()
 
     # ── Internal helpers ─────────────────────────────────────────
+
+    @staticmethod
+    def _parse_username(raw: str) -> str:
+        """Extract username from StarRocks SHOW USERS format.
+
+        Input:  "'root'@'%'" or "'nova_admin'@'%'"
+        Output: "root" or "nova_admin"
+        """
+        # Strip surrounding quotes and @'%' host part
+        if "@" in raw:
+            user_part = raw.split("@")[0]
+        else:
+            user_part = raw
+        return user_part.strip("'\"")
 
     @staticmethod
     async def _get_grants_for(
