@@ -1393,7 +1393,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
               return (
                 <th
                   key={column}
-                  className={`border-b border-r border-border px-2 py-1.5 text-left font-normal whitespace-nowrap${colIndex === 0 ? ' border-l' : ''}`}
+                  className={`border-b border-r border-border px-2 py-1.5 text-left font-normal whitespace-nowrap`}
                 >
                   <span className='mr-1.5 text-muted-foreground'>{typeIcon}</span>
                   {column}
@@ -1408,7 +1408,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
               {row.map((cell, cellIndex) => (
                 <td
                   key={`${rowIndex}-${cellIndex}`}
-                  className={`border-b border-r border-border px-2 py-1 whitespace-nowrap${cellIndex === 0 ? ' border-l' : ''}`}
+                  className={`border-b border-r border-border px-2 py-1 whitespace-nowrap`}
                 >
                   {cell === null ? (
                     <span className='text-muted-foreground italic'>NULL</span>
