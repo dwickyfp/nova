@@ -570,7 +570,7 @@ export function WorkspacesPage() {
   }
 
   return (
-    <div className='flex h-full min-h-0 flex-col'>
+    <div data-layout='fixed' className='flex h-full min-h-0 flex-col'>
       <Header fixed>
         <div className='flex min-w-0 flex-1 items-center gap-3'>
           <div className='min-w-0'>
