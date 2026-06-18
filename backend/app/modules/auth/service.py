@@ -167,20 +167,38 @@ class AuthService:
 
     @staticmethod
     def _parse_roles(grants_rows: list) -> list[str]:
-        """Parse role names from SHOW GRANTS output."""
+        """Parse role names from SHOW GRANTS output.
+
+        StarRocks SHOW GRANTS returns tuples:
+          ('user'@'%', None, "GRANT 'ACCOUNTADMIN' TO 'user'@'%'")
+          ('user'@'%', None, "GRANT ALL ON *.* TO ROLE analyst")
+        """
         roles = []
         for row in grants_rows:
-            # SHOW GRANTS returns tuples like ('GRANT SELECT ON *.* TO ROLE analyst',)
-            grant_text = str(row)
-            if "TO ROLE" in grant_text.upper():
-                parts = grant_text.upper().split("TO ROLE")
+            # Extract the grant text (3rd element of tuple)
+            if isinstance(row, (tuple, list)) and len(row) >= 3:
+                grant_text = str(row[2])
+            else:
+                grant_text = str(row)
+
+            upper = grant_text.upper()
+
+            # Pattern 1: GRANT 'ROLENAME' TO 'user' — role assignment
+            if grant_text.startswith("GRANT '") and " TO '" in grant_text:
+                parts = grant_text.split("'")
+                if len(parts) >= 2:
+                    role = parts[1].strip()
+                    if role and role.upper() not in ("ALL", "SELECT", "INSERT", "UPDATE", "DELETE"):
+                        roles.append(role)
+
+            # Pattern 2: GRANT ... TO ROLE rolename — privilege grant
+            elif "TO ROLE" in upper:
+                parts = upper.split("TO ROLE")
                 if len(parts) > 1:
-                    role = parts[-1].strip().strip("'").strip('"').strip(")").strip()
+                    role = parts[-1].strip().strip("'\"").strip(")").strip()
                     if role:
                         roles.append(role)
-            elif "TO USER" in grant_text.upper():
-                # User-level grants, not role-based
-                pass
+
         return roles
 
     @staticmethod
