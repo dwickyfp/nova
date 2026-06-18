@@ -1,0 +1,46 @@
+services:
+  starrocks-fe:
+    image: starrocks/fe-ubuntu:4.1.1
+    ports:
+      - "29030:9030"   # MySQL protocol (test port)
+      - "28030:8030"   # HTTP
+    environment:
+      - FE_QUERY_PORT=9030
+    healthcheck:
+      test: ["CMD", "mysql", "-h", "127.0.0.1", "-P", "9030", "-u", "root", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  starrocks-be:
+    image: starrocks/be-ubuntu:4.1.1
+    depends_on:
+      starrocks-fe:
+        condition: service_healthy
+    environment:
+      - FE_ADDRESS=starrocks-fe:9010
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "29000:9000"   # S3 API (test port)
+      - "29001:9001"   # Web console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "26379:6379"   # Redis (test port)
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
