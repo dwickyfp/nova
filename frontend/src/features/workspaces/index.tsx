@@ -1406,6 +1406,8 @@ function MonacoSqlEditor({
   onRun: () => void
 }) {
   const providerRef = useRef<{ dispose(): void } | null>(null)
+  const onRunRef = useRef(onRun)
+  onRunRef.current = onRun
 
   async function provideCompletions(
     textUntilPosition: string
@@ -1532,7 +1534,7 @@ function MonacoSqlEditor({
       },
     })
 
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRun())
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRunRef.current())
   }
 
   return (
