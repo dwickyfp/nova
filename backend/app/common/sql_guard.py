@@ -31,3 +31,23 @@ def guard_sql(sql: str) -> None:
     for pattern, message in BLOCKED_PATTERNS:
         if re.search(pattern, upper, re.IGNORECASE):
             raise ForbiddenSQLError(message)
+
+
+DESTRUCTIVE_SQL_PATTERN = re.compile(
+    r"^\s*(DROP|TRUNCATE|ALTER\s+TABLE\s+.+\s+DROP|DELETE\s+FROM|UPDATE\s+)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+UNSCOPED_MUTATION_PATTERN = re.compile(
+    r"^\s*(DELETE\s+FROM|UPDATE\s+)(?!.*\bWHERE\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def is_destructive_sql(sql: str) -> bool:
+    return bool(DESTRUCTIVE_SQL_PATTERN.search(sql))
+
+
+def is_unscoped_mutation(sql: str) -> bool:
+    return bool(UNSCOPED_MUTATION_PATTERN.search(sql))

@@ -75,28 +75,28 @@ class QueryRepository:
         username: str,
         password: str,
         database: str | None = None,
+        role: str | None = None,
+        max_rows: int | None = None,
     ) -> QueryResult:
         """Execute SQL as an authenticated user (RBAC-respecting)."""
         start = time.monotonic()
         try:
-            conn = await asyncmy.connect(
-                host=settings.STARROCKS_HOST,
-                port=settings.STARROCKS_FE_MYSQL_PORT,
-                user=username,
+            async with db.user_conn(
+                username=username,
                 password=password,
                 database=database,
-                autocommit=True,
-                connect_timeout=10,
-                read_timeout=300,
-            )
-            try:
+            ) as conn:
                 async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
+                    if role:
+                        await self._set_role(cur, role)
                     await cur.execute(sql)
                     elapsed = (time.monotonic() - start) * 1000
 
                     if cur.description:
                         columns = [desc[0] for desc in cur.description]
-                        raw_rows = await cur.fetchall()
+                        raw_rows = (
+                            await cur.fetchmany(max_rows) if max_rows else await cur.fetchall()
+                        )
                         rows = [list(r.values()) for r in raw_rows]
                         return QueryResult(
                             columns=columns,
@@ -110,12 +110,15 @@ class QueryRepository:
                         elapsed_ms=round(elapsed, 2),
                         executed_sql=sql,
                     )
-            finally:
-                conn.close()
         except asyncmy.errors.OperationalError as e:
             raise StarRocksError(f"Connection error: {e}")
         except asyncmy.errors.ProgrammingError as e:
             raise StarRocksError(f"SQL error: {e}")
+
+    @staticmethod
+    async def _set_role(cur: asyncmy.cursors.DictCursor, role: str) -> None:
+        safe_role = role.replace("`", "").replace("'", "")
+        await cur.execute(f"SET ROLE {safe_role}")
 
 
 query_repo = QueryRepository()

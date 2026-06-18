@@ -1,5 +1,16 @@
 """Type-safe configuration from environment variables."""
 
+from __future__ import annotations
+
+import os
+import re
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from urllib.parse import urlparse
+from typing import Any
+
+import yaml
 from pydantic_settings import BaseSettings
 
 
@@ -27,6 +38,9 @@ class Settings(BaseSettings):
     S3_ACCESS_KEY: str = "minioadmin"
     S3_SECRET_KEY: str = "minioadmin"
     S3_BUCKET: str = "nova-stages"
+    NOVA_CONFIG_PATH: str = str(
+        Path(__file__).resolve().parents[3] / "docker" / "nova.yaml"
+    )
 
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
@@ -39,3 +53,120 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+@dataclass(frozen=True)
+class StorageConnectionConfig:
+    name: str
+    type: str
+    endpoint: str
+    bucket: str
+    access_key: str
+    secret_key: str
+    region: str = ""
+    path_style: bool = True
+    ssl: bool = False
+
+
+@dataclass(frozen=True)
+class WorkspaceStorageConfig:
+    storage_connection: str = "production"
+    base_prefix: str = "workspaces"
+
+
+@dataclass(frozen=True)
+class NovaAppConfig:
+    storage_connections: dict[str, StorageConnectionConfig]
+    workspace: WorkspaceStorageConfig
+
+
+_ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
+
+
+def _substitute_env(value: Any) -> Any:
+    if isinstance(value, str):
+        return _ENV_PATTERN.sub(lambda match: os.getenv(match.group(1), ""), value)
+    if isinstance(value, dict):
+        return {k: _substitute_env(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_substitute_env(v) for v in value]
+    return value
+
+
+def _resolve_endpoint(endpoint: str) -> str:
+    if not endpoint:
+        return endpoint
+
+    parsed = urlparse(endpoint)
+    if parsed.hostname not in {"minio"}:
+        return endpoint
+
+    # When backend runs on the host machine, docker-internal names like
+    # `minio` are not resolvable. Prefer the host-side env endpoint if present.
+    if settings.S3_ENDPOINT:
+        return settings.S3_ENDPOINT
+    return endpoint
+
+
+@lru_cache(maxsize=1)
+def load_nova_app_config() -> NovaAppConfig:
+    path = Path(settings.NOVA_CONFIG_PATH)
+    if not path.exists():
+        return NovaAppConfig(
+            storage_connections={
+                "production": StorageConnectionConfig(
+                    name="production",
+                    type="minio",
+                    endpoint=settings.S3_ENDPOINT,
+                    bucket=settings.S3_BUCKET,
+                    access_key=settings.S3_ACCESS_KEY,
+                    secret_key=settings.S3_SECRET_KEY,
+                )
+            },
+            workspace=WorkspaceStorageConfig(),
+        )
+
+    with path.open("r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+
+    parsed = _substitute_env(raw)
+    storage_connections = {}
+    for name, cfg in parsed.get("storage", {}).get("connections", {}).items():
+        storage_connections[name] = StorageConnectionConfig(
+            name=name,
+            type=cfg.get("type", "minio"),
+            endpoint=_resolve_endpoint(cfg.get("endpoint", "")) or settings.S3_ENDPOINT,
+            bucket=cfg.get("bucket", "") or settings.S3_BUCKET,
+            access_key=cfg.get("access_key", "") or settings.S3_ACCESS_KEY,
+            secret_key=cfg.get("secret_key", "") or settings.S3_SECRET_KEY,
+            region=cfg.get("region", ""),
+            path_style=bool(cfg.get("path_style", True)),
+            ssl=bool(cfg.get("ssl", False)),
+        )
+
+    if not storage_connections:
+        storage_connections["production"] = StorageConnectionConfig(
+            name="production",
+            type="minio",
+            endpoint=settings.S3_ENDPOINT,
+            bucket=settings.S3_BUCKET,
+            access_key=settings.S3_ACCESS_KEY,
+            secret_key=settings.S3_SECRET_KEY,
+        )
+
+    workspace_cfg = parsed.get("workspace", {})
+    workspace = WorkspaceStorageConfig(
+        storage_connection=workspace_cfg.get("storage_connection", "production"),
+        base_prefix=workspace_cfg.get("base_prefix", "workspaces"),
+    )
+    return NovaAppConfig(
+        storage_connections=storage_connections,
+        workspace=workspace,
+    )
+
+
+def get_storage_connection(name: str) -> StorageConnectionConfig:
+    config = load_nova_app_config()
+    if name in config.storage_connections:
+        return config.storage_connections[name]
+    return next(iter(config.storage_connections.values()))

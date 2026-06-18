@@ -2,11 +2,12 @@
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from cryptography.fernet import InvalidToken
 
 from app.core.database import db
 from app.core.exceptions import SessionExpiredError, InsufficientRoleError
 from app.core.redis import session_store
-from app.core.security import decode_token
+from app.core.security import decode_token, decrypt_password
 
 bearer_scheme = HTTPBearer()
 
@@ -29,6 +30,15 @@ async def get_current_user(
 
     session = await session_store.get(payload["sid"])
     if not session:
+        raise SessionExpiredError()
+
+    # Sessions store an encrypted StarRocks password. If the backend restarted
+    # with a different Fernet key, old sessions become unreadable and should be
+    # treated as expired instead of surfacing 500s from downstream handlers.
+    try:
+        decrypt_password(session["encrypted_password"])
+    except (InvalidToken, KeyError, TypeError, ValueError):
+        await session_store.delete(payload["sid"])
         raise SessionExpiredError()
 
     # Refresh session TTL on activity
@@ -70,8 +80,6 @@ async def get_user_connection(user: dict = Depends(get_current_user)):
             async with conn.cursor() as cur:
                 await cur.execute("SHOW TABLES")
     """
-    from app.core.security import decrypt_password
-
     password = decrypt_password(user["encrypted_password"])
     conn = await db.user_conn(user["username"], password)
     try:

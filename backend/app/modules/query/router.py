@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.core.deps import get_current_user
+from app.common.sql_guard import is_destructive_sql, is_unscoped_mutation
 from app.modules.query.service import query_service
 
 router = APIRouter()
@@ -13,6 +14,10 @@ class QueryRequest(BaseModel):
     sql: str = Field(..., min_length=1)
     database: str | None = None
     schema_name: str | None = Field(None, alias="schema")
+    role: str | None = None
+    max_rows: int = Field(500, ge=1, le=5000)
+    file_id: str | None = None
+    confirm_destructive: bool = False
 
 
 class QueryResponse(BaseModel):
@@ -25,6 +30,12 @@ class QueryResponse(BaseModel):
     original_sql: str = ""
     executed_sql: str = ""
     warnings: list[str] = []
+    destructive: bool = False
+    needs_confirmation: bool = False
+
+
+class CompletionResponse(BaseModel):
+    items: list[dict]
 
 
 @router.post("/execute", response_model=QueryResponse)
@@ -44,6 +55,10 @@ async def execute_query(
         encrypted_password=user["encrypted_password"],
         database=req.database,
         schema=req.schema_name,
+        role=req.role,
+        max_rows=req.max_rows,
+        session_id=user["session_id"],
+        confirm_destructive=req.confirm_destructive,
     )
 
     return QueryResponse(
@@ -56,6 +71,9 @@ async def execute_query(
         original_sql=result.original_sql,
         executed_sql=result.executed_sql,
         warnings=result.warnings,
+        destructive=is_destructive_sql(req.sql),
+        needs_confirmation=is_destructive_sql(req.sql)
+        or is_unscoped_mutation(req.sql),
     )
 
 
@@ -73,6 +91,7 @@ async def explain_query(
         username=user["username"],
         encrypted_password=user["encrypted_password"],
         database=req.database,
+        role=req.role,
     )
 
     return QueryResponse(
@@ -85,3 +104,36 @@ async def explain_query(
         executed_sql=result.executed_sql,
         warnings=result.warnings,
     )
+
+
+@router.get("/context")
+async def get_query_context(user: dict = Depends(get_current_user)):
+    return await query_service.get_context(
+        username=user["username"],
+        encrypted_password=user["encrypted_password"],
+    )
+
+
+@router.get("/completions", response_model=CompletionResponse)
+async def get_query_completions(
+    kind: str,
+    prefix: str = "",
+    database: str | None = None,
+    schema: str | None = None,
+    role: str | None = None,
+    table: str | None = None,
+    stage: str | None = None,
+    user: dict = Depends(get_current_user),
+):
+    result = await query_service.get_completions(
+        username=user["username"],
+        encrypted_password=user["encrypted_password"],
+        kind=kind,
+        prefix=prefix,
+        database=database,
+        schema=schema,
+        role=role,
+        table=table,
+        stage=stage,
+    )
+    return CompletionResponse(**result)

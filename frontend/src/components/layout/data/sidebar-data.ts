@@ -1,5 +1,6 @@
 import {
   Construction,
+  Database,
   LayoutDashboard,
   Monitor,
   Bug,
@@ -70,6 +71,16 @@ export const sidebarData: SidebarData = {
               url: '/clerk/user-management',
             },
           ],
+        },
+      ],
+    },
+    {
+      title: 'Data Management',
+      items: [
+        {
+          title: 'Workspaces',
+          url: '/workspaces',
+          icon: Database,
         },
       ],
     },

@@ -9,6 +9,26 @@ All persistent state lives in StarRocks NOVA_SYSTEM — no SQLite, no PostgreSQL
 from app.core.database import db
 
 
+WORKSPACE_ENTRIES_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_ENTRIES (
+    id           VARCHAR(64) NOT NULL,
+    user_name    VARCHAR(128) NOT NULL,
+    parent_path  VARCHAR(1024) NOT NULL,
+    name         VARCHAR(256) NOT NULL,
+    entry_type   VARCHAR(32) NOT NULL,
+    object_key   VARCHAR(1024),
+    size_bytes   BIGINT DEFAULT "0",
+    etag         VARCHAR(256),
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at   DATETIME,
+    is_deleted   BOOLEAN DEFAULT "false"
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
+
 async def init_nova_system() -> None:
     """Verify NOVA_SYSTEM exists and setup marker is present.
 
@@ -16,6 +36,7 @@ async def init_nova_system() -> None:
     This just ensures the setup_complete preference exists.
     """
     try:
+        await db.execute_system(WORKSPACE_ENTRIES_DDL)
         result = await db.execute_system(
             "SELECT pref_value FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
             "WHERE user_name = '__system__' AND pref_key = 'setup_complete'"
