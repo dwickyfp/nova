@@ -43,7 +43,7 @@ GRANT SECURITY ON SYSTEM TO ROLE ACCOUNTADMIN;
 
 -- ── Create nova_admin user ──
 -- Default password: nova (must be changed on first login)
-CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY 'nova';
+CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY '!1password';
 GRANT ACCOUNTADMIN TO USER 'nova_admin'@'%';
 
 -- ── Create NOVA_SYSTEM database ──
@@ -90,6 +90,23 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_USER_PREFERENCES (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) PRIMARY KEY (user_name, pref_key)
 DISTRIBUTED BY HASH(user_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_ENTRIES (
+  id           VARCHAR(64) NOT NULL,
+  user_name    VARCHAR(128) NOT NULL,
+  parent_path  VARCHAR(1024) NOT NULL,
+  name         VARCHAR(256) NOT NULL,
+  entry_type   VARCHAR(32) NOT NULL,
+  object_key   VARCHAR(1024),
+  size_bytes   BIGINT DEFAULT "0",
+  etag         VARCHAR(256),
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  deleted_at   DATETIME,
+  is_deleted   BOOLEAN DEFAULT "false"
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AI_PROVIDERS (
