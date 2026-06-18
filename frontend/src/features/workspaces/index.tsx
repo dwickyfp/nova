@@ -1088,7 +1088,7 @@ function renderWorkspaceEntries(
                 )}
               </button>
             ) : (
-              <span className='w-5' />
+              <span className='w-4' />
             )}
             {isFolder ? (
               <Folder className='size-4 text-primary' />
@@ -1108,19 +1108,11 @@ function renderWorkspaceEntries(
               className='size-7 opacity-0 group-hover:opacity-100'
               onClick={() => onRename(entry)}
             >
-              <Save className='size-3.5' />
-            </Button>
-            <Button
-              size='icon'
-              variant='ghost'
-              className='size-7 opacity-0 group-hover:opacity-100'
-              onClick={() => onDelete(entry)}
-            >
               <Trash2 className='size-3.5' />
             </Button>
           </div>
           {isFolder && isOpen && (
-            <div className='ml-5 border-l pl-2'>
+            <div className='ml-3 border-l pl-2'>
               {renderWorkspaceEntries(
                 entry.path,
                 entries,
