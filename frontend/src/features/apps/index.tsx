@@ -83,7 +83,7 @@ export function Apps() {
       {/* ===== Top Heading ===== */}
       <Header>
         <Search className='me-auto' />
-90|91|92|      </Header>
+      </Header>
 
       {/* ===== Content ===== */}
       <Main fixed>

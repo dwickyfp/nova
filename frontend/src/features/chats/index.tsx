@@ -65,7 +65,7 @@ export function Chats() {
       {/* ===== Top Heading ===== */}
       <Header>
         <Search className='me-auto' />
-72|73|74|      </Header>
+      </Header>
 
       <Main fixed>
         <section className='flex h-full gap-6'>

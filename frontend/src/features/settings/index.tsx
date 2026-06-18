@@ -40,7 +40,7 @@ export function Settings() {
       {/* ===== Top Heading ===== */}
       <Header>
         <Search className='me-auto' />
-47|48|49|      </Header>
+      </Header>
 
       <Main fixed>
         <div className='space-y-0.5'>

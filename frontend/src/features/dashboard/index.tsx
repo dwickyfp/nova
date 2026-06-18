@@ -22,7 +22,7 @@ export function Dashboard() {
       <Header>
         <TopNav links={topNav} className='me-auto' />
         <Search />
-29|30|31|      </Header>
+      </Header>
 
       {/* ===== Main ===== */}
       <Main>
