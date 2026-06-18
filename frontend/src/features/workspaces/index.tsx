@@ -742,7 +742,6 @@ export function WorkspacesPage() {
               {openTabIds.map((id) => {
                 const tab = tabs[id]
                 if (!tab) return null
-                const dirty = tab.content !== tab.savedContent
                 return (
                   <button
                     key={id}
@@ -756,7 +755,6 @@ export function WorkspacesPage() {
                     )}
                   >
                     <span className='truncate'>{tab.title}</span>
-                    {dirty && <Badge variant='outline'>Unsaved</Badge>}
                     <X
                       className='size-3.5'
                       onClick={(event) => {
@@ -783,22 +781,6 @@ export function WorkspacesPage() {
                 <Button size='sm' onClick={() => runQuery()} disabled={running}>
                   <Play className='size-4' />
                   {running ? 'Running...' : 'Run'}
-                </Button>
-                <Button
-                  size='sm'
-                  variant='outline'
-                  onClick={() =>
-                    void saveFile(
-                      activeTab.id,
-                      activeTab.content,
-                      activeTab.database,
-                      activeTab.schema,
-                      activeTab.role
-                    )
-                  }
-                >
-                  <Save className='size-4' />
-                  Save
                 </Button>
                 <div className='flex flex-1 flex-wrap items-center justify-end gap-2'>
                   <ContextSelect
