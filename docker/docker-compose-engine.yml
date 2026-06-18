@@ -125,6 +125,13 @@ services:
       ENV_TYPE: docker_compose_deploy
       ENABLE_DEBUG_SOCKET: "false"
       JAVA_OPTS: "-Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+    ulimits:
+      nproc:
+        soft: 65535
+        hard: 65535
+      nofile:
+        soft: 655350
+        hard: 655350
     volumes:
       - fe_meta:/opt/starrocks/fe/meta
       - fe_log:/opt/starrocks/fe/log
@@ -156,6 +163,13 @@ services:
       HOST_TYPE: FQDN
       ENV_TYPE: docker_compose_deploy
       ENABLE_DEBUG_SOCKET: "false"
+    ulimits:
+      nproc:
+        soft: 65535
+        hard: 65535
+      nofile:
+        soft: 655350
+        hard: 655350
     volumes:
       - be_storage:/opt/starrocks/be/storage
       - be_log:/opt/starrocks/be/log
