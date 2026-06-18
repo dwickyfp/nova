@@ -353,3 +353,124 @@ DISTRIBUTED BY HASH(stat_id) BUCKETS 8
 PROPERTIES("replication_num"="1");
 
 SELECT 'Nova init complete! All tables created.' AS status;
+
+-- ═══════════════════════════════════════════════════════════════
+-- NOVA_DEMO — E-Commerce Sample Database
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE DATABASE IF NOT EXISTS NOVA_DEMO;
+
+-- ── Customers ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_DEMO.customers (
+  customer_id   BIGINT        NOT NULL,
+  first_name    VARCHAR(50)   NOT NULL,
+  last_name     VARCHAR(50)   NOT NULL,
+  email         VARCHAR(120)  NOT NULL,
+  phone         VARCHAR(20),
+  city          VARCHAR(80),
+  country       VARCHAR(60)   DEFAULT 'Indonesia',
+  created_at    DATETIME      NOT NULL
+) PRIMARY KEY(customer_id)
+DISTRIBUTED BY HASH(customer_id) BUCKETS 4
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_DEMO.customers VALUES
+(1, 'Dwicky', 'Putra', 'dwicky@example.com', '081234567890', 'Jakarta', 'Indonesia', '2025-01-15 10:00:00'),
+(2, 'Kezia', 'Tan', 'kezia@example.com', '081298765432', 'Surabaya', 'Indonesia', '2025-02-20 14:30:00'),
+(3, 'Budi', 'Santoso', 'budi@example.com', '085612345678', 'Bandung', 'Indonesia', '2025-03-10 09:15:00'),
+(4, 'Sarah', 'Kim', 'sarah@example.com', '087812345678', 'Semarang', 'Indonesia', '2025-04-05 16:45:00'),
+(5, 'Rizki', 'Pratama', 'rizki@example.com', '089912345678', 'Yogyakarta', 'Indonesia', '2025-05-12 11:20:00'),
+(6, 'Maya', 'Wijaya', 'maya@example.com', '081112223344', 'Medan', 'Indonesia', '2025-06-18 08:00:00'),
+(7, 'Andi', 'Kusuma', 'andi@example.com', '082212345678', 'Makassar', 'Indonesia', '2025-07-22 13:10:00'),
+(8, 'Lisa', 'Chen', 'lisa@example.com', '083312345678', 'Bali', 'Indonesia', '2025-08-30 17:30:00'),
+(9, 'Dimas', 'Rahardian', 'dimas@example.com', '084412345678', 'Malang', 'Indonesia', '2025-09-14 12:00:00'),
+(10, 'Nina', 'Sari', 'nina@example.com', '085512345678', 'Palembang', 'Indonesia', '2025-10-25 15:45:00');
+
+-- ── Products ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_DEMO.products (
+  product_id    BIGINT        NOT NULL,
+  product_name  VARCHAR(200)  NOT NULL,
+  category      VARCHAR(80)   NOT NULL,
+  brand         VARCHAR(80),
+  price         DECIMAL(12,2) NOT NULL,
+  stock_qty     INT           NOT NULL,
+  created_at    DATETIME      NOT NULL
+) PRIMARY KEY(product_id)
+DISTRIBUTED BY HASH(product_id) BUCKETS 4
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_DEMO.products VALUES
+(1, 'Laptop ASUS ROG Strix G16', 'Electronics', 'ASUS', 18999000.00, 25, '2025-01-01 00:00:00'),
+(2, 'iPhone 16 Pro Max 256GB', 'Electronics', 'Apple', 24999000.00, 50, '2025-01-01 00:00:00'),
+(3, 'Samsung Galaxy S25 Ultra', 'Electronics', 'Samsung', 19999000.00, 40, '2025-01-01 00:00:00'),
+(4, 'Sony WH-1000XM5 Headphones', 'Audio', 'Sony', 4299000.00, 100, '2025-01-15 00:00:00'),
+(5, 'Mechanical Keyboard Keychron Q1', 'Accessories', 'Keychron', 2899000.00, 80, '2025-02-01 00:00:00'),
+(6, 'LG UltraGear 27 4K Monitor', 'Electronics', 'LG', 6499000.00, 30, '2025-02-15 00:00:00'),
+(7, 'Logitech MX Master 3S Mouse', 'Accessories', 'Logitech', 1499000.00, 120, '2025-03-01 00:00:00'),
+(8, 'iPad Air M3 256GB', 'Electronics', 'Apple', 12999000.00, 35, '2025-03-15 00:00:00'),
+(9, 'Samsung 990 PRO SSD 2TB', 'Storage', 'Samsung', 3299000.00, 60, '2025-04-01 00:00:00'),
+(10, 'AirPods Pro 3', 'Audio', 'Apple', 3999000.00, 90, '2025-04-15 00:00:00'),
+(11, 'Dell XPS 15 Laptop', 'Electronics', 'Dell', 22499000.00, 20, '2025-05-01 00:00:00'),
+(12, 'Anker 65W USB-C Charger', 'Accessories', 'Anker', 599000.00, 200, '2025-05-15 00:00:00');
+
+-- ── Orders ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_DEMO.orders (
+  order_id      BIGINT        NOT NULL,
+  customer_id   BIGINT        NOT NULL,
+  order_date    DATETIME      NOT NULL,
+  status        VARCHAR(20)   NOT NULL DEFAULT 'pending',
+  total_amount  DECIMAL(14,2) NOT NULL,
+  payment_method VARCHAR(30),
+  shipping_city VARCHAR(80)
+) PRIMARY KEY(order_id)
+DISTRIBUTED BY HASH(order_id) BUCKETS 4
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_DEMO.orders VALUES
+(1001, 1, '2025-06-01 10:30:00', 'completed', 23298000.00, 'DANA', 'Jakarta'),
+(1002, 2, '2025-06-02 14:00:00', 'completed', 4299000.00, 'GoPay', 'Surabaya'),
+(1003, 3, '2025-06-03 09:15:00', 'completed', 18999000.00, 'Bank Transfer', 'Bandung'),
+(1004, 1, '2025-06-05 16:45:00', 'completed', 2899000.00, 'QRIS', 'Jakarta'),
+(1005, 4, '2025-06-07 11:20:00', 'shipped', 24999000.00, 'Credit Card', 'Semarang'),
+(1006, 5, '2025-06-10 08:00:00', 'completed', 6499000.00, 'DANA', 'Yogyakarta'),
+(1007, 6, '2025-06-12 13:10:00', 'processing', 19999000.00, 'Bank Transfer', 'Medan'),
+(1008, 2, '2025-06-15 17:30:00', 'completed', 1499000.00, 'GoPay', 'Surabaya'),
+(1009, 7, '2025-06-18 12:00:00', 'shipped', 12999000.00, 'Credit Card', 'Makassar'),
+(1010, 8, '2025-06-20 15:45:00', 'completed', 3999000.00, 'QRIS', 'Bali'),
+(1011, 3, '2025-06-22 10:00:00', 'pending', 3299000.00, 'DANA', 'Bandung'),
+(1012, 9, '2025-06-25 14:30:00', 'completed', 22499000.00, 'Bank Transfer', 'Malang'),
+(1013, 10, '2025-06-28 09:00:00', 'shipped', 599000.00, 'GoPay', 'Palembang'),
+(1014, 1, '2025-07-01 11:00:00', 'completed', 4299000.00, 'QRIS', 'Jakarta'),
+(1015, 5, '2025-07-05 16:00:00', 'completed', 24999000.00, 'Credit Card', 'Yogyakarta');
+
+-- ── Order Items ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_DEMO.order_items (
+  item_id       BIGINT        NOT NULL,
+  order_id      BIGINT        NOT NULL,
+  product_id    BIGINT        NOT NULL,
+  quantity      INT           NOT NULL,
+  unit_price    DECIMAL(12,2) NOT NULL,
+  subtotal      DECIMAL(14,2) NOT NULL
+) PRIMARY KEY(item_id)
+DISTRIBUTED BY HASH(item_id) BUCKETS 4
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_DEMO.order_items VALUES
+(1, 1001, 1, 1, 18999000.00, 18999000.00),
+(2, 1001, 4, 1, 4299000.00, 4299000.00),
+(3, 1002, 4, 1, 4299000.00, 4299000.00),
+(4, 1003, 1, 1, 18999000.00, 18999000.00),
+(5, 1004, 5, 1, 2899000.00, 2899000.00),
+(6, 1005, 2, 1, 24999000.00, 24999000.00),
+(7, 1006, 6, 1, 6499000.00, 6499000.00),
+(8, 1007, 3, 1, 19999000.00, 19999000.00),
+(9, 1008, 7, 1, 1499000.00, 1499000.00),
+(10, 1009, 8, 1, 12999000.00, 12999000.00),
+(11, 1010, 10, 1, 3999000.00, 3999000.00),
+(12, 1011, 9, 1, 3299000.00, 3299000.00),
+(13, 1012, 11, 1, 22499000.00, 22499000.00),
+(14, 1013, 12, 1, 599000.00, 599000.00),
+(15, 1014, 4, 1, 4299000.00, 4299000.00),
+(16, 1015, 2, 1, 24999000.00, 24999000.00);
+
+SELECT 'NOVA_DEMO e-commerce sample data loaded!' AS status;
