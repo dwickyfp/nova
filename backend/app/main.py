@@ -20,10 +20,11 @@ from app.modules.objects.router import router as objects_router
 from app.modules.query.router import router as query_router
 from app.modules.tables.router import router as tables_router
 from app.modules.views.router import router as views_router
+from app.modules.stages.router import router as stages_router
+from app.modules.users.router import router as users_router
+from app.modules.ai_ml.router import router as ai_router
 # from app.modules.query.router import router as query_router
 # from app.modules.objects.router import router as objects_router
-# from app.modules.stages.router import router as stages_router
-# from app.modules.users.router import router as users_router
 # from app.modules.tables.router import router as tables_router
 # from app.modules.views.router import router as views_router
 # from app.modules.functions.router import router as functions_router
@@ -32,7 +33,6 @@ from app.modules.views.router import router as views_router
 # from app.modules.external_catalogs.router import router as ext_router
 # from app.modules.cluster.router import router as cluster_router
 # from app.modules.resource_groups.router import router as rg_router
-# from app.modules.ai_ml.router import router as ai_router
 # from app.modules.dashboards.router import router as dash_router
 # from app.modules.backup.router import router as backup_router
 # from app.modules.governance.router import router as gov_router
@@ -81,11 +81,14 @@ def create_app() -> FastAPI:
     app.include_router(objects_router, prefix=f"{prefix}/objects", tags=["objects"])
     app.include_router(tables_router, prefix=f"{prefix}/tables", tags=["tables"])
     app.include_router(views_router, prefix=f"{prefix}/views", tags=["views"])
+    app.include_router(stages_router, prefix=f"{prefix}/stages", tags=["stages"])
+    app.include_router(users_router, prefix=f"{prefix}/users", tags=["users"])
+    app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["ai"])
 
     # Future modules:
     # app.include_router(query_router, prefix=f"{prefix}/query", tags=["query"])
     # app.include_router(objects_router, prefix=f"{prefix}/objects", tags=["objects"])
-    # app.include_router(stages_router, prefix=f"{prefix}/stages", tags=["stages"])
+    # stages_router registered above
     # app.include_router(users_router, prefix=f"{prefix}/users", tags=["users"])
     # ... etc
 
