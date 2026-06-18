@@ -144,7 +144,7 @@ export function NavUser({ user }: NavUserProps) {
                       >
                         <SquareUser className='size-4' />
                         <span className='flex-1'>{role}</span>
-                        {role === activeRole && <Check className='size-4' />}
+                        {role === activeRole && <Check className='size-4 text-sidebar-accent-foreground' />}
                       </DropdownMenuItem>
                     ))
                   )}
