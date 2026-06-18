@@ -16,6 +16,7 @@ from app.core.redis import session_store
 
 # --- Module routers ---
 from app.modules.auth.router import router as auth_router
+from app.modules.query.router import router as query_router
 
 # Future modules (uncomment as implemented):
 # from app.modules.query.router import router as query_router
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
     # API v1 routers
     prefix = "/api/v1"
     app.include_router(auth_router, prefix=f"{prefix}/auth", tags=["auth"])
+    app.include_router(query_router, prefix=f"{prefix}/query", tags=["query"])
 
     # Future modules:
     # app.include_router(query_router, prefix=f"{prefix}/query", tags=["query"])
