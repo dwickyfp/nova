@@ -513,6 +513,7 @@ export function WorkspacesPage() {
       return runQuery(true)
     }
     setRunning(true)
+    setQueryResult(null)
     try {
       const response = await api.post<QueryResponse>('/query/execute', {
         sql,
@@ -533,6 +534,20 @@ export function WorkspacesPage() {
           activeTab.role
         )
       }
+    } catch (error) {
+      setQueryResult({
+        success: false,
+        columns: [],
+        rows: [],
+        row_count: 0,
+        affected_rows: 0,
+        elapsed_ms: 0,
+        original_sql: sql,
+        executed_sql: '',
+        warnings: [error instanceof Error ? error.message : 'Query failed'],
+        destructive: false,
+        needs_confirmation: false,
+      })
     } finally {
       setRunning(false)
     }
@@ -1326,6 +1341,16 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
     return (
       <div className='p-4 text-sm text-muted-foreground'>
         Run a query to inspect table output here.
+      </div>
+    )
+  }
+
+  if (queryResult.warnings?.length) {
+    return (
+      <div className='p-4 text-sm text-destructive'>
+        {queryResult.warnings.map((w, i) => (
+          <div key={i}>{w}</div>
+        ))}
       </div>
     )
   }
