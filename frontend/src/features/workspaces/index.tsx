@@ -197,6 +197,7 @@ export function WorkspacesPage() {
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const saveTimerRef = useRef<number | null>(null)
   const stateSaveTimerRef = useRef<number | null>(null)
+  const editorContentRef = useRef('')
 
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
     queryKey: ['workspace-tree'],
@@ -371,6 +372,7 @@ export function WorkspacesPage() {
     const file = await api.get<WorkspaceFileResponse>(`/workspaces/files/${id}`)
     const context = queryContextQuery.data
     const defaults = workspaceTreeQuery.data?.defaults
+    editorContentRef.current = file.content
     setTabs((prev) => ({
       ...prev,
       [id]: {
@@ -501,7 +503,7 @@ export function WorkspacesPage() {
 
   async function runQuery(confirmDestructive = false) {
     if (!activeTab) return
-    const sql = activeTab.content.trim()
+    const sql = editorContentRef.current.trim() || activeTab.content.trim()
     if (!sql) return
     if (!confirmDestructive && isDestructiveSql(sql)) {
       const ok = window.confirm(
@@ -874,15 +876,17 @@ export function WorkspacesPage() {
                     database={activeTab.database}
                     schema={activeTab.schema}
                     role={activeTab.role}
-                    onChange={(value) =>
+                    onChange={(value) => {
+                      const content = value ?? ''
+                      editorContentRef.current = content
                       setTabs((prev) => ({
                         ...prev,
                         [activeTab.id]: {
                           ...prev[activeTab.id],
-                          content: value ?? '',
+                          content,
                         },
                       }))
-                    }
+                    }}
                     onRun={() => runQuery()}
                   />
                 </div>
