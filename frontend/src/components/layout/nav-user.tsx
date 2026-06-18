@@ -106,6 +106,11 @@ export function NavUser({ user }: NavUserProps) {
               <DropdownMenuSeparator />
 
               {/* ── Role switcher (submenu) ── */}
+              <div className='px-2 py-1'>
+                <span className='text-[10px] font-medium uppercase tracking-wider text-muted-foreground'>
+                  Switch Role
+                </span>
+              </div>
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className='gap-2'>
                   <Shield className='size-4' />
