@@ -1506,6 +1506,33 @@ function MonacoSqlEditor({
     editor: Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0],
     monaco: Monaco
   ) {
+    // Define custom Nova theme with primary color for SQL keywords
+    monaco.editor.defineTheme('nova-light', {
+      base: 'vs',
+      inherit: true,
+      rules: [
+        { token: 'keyword', foreground: 'd04738', fontStyle: 'bold' },
+        { token: 'keyword.sql', foreground: 'd04738', fontStyle: 'bold' },
+        { token: 'predefined.sql', foreground: 'd04738' },
+        { token: 'operator.sql', foreground: 'd04738' },
+        { token: 'string', foreground: '1a8974' },
+        { token: 'string.sql', foreground: '1a8974' },
+        { token: 'number', foreground: 'c9662e' },
+        { token: 'comment', foreground: '8e99a4', fontStyle: 'italic' },
+        { token: 'type', foreground: '6b46c1' },
+        { token: 'identifier', foreground: '2c3e50' },
+        { token: 'predefined', foreground: 'd04738' },
+      ],
+      colors: {
+        'editor.background': '#ffffff',
+        'editor.foreground': '#2c3e50',
+        'editor.lineHighlightBackground': '#f8f9fa',
+        'editor.selectionBackground': '#d0473820',
+        'editorCursor.foreground': '#d04738',
+      },
+    })
+    monaco.editor.setTheme('nova-light')
+
     providerRef.current?.dispose()
     providerRef.current = monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: ['@', '.', ' '],
@@ -1562,7 +1589,7 @@ function MonacoSqlEditor({
     <Editor
       height='100%'
       language='sql'
-      theme='vs-light'
+      theme='nova-light'
       value={value}
       onChange={onChange}
       onMount={handleMount}
