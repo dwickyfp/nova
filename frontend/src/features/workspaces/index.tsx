@@ -109,6 +109,8 @@ type QueryResponse = {
   original_sql: string
   executed_sql: string
   warnings: string[]
+  destructive?: boolean
+  needs_confirmation?: boolean
 }
 
 type CompletionResponse = {
@@ -259,6 +261,22 @@ export function WorkspacesPage() {
     if (!tab || tab.loaded) return
     void openTab(activeTabId)
   }, [activeTabId, tabs])
+
+  // Pre-load schemas when active tab's database changes
+  useEffect(() => {
+    if (!activeTab?.database || schemasByDatabase[activeTab.database]) return
+    void api
+      .get<SchemaResponse>(
+        `/objects/databases/${encodeURIComponent(activeTab.database)}/schemas${activeTab.role ? `?role=${encodeURIComponent(activeTab.role)}` : ''}`
+      )
+      .then((response) => {
+        setSchemasByDatabase((prev) => ({
+          ...prev,
+          [activeTab.database]: response.schemas,
+        }))
+      })
+      .catch(() => {})
+  }, [activeTab?.database, activeTab?.role])
 
   useEffect(() => {
     if (!activeTab) return
