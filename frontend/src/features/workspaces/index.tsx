@@ -1382,31 +1382,39 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
   }
 
   return (
-    <div className='p-4'>
-      <Table>
-        <TableHeader>
-          <TableRow>
+    <div className='h-full overflow-auto'>
+      <table className='w-full border-collapse text-sm'>
+        <thead className='sticky top-0 z-10 bg-muted'>
+          <tr>
             {queryResult.columns.map((column) => (
-              <TableHead key={column}>{column}</TableHead>
+              <th
+                key={column}
+                className='border border-border px-2 py-1.5 text-left font-semibold whitespace-nowrap'
+              >
+                {column}
+              </th>
             ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+          </tr>
+        </thead>
+        <tbody>
           {queryResult.rows.map((row, rowIndex) => (
-            <TableRow key={rowIndex}>
+            <tr key={rowIndex}>
               {row.map((cell, cellIndex) => (
-                <TableCell key={`${rowIndex}-${cellIndex}`}>
+                <td
+                  key={`${rowIndex}-${cellIndex}`}
+                  className='border border-border px-2 py-1 whitespace-nowrap'
+                >
                   {cell === null ? (
-                    <span className='text-muted-foreground'>NULL</span>
+                    <span className='text-muted-foreground italic'>NULL</span>
                   ) : (
                     String(cell)
                   )}
-                </TableCell>
+                </td>
               ))}
-            </TableRow>
+            </tr>
           ))}
-        </TableBody>
-      </Table>
+        </tbody>
+      </table>
     </div>
   )
 }
