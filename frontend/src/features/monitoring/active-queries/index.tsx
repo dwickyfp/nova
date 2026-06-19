@@ -80,7 +80,7 @@ export function MonitoringActiveQueries() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
-  const { data, isLoading, isFetching, refetch } = useQuery<ActiveQuery[]>({
+  const { data, isLoading, isFetching } = useQuery<ActiveQuery[]>({
     queryKey: ['monitoring', 'active-queries'],
     queryFn: () => api.get<ActiveQuery[]>('/monitoring/queries/active'),
     refetchInterval: 5000,
@@ -151,17 +151,6 @@ export function MonitoringActiveQueries() {
           {isFetching && (
             <RefreshCw className='h-4 w-4 animate-spin text-muted-foreground' />
           )}
-          <Button
-            variant='outline'
-            size='sm'
-            onClick={() => refetch()}
-            disabled={isFetching}
-          >
-            <RefreshCw
-              className={cn('h-4 w-4', isFetching && 'animate-spin')}
-            />
-            Refresh
-          </Button>
         </div>
       </div>
 
