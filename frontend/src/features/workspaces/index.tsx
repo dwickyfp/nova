@@ -18,6 +18,7 @@ import Editor, { type Monaco } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Braces,
+  Bookmark,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -39,6 +40,7 @@ import {
   RotateCcw,
   Search,
   Table2,
+  Trash2,
   Type,
   UserRoundCog,
   X,
@@ -324,7 +326,7 @@ const SQL_KEYWORDS = [
 
 export function WorkspacesPage() {
   const queryClient = useQueryClient()
-  const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases'>(
+  const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases' | 'snippets'>(
     'workspaces'
   )
   const [secondaryCollapsed, setSecondaryCollapsed] = useState(false)
@@ -350,6 +352,9 @@ export function WorkspacesPage() {
   const [resultsTab, setResultsTab] = useState<'results' | 'history' | 'explain'>('results')
   const [explainResult, setExplainResult] = useState<string | null>(null)
   const [explaining, setExplaining] = useState(false)
+  const [savingSnippet, setSavingSnippet] = useState(false)
+  const [snippetDialogOpen, setSnippetDialogOpen] = useState(false)
+  const [snippetName, setSnippetName] = useState('')
   const [historyFilter, setHistoryFilter] = useState<'file' | 'all'>('file')
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(() => {
     try {
@@ -846,6 +851,29 @@ export function WorkspacesPage() {
     }
   }
 
+  async function saveSnippet() {
+    if (!activeTab) return
+    const sql = editorContentRef.current.trim() || activeTab.content.trim()
+    if (!sql || !snippetName.trim()) return
+    setSavingSnippet(true)
+    try {
+      await api.post('/snippets/', {
+        name: snippetName.trim(),
+        sql_text: sql,
+        database_name: activeTab.database || null,
+        schema_name: activeTab.schema || null,
+      })
+      toast.success('Snippet saved')
+      setSnippetDialogOpen(false)
+      setSnippetName('')
+      void queryClient.invalidateQueries({ queryKey: ['snippets'] })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save snippet')
+    } finally {
+      setSavingSnippet(false)
+    }
+  }
+
   async function flushTabSave(tabId: string | null) {
     if (!tabId) return
     const tab = tabs[tabId]
@@ -923,13 +951,14 @@ export function WorkspacesPage() {
                   <Tabs
                     value={sidebarTab}
                     onValueChange={(value) =>
-                      setSidebarTab(value as 'workspaces' | 'databases')
+                      setSidebarTab(value as 'workspaces' | 'databases' | 'snippets')
                     }
                     className='w-full'
                   >
-                    <TabsList className='grid w-full grid-cols-2'>
+                    <TabsList className='grid w-full grid-cols-3'>
                       <TabsTrigger value='workspaces'>Workspaces</TabsTrigger>
                       <TabsTrigger value='databases'>Databases</TabsTrigger>
+                      <TabsTrigger value='snippets'>Snippets</TabsTrigger>
                     </TabsList>
                   </Tabs>
                 )}
@@ -1052,7 +1081,7 @@ export function WorkspacesPage() {
                       onRename={renameEntry}
                       onDelete={deleteEntry}
                     />
-                  ) : (
+                  ) : sidebarTab === 'databases' ? (
                     <DatabaseExplorer
                       databases={filteredDatabases}
                       expandedDatabases={expandedDatabases}
@@ -1071,6 +1100,22 @@ export function WorkspacesPage() {
                       }
                       role={activeTab?.role ?? queryContextQuery.data?.defaults.role ?? undefined}
                       setSchemasByDatabase={setSchemasByDatabase}
+                    />
+                  ) : (
+                    <SnippetsSidebar
+                      onLoadSql={(sql, dbName) => {
+                        if (activeTabId && tabs[activeTabId]) {
+                          setTabs((prev) => ({
+                            ...prev,
+                            [activeTabId]: {
+                              ...prev[activeTabId],
+                              content: sql,
+                              database: dbName || prev[activeTabId].database,
+                            },
+                          }))
+                          editorContentRef.current = sql
+                        }
+                      }}
                     />
                   )}
                 </ScrollArea>
@@ -1212,6 +1257,42 @@ export function WorkspacesPage() {
                   <Route className='size-4' />
                   {explaining ? 'Explaining...' : 'Explain'}
                 </Button>
+                <Button
+                  size='sm'
+                  variant='ghost'
+                  title='Save current SQL as snippet'
+                  onClick={() => {
+                    setSnippetName(activeTab?.title?.replace(/\.sql$/i, '') ?? '')
+                    setSnippetDialogOpen(true)
+                  }}
+                >
+                  <Bookmark className='size-4' />
+                  Save
+                </Button>
+                {/* Save Snippet Dialog */}
+                {snippetDialogOpen && (
+                  <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/40' onClick={() => setSnippetDialogOpen(false)}>
+                    <div className='w-[360px] rounded-lg border border-border bg-popover p-4 shadow-xl' onClick={(e) => e.stopPropagation()}>
+                      <h3 className='mb-3 text-sm font-semibold text-foreground'>Save as Snippet</h3>
+                      <Input
+                        autoFocus
+                        placeholder='Snippet name…'
+                        value={snippetName}
+                        onChange={(e) => setSnippetName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void saveSnippet()
+                          if (e.key === 'Escape') setSnippetDialogOpen(false)
+                        }}
+                      />
+                      <div className='mt-3 flex justify-end gap-2'>
+                        <Button size='sm' variant='outline' onClick={() => setSnippetDialogOpen(false)}>Cancel</Button>
+                        <Button size='sm' onClick={() => void saveSnippet()} disabled={savingSnippet || !snippetName.trim()}>
+                          {savingSnippet ? 'Saving…' : 'Save'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className='flex flex-1 flex-wrap items-center justify-end gap-2'>
                   <InlineSelect
                     label='Role'
@@ -1439,9 +1520,7 @@ export function WorkspacesPage() {
                       ) : explaining ? (
                         <div className='text-sm text-muted-foreground'>Generating execution plan…</div>
                       ) : (
-                        <pre className='whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed text-foreground'>
-                          {explainResult}
-                        </pre>
+                        <ExplainTreeView planText={explainResult!} />
                       )}
                     </div>
                   )}
@@ -1982,6 +2061,26 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
   const [pageSize, setPageSize] = useState(100)
   const [sortCol, setSortCol] = useState<number | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; rowIdx: number; colIdx: number } | null>(null)
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!ctxMenu) return
+    const close = () => setCtxMenu(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [ctxMenu])
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text)
+    toast.success('Copied to clipboard')
+  }
+
+  function handleCellContext(e: React.MouseEvent, rowIdx: number, colIdx: number) {
+    e.preventDefault()
+    e.stopPropagation()
+    setCtxMenu({ x: e.clientX, y: e.clientY, rowIdx, colIdx })
+  }
 
   // Reset pagination on new results
   const prevRowCount = useRef(0)
@@ -2092,6 +2191,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
                   <td
                     key={`${rowIndex}-${cellIndex}`}
                     className='border-b border-r border-border px-2 py-1 whitespace-nowrap'
+                    onContextMenu={(e) => handleCellContext(e, startIdx + rowIndex, cellIndex)}
                   >
                     {cell === null ? (
                       <span className='text-muted-foreground italic'>NULL</span>
@@ -2142,6 +2242,346 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
           </select>
         </div>
       </div>
+      {/* Right-click context menu */}
+      {ctxMenu && queryResult && (() => {
+        const { rowIdx, colIdx, x, y } = ctxMenu
+        const allRows = sortedRows
+        const cellVal = allRows[rowIdx]?.[colIdx]
+        const row = allRows[rowIdx]
+        const col = allRows.map((r) => r[colIdx])
+        const colName = queryResult.columns[colIdx]
+        return (
+          <div
+            className='fixed z-[9999] min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-lg'
+            style={{ left: x, top: y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className='mb-1 truncate border-b border-border px-2 py-1 text-[11px] text-muted-foreground'>
+              {colName} — Row {rowIdx + 1}
+            </div>
+            <button
+              type='button'
+              className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+              onClick={() => { copyToClipboard(cellVal === null ? 'NULL' : String(cellVal)); setCtxMenu(null) }}
+            >
+              <Copy className='size-3.5' /> Copy cell value
+            </button>
+            <button
+              type='button'
+              className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+              onClick={() => { copyToClipboard(row.map((c) => c === null ? 'NULL' : String(c)).join('\t')); setCtxMenu(null) }}
+            >
+              <Copy className='size-3.5' /> Copy row (TSV)
+            </button>
+            <button
+              type='button'
+              className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+              onClick={() => { copyToClipboard(col.map((c) => c === null ? 'NULL' : String(c)).join('\n')); setCtxMenu(null) }}
+            >
+              <Copy className='size-3.5' /> Copy column ({colName})
+            </button>
+            <div className='my-1 border-t border-border' />
+            <button
+              type='button'
+              className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+              onClick={() => {
+                const header = queryResult.columns.join('\t')
+                const body = allRows.map((r) => r.map((c) => c === null ? '' : String(c)).join('\t'))
+                copyToClipboard([header, ...body].join('\n'))
+                setCtxMenu(null)
+              }}
+            >
+              <Copy className='size-3.5' /> Copy all (CSV)
+            </button>
+          </div>
+        )
+      })()}
+    </div>
+  )
+}
+
+// ── EXPLAIN Tree View ───────────────────────────────────────────────
+const OPERATOR_COLORS: Record<string, string> = {
+  OlapScanNode: 'text-blue-500',
+  OlapScan: 'text-blue-500',
+  EXCHANGE: 'text-emerald-500',
+  'HASH JOIN': 'text-orange-500',
+  'NESTLOOP JOIN': 'text-orange-500',
+  'MERGE JOIN': 'text-orange-500',
+  JOIN: 'text-orange-500',
+  AGGREGATE: 'text-violet-500',
+  'AGGREGATE_NODE': 'text-violet-500',
+  SORT: 'text-amber-500',
+  'TOP-N': 'text-amber-500',
+  ANALYTIC: 'text-pink-500',
+  'RESULT SINK': 'text-muted-foreground',
+  'STREAM DATA SINK': 'text-muted-foreground',
+  UNION: 'text-cyan-500',
+  INTERSECT: 'text-cyan-500',
+  EXCEPT: 'text-cyan-500',
+  FILTER: 'text-yellow-600 dark:text-yellow-500',
+  PROJECT: 'text-yellow-600 dark:text-yellow-500',
+}
+
+function getOperatorColor(line: string): string {
+  // Match operator patterns like "0:OlapScanNode", "1:EXCHANGE", "HASH JOIN", etc.
+  const opMatch = line.match(/^\d+:(\w+)/)
+  if (opMatch && OPERATOR_COLORS[opMatch[1]]) return OPERATOR_COLORS[opMatch[1]]
+  // Check for standalone operator names
+  for (const [op, color] of Object.entries(OPERATOR_COLORS)) {
+    if (line.trim().startsWith(op)) return color
+  }
+  return 'text-foreground'
+}
+
+interface PlanNode {
+  line: string
+  indent: number
+  children: PlanNode[]
+}
+
+function parseExplainPlan(text: string): PlanNode[] {
+  const lines = text.split('\n')
+  const root: PlanNode = { line: '', indent: -1, children: [] }
+  const stack: PlanNode[] = [root]
+
+  for (const rawLine of lines) {
+    if (rawLine.trim() === '') continue
+    const indent = rawLine.search(/\S/)
+    const line = rawLine.trim()
+    const node: PlanNode = { line, indent, children: [] }
+
+    // Pop stack until we find a parent with less indentation
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+      stack.pop()
+    }
+    stack[stack.length - 1].children.push(node)
+    stack.push(node)
+  }
+
+  return root.children
+}
+
+function ExplainTreeView({ planText }: { planText: string }) {
+  const tree = useMemo(() => parseExplainPlan(planText), [planText])
+  const [collapsedFragments, setCollapsedFragments] = useState<Set<string>>(new Set())
+
+  function toggleFragment(label: string) {
+    setCollapsedFragments((prev) => {
+      const next = new Set(prev)
+      next.has(label) ? next.delete(label) : next.add(label)
+      return next
+    })
+  }
+
+  // Group top-level nodes into PLAN FRAGMENTs
+  const fragments: { label: string; children: PlanNode[] }[] = []
+  let currentFragment: { label: string; children: PlanNode[] } | null = null
+
+  for (const node of tree) {
+    if (node.line.startsWith('PLAN FRAGMENT')) {
+      currentFragment = { label: node.line, children: node.children }
+      fragments.push(currentFragment)
+    } else if (currentFragment) {
+      currentFragment.children.push(node)
+    } else {
+      // Lines before any PLAN FRAGMENT — create an implicit fragment
+      currentFragment = { label: 'Execution Plan', children: [node] }
+      fragments.push(currentFragment)
+    }
+  }
+
+  return (
+    <div className='space-y-1 font-mono text-xs'>
+      {fragments.map((frag, fi) => {
+        const isCollapsed = collapsedFragments.has(frag.label)
+        return (
+          <div key={fi} className='rounded-md border border-border overflow-hidden'>
+            <button
+              type='button'
+              className='flex w-full items-center gap-1.5 bg-muted/40 px-2.5 py-1.5 text-left font-semibold text-foreground hover:bg-muted/60 transition-colors'
+              onClick={() => toggleFragment(frag.label)}
+            >
+              <ChevronRight
+                className={cn(
+                  'size-3.5 shrink-0 transition-transform duration-200',
+                  !isCollapsed && 'rotate-90'
+                )}
+              />
+              <span className='text-primary'>{frag.label}</span>
+            </button>
+            {!isCollapsed && (
+              <div className='px-2 py-1.5'>
+                {frag.children.map((node, ni) => (
+                  <ExplainNode key={ni} node={node} depth={0} />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ExplainNode({ node, depth }: { node: PlanNode; depth: number }) {
+  const isOperator = /^\d+:\w/.test(node.line)
+  const isSink = /^RESULT SINK|^STREAM DATA SINK/.test(node.line)
+  const colorClass = getOperatorColor(node.line)
+  const hasChildren = node.children.length > 0
+
+  return (
+    <div style={{ paddingLeft: depth * 16 }}>
+      <div
+        className={cn(
+          'flex items-start gap-1 rounded px-1.5 py-0.5 leading-relaxed',
+          (isOperator || isSink) ? 'font-semibold' : '',
+          (isOperator || isSink) ? colorClass : 'text-muted-foreground'
+        )}
+      >
+        {hasChildren && isOperator && (
+          <ChevronRight className='mt-0.5 size-3 shrink-0 opacity-50' />
+        )}
+        <span className='whitespace-pre-wrap break-all'>{node.line}</span>
+      </div>
+      {node.children.map((child, ci) => (
+        <ExplainNode key={ci} node={child} depth={depth + 1} />
+      ))}
+    </div>
+  )
+}
+
+// ── Snippets Sidebar ────────────────────────────────────────────────
+type Snippet = {
+  id: string
+  user_name: string
+  name: string
+  sql_text: string
+  database_name: string | null
+  schema_name: string | null
+  is_shared: boolean
+  created_at: string | null
+}
+
+function SnippetsSidebar({ onLoadSql }: { onLoadSql: (sql: string, dbName: string | null) => void }) {
+  const snippetsQuery = useQuery<{ items: Snippet[]; total: number }>({
+    queryKey: ['snippets'],
+    queryFn: () => api.get('/snippets/'),
+  })
+  const queryClient = useQueryClient()
+  const [search, setSearch] = useState('')
+  const deferredSearch = useDeferredValue(search)
+
+  const snippets = snippetsQuery.data?.items ?? []
+  const mine = snippets.filter((s) => !s.is_shared)
+  const shared = snippets.filter((s) => s.is_shared)
+
+  const filtered = (list: Snippet[]) =>
+    deferredSearch
+      ? list.filter(
+          (s) =>
+            s.name.toLowerCase().includes(deferredSearch.toLowerCase()) ||
+            s.sql_text.toLowerCase().includes(deferredSearch.toLowerCase())
+        )
+      : list
+
+  async function deleteSnippet(id: string) {
+    try {
+      await api.delete(`/snippets/${id}`)
+      toast.success('Snippet deleted')
+      void queryClient.invalidateQueries({ queryKey: ['snippets'] })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete')
+    }
+  }
+
+  const snippets_ = snippetsQuery.isLoading ? (
+    <div className='flex items-center justify-center p-4 text-xs text-muted-foreground'>
+      Loading snippets…
+    </div>
+  ) : (
+    <div className='space-y-3 p-2'>
+      {/* My Snippets */}
+      <div>
+        <div className='mb-1 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground'>
+          ★ My Snippets ({filtered(mine).length})
+        </div>
+        {filtered(mine).length === 0 ? (
+          <div className='px-1 py-2 text-xs text-muted-foreground italic'>No snippets yet</div>
+        ) : (
+          filtered(mine).map((s) => (
+            <SnippetRow key={s.id} snippet={s} onLoad={onLoadSql} onDelete={deleteSnippet} />
+          ))
+        )}
+      </div>
+      {/* Shared Snippets */}
+      {shared.length > 0 && (
+        <div>
+          <div className='mb-1 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground'>
+            🌐 Shared ({filtered(shared).length})
+          </div>
+          {filtered(shared).map((s) => (
+            <SnippetRow key={s.id} snippet={s} onLoad={onLoadSql} onDelete={s.user_name === mine[0]?.user_name ? deleteSnippet : undefined} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className='flex flex-col gap-2'>
+      <div className='flex items-center gap-1 px-2 pt-2'>
+        <Input
+          placeholder='Search snippets…'
+          className='h-7 text-xs'
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+      {snippets_}
+    </div>
+  )
+}
+
+function SnippetRow({
+  snippet,
+  onLoad,
+  onDelete,
+}: {
+  snippet: Snippet
+  onLoad: (sql: string, dbName: string | null) => void
+  onDelete?: (id: string) => void
+}) {
+  return (
+    <div className='group flex items-start gap-1.5 rounded-md px-1.5 py-1 hover:bg-muted/50 transition-colors'>
+      <button
+        type='button'
+        className='min-w-0 flex-1 cursor-pointer text-left'
+        onClick={() => onLoad(snippet.sql_text, snippet.database_name)}
+      >
+        <div className='flex items-center gap-1'>
+          <Bookmark className='size-3 shrink-0 text-amber-500' />
+          <span className='truncate text-xs font-medium text-foreground'>{snippet.name}</span>
+        </div>
+        <code className='mt-0.5 block truncate font-mono text-[10px] text-muted-foreground'>
+          {snippet.sql_text.slice(0, 80)}
+        </code>
+        {snippet.database_name && (
+          <span className='mt-0.5 inline-block text-[10px] text-muted-foreground'>
+            {snippet.database_name}
+          </span>
+        )}
+      </button>
+      {onDelete && (
+        <button
+          type='button'
+          className='shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 group-hover:opacity-100'
+          onClick={() => onDelete(snippet.id)}
+          title='Delete snippet'
+        >
+          <Trash2 className='size-3 text-destructive' />
+        </button>
+      )}
     </div>
   )
 }
@@ -2363,6 +2803,43 @@ function MonacoSqlEditor({
         `/query/completions?kind=object&database=${encodeURIComponent(database)}&role=${encodeURIComponent(role)}&prefix=${encodeURIComponent(objectMatch[2] ?? '')}`
       )
       return response.items
+    }
+
+    // Expression context: suggest columns from tables in FROM/JOIN scope
+    const expressionKeywords = /\b(?:SELECT|WHERE|AND|OR|ON|HAVING|GROUP\s+BY|ORDER\s+BY|SET|WHEN|THEN|ELSE)\s/i
+    if (expressionKeywords.test(textUntilPosition) && database) {
+      const tables = extractTablesInScope(value)
+      if (tables.length > 0) {
+        // Fetch columns from all in-scope tables (limit to 5 to avoid too many requests)
+        const limitedTables = tables.slice(0, 5)
+        const allColumnItems: CompletionResponse['items'] = []
+        const fetches = limitedTables.map(async ({ tableName }) => {
+          try {
+            const response = await api.get<CompletionResponse>(
+              `/query/completions?kind=column&database=${encodeURIComponent(database)}&role=${encodeURIComponent(role)}&table=${encodeURIComponent(tableName)}`
+            )
+            return response.items
+          } catch {
+            return []
+          }
+        })
+        const results = await Promise.all(fetches)
+        for (const items of results) {
+          allColumnItems.push(...items)
+        }
+        // Deduplicate column labels
+        const seenCols = new Set<string>()
+        const uniqueCols = allColumnItems.filter((item) => {
+          if (seenCols.has(item.label)) return false
+          seenCols.add(item.label)
+          return true
+        })
+        // Merge with keyword suggestions
+        const keywordItems = SQL_KEYWORDS.filter((keyword) =>
+          keyword.toLowerCase().startsWith(lastWord(textUntilPosition).toLowerCase())
+        ).map((keyword) => ({ label: keyword, type: 'keyword' }))
+        return [...uniqueCols, ...keywordItems]
+      }
     }
 
     return SQL_KEYWORDS.filter((keyword) =>
@@ -2605,6 +3082,25 @@ function resolveAliasTable(sql: string, alias: string) {
     match = regex.exec(sql)
   }
   return null
+}
+
+function extractTablesInScope(sql: string): Array<{ tableName: string; alias: string | null }> {
+  const regex =
+    /\b(?:FROM|JOIN)\s+([A-Za-z0-9_.`]+)(?:\s+(?:AS\s+)?([A-Za-z0-9_]+))?/gi
+  const tables: Array<{ tableName: string; alias: string | null }> = []
+  const seen = new Set<string>()
+  let match: RegExpExecArray | null = regex.exec(sql)
+  while (match) {
+    const raw = match[1].replace(/`/g, '')
+    const tableName = raw.split('.').pop() ?? raw
+    const alias = match[2] ?? null
+    if (!seen.has(tableName)) {
+      seen.add(tableName)
+      tables.push({ tableName, alias })
+    }
+    match = regex.exec(sql)
+  }
+  return tables
 }
 
 function lastWord(text: string) {
