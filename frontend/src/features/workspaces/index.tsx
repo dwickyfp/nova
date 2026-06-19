@@ -2736,19 +2736,33 @@ function MonacoSqlEditor({
   const providerRef = useRef<{ dispose(): void } | null>(null)
   const onRunRef = useRef(onRun)
   onRunRef.current = onRun
+  // Refs for completion provider — prevents stale closure (provider registered once at mount)
+  const valueRef = useRef(value)
+  valueRef.current = value
+  const databaseRef = useRef(database)
+  databaseRef.current = database
+  const schemaRef = useRef(schema)
+  schemaRef.current = schema
+  const roleRef = useRef(role)
+  roleRef.current = role
   const { resolvedTheme } = useTheme()
 
   async function provideCompletions(
     textUntilPosition: string
   ): Promise<CompletionResponse['items']> {
+    const curValue = valueRef.current
+    const curDb = databaseRef.current
+    const curSchema = schemaRef.current
+    const curRole = roleRef.current
+
     const relationContext = extractRelationCompletionContext(textUntilPosition)
     if (relationContext?.type === 'database') {
       const [databases, objects] = await Promise.all([
         api.get<CompletionResponse>(
-          `/query/completions?kind=database&role=${encodeURIComponent(role)}&prefix=${encodeURIComponent(relationContext.prefix)}`
+          `/query/completions?kind=database&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`
         ),
         api.get<CompletionResponse>(
-          `/query/completions?kind=object&database=${encodeURIComponent(database)}&schema=${encodeURIComponent(schema)}&role=${encodeURIComponent(role)}&prefix=${encodeURIComponent(relationContext.prefix)}`
+          `/query/completions?kind=object&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`
         ),
       ])
       return dedupeCompletionItems([...databases.items, ...objects.items])
@@ -2756,14 +2770,14 @@ function MonacoSqlEditor({
 
     if (relationContext?.type === 'schema') {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=schema&database=${encodeURIComponent(relationContext.database)}&role=${encodeURIComponent(role)}&prefix=${encodeURIComponent(relationContext.prefix)}`
+        `/query/completions?kind=schema&database=${encodeURIComponent(relationContext.database)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`
       )
       return response.items
     }
 
     if (relationContext?.type === 'object') {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=object&database=${encodeURIComponent(relationContext.database)}&schema=${encodeURIComponent(relationContext.schema)}&role=${encodeURIComponent(role)}&prefix=${encodeURIComponent(relationContext.prefix)}`
+        `/query/completions?kind=object&database=${encodeURIComponent(relationContext.database)}&schema=${encodeURIComponent(relationContext.schema)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`
       )
       return response.items
     }
@@ -2771,7 +2785,7 @@ function MonacoSqlEditor({
     const stageFileMatch = textUntilPosition.match(/@([A-Za-z0-9_]+)\.([\w.-]*)$/)
     if (stageFileMatch) {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=stage_file&database=${encodeURIComponent(database)}&schema=${encodeURIComponent(schema)}&stage=${encodeURIComponent(stageFileMatch[1])}&prefix=${encodeURIComponent(stageFileMatch[2] ?? '')}`
+        `/query/completions?kind=stage_file&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&stage=${encodeURIComponent(stageFileMatch[1])}&prefix=${encodeURIComponent(stageFileMatch[2] ?? '')}`
       )
       return response.items
     }
@@ -2779,17 +2793,17 @@ function MonacoSqlEditor({
     const stageMatch = textUntilPosition.match(/@([\w-]*)$/)
     if (stageMatch) {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=stage&database=${encodeURIComponent(database)}&schema=${encodeURIComponent(schema)}&prefix=${encodeURIComponent(stageMatch[1] ?? '')}`
+        `/query/completions?kind=stage&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&prefix=${encodeURIComponent(stageMatch[1] ?? '')}`
       )
       return response.items
     }
 
     const aliasMatch = textUntilPosition.match(/([A-Za-z_][\w]*)\.$/)
     if (aliasMatch) {
-      const tableName = resolveAliasTable(value, aliasMatch[1])
+      const tableName = resolveAliasTable(curValue, aliasMatch[1])
       if (tableName) {
         const response = await api.get<CompletionResponse>(
-          `/query/completions?kind=column&database=${encodeURIComponent(database)}&role=${encodeURIComponent(role)}&table=${encodeURIComponent(tableName)}`
+          `/query/completions?kind=column&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&table=${encodeURIComponent(tableName)}`
         )
         return response.items
       }
@@ -2800,15 +2814,15 @@ function MonacoSqlEditor({
     )
     if (objectMatch) {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=object&database=${encodeURIComponent(database)}&role=${encodeURIComponent(role)}&prefix=${encodeURIComponent(objectMatch[2] ?? '')}`
+        `/query/completions?kind=object&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(objectMatch[2] ?? '')}`
       )
       return response.items
     }
 
     // Expression context: suggest columns from tables in FROM/JOIN scope
     const expressionKeywords = /\b(?:SELECT|WHERE|AND|OR|ON|HAVING|GROUP\s+BY|ORDER\s+BY|SET|WHEN|THEN|ELSE)\s/i
-    if (expressionKeywords.test(textUntilPosition) && database) {
-      const tables = extractTablesInScope(value)
+    if (expressionKeywords.test(textUntilPosition) && curDb) {
+      const tables = extractTablesInScope(curValue)
       if (tables.length > 0) {
         // Fetch columns from all in-scope tables (limit to 5 to avoid too many requests)
         const limitedTables = tables.slice(0, 5)
@@ -2816,7 +2830,7 @@ function MonacoSqlEditor({
         const fetches = limitedTables.map(async ({ tableName }) => {
           try {
             const response = await api.get<CompletionResponse>(
-              `/query/completions?kind=column&database=${encodeURIComponent(database)}&role=${encodeURIComponent(role)}&table=${encodeURIComponent(tableName)}`
+              `/query/completions?kind=column&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&table=${encodeURIComponent(tableName)}`
             )
             return response.items
           } catch {
