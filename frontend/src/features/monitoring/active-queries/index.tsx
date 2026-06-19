@@ -305,7 +305,6 @@ export function MonitoringActiveQueries() {
               </Button>
             </div>
           </div>
-        </div>
 
       <Dialog open={!!killTarget} onOpenChange={() => setKillTarget(null)}>
         <DialogContent>
