@@ -291,7 +291,7 @@ function AuditCard({ item }: { item: AuditItem }) {
             <span>{item.duration_ms} ms</span>
           )}
           {item.rows_affected != null && (
-            <span>{item.rows_affected.toLocaleString()} rows</span>
+            <span>{(item.rows_affected ?? 0).toLocaleString()} rows</span>
           )}
           {item.ip_address && <span>{item.ip_address}</span>}
         </div>

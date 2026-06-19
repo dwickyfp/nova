@@ -34,13 +34,12 @@ type ActiveQuery = {
   id: number
   user: string
   host: string
-  database: string
+  db: string | null
   command: string
-  time_seconds: number
+  time: number
   state: string
   info: string | null
-  is_pending: boolean
-  query_id: string
+  query_id: string | null
 }
 
 function formatDuration(seconds: number): string {
@@ -96,7 +95,7 @@ export function MonitoringActiveQueries() {
       return false
     if (
       databaseFilter &&
-      !q.database.toLowerCase().includes(databaseFilter.toLowerCase())
+      !(q.db ?? '').toLowerCase().includes(databaseFilter.toLowerCase())
     )
       return false
     return true
@@ -183,7 +182,7 @@ export function MonitoringActiveQueries() {
                   <TableCell className='font-mono text-xs'>
                     {query.host}
                   </TableCell>
-                  <TableCell>{query.database}</TableCell>
+                  <TableCell>{query.db ?? '—'}</TableCell>
                   <TableCell>
                     <span
                       className={cn(
@@ -195,7 +194,7 @@ export function MonitoringActiveQueries() {
                     </span>
                   </TableCell>
                   <TableCell className='font-mono text-xs'>
-                    {formatDuration(query.time_seconds)}
+                    {formatDuration(query.time ?? 0)}
                   </TableCell>
                   <TableCell className='text-xs'>{query.state}</TableCell>
                   <TableCell className='max-w-xs truncate font-mono text-xs text-muted-foreground'>

@@ -97,8 +97,9 @@ function formatTime(isoString: string) {
   })
 }
 
-function formatDuration(ms: number) {
-  if (ms < 1000) return `${ms}ms`
+const formatDuration = (ms: number | null | undefined) => {
+    if (ms == null) return '—'
+    if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(2)}s`
 }
 
@@ -107,7 +108,8 @@ function truncateSql(sql: string, max = 80) {
   return sql.slice(0, max).trim() + '...'
 }
 
-function formatNumber(n: number) {
+function formatNumber(n: number | null | undefined) {
+  if (n == null) return '—'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return n.toLocaleString()
@@ -213,7 +215,7 @@ export function MonitoringQueryCost() {
 
   const successRate =
     metrics && metrics.query_total > 0
-      ? ((metrics.query_success / metrics.query_total) * 100).toFixed(1)
+      ? ((metrics.query_success / (metrics.query_total || 1)) * 100).toFixed(1)
       : null
 
   const sortedItems = useMemo(() => {
@@ -646,7 +648,7 @@ export function MonitoringQueryCost() {
                         </span>
                       </td>
                       <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
-                        {item.rows_affected.toLocaleString()}
+                        {(item.rows_affected ?? 0).toLocaleString()}
                       </td>
                       <td className='px-4 py-3'>
                         <Badge
@@ -710,7 +712,7 @@ export function MonitoringQueryCost() {
                                 <span className='font-medium'>
                                   Rows Affected:
                                 </span>{' '}
-                                {item.rows_affected.toLocaleString()}
+                                {(item.rows_affected ?? 0).toLocaleString()}
                               </div>
                             </div>
                           </div>

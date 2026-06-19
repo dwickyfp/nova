@@ -243,15 +243,19 @@ class MonitoringRepository:
 
         items = []
         for row in result["rows"]:
-            # SHOW PROCESSLIST columns: Id, User, Host, Db, Command, Time, State, Info
-            conn_id = row[0]
-            user = row[1] or ""
-            host = row[2] or ""
-            db_name = row[3]
-            command = row[4] or ""
-            time_sec = row[5] or 0
-            state = row[6] or ""
-            info = row[7] if len(row) > 7 else None
+            # SHOW PROCESSLIST columns (15):
+            # 0:ServerName, 1:Id, 2:User, 3:Host, 4:Db,
+            # 5:Command, 6:ConnectionStartTime, 7:Time, 8:State, 9:Info,
+            # 10:IsPending, 11:Warehouse, 12:CNGroup, 13:Catalog, 14:QueryId
+            conn_id = row[1]
+            user = row[2] or ""
+            host = row[3] or ""
+            db_name = row[4]
+            command = row[5] or ""
+            time_sec = row[7] if row[7] is not None else 0
+            state = row[8] or ""
+            info = row[9] if len(row) > 9 else None
+            query_id = row[14] if len(row) > 14 else None
 
             # Skip idle / system connections with no query text
             if command in ("Sleep", "Daemon") and not info:
@@ -267,6 +271,7 @@ class MonitoringRepository:
                     "time": time_sec,
                     "state": state,
                     "info": info,
+                    "query_id": query_id,
                 }
             )
 
@@ -516,10 +521,9 @@ class MonitoringRepository:
 
         metrics: dict = {}
         for row in result["rows"]:
-            # fe_metrics typically has (name, value) columns but
-            # exact column count/position may vary across StarRocks versions.
-            name = str(row[0]).lower() if row[0] else ""
-            value = row[1] if len(row) > 1 else None
+            # fe_metrics columns: FE_ID(0), NAME(1), LABELS(2), VALUE(3)
+            name = str(row[1]).lower() if row[1] else ""
+            value = row[3] if len(row) > 3 else None
 
             # Match by prefix so we capture gauge and counter variants
             for target in target_metrics:

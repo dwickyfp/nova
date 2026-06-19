@@ -153,7 +153,8 @@ export function MonitoringQueryHistory() {
     })
   }
 
-  const formatDuration = (ms: number) => {
+  const formatDuration = (ms: number | null | undefined) => {
+    if (ms == null) return '—'
     if (ms < 1000) return `${ms}ms`
     return `${(ms / 1000).toFixed(2)}s`
   }
@@ -223,7 +224,7 @@ export function MonitoringQueryHistory() {
                 </p>
                 <p className='text-2xl font-bold'>
                   {stats
-                    ? `${((stats.success_count / stats.total) * 100).toFixed(1)}%`
+                    ? `${((stats.success_count / (stats.total || 1)) * 100).toFixed(1)}%`
                     : '—'}
                 </p>
               </div>
@@ -401,7 +402,7 @@ export function MonitoringQueryHistory() {
                         {formatDuration(item.duration_ms)}
                       </td>
                       <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
-                        {item.rows_affected.toLocaleString()}
+                        {(item.rows_affected ?? 0).toLocaleString()}
                       </td>
                     </tr>
                     {expandedRow === item.log_id && (
