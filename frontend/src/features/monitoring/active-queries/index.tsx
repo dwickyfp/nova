@@ -32,14 +32,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 
 type ActiveQuery = {
   id: number
@@ -169,101 +161,108 @@ export function MonitoringActiveQueries() {
         />
       </div>
 
-      {isLoading ? (
-        <div className='rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground'>
-          Loading...
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className='rounded-md border border-dashed p-8 text-center'>
-          <CheckCircle className='mx-auto h-8 w-8 text-muted-foreground' />
-          <p className='mt-2 text-sm text-muted-foreground'>No active queries</p>
-        </div>
-      ) : (
-        <>
-          <div className='rounded-md border'>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Host</TableHead>
-                  <TableHead>Database</TableHead>
-                  <TableHead>Command</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Query</TableHead>
-                  <TableHead className='text-right'>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paged.map((query) => (
-                  <TableRow key={query.id}>
-                    <TableCell className='font-mono text-xs'>
-                      {query.id}
-                    </TableCell>
-                    <TableCell>{query.user}</TableCell>
-                    <TableCell className='font-mono text-xs'>
-                      {query.host}
-                    </TableCell>
-                    <TableCell>{query.db ?? '—'}</TableCell>
-                    <TableCell>
-                      <span
-                        className={cn(
-                          'inline-block rounded px-2 py-0.5 text-xs font-medium',
-                          getCommandColor(query.command)
-                        )}
-                      >
-                        {query.command}
-                      </span>
-                    </TableCell>
-                    <TableCell className='font-mono text-xs'>
-                      {formatDuration(query.time ?? 0)}
-                    </TableCell>
-                    <TableCell className='text-xs'>{query.state}</TableCell>
-                    <TableCell className='max-w-xs truncate font-mono text-xs text-muted-foreground'>
-                      {query.info ?? '—'}
-                    </TableCell>
-                    <TableCell className='text-right'>
-                      <Button
-                        variant='ghost'
-                        size='sm'
-                        onClick={() => setKillTarget(query)}
-                        className='text-destructive hover:text-destructive'
-                      >
-                        <XCircle className='h-4 w-4' />
-                        Kill
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Pagination */}
-          <div className='flex items-center justify-between px-2'>
-            <div className='flex items-center gap-4'>
-              <div className='flex items-center gap-2 text-sm'>
-                <span className='text-muted-foreground'>Rows per page:</span>
-                <Select
-                  value={String(pageSize)}
-                  onValueChange={handlePageSizeChange}
+      <div className='overflow-x-auto'>
+        <table className='w-full'>
+          <thead className='border-b border-border bg-muted/50'>
+            <tr>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>ID</th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>User</th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>Host</th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>Database</th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>Command</th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>Time</th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>State</th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>Query</th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={9} className='px-4 py-12 text-center text-sm text-muted-foreground'>
+                  Loading...
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={9} className='px-4 py-12 text-center text-sm text-muted-foreground'>
+                  <CheckCircle className='mx-auto mb-2 h-8 w-8 text-muted-foreground' />
+                  No active queries
+                </td>
+              </tr>
+            ) : (
+              paged.map((query) => (
+                <tr
+                  key={query.id}
+                  className='border-b border-border transition-colors hover:bg-muted/50'
                 >
-                  <SelectTrigger className='w-[70px]'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value='10'>10</SelectItem>
-                    <SelectItem value='25'>25</SelectItem>
-                    <SelectItem value='50'>50</SelectItem>
-                    <SelectItem value='100'>100</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <span className='text-sm text-muted-foreground'>
-                Showing {pageStart}–{pageEnd} of {total}
-              </span>
-            </div>
+                  <td className='px-4 py-3 font-mono text-xs text-muted-foreground'>
+                    {query.id}
+                  </td>
+                  <td className='px-4 py-3 text-sm'>{query.user}</td>
+                  <td className='px-4 py-3 font-mono text-xs text-muted-foreground'>
+                    {query.host}
+                  </td>
+                  <td className='px-4 py-3 text-sm'>{query.db ?? '—'}</td>
+                  <td className='px-4 py-3'>
+                    <span
+                      className={cn(
+                        'inline-block rounded px-2 py-0.5 text-xs font-medium',
+                        getCommandColor(query.command)
+                      )}
+                    >
+                      {query.command}
+                    </span>
+                  </td>
+                  <td className='px-4 py-3 text-right font-mono text-xs'>
+                    {formatDuration(query.time ?? 0)}
+                  </td>
+                  <td className='px-4 py-3 text-xs'>{query.state}</td>
+                  <td className='max-w-xs truncate px-4 py-3 font-mono text-xs text-muted-foreground'>
+                    {query.info ?? '—'}
+                  </td>
+                  <td className='px-4 py-3 text-right'>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      onClick={() => setKillTarget(query)}
+                      className='text-destructive hover:text-destructive'
+                    >
+                      <XCircle className='h-4 w-4' />
+                      Kill
+                    </Button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      <div className='flex items-center justify-between px-2'>
+        <div className='flex items-center gap-4'>
+          <div className='flex items-center gap-2 text-sm'>
+            <span className='text-muted-foreground'>Rows per page:</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={handlePageSizeChange}
+            >
+              <SelectTrigger className='w-[70px]'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='10'>10</SelectItem>
+                <SelectItem value='25'>25</SelectItem>
+                <SelectItem value='50'>50</SelectItem>
+                <SelectItem value='100'>100</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <span className='text-sm text-muted-foreground'>
+            Showing {pageStart}–{pageEnd} of {total}
+          </span>
+        </div>
             <div className='flex items-center gap-1'>
               <span className='me-2 text-sm text-muted-foreground'>
                 Page {safePage} of {totalPages}
@@ -306,8 +305,7 @@ export function MonitoringActiveQueries() {
               </Button>
             </div>
           </div>
-        </>
-      )}
+        </div>
 
       <Dialog open={!!killTarget} onOpenChange={() => setKillTarget(null)}>
         <DialogContent>
