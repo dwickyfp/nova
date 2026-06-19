@@ -272,6 +272,86 @@ Nova is under active development. The architecture and product specifications
 describe the target platform; individual modules may be implemented
 incrementally.
 
+## Roadmap
+
+### Phase 1 — Foundation & Auth ✅
+- [x] Docker infrastructure (StarRocks FE/BE, MinIO, Redis)
+- [x] FastAPI modular monolith with asyncmy driver
+- [x] JWT + Redis session management
+- [x] StarRocks-native authentication (first-login setup wizard)
+- [x] ACCOUNTADMIN role guard (immutable super user)
+- [x] NOVA_SYSTEM database initialization (CONFIG, AUDIT schemas)
+- [x] Frontend: Sign-in page (split-screen), auth guard, JWT cookie
+
+### Phase 2 — Query Engine ✅
+- [x] SQL execution via asyncmy per-user connections
+- [x] @stage SQL dialect — parser, translator, credential injector
+- [x] File format auto-detection (CSV, Parquet, JSON, ORC, Avro)
+- [x] Query history with audit logging
+- [x] Destructive SQL guard (DROP, TRUNCATE, DELETE confirmation)
+- [x] Frontend: Monaco editor, results table, multi-tab, Ctrl+Enter
+
+### Phase 3 — Object Browser ✅
+- [x] Catalog → Database → Schema → Table/View/MV/Function tree
+- [x] SHOW / DESCRIBE / INFORMATION_SCHEMA queries
+- [x] Table column metadata with types
+- [x] Schema browser in sidebar (DatabaseExplorer)
+- [x] Frontend: Object browser panel, schema pre-loading
+
+### Phase 4 — Stage & Storage ✅
+- [x] Storage provider abstraction (S3/MinIO)
+- [x] Stage CRUD registered in NOVA_SYSTEM.CONFIG.STAGES
+- [x] File operations: browse, upload, download, delete
+- [x] Schema-bound access control (RBAC on stage files)
+- [x] CTAS from stage, export to stage
+- [x] NOVA_DEMO sample database (customers, products, orders)
+
+### Phase 5 — Administration 🔶
+- [x] User management (create, alter, drop, password reset)
+- [x] Role management (create, drop, grant, set default)
+- [x] RBAC enforcement via StarRocks SHOW GRANTS
+- [x] Workspace file persistence (save/load/query files)
+- [ ] Resource groups (CPU/memory quotas, classifiers)
+- [ ] Cluster monitor (FE/BE/CN nodes, health checks)
+- [ ] Function manager (UDF: SQL, Java, Python)
+- [ ] Task manager (SUBMIT TASK, scheduling)
+- [ ] Pipe manager (continuous ingestion, AUTO_INGEST)
+
+### Phase 6 — Advanced Features 🔶
+- [x] AI Provider management (OpenAI, Anthropic, openai-compatible)
+- [x] ML model registry (forecast, classify, anomaly detection)
+- [x] AI SQL functions (AI_SENTIMENT, AI_COMPLETE, AI_TRANSLATE, etc.)
+- [ ] External catalogs (Hive, Iceberg, Paimon, JDBC, Delta Lake)
+- [ ] Dashboards (charts, widgets, auto-refresh)
+- [ ] Backup & restore (snapshots, point-in-time, recycle bin)
+- [ ] Data governance (masking policies, row access, tagging, lineage)
+- [ ] Variables & settings (session/global browser, password policies)
+- [ ] Compaction manager (manual trigger, score monitoring)
+- [ ] Storage volumes (shared-data mode)
+- [ ] Data sharing (shared views, shared stages, API endpoints)
+- [ ] Data loading (Stream Load, Broker Load, Routine Load)
+- [ ] Data export (INSERT INTO FILES, partitioned unload)
+
+### Phase 7 — Frontend Pages 🔶
+- [x] Auth: Sign-in, setup wizard, role switcher
+- [x] SQL Workspace: Monaco editor, results panel, tabs
+- [x] Sidebar: Object browser, workspace tree
+- [x] Appearance: Light/Dark/System themes
+- [ ] Stage Manager page
+- [ ] User & Role Management page
+- [ ] AI Providers page
+- [ ] Cluster Monitor page
+- [ ] Dashboards page
+- [ ] Admin Settings page
+
+### Phase 8 — MySQL Protocol Proxy
+- [ ] TCP listener on port 4406
+- [ ] MySQL wire protocol parser
+- [ ] @stage dialect translation in proxy layer
+- [ ] Credential injection for @stage queries
+- [ ] Audit logging for proxy queries
+- [ ] Connection pooling and session tracking
+
 ## License
 
 Internal project — not yet licensed for distribution.
