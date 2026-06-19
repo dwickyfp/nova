@@ -38,18 +38,18 @@ class CompletionResponse(BaseModel):
     items: list[dict]
 
 
-@router.post("/execute", response_model=QueryResponse)
+@router.post("/execute", response_model=list[QueryResponse])
 async def execute_query(
     req: QueryRequest,
     user: dict = Depends(get_current_user),
 ):
-    """Execute a SQL statement with @stage dialect support.
+    """Execute one or more SQL statements (split by `;`).
 
-    The SQL is parsed for @stage references, translated to FILES() calls
-    with auto-detected format and injected credentials, then executed
-    against StarRocks as the authenticated user.
+    Each statement runs through the full pipeline (guard → parse → translate → execute → audit).
+    Stops on first error — returns results collected so far plus an error result.
+    Always returns a list (single statement → list with one element).
     """
-    result = await query_service.execute(
+    results = await query_service.execute_statements(
         sql=req.sql,
         username=user["username"],
         encrypted_password=user["encrypted_password"],
@@ -62,20 +62,26 @@ async def execute_query(
         file_id=req.file_id,
     )
 
-    return QueryResponse(
-        success=True,
-        columns=result.columns,
-        rows=result.rows,
-        row_count=result.row_count,
-        affected_rows=result.affected_rows,
-        elapsed_ms=result.elapsed_ms,
-        original_sql=result.original_sql,
-        executed_sql=result.executed_sql,
-        warnings=result.warnings,
-        destructive=is_destructive_sql(req.sql),
-        needs_confirmation=is_destructive_sql(req.sql)
-        or is_unscoped_mutation(req.sql),
-    )
+    responses = []
+    for result in results:
+        is_error = bool(result.warnings) and not result.columns and result.row_count == 0
+        responses.append(
+            QueryResponse(
+                success=not is_error,
+                columns=result.columns,
+                rows=result.rows,
+                row_count=result.row_count,
+                affected_rows=result.affected_rows,
+                elapsed_ms=result.elapsed_ms,
+                original_sql=result.original_sql,
+                executed_sql=result.executed_sql,
+                warnings=result.warnings,
+                destructive=is_destructive_sql(result.original_sql),
+                needs_confirmation=is_destructive_sql(result.original_sql)
+                or is_unscoped_mutation(result.original_sql),
+            )
+        )
+    return responses
 
 
 @router.post("/explain", response_model=QueryResponse)

@@ -14,7 +14,7 @@ import re
 
 from app.common.audit import write_audit_log
 from app.common.sql_guard import guard_sql
-from app.common.sql_guard import is_destructive_sql, is_unscoped_mutation
+from app.common.sql_guard import is_destructive_sql, is_unscoped_mutation, split_sql_statements
 from app.core.config import settings
 from app.core.config import get_storage_connection, load_nova_app_config
 from app.core.database import db
@@ -156,6 +156,54 @@ class QueryService:
                 schema_name=schema,
             )
             raise
+
+    async def execute_statements(
+        self,
+        sql: str,
+        username: str,
+        encrypted_password: str,
+        database: str | None = None,
+        schema: str | None = None,
+        role: str | None = None,
+        max_rows: int | None = None,
+        session_id: str | None = None,
+        confirm_destructive: bool = False,
+        file_id: str | None = None,
+    ) -> list[QueryResult]:
+        """Split SQL into statements and execute each sequentially.
+
+        Stops on first error — returns results collected so far plus an error result.
+        """
+        statements = split_sql_statements(sql)
+        if not statements:
+            return [QueryResult(original_sql=sql, warnings=["Empty SQL"])]
+
+        results: list[QueryResult] = []
+        for stmt_sql in statements:
+            try:
+                result = await self.execute(
+                    sql=stmt_sql,
+                    username=username,
+                    encrypted_password=encrypted_password,
+                    database=database,
+                    schema=schema,
+                    role=role,
+                    max_rows=max_rows,
+                    session_id=session_id,
+                    confirm_destructive=confirm_destructive,
+                    file_id=file_id,
+                )
+                results.append(result)
+            except Exception as exc:
+                # Return error result for this statement and stop
+                error_result = QueryResult(
+                    original_sql=stmt_sql,
+                    executed_sql=stmt_sql,
+                    warnings=[str(exc)],
+                )
+                results.append(error_result)
+                break
+        return results
 
     async def get_history(
         self,

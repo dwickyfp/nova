@@ -17,6 +17,7 @@ import { format as formatSql } from 'sql-formatter'
 import Editor, { type Monaco } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  BarChart3,
   Braces,
   ChevronDown,
   ChevronRight,
@@ -44,6 +45,10 @@ import {
   X,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
@@ -347,18 +352,29 @@ export function WorkspacesPage() {
   >({})
   const [resultsHeight, setResultsHeight] = useState(350)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
-  const [resultsTab, setResultsTab] = useState<'results' | 'history' | 'explain'>('results')
+  const [resultsTab, setResultsTab] = useState<'results' | 'history' | 'explain' | 'chart'>('results')
   const [explainResult, setExplainResult] = useState<string | null>(null)
   const [explaining, setExplaining] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<'file' | 'all'>('file')
-  const [queryResult, setQueryResult] = useState<QueryResponse | null>(() => {
+  const [queryResults, setQueryResults] = useState<QueryResponse[] | null>(() => {
     try {
-      const cached = sessionStorage.getItem('nova:last-query-result')
-      return cached ? (JSON.parse(cached) as QueryResponse) : null
+      const cached = sessionStorage.getItem('nova:last-query-results')
+      if (cached) return JSON.parse(cached) as QueryResponse[]
+      // Backward compat: try old single-result key
+      const old = sessionStorage.getItem('nova:last-query-result')
+      if (old) {
+        const r = JSON.parse(old) as QueryResponse
+        sessionStorage.removeItem('nova:last-query-result')
+        sessionStorage.setItem('nova:last-query-results', JSON.stringify([r]))
+        return [r]
+      }
+      return null
     } catch {
       return null
     }
   })
+  const [activeResultIdx, setActiveResultIdx] = useState(0)
+  const activeResult = queryResults?.[activeResultIdx] ?? null
   const [running, setRunning] = useState(false)
   const [elapsedMs, setElapsedMs] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
@@ -483,14 +499,14 @@ export function WorkspacesPage() {
 
   // Persist last query result to sessionStorage for page refresh recovery
   useEffect(() => {
-    if (queryResult) {
+    if (queryResults) {
       try {
-        sessionStorage.setItem('nova:last-query-result', JSON.stringify(queryResult))
+        sessionStorage.setItem('nova:last-query-results', JSON.stringify(queryResults))
       } catch {
         // Ignore quota errors for large result sets
       }
     }
-  }, [queryResult])
+  }, [queryResults])
 
   useEffect(() => {
     const onMouseMove = (event: MouseEvent) => {
@@ -757,14 +773,15 @@ export function WorkspacesPage() {
       return runQuery(true)
     }
     setRunning(true)
-    setQueryResult(null)
+    setQueryResults(null)
+    setActiveResultIdx(0)
     setElapsedMs(0)
     const controller = new AbortController()
     abortRef.current = controller
     const startTime = Date.now()
     timerRef.current = setInterval(() => setElapsedMs(Date.now() - startTime), 100)
     try {
-      const response = await api.post<QueryResponse>('/query/execute', {
+      const response = await api.post<QueryResponse[]>('/query/execute', {
         sql,
         database: activeTab.database || null,
         schema: activeTab.schema || null,
@@ -773,7 +790,7 @@ export function WorkspacesPage() {
         file_id: activeTab.id,
         confirm_destructive: confirmDestructive,
       }, controller.signal)
-      setQueryResult(response)
+      setQueryResults(response)
       void queryClient.invalidateQueries({ queryKey: ['query-history'] })
       if (activeTab.content !== activeTab.savedContent) {
         await saveFile(
@@ -786,7 +803,7 @@ export function WorkspacesPage() {
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        setQueryResult({
+        setQueryResults([{
           success: false,
           columns: [],
           rows: [],
@@ -798,9 +815,9 @@ export function WorkspacesPage() {
           warnings: [`Query cancelled after ${((Date.now() - startTime) / 1000).toFixed(1)}s`],
           destructive: false,
           needs_confirmation: false,
-        })
+        }])
       } else {
-        setQueryResult({
+        setQueryResults([{
           success: false,
           columns: [],
           rows: [],
@@ -812,7 +829,7 @@ export function WorkspacesPage() {
           warnings: [error instanceof Error ? error.message : 'Query failed'],
           destructive: false,
           needs_confirmation: false,
-        })
+        }])
       }
       void queryClient.invalidateQueries({ queryKey: ['query-history'] })
     } finally {
@@ -854,20 +871,26 @@ export function WorkspacesPage() {
   }
 
   function exportToExcel() {
-    if (!queryResult || !queryResult.columns.length) return
-    const data = queryResult.rows.map((row) => {
-      const obj: Record<string, unknown> = {}
-      queryResult.columns.forEach((col, i) => {
-        obj[col] = row[i]
-      })
-      return obj
-    })
-    const worksheet = XLSX.utils.json_to_sheet(data)
+    if (!queryResults?.length) return
     const workbook = XLSX.utils.book_new()
-    const sheetName = activeTab?.title?.replace(/\.sql$/i, '') ?? 'Query Results'
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.slice(0, 31))
+    const baseName = activeTab?.title?.replace(/\.sql$/i, '') ?? 'Query Results'
+    queryResults.forEach((qr, idx) => {
+      if (!qr.columns.length) return
+      const data = qr.rows.map((row) => {
+        const obj: Record<string, unknown> = {}
+        qr.columns.forEach((col, i) => {
+          obj[col] = row[i]
+        })
+        return obj
+      })
+      const worksheet = XLSX.utils.json_to_sheet(data)
+      const sheetName = queryResults.length === 1
+        ? baseName.slice(0, 31)
+        : `Result ${idx + 1}`
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
+    })
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
-    XLSX.writeFile(workbook, `${sheetName}_${timestamp}.xlsx`)
+    XLSX.writeFile(workbook, `${baseName}_${timestamp}.xlsx`)
   }
 
   function activateTab(nextTabId: string) {
@@ -1317,9 +1340,9 @@ export function WorkspacesPage() {
                         )}
                       >
                         Results
-                        {queryResult && (
+                        {queryResults && queryResults.length > 0 && (
                           <span className='text-muted-foreground'>
-                            {queryResult.row_count}r • {queryResult.elapsed_ms}ms
+                            {queryResults.reduce((s, r) => s + r.row_count, 0)}r • {queryResults.reduce((s, r) => s + r.elapsed_ms, 0).toFixed(0)}ms
                           </span>
                         )}
                       </button>
@@ -1349,10 +1372,23 @@ export function WorkspacesPage() {
                         <Route className='size-3' />
                         Explain
                       </button>
+                      <button
+                        type='button'
+                        onClick={() => setResultsTab('chart')}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors',
+                          resultsTab === 'chart'
+                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
+                            : 'border-b border-b-border text-muted-foreground hover:bg-muted/50'
+                        )}
+                      >
+                        <BarChart3 className='size-3' />
+                        Chart
+                      </button>
                     </div>
                     {!resultsCollapsed && (
                       <div className='ml-auto mb-1 flex items-center gap-1'>
-                        {resultsTab === 'results' && queryResult?.columns.length ? (
+                        {resultsTab === 'results' && activeResult?.columns.length ? (
                           <Button
                             type='button'
                             size='sm'
@@ -1405,7 +1441,30 @@ export function WorkspacesPage() {
                     )}
                   </div>
                   {!resultsCollapsed && resultsTab === 'results' && (
-                    <QueryResults queryResult={queryResult} />
+                    <div className='flex min-h-0 flex-1 flex-col'>
+                      {/* Multi-result sub-tabs */}
+                      {queryResults && queryResults.length > 1 && (
+                        <div className='flex items-center gap-0.5 border-b border-border px-2 py-1'>
+                          {queryResults.map((_, idx) => (
+                            <button
+                              key={idx}
+                              type='button'
+                              onClick={() => setActiveResultIdx(idx)}
+                              className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                                activeResultIdx === idx
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'text-muted-foreground hover:bg-muted/50'
+                              }`}
+                            >
+                              {!queryResults[idx].success ? '⚠ ' : ''}Result {idx + 1}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className='min-h-0 flex-1 overflow-auto'>
+                        <QueryResults queryResult={activeResult} />
+                      </div>
+                    </div>
                   )}
                   {!resultsCollapsed && resultsTab === 'history' && (
                     <QueryHistory
@@ -1442,6 +1501,9 @@ export function WorkspacesPage() {
                         <ExplainTreeView planText={explainResult!} />
                       )}
                     </div>
+                  )}
+                  {!resultsCollapsed && resultsTab === 'chart' && (
+                    <ChartVisualization queryResult={activeResult} />
                   )}
                 </div>
               </div>
@@ -2219,6 +2281,178 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
   )
 }
 
+// ── Chart Visualization ─────────────────────────────────────────────
+const CHART_COLORS = [
+  'hsl(var(--primary))', '#3b82f6', '#10b981', '#f59e0b',
+  '#8b5cf6', '#ec4899', '#06b6d4', '#f97316',
+]
+
+type ColumnType = 'number' | 'date' | 'text' | 'boolean' | 'null'
+type ChartType = 'bar' | 'line' | 'pie'
+
+function inferColumnType(rows: QueryResponse['rows'], colIndex: number): ColumnType {
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    const val = rows[i]?.[colIndex]
+    if (val === null || val === undefined) continue
+    if (typeof val === 'number') return 'number'
+    if (typeof val === 'boolean') return 'boolean'
+    if (typeof val === 'string') {
+      if (/^\d{4}-\d{2}-\d{2}/.test(val)) return 'date'
+      if (/^[\d.,]+$/.test(val)) return 'number'
+      return 'text'
+    }
+  }
+  return 'null'
+}
+
+function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null }) {
+  const [chartType, setChartType] = useState<ChartType>('bar')
+  const [xCol, setXCol] = useState('')
+  const [yCols, setYCols] = useState<string[]>([])
+
+  const columnTypes = useMemo(() => {
+    if (!queryResult?.columns.length) return []
+    return queryResult.columns.map((_, i) => inferColumnType(queryResult.rows, i))
+  }, [queryResult])
+
+  // Auto-detect best chart config on new results
+  useEffect(() => {
+    if (!queryResult?.columns.length) return
+    const textCols = queryResult.columns.filter((_, i) => columnTypes[i] === 'text')
+    const dateCols = queryResult.columns.filter((_, i) => columnTypes[i] === 'date')
+    const numCols = queryResult.columns.filter((_, i) => columnTypes[i] === 'number')
+
+    if (dateCols.length >= 1 && numCols.length >= 1) {
+      setChartType('line'); setXCol(dateCols[0]); setYCols(numCols.slice(0, 4))
+    } else if (textCols.length >= 1 && numCols.length >= 1) {
+      setChartType('bar'); setXCol(textCols[0]); setYCols(numCols.slice(0, 4))
+    } else if (queryResult.columns.length >= 2 && numCols.length >= 1) {
+      setChartType('bar'); setXCol(queryResult.columns.find(c => !numCols.includes(c)) ?? queryResult.columns[0]); setYCols(numCols.slice(0, 4))
+    } else {
+      setChartType('bar'); setXCol(queryResult.columns[0] ?? ''); setYCols(queryResult.columns.slice(1, 3))
+    }
+  }, [queryResult, columnTypes])
+
+  const chartData = useMemo(() => {
+    if (!queryResult) return []
+    return queryResult.rows.map((row) => {
+      const obj: Record<string, unknown> = {}
+      queryResult.columns.forEach((col, i) => { obj[col] = row[i] })
+      return obj
+    })
+  }, [queryResult])
+
+  if (!queryResult?.columns.length || !queryResult.rows.length) {
+    return (
+      <div className='flex h-full items-center justify-center p-4 text-sm text-muted-foreground'>
+        Run a query with results to visualize as a chart.
+      </div>
+    )
+  }
+
+  const yCandidates = queryResult.columns.filter((_, i) => columnTypes[i] === 'number')
+
+  return (
+    <div className='flex h-full min-h-0 flex-col'>
+      {/* Toolbar */}
+      <div className='flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5'>
+        {/* Chart type toggles */}
+        <div className='flex gap-0.5'>
+          {(['bar', 'line', 'pie'] as ChartType[]).map((t) => (
+            <button
+              key={t}
+              type='button'
+              onClick={() => setChartType(t)}
+              className={cn(
+                'rounded px-2 py-0.5 text-xs font-medium capitalize transition-colors',
+                chartType === t
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted/50'
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <span className='text-muted-foreground'>|</span>
+        {/* X axis */}
+        <label className='flex items-center gap-1 text-xs text-muted-foreground'>
+          X:
+          <select
+            value={xCol}
+            onChange={(e) => setXCol(e.target.value)}
+            className='h-6 rounded border border-border bg-background px-1 text-xs text-foreground'
+          >
+            {queryResult.columns.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </label>
+        {/* Y axis */}
+        {chartType !== 'pie' && yCandidates.length > 0 && (
+          <label className='flex items-center gap-1 text-xs text-muted-foreground'>
+            Y:
+            <select
+              value={yCols[0] ?? ''}
+              onChange={(e) => setYCols([e.target.value])}
+              className='h-6 rounded border border-border bg-background px-1 text-xs text-foreground'
+            >
+              {yCandidates.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      {/* Chart */}
+      <div className='min-h-0 flex-1 p-4'>
+        {chartType === 'bar' && xCol && yCols.length > 0 ? (
+          <ResponsiveContainer width='100%' height='100%'>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray='3 3' className='stroke-border' />
+              <XAxis dataKey={xCol} tick={{ fontSize: 11 }} className='fill-muted-foreground' />
+              <YAxis tick={{ fontSize: 11 }} className='fill-muted-foreground' />
+              <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 6, fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {yCols.map((col, i) => (
+                <Bar key={col} dataKey={col} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        ) : chartType === 'line' && xCol && yCols.length > 0 ? (
+          <ResponsiveContainer width='100%' height='100%'>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray='3 3' className='stroke-border' />
+              <XAxis dataKey={xCol} tick={{ fontSize: 11 }} className='fill-muted-foreground' />
+              <YAxis tick={{ fontSize: 11 }} className='fill-muted-foreground' />
+              <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 6, fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {yCols.map((col, i) => (
+                <Line key={col} type='monotone' dataKey={col} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2} dot={{ r: 3 }} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        ) : chartType === 'pie' && xCol && yCols.length > 0 ? (
+          <ResponsiveContainer width='100%' height='100%'>
+            <PieChart>
+              <Pie data={chartData} dataKey={yCols[0]} nameKey={xCol} cx='50%' cy='50%' outerRadius='70%' label={({ name, percent }: { name: string; percent: number }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} style={{ fontSize: 11 }}>
+                {chartData.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 6, fontSize: 12 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className='flex h-full items-center justify-center text-sm text-muted-foreground'>
+            Select valid X (label) and Y (numeric) columns to render a chart.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── EXPLAIN Tree View ───────────────────────────────────────────────
 const OPERATOR_COLORS: Record<string, string> = {
   OlapScanNode: 'text-blue-500',
@@ -2906,7 +3140,7 @@ function lastWord(text: string) {
 }
 
 function isDestructiveSql(sql: string) {
-  return /^\s*(DROP|TRUNCATE|ALTER\s+TABLE\s+.+\s+DROP|DELETE\s+FROM|UPDATE\s+)/i.test(
-    sql
-  )
+  const pattern = /^\s*(DROP|TRUNCATE|ALTER\s+TABLE\s+.+\s+DROP|DELETE\s+FROM|UPDATE\s+)/i
+  // Check each statement in multi-statement SQL
+  return sql.split(';').some((stmt) => pattern.test(stmt))
 }

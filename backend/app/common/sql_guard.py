@@ -51,3 +51,41 @@ def is_destructive_sql(sql: str) -> bool:
 
 def is_unscoped_mutation(sql: str) -> bool:
     return bool(UNSCOPED_MUTATION_PATTERN.search(sql))
+
+
+def split_sql_statements(sql: str) -> list[str]:
+    """Split SQL into individual statements, respecting single-quoted strings.
+
+    Semicolons inside single-quoted strings are not treated as separators.
+    Empty statements are filtered out.
+    """
+    statements: list[str] = []
+    current: list[str] = []
+    in_string = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        if ch == "'" and not in_string:
+            in_string = True
+            current.append(ch)
+        elif ch == "'" and in_string:
+            # Check for escaped quote ''
+            if i + 1 < len(sql) and sql[i + 1] == "'":
+                current.append("''")
+                i += 2
+                continue
+            in_string = False
+            current.append(ch)
+        elif ch == ";" and not in_string:
+            stmt = "".join(current).strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+    # Last statement (no trailing semicolon)
+    stmt = "".join(current).strip()
+    if stmt:
+        statements.append(stmt)
+    return statements
