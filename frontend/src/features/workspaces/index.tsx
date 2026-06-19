@@ -1052,7 +1052,7 @@ export function WorkspacesPage() {
                       onRename={renameEntry}
                       onDelete={deleteEntry}
                     />
-                  ) : sidebarTab === 'databases' ? (
+                  ) : (
                     <DatabaseExplorer
                       databases={filteredDatabases}
                       expandedDatabases={expandedDatabases}
