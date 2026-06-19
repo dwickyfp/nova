@@ -3,16 +3,13 @@ import {
   Database,
   LayoutDashboard,
   ListTodo,
-  Package,
   Shield,
   TrendingUp,
   Upload,
   Users,
   Zap,
-  MessagesSquare,
   Activity,
 } from 'lucide-react'
-import { ClerkLogo } from '@/assets/clerk-logo'
 import { type SidebarData } from '../types'
 
 export const sidebarData: SidebarData = {
@@ -24,44 +21,6 @@ export const sidebarData: SidebarData = {
           title: 'Dashboard',
           url: '/',
           icon: LayoutDashboard,
-        },
-        {
-          title: 'Tasks',
-          url: '/tasks',
-          icon: ListTodo,
-          showChevron: true,
-        },
-        {
-          title: 'Apps',
-          url: '/apps',
-          icon: Package,
-          showChevron: true,
-        },
-        {
-          title: 'Chats',
-          url: '/chats',
-          badge: '3',
-          icon: MessagesSquare,
-          showChevron: true,
-        },
-        {
-          title: 'Secured by Clerk',
-          icon: ClerkLogo,
-          showChevron: true,
-          items: [
-            {
-              title: 'Sign In',
-              url: '/clerk/sign-in',
-            },
-            {
-              title: 'Sign Up',
-              url: '/clerk/sign-up',
-            },
-            {
-              title: 'User Management',
-              url: '/clerk/user-management',
-            },
-          ],
         },
       ],
     },
