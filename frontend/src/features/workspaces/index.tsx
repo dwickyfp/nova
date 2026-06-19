@@ -13,9 +13,11 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
+import { format as formatSql } from 'sql-formatter'
 import Editor, { type Monaco } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Braces,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -32,6 +34,8 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Route,
+  Square,
   RotateCcw,
   Search,
   Table2,
@@ -44,6 +48,7 @@ import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
 import { DatabaseSchemaSelector } from './database-schema-selector'
+import { useTheme } from '@/context/theme-provider'
 import { InlineSelect } from './inline-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -167,24 +172,154 @@ type HistoryResponse = {
 }
 
 const SQL_KEYWORDS = [
-  'SELECT',
-  'FROM',
-  'WHERE',
-  'JOIN',
-  'LEFT JOIN',
-  'RIGHT JOIN',
-  'GROUP BY',
-  'ORDER BY',
-  'LIMIT',
-  'INSERT INTO',
-  'UPDATE',
-  'DELETE FROM',
-  'CREATE TABLE',
-  'ALTER TABLE',
-  'DROP TABLE',
-  'SHOW DATABASES',
-  'DESC',
-  'EXPLAIN',
+  // Core DQL
+  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'NOT IN',
+  'BETWEEN', 'LIKE', 'IS NULL', 'IS NOT NULL', 'AS', 'DISTINCT',
+  'ALL', 'ANY', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+  'CAST', 'COALESCE', 'NULLIF', 'IF', 'IFNULL',
+  // Joins
+  'JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL OUTER JOIN',
+  'CROSS JOIN', 'ON', 'USING',
+  // Aggregation & Grouping
+  'GROUP BY', 'HAVING', 'ORDER BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET',
+  'WITH ROLLUP', 'WITH',
+  // Set Operations
+  'UNION', 'UNION ALL', 'INTERSECT', 'EXCEPT', 'MINUS',
+  // Subquery
+  'LATERAL', 'TABLESAMPLE',
+  // Window Functions
+  'OVER', 'PARTITION BY', 'ROWS', 'RANGE', 'UNBOUNDED PRECEDING',
+  'UNBOUNDED FOLLOWING', 'CURRENT ROW',
+  // DML
+  'INSERT INTO', 'INSERT INTO ... VALUES', 'INSERT INTO ... SELECT',
+  'UPDATE', 'DELETE FROM', 'DELETE', 'MERGE INTO',
+  'VALUES', 'SET', 'ON DUPLICATE KEY UPDATE',
+  'ON CONFLICT DO UPDATE', 'ON CONFLICT DO NOTHING',
+  // DDL
+  'CREATE TABLE', 'CREATE VIEW', 'CREATE MATERIALIZED VIEW',
+  'CREATE INDEX', 'CREATE DATABASE', 'CREATE FUNCTION',
+  'CREATE EXTERNAL TABLE', 'CREATE ROUTINE LOAD',
+  'CREATE PIPE', 'CREATE RESOURCE', 'CREATE STORAGE VOLUME',
+  'ALTER TABLE', 'ALTER VIEW', 'ALTER DATABASE',
+  'DROP TABLE', 'DROP VIEW', 'DROP DATABASE', 'DROP INDEX',
+  'DROP MATERIALIZED VIEW', 'DROP FUNCTION',
+  'TRUNCATE TABLE', 'RENAME TABLE',
+  'ADD COLUMN', 'DROP COLUMN', 'MODIFY COLUMN',
+  // Transaction & Session
+  'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT',
+  'SET VARIABLE', 'SET PROPERTY', 'SET CATALOG',
+  // Data Loading
+  'LOAD LABEL', 'CANCEL LOAD', 'SHOW LOAD',
+  'STREAM LOAD', 'BROKER LOAD', 'ROUTINE LOAD',
+  'SHOW STREAM LOAD', 'CANCEL STREAM LOAD',
+  // StarRocks-specific
+  'SHOW DATABASES', 'SHOW TABLES', 'SHOW COLUMNS',
+  'SHOW CREATE TABLE', 'SHOW PROCESSLIST', 'SHOW VARIABLES',
+  'SHOW BACKENDS', 'SHOW FRONTENDS', 'SHOW BROKER',
+  'SHOW RESOURCES', 'SHOW ROUTINE LOAD',
+  'SHOW MATERIALIZED VIEWS', 'SHOW PARTITIONS',
+  'SHOW TABLET', 'SHOW SNAPSHOT', 'SHOW CATALOGS',
+  'DESC', 'DESCRIBE', 'EXPLAIN', 'EXPLAIN VERBOSE',
+  'EXPLAIN COSTS', 'EXPLAIN ANALYZE',
+  'ANALYZE TABLE', 'ANALYZE PROFILE',
+  'KILL QUERY', 'KILL CONNECTION',
+  'GRANT', 'REVOKE', 'CREATE USER', 'DROP USER', 'ALTER USER',
+  'CREATE ROLE', 'DROP ROLE', 'GRANT ROLE',
+  'SHOW GRANTS', 'SHOW ROLES',
+  'ADMIN', 'ADMIN SET', 'ADMIN SHOW',
+  'REFRESH', 'REFRESH MATERIALIZED VIEW',
+  'SUBMIT', 'CANCEL', 'RECOVER',
+  'INSTALL', 'UNINSTALL', 'SHOW PLUGINS',
+  // Aggregate Functions
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
+  'COUNT(DISTINCT', 'APPROX_COUNT_DISTINCT', 'NDV',
+  'GROUP_CONCAT', 'BITMAP_UNION', 'BITMAP_INTERSECT',
+  'HLL_UNION', 'HLL_CARDINALITY', 'PERCENTILE_APPROX',
+  'VARIANCE', 'VAR_SAMP', 'VAR_POP',
+  'STDDEV', 'STDDEV_SAMP', 'STDDEV_POP',
+  'ANY_VALUE', 'BIT_AND', 'BIT_OR', 'BIT_XOR',
+  // String Functions
+  'CONCAT', 'CONCAT_WS', 'LENGTH', 'CHAR_LENGTH',
+  'LOWER', 'UPPER', 'LCASE', 'UCASE',
+  'LTRIM', 'RTRIM', 'TRIM', 'LPAD', 'RPAD',
+  'SUBSTR', 'SUBSTRING', 'LEFT', 'RIGHT',
+  'REPLACE', 'REVERSE', 'REPEAT', 'SPACE',
+  'LOCATE', 'INSTR', 'POSITION',
+  'HEX', 'UNHEX', 'ENCODE', 'DECODE',
+  'SPLIT', 'SPLIT_PART', 'REGEXP_REPLACE', 'REGEXP_EXTRACT',
+  'STR_TO_MAP', 'PARSE_URL', 'URL_ENCODE', 'URL_DECODE',
+  'CHAR', 'ASCII', 'FROM_BASE64', 'TO_BASE64',
+  'MONEY_FORMAT', 'FORMAT',
+  // Date/Time Functions
+  'NOW', 'CURDATE', 'CURTIME', 'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
+  'DATE', 'DATETIME', 'TIMESTAMP',
+  'DATE_ADD', 'DATE_SUB', 'DATE_DIFF', 'DATEDIFF',
+  'DATE_FORMAT', 'DATE_TRUNC', 'DATE_SLICE',
+  'YEAR', 'MONTH', 'DAY', 'HOUR', 'MINUTE', 'SECOND',
+  'WEEK', 'WEEKDAY', 'DAYOFWEEK', 'DAYOFYEAR', 'QUARTER',
+  'FROM_UNIXTIME', 'UNIX_TIMESTAMP', 'TO_DATE',
+  'STR_TO_DATE', 'TIME_TO_SEC', 'SEC_TO_TIME',
+  'MONTHS_ADD', 'MONTHS_SUB', 'YEARS_ADD', 'YEARS_SUB',
+  'HOURS_ADD', 'HOURS_SUB', 'MINUTES_ADD', 'MINUTES_SUB',
+  'SECONDS_ADD', 'SECONDS_SUB', 'MILLISECONDS_ADD',
+  'LAST_DAY', 'NEXT_DAY',
+  'TIME_SLICE', 'NOW', 'UTC_TIMESTAMP',
+  // Math Functions
+  'ABS', 'CEIL', 'CEILING', 'FLOOR', 'ROUND', 'TRUNCATE',
+  'MOD', 'POWER', 'POW', 'SQRT', 'EXP', 'LN', 'LOG', 'LOG2', 'LOG10',
+  'SIGN', 'PI', 'E', 'RAND', 'RANDOM',
+  'SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN', 'ATAN2',
+  'DEGREES', 'RADIANS', 'COT',
+  'CONV', 'BIN', 'GREATEST', 'LEAST',
+  'WIDTH_BUCKET', 'Pmod',
+  // Conditional Functions
+  'CASE WHEN', 'IF', 'IFNULL', 'NULLIF', 'COALESCE',
+  'NVL', 'NVL2', 'DECODE',
+  // JSON Functions
+  'JSON_OBJECT', 'JSON_ARRAY', 'JSON_EXTRACT', 'JSON_QUERY',
+  'JSON_VALUE', 'JSON_SET', 'JSON_REPLACE', 'JSON_REMOVE',
+  'JSON_INSERT', 'JSON_KEYS', 'JSON_TYPE',
+  'GET_JSON_STRING', 'GET_JSON_INT', 'GET_JSON_DOUBLE',
+  'JSON_EACH', 'PARSE_JSON', 'TO_JSON',
+  // Array Functions
+  'ARRAY', 'ARRAY_AGG', 'ARRAY_CONCAT', 'ARRAY_CONTAINS',
+  'ARRAY_LENGTH', 'ARRAY_SLICE', 'ARRAY_DISTINCT',
+  'ARRAY_SORT', 'ARRAY_JOIN', 'ARRAY_MAX', 'ARRAY_MIN',
+  'ARRAY_SUM', 'ARRAY_AVG', 'ARRAY_POSITION',
+  'ARRAY_REMOVE', 'ARRAY_MAP', 'ARRAY_FILTER',
+  'ARRAY_GENERATE', 'ARRAY_TO_STRING',
+  'ARRAYS_OVERLAP', 'ARRAYS_INTERSECT', 'CARDINALITY',
+  // Map Functions
+  'MAP', 'MAP_KEYS', 'MAP_VALUES', 'MAP_CONCAT',
+  'MAP_FROM_ARRAYS', 'ELEMENT_AT',
+  // Window Functions (named)
+  'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'NTILE',
+  'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE',
+  'NTH_VALUE', 'CUME_DIST', 'PERCENT_RANK',
+  // Bitmap Functions
+  'BITMAP_EMPTY', 'BITMAP_HASH', 'BITMAP_HAS',
+  'BITMAP_COUNT', 'BITMAP_OR', 'BITMAP_AND', 'BITMAP_XOR',
+  'BITMAP_NOT', 'BITMAP_AGG', 'TO_BITMAP',
+  'BITMAP_FROM_STRING', 'BITMAP_TO_STRING',
+  'BITMAP_FROM_BINARY', 'BITMAP_TO_BINARY',
+  'BITMAP_FROM_ARRAY', 'BITMAP_TO_ARRAY',
+  'SUB_BITMAP', 'BITMAP_MAX', 'BITMAP_MIN',
+  'BITMAP_ANDNOT', 'BITMAP_SUBSET_LIMIT',
+  'BITMAP_SUBSET_IN_RANGE', 'BITMAP_REMOVE',
+  // HLL Functions
+  'HLL_EMPTY', 'HLL_HASH', 'HLL_UNION_AGG',
+  'HLL_RAW_AGG', 'HLL_MERGE',
+  // Hash Functions
+  'MD5', 'MD5SUM', 'MURMUR_HASH3_32', 'MURMUR_HASH3_64',
+  'XXHASH_32', 'XXHASH_64', 'SHA2', 'SHA',
+  // Utility
+  'SLEEP', 'UUID', 'LAST_QUERY_ID', 'CONNECTION_ID',
+  'DATABASE', 'SCHEMA', 'VERSION', 'CURRENT_USER',
+  'SESSION_USER', 'USER',
+  // Table Function
+  'UNNEST', 'GENERATE', 'FILES',
+  // ML / AI Functions (StarRocks 3.x)
+  'ML_PREDICT', 'AI_COMPLETE',
 ]
 
 export function WorkspacesPage() {
@@ -212,7 +347,9 @@ export function WorkspacesPage() {
   >({})
   const [resultsHeight, setResultsHeight] = useState(350)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
-  const [resultsTab, setResultsTab] = useState<'results' | 'history'>('results')
+  const [resultsTab, setResultsTab] = useState<'results' | 'history' | 'explain'>('results')
+  const [explainResult, setExplainResult] = useState<string | null>(null)
+  const [explaining, setExplaining] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<'file' | 'all'>('file')
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(() => {
     try {
@@ -223,6 +360,9 @@ export function WorkspacesPage() {
     }
   })
   const [running, setRunning] = useState(false)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const abortRef = useRef<AbortController | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -618,6 +758,11 @@ export function WorkspacesPage() {
     }
     setRunning(true)
     setQueryResult(null)
+    setElapsedMs(0)
+    const controller = new AbortController()
+    abortRef.current = controller
+    const startTime = Date.now()
+    timerRef.current = setInterval(() => setElapsedMs(Date.now() - startTime), 100)
     try {
       const response = await api.post<QueryResponse>('/query/execute', {
         sql,
@@ -627,7 +772,7 @@ export function WorkspacesPage() {
         max_rows: 500,
         file_id: activeTab.id,
         confirm_destructive: confirmDestructive,
-      })
+      }, controller.signal)
       setQueryResult(response)
       void queryClient.invalidateQueries({ queryKey: ['query-history'] })
       if (activeTab.content !== activeTab.savedContent) {
@@ -640,22 +785,64 @@ export function WorkspacesPage() {
         )
       }
     } catch (error) {
-      setQueryResult({
-        success: false,
-        columns: [],
-        rows: [],
-        row_count: 0,
-        affected_rows: 0,
-        elapsed_ms: 0,
-        original_sql: sql,
-        executed_sql: '',
-        warnings: [error instanceof Error ? error.message : 'Query failed'],
-        destructive: false,
-        needs_confirmation: false,
-      })
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setQueryResult({
+          success: false,
+          columns: [],
+          rows: [],
+          row_count: 0,
+          affected_rows: 0,
+          elapsed_ms: Date.now() - startTime,
+          original_sql: sql,
+          executed_sql: '',
+          warnings: [`Query cancelled after ${((Date.now() - startTime) / 1000).toFixed(1)}s`],
+          destructive: false,
+          needs_confirmation: false,
+        })
+      } else {
+        setQueryResult({
+          success: false,
+          columns: [],
+          rows: [],
+          row_count: 0,
+          affected_rows: 0,
+          elapsed_ms: 0,
+          original_sql: sql,
+          executed_sql: '',
+          warnings: [error instanceof Error ? error.message : 'Query failed'],
+          destructive: false,
+          needs_confirmation: false,
+        })
+      }
       void queryClient.invalidateQueries({ queryKey: ['query-history'] })
     } finally {
+      if (timerRef.current) clearInterval(timerRef.current)
+      abortRef.current = null
       setRunning(false)
+    }
+  }
+
+  async function runExplain() {
+    if (!activeTab) return
+    const sql = editorContentRef.current.trim() || activeTab.content.trim()
+    if (!sql) return
+    setExplaining(true)
+    setExplainResult(null)
+    setResultsTab('explain')
+    try {
+      const response = await api.post<QueryResponse>('/query/explain', {
+        sql,
+        database: activeTab.database || null,
+        schema: activeTab.schema || null,
+        role: activeTab.role || null,
+      })
+      // EXPLAIN returns rows with a single column containing plan text
+      const planText = response.rows.map((row) => row[0]).join('\n')
+      setExplainResult(planText)
+    } catch (error) {
+      setExplainResult(error instanceof Error ? error.message : 'EXPLAIN failed')
+    } finally {
+      setExplaining(false)
     }
   }
 
@@ -986,9 +1173,44 @@ export function WorkspacesPage() {
           {activeTab ? (
             <>
               <div className='flex flex-wrap items-center gap-3 px-4 py-3'>
-                <Button size='sm' onClick={() => runQuery()} disabled={running}>
-                  <Play className='size-4' />
-                  {running ? 'Running...' : 'Run'}
+                {running ? (
+                  <Button
+                    size='sm'
+                    variant='destructive'
+                    onClick={() => abortRef.current?.abort()}
+                  >
+                    <Square className='size-4' />
+                    Cancel {(elapsedMs / 1000).toFixed(1)}s
+                  </Button>
+                ) : (
+                  <Button size='sm' onClick={() => runQuery()}>
+                    <Play className='size-4' />
+                    Run
+                  </Button>
+                )}
+                <Button
+                  size='sm'
+                  variant='outline'
+                  title='Format SQL (Ctrl+Shift+F)'
+                  onClick={() => {
+                    const editors = window.monaco?.editor?.getEditors?.()
+                    if (editors?.length) {
+                      editors[0].getAction('editor.action.formatDocument')?.run()
+                    }
+                  }}
+                >
+                  <Braces className='size-4' />
+                  Format
+                </Button>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  title='Explain query plan'
+                  onClick={() => void runExplain()}
+                  disabled={explaining}
+                >
+                  <Route className='size-4' />
+                  {explaining ? 'Explaining...' : 'Explain'}
                 </Button>
                 <div className='flex flex-1 flex-wrap items-center justify-end gap-2'>
                   <InlineSelect
@@ -1114,6 +1336,19 @@ export function WorkspacesPage() {
                         <Clock className='size-3' />
                         History
                       </button>
+                      <button
+                        type='button'
+                        onClick={() => setResultsTab('explain')}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors',
+                          resultsTab === 'explain'
+                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
+                            : 'border-b border-b-border text-muted-foreground hover:bg-muted/50'
+                        )}
+                      >
+                        <Route className='size-3' />
+                        Explain
+                      </button>
                     </div>
                     {!resultsCollapsed && (
                       <div className='ml-auto mb-1 flex items-center gap-1'>
@@ -1194,6 +1429,21 @@ export function WorkspacesPage() {
                         void runQuery()
                       }}
                     />
+                  )}
+                  {!resultsCollapsed && resultsTab === 'explain' && (
+                    <div className='h-full overflow-auto p-3'>
+                      {explainResult === null && !explaining ? (
+                        <div className='text-sm text-muted-foreground'>
+                          Click <strong>Explain</strong> in the toolbar to view the query execution plan.
+                        </div>
+                      ) : explaining ? (
+                        <div className='text-sm text-muted-foreground'>Generating execution plan…</div>
+                      ) : (
+                        <pre className='whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed text-foreground'>
+                          {explainResult}
+                        </pre>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -1728,6 +1978,21 @@ function TableItemWithPopover({ name, database, schema }: { name: string; databa
 }
 
 function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(100)
+  const [sortCol, setSortCol] = useState<number | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  // Reset pagination on new results
+  const prevRowCount = useRef(0)
+  useEffect(() => {
+    if (queryResult && queryResult.row_count !== prevRowCount.current) {
+      setPage(1)
+      setSortCol(null)
+      prevRowCount.current = queryResult.row_count
+    }
+  }, [queryResult])
+
   if (!queryResult) {
     return (
       <div className='p-4 text-sm text-muted-foreground'>
@@ -1754,52 +2019,129 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
     )
   }
 
+  // Sort rows
+  const sortedRows = sortCol !== null
+    ? [...queryResult.rows].sort((a, b) => {
+        const av = a[sortCol], bv = b[sortCol]
+        if (av === null && bv === null) return 0
+        if (av === null) return 1
+        if (bv === null) return -1
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0
+        return sortDir === 'asc' ? cmp : -cmp
+      })
+    : queryResult.rows
+
+  // Paginate
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize))
+  const startIdx = (page - 1) * pageSize
+  const pageRows = sortedRows.slice(startIdx, startIdx + pageSize)
+
+  function handleSort(colIdx: number) {
+    if (sortCol === colIdx) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortCol(colIdx)
+      setSortDir('asc')
+    }
+    setPage(1)
+  }
+
   return (
-    <div className='h-full overflow-auto'>
-      <table className='w-full border-separate border-spacing-0 text-sm'>
-        <thead className='sticky top-0 z-10 bg-white'>
-          <tr>
-            {queryResult.columns.map((column, colIndex) => {
-              const sample = queryResult.rows[0]?.[colIndex]
-              const typeIcon = typeof sample === 'number' ? '#'
-                : typeof sample === 'boolean' ? '⊙'
-                : typeof sample === 'string'
-                  ? (String(sample).match(/^\d{4}-\d{2}-\d{2}/) ? '◷'
-                    : String(sample).match(/^[\d.,]+$/) ? '#'
-                    : 'A')
-                : sample === null ? '∅'
-                : '?'
-              return (
-                <th
-                  key={column}
-                  className={`border-b border-r border-border px-2 py-1.5 text-left font-normal whitespace-nowrap`}
-                >
-                  <span className='mr-1.5 text-muted-foreground'>{typeIcon}</span>
-                  {column}
-                </th>
-              )
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {queryResult.rows.map((row, rowIndex) => (
-            <tr key={rowIndex}>
-              {row.map((cell, cellIndex) => (
-                <td
-                  key={`${rowIndex}-${cellIndex}`}
-                  className={`border-b border-r border-border px-2 py-1 whitespace-nowrap`}
-                >
-                  {cell === null ? (
-                    <span className='text-muted-foreground italic'>NULL</span>
-                  ) : (
-                    String(cell)
-                  )}
-                </td>
-              ))}
+    <div className='flex h-full flex-col'>
+      <div className='min-h-0 flex-1 overflow-auto'>
+        <table className='w-full border-separate border-spacing-0 text-sm'>
+          <thead className='sticky top-0 z-10 bg-background'>
+            <tr>
+              <th className='w-10 border-b border-r border-border px-1 py-1.5 text-center text-xs text-muted-foreground font-normal'>
+                #
+              </th>
+              {queryResult.columns.map((column, colIndex) => {
+                const sample = queryResult.rows[0]?.[colIndex]
+                const typeIcon = typeof sample === 'number' ? '#'
+                  : typeof sample === 'boolean' ? '⊙'
+                  : typeof sample === 'string'
+                    ? (String(sample).match(/^\d{4}-\d{2}-\d{2}/) ? '◷'
+                      : String(sample).match(/^[\d.,]+$/) ? '#'
+                      : 'A')
+                    : sample === null ? '∅'
+                    : '?'
+                const isSorted = sortCol === colIndex
+                return (
+                  <th
+                    key={column}
+                    className='cursor-pointer select-none border-b border-r border-border px-2 py-1.5 text-left font-normal whitespace-nowrap hover:bg-muted/50'
+                    onClick={() => handleSort(colIndex)}
+                  >
+                    <span className='mr-1 text-muted-foreground'>{typeIcon}</span>
+                    {column}
+                    {isSorted && (
+                      <span className='ml-1 text-primary'>{sortDir === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </th>
+                )
+              })}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {pageRows.map((row, rowIndex) => (
+              <tr key={rowIndex} className='hover:bg-muted/30'>
+                <td className='border-b border-r border-border px-1 py-1 text-center text-xs text-muted-foreground'>
+                  {startIdx + rowIndex + 1}
+                </td>
+                {row.map((cell, cellIndex) => (
+                  <td
+                    key={`${rowIndex}-${cellIndex}`}
+                    className='border-b border-r border-border px-2 py-1 whitespace-nowrap'
+                  >
+                    {cell === null ? (
+                      <span className='text-muted-foreground italic'>NULL</span>
+                    ) : (
+                      String(cell)
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* Pagination footer */}
+      <div className='flex items-center justify-between border-t border-border px-3 py-1.5 text-xs text-muted-foreground'>
+        <span>
+          Rows {startIdx + 1}–{Math.min(startIdx + pageSize, sortedRows.length)} of {sortedRows.length}
+        </span>
+        <div className='flex items-center gap-2'>
+          <button
+            type='button'
+            className='rounded px-1.5 py-0.5 hover:bg-muted disabled:opacity-40'
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            ◀ Prev
+          </button>
+          <span>
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type='button'
+            className='rounded px-1.5 py-0.5 hover:bg-muted disabled:opacity-40'
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next ▶
+          </button>
+          <select
+            className='rounded border border-border bg-background px-1.5 py-0.5 text-xs'
+            value={pageSize}
+            onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
+          >
+            <option value={25}>25 / page</option>
+            <option value={50}>50 / page</option>
+            <option value={100}>100 / page</option>
+            <option value={250}>250 / page</option>
+          </select>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1903,7 +2245,7 @@ function QueryHistory({
               </code>
             </button>
             {item.error_message && (
-              <p className='truncate text-[11px] text-red-500'>
+              <p className='truncate text-[11px] text-destructive'>
                 {item.error_message}
               </p>
             )}
@@ -1954,6 +2296,7 @@ function MonacoSqlEditor({
   const providerRef = useRef<{ dispose(): void } | null>(null)
   const onRunRef = useRef(onRun)
   onRunRef.current = onRun
+  const { resolvedTheme } = useTheme()
 
   async function provideCompletions(
     textUntilPosition: string
@@ -2031,7 +2374,7 @@ function MonacoSqlEditor({
     editor: Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0],
     monaco: Monaco
   ) {
-    // Define custom Nova theme with primary color for SQL keywords
+    // Define custom Nova themes — light and dark
     monaco.editor.defineTheme('nova-light', {
       base: 'vs',
       inherit: true,
@@ -2056,7 +2399,31 @@ function MonacoSqlEditor({
         'editorCursor.foreground': '#d04738',
       },
     })
-    monaco.editor.setTheme('nova-light')
+    monaco.editor.defineTheme('nova-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'keyword', foreground: 'f36b5b', fontStyle: 'bold' },
+        { token: 'keyword.sql', foreground: 'f36b5b', fontStyle: 'bold' },
+        { token: 'predefined.sql', foreground: 'f36b5b' },
+        { token: 'operator.sql', foreground: 'f36b5b' },
+        { token: 'string', foreground: '2cc6b6' },
+        { token: 'string.sql', foreground: '2cc6b6' },
+        { token: 'number', foreground: 'f0ad3d' },
+        { token: 'comment', foreground: '6b7a8d', fontStyle: 'italic' },
+        { token: 'type', foreground: 'a78bfa' },
+        { token: 'identifier', foreground: 'e2e8f0' },
+        { token: 'predefined', foreground: 'f36b5b' },
+      ],
+      colors: {
+        'editor.background': '#0f1117',
+        'editor.foreground': '#e2e8f0',
+        'editor.lineHighlightBackground': '#1a1d2e',
+        'editor.selectionBackground': '#d0473840',
+        'editorCursor.foreground': '#e45a49',
+      },
+    })
+    monaco.editor.setTheme(resolvedTheme === 'dark' ? 'nova-dark' : 'nova-light')
 
     providerRef.current?.dispose()
     providerRef.current = monaco.languages.registerCompletionItemProvider('sql', {
@@ -2107,6 +2474,33 @@ function MonacoSqlEditor({
       },
     })
 
+    // SQL Formatting — Format Document + Format Selection
+    const formatOpts = { language: 'mysql' as const, keywordCase: 'upper' as const, tabWidth: 2 }
+    monaco.languages.registerDocumentFormattingEditProvider('sql', {
+      provideDocumentFormattingEdits(model) {
+        try {
+          const formatted = formatSql(model.getValue(), formatOpts)
+          return [{ range: model.getFullModelRange(), text: formatted }]
+        } catch { return [] }
+      },
+    })
+    monaco.languages.registerDocumentRangeFormattingEditProvider('sql', {
+      provideDocumentRangeFormattingEdits(model, range) {
+        try {
+          const text = model.getValueInRange(range)
+          const formatted = formatSql(text, formatOpts)
+          return [{ range, text: formatted }]
+        } catch { return [] }
+      },
+    })
+    // Ctrl+Shift+F keyboard shortcut for format
+    editor.addAction({
+      id: 'format-sql',
+      label: 'Format SQL',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF],
+      run: (ed) => { ed.getAction('editor.action.formatDocument')?.run() },
+    })
+
     // Ctrl/Cmd+Enter to run query — DOM listener is more reliable than
     // Monaco's addCommand which can be swallowed by the keybinding service
     const editorDomNode = editor.getDomNode()
@@ -2126,7 +2520,7 @@ function MonacoSqlEditor({
     <Editor
       height='100%'
       language='sql'
-      theme='nova-light'
+      theme={resolvedTheme === 'dark' ? 'nova-dark' : 'nova-light'}
       value={value}
       onChange={onChange}
       onMount={handleMount}
