@@ -48,6 +48,7 @@ async def get_current_user(
         "username": payload["sub"],
         "session_id": payload["sid"],
         "roles": session["roles"],
+        "active_role": session.get("active_role"),
         "encrypted_password": session["encrypted_password"],
     }
 

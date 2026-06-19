@@ -58,6 +58,7 @@ type LoginResult = {
   access_token: string
   user: string | AuthUser | null
   roles?: string[]
+  active_role?: string | null
 }
 
 function getAuthUser(result: LoginResult): AuthUser | null {
@@ -66,6 +67,7 @@ function getAuthUser(result: LoginResult): AuthUser | null {
     return {
       username: result.user,
       roles: result.roles ?? [],
+      activeRole: result.active_role ?? result.roles?.[0] ?? null,
     }
   }
   return result.user

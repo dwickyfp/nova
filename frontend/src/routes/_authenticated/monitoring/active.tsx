@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { MonitoringActiveQueries } from '@/features/monitoring/active-queries'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/monitoring/active')({
-  component: MonitoringActiveQueries,
+  beforeLoad: async () => {
+    throw redirect({ to: '/active-query' })
+  },
 })

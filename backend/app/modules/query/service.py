@@ -239,8 +239,9 @@ class QueryService:
 
         result = await db.execute_system(
             f"""
-            SELECT query_id, event_time, sql_text, status, duration_ms,
-                   rows_affected, error_message, file_id, database_name, schema_name
+            SELECT log_id, query_id, event_time, user_name, object_name, action,
+                   sql_text, status, duration_ms, rows_affected, error_message,
+                   file_id, database_name, schema_name, session_id
             FROM NOVA_SYSTEM.AUDIT_LOG
             WHERE {where}
             ORDER BY event_time DESC
@@ -252,16 +253,21 @@ class QueryService:
         items = []
         for row in result["rows"]:
             items.append({
-                "query_id": row[0] or "",
-                "event_time": str(row[1]) if row[1] else "",
-                "sql_text": row[2] or "",
-                "status": row[3] or "",
-                "duration_ms": row[4],
-                "rows_affected": row[5],
-                "error_message": row[6],
-                "file_id": row[7],
-                "database_name": row[8],
-                "schema_name": row[9],
+                "log_id": str(row[0]) if row[0] is not None else "",
+                "query_id": row[1] or "",
+                "event_time": str(row[2]) if row[2] else "",
+                "user_name": row[3] or "",
+                "object_name": row[4] or "",
+                "action": row[5] or "",
+                "sql_text": row[6] or "",
+                "status": row[7] or "",
+                "duration_ms": row[8],
+                "rows_affected": row[9],
+                "error_message": row[10],
+                "file_id": row[11],
+                "database_name": row[12],
+                "schema_name": row[13],
+                "session_id": row[14],
             })
 
         return {"items": items, "total": total}

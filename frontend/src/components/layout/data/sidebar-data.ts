@@ -1,29 +1,15 @@
 import {
   Clock,
-  Construction,
   Database,
   LayoutDashboard,
-  Monitor,
-  Bug,
   ListTodo,
-  FileX,
-  HelpCircle,
-  Lock,
-  Bell,
   Package,
-  Palette,
-  ServerOff,
-  Settings,
   Shield,
   TrendingUp,
   Upload,
-  Wrench,
-  UserCog,
-  UserX,
   Users,
   Zap,
   MessagesSquare,
-  ShieldCheck,
   Activity,
 } from 'lucide-react'
 import { ClerkLogo } from '@/assets/clerk-logo'
@@ -43,26 +29,25 @@ export const sidebarData: SidebarData = {
           title: 'Tasks',
           url: '/tasks',
           icon: ListTodo,
+          showChevron: true,
         },
         {
           title: 'Apps',
           url: '/apps',
           icon: Package,
+          showChevron: true,
         },
         {
           title: 'Chats',
           url: '/chats',
           badge: '3',
           icon: MessagesSquare,
-        },
-        {
-          title: 'Users',
-          url: '/users',
-          icon: Users,
+          showChevron: true,
         },
         {
           title: 'Secured by Clerk',
           icon: ClerkLogo,
+          showChevron: true,
           items: [
             {
               title: 'Sign In',
@@ -91,6 +76,16 @@ export const sidebarData: SidebarData = {
       ],
     },
     {
+      title: 'Administrator',
+      items: [
+        {
+          title: 'Users & Roles',
+          url: '/users',
+          icon: Users,
+        },
+      ],
+    },
+    {
       title: 'Operations',
       items: [
         {
@@ -104,7 +99,7 @@ export const sidebarData: SidebarData = {
             },
             {
               title: 'Active Queries',
-              url: '/monitoring/active',
+              url: '/active-query',
               icon: Zap,
             },
             {
@@ -114,7 +109,7 @@ export const sidebarData: SidebarData = {
             },
             {
               title: 'Tasks',
-              url: '/monitoring/tasks',
+              url: '/tasks',
               icon: ListTodo,
             },
             {
@@ -128,109 +123,6 @@ export const sidebarData: SidebarData = {
               icon: Upload,
             },
           ],
-        },
-      ],
-    },
-    {
-      title: 'Pages',
-      items: [
-        {
-          title: 'Auth',
-          icon: ShieldCheck,
-          items: [
-            {
-              title: 'Sign In',
-              url: '/sign-in',
-            },
-            {
-              title: 'Sign In (2 Col)',
-              url: '/sign-in-2',
-            },
-            {
-              title: 'Sign Up',
-              url: '/sign-up',
-            },
-            {
-              title: 'Forgot Password',
-              url: '/forgot-password',
-            },
-            {
-              title: 'OTP',
-              url: '/otp',
-            },
-          ],
-        },
-        {
-          title: 'Errors',
-          icon: Bug,
-          items: [
-            {
-              title: 'Unauthorized',
-              url: '/errors/unauthorized',
-              icon: Lock,
-            },
-            {
-              title: 'Forbidden',
-              url: '/errors/forbidden',
-              icon: UserX,
-            },
-            {
-              title: 'Not Found',
-              url: '/errors/not-found',
-              icon: FileX,
-            },
-            {
-              title: 'Internal Server Error',
-              url: '/errors/internal-server-error',
-              icon: ServerOff,
-            },
-            {
-              title: 'Maintenance Error',
-              url: '/errors/maintenance-error',
-              icon: Construction,
-            },
-          ],
-        },
-      ],
-    },
-    {
-      title: 'Other',
-      items: [
-        {
-          title: 'Settings',
-          icon: Settings,
-          items: [
-            {
-              title: 'Profile',
-              url: '/settings',
-              icon: UserCog,
-            },
-            {
-              title: 'Account',
-              url: '/settings/account',
-              icon: Wrench,
-            },
-            {
-              title: 'Appearance',
-              url: '/settings/appearance',
-              icon: Palette,
-            },
-            {
-              title: 'Notifications',
-              url: '/settings/notifications',
-              icon: Bell,
-            },
-            {
-              title: 'Display',
-              url: '/settings/display',
-              icon: Monitor,
-            },
-          ],
-        },
-        {
-          title: 'Help Center',
-          url: '/help-center',
-          icon: HelpCircle,
         },
       ],
     },

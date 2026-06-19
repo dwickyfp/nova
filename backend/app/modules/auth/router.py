@@ -11,6 +11,7 @@ from app.modules.auth.schemas import (
     SessionInfo,
     SetupRequest,
     SetupResponse,
+    SwitchRoleRequest,
 )
 from app.modules.auth.service import auth_service
 
@@ -73,5 +74,21 @@ async def get_me(user: dict = Depends(get_current_user)):
     return SessionInfo(
         username=user["username"],
         roles=user["roles"],
+        active_role=user.get("active_role"),
         session_id=user["session_id"],
     )
+
+
+@router.post("/switch-role")
+async def switch_role(
+    req: SwitchRoleRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Switch active role in the current session."""
+    result = await auth_service.switch_role(user["session_id"], req.role)
+    return {
+        "username": user["username"],
+        "roles": result["roles"],
+        "active_role": result["active_role"],
+        "session_id": user["session_id"],
+    }

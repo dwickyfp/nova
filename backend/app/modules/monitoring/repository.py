@@ -407,8 +407,8 @@ class MonitoringRepository:
 
         result = await db.execute_system(
             f"""
-            SELECT query_id, event_time, user_name, database_name,
-                   COALESCE(duration_ms, 0)   AS duration_ms,
+            SELECT log_id, query_id, event_time, user_name, database_name,
+                   sql_text, COALESCE(duration_ms, 0) AS duration_ms,
                    COALESCE(rows_affected, 0) AS rows_affected,
                    status, error_message
             FROM NOVA_SYSTEM.AUDIT_LOG
@@ -423,14 +423,16 @@ class MonitoringRepository:
         for row in result["rows"]:
             items.append(
                 {
-                    "query_id": row[0] or "",
-                    "event_time": str(row[1]) if row[1] else "",
-                    "user_name": row[2] or "",
-                    "database_name": row[3],
-                    "duration_ms": row[4] or 0,
-                    "rows_affected": row[5] or 0,
-                    "status": row[6] or "",
-                    "error_message": row[7],
+                    "log_id": row[0] or "",
+                    "query_id": row[1] or "",
+                    "event_time": str(row[2]) if row[2] else "",
+                    "user_name": row[3] or "",
+                    "database_name": row[4],
+                    "sql_text": row[5] or "",
+                    "duration_ms": row[6] or 0,
+                    "rows_affected": row[7] or 0,
+                    "status": row[8] or "",
+                    "error_message": row[9],
                 }
             )
 
@@ -481,7 +483,7 @@ class MonitoringRepository:
         for row in result["rows"]:
             items.append(
                 {
-                    "bucket": row[0] or "",
+                    "period": row[0] or "",
                     "query_count": row[1] or 0,
                     "avg_duration_ms": round(float(row[2] or 0), 2),
                     "total_rows": row[3] or 0,
@@ -528,7 +530,7 @@ class MonitoringRepository:
             # Match by prefix so we capture gauge and counter variants
             for target in target_metrics:
                 if target in name:
-                    metrics[name] = self._parse_metric_value(value)
+                    metrics[target] = self._parse_metric_value(value)
                     break
 
         return metrics

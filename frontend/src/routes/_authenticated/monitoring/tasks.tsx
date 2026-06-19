@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { MonitoringTasks } from '@/features/monitoring/tasks'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/monitoring/tasks')({
-  component: MonitoringTasks,
+  beforeLoad: async () => {
+    throw redirect({ to: '/tasks' })
+  },
 })

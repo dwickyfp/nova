@@ -14,6 +14,7 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     user: str | None = None
     roles: list[str] = []
+    active_role: str | None = None
     message: str | None = None
 
 
@@ -36,4 +37,9 @@ class ChangePasswordRequest(BaseModel):
 class SessionInfo(BaseModel):
     username: str
     roles: list[str]
+    active_role: str | None = None
     session_id: str
+
+
+class SwitchRoleRequest(BaseModel):
+    role: str

@@ -75,6 +75,9 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
           {item.icon && <item.icon />}
           <span>{item.title}</span>
           {item.badge && <NavBadge>{item.badge}</NavBadge>}
+          {item.showChevron && (
+            <ChevronRight className='ms-auto size-4 text-sidebar-foreground/60 transition-colors group-hover/menu-button:text-sidebar-accent-foreground' />
+          )}
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>

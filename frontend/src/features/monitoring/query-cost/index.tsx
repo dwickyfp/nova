@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -18,14 +18,13 @@ import {
   ArrowDown,
 } from 'lucide-react'
 import {
-  BarChart,
+  ComposedChart,
   Bar,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts'
 import { api } from '@/lib/api-client'
@@ -98,8 +97,8 @@ function formatTime(isoString: string) {
 }
 
 const formatDuration = (ms: number | null | undefined) => {
-    if (ms == null) return '—'
-    if (ms < 1000) return `${ms}ms`
+  if (ms == null) return '—'
+  if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(2)}s`
 }
 
@@ -113,6 +112,53 @@ function formatNumber(n: number | null | undefined) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return n.toLocaleString()
+}
+
+function formatPeriodLabel(period: string, groupBy: 'hour' | 'day') {
+  const date = new Date(period)
+  if (Number.isNaN(date.getTime())) return period
+
+  if (groupBy === 'hour') {
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function getChartColors(isDarkMode: boolean) {
+  if (isDarkMode) {
+    return {
+      barTop: '#5da2ff',
+      barBottom: '#2d6cdf',
+      line: '#32d2a4',
+      dotFill: '#0f172a',
+      dotStroke: '#32d2a4',
+      activeDotStroke: '#e5eefc',
+      axis: '#94a3b8',
+      grid: '#334155',
+      tooltipBg: '#111827',
+      tooltipBorder: '#334155',
+    }
+  }
+
+  return {
+    barTop: '#4f8df7',
+    barBottom: '#2f6fe4',
+    line: '#12b886',
+    dotFill: '#ffffff',
+    dotStroke: '#12b886',
+    activeDotStroke: '#dbe7ff',
+    axis: '#64748b',
+    grid: '#d9e2ec',
+    tooltipBg: '#ffffff',
+    tooltipBorder: '#d9e2ec',
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -159,13 +205,20 @@ function ChartTooltipContent({
 export function MonitoringQueryCost() {
   /* ---- state ---- */
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [pageSize, setPageSize] = useState(10)
   const [userFilter, setUserFilter] = useState('')
   const [databaseFilter, setDatabaseFilter] = useState('')
   const [groupBy, setGroupBy] = useState<'hour' | 'day'>('hour')
   const [sortField, setSortField] = useState<SortField>('event_time')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
+  const [isScrolling, setIsScrolling] = useState(false)
+  const scrollTimeoutRef = useRef<number | null>(null)
+
+  const isDarkMode =
+    typeof document !== 'undefined' &&
+    document.documentElement.classList.contains('dark')
+  const chartColors = getChartColors(isDarkMode)
 
   /* ---- queries ---- */
 
@@ -221,7 +274,7 @@ export function MonitoringQueryCost() {
   const aggregation = aggregationQuery.data ?? []
   const items = historyQuery.data?.items ?? []
   const total = historyQuery.data?.total ?? 0
-  const totalPages = Math.ceil(total / pageSize)
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   const successRate =
     metrics && metrics.query_total > 0
@@ -298,10 +351,35 @@ export function MonitoringQueryCost() {
     )
   }
 
+  const handleContainerScroll = () => {
+    setIsScrolling(true)
+
+    if (scrollTimeoutRef.current) {
+      window.clearTimeout(scrollTimeoutRef.current)
+    }
+
+    scrollTimeoutRef.current = window.setTimeout(() => {
+      setIsScrolling(false)
+      scrollTimeoutRef.current = null
+    }, 700)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        window.clearTimeout(scrollTimeoutRef.current)
+      }
+    }
+  }, [])
+
   /* ---- render ---- */
 
   return (
-    <div className='space-y-6'>
+    <div
+      className='minimal-scrollbar flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pe-1'
+      data-scrolling={isScrolling ? 'true' : 'false'}
+      onScroll={handleContainerScroll}
+    >
       {/* Header */}
       <div>
         <h3 className='text-lg font-medium'>Query Cost</h3>
@@ -310,103 +388,91 @@ export function MonitoringQueryCost() {
         </p>
       </div>
 
-      {/* ── Metric Cards ── */}
-      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-5'>
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <Activity className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Total Queries
-                </p>
-                <p className='text-2xl font-bold'>
-                  {metrics ? formatNumber(metrics.query_total) : '—'}
-                </p>
-              </div>
+      <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5'>
+        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm'>
+          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
+            <div className='rounded-2xl bg-sky-500/10 p-2.5 text-sky-600 dark:text-sky-300'>
+              <Activity className='h-4.5 w-4.5' />
+            </div>
+            <div className='min-w-0'>
+              <p className='text-sm font-medium text-muted-foreground'>
+                Total Queries
+              </p>
+              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
+                {metrics ? formatNumber(metrics.query_total) : '—'}
+              </p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <CheckCircle className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Success Rate
-                </p>
-                <p className='text-2xl font-bold'>
-                  {successRate ? `${successRate}%` : '—'}
-                </p>
-              </div>
+        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm'>
+          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
+            <div className='rounded-2xl bg-emerald-500/10 p-2.5 text-emerald-600 dark:text-emerald-300'>
+              <CheckCircle className='h-4.5 w-4.5' />
+            </div>
+            <div className='min-w-0'>
+              <p className='text-sm font-medium text-muted-foreground'>
+                Success Rate
+              </p>
+              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
+                {successRate ? `${successRate}%` : '—'}
+              </p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <AlertTriangle className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Error Count
-                </p>
-                <p className='text-2xl font-bold'>
-                  {metrics ? formatNumber(metrics.query_err) : '—'}
-                </p>
-              </div>
+        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm'>
+          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
+            <div className='rounded-2xl bg-rose-500/10 p-2.5 text-rose-600 dark:text-rose-300'>
+              <AlertTriangle className='h-4.5 w-4.5' />
+            </div>
+            <div className='min-w-0'>
+              <p className='text-sm font-medium text-muted-foreground'>
+                Error Count
+              </p>
+              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
+                {metrics ? formatNumber(metrics.query_err) : '—'}
+              </p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <Clock className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Slow Queries
-                </p>
-                <p className='text-2xl font-bold'>
-                  {metrics ? formatNumber(metrics.slow_query) : '—'}
-                </p>
-              </div>
+        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm'>
+          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
+            <div className='rounded-2xl bg-amber-500/10 p-2.5 text-amber-600 dark:text-amber-300'>
+              <Clock className='h-4.5 w-4.5' />
+            </div>
+            <div className='min-w-0'>
+              <p className='text-sm font-medium text-muted-foreground'>
+                Slow Queries
+              </p>
+              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
+                {metrics ? formatNumber(metrics.slow_query) : '—'}
+              </p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <Users className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Active Connections
-                </p>
-                <p className='text-2xl font-bold'>
-                  {metrics ? formatNumber(metrics.connection_total) : '—'}
-                </p>
-              </div>
+        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm sm:col-span-2 xl:col-span-1'>
+          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
+            <div className='rounded-2xl bg-slate-500/10 p-2.5 text-slate-600 dark:text-slate-300'>
+              <Users className='h-4.5 w-4.5' />
+            </div>
+            <div className='min-w-0'>
+              <p className='text-sm font-medium text-muted-foreground'>
+                Active Connections
+              </p>
+              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
+                {metrics ? formatNumber(metrics.connection_total) : '—'}
+              </p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Aggregation Chart ── */}
-      <Card className='rounded-md border border-border'>
-        <CardContent className='pt-6'>
-          <div className='mb-4 flex items-center justify-between'>
+      <Card className='rounded-2xl border-border/70 bg-card/90 shadow-sm'>
+        <CardContent className='p-6 sm:p-7'>
+          <div className='mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between'>
             <div className='flex items-center gap-2'>
               <TrendingUp className='h-4 w-4 text-muted-foreground' />
               <h4 className='text-sm font-medium'>
@@ -419,7 +485,7 @@ export function MonitoringQueryCost() {
                 setGroupBy(v as 'hour' | 'day')
               }
             >
-              <SelectTrigger className='w-[120px]'>
+              <SelectTrigger className='h-10 w-[132px] rounded-xl border-border/70 bg-background/70'>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -430,89 +496,104 @@ export function MonitoringQueryCost() {
           </div>
 
           {aggregationQuery.isLoading ? (
-            <div className='flex h-[300px] items-center justify-center text-sm text-muted-foreground'>
+            <div className='flex h-[340px] items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/40 text-sm text-muted-foreground'>
               Loading chart data…
             </div>
           ) : aggregation.length === 0 ? (
-            <div className='flex h-[300px] items-center justify-center text-sm text-muted-foreground'>
+            <div className='flex h-[340px] items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/40 text-sm text-muted-foreground'>
               No aggregation data available
             </div>
           ) : (
-            <ResponsiveContainer width='100%' height={300}>
-              <BarChart data={aggregation}>
-                <CartesianGrid
-                  strokeDasharray='3 3'
-                  className='stroke-border'
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey='period'
-                  stroke='#888888'
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v: string) => {
-                    if (groupBy === 'hour') {
-                      const d = new Date(v)
-                      return isNaN(d.getTime())
-                        ? v
-                        : d.toLocaleTimeString('en-US', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
+            <div className='rounded-2xl border border-border/60 bg-background/35 p-3 sm:p-4'>
+              <ResponsiveContainer width='100%' height={340}>
+                <ComposedChart
+                  data={aggregation}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id='query-cost-bar'
+                      x1='0'
+                      y1='0'
+                      x2='0'
+                      y2='1'
+                    >
+                      <stop
+                        offset='0%'
+                        stopColor={chartColors.barTop}
+                        stopOpacity={0.95}
+                      />
+                      <stop
+                        offset='100%'
+                        stopColor={chartColors.barBottom}
+                        stopOpacity={0.78}
+                      />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    stroke={chartColors.grid}
+                    strokeDasharray='4 6'
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey='period'
+                    stroke={chartColors.axis}
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value: string) =>
+                      formatPeriodLabel(value, groupBy)
                     }
-                    const d = new Date(v)
-                    return isNaN(d.getTime())
-                      ? v
-                      : d.toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                        })
-                  }}
-                />
-                <YAxis
-                  yAxisId='left'
-                  stroke='#888888'
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v: number) => formatNumber(v)}
-                />
-                <YAxis
-                  yAxisId='right'
-                  orientation='right'
-                  stroke='#888888'
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v: number) => formatDuration(v)}
-                />
-                <Tooltip content={<ChartTooltipContent />} />
-                <Legend
-                  wrapperStyle={{ fontSize: 12 }}
-                  iconType='circle'
-                  iconSize={8}
-                />
-                <Bar
-                  yAxisId='left'
-                  dataKey='query_count'
-                  name='Query Count'
-                  fill='#3b82f6'
-                  radius={[4, 4, 0, 0]}
-                  barSize={aggregation.length > 30 ? 8 : 20}
-                />
-                <Line
-                  yAxisId='right'
-                  type='monotone'
-                  dataKey='avg_duration_ms'
-                  name='Avg Duration (ms)'
-                  stroke='#10b981'
-                  strokeWidth={2}
-                  dot={aggregation.length <= 30}
-                  activeDot={{ r: 4 }}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+                  />
+                  <YAxis
+                    yAxisId='left'
+                    stroke={chartColors.axis}
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value: number) => formatNumber(value)}
+                  />
+                  <YAxis
+                    yAxisId='right'
+                    orientation='right'
+                    stroke={chartColors.axis}
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value: number) => formatDuration(value)}
+                  />
+                  <Tooltip content={<ChartTooltipContent />} />
+                  <Bar
+                    yAxisId='left'
+                    dataKey='query_count'
+                    name='Query Count'
+                    fill='url(#query-cost-bar)'
+                    radius={[8, 8, 0, 0]}
+                    barSize={aggregation.length > 30 ? 8 : 18}
+                  />
+                  <Line
+                    yAxisId='right'
+                    type='monotone'
+                    dataKey='avg_duration_ms'
+                    name='Avg Duration (ms)'
+                    stroke={chartColors.line}
+                    strokeWidth={3}
+                    dot={{
+                      r: aggregation.length <= 18 ? 4 : 0,
+                      fill: chartColors.dotFill,
+                      stroke: chartColors.dotStroke,
+                      strokeWidth: 2,
+                    }}
+                    activeDot={{
+                      r: 5,
+                      fill: chartColors.line,
+                      stroke: chartColors.activeDotStroke,
+                      strokeWidth: 2,
+                    }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -743,9 +824,9 @@ export function MonitoringQueryCost() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value='10'>10</SelectItem>
               <SelectItem value='25'>25</SelectItem>
               <SelectItem value='50'>50</SelectItem>
-              <SelectItem value='100'>100</SelectItem>
             </SelectContent>
           </Select>
         </div>

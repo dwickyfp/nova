@@ -64,6 +64,46 @@ input:-webkit-autofill:active {
   scrollbar-width: none; /* Firefox */
 }
 
+.minimal-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.minimal-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.minimal-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.minimal-scrollbar::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-color: transparent;
+  background-clip: padding-box;
+  transition:
+    background-color 220ms ease,
+    border-color 220ms ease;
+}
+
+.minimal-scrollbar:hover {
+  scrollbar-color: color-mix(in oklab, var(--border) 85%, transparent) transparent;
+}
+
+.minimal-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--border) 85%, transparent);
+}
+
+.minimal-scrollbar[data-scrolling='true'] {
+  scrollbar-color: color-mix(in oklab, var(--border) 92%, transparent) transparent;
+}
+
+.minimal-scrollbar[data-scrolling='true']::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--border) 92%, transparent);
+}
+
 @utility faded-bottom {
   @apply after:pointer-events-none after:absolute after:inset-s-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,transparent_10%,var(--background)_70%)] md:after:block;
 }

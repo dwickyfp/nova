@@ -6,6 +6,7 @@ const TOKEN_KEY = 'nova_access_token'
 export interface AuthUser {
   username: string
   roles: string[]
+  activeRole?: string | null
 }
 
 interface AuthState {

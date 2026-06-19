@@ -1,22 +1,26 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Upload,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Database,
-  Table2,
   AlertTriangle,
+  CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Clock3,
+  Database,
+  Search,
+  Table2,
+  Upload,
+  XCircle,
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
   Select,
@@ -25,12 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type DataLoadItem = {
   label: string
@@ -53,18 +51,9 @@ type DataLoadsResponse = {
   total: number
 }
 
-type DataLoadStats = {
-  total: number
-  finished: number
-  cancelled: number
-  loading: number
-}
+function formatTime(iso: string | null) {
+  if (!iso) return '—'
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatTime(iso: string) {
   return new Date(iso).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -84,63 +73,86 @@ function formatShortTime(iso: string) {
 }
 
 function computeDuration(item: DataLoadItem): string {
-  if (item.load_finish_time) {
-    const ms =
-      new Date(item.load_finish_time).getTime() -
-      new Date(item.create_time).getTime()
-    if (ms < 1000) return `${ms}ms`
-    const seconds = ms / 1000
-    if (seconds < 60) return `${seconds.toFixed(1)}s`
-    const minutes = Math.floor(seconds / 60)
-    const secs = Math.round(seconds % 60)
-    if (minutes < 60) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
-    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
-  }
-  return 'In progress'
+  const endTime = item.load_finish_time ?? item.load_commit_time
+
+  if (!endTime) return 'In progress'
+
+  const ms = new Date(endTime).getTime() - new Date(item.create_time).getTime()
+  if (ms < 1000) return `${ms}ms`
+
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+
+  const minutes = Math.floor(seconds / 60)
+  const secs = Math.round(seconds % 60)
+  if (minutes < 60) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`
+
+  const hours = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
 }
 
-function truncate(value: string, max: number = 40) {
+function truncate(value: string, max: number = 80) {
   if (value.length <= max) return value
-  return value.slice(0, max).trimEnd() + '…'
+  return `${value.slice(0, max).trimEnd()}...`
 }
 
-function stateBadgeClasses(state: string) {
-  const s = state.toUpperCase()
-  if (s === 'FINISHED')
-    return 'bg-chart-2/10 text-chart-2 border-chart-2/20'
-  if (s === 'CANCELLED')
-    return 'bg-destructive/10 text-destructive border-destructive/20'
-  if (s === 'LOADING')
-    return 'bg-warning/10 text-warning border-warning/20'
-  return 'bg-muted text-muted-foreground border-border'
+function getStateBadgeClassName(state: string) {
+  const normalizedState = state.toUpperCase()
+
+  if (normalizedState === 'FINISHED') {
+    return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
+  }
+
+  if (
+    normalizedState === 'CANCELLED' ||
+    normalizedState === 'FAILED' ||
+    normalizedState === 'ERROR'
+  ) {
+    return 'border-transparent bg-red-600 text-white hover:bg-red-600'
+  }
+
+  if (
+    normalizedState === 'LOADING' ||
+    normalizedState === 'PENDING' ||
+    normalizedState === 'RUNNING'
+  ) {
+    return 'border-transparent bg-amber-500 text-white hover:bg-amber-500'
+  }
+
+  return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+function getProgressBarClassName(state: string) {
+  const normalizedState = state.toUpperCase()
+
+  if (normalizedState === 'FINISHED') return 'bg-emerald-500'
+  if (
+    normalizedState === 'CANCELLED' ||
+    normalizedState === 'FAILED' ||
+    normalizedState === 'ERROR'
+  ) {
+    return 'bg-red-500'
+  }
+  if (
+    normalizedState === 'LOADING' ||
+    normalizedState === 'PENDING' ||
+    normalizedState === 'RUNNING'
+  ) {
+    return 'bg-amber-500'
+  }
+
+  return 'bg-slate-500'
+}
 
 export function MonitoringDataLoads() {
-  // Pagination
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
-
-  // Filters
+  const [pageSize, setPageSize] = useState(10)
   const [stateFilter, setStateFilter] = useState<string>('')
   const [dbFilter, setDbFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-
-  // Expansion
+  const [searchQuery, setSearchQuery] = useState('')
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
-
-  // ----- Queries -----------------------------------------------------------
-
-  const statsQuery = useQuery<DataLoadStats>({
-    queryKey: ['monitoring-loads-stats'],
-    queryFn: () => api.get<DataLoadStats>('/monitoring/loads/stats'),
-    refetchInterval: 10_000,
-  })
 
   const loadsQuery = useQuery<DataLoadsResponse>({
     queryKey: [
@@ -161,174 +173,141 @@ export function MonitoringDataLoads() {
       if (typeFilter) params.set('load_type', typeFilter)
       return api.get<DataLoadsResponse>(`/monitoring/loads?${params.toString()}`)
     },
-    refetchInterval: 8_000,
+    placeholderData: keepPreviousData,
   })
-
-  // ----- Derived data ------------------------------------------------------
-
-  const items = loadsQuery.data?.items ?? []
-  const total = loadsQuery.data?.total ?? 0
-  const totalPages = Math.ceil(total / pageSize)
-  const stats = statsQuery.data
-
-  const databaseOptions = useMemo(() => {
-    if (!loadsQuery.data?.items) return []
-    return [...new Set(loadsQuery.data.items.map(i => i.db_name).filter(Boolean))] as string[]
-  }, [loadsQuery.data])
-
-  const typeOptions = useMemo(() => {
-    if (!loadsQuery.data?.items) return []
-    return [...new Set(loadsQuery.data.items.map(i => i.load_type).filter(Boolean))] as string[]
-  }, [loadsQuery.data])
-
-  // ----- Error toasts ------------------------------------------------------
 
   useEffect(() => {
     if (loadsQuery.error) {
       toast.error('Failed to load data loads', {
-        description: (loadsQuery.error as Error).message,
+        description: loadsQuery.error.message,
       })
     }
   }, [loadsQuery.error])
 
-  useEffect(() => {
-    if (statsQuery.error) {
-      toast.error('Failed to load load statistics', {
-        description: (statsQuery.error as Error).message,
-      })
-    }
-  }, [statsQuery.error])
+  const items = loadsQuery.data?.items ?? []
+  const filteredItems = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase()
+    if (!normalizedSearch) return items
 
-  // ----- Handlers ----------------------------------------------------------
+    return items.filter((item) =>
+      [
+        item.label,
+        item.db_name,
+        item.table_name,
+        item.load_type,
+        item.state,
+        item.error_msg ?? '',
+      ].some((value) => value.toLowerCase().includes(normalizedSearch))
+    )
+  }, [items, searchQuery])
 
-  const handlePageChange = (p: number) => {
-    setPage(p)
+  const total = loadsQuery.data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const pageEnd = Math.min(page * pageSize, total)
+
+  const databaseOptions = useMemo(() => {
+    if (!loadsQuery.data?.items) return []
+    return [
+      ...new Set(loadsQuery.data.items.map((item) => item.db_name).filter(Boolean)),
+    ] as string[]
+  }, [loadsQuery.data])
+
+  const typeOptions = useMemo(() => {
+    if (!loadsQuery.data?.items) return []
+    return [
+      ...new Set(
+        loadsQuery.data.items.map((item) => item.load_type).filter(Boolean)
+      ),
+    ] as string[]
+  }, [loadsQuery.data])
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage)
     setExpandedRow(null)
   }
 
-  const handlePageSizeChange = (size: string) => {
-    setPageSize(Number(size))
+  const handlePageSizeChange = (newSize: string) => {
+    setPageSize(Number(newSize))
     setPage(1)
     setExpandedRow(null)
   }
 
-  // ----- Render ------------------------------------------------------------
+  const handleFilterChange = (
+    setter: (value: string) => void,
+    value: string
+  ) => {
+    setter(value)
+    setPage(1)
+    setExpandedRow(null)
+  }
 
   return (
     <div className='space-y-6'>
-      {/* Header */}
       <div>
         <h3 className='text-lg font-medium'>Data Loads</h3>
         <p className='text-sm text-muted-foreground'>
-          Track data import and load operations with status and progress.
+          Monitor load jobs, progress, and failures in one consistent view.
         </p>
       </div>
 
-      {/* Stats Cards */}
-      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
-        {/* Total */}
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <Upload className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Total Loads
-                </p>
-                <p className='text-2xl font-bold'>{stats?.total ?? '—'}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Finished */}
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-chart-2/10 p-2'>
-                <CheckCircle className='h-4 w-4 text-chart-2' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Finished
-                </p>
-                <p className='text-2xl font-bold text-chart-2'>
-                  {stats?.finished ?? '—'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Cancelled */}
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-destructive/10 p-2'>
-                <XCircle className='h-4 w-4 text-destructive' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Cancelled
-                </p>
-                <p className='text-2xl font-bold text-destructive'>
-                  {stats?.cancelled ?? '—'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* In Progress */}
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-warning/10 p-2'>
-                <Clock className='h-4 w-4 text-warning' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  In Progress
-                </p>
-                <p className='text-2xl font-bold text-warning'>
-                  {stats?.loading ?? '—'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filter Bar */}
       <div className='flex flex-wrap items-center gap-3'>
         <SearchableSelect
           options={['FINISHED', 'CANCELLED', 'LOADING']}
           value={stateFilter}
-          onChange={(v) => { setStateFilter(v); setPage(1) }}
+          onChange={(value: string) => handleFilterChange(setStateFilter, value)}
           label='State'
+          icon={<CheckCircle2 size={14} />}
         />
+
         <SearchableSelect
           options={databaseOptions}
           value={dbFilter}
-          onChange={(v) => { setDbFilter(v); setPage(1) }}
+          onChange={(value: string) => handleFilterChange(setDbFilter, value)}
           label='Database'
+          icon={<Database size={14} />}
         />
+
         <SearchableSelect
           options={typeOptions}
           value={typeFilter}
-          onChange={(v) => { setTypeFilter(v); setPage(1) }}
+          onChange={(value: string) => handleFilterChange(setTypeFilter, value)}
           label='Type'
+          icon={<Upload size={14} />}
         />
+
+        <div className='relative w-full max-w-xs'>
+          <Search className='pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground' />
+          <Input
+            placeholder='Search label, table, error...'
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value)
+              setExpandedRow(null)
+            }}
+            className='pl-9'
+          />
+        </div>
 
         <div className='ml-auto text-sm text-muted-foreground'>
           {total} {total === 1 ? 'load' : 'loads'}
         </div>
       </div>
 
-      {/* Data Table */}
-      <div className='rounded-md border border-border'>
+      <div className='relative rounded-md border border-border'>
+        {loadsQuery.isFetching && !loadsQuery.isLoading ? (
+          <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
+            <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
+              <div className='h-1.5 w-full overflow-hidden bg-muted'>
+                <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
+              </div>
+              <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
+                Loading data loads...
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className='overflow-x-auto'>
           <table className='w-full'>
             <thead className='border-b border-border bg-muted/50'>
@@ -347,7 +326,7 @@ export function MonitoringDataLoads() {
                   Type
                 </th>
                 <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  State
+                  Status
                 </th>
                 <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
                   Progress
@@ -376,10 +355,10 @@ export function MonitoringDataLoads() {
                     colSpan={12}
                     className='px-4 py-12 text-center text-sm text-muted-foreground'
                   >
-                    Loading data loads…
+                    Loading data loads...
                   </td>
                 </tr>
-              ) : items.length === 0 ? (
+              ) : filteredItems.length === 0 ? (
                 <tr>
                   <td
                     colSpan={12}
@@ -389,15 +368,14 @@ export function MonitoringDataLoads() {
                   </td>
                 </tr>
               ) : (
-                items.map((item) => {
+                filteredItems.map((item) => {
                   const rowKey = `${item.label}-${item.create_time}`
                   const isExpanded = expandedRow === rowKey
-                  const isFinished = item.state.toUpperCase() === 'FINISHED'
-                  const isCancelled = item.state.toUpperCase() === 'CANCELLED'
-                  const isLoading = item.state.toUpperCase() === 'LOADING'
                   const progressPct = Math.round(
                     (typeof item.progress === 'number' ? item.progress : 0) * 100
                   )
+                  const hasError = Boolean(item.error_msg)
+                  const normalizedState = item.state.toUpperCase()
 
                   return (
                     <Fragment key={rowKey}>
@@ -410,78 +388,71 @@ export function MonitoringDataLoads() {
                           isExpanded && 'bg-muted/30'
                         )}
                       >
-                        {/* Expand chevron */}
-                        <td className='px-3 py-3'>
+                        <td className='px-3 py-3 text-muted-foreground'>
                           {isExpanded ? (
-                            <ChevronDown className='h-4 w-4 text-muted-foreground' />
+                            <ChevronDown className='h-4 w-4' />
                           ) : (
-                            <ChevronRight className='h-4 w-4 text-muted-foreground' />
+                            <ChevronRight className='h-4 w-4' />
                           )}
                         </td>
 
-                        {/* Label (truncated) */}
                         <td className='px-4 py-3'>
                           <span
-                            className='block max-w-[200px] truncate text-sm font-medium'
+                            className='block max-w-[240px] truncate text-sm font-medium'
                             title={item.label}
                           >
                             {truncate(item.label)}
                           </span>
                         </td>
 
-                        {/* Database */}
                         <td className='px-4 py-3'>
-                          <div className='flex items-center gap-1.5'>
-                            <Database className='h-3 w-3 text-muted-foreground' />
-                            <span className='text-xs'>{item.db_name}</span>
+                          <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                            <Database className='h-3.5 w-3.5' />
+                            <span>{item.db_name}</span>
                           </div>
                         </td>
 
-                        {/* Table */}
                         <td className='px-4 py-3'>
-                          <div className='flex items-center gap-1.5'>
-                            <Table2 className='h-3 w-3 text-muted-foreground' />
-                            <span className='text-xs'>{item.table_name}</span>
+                          <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                            <Table2 className='h-3.5 w-3.5' />
+                            <span>{item.table_name}</span>
                           </div>
                         </td>
 
-                        {/* Type */}
                         <td className='px-4 py-3'>
                           <Badge variant='secondary' className='text-xs'>
                             {item.load_type}
                           </Badge>
                         </td>
 
-                        {/* State badge */}
                         <td className='px-4 py-3'>
                           <Badge
                             variant='outline'
                             className={cn(
-                              'text-xs',
-                              stateBadgeClasses(item.state)
+                              'gap-1.5 border-transparent text-xs',
+                              getStateBadgeClassName(item.state)
                             )}
                           >
-                            {isLoading && (
-                              <span className='mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-warning' />
-                            )}
+                            {normalizedState === 'FINISHED' ? (
+                              <CheckCircle2 className='h-3.5 w-3.5' />
+                            ) : null}
+                            {normalizedState === 'LOADING' ? (
+                              <Clock3 className='h-3.5 w-3.5' />
+                            ) : null}
+                            {normalizedState === 'CANCELLED' ? (
+                              <XCircle className='h-3.5 w-3.5' />
+                            ) : null}
                             {item.state}
                           </Badge>
                         </td>
 
-                        {/* Progress */}
                         <td className='px-4 py-3'>
                           <div className='flex items-center gap-2'>
-                            <div className='h-1.5 w-16 overflow-hidden rounded-full bg-muted'>
+                            <div className='h-1.5 w-20 overflow-hidden rounded-full bg-muted'>
                               <div
                                 className={cn(
                                   'h-full rounded-full transition-all',
-                                  isFinished && 'bg-chart-2',
-                                  isCancelled && 'bg-destructive',
-                                  isLoading && 'bg-warning',
-                                  !isFinished &&
-                                    !isCancelled &&
-                                    !isLoading &&
-                                    'bg-muted-foreground'
+                                  getProgressBarClassName(item.state)
                                 )}
                                 style={{ width: `${progressPct}%` }}
                               />
@@ -492,44 +463,37 @@ export function MonitoringDataLoads() {
                           </div>
                         </td>
 
-                        {/* Scan Rows */}
                         <td className='px-4 py-3 text-right text-xs tabular-nums text-muted-foreground'>
                           {(item.scan_rows ?? 0).toLocaleString()}
                         </td>
 
-                        {/* Sink Rows */}
                         <td className='px-4 py-3 text-right text-xs tabular-nums text-muted-foreground'>
                           {(item.sink_rows ?? 0).toLocaleString()}
                         </td>
 
-                        {/* Created */}
                         <td className='whitespace-nowrap px-4 py-3 text-xs text-muted-foreground'>
                           {formatShortTime(item.create_time)}
                         </td>
 
-                        {/* Duration */}
                         <td className='px-4 py-3 text-right text-xs font-medium'>
                           {computeDuration(item)}
                         </td>
 
-                        {/* Error indicator */}
                         <td className='px-4 py-3 text-center'>
-                          {item.error_msg ? (
-                            <AlertTriangle className='inline h-4 w-4 text-destructive' />
+                          {hasError ? (
+                            <AlertTriangle className='mx-auto h-4 w-4 text-red-500' />
                           ) : (
                             <span className='text-muted-foreground'>—</span>
                           )}
                         </td>
                       </tr>
 
-                      {/* Expanded detail row */}
-                      {isExpanded && (
+                      {isExpanded ? (
                         <tr className='border-b border-border bg-muted/20'>
                           <td colSpan={12} className='px-6 py-4'>
-                            <div className='space-y-3'>
-                              {/* Full label */}
+                            <div className='space-y-4'>
                               <div>
-                                <p className='mb-1 text-xs font-medium text-muted-foreground'>
+                                <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
                                   Full Label
                                 </p>
                                 <code className='block break-all rounded-md bg-muted px-3 py-2 text-xs font-mono'>
@@ -537,74 +501,72 @@ export function MonitoringDataLoads() {
                                 </code>
                               </div>
 
-                              {/* Timing details */}
-                              <div className='flex flex-wrap gap-x-8 gap-y-2 text-xs text-muted-foreground'>
+                              <div className='grid gap-3 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3'>
                                 <div>
-                                  <span className='font-medium'>Created:</span>{' '}
+                                  <span className='font-medium text-foreground'>
+                                    Created:
+                                  </span>{' '}
                                   {formatTime(item.create_time)}
                                 </div>
-                                {item.load_start_time && (
-                                  <div>
-                                    <span className='font-medium'>
-                                      Load Start:
-                                    </span>{' '}
-                                    {formatTime(item.load_start_time)}
-                                  </div>
-                                )}
-                                {item.load_commit_time && (
-                                  <div>
-                                    <span className='font-medium'>
-                                      Commit Time:
-                                    </span>{' '}
-                                    {formatTime(item.load_commit_time)}
-                                  </div>
-                                )}
-                                {item.load_finish_time && (
-                                  <div>
-                                    <span className='font-medium'>
-                                      Finish Time:
-                                    </span>{' '}
-                                    {formatTime(item.load_finish_time)}
-                                  </div>
-                                )}
                                 <div>
-                                  <span className='font-medium'>Duration:</span>{' '}
+                                  <span className='font-medium text-foreground'>
+                                    Load Start:
+                                  </span>{' '}
+                                  {formatTime(item.load_start_time)}
+                                </div>
+                                <div>
+                                  <span className='font-medium text-foreground'>
+                                    Commit Time:
+                                  </span>{' '}
+                                  {formatTime(item.load_commit_time)}
+                                </div>
+                                <div>
+                                  <span className='font-medium text-foreground'>
+                                    Finish Time:
+                                  </span>{' '}
+                                  {formatTime(item.load_finish_time)}
+                                </div>
+                                <div>
+                                  <span className='font-medium text-foreground'>
+                                    Duration:
+                                  </span>{' '}
                                   {computeDuration(item)}
                                 </div>
-                              </div>
-
-                              {/* Rows summary */}
-                              <div className='flex flex-wrap gap-x-8 gap-y-2 text-xs text-muted-foreground'>
                                 <div>
-                                  <span className='font-medium'>Scan Rows:</span>{' '}
+                                  <span className='font-medium text-foreground'>
+                                    Progress:
+                                  </span>{' '}
+                                  {progressPct}%
+                                </div>
+                                <div>
+                                  <span className='font-medium text-foreground'>
+                                    Scan Rows:
+                                  </span>{' '}
                                   {(item.scan_rows ?? 0).toLocaleString()}
                                 </div>
                                 <div>
-                                  <span className='font-medium'>Sink Rows:</span>{' '}
+                                  <span className='font-medium text-foreground'>
+                                    Sink Rows:
+                                  </span>{' '}
                                   {(item.sink_rows ?? 0).toLocaleString()}
-                                </div>
-                                <div>
-                                  <span className='font-medium'>Progress:</span>{' '}
-                                  {progressPct}%
                                 </div>
                               </div>
 
-                              {/* Error message */}
-                              {item.error_msg && (
+                              {item.error_msg ? (
                                 <div>
-                                  <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive'>
-                                    <AlertTriangle className='h-3 w-3' />
+                                  <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-red-500'>
+                                    <AlertTriangle className='h-3.5 w-3.5' />
                                     Error Message
                                   </p>
-                                  <pre className='overflow-auto rounded-md bg-destructive/10 p-3 text-xs font-mono text-destructive'>
+                                  <pre className='overflow-auto rounded-md bg-red-500/10 p-3 text-xs font-mono text-red-500'>
                                     {item.error_msg}
                                   </pre>
                                 </div>
-                              )}
+                              ) : null}
                             </div>
                           </td>
                         </tr>
-                      )}
+                      ) : null}
                     </Fragment>
                   )
                 })
@@ -614,28 +576,28 @@ export function MonitoringDataLoads() {
         </div>
       </div>
 
-      {/* Pagination */}
-      <div className='flex items-center justify-between gap-4'>
-        <div className='flex items-center gap-2 text-sm'>
-          <span className='text-muted-foreground'>Rows per page:</span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={handlePageSizeChange}
-          >
-            <SelectTrigger className='w-[70px]'>
+      <div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
+        <div className='flex items-center gap-2 text-sm text-muted-foreground'>
+          <span>
+            Showing {pageStart}-{pageEnd} of {total}
+          </span>
+          <span>•</span>
+          <span>Rows per page</span>
+          <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
+            <SelectTrigger className='h-8 w-[76px]'>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value='10'>10</SelectItem>
               <SelectItem value='25'>25</SelectItem>
               <SelectItem value='50'>50</SelectItem>
-              <SelectItem value='100'>100</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        <div className='flex items-center gap-2'>
+        <div className='flex items-center gap-2 self-end sm:self-auto'>
           <span className='text-sm text-muted-foreground'>
-            Page {page} of {totalPages || 1}
+            Page {page} of {totalPages}
           </span>
           <div className='flex items-center gap-1'>
             <Button
@@ -654,7 +616,7 @@ export function MonitoringDataLoads() {
               disabled={page === 1}
               className='h-8 w-8'
             >
-              <ChevronRight className='h-4 w-4 rotate-180' />
+              <ChevronLeft className='h-4 w-4' />
             </Button>
             <Button
               variant='outline'

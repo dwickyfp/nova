@@ -96,7 +96,7 @@ describe('UserAuthForm', () => {
   })
 
   it('navigates to a safe internal redirect path', async () => {
-    screen = await render(<UserAuthForm redirectTo='/settings?tab=account' />)
+    screen = await render(<UserAuthForm redirectTo='/users?tab=account' />)
     usernameInput = screen.getByRole('textbox', { name: /^Username$/i })
     passwordInput = screen.getByLabelText(/^Password$/i)
     signInButton = screen.getByRole('button', { name: /^Sign in$/i })
@@ -107,7 +107,7 @@ describe('UserAuthForm', () => {
 
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
-        to: '/settings?tab=account',
+        to: '/users?tab=account',
         replace: true,
       })
     )

@@ -1,27 +1,33 @@
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  Activity,
+  AlertCircle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Code,
+  Database,
   FolderOpen,
   LogIn,
-  Activity,
-  ChevronDown,
-  ChevronRight,
-  Clock,
   User,
-  Database,
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
-import { cn, getPageNumbers } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
 import { SearchableSelect } from '@/components/ui/searchable-select'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 
 interface AuditItem {
   log_id: string
@@ -47,10 +53,6 @@ interface AuditResponse {
   total: number
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const EVENT_TYPE_OPTIONS = ['query', 'workspace', 'login']
 const STATUS_OPTIONS = ['SUCCESS', 'ERROR']
 
@@ -60,30 +62,21 @@ const EVENT_ICON: Record<string, React.ElementType> = {
   login: LogIn,
 }
 
-const EVENT_BADGE_CLASSES: Record<string, string> = {
-  query: 'bg-chart-1/10 text-chart-1 border-chart-1/20',
-  workspace: 'bg-purple-500/10 text-purple-600 border-purple-500/20 dark:text-purple-400',
-  login: 'bg-chart-2/10 text-chart-2 border-chart-2/20',
-}
-
-const DEFAULT_BADGE_CLASS =
-  'bg-muted text-muted-foreground border-border'
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function buildQueryString(params: Record<string, string | number>) {
-  const qs = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== '' && v !== 'all') qs.set(k, String(v))
+  const queryString = new URLSearchParams()
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== '' && value !== 'all') {
+      queryString.set(key, String(value))
+    }
   }
-  return qs.toString()
+
+  return queryString.toString()
 }
 
 function formatTime(iso: string) {
-  const d = new Date(iso)
-  return d.toLocaleString(undefined, {
+  const date = new Date(iso)
+  return date.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -92,380 +85,65 @@ function formatTime(iso: string) {
   })
 }
 
-function formatRelative(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  return `${days}d ago`
+function formatDuration(durationMs: number | null | undefined) {
+  if (durationMs == null) return '—'
+  if (durationMs < 1000) return `${durationMs}ms`
+  return `${(durationMs / 1000).toFixed(2)}s`
 }
 
-function getEventIcon(eventType: string) {
-  return EVENT_ICON[eventType] ?? Activity
+function truncateText(value: string, maxLength: number = 80) {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength).trim()}...`
 }
 
-function getBadgeClass(eventType: string) {
-  return EVENT_BADGE_CLASSES[eventType] ?? DEFAULT_BADGE_CLASS
+function getEventBadgeClassName(eventType: string) {
+  const normalizedType = eventType.toLowerCase()
+
+  if (normalizedType === 'query') {
+    return 'border-transparent bg-sky-600 text-white hover:bg-sky-600'
+  }
+
+  if (normalizedType === 'workspace') {
+    return 'border-transparent bg-violet-600 text-white hover:bg-violet-600'
+  }
+
+  if (normalizedType === 'login') {
+    return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
+  }
+
+  return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
+function getStatusBadgeClassName(status: string) {
+  const normalizedStatus = status.toUpperCase()
 
-function StatusDot({ status }: { status: string }) {
-  const isError = status === 'ERROR'
-  return (
-    <span
-      className={cn(
-        'inline-block size-2 rounded-full',
-        isError ? 'bg-destructive' : 'bg-chart-2'
-      )}
-      aria-label={isError ? 'Error' : 'Success'}
-    />
-  )
+  if (normalizedStatus === 'SUCCESS') {
+    return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
+  }
+
+  if (
+    normalizedStatus === 'FAILED' ||
+    normalizedStatus === 'FAILURE' ||
+    normalizedStatus === 'ERROR'
+  ) {
+    return 'border-transparent bg-red-600 text-white hover:bg-red-600'
+  }
+
+  return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
 }
-
-function FilterBar({
-  eventType,
-  setEventType,
-  status,
-  setStatus,
-  userName,
-  setUserName,
-  users,
-}: {
-  eventType: string
-  setEventType: (v: string) => void
-  status: string
-  setStatus: (v: string) => void
-  userName: string
-  setUserName: (v: string) => void
-  users: string[]
-}) {
-  return (
-    <div className='flex flex-wrap items-center gap-2'>
-      <SearchableSelect
-        options={EVENT_TYPE_OPTIONS}
-        value={eventType}
-        onChange={setEventType}
-        label='Event Types'
-        placeholder='Search event types…'
-      />
-
-      <SearchableSelect
-        options={STATUS_OPTIONS}
-        value={status}
-        onChange={setStatus}
-        label='Statuses'
-        placeholder='Search statuses…'
-      />
-
-      <SearchableSelect
-        options={users}
-        value={userName}
-        onChange={setUserName}
-        label='Users'
-        placeholder='Search users…'
-      />
-    </div>
-  )
-}
-
-function AuditCard({ item }: { item: AuditItem }) {
-  const [expanded, setExpanded] = useState(false)
-  const Icon = getEventIcon(item.event_type)
-  const badgeClass = getBadgeClass(item.event_type)
-
-  return (
-    <div className='relative flex gap-4'>
-      {/* Timeline rail */}
-      <div className='flex flex-col items-center'>
-        <div
-          className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-full border',
-            item.status === 'ERROR'
-              ? 'border-destructive/30 bg-destructive/10 text-destructive'
-              : 'border-border bg-muted text-muted-foreground'
-          )}
-        >
-          <Icon className='size-4' />
-        </div>
-        <div className='mt-2 w-px flex-1 bg-border' />
-      </div>
-
-      {/* Card body */}
-      <button
-        type='button'
-        onClick={() => setExpanded((v) => !v)}
-        className={cn(
-          'mb-4 flex-1 rounded-lg border bg-card p-4 text-start shadow-xs transition-colors hover:bg-accent/50',
-          expanded && 'ring-1 ring-ring/30'
-        )}
-      >
-        {/* Header row */}
-        <div className='flex flex-wrap items-center gap-2'>
-          {expanded ? (
-            <ChevronDown className='size-4 text-muted-foreground' />
-          ) : (
-            <ChevronRight className='size-4 text-muted-foreground' />
-          )}
-
-          <Badge
-            variant='outline'
-            className={cn('text-[11px]', badgeClass)}
-          >
-            {item.event_type}
-          </Badge>
-
-          <StatusDot status={item.status} />
-
-          <span className='text-sm font-medium text-foreground'>
-            {item.action}
-          </span>
-
-          {item.object_name && (
-            <span className='truncate text-sm text-muted-foreground'>
-              {item.object_type} &ldquo;{item.object_name}&rdquo;
-            </span>
-          )}
-
-          <span className='ms-auto flex items-center gap-1 text-xs text-muted-foreground'>
-            <Clock className='size-3' />
-            <span title={formatTime(item.event_time)}>
-              {formatRelative(item.event_time)}
-            </span>
-          </span>
-        </div>
-
-        {/* Meta row */}
-        <div className='mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground'>
-          <span className='flex items-center gap-1'>
-            <User className='size-3' />
-            {item.user_name || '—'}
-          </span>
-          {item.database_name && (
-            <span className='flex items-center gap-1'>
-              <Database className='size-3' />
-              {item.database_name}
-              {item.schema_name ? `.${item.schema_name}` : ''}
-            </span>
-          )}
-          {item.duration_ms != null && (
-            <span>{item.duration_ms} ms</span>
-          )}
-          {item.rows_affected != null && (
-            <span>{(item.rows_affected ?? 0).toLocaleString()} rows</span>
-          )}
-          {item.ip_address && <span>{item.ip_address}</span>}
-        </div>
-
-        {/* Expanded details */}
-        {expanded && (
-          <div className='mt-4 space-y-3 border-t pt-3 text-sm'>
-            {item.sql_text && (
-              <DetailBlock label='SQL Text'>
-                <pre className='overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2 font-mono text-xs text-foreground'>
-                  {item.sql_text}
-                </pre>
-              </DetailBlock>
-            )}
-
-            {item.error_message && (
-              <DetailBlock label='Error'>
-                <pre className='overflow-x-auto whitespace-pre-wrap rounded bg-destructive/10 p-2 font-mono text-xs text-destructive'>
-                  {item.error_message}
-                </pre>
-              </DetailBlock>
-            )}
-
-            <div className='grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-3'>
-              <DetailField label='Status' value={item.status} />
-              <DetailField label='Session ID' value={item.session_id} />
-              <DetailField label='Log ID' value={item.log_id} />
-              <DetailField label='Object Type' value={item.object_type} />
-              <DetailField label='Object Name' value={item.object_name} />
-              <DetailField label='IP Address' value={item.ip_address} />
-              <DetailField label='Database' value={item.database_name} />
-              <DetailField label='Schema' value={item.schema_name} />
-              <DetailField
-                label='Event Time'
-                value={formatTime(item.event_time)}
-              />
-            </div>
-          </div>
-        )}
-      </button>
-    </div>
-  )
-}
-
-function DetailBlock({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div>
-      <p className='mb-1 text-xs font-medium text-muted-foreground'>
-        {label}
-      </p>
-      {children}
-    </div>
-  )
-}
-
-function DetailField({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className='text-muted-foreground'>{label}</p>
-      <p className='truncate font-medium text-foreground'>{value || '—'}</p>
-    </div>
-  )
-}
-
-const PAGE_SIZE_OPTIONS = [25, 50, 100]
-
-function Pagination({
-  page,
-  pageSize,
-  totalPages,
-  total,
-  onPageChange,
-  onPageSizeChange,
-}: {
-  page: number
-  pageSize: number
-  totalPages: number
-  total: number
-  onPageChange: (p: number) => void
-  onPageSizeChange: (size: number) => void
-}) {
-  if (totalPages <= 1 && total <= PAGE_SIZE_OPTIONS[0]) return null
-  const pages = getPageNumbers(page, totalPages)
-
-  return (
-    <div className='flex flex-wrap items-center justify-between gap-2 border-t pt-4'>
-      <div className='flex items-center gap-3'>
-        <p className='text-xs text-muted-foreground'>
-          Showing {(page - 1) * pageSize + 1}–
-          {Math.min(page * pageSize, total)} of {total.toLocaleString()} events
-        </p>
-        <div className='flex items-center gap-1.5'>
-          <label
-            htmlFor='page-size-select'
-            className='text-xs text-muted-foreground'
-          >
-            Per page:
-          </label>
-          <select
-            id='page-size-select'
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className='rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary'
-          >
-            {PAGE_SIZE_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <div className='flex items-center gap-1'>
-        <Button
-          variant='outline'
-          size='sm'
-          disabled={page === 1}
-          onClick={() => onPageChange(page - 1)}
-        >
-          Prev
-        </Button>
-        {pages.map((p, i) =>
-          typeof p === 'string' ? (
-            <span
-              key={`ellipsis-${i}`}
-              className='px-2 text-xs text-muted-foreground'
-            >
-              …
-            </span>
-          ) : (
-            <Button
-              key={p}
-              variant={p === page ? 'default' : 'outline'}
-              size='sm'
-              onClick={() => onPageChange(p)}
-            >
-              {p}
-            </Button>
-          )
-        )}
-        <Button
-          variant='outline'
-          size='sm'
-          disabled={page === totalPages}
-          onClick={() => onPageChange(page + 1)}
-        >
-          Next
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function TimelineSkeleton() {
-  return (
-    <div className='space-y-4'>
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className='flex gap-4'>
-          <Skeleton className='size-9 shrink-0 rounded-full' />
-          <div className='flex-1 space-y-2 rounded-lg border p-4'>
-            <Skeleton className='h-4 w-3/4' />
-            <Skeleton className='h-3 w-1/2' />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
 
 export function MonitoringAuditTrail() {
-  // Filters
   const [eventType, setEventType] = useState('')
   const [status, setStatus] = useState('')
   const [userName, setUserName] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
-
-  // Reset to page 1 when filters change
-  const handleSetEventType = (v: string) => {
-    setEventType(v)
-    setPage(1)
-  }
-  const handleSetStatus = (v: string) => {
-    setStatus(v)
-    setPage(1)
-  }
-  const handleSetUserName = (v: string) => {
-    setUserName(v)
-    setPage(1)
-  }
-  const handleSetPageSize = (size: number) => {
-    setPageSize(size)
-    setPage(1)
-  }
+  const [pageSize, setPageSize] = useState(5)
 
   const offset = (page - 1) * pageSize
 
-  const qs = buildQueryString({
+  const queryString = buildQueryString({
     limit: pageSize,
     offset,
     event_type: eventType,
@@ -473,28 +151,80 @@ export function MonitoringAuditTrail() {
     status,
   })
 
-  const query = useQuery<AuditResponse>({
-    queryKey: ['monitoring', 'audit', eventType, status, userName, page, pageSize],
-    queryFn: () => api.get<AuditResponse>(`/monitoring/audit?${qs}`),
+  const auditQuery = useQuery<AuditResponse>({
+    queryKey: [
+      'monitoring',
+      'audit',
+      eventType,
+      status,
+      userName,
+      page,
+      pageSize,
+    ],
+    queryFn: () => api.get<AuditResponse>(`/monitoring/audit?${queryString}`),
+    placeholderData: keepPreviousData,
   })
 
-  if (query.isError) {
-    toast.error(query.error.message || 'Failed to load audit trail')
+  useEffect(() => {
+    if (auditQuery.error) {
+      toast.error(auditQuery.error.message || 'Failed to load audit trail')
+    }
+  }, [auditQuery.error])
+
+  const queryItems = auditQuery.data?.items ?? []
+
+  const filteredItems = useMemo(() => {
+    const normalizedSearchQuery = searchQuery.trim().toLowerCase()
+
+    if (!normalizedSearchQuery) return queryItems
+
+    return queryItems.filter((item) =>
+      [
+        item.action,
+        item.object_name,
+        item.object_type,
+        item.sql_text,
+        item.user_name,
+        item.database_name,
+        item.schema_name,
+        item.ip_address,
+      ]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(normalizedSearchQuery))
+    )
+  }, [queryItems, searchQuery])
+
+  const total = auditQuery.data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const pageEnd = Math.min(page * pageSize, total)
+
+  const userOptions = useMemo(() => {
+    return [...new Set(queryItems.map((item) => item.user_name).filter(Boolean))] as string[]
+  }, [queryItems])
+
+  const handleFilterChange = (
+    setter: (value: string) => void,
+    value: string
+  ) => {
+    setter(value)
+    setPage(1)
+    setExpandedRow(null)
   }
 
-  const items = query.data?.items ?? []
-  const total = query.data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage)
+    setExpandedRow(null)
+  }
 
-  // Derive unique user names from the current result set for the filter
-  const userOptions = useMemo(() => {
-    if (!query.data?.items) return []
-    return [...new Set(query.data.items.map((i) => i.user_name).filter(Boolean))] as string[]
-  }, [query.data])
+  const handlePageSizeChange = (value: string) => {
+    setPageSize(Number(value))
+    setPage(1)
+    setExpandedRow(null)
+  }
 
   return (
-    <div className='space-y-4'>
-      {/* Header */}
+    <div className='space-y-6'>
       <div>
         <h3 className='text-lg font-medium'>Audit Trail</h3>
         <p className='text-sm text-muted-foreground'>
@@ -502,47 +232,309 @@ export function MonitoringAuditTrail() {
         </p>
       </div>
 
-      {/* Filter bar */}
-      <FilterBar
-        eventType={eventType}
-        setEventType={handleSetEventType}
-        status={status}
-        setStatus={handleSetStatus}
-        userName={userName}
-        setUserName={handleSetUserName}
-        users={userOptions}
-      />
+      <div className='flex flex-wrap items-center gap-3'>
+        <SearchableSelect
+          options={EVENT_TYPE_OPTIONS}
+          value={eventType}
+          onChange={(value: string) => handleFilterChange(setEventType, value)}
+          label='Event Type'
+          icon={<Activity size={14} />}
+        />
 
-      {/* Timeline */}
-      {query.isLoading ? (
-        <TimelineSkeleton />
-      ) : items.length === 0 ? (
-        <div className='rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground'>
-          No audit events found.
+        <SearchableSelect
+          options={STATUS_OPTIONS}
+          value={status}
+          onChange={(value: string) => handleFilterChange(setStatus, value)}
+          label='Status'
+          icon={<CheckCircle2 size={14} />}
+        />
+
+        <SearchableSelect
+          options={userOptions}
+          value={userName}
+          onChange={(value: string) => handleFilterChange(setUserName, value)}
+          label='User'
+          icon={<User size={14} />}
+        />
+
+        <Input
+          placeholder='Search action, object, SQL...'
+          value={searchQuery}
+          onChange={(event) => {
+            setSearchQuery(event.target.value)
+            setExpandedRow(null)
+          }}
+          className='max-w-xs'
+        />
+
+        <div className='ml-auto text-sm text-muted-foreground'>
+          {total} {total === 1 ? 'event' : 'events'}
         </div>
-      ) : (
-        <div>
-          {items.map((item) => (
-            <AuditCard key={item.log_id} item={item} />
-          ))}
-          {/* Trailing dot to cap the timeline */}
-          <div className='flex justify-start ps-[13px]'>
-            <div className='size-2.5 rounded-full bg-border' />
+      </div>
+
+      <div className='relative rounded-md border border-border'>
+        {auditQuery.isFetching && !auditQuery.isLoading ? (
+          <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
+            <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
+              <div className='h-1.5 w-full overflow-hidden bg-muted'>
+                <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
+              </div>
+              <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
+                Loading audit events...
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <div className='overflow-x-auto'>
+          <table className='w-full'>
+            <thead className='border-b border-border bg-muted/50'>
+              <tr>
+                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                  Time
+                </th>
+                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                  User
+                </th>
+                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                  Event
+                </th>
+                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                  Action
+                </th>
+                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                  Status
+                </th>
+                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                  Duration
+                </th>
+                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                  Rows
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditQuery.isLoading ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className='px-4 py-12 text-center text-sm text-muted-foreground'
+                  >
+                    Loading...
+                  </td>
+                </tr>
+              ) : filteredItems.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className='px-4 py-12 text-center text-sm text-muted-foreground'
+                  >
+                    No audit events found
+                  </td>
+                </tr>
+              ) : (
+                filteredItems.map((item) => {
+                  const EventIcon = EVENT_ICON[item.event_type] ?? Activity
+
+                  return (
+                    <Fragment key={item.log_id}>
+                      <tr
+                        onClick={() =>
+                          setExpandedRow(
+                            expandedRow === item.log_id ? null : item.log_id
+                          )
+                        }
+                        className={cn(
+                          'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
+                          expandedRow === item.log_id && 'bg-muted/30'
+                        )}
+                      >
+                        <td className='px-4 py-3 text-xs text-muted-foreground whitespace-nowrap'>
+                          {formatTime(item.event_time)}
+                        </td>
+                        <td className='px-4 py-3 text-sm'>
+                          <div className='flex items-center gap-1.5'>
+                            <User className='h-3 w-3 text-muted-foreground' />
+                            <span className='text-xs'>{item.user_name || '—'}</span>
+                          </div>
+                        </td>
+                        <td className='px-4 py-3'>
+                          <Badge
+                            variant='secondary'
+                            className={cn(
+                              'text-xs font-medium',
+                              getEventBadgeClassName(item.event_type)
+                            )}
+                          >
+                            <EventIcon className='h-3 w-3' />
+                            {item.event_type}
+                          </Badge>
+                        </td>
+                        <td className='px-4 py-3 text-sm'>
+                          <div className='space-y-1'>
+                            <p className='text-xs font-medium'>{item.action}</p>
+                            <p className='text-xs text-muted-foreground'>
+                              {item.object_name
+                                ? `${item.object_type} ${truncateText(item.object_name, 32)}`
+                                : item.object_type || '—'}
+                            </p>
+                          </div>
+                        </td>
+                        <td className='px-4 py-3'>
+                          <Badge
+                            variant='secondary'
+                            className={cn(
+                              'text-xs font-medium',
+                              getStatusBadgeClassName(item.status)
+                            )}
+                          >
+                            {item.status}
+                          </Badge>
+                        </td>
+                        <td className='px-4 py-3 text-right text-xs font-medium'>
+                          {formatDuration(item.duration_ms)}
+                        </td>
+                        <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
+                          {(item.rows_affected ?? 0).toLocaleString()}
+                        </td>
+                      </tr>
+                      {expandedRow === item.log_id ? (
+                        <tr className='border-b border-border bg-muted/20'>
+                          <td colSpan={7} className='px-4 py-4'>
+                            <div className='space-y-3'>
+                              {item.sql_text ? (
+                                <div>
+                                  <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
+                                    SQL Text
+                                  </p>
+                                  <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs font-mono'>
+                                    {item.sql_text}
+                                  </pre>
+                                </div>
+                              ) : null}
+
+                              {item.error_message ? (
+                                <div>
+                                  <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive'>
+                                    <AlertCircle className='h-3 w-3' />
+                                    Error Message
+                                  </p>
+                                  <pre className='rounded-md bg-destructive/10 p-3 text-xs font-mono text-destructive'>
+                                    {item.error_message}
+                                  </pre>
+                                </div>
+                              ) : null}
+
+                              <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
+                                <div>
+                                  <span className='font-medium'>Log ID:</span>{' '}
+                                  {item.log_id}
+                                </div>
+                                <div>
+                                  <span className='font-medium'>Session:</span>{' '}
+                                  {item.session_id || '—'}
+                                </div>
+                                <div>
+                                  <span className='font-medium'>IP Address:</span>{' '}
+                                  {item.ip_address || '—'}
+                                </div>
+                                <div>
+                                  <span className='font-medium'>Database:</span>{' '}
+                                  {item.database_name || '—'}
+                                </div>
+                                <div>
+                                  <span className='font-medium'>Schema:</span>{' '}
+                                  {item.schema_name || '—'}
+                                </div>
+                              </div>
+
+                              {item.database_name || item.schema_name ? (
+                                <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                                  <Database className='h-3 w-3' />
+                                  <span>
+                                    {item.database_name || '—'}
+                                    {item.schema_name
+                                      ? `.${item.schema_name}`
+                                      : ''}
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
+        <div className='flex items-center gap-2 text-sm'>
+          <span className='text-muted-foreground'>Rows per page:</span>
+          <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
+            <SelectTrigger className='w-[70px]'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value='5'>5</SelectItem>
+              <SelectItem value='10'>10</SelectItem>
+              <SelectItem value='25'>25</SelectItem>
+              <SelectItem value='50'>50</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
+          <span className='text-sm text-muted-foreground'>
+            Showing {pageStart}-{pageEnd} of {total}
+          </span>
+          <span className='text-sm text-muted-foreground'>
+            Page {page} of {totalPages}
+          </span>
+          <div className='flex items-center gap-1'>
+            <Button
+              variant='outline'
+              size='icon'
+              onClick={() => handlePageChange(1)}
+              disabled={page === 1}
+              className='h-8 w-8'
+            >
+              <ChevronsLeft className='h-4 w-4' />
+            </Button>
+            <Button
+              variant='outline'
+              size='icon'
+              onClick={() => handlePageChange(page - 1)}
+              disabled={page === 1}
+              className='h-8 w-8'
+            >
+              <ChevronLeft className='h-4 w-4' />
+            </Button>
+            <Button
+              variant='outline'
+              size='icon'
+              onClick={() => handlePageChange(page + 1)}
+              disabled={page >= totalPages}
+              className='h-8 w-8'
+            >
+              <ChevronRight className='h-4 w-4' />
+            </Button>
+            <Button
+              variant='outline'
+              size='icon'
+              onClick={() => handlePageChange(totalPages)}
+              disabled={page >= totalPages}
+              className='h-8 w-8'
+            >
+              <ChevronsRight className='h-4 w-4' />
+            </Button>
           </div>
         </div>
-      )}
-
-      {/* Pagination */}
-      {!query.isLoading && total > 0 && (
-        <Pagination
-          page={page}
-          pageSize={pageSize}
-          totalPages={totalPages}
-          total={total}
-          onPageChange={setPage}
-          onPageSizeChange={handleSetPageSize}
-        />
-      )}
+      </div>
     </div>
   )
 }

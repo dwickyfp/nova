@@ -29,8 +29,8 @@ type QueryHistoryItem = {
   log_id: string
   event_time: string
   user_name: string
-  object_name: string
-  action: string
+  object_name?: string
+  action?: string
   sql_text: string
   status: string
   error_message: string | null
@@ -78,7 +78,7 @@ export function MonitoringQueryHistory() {
       if (databaseFilter) params.set('database_name', databaseFilter)
       if (searchQuery) params.set('search', searchQuery)
       return api.get<QueryHistoryResponse>(
-        `/query/history?${params.toString()}`
+        `/monitoring/queries/history?${params.toString()}`
       )
     },
     placeholderData: keepPreviousData,

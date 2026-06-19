@@ -24,8 +24,10 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     if (!accessToken || user) return
 
     void api
-      .get<{ username: string; roles: string[] }>('/auth/me')
-      .then(({ username, roles }) => setUser({ username, roles }))
+      .get<{ username: string; roles: string[]; active_role?: string | null }>('/auth/me')
+      .then(({ username, roles, active_role }) =>
+        setUser({ username, roles, activeRole: active_role ?? roles[0] ?? null })
+      )
   }, [accessToken, setUser, user])
 
   return (

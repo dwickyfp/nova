@@ -32,7 +32,7 @@ class SessionStore:
             self._redis = None
 
     async def create(
-        self, username: str, encrypted_password: str, roles: list[str]
+        self, username: str, encrypted_password: str, roles: list[str], active_role: str | None = None
     ) -> str:
         """Create a new session. Returns session_id (UUID)."""
         if not self._redis:
@@ -43,6 +43,7 @@ class SessionStore:
             "username": username,
             "encrypted_password": encrypted_password,
             "roles": ",".join(roles),
+            "active_role": active_role or (roles[0] if roles else ""),
         }
         key = f"{SESSION_PREFIX}{session_id}"
         await self._redis.hset(key, mapping=data)
@@ -58,7 +59,23 @@ class SessionStore:
         if not data:
             return None
         data["roles"] = data.get("roles", "").split(",") if data.get("roles") else []
+        data["active_role"] = data.get("active_role") or (data["roles"][0] if data["roles"] else None)
         return data
+
+    async def set_active_role(self, session_id: str, active_role: str, roles: list[str]) -> None:
+        """Update active role and normalized role order for a session."""
+        if not self._redis:
+            raise RuntimeError("SessionStore not initialized. Call init() first.")
+
+        key = f"{SESSION_PREFIX}{session_id}"
+        await self._redis.hset(
+            key,
+            mapping={
+                "active_role": active_role,
+                "roles": ",".join(roles),
+            },
+        )
+        await self._redis.expire(key, settings.SESSION_TTL_SECONDS)
 
     async def delete(self, session_id: str) -> None:
         """Delete a session (logout)."""

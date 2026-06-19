@@ -1,8 +1,5 @@
 import { useState } from 'react'
-import { Link } from '@tanstack/react-router'
 import {
-  BadgeCheck,
-  Bell,
   ChevronsUpDown,
   LogOut,
   Moon,
@@ -13,7 +10,8 @@ import {
   Search,
 } from 'lucide-react'
 import useDialogState from '@/hooks/use-dialog-state'
-import { type AuthUser } from '@/stores/auth-store'
+import { api } from '@/lib/api-client'
+import { type AuthUser, useAuthStore } from '@/stores/auth-store'
 import { useTheme } from '@/context/theme-provider'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -45,17 +43,34 @@ export function NavUser({ user }: NavUserProps) {
   const [open, setOpen] = useDialogState()
   const { theme, setTheme } = useTheme()
   const [roleSearch, setRoleSearch] = useState('')
+  const setUser = useAuthStore((state) => state.auth.setUser)
   const username = user?.username ?? 'Loading account'
-  const activeRole = user?.roles.length ? user.roles[0] : 'No role'
+  const activeRole = user?.activeRole ?? user?.roles[0] ?? 'No role'
   const initials = getInitials(username)
-
-  // For now, roles come from user.roles (single role from StarRocks)
-  // In the future, this will be a list of switchable roles
   const availableRoles = user?.roles ?? []
 
   const filteredRoles = availableRoles.filter((r) =>
     r.toLowerCase().includes(roleSearch.toLowerCase())
   )
+
+  async function handleSwitchRole(role: string) {
+    if (!user || role === activeRole) return
+
+    const result = await api.post<{
+      username: string
+      roles: string[]
+      active_role: string
+      session_id: string
+    }>('/auth/switch-role', { role })
+
+    setUser({
+      username: result.username,
+      roles: result.roles,
+      activeRole: result.active_role,
+    })
+
+    window.location.reload()
+  }
 
   return (
     <>
@@ -138,9 +153,7 @@ export function NavUser({ user }: NavUserProps) {
                       <DropdownMenuItem
                         key={role}
                         className={`gap-2 ${role === activeRole ? 'text-sidebar-accent-foreground font-medium' : ''}`}
-                        onSelect={() => {
-                          // TODO: switch role via API
-                        }}
+                        onSelect={() => void handleSwitchRole(role)}
                       >
                         <SquareUser className='size-4' />
                         <span className='flex-1'>{role}</span>
@@ -183,23 +196,6 @@ export function NavUser({ user }: NavUserProps) {
               </DropdownMenuSub>
 
               <DropdownMenuSeparator />
-
-              {/* ── Account & Notifications ── */}
-              <DropdownMenuItem asChild>
-                <Link to='/settings/account'>
-                  <BadgeCheck />
-                  Account
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to='/settings/notifications'>
-                  <Bell />
-                  Notifications
-                </Link>
-              </DropdownMenuItem>
-
-              <DropdownMenuSeparator />
-
               {/* ── Sign out ── */}
               <DropdownMenuItem
                 variant='destructive'

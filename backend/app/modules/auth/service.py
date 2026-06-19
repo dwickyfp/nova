@@ -3,6 +3,7 @@
 import asyncmy
 import asyncmy.errors
 
+from app.common.audit import write_audit_log
 from app.common.nova_system import is_setup_complete, mark_setup_complete
 from app.core.config import settings
 from app.core.database import db
@@ -36,7 +37,7 @@ class AuthService:
             return False
 
     async def get_user_roles(self, username: str, password: str) -> list[str]:
-        """Fetch roles granted to this user via SHOW GRANTS."""
+        """Fetch all granted/applicable roles for this user."""
         conn = await asyncmy.connect(
             host=settings.STARROCKS_HOST,
             port=settings.STARROCKS_FE_MYSQL_PORT,
@@ -46,9 +47,18 @@ class AuthService:
         )
         try:
             async with conn.cursor() as cur:
+                try:
+                    await cur.execute("SELECT ROLE_NAME FROM information_schema.applicable_roles")
+                    rows = await cur.fetchall()
+                    roles = sorted({str(row[0]) for row in rows if row and row[0]})
+                    if roles:
+                        return roles
+                except Exception:
+                    pass
+
                 await cur.execute("SHOW GRANTS")
                 rows = await cur.fetchall()
-                return self._parse_roles(rows)
+                return sorted(set(self._parse_roles(rows)))
         finally:
             conn.close()
 
@@ -74,14 +84,29 @@ class AuthService:
         if not setup_done and username == "nova_admin":
             roles = await self.get_user_roles(username, password)
             enc_password = encrypt_password(password)
-            session_id = await session_store.create(username, enc_password, roles)
+            session_id = await session_store.create(
+                username,
+                enc_password,
+                roles,
+                active_role=roles[0] if roles else None,
+            )
             token = create_access_token(username, session_id)
+            await write_audit_log(
+                event_type="login",
+                user_name=username,
+                action="LOGIN",
+                object_type="USER",
+                object_name=username,
+                status="SUCCESS",
+                session_id=session_id,
+            )
             return {
                 "status": "SETUP_REQUIRED",
                 "access_token": token,
                 "token_type": "bearer",
                 "user": username,
                 "roles": roles,
+                "active_role": roles[0] if roles else None,
                 "message": "First login — set a new admin password",
             }
 
@@ -92,8 +117,22 @@ class AuthService:
         # 5. Normal authenticated session
         roles = await self.get_user_roles(username, password)
         enc_password = encrypt_password(password)
-        session_id = await session_store.create(username, enc_password, roles)
+        session_id = await session_store.create(
+            username,
+            enc_password,
+            roles,
+            active_role=roles[0] if roles else None,
+        )
         token = create_access_token(username, session_id)
+        await write_audit_log(
+            event_type="login",
+            user_name=username,
+            action="LOGIN",
+            object_type="USER",
+            object_name=username,
+            status="SUCCESS",
+            session_id=session_id,
+        )
 
         return {
             "status": "AUTHENTICATED",
@@ -101,6 +140,24 @@ class AuthService:
             "token_type": "bearer",
             "user": username,
             "roles": roles,
+            "active_role": roles[0] if roles else None,
+        }
+
+    async def switch_role(self, session_id: str, requested_role: str) -> dict:
+        session = await session_store.get(session_id)
+        if not session:
+            raise InvalidCredentialsError("Session expired")
+
+        roles = session.get("roles", [])
+        if requested_role not in roles:
+            raise InvalidCredentialsError("Role is not granted to this user")
+
+        reordered_roles = [requested_role, *[role for role in roles if role != requested_role]]
+        await session_store.set_active_role(session_id, requested_role, reordered_roles)
+
+        return {
+            "roles": reordered_roles,
+            "active_role": requested_role,
         }
 
     async def setup(self, username: str, session_id: str, new_password: str, confirm_password: str) -> dict:

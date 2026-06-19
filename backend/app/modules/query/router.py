@@ -147,8 +147,12 @@ async def get_query_completions(
 
 
 class HistoryItem(BaseModel):
+    log_id: str
     query_id: str
     event_time: str
+    user_name: str
+    object_name: str
+    action: str
     sql_text: str
     status: str
     duration_ms: int | None = None
@@ -157,6 +161,7 @@ class HistoryItem(BaseModel):
     file_id: str | None = None
     database_name: str | None = None
     schema_name: str | None = None
+    session_id: str | None = None
 
 
 class HistoryResponse(BaseModel):
