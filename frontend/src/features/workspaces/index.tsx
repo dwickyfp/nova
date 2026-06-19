@@ -18,7 +18,6 @@ import Editor, { type Monaco } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Braces,
-  Bookmark,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -40,7 +39,6 @@ import {
   RotateCcw,
   Search,
   Table2,
-  Trash2,
   Type,
   UserRoundCog,
   X,
@@ -326,7 +324,7 @@ const SQL_KEYWORDS = [
 
 export function WorkspacesPage() {
   const queryClient = useQueryClient()
-  const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases' | 'snippets'>(
+  const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases'>(
     'workspaces'
   )
   const [secondaryCollapsed, setSecondaryCollapsed] = useState(false)
@@ -352,9 +350,6 @@ export function WorkspacesPage() {
   const [resultsTab, setResultsTab] = useState<'results' | 'history' | 'explain'>('results')
   const [explainResult, setExplainResult] = useState<string | null>(null)
   const [explaining, setExplaining] = useState(false)
-  const [savingSnippet, setSavingSnippet] = useState(false)
-  const [snippetDialogOpen, setSnippetDialogOpen] = useState(false)
-  const [snippetName, setSnippetName] = useState('')
   const [historyFilter, setHistoryFilter] = useState<'file' | 'all'>('file')
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(() => {
     try {
@@ -851,29 +846,6 @@ export function WorkspacesPage() {
     }
   }
 
-  async function saveSnippet() {
-    if (!activeTab) return
-    const sql = editorContentRef.current.trim() || activeTab.content.trim()
-    if (!sql || !snippetName.trim()) return
-    setSavingSnippet(true)
-    try {
-      await api.post('/snippets/', {
-        name: snippetName.trim(),
-        sql_text: sql,
-        database_name: activeTab.database || null,
-        schema_name: activeTab.schema || null,
-      })
-      toast.success('Snippet saved')
-      setSnippetDialogOpen(false)
-      setSnippetName('')
-      void queryClient.invalidateQueries({ queryKey: ['snippets'] })
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to save snippet')
-    } finally {
-      setSavingSnippet(false)
-    }
-  }
-
   async function flushTabSave(tabId: string | null) {
     if (!tabId) return
     const tab = tabs[tabId]
@@ -951,14 +923,13 @@ export function WorkspacesPage() {
                   <Tabs
                     value={sidebarTab}
                     onValueChange={(value) =>
-                      setSidebarTab(value as 'workspaces' | 'databases' | 'snippets')
+                      setSidebarTab(value as 'workspaces' | 'databases')
                     }
                     className='w-full'
                   >
-                    <TabsList className='grid w-full grid-cols-3'>
+                    <TabsList className='grid w-full grid-cols-2'>
                       <TabsTrigger value='workspaces'>Workspaces</TabsTrigger>
                       <TabsTrigger value='databases'>Databases</TabsTrigger>
-                      <TabsTrigger value='snippets'>Snippets</TabsTrigger>
                     </TabsList>
                   </Tabs>
                 )}
@@ -1101,22 +1072,6 @@ export function WorkspacesPage() {
                       role={activeTab?.role ?? queryContextQuery.data?.defaults.role ?? undefined}
                       setSchemasByDatabase={setSchemasByDatabase}
                     />
-                  ) : (
-                    <SnippetsSidebar
-                      onLoadSql={(sql, dbName) => {
-                        if (activeTabId && tabs[activeTabId]) {
-                          setTabs((prev) => ({
-                            ...prev,
-                            [activeTabId]: {
-                              ...prev[activeTabId],
-                              content: sql,
-                              database: dbName || prev[activeTabId].database,
-                            },
-                          }))
-                          editorContentRef.current = sql
-                        }
-                      }}
-                    />
                   )}
                 </ScrollArea>
               </>
@@ -1257,42 +1212,6 @@ export function WorkspacesPage() {
                   <Route className='size-4' />
                   {explaining ? 'Explaining...' : 'Explain'}
                 </Button>
-                <Button
-                  size='sm'
-                  variant='ghost'
-                  title='Save current SQL as snippet'
-                  onClick={() => {
-                    setSnippetName(activeTab?.title?.replace(/\.sql$/i, '') ?? '')
-                    setSnippetDialogOpen(true)
-                  }}
-                >
-                  <Bookmark className='size-4' />
-                  Save
-                </Button>
-                {/* Save Snippet Dialog */}
-                {snippetDialogOpen && (
-                  <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/40' onClick={() => setSnippetDialogOpen(false)}>
-                    <div className='w-[360px] rounded-lg border border-border bg-popover p-4 shadow-xl' onClick={(e) => e.stopPropagation()}>
-                      <h3 className='mb-3 text-sm font-semibold text-foreground'>Save as Snippet</h3>
-                      <Input
-                        autoFocus
-                        placeholder='Snippet name…'
-                        value={snippetName}
-                        onChange={(e) => setSnippetName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') void saveSnippet()
-                          if (e.key === 'Escape') setSnippetDialogOpen(false)
-                        }}
-                      />
-                      <div className='mt-3 flex justify-end gap-2'>
-                        <Button size='sm' variant='outline' onClick={() => setSnippetDialogOpen(false)}>Cancel</Button>
-                        <Button size='sm' onClick={() => void saveSnippet()} disabled={savingSnippet || !snippetName.trim()}>
-                          {savingSnippet ? 'Saving…' : 'Save'}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
                 <div className='flex flex-1 flex-wrap items-center justify-end gap-2'>
                   <InlineSelect
                     label='Role'
@@ -2447,141 +2366,6 @@ function ExplainNode({ node, depth }: { node: PlanNode; depth: number }) {
       {node.children.map((child, ci) => (
         <ExplainNode key={ci} node={child} depth={depth + 1} />
       ))}
-    </div>
-  )
-}
-
-// ── Snippets Sidebar ────────────────────────────────────────────────
-type Snippet = {
-  id: string
-  user_name: string
-  name: string
-  sql_text: string
-  database_name: string | null
-  schema_name: string | null
-  is_shared: boolean
-  created_at: string | null
-}
-
-function SnippetsSidebar({ onLoadSql }: { onLoadSql: (sql: string, dbName: string | null) => void }) {
-  const snippetsQuery = useQuery<{ items: Snippet[]; total: number }>({
-    queryKey: ['snippets'],
-    queryFn: () => api.get('/snippets/'),
-  })
-  const queryClient = useQueryClient()
-  const [search, setSearch] = useState('')
-  const deferredSearch = useDeferredValue(search)
-
-  const snippets = snippetsQuery.data?.items ?? []
-  const mine = snippets.filter((s) => !s.is_shared)
-  const shared = snippets.filter((s) => s.is_shared)
-
-  const filtered = (list: Snippet[]) =>
-    deferredSearch
-      ? list.filter(
-          (s) =>
-            s.name.toLowerCase().includes(deferredSearch.toLowerCase()) ||
-            s.sql_text.toLowerCase().includes(deferredSearch.toLowerCase())
-        )
-      : list
-
-  async function deleteSnippet(id: string) {
-    try {
-      await api.delete(`/snippets/${id}`)
-      toast.success('Snippet deleted')
-      void queryClient.invalidateQueries({ queryKey: ['snippets'] })
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to delete')
-    }
-  }
-
-  const snippets_ = snippetsQuery.isLoading ? (
-    <div className='flex items-center justify-center p-4 text-xs text-muted-foreground'>
-      Loading snippets…
-    </div>
-  ) : (
-    <div className='space-y-3 p-2'>
-      {/* My Snippets */}
-      <div>
-        <div className='mb-1 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground'>
-          ★ My Snippets ({filtered(mine).length})
-        </div>
-        {filtered(mine).length === 0 ? (
-          <div className='px-1 py-2 text-xs text-muted-foreground italic'>No snippets yet</div>
-        ) : (
-          filtered(mine).map((s) => (
-            <SnippetRow key={s.id} snippet={s} onLoad={onLoadSql} onDelete={deleteSnippet} />
-          ))
-        )}
-      </div>
-      {/* Shared Snippets */}
-      {shared.length > 0 && (
-        <div>
-          <div className='mb-1 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground'>
-            🌐 Shared ({filtered(shared).length})
-          </div>
-          {filtered(shared).map((s) => (
-            <SnippetRow key={s.id} snippet={s} onLoad={onLoadSql} onDelete={s.user_name === mine[0]?.user_name ? deleteSnippet : undefined} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-
-  return (
-    <div className='flex flex-col gap-2'>
-      <div className='flex items-center gap-1 px-2 pt-2'>
-        <Input
-          placeholder='Search snippets…'
-          className='h-7 text-xs'
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-      {snippets_}
-    </div>
-  )
-}
-
-function SnippetRow({
-  snippet,
-  onLoad,
-  onDelete,
-}: {
-  snippet: Snippet
-  onLoad: (sql: string, dbName: string | null) => void
-  onDelete?: (id: string) => void
-}) {
-  return (
-    <div className='group flex items-start gap-1.5 rounded-md px-1.5 py-1 hover:bg-muted/50 transition-colors'>
-      <button
-        type='button'
-        className='min-w-0 flex-1 cursor-pointer text-left'
-        onClick={() => onLoad(snippet.sql_text, snippet.database_name)}
-      >
-        <div className='flex items-center gap-1'>
-          <Bookmark className='size-3 shrink-0 text-amber-500' />
-          <span className='truncate text-xs font-medium text-foreground'>{snippet.name}</span>
-        </div>
-        <code className='mt-0.5 block truncate font-mono text-[10px] text-muted-foreground'>
-          {snippet.sql_text.slice(0, 80)}
-        </code>
-        {snippet.database_name && (
-          <span className='mt-0.5 inline-block text-[10px] text-muted-foreground'>
-            {snippet.database_name}
-          </span>
-        )}
-      </button>
-      {onDelete && (
-        <button
-          type='button'
-          className='shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 group-hover:opacity-100'
-          onClick={() => onDelete(snippet.id)}
-          title='Delete snippet'
-        >
-          <Trash2 className='size-3 text-destructive' />
-        </button>
-      )}
     </div>
   )
 }
