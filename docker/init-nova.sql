@@ -228,6 +228,7 @@ PROPERTIES("replication_num"="1");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (
   log_id        BIGINT NOT NULL AUTO_INCREMENT,
+  query_id      VARCHAR(36),
   event_type    VARCHAR(64) NOT NULL,
   event_time    DATETIME NOT NULL,
   user_name     VARCHAR(128),
@@ -242,7 +243,10 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (
   rows_affected BIGINT,
   client_ip     VARCHAR(45),
   session_id    VARCHAR(64),
-  rewritten_sql TEXT
+  rewritten_sql TEXT,
+  file_id       VARCHAR(64),
+  database_name VARCHAR(128),
+  schema_name   VARCHAR(128)
 ) DUPLICATE KEY(log_id, event_type, event_time)
 PARTITION BY RANGE(event_time) (
   PARTITION p202601 VALUES LESS THAN ("2026-02-01"),
@@ -377,7 +381,7 @@ SELECT 'Nova init complete! All tables created.' AS status;
 
 CREATE DATABASE IF NOT EXISTS NOVA_DEMO;
 
--- ── Customers ────────────────────────────────────────────────
+-- ── Sales: Customers ──────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS NOVA_DEMO.customers (
   customer_id   BIGINT        NOT NULL,
   first_name    VARCHAR(50)   NOT NULL,
@@ -403,34 +407,7 @@ INSERT INTO NOVA_DEMO.customers VALUES
 (9, 'Dimas', 'Rahardian', 'dimas@example.com', '084412345678', 'Malang', 'Indonesia', '2025-09-14 12:00:00'),
 (10, 'Nina', 'Sari', 'nina@example.com', '085512345678', 'Palembang', 'Indonesia', '2025-10-25 15:45:00');
 
--- ── Products ─────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS NOVA_DEMO.products (
-  product_id    BIGINT        NOT NULL,
-  product_name  VARCHAR(200)  NOT NULL,
-  category      VARCHAR(80)   NOT NULL,
-  brand         VARCHAR(80),
-  price         DECIMAL(12,2) NOT NULL,
-  stock_qty     INT           NOT NULL,
-  created_at    DATETIME      NOT NULL
-) PRIMARY KEY(product_id)
-DISTRIBUTED BY HASH(product_id) BUCKETS 4
-PROPERTIES("replication_num"="1");
-
-INSERT INTO NOVA_DEMO.products VALUES
-(1, 'Laptop ASUS ROG Strix G16', 'Electronics', 'ASUS', 18999000.00, 25, '2025-01-01 00:00:00'),
-(2, 'iPhone 16 Pro Max 256GB', 'Electronics', 'Apple', 24999000.00, 50, '2025-01-01 00:00:00'),
-(3, 'Samsung Galaxy S25 Ultra', 'Electronics', 'Samsung', 19999000.00, 40, '2025-01-01 00:00:00'),
-(4, 'Sony WH-1000XM5 Headphones', 'Audio', 'Sony', 4299000.00, 100, '2025-01-15 00:00:00'),
-(5, 'Mechanical Keyboard Keychron Q1', 'Accessories', 'Keychron', 2899000.00, 80, '2025-02-01 00:00:00'),
-(6, 'LG UltraGear 27 4K Monitor', 'Electronics', 'LG', 6499000.00, 30, '2025-02-15 00:00:00'),
-(7, 'Logitech MX Master 3S Mouse', 'Accessories', 'Logitech', 1499000.00, 120, '2025-03-01 00:00:00'),
-(8, 'iPad Air M3 256GB', 'Electronics', 'Apple', 12999000.00, 35, '2025-03-15 00:00:00'),
-(9, 'Samsung 990 PRO SSD 2TB', 'Storage', 'Samsung', 3299000.00, 60, '2025-04-01 00:00:00'),
-(10, 'AirPods Pro 3', 'Audio', 'Apple', 3999000.00, 90, '2025-04-15 00:00:00'),
-(11, 'Dell XPS 15 Laptop', 'Electronics', 'Dell', 22499000.00, 20, '2025-05-01 00:00:00'),
-(12, 'Anker 65W USB-C Charger', 'Accessories', 'Anker', 599000.00, 200, '2025-05-15 00:00:00');
-
--- ── Orders ───────────────────────────────────────────────────
+-- ── Sales: Orders ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS NOVA_DEMO.orders (
   order_id      BIGINT        NOT NULL,
   customer_id   BIGINT        NOT NULL,
@@ -460,7 +437,7 @@ INSERT INTO NOVA_DEMO.orders VALUES
 (1014, 1, '2025-07-01 11:00:00', 'completed', 4299000.00, 'QRIS', 'Jakarta'),
 (1015, 5, '2025-07-05 16:00:00', 'completed', 24999000.00, 'Credit Card', 'Yogyakarta');
 
--- ── Order Items ──────────────────────────────────────────────
+-- ── Sales: Order Items ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS NOVA_DEMO.order_items (
   item_id       BIGINT        NOT NULL,
   order_id      BIGINT        NOT NULL,
@@ -490,4 +467,178 @@ INSERT INTO NOVA_DEMO.order_items VALUES
 (15, 1014, 4, 1, 4299000.00, 4299000.00),
 (16, 1015, 2, 1, 24999000.00, 24999000.00);
 
-SELECT 'NOVA_DEMO e-commerce sample data loaded!' AS status;
+
+-- ═══════════════════════════════════════════════════════════════
+-- NOVA_CATALOG — Product Catalog & Inventory Database
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE DATABASE IF NOT EXISTS NOVA_CATALOG;
+
+-- ── Products ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_CATALOG.products (
+  product_id    BIGINT        NOT NULL,
+  product_name  VARCHAR(200)  NOT NULL,
+  category      VARCHAR(80)   NOT NULL,
+  brand         VARCHAR(80),
+  price         DECIMAL(12,2) NOT NULL,
+  stock_qty     INT           NOT NULL,
+  created_at    DATETIME      NOT NULL
+) PRIMARY KEY(product_id)
+DISTRIBUTED BY HASH(product_id) BUCKETS 4
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_CATALOG.products VALUES
+(1, 'Laptop ASUS ROG Strix G16', 'Electronics', 'ASUS', 18999000.00, 25, '2025-01-01 00:00:00'),
+(2, 'iPhone 16 Pro Max 256GB', 'Electronics', 'Apple', 24999000.00, 50, '2025-01-01 00:00:00'),
+(3, 'Samsung Galaxy S25 Ultra', 'Electronics', 'Samsung', 19999000.00, 40, '2025-01-01 00:00:00'),
+(4, 'Sony WH-1000XM5 Headphones', 'Audio', 'Sony', 4299000.00, 100, '2025-01-15 00:00:00'),
+(5, 'Mechanical Keyboard Keychron Q1', 'Accessories', 'Keychron', 2899000.00, 80, '2025-02-01 00:00:00'),
+(6, 'LG UltraGear 27 4K Monitor', 'Electronics', 'LG', 6499000.00, 30, '2025-02-15 00:00:00'),
+(7, 'Logitech MX Master 3S Mouse', 'Accessories', 'Logitech', 1499000.00, 120, '2025-03-01 00:00:00'),
+(8, 'iPad Air M3 256GB', 'Electronics', 'Apple', 12999000.00, 35, '2025-03-15 00:00:00'),
+(9, 'Samsung 990 PRO SSD 2TB', 'Storage', 'Samsung', 3299000.00, 60, '2025-04-01 00:00:00'),
+(10, 'AirPods Pro 3', 'Audio', 'Apple', 3999000.00, 90, '2025-04-15 00:00:00'),
+(11, 'Dell XPS 15 Laptop', 'Electronics', 'Dell', 22499000.00, 20, '2025-05-01 00:00:00'),
+(12, 'Anker 65W USB-C Charger', 'Accessories', 'Anker', 599000.00, 200, '2025-05-15 00:00:00');
+
+-- ── Categories ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_CATALOG.categories (
+  category_id   BIGINT        NOT NULL,
+  category_name VARCHAR(80)   NOT NULL,
+  parent_id     BIGINT,
+  description   VARCHAR(255)
+) PRIMARY KEY(category_id)
+DISTRIBUTED BY HASH(category_id) BUCKETS 2
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_CATALOG.categories VALUES
+(1, 'Electronics', NULL, 'Gadgets and electronic devices'),
+(2, 'Audio', NULL, 'Headphones, speakers, and audio equipment'),
+(3, 'Accessories', NULL, 'Peripherals and add-on accessories'),
+(4, 'Storage', NULL, 'SSDs, HDDs, and storage devices'),
+(5, 'Laptops', 1, 'Notebook computers and laptops'),
+(6, 'Smartphones', 1, 'Mobile phones and tablets'),
+(7, 'Monitors', 1, 'Display monitors and screens');
+
+-- ── Warehouses ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_CATALOG.warehouses (
+  warehouse_id  BIGINT        NOT NULL,
+  warehouse_name VARCHAR(100) NOT NULL,
+  city          VARCHAR(80)   NOT NULL,
+  capacity      INT           NOT NULL,
+  manager       VARCHAR(80)
+) PRIMARY KEY(warehouse_id)
+DISTRIBUTED BY HASH(warehouse_id) BUCKETS 2
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_CATALOG.warehouses VALUES
+(1, 'Jakarta Central Hub', 'Jakarta', 50000, 'Hendra Wijaya'),
+(2, 'Surabaya East DC', 'Surabaya', 30000, 'Siti Rahayu'),
+(3, 'Bandung West DC', 'Bandung', 20000, 'Agus Prabowo'),
+(4, 'Medan North DC', 'Medan', 15000, 'Ratna Dewi');
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- NOVA_ANALYTICS — Business Intelligence Sample Database
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE DATABASE IF NOT EXISTS NOVA_ANALYTICS;
+
+-- ── Marketing: Campaigns ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_ANALYTICS.campaigns (
+  campaign_id   BIGINT        NOT NULL,
+  campaign_name VARCHAR(150)  NOT NULL,
+  channel       VARCHAR(40)   NOT NULL,
+  start_date    DATE          NOT NULL,
+  end_date      DATE,
+  budget        DECIMAL(14,2) NOT NULL,
+  status        VARCHAR(20)   NOT NULL DEFAULT 'draft'
+) PRIMARY KEY(campaign_id)
+DISTRIBUTED BY HASH(campaign_id) BUCKETS 4
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_ANALYTICS.campaigns VALUES
+(1, 'Ramadan Sale 2025', 'Instagram', '2025-03-01', '2025-04-10', 50000000.00, 'completed'),
+(2, 'Harbolnas 12.12', 'Google Ads', '2025-12-01', '2025-12-15', 75000000.00, 'completed'),
+(3, 'Back to School', 'TikTok', '2025-06-15', '2025-07-31', 30000000.00, 'completed'),
+(4, 'Tech Week Flash Sale', 'Email', '2025-08-01', '2025-08-07', 10000000.00, 'completed'),
+(5, 'Year End Clearance', 'Meta Ads', '2025-12-20', '2026-01-05', 60000000.00, 'active'),
+(6, 'New Year New Gadgets', 'Google Ads', '2026-01-01', '2026-01-31', 45000000.00, 'active'),
+(7, 'Valentine Special', 'Instagram', '2026-02-01', '2026-02-14', 20000000.00, 'draft'),
+(8, 'Brand Awareness Q1', 'YouTube', '2026-01-15', '2026-03-31', 80000000.00, 'active');
+
+-- ── Marketing: Channel Performance ─────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_ANALYTICS.channel_performance (
+  record_id     BIGINT        NOT NULL,
+  channel       VARCHAR(40)   NOT NULL,
+  report_date   DATE          NOT NULL,
+  impressions   BIGINT        NOT NULL,
+  clicks        BIGINT        NOT NULL,
+  conversions   INT           NOT NULL,
+  spend         DECIMAL(14,2) NOT NULL
+) PRIMARY KEY(record_id)
+DISTRIBUTED BY HASH(record_id) BUCKETS 4
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_ANALYTICS.channel_performance VALUES
+(1, 'Instagram', '2025-06-01', 1250000, 43750, 875, 5200000.00),
+(2, 'Google Ads', '2025-06-01', 980000, 58800, 1176, 8500000.00),
+(3, 'TikTok', '2025-06-01', 2100000, 63000, 945, 3800000.00),
+(4, 'Email', '2025-06-01', 150000, 12000, 720, 800000.00),
+(5, 'Meta Ads', '2025-06-01', 1800000, 54000, 1080, 6500000.00),
+(6, 'YouTube', '2025-06-01', 750000, 22500, 450, 4200000.00),
+(7, 'Instagram', '2025-07-01', 1400000, 49000, 980, 5800000.00),
+(8, 'Google Ads', '2025-07-01', 1100000, 66000, 1320, 9200000.00),
+(9, 'TikTok', '2025-07-01', 2500000, 75000, 1125, 4100000.00),
+(10, 'Email', '2025-07-01', 180000, 14400, 864, 900000.00),
+(11, 'Meta Ads', '2025-07-01', 2000000, 60000, 1200, 7000000.00),
+(12, 'YouTube', '2025-07-01', 900000, 27000, 540, 4800000.00);
+
+-- ── Finance: Invoices ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_ANALYTICS.invoices (
+  invoice_id    BIGINT        NOT NULL,
+  customer_name VARCHAR(100)  NOT NULL,
+  issue_date    DATE          NOT NULL,
+  due_date      DATE          NOT NULL,
+  amount        DECIMAL(14,2) NOT NULL,
+  tax_amount    DECIMAL(12,2) NOT NULL,
+  status        VARCHAR(20)   NOT NULL DEFAULT 'unpaid'
+) PRIMARY KEY(invoice_id)
+DISTRIBUTED BY HASH(invoice_id) BUCKETS 4
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_ANALYTICS.invoices VALUES
+(1, 'PT Teknologi Nusantara', '2025-06-01', '2025-06-30', 125000000.00, 13750000.00, 'paid'),
+(2, 'CV Maju Bersama', '2025-06-05', '2025-07-05', 45000000.00, 4950000.00, 'paid'),
+(3, 'PT Digital Kreatif', '2025-06-10', '2025-07-10', 78500000.00, 8635000.00, 'paid'),
+(4, 'UD Sumber Rejeki', '2025-06-15', '2025-07-15', 32000000.00, 3520000.00, 'overdue'),
+(5, 'PT Global Solusi', '2025-07-01', '2025-07-31', 95000000.00, 10450000.00, 'paid'),
+(6, 'CV Karya Mandiri', '2025-07-10', '2025-08-10', 28000000.00, 3080000.00, 'paid'),
+(7, 'PT Inovasi Data', '2025-07-20', '2025-08-20', 150000000.00, 16500000.00, 'unpaid'),
+(8, 'PT Awan Teknologi', '2025-08-01', '2025-08-31', 67000000.00, 7370000.00, 'paid'),
+(9, 'CV Bintang Timur', '2025-08-15', '2025-09-15', 41000000.00, 4510000.00, 'unpaid'),
+(10, 'PT Sentosa Abadi', '2025-09-01', '2025-09-30', 88000000.00, 9680000.00, 'paid');
+
+-- ── Finance: Monthly Revenue ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS NOVA_ANALYTICS.monthly_revenue (
+  record_id     BIGINT        NOT NULL,
+  report_month  DATE          NOT NULL,
+  gross_revenue DECIMAL(16,2) NOT NULL,
+  refunds       DECIMAL(14,2) NOT NULL,
+  net_revenue   DECIMAL(16,2) NOT NULL,
+  order_count   INT           NOT NULL,
+  avg_order_value DECIMAL(12,2) NOT NULL
+) PRIMARY KEY(record_id)
+DISTRIBUTED BY HASH(record_id) BUCKETS 2
+PROPERTIES("replication_num"="1");
+
+INSERT INTO NOVA_ANALYTICS.monthly_revenue VALUES
+(1, '2025-06-01', 175000000.00, 3500000.00, 171500000.00, 2450, 71428571.00),
+(2, '2025-07-01', 192000000.00, 4800000.00, 187200000.00, 2680, 71641791.00),
+(3, '2025-08-01', 210000000.00, 5200000.00, 204800000.00, 2900, 72413793.00),
+(4, '2025-09-01', 185000000.00, 3700000.00, 181300000.00, 2550, 72549020.00),
+(5, '2025-10-01', 225000000.00, 6000000.00, 219000000.00, 3100, 72580645.00),
+(6, '2025-11-01', 310000000.00, 9300000.00, 300700000.00, 4200, 73809524.00),
+(7, '2025-12-01', 480000000.00, 14400000.00, 465600000.00, 6500, 73846154.00);
+
+SELECT 'NOVA_DEMO + NOVA_CATALOG + NOVA_ANALYTICS sample data loaded!' AS status;

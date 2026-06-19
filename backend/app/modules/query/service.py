@@ -46,6 +46,7 @@ class QueryService:
         max_rows: int | None = None,
         session_id: str | None = None,
         confirm_destructive: bool = False,
+        file_id: str | None = None,
     ) -> QueryResult:
         """Execute SQL with full @stage dialect pipeline.
 
@@ -133,6 +134,9 @@ class QueryService:
                 duration_ms=int(result.elapsed_ms),
                 rows_affected=result.affected_rows or result.row_count,
                 session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
             )
             return result
         except Exception as exc:
@@ -147,8 +151,68 @@ class QueryService:
                 rewritten_sql=executed_sql,
                 error_message=str(exc),
                 session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
             )
             raise
+
+    async def get_history(
+        self,
+        *,
+        username: str,
+        file_id: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """Retrieve query execution history from AUDIT_LOG."""
+        conditions = ["event_type = 'query'", "user_name = %s"]
+        params: list = [username]
+
+        if file_id:
+            conditions.append("file_id = %s")
+            params.append(file_id)
+        if status:
+            conditions.append("status = %s")
+            params.append(status.upper())
+
+        where = " AND ".join(conditions)
+
+        count_result = await db.execute_system(
+            f"SELECT COUNT(*) FROM NOVA_SYSTEM.AUDIT_LOG WHERE {where}",
+            params,
+        )
+        total = count_result["rows"][0][0] if count_result["rows"] else 0
+
+        result = await db.execute_system(
+            f"""
+            SELECT query_id, event_time, sql_text, status, duration_ms,
+                   rows_affected, error_message, file_id, database_name, schema_name
+            FROM NOVA_SYSTEM.AUDIT_LOG
+            WHERE {where}
+            ORDER BY event_time DESC
+            LIMIT %s OFFSET %s
+            """,
+            params + [limit, offset],
+        )
+
+        items = []
+        for row in result["rows"]:
+            items.append({
+                "query_id": row[0] or "",
+                "event_time": str(row[1]) if row[1] else "",
+                "sql_text": row[2] or "",
+                "status": row[3] or "",
+                "duration_ms": row[4],
+                "rows_affected": row[5],
+                "error_message": row[6],
+                "file_id": row[7],
+                "database_name": row[8],
+                "schema_name": row[9],
+            })
+
+        return {"items": items, "total": total}
 
     async def explain(
         self,

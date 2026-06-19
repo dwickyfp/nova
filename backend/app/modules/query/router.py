@@ -59,6 +59,7 @@ async def execute_query(
         max_rows=req.max_rows,
         session_id=user["session_id"],
         confirm_destructive=req.confirm_destructive,
+        file_id=req.file_id,
     )
 
     return QueryResponse(
@@ -137,3 +138,44 @@ async def get_query_completions(
         stage=stage,
     )
     return CompletionResponse(**result)
+
+
+class HistoryItem(BaseModel):
+    query_id: str
+    event_time: str
+    sql_text: str
+    status: str
+    duration_ms: int | None = None
+    rows_affected: int | None = None
+    error_message: str | None = None
+    file_id: str | None = None
+    database_name: str | None = None
+    schema_name: str | None = None
+
+
+class HistoryResponse(BaseModel):
+    items: list[HistoryItem]
+    total: int
+
+
+@router.get("/history", response_model=HistoryResponse)
+async def get_query_history(
+    file_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    user: dict = Depends(get_current_user),
+):
+    """Get query execution history for the current user.
+
+    Filter by file_id to get history for a specific workspace file,
+    or omit to get all history.
+    """
+    result = await query_service.get_history(
+        username=user["username"],
+        file_id=file_id,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return HistoryResponse(**result)

@@ -11,35 +11,40 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
+import { toast } from 'sonner'
 import Editor, { type Monaco } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
   ChevronRight,
+  Clock,
+  Copy,
   Database,
+  Download,
+  FileCode,
   Folder,
   FolderOpen,
   GripHorizontal,
+  Hash,
+  MoreHorizontal,
+  Pencil,
   Play,
   Plus,
-  Save,
+  RefreshCw,
+  RotateCcw,
   Search,
   Table2,
-  Trash2,
+  Type,
   UserRoundCog,
   X,
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { DatabaseSchemaSelector } from './database-schema-selector'
+import { InlineSelect } from './inline-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -51,15 +56,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import {
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+} from '@/components/ui/sidebar'
 
 type WorkspaceEntry = {
   id: string
@@ -141,6 +148,24 @@ type WorkspaceTabState = {
   loaded: boolean
 }
 
+type HistoryItem = {
+  query_id: string
+  event_time: string
+  sql_text: string
+  status: string
+  duration_ms: number | null
+  rows_affected: number | null
+  error_message: string | null
+  file_id: string | null
+  database_name: string | null
+  schema_name: string | null
+}
+
+type HistoryResponse = {
+  items: HistoryItem[]
+  total: number
+}
+
 const SQL_KEYWORDS = [
   'SELECT',
   'FROM',
@@ -187,12 +212,21 @@ export function WorkspacesPage() {
   >({})
   const [resultsHeight, setResultsHeight] = useState(350)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
-  const [queryResult, setQueryResult] = useState<QueryResponse | null>(null)
+  const [resultsTab, setResultsTab] = useState<'results' | 'history'>('results')
+  const [historyFilter, setHistoryFilter] = useState<'file' | 'all'>('file')
+  const [queryResult, setQueryResult] = useState<QueryResponse | null>(() => {
+    try {
+      const cached = sessionStorage.getItem('nova:last-query-result')
+      return cached ? (JSON.parse(cached) as QueryResponse) : null
+    } catch {
+      return null
+    }
+  })
   const [running, setRunning] = useState(false)
-  const [createFileOpen, setCreateFileOpen] = useState(false)
-  const [newFileName, setNewFileName] = useState('Untitled.sql')
-  const [createFileError, setCreateFileError] = useState<string | null>(null)
-  const [creatingFile, setCreatingFile] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+
   const activeTab = activeTabId ? tabs[activeTabId] : null
   const deferredWorkspaceSearch = useDeferredValue(workspaceSearch)
   const deferredDatabaseSearch = useDeferredValue(databaseSearch)
@@ -214,6 +248,19 @@ export function WorkspacesPage() {
   const databasesQuery = useQuery<{ databases: Array<{ name: string }> }>({
     queryKey: ['object-databases'],
     queryFn: () => api.get<{ databases: Array<{ name: string }> }>('/objects/databases'),
+  })
+
+  const historyQuery = useQuery<HistoryResponse>({
+    queryKey: [
+      'query-history',
+      historyFilter === 'file' ? activeTabId : 'all',
+    ],
+    queryFn: () =>
+      api.get<HistoryResponse>(
+        `/query/history?limit=50${historyFilter === 'file' && activeTabId ? `&file_id=${encodeURIComponent(activeTabId)}` : ''}`
+      ),
+    enabled: resultsTab === 'history',
+    refetchInterval: resultsTab === 'history' ? 5000 : false,
   })
 
   useEffect(() => {
@@ -293,6 +340,17 @@ export function WorkspacesPage() {
       }
     }
   }, [activeTab])
+
+  // Persist last query result to sessionStorage for page refresh recovery
+  useEffect(() => {
+    if (queryResult) {
+      try {
+        sessionStorage.setItem('nova:last-query-result', JSON.stringify(queryResult))
+      } catch {
+        // Ignore quota errors for large result sets
+      }
+    }
+  }, [queryResult])
 
   useEffect(() => {
     const onMouseMove = (event: MouseEvent) => {
@@ -444,17 +502,21 @@ export function WorkspacesPage() {
     await queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
   }
 
-  async function createFile() {
-    const trimmedName = newFileName.trim()
-    if (!trimmedName) {
-      setCreateFileError('File name is required.')
-      return
-    }
-    setCreatingFile(true)
-    setCreateFileError(null)
+  function generateUniqueFileName(): string {
+    const existingNames = new Set(Object.values(tabs).map((t) => t.title.toLowerCase()))
+    const base = 'Untitled'
+    const first = `${base}.sql`
+    if (!existingNames.has(first.toLowerCase())) return first
+    let i = 2
+    while (existingNames.has(`${base}-${i}.sql`.toLowerCase())) i++
+    return `${base}-${i}.sql`
+  }
+
+  async function createNewFile() {
+    const fileName = generateUniqueFileName()
     try {
       const response = await api.post<WorkspaceFileResponse>('/workspaces/files', {
-        name: trimmedName,
+        name: fileName,
         parent_path: '',
         content: '',
       })
@@ -487,14 +549,8 @@ export function WorkspacesPage() {
           },
         }))
       })
-      setCreateFileOpen(false)
-      setNewFileName('Untitled.sql')
-    } catch (error) {
-      setCreateFileError(
-        error instanceof Error ? error.message : 'Failed to create SQL file.'
-      )
-    } finally {
-      setCreatingFile(false)
+    } catch {
+      // Silent fail — file creation error
     }
   }
 
@@ -517,6 +573,36 @@ export function WorkspacesPage() {
       setActiveTabId((prev) => openTabIds.find((id) => id !== prev) ?? null)
     }
     await queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
+  }
+
+  async function renameTabFile(tabId: string, newName: string) {
+    const trimmed = newName.trim()
+    if (!trimmed) return
+    const tab = tabs[tabId]
+    if (!tab || trimmed === tab.title) {
+      setRenamingTabId(null)
+      return
+    }
+    // Check uniqueness among open tabs
+    const existingNames = Object.entries(tabs)
+      .filter(([id]) => id !== tabId)
+      .map(([, t]) => t.title.toLowerCase())
+    if (existingNames.includes(trimmed.toLowerCase())) {
+      toast.error(`A file named "${trimmed}" already exists.`)
+      return
+    }
+    try {
+      await api.post('/workspaces/rename', { id: tabId, name: trimmed, parent_path: '' })
+      setTabs((prev) => ({
+        ...prev,
+        [tabId]: { ...prev[tabId], title: trimmed },
+      }))
+      await queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
+    } catch {
+      toast.error('Failed to rename file.')
+    } finally {
+      setRenamingTabId(null)
+    }
   }
 
   async function runQuery(confirmDestructive = false) {
@@ -543,6 +629,7 @@ export function WorkspacesPage() {
         confirm_destructive: confirmDestructive,
       })
       setQueryResult(response)
+      void queryClient.invalidateQueries({ queryKey: ['query-history'] })
       if (activeTab.content !== activeTab.savedContent) {
         await saveFile(
           activeTab.id,
@@ -566,6 +653,7 @@ export function WorkspacesPage() {
         destructive: false,
         needs_confirmation: false,
       })
+      void queryClient.invalidateQueries({ queryKey: ['query-history'] })
     } finally {
       setRunning(false)
     }
@@ -576,6 +664,23 @@ export function WorkspacesPage() {
     const tab = tabs[tabId]
     if (!tab || !tab.loaded || tab.content === tab.savedContent) return
     await saveFile(tab.id, tab.content, tab.database, tab.schema, tab.role)
+  }
+
+  function exportToExcel() {
+    if (!queryResult || !queryResult.columns.length) return
+    const data = queryResult.rows.map((row) => {
+      const obj: Record<string, unknown> = {}
+      queryResult.columns.forEach((col, i) => {
+        obj[col] = row[i]
+      })
+      return obj
+    })
+    const worksheet = XLSX.utils.json_to_sheet(data)
+    const workbook = XLSX.utils.book_new()
+    const sheetName = activeTab?.title?.replace(/\.sql$/i, '') ?? 'Query Results'
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.slice(0, 31))
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+    XLSX.writeFile(workbook, `${sheetName}_${timestamp}.xlsx`)
   }
 
   function activateTab(nextTabId: string) {
@@ -655,14 +760,15 @@ export function WorkspacesPage() {
                 </Button>
               </div>
               {!secondaryCollapsed && sidebarTab === 'workspaces' && (
-                <div className='mt-3 flex gap-2'>
+                <div className='mt-3'>
                   <Button
                     size='sm'
                     variant='outline'
-                    onClick={() => setCreateFileOpen(true)}
+                    className='w-full justify-center gap-2'
+                    onClick={() => void createNewFile()}
                   >
                     <Plus className='size-4' />
-                    File
+                    New File
                   </Button>
                 </div>
               )}
@@ -671,32 +777,53 @@ export function WorkspacesPage() {
             {!secondaryCollapsed && (
               <>
                 <div className='border-b px-3 py-3'>
-                  <div className='relative'>
-                    <Search className='absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground' />
-                    <Input
-                      value={
-                        sidebarTab === 'workspaces'
-                          ? workspaceSearch
-                          : databaseSearch
-                      }
-                      onChange={(event) =>
-                        sidebarTab === 'workspaces'
-                          ? setWorkspaceSearch(event.target.value)
-                          : setDatabaseSearch(event.target.value)
-                      }
-                      placeholder={
-                        sidebarTab === 'workspaces'
-                          ? 'Search files'
-                          : 'Search databases'
-                      }
-                      className='pl-9'
-                    />
+                  <div className='flex items-center gap-1.5'>
+                    <div className='relative flex-1'>
+                      <Search className='absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground' />
+                      <Input
+                        value={
+                          sidebarTab === 'workspaces'
+                            ? workspaceSearch
+                            : databaseSearch
+                        }
+                        onChange={(event) =>
+                          sidebarTab === 'workspaces'
+                            ? setWorkspaceSearch(event.target.value)
+                            : setDatabaseSearch(event.target.value)
+                        }
+                        placeholder={
+                          sidebarTab === 'workspaces'
+                            ? 'Search files'
+                            : 'Search databases'
+                        }
+                        className='pl-9'
+                      />
+                    </div>
+                    <button
+                      type='button'
+                      className='shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+                      title='Refresh'
+                      onClick={() => {
+                        setRefreshing(true)
+                        setTimeout(() => setRefreshing(false), 1000)
+                        if (sidebarTab === 'workspaces') {
+                          void queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
+                        } else {
+                          void queryClient.invalidateQueries({ queryKey: ['object-databases'] })
+                          void queryClient.invalidateQueries({ queryKey: ['db-schemas'] })
+                          void queryClient.invalidateQueries({ queryKey: ['schema-tree'] })
+                        }
+                      }}
+                    >
+                      <RefreshCw className={cn('size-3.5 transition-transform', refreshing && 'animate-spin')} />
+                    </button>
                   </div>
                 </div>
                 <ScrollArea className='min-h-0 flex-1'>
                   {sidebarTab === 'workspaces' ? (
                     <WorkspaceTree
                       entries={filteredEntries}
+                      activeEntryId={activeTabId}
                       expandedPaths={expandedWorkspacePaths}
                       onTogglePath={(path) =>
                         setExpandedWorkspacePaths((prev) => ({
@@ -766,57 +893,109 @@ export function WorkspacesPage() {
         </aside>
 
         <section className='flex min-h-0 min-w-0 flex-1 flex-col bg-background'>
-          <div className='border-b px-4 py-3'>
-            <div className='flex flex-wrap items-center gap-2'>
+          <div className='flex items-end border-b border-border px-2 pt-2'>
+            <div className='flex min-w-0 flex-1 items-end gap-0'>
               {openTabIds.map((id) => {
                 const tab = tabs[id]
                 if (!tab) return null
+                const isActive = activeTabId === id
+                const isRenaming = renamingTabId === id
                 return (
-                  <button
-                    key={id}
-                    type='button'
-                    onClick={() => activateTab(id)}
-                    className={cn(
-                      'flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm',
-                      activeTabId === id
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border bg-background hover:bg-muted'
+                  <div key={id} className='group relative flex min-w-[120px] max-w-[260px] items-center'>
+                    {isRenaming ? (
+                      <Input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void renameTabFile(id, renameValue)
+                          if (e.key === 'Escape') setRenamingTabId(null)
+                        }}
+                        onBlur={() => void renameTabFile(id, renameValue)}
+                        onFocus={(e) => {
+                          const dotIdx = renameValue.lastIndexOf('.')
+                          e.target.setSelectionRange(0, dotIdx > 0 ? dotIdx : renameValue.length)
+                        }}
+                        className={cn(
+                          'mx-1.5 h-6 flex-1 rounded border py-0 pl-2 pr-1 text-xs shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0',
+                          isActive
+                            ? 'z-10 -mb-px border-border bg-background text-primary'
+                            : 'border-border bg-muted/40 text-foreground'
+                        )}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <button
+                        type='button'
+                        onClick={() => activateTab(id)}
+                        className={cn(
+                          'flex flex-1 items-center gap-2 rounded-t-md py-1.5 pr-14 pl-3 text-sm transition-colors',
+                          isActive
+                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
+                            : 'border-b border-b-border bg-muted/40 text-muted-foreground hover:bg-muted/60'
+                        )}
+                      >
+                        <span className='truncate'>{tab.title}</span>
+                      </button>
                     )}
-                  >
-                    <span className='truncate'>{tab.title}</span>
-                    <X
-                      className='size-3.5'
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        closeTab(id)
-                      }}
-                    />
-                  </button>
+                    {/* 3-dot menu + close — hidden when renaming */}
+                    {!isRenaming && (
+                    <div className={cn(
+                      'absolute right-1 z-20 flex items-center gap-0.5 rounded-sm transition-opacity',
+                      isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                    )}>
+                      <TabMenuButton
+                        onRename={() => {
+                          setRenameValue(tab.title)
+                          setRenamingTabId(id)
+                        }}
+                        onDownload={() => {
+                          const blob = new Blob([tab.content], { type: 'text/sql' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = tab.title.endsWith('.sql') ? tab.title : `${tab.title}.sql`
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        }}
+                        onClose={() => closeTab(id)}
+                      />
+                      <X
+                        className='size-3.5 shrink-0 cursor-pointer rounded-sm p-0.5 hover:bg-muted-foreground/20'
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          closeTab(id)
+                        }}
+                      />
+                    </div>
+                    )}
+                  </div>
                 )
               })}
-              <Button
-                size='icon'
-                variant='outline'
-                onClick={() => setCreateFileOpen(true)}
+              <button
+                type='button'
+                className='mb-0.5 ml-0.5 shrink-0 rounded-t-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+                title='New file'
+                onClick={() => void createNewFile()}
               >
-                <Plus className='size-4' />
-              </Button>
+                <Plus className='size-3.5' />
+              </button>
             </div>
           </div>
 
           {activeTab ? (
             <>
-              <div className='flex flex-wrap items-center gap-3 border-b px-4 py-3'>
+              <div className='flex flex-wrap items-center gap-3 px-4 py-3'>
                 <Button size='sm' onClick={() => runQuery()} disabled={running}>
                   <Play className='size-4' />
                   {running ? 'Running...' : 'Run'}
                 </Button>
                 <div className='flex flex-1 flex-wrap items-center justify-end gap-2'>
-                  <ContextSelect
+                  <InlineSelect
                     label='Role'
                     value={activeTab.role}
                     options={queryContextQuery.data?.roles ?? []}
-                    icon={<UserRoundCog className='size-4' />}
+                    icon={<UserRoundCog className='size-3.5' />}
                     onChange={(value) =>
                       setTabs((prev) => ({
                         ...prev,
@@ -824,12 +1003,16 @@ export function WorkspacesPage() {
                       }))
                     }
                   />
-                  <ContextSelect
-                    label='Database'
-                    value={activeTab.database}
-                    options={queryContextQuery.data?.databases ?? []}
-                    icon={<Database className='size-4' />}
-                    onChange={async (value) => {
+                  <DatabaseSchemaSelector
+                    databases={queryContextQuery.data?.databases ?? []}
+                    selectedDatabase={activeTab.database}
+                    schemas={
+                      activeTab.database
+                        ? (schemasByDatabase[activeTab.database] ?? [])
+                        : []
+                    }
+                    selectedSchema={activeTab.schema}
+                    onSelectDatabase={async (value) => {
                       const schemas = await api.get<SchemaResponse>(
                         `/objects/databases/${encodeURIComponent(value)}/schemas${activeTab.role ? `?role=${encodeURIComponent(activeTab.role)}` : ''}`
                       )
@@ -846,30 +1029,7 @@ export function WorkspacesPage() {
                         },
                       }))
                     }}
-                  />
-                  <ContextSelect
-                    label='Schema'
-                    value={activeTab.schema}
-                    options={
-                      activeTab.database
-                        ? ((schemasByDatabase[activeTab.database] ?? []).map(
-                            (item) => item.name
-                          ) as string[])
-                        : ['default']
-                    }
-                    icon={<FolderOpen className='size-4' />}
-                    onOpen={async () => {
-                      if (!activeTab.database || schemasByDatabase[activeTab.database])
-                        return
-                      const response = await api.get<SchemaResponse>(
-                        `/objects/databases/${encodeURIComponent(activeTab.database)}/schemas${activeTab.role ? `?role=${encodeURIComponent(activeTab.role)}` : ''}`
-                      )
-                      setSchemasByDatabase((prev) => ({
-                        ...prev,
-                        [activeTab.database]: response.schemas,
-                      }))
-                    }}
-                    onChange={(value) =>
+                    onSelectSchema={(value) =>
                       setTabs((prev) => ({
                         ...prev,
                         [activeTab.id]: { ...prev[activeTab.id], schema: value },
@@ -910,43 +1070,130 @@ export function WorkspacesPage() {
                   }
                   className='mx-4 mt-2 flex shrink-0 flex-col overflow-hidden rounded-t-xl border bg-background transition-[height] duration-200 ease-in-out'
                 >
-                  <div className='flex items-center justify-between border-b px-4 py-2'>
-                    <div className='flex items-center gap-3'>
+                  <div className='flex items-end border-b border-border px-2 pt-1'>
+                    <button
+                      type='button'
+                      className='mb-1.5 mr-1 rounded p-0.5 hover:bg-muted'
+                      onClick={() => setResultsCollapsed((prev) => !prev)}
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'size-3.5 transition-transform',
+                          resultsCollapsed && '-rotate-90'
+                        )}
+                      />
+                    </button>
+                    <div className='flex items-end gap-0'>
                       <button
                         type='button'
-                        className='rounded p-1 hover:bg-muted'
-                        onClick={() => setResultsCollapsed((prev) => !prev)}
-                      >
-                        <ChevronDown
-                          className={cn(
-                            'size-4 transition-transform',
-                            resultsCollapsed && '-rotate-90'
-                          )}
-                        />
-                      </button>
-                      <div>
-                        <div className='font-medium'>Results</div>
-                        {queryResult && (
-                          <div className='text-xs text-muted-foreground'>
-                            {queryResult.row_count} rows • {queryResult.elapsed_ms}
-                            ms
-                          </div>
+                        onClick={() => setResultsTab('results')}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors',
+                          resultsTab === 'results'
+                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
+                            : 'border-b border-b-border text-muted-foreground hover:bg-muted/50'
                         )}
-                      </div>
+                      >
+                        Results
+                        {queryResult && (
+                          <span className='text-muted-foreground'>
+                            {queryResult.row_count}r • {queryResult.elapsed_ms}ms
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type='button'
+                        onClick={() => setResultsTab('history')}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors',
+                          resultsTab === 'history'
+                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
+                            : 'border-b border-b-border text-muted-foreground hover:bg-muted/50'
+                        )}
+                      >
+                        <Clock className='size-3' />
+                        History
+                      </button>
                     </div>
                     {!resultsCollapsed && (
-                      <Button
-                        type='button'
-                        size='icon'
-                        variant='ghost'
-                        onMouseDown={startResultsResize}
-                      >
-                        <GripHorizontal className='size-4' />
-                      </Button>
+                      <div className='ml-auto mb-1 flex items-center gap-1'>
+                        {resultsTab === 'results' && queryResult?.columns.length ? (
+                          <Button
+                            type='button'
+                            size='sm'
+                            variant='ghost'
+                            className='h-6 gap-1.5 px-2 text-xs'
+                            onClick={exportToExcel}
+                          >
+                            <Download className='size-3' />
+                            Export
+                          </Button>
+                        ) : null}
+                        {resultsTab === 'history' && (
+                          <div className='flex items-center gap-1 text-xs'>
+                            <button
+                              type='button'
+                              className={cn(
+                                'rounded-md px-2.5 py-0.5 transition-colors',
+                                historyFilter === 'file'
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'text-muted-foreground hover:bg-muted'
+                              )}
+                              onClick={() => setHistoryFilter('file')}
+                            >
+                              Current file
+                            </button>
+                            <button
+                              type='button'
+                              className={cn(
+                                'rounded-md px-2.5 py-0.5 transition-colors',
+                                historyFilter === 'all'
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'text-muted-foreground hover:bg-muted'
+                              )}
+                              onClick={() => setHistoryFilter('all')}
+                            >
+                              All files
+                            </button>
+                          </div>
+                        )}
+                        <Button
+                          type='button'
+                          size='icon'
+                          variant='ghost'
+                          className='size-6'
+                          onMouseDown={startResultsResize}
+                        >
+                          <GripHorizontal className='size-3.5' />
+                        </Button>
+                      </div>
                     )}
                   </div>
-                  {!resultsCollapsed && (
+                  {!resultsCollapsed && resultsTab === 'results' && (
                     <QueryResults queryResult={queryResult} />
+                  )}
+                  {!resultsCollapsed && resultsTab === 'history' && (
+                    <QueryHistory
+                      items={historyQuery.data?.items ?? []}
+                      loading={historyQuery.isLoading}
+                      onLoadSql={(sql) => {
+                        if (!activeTab) return
+                        editorContentRef.current = sql
+                        setTabs((prev) => ({
+                          ...prev,
+                          [activeTab.id]: { ...prev[activeTab.id], content: sql },
+                        }))
+                      }}
+                      onReRun={(sql) => {
+                        if (!activeTab) return
+                        editorContentRef.current = sql
+                        setTabs((prev) => ({
+                          ...prev,
+                          [activeTab.id]: { ...prev[activeTab.id], content: sql },
+                        }))
+                        void runQuery()
+                      }}
+                    />
                   )}
                 </div>
               </div>
@@ -958,50 +1205,6 @@ export function WorkspacesPage() {
           )}
         </section>
       </div>
-      <Dialog
-        open={createFileOpen}
-        onOpenChange={(open) => {
-          setCreateFileOpen(open)
-          if (open) return
-          setCreateFileError(null)
-          setNewFileName('Untitled.sql')
-        }}
-      >
-        <DialogContent className='sm:max-w-md'>
-          <DialogHeader className='text-start'>
-            <DialogTitle>New SQL File</DialogTitle>
-            <DialogDescription>
-              Create a new SQL file in your workspace.
-            </DialogDescription>
-          </DialogHeader>
-          <div className='space-y-2'>
-            <Input
-              autoFocus
-              value={newFileName}
-              onChange={(event) => {
-                setNewFileName(event.target.value)
-                if (createFileError) setCreateFileError(null)
-              }}
-              placeholder='Untitled.sql'
-            />
-            {createFileError ? (
-              <p className='text-sm text-destructive'>{createFileError}</p>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button
-              variant='outline'
-              onClick={() => setCreateFileOpen(false)}
-              disabled={creatingFile}
-            >
-              Cancel
-            </Button>
-            <Button onClick={() => void createFile()} disabled={creatingFile}>
-              {creatingFile ? 'Creating...' : 'Create file'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
@@ -1048,6 +1251,7 @@ function ContextSelect({
 
 function WorkspaceTree({
   entries,
+  activeEntryId,
   expandedPaths,
   onTogglePath,
   onOpen,
@@ -1055,6 +1259,7 @@ function WorkspaceTree({
   onDelete,
 }: {
   entries: WorkspaceEntry[]
+  activeEntryId: string | null
   expandedPaths: Record<string, boolean>
   onTogglePath: (path: string) => void
   onOpen: (entry: WorkspaceEntry) => void
@@ -1062,18 +1267,19 @@ function WorkspaceTree({
   onDelete: (entry: WorkspaceEntry) => void
 }) {
   return (
-    <div className='p-3'>
-      <div className='space-y-1'>
+    <div className='px-2 py-3'>
+      <SidebarMenu>
         {renderWorkspaceEntries(
           '',
           entries,
+          activeEntryId,
           expandedPaths,
           onTogglePath,
           onOpen,
           onRename,
           onDelete
         )}
-      </div>
+      </SidebarMenu>
     </div>
   )
 }
@@ -1081,6 +1287,7 @@ function WorkspaceTree({
 function renderWorkspaceEntries(
   parentPath: string,
   entries: WorkspaceEntry[],
+  activeEntryId: string | null,
   expandedPaths: Record<string, boolean>,
   onTogglePath: (path: string) => void,
   onOpen: (entry: WorkspaceEntry) => void,
@@ -1099,61 +1306,133 @@ function renderWorkspaceEntries(
     .map((entry) => {
       const isFolder = entry.entry_type === 'folder'
       const isOpen = expandedPaths[entry.path] ?? false
+
+      if (isFolder) {
+        return (
+          <Collapsible
+            key={entry.id}
+            open={isOpen}
+            onOpenChange={() => onTogglePath(entry.path)}
+          >
+            <SidebarMenuItem>
+              <CollapsibleTrigger asChild>
+                <button
+                  type='button'
+                  className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted'
+                >
+                  <ChevronRight
+                    className={cn(
+                      'size-4 shrink-0 transition-transform duration-200',
+                      isOpen && 'rotate-90'
+                    )}
+                  />
+                  <Folder
+                    className={cn(
+                      'size-4 shrink-0 text-primary',
+                      isOpen && 'text-primary/80'
+                    )}
+                  />
+                  <span className='truncate'>{entry.name}</span>
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarMenuSub>
+                  {renderWorkspaceEntries(
+                    entry.path,
+                    entries,
+                    activeEntryId,
+                    expandedPaths,
+                    onTogglePath,
+                    onOpen,
+                    onRename,
+                    onDelete
+                  )}
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </SidebarMenuItem>
+          </Collapsible>
+        )
+      }
+
       return (
-        <div key={entry.id}>
-          <div className='group flex items-center gap-1 rounded-md px-2 py-1.5 hover:bg-muted'>
-            {isFolder ? (
-              <button
-                type='button'
-                className='rounded p-0.5 hover:bg-background'
-                onClick={() => onTogglePath(entry.path)}
-              >
-                {isOpen ? (
-                  <ChevronDown className='size-4' />
-                ) : (
-                  <ChevronRight className='size-4' />
-                )}
-              </button>
-            ) : (
-              <span className='w-4' />
+        <SidebarMenuItem key={entry.id}>
+          <button
+            type='button'
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted',
+              entry.id === activeEntryId && 'bg-primary/10 font-medium text-primary'
             )}
-            {isFolder ? (
-              <Folder className='size-4 text-primary' />
-            ) : (
-              <Table2 className='size-4 text-muted-foreground' />
-            )}
-            <button
-              type='button'
-              className='min-w-0 flex-1 truncate text-left text-sm'
-              onClick={() => (isFolder ? onTogglePath(entry.path) : onOpen(entry))}
-            >
-              {entry.name}
-            </button>
-            <Button
-              size='icon'
-              variant='ghost'
-              className='size-7 opacity-0 group-hover:opacity-100'
-              onClick={() => onRename(entry)}
-            >
-              <Trash2 className='size-3.5' />
-            </Button>
-          </div>
-          {isFolder && isOpen && (
-            <div className='ml-3 border-l pl-2'>
-              {renderWorkspaceEntries(
-                entry.path,
-                entries,
-                expandedPaths,
-                onTogglePath,
-                onOpen,
-                onRename,
-                onDelete
-              )}
-            </div>
-          )}
-        </div>
+            onClick={() => onOpen(entry)}
+          >
+            <FileCode className={cn(
+              'size-4 shrink-0',
+              entry.id === activeEntryId ? 'text-primary' : 'text-muted-foreground'
+            )} />
+            <span className='truncate'>{entry.name}</span>
+          </button>
+        </SidebarMenuItem>
       )
     })
+}
+
+function TabMenuButton({
+  onRename,
+  onDownload,
+  onClose,
+}: {
+  onRename: () => void
+  onDownload: () => void
+  onClose: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} className='relative'>
+      <button
+        type='button'
+        className='rounded-sm p-0.5 hover:bg-muted-foreground/20'
+        onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+      >
+        <MoreHorizontal className='size-3.5' />
+      </button>
+      {open && (
+        <div className='absolute right-0 top-full z-50 mt-1 w-36 rounded-md border bg-popover py-1 shadow-md'>
+          <button
+            type='button'
+            className='flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted'
+            onClick={(e) => { e.stopPropagation(); onRename(); setOpen(false) }}
+          >
+            <Pencil className='size-3.5' /> Rename
+          </button>
+          <button
+            type='button'
+            className='flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted'
+            onClick={(e) => { e.stopPropagation(); onDownload(); setOpen(false) }}
+          >
+            <Download className='size-3.5' /> Download SQL
+          </button>
+          <div className='my-1 border-t' />
+          <button
+            type='button'
+            className='flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted'
+            onClick={(e) => { e.stopPropagation(); onClose(); setOpen(false) }}
+          >
+            <X className='size-3.5' /> Close
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function DatabaseExplorer({
@@ -1176,9 +1455,8 @@ function DatabaseExplorer({
   >
 }) {
   return (
-    <div className='p-3'>
-      <div className='mb-3 text-sm font-medium'>Database Explorer</div>
-      <div className='space-y-1'>
+    <div className='px-2 py-3'>
+      <SidebarMenu>
         {databases.map((database) => (
           <DatabaseNode
             key={database.name}
@@ -1191,7 +1469,7 @@ function DatabaseExplorer({
             setSchemasByDatabase={setSchemasByDatabase}
           />
         ))}
-      </div>
+      </SidebarMenu>
     </div>
   )
 }
@@ -1234,35 +1512,39 @@ function DatabaseNode({
   }, [database, schemasQuery.data, setSchemasByDatabase])
 
   return (
-    <div>
-      <button
-        type='button'
-        className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted'
-        onClick={() => onToggleDatabase(database)}
-      >
-        {expanded ? (
-          <ChevronDown className='size-4' />
-        ) : (
-          <ChevronRight className='size-4' />
-        )}
-        <Database className='size-4 text-primary' />
-        <span className='truncate text-sm'>{database}</span>
-      </button>
-      {expanded && (
-        <div className='ml-5 border-l pl-2'>
-          {schemasQuery.data?.schemas.map((schema) => (
-            <SchemaNode
-              key={`${database}:${schema.name}`}
-              database={database}
-              schema={schema.name}
-              expanded={expandedSchemas[`${database}:${schema.name}`] ?? false}
-              onToggleSchema={onToggleSchema}
-              role={role}
+    <Collapsible open={expanded} onOpenChange={() => onToggleDatabase(database)}>
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <button
+            type='button'
+            className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted'
+          >
+            <ChevronRight
+              className={cn(
+                'size-4 shrink-0 transition-transform duration-200',
+                expanded && 'rotate-90'
+              )}
             />
-          ))}
-        </div>
-      )}
-    </div>
+            <Database className='size-4 shrink-0 text-primary' />
+            <span className='truncate font-medium'>{database}</span>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {schemasQuery.data?.schemas.map((schema) => (
+              <SchemaNode
+                key={`${database}:${schema.name}`}
+                database={database}
+                schema={schema.name}
+                expanded={expandedSchemas[`${database}:${schema.name}`] ?? false}
+                onToggleSchema={onToggleSchema}
+                role={role}
+              />
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
   )
 }
 
@@ -1290,60 +1572,157 @@ function SchemaNode({
   })
 
   return (
-    <div>
-      <button
-        type='button'
-        className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted'
-        onClick={() => onToggleSchema(schemaKey)}
-      >
-        {expanded ? (
-          <ChevronDown className='size-4' />
-        ) : (
-          <ChevronRight className='size-4' />
-        )}
-        <Folder className='size-4 text-amber-500' />
-        <span className='truncate text-sm'>{schema}</span>
-      </button>
-      {expanded && treeQuery.data && (
-        <div className='ml-5 space-y-2 border-l pl-2 py-1'>
-          <ObjectGroup title='Tables' items={treeQuery.data.tables} />
-          <ObjectGroup title='Views' items={treeQuery.data.views} />
-          <ObjectGroup
-            title='Materialized Views'
-            items={treeQuery.data.materialized_views}
-          />
-          <ObjectGroup title='Stages' items={treeQuery.data.stages} />
-        </div>
-      )}
-    </div>
+    <Collapsible open={expanded} onOpenChange={() => onToggleSchema(schemaKey)}>
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <button
+            type='button'
+            className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted'
+          >
+            <ChevronRight
+              className={cn(
+                'size-4 shrink-0 transition-transform duration-200',
+                expanded && 'rotate-90'
+              )}
+            />
+            <Folder className='size-4 shrink-0 text-amber-500' />
+            <span className='truncate'>{schema}</span>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          {treeQuery.data && (
+            <SidebarMenuSub className='space-y-2 py-1'>
+              <ObjectGroup title='Tables' items={treeQuery.data.tables} database={database} schema={schema} />
+              <ObjectGroup title='Views' items={treeQuery.data.views} database={database} schema={schema} />
+              <ObjectGroup
+                title='Materialized Views'
+                items={treeQuery.data.materialized_views}
+                database={database}
+                schema={schema}
+              />
+              <ObjectGroup title='Stages' items={treeQuery.data.stages} database={database} schema={schema} />
+            </SidebarMenuSub>
+          )}
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
   )
 }
 
 function ObjectGroup({
   title,
   items,
+  database,
+  schema,
 }: {
   title: string
   items: Array<{ name: string }>
+  database: string
+  schema: string
 }) {
   if (!items.length) return null
   const isTables = title === 'Tables'
   return (
     <div>
-      <div className='px-2 text-xs font-medium tracking-wide text-muted-foreground uppercase'>
+      <div className='px-2 py-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase'>
         {title}
       </div>
-      <div className='mt-1 space-y-1'>
+      <div className='space-y-0.5'>
         {items.map((item) => (
-          <div
-            key={item.name}
-            className='flex items-center gap-2 truncate rounded-md px-2 py-1 text-sm hover:bg-muted'
-          >
-            {isTables ? <Table2 className='size-4 shrink-0 text-primary' /> : null}
-            {item.name}
-          </div>
+          <SidebarMenuSubItem key={item.name}>
+            {isTables ? (
+              <TableItemWithPopover name={item.name} database={database} schema={schema} />
+            ) : (
+              <button
+                type='button'
+                className='flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted'
+              >
+                <span className='size-3.5 shrink-0 rounded-sm bg-muted-foreground/20' />
+                <span className='truncate'>{item.name}</span>
+              </button>
+            )}
+          </SidebarMenuSubItem>
         ))}
       </div>
+    </div>
+  )
+}
+
+type ColumnInfo = { name: string; type: string; null: string; key: string; default: string | null; extra: string }
+
+function TableItemWithPopover({ name, database, schema }: { name: string; database: string; schema: string }) {
+  const [hovered, setHovered] = useState(false)
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const columnsQuery = useQuery<{ columns: ColumnInfo[]; count: number }>({
+    queryKey: ['table-columns', database, schema, name],
+    queryFn: () =>
+      api.get<{ columns: ColumnInfo[]; count: number }>(
+        `/objects/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(name)}/columns`
+      ),
+    enabled: hovered,
+    staleTime: 60_000,
+  })
+
+  function typeIcon(type: string) {
+    const t = type.toUpperCase()
+    if (/INT|BIGINT|SMALLINT|TINYINT|FLOAT|DOUBLE|DECIMAL|NUMERIC|NUMBER/.test(t))
+      return <Hash className='size-3 shrink-0 text-blue-500' />
+    if (/DATE|TIME|TIMESTAMP/.test(t))
+      return <Clock className='size-3 shrink-0 text-emerald-500' />
+    if (/BOOL/.test(t))
+      return <span className='flex size-3 shrink-0 items-center justify-center text-[9px] font-bold text-orange-500'>B</span>
+    return <Type className='size-3 shrink-0 text-violet-500' />
+  }
+
+  return (
+    <div
+      onMouseEnter={() => {
+        setHovered(true)
+        if (btnRef.current) setRect(btnRef.current.getBoundingClientRect())
+      }}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        ref={btnRef}
+        type='button'
+        className='flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted'
+      >
+        <Table2 className='size-3.5 shrink-0 text-primary' />
+        <span className='truncate'>{name}</span>
+      </button>
+      {hovered && rect && createPortal(
+        <div
+          className='fixed z-[9999] w-64 rounded-md border bg-popover p-0 shadow-lg'
+          style={{ left: rect.right + 8, top: rect.top }}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
+          <div className='border-b px-3 py-1.5 text-xs font-medium text-muted-foreground'>
+            <FileCode className='mr-1.5 inline size-3' />
+            {name}
+            {columnsQuery.data && (
+              <span className='ml-1 text-muted-foreground/60'>• {columnsQuery.data.count} columns</span>
+            )}
+          </div>
+          <div className='max-h-[240px] overflow-auto py-1'>
+            {columnsQuery.isLoading && (
+              <div className='px-3 py-2 text-xs text-muted-foreground'>Loading columns…</div>
+            )}
+            {columnsQuery.data?.columns.map((col) => (
+              <div key={col.name} className='flex items-center gap-2 px-3 py-1 text-xs'>
+                {typeIcon(col.type)}
+                <span className='flex-1 truncate font-medium'>{col.name}</span>
+                <span className='shrink-0 text-muted-foreground'>{col.type}</span>
+              </div>
+            ))}
+            {columnsQuery.isError && (
+              <div className='px-3 py-2 text-xs text-destructive'>Failed to load columns</div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
@@ -1421,6 +1800,138 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function QueryHistory({
+  items,
+  loading,
+  onLoadSql,
+  onReRun,
+}: {
+  items: HistoryItem[]
+  loading: boolean
+  onLoadSql: (sql: string) => void
+  onReRun: (sql: string) => void
+}) {
+  if (loading) {
+    return (
+      <div className='flex items-center justify-center p-6 text-sm text-muted-foreground'>
+        Loading history...
+      </div>
+    )
+  }
+
+  if (!items.length) {
+    return (
+      <div className='flex flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground'>
+        <Clock className='size-8 opacity-40' />
+        <span>No query history yet.</span>
+      </div>
+    )
+  }
+
+  function formatTime(iso: string) {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const now = new Date()
+    const isToday =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    const time = d.toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+    if (isToday) return time
+    return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`
+  }
+
+  function formatDuration(ms: number | null) {
+    if (ms == null) return '—'
+    if (ms < 1000) return `${ms}ms`
+    return `${(ms / 1000).toFixed(1)}s`
+  }
+
+  return (
+    <div className='min-h-0 flex-1 overflow-auto'>
+      {items.map((item) => (
+        <div
+          key={item.query_id}
+          className='group flex items-start gap-3 border-b px-4 py-2.5 last:border-b-0 hover:bg-muted/50'
+        >
+          <div className='flex flex-1 flex-col gap-1 overflow-hidden'>
+            <div className='flex items-center gap-2'>
+              <span
+                className={cn(
+                  'inline-flex h-4 items-center rounded px-1 text-[10px] font-medium',
+                  item.status === 'SUCCESS'
+                    ? 'bg-emerald-500/10 text-emerald-600'
+                    : 'bg-red-500/10 text-red-600'
+                )}
+              >
+                {item.status === 'SUCCESS' ? 'OK' : 'ERR'}
+              </span>
+              <span className='text-xs text-muted-foreground'>
+                {formatDuration(item.duration_ms)}
+              </span>
+              {item.rows_affected != null && (
+                <span className='text-xs text-muted-foreground'>
+                  {item.rows_affected} rows
+                </span>
+              )}
+              {item.database_name && (
+                <span className='text-xs text-muted-foreground'>
+                  {item.database_name}
+                  {item.schema_name ? `.${item.schema_name}` : ''}
+                </span>
+              )}
+              <span className='ml-auto text-[11px] text-muted-foreground'>
+                {formatTime(item.event_time)}
+              </span>
+            </div>
+            <button
+              type='button'
+              className='w-full cursor-pointer text-left'
+              onClick={() => onLoadSql(item.sql_text)}
+              title={item.sql_text}
+            >
+              <code className='block truncate font-mono text-xs text-foreground/80'>
+                {item.sql_text}
+              </code>
+            </button>
+            {item.error_message && (
+              <p className='truncate text-[11px] text-red-500'>
+                {item.error_message}
+              </p>
+            )}
+          </div>
+          <div className='flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100'>
+            <Button
+              type='button'
+              size='icon'
+              variant='ghost'
+              className='size-6'
+              title='Copy SQL'
+              onClick={() => navigator.clipboard.writeText(item.sql_text)}
+            >
+              <Copy className='size-3' />
+            </Button>
+            <Button
+              type='button'
+              size='icon'
+              variant='ghost'
+              className='size-6'
+              title='Load into editor & run'
+              onClick={() => onReRun(item.sql_text)}
+            >
+              <RotateCcw className='size-3' />
+            </Button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -1596,7 +2107,19 @@ function MonacoSqlEditor({
       },
     })
 
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRunRef.current())
+    // Ctrl/Cmd+Enter to run query — DOM listener is more reliable than
+    // Monaco's addCommand which can be swallowed by the keybinding service
+    const editorDomNode = editor.getDomNode()
+    if (editorDomNode) {
+      const handler = (e: KeyboardEvent) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault()
+          e.stopPropagation()
+          onRunRef.current()
+        }
+      }
+      editorDomNode.addEventListener('keydown', handler, true)
+    }
   }
 
   return (
