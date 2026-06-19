@@ -25,10 +25,12 @@ import { Route as authForgotPasswordRouteImport } from './routes/(auth)/forgot-p
 import { Route as ClerkAuthenticatedRouteRouteImport } from './routes/clerk/_authenticated/route'
 import { Route as ClerkauthRouteRouteImport } from './routes/clerk/(auth)/route'
 import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
+import { Route as AuthenticatedMonitoringRouteRouteImport } from './routes/_authenticated/monitoring/route'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedMonitoringIndexRouteImport } from './routes/_authenticated/monitoring/index'
 import { Route as AuthenticatedHelpCenterIndexRouteImport } from './routes/_authenticated/help-center/index'
 import { Route as AuthenticatedChatsIndexRouteImport } from './routes/_authenticated/chats/index'
 import { Route as AuthenticatedAppsIndexRouteImport } from './routes/_authenticated/apps/index'
@@ -39,6 +41,11 @@ import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes
 import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_authenticated/settings/display'
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
+import { Route as AuthenticatedMonitoringTasksRouteImport } from './routes/_authenticated/monitoring/tasks'
+import { Route as AuthenticatedMonitoringLoadsRouteImport } from './routes/_authenticated/monitoring/loads'
+import { Route as AuthenticatedMonitoringCostRouteImport } from './routes/_authenticated/monitoring/cost'
+import { Route as AuthenticatedMonitoringAuditRouteImport } from './routes/_authenticated/monitoring/audit'
+import { Route as AuthenticatedMonitoringActiveRouteImport } from './routes/_authenticated/monitoring/active'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 
 const ClerkRouteRoute = ClerkRouteRouteImport.update({
@@ -119,6 +126,12 @@ const AuthenticatedSettingsRouteRoute =
     path: '/settings',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMonitoringRouteRoute =
+  AuthenticatedMonitoringRouteRouteImport.update({
+    id: '/monitoring',
+    path: '/monitoring',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedWorkspacesIndexRoute =
   AuthenticatedWorkspacesIndexRouteImport.update({
     id: '/workspaces/',
@@ -140,6 +153,12 @@ const AuthenticatedSettingsIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonitoringIndexRoute =
+  AuthenticatedMonitoringIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
   } as any)
 const AuthenticatedHelpCenterIndexRoute =
   AuthenticatedHelpCenterIndexRouteImport.update({
@@ -197,6 +216,36 @@ const AuthenticatedSettingsAccountRoute =
     path: '/account',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
+const AuthenticatedMonitoringTasksRoute =
+  AuthenticatedMonitoringTasksRouteImport.update({
+    id: '/tasks',
+    path: '/tasks',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
+const AuthenticatedMonitoringLoadsRoute =
+  AuthenticatedMonitoringLoadsRouteImport.update({
+    id: '/loads',
+    path: '/loads',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
+const AuthenticatedMonitoringCostRoute =
+  AuthenticatedMonitoringCostRouteImport.update({
+    id: '/cost',
+    path: '/cost',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
+const AuthenticatedMonitoringAuditRoute =
+  AuthenticatedMonitoringAuditRouteImport.update({
+    id: '/audit',
+    path: '/audit',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
+const AuthenticatedMonitoringActiveRoute =
+  AuthenticatedMonitoringActiveRouteImport.update({
+    id: '/active',
+    path: '/active',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
@@ -207,6 +256,7 @@ const AuthenticatedErrorsErrorRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/clerk': typeof ClerkAuthenticatedRouteRouteWithChildren
+  '/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/forgot-password': typeof authForgotPasswordRoute
   '/otp': typeof authOtpRoute
@@ -219,6 +269,11 @@ export interface FileRoutesByFullPath {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
+  '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
+  '/monitoring/cost': typeof AuthenticatedMonitoringCostRoute
+  '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
+  '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -229,6 +284,7 @@ export interface FileRoutesByFullPath {
   '/apps/': typeof AuthenticatedAppsIndexRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
   '/help-center/': typeof AuthenticatedHelpCenterIndexRoute
+  '/monitoring/': typeof AuthenticatedMonitoringIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
@@ -248,6 +304,11 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/': typeof AuthenticatedIndexRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
+  '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
+  '/monitoring/cost': typeof AuthenticatedMonitoringCostRoute
+  '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
+  '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -258,6 +319,7 @@ export interface FileRoutesByTo {
   '/apps': typeof AuthenticatedAppsIndexRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
   '/help-center': typeof AuthenticatedHelpCenterIndexRoute
+  '/monitoring': typeof AuthenticatedMonitoringIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
@@ -267,6 +329,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/clerk': typeof ClerkRouteRouteWithChildren
+  '/_authenticated/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/clerk/(auth)': typeof ClerkauthRouteRouteWithChildren
   '/clerk/_authenticated': typeof ClerkAuthenticatedRouteRouteWithChildren
@@ -282,6 +345,11 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
+  '/_authenticated/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
+  '/_authenticated/monitoring/cost': typeof AuthenticatedMonitoringCostRoute
+  '/_authenticated/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
+  '/_authenticated/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/_authenticated/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -292,6 +360,7 @@ export interface FileRoutesById {
   '/_authenticated/apps/': typeof AuthenticatedAppsIndexRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
   '/_authenticated/help-center/': typeof AuthenticatedHelpCenterIndexRoute
+  '/_authenticated/monitoring/': typeof AuthenticatedMonitoringIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
@@ -302,6 +371,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/clerk'
+    | '/monitoring'
     | '/settings'
     | '/forgot-password'
     | '/otp'
@@ -314,6 +384,11 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/errors/$error'
+    | '/monitoring/active'
+    | '/monitoring/audit'
+    | '/monitoring/cost'
+    | '/monitoring/loads'
+    | '/monitoring/tasks'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/display'
@@ -324,6 +399,7 @@ export interface FileRouteTypes {
     | '/apps/'
     | '/chats/'
     | '/help-center/'
+    | '/monitoring/'
     | '/settings/'
     | '/tasks/'
     | '/users/'
@@ -343,6 +419,11 @@ export interface FileRouteTypes {
     | '/503'
     | '/'
     | '/errors/$error'
+    | '/monitoring/active'
+    | '/monitoring/audit'
+    | '/monitoring/cost'
+    | '/monitoring/loads'
+    | '/monitoring/tasks'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/display'
@@ -353,6 +434,7 @@ export interface FileRouteTypes {
     | '/apps'
     | '/chats'
     | '/help-center'
+    | '/monitoring'
     | '/settings'
     | '/tasks'
     | '/users'
@@ -361,6 +443,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authenticated'
     | '/clerk'
+    | '/_authenticated/monitoring'
     | '/_authenticated/settings'
     | '/clerk/(auth)'
     | '/clerk/_authenticated'
@@ -376,6 +459,11 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/_authenticated/'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/monitoring/active'
+    | '/_authenticated/monitoring/audit'
+    | '/_authenticated/monitoring/cost'
+    | '/_authenticated/monitoring/loads'
+    | '/_authenticated/monitoring/tasks'
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/appearance'
     | '/_authenticated/settings/display'
@@ -386,6 +474,7 @@ export interface FileRouteTypes {
     | '/_authenticated/apps/'
     | '/_authenticated/chats/'
     | '/_authenticated/help-center/'
+    | '/_authenticated/monitoring/'
     | '/_authenticated/settings/'
     | '/_authenticated/tasks/'
     | '/_authenticated/users/'
@@ -521,6 +610,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/monitoring': {
+      id: '/_authenticated/monitoring'
+      path: '/monitoring'
+      fullPath: '/monitoring'
+      preLoaderRoute: typeof AuthenticatedMonitoringRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/workspaces/': {
       id: '/_authenticated/workspaces/'
       path: '/workspaces'
@@ -548,6 +644,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/'
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/monitoring/': {
+      id: '/_authenticated/monitoring/'
+      path: '/'
+      fullPath: '/monitoring/'
+      preLoaderRoute: typeof AuthenticatedMonitoringIndexRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
     }
     '/_authenticated/help-center/': {
       id: '/_authenticated/help-center/'
@@ -619,6 +722,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
+    '/_authenticated/monitoring/tasks': {
+      id: '/_authenticated/monitoring/tasks'
+      path: '/tasks'
+      fullPath: '/monitoring/tasks'
+      preLoaderRoute: typeof AuthenticatedMonitoringTasksRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
+    '/_authenticated/monitoring/loads': {
+      id: '/_authenticated/monitoring/loads'
+      path: '/loads'
+      fullPath: '/monitoring/loads'
+      preLoaderRoute: typeof AuthenticatedMonitoringLoadsRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
+    '/_authenticated/monitoring/cost': {
+      id: '/_authenticated/monitoring/cost'
+      path: '/cost'
+      fullPath: '/monitoring/cost'
+      preLoaderRoute: typeof AuthenticatedMonitoringCostRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
+    '/_authenticated/monitoring/audit': {
+      id: '/_authenticated/monitoring/audit'
+      path: '/audit'
+      fullPath: '/monitoring/audit'
+      preLoaderRoute: typeof AuthenticatedMonitoringAuditRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
+    '/_authenticated/monitoring/active': {
+      id: '/_authenticated/monitoring/active'
+      path: '/active'
+      fullPath: '/monitoring/active'
+      preLoaderRoute: typeof AuthenticatedMonitoringActiveRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
     '/_authenticated/errors/$error': {
       id: '/_authenticated/errors/$error'
       path: '/errors/$error'
@@ -628,6 +766,30 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface AuthenticatedMonitoringRouteRouteChildren {
+  AuthenticatedMonitoringActiveRoute: typeof AuthenticatedMonitoringActiveRoute
+  AuthenticatedMonitoringAuditRoute: typeof AuthenticatedMonitoringAuditRoute
+  AuthenticatedMonitoringCostRoute: typeof AuthenticatedMonitoringCostRoute
+  AuthenticatedMonitoringLoadsRoute: typeof AuthenticatedMonitoringLoadsRoute
+  AuthenticatedMonitoringTasksRoute: typeof AuthenticatedMonitoringTasksRoute
+  AuthenticatedMonitoringIndexRoute: typeof AuthenticatedMonitoringIndexRoute
+}
+
+const AuthenticatedMonitoringRouteRouteChildren: AuthenticatedMonitoringRouteRouteChildren =
+  {
+    AuthenticatedMonitoringActiveRoute: AuthenticatedMonitoringActiveRoute,
+    AuthenticatedMonitoringAuditRoute: AuthenticatedMonitoringAuditRoute,
+    AuthenticatedMonitoringCostRoute: AuthenticatedMonitoringCostRoute,
+    AuthenticatedMonitoringLoadsRoute: AuthenticatedMonitoringLoadsRoute,
+    AuthenticatedMonitoringTasksRoute: AuthenticatedMonitoringTasksRoute,
+    AuthenticatedMonitoringIndexRoute: AuthenticatedMonitoringIndexRoute,
+  }
+
+const AuthenticatedMonitoringRouteRouteWithChildren =
+  AuthenticatedMonitoringRouteRoute._addFileChildren(
+    AuthenticatedMonitoringRouteRouteChildren,
+  )
 
 interface AuthenticatedSettingsRouteRouteChildren {
   AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
@@ -653,6 +815,7 @@ const AuthenticatedSettingsRouteRouteWithChildren =
   )
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedMonitoringRouteRoute: typeof AuthenticatedMonitoringRouteRouteWithChildren
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
@@ -665,6 +828,8 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedMonitoringRouteRoute:
+    AuthenticatedMonitoringRouteRouteWithChildren,
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,

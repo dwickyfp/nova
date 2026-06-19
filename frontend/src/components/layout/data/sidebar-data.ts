@@ -1,4 +1,5 @@
 import {
+  Clock,
   Construction,
   Database,
   LayoutDashboard,
@@ -13,12 +14,17 @@ import {
   Palette,
   ServerOff,
   Settings,
+  Shield,
+  TrendingUp,
+  Upload,
   Wrench,
   UserCog,
   UserX,
   Users,
+  Zap,
   MessagesSquare,
   ShieldCheck,
+  Activity,
 } from 'lucide-react'
 import { ClerkLogo } from '@/assets/clerk-logo'
 import { type SidebarData } from '../types'
@@ -81,6 +87,47 @@ export const sidebarData: SidebarData = {
           title: 'Workspaces',
           url: '/workspaces',
           icon: Database,
+        },
+      ],
+    },
+    {
+      title: 'Operations',
+      items: [
+        {
+          title: 'Monitoring',
+          icon: Activity,
+          items: [
+            {
+              title: 'Query History',
+              url: '/monitoring',
+              icon: Clock,
+            },
+            {
+              title: 'Active Queries',
+              url: '/monitoring/active',
+              icon: Zap,
+            },
+            {
+              title: 'Audit Trail',
+              url: '/monitoring/audit',
+              icon: Shield,
+            },
+            {
+              title: 'Tasks',
+              url: '/monitoring/tasks',
+              icon: ListTodo,
+            },
+            {
+              title: 'Query Cost',
+              url: '/monitoring/cost',
+              icon: TrendingUp,
+            },
+            {
+              title: 'Data Loads',
+              url: '/monitoring/loads',
+              icon: Upload,
+            },
+          ],
         },
       ],
     },

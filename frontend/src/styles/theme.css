@@ -21,6 +21,8 @@
   --inset-border: #d8dee8;
   --inset-shadow:
     0 1px 2px rgb(15 23 42 / 8%), 0 8px 24px rgb(15 23 42 / 6%);
+  --warning: #e89b17;
+  --info: #4f7ee8;
   --chart-1: #f05a47;
   --chart-2: #14a89a;
   --chart-3: #e89b17;
@@ -59,6 +61,8 @@
   --inset-border: #344151;
   --inset-shadow:
     0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px rgb(0 0 0 / 24%);
+  --warning: #f0ad3d;
+  --info: #7398ed;
   --chart-1: #f36b5b;
   --chart-2: #2cc6b6;
   --chart-3: #f0ad3d;
@@ -89,6 +93,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
