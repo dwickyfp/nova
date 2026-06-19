@@ -213,19 +213,23 @@ class QueryService:
         status: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        search: str | None = None,
+        database_name: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        min_duration_ms: int | None = None,
     ) -> dict:
         """Retrieve query execution history from AUDIT_LOG."""
-        conditions = ["event_type = 'query'", "user_name = %s"]
-        params: list = [username]
-
-        if file_id:
-            conditions.append("file_id = %s")
-            params.append(file_id)
-        if status:
-            conditions.append("status = %s")
-            params.append(status.upper())
-
-        where = " AND ".join(conditions)
+        where, params = self._build_history_filters(
+            username=username,
+            file_id=file_id,
+            status=status,
+            search=search,
+            database_name=database_name,
+            date_from=date_from,
+            date_to=date_to,
+            min_duration_ms=min_duration_ms,
+        )
 
         count_result = await db.execute_system(
             f"SELECT COUNT(*) FROM NOVA_SYSTEM.AUDIT_LOG WHERE {where}",
@@ -261,6 +265,97 @@ class QueryService:
             })
 
         return {"items": items, "total": total}
+
+    async def get_history_stats(
+        self,
+        *,
+        username: str,
+        file_id: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
+        database_name: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        min_duration_ms: int | None = None,
+    ) -> dict:
+        """Return aggregate statistics for query execution history."""
+        where, params = self._build_history_filters(
+            username=username,
+            file_id=file_id,
+            status=status,
+            search=search,
+            database_name=database_name,
+            date_from=date_from,
+            date_to=date_to,
+            min_duration_ms=min_duration_ms,
+        )
+
+        result = await db.execute_system(
+            f"""
+            SELECT COUNT(*) AS total,
+                   AVG(duration_ms) AS avg_duration_ms,
+                   SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END) AS error_count,
+                   SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success_count
+            FROM NOVA_SYSTEM.AUDIT_LOG
+            WHERE {where}
+            """,
+            params,
+        )
+
+        row = result["rows"][0] if result["rows"] else (0, None, 0, 0)
+        total = row[0] or 0
+        avg_duration_ms = float(row[1]) if row[1] is not None else None
+        error_count = row[2] or 0
+        success_count = row[3] or 0
+        error_rate = (error_count / total) if total > 0 else 0.0
+
+        return {
+            "total": total,
+            "avg_duration_ms": avg_duration_ms,
+            "error_count": error_count,
+            "success_count": success_count,
+            "error_rate": error_rate,
+        }
+
+    @staticmethod
+    def _build_history_filters(
+        *,
+        username: str,
+        file_id: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
+        database_name: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        min_duration_ms: int | None = None,
+    ) -> tuple[str, list]:
+        """Build shared WHERE clause and params for history queries."""
+        conditions = ["event_type = 'query'", "user_name = %s"]
+        params: list = [username]
+
+        if file_id:
+            conditions.append("file_id = %s")
+            params.append(file_id)
+        if status:
+            conditions.append("status = %s")
+            params.append(status.upper())
+        if search:
+            conditions.append("sql_text LIKE %s")
+            params.append(f"%{search}%")
+        if database_name:
+            conditions.append("database_name = %s")
+            params.append(database_name)
+        if date_from:
+            conditions.append("event_time >= %s")
+            params.append(date_from)
+        if date_to:
+            conditions.append("event_time <= %s")
+            params.append(date_to)
+        if min_duration_ms is not None:
+            conditions.append("duration_ms >= %s")
+            params.append(min_duration_ms)
+
+        return " AND ".join(conditions), params
 
     async def explain(
         self,

@@ -170,18 +170,69 @@ async def get_query_history(
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    search: str | None = None,
+    database_name: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    min_duration_ms: int | None = None,
+    user_name: str | None = None,
     user: dict = Depends(get_current_user),
 ):
     """Get query execution history for the current user.
 
     Filter by file_id to get history for a specific workspace file,
-    or omit to get all history.
+    or omit to get all history. Admin users can pass user_name to
+    view another user's history.
     """
+    effective_user = user_name if user_name else user["username"]
     result = await query_service.get_history(
-        username=user["username"],
+        username=effective_user,
         file_id=file_id,
         status=status,
         limit=limit,
         offset=offset,
+        search=search,
+        database_name=database_name,
+        date_from=date_from,
+        date_to=date_to,
+        min_duration_ms=min_duration_ms,
     )
     return HistoryResponse(**result)
+
+
+class HistoryStatsResponse(BaseModel):
+    total: int
+    avg_duration_ms: float | None = None
+    error_count: int
+    success_count: int
+    error_rate: float
+
+
+@router.get("/history/stats", response_model=HistoryStatsResponse)
+async def get_query_history_stats(
+    file_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    database_name: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    min_duration_ms: int | None = None,
+    user_name: str | None = None,
+    user: dict = Depends(get_current_user),
+):
+    """Get aggregate statistics for query execution history.
+
+    Uses the same filter parameters as the history endpoint.
+    """
+    effective_user = user_name if user_name else user["username"]
+    result = await query_service.get_history_stats(
+        username=effective_user,
+        file_id=file_id,
+        status=status,
+        search=search,
+        database_name=database_name,
+        date_from=date_from,
+        date_to=date_to,
+        min_duration_ms=min_duration_ms,
+    )
+    return HistoryStatsResponse(**result)

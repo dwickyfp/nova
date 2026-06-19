@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -17,13 +17,7 @@ import { cn, getPageNumbers } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,20 +51,8 @@ interface AuditResponse {
 // Constants
 // ---------------------------------------------------------------------------
 
-const PAGE_SIZE = 50
-
-const EVENT_TYPE_OPTIONS = [
-  { value: 'all', label: 'All Types' },
-  { value: 'query', label: 'Query' },
-  { value: 'workspace', label: 'Workspace' },
-  { value: 'login', label: 'Login' },
-] as const
-
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All Statuses' },
-  { value: 'SUCCESS', label: 'Success' },
-  { value: 'ERROR', label: 'Error' },
-] as const
+const EVENT_TYPE_OPTIONS = ['query', 'workspace', 'login']
+const STATUS_OPTIONS = ['SUCCESS', 'ERROR']
 
 const EVENT_ICON: Record<string, React.ElementType> = {
   query: Code,
@@ -165,45 +147,29 @@ function FilterBar({
 }) {
   return (
     <div className='flex flex-wrap items-center gap-2'>
-      <Select value={eventType} onValueChange={setEventType}>
-        <SelectTrigger size='sm'>
-          <SelectValue placeholder='Event Type' />
-        </SelectTrigger>
-        <SelectContent>
-          {EVENT_TYPE_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <SearchableSelect
+        options={EVENT_TYPE_OPTIONS}
+        value={eventType}
+        onChange={setEventType}
+        label='Event Types'
+        placeholder='Search event types…'
+      />
 
-      <Select value={status} onValueChange={setStatus}>
-        <SelectTrigger size='sm'>
-          <SelectValue placeholder='Status' />
-        </SelectTrigger>
-        <SelectContent>
-          {STATUS_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <SearchableSelect
+        options={STATUS_OPTIONS}
+        value={status}
+        onChange={setStatus}
+        label='Statuses'
+        placeholder='Search statuses…'
+      />
 
-      <Select value={userName} onValueChange={setUserName}>
-        <SelectTrigger size='sm'>
-          <SelectValue placeholder='All Users' />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value='all'>All Users</SelectItem>
-          {users.map((u) => (
-            <SelectItem key={u} value={u}>
-              {u}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <SearchableSelect
+        options={users}
+        value={userName}
+        onChange={setUserName}
+        label='Users'
+        placeholder='Search users…'
+      />
     </div>
   )
 }
@@ -362,26 +328,54 @@ function DetailField({ label, value }: { label: string; value: string }) {
   )
 }
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100]
+
 function Pagination({
   page,
+  pageSize,
   totalPages,
   total,
   onPageChange,
+  onPageSizeChange,
 }: {
   page: number
+  pageSize: number
   totalPages: number
   total: number
   onPageChange: (p: number) => void
+  onPageSizeChange: (size: number) => void
 }) {
-  if (totalPages <= 1) return null
+  if (totalPages <= 1 && total <= PAGE_SIZE_OPTIONS[0]) return null
   const pages = getPageNumbers(page, totalPages)
 
   return (
     <div className='flex flex-wrap items-center justify-between gap-2 border-t pt-4'>
-      <p className='text-xs text-muted-foreground'>
-        Showing {(page - 1) * PAGE_SIZE + 1}–
-        {Math.min(page * PAGE_SIZE, total)} of {total.toLocaleString()} events
-      </p>
+      <div className='flex items-center gap-3'>
+        <p className='text-xs text-muted-foreground'>
+          Showing {(page - 1) * pageSize + 1}–
+          {Math.min(page * pageSize, total)} of {total.toLocaleString()} events
+        </p>
+        <div className='flex items-center gap-1.5'>
+          <label
+            htmlFor='page-size-select'
+            className='text-xs text-muted-foreground'
+          >
+            Per page:
+          </label>
+          <select
+            id='page-size-select'
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className='rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary'
+          >
+            {PAGE_SIZE_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
       <div className='flex items-center gap-1'>
         <Button
           variant='outline'
@@ -445,10 +439,11 @@ function TimelineSkeleton() {
 
 export function MonitoringAuditTrail() {
   // Filters
-  const [eventType, setEventType] = useState('all')
-  const [status, setStatus] = useState('all')
-  const [userName, setUserName] = useState('all')
+  const [eventType, setEventType] = useState('')
+  const [status, setStatus] = useState('')
+  const [userName, setUserName] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   // Reset to page 1 when filters change
   const handleSetEventType = (v: string) => {
@@ -463,11 +458,15 @@ export function MonitoringAuditTrail() {
     setUserName(v)
     setPage(1)
   }
+  const handleSetPageSize = (size: number) => {
+    setPageSize(size)
+    setPage(1)
+  }
 
-  const offset = (page - 1) * PAGE_SIZE
+  const offset = (page - 1) * pageSize
 
   const qs = buildQueryString({
-    limit: PAGE_SIZE,
+    limit: pageSize,
     offset,
     event_type: eventType,
     user_name: userName,
@@ -475,7 +474,7 @@ export function MonitoringAuditTrail() {
   })
 
   const query = useQuery<AuditResponse>({
-    queryKey: ['monitoring', 'audit', eventType, status, userName, page],
+    queryKey: ['monitoring', 'audit', eventType, status, userName, page, pageSize],
     queryFn: () => api.get<AuditResponse>(`/monitoring/audit?${qs}`),
   })
 
@@ -485,12 +484,13 @@ export function MonitoringAuditTrail() {
 
   const items = query.data?.items ?? []
   const total = query.data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   // Derive unique user names from the current result set for the filter
-  const users = Array.from(
-    new Set(items.map((i) => i.user_name).filter(Boolean))
-  ).sort()
+  const userOptions = useMemo(() => {
+    if (!query.data?.items) return []
+    return [...new Set(query.data.items.map((i) => i.user_name).filter(Boolean))] as string[]
+  }, [query.data])
 
   return (
     <div className='space-y-4'>
@@ -510,7 +510,7 @@ export function MonitoringAuditTrail() {
         setStatus={handleSetStatus}
         userName={userName}
         setUserName={handleSetUserName}
-        users={users}
+        users={userOptions}
       />
 
       {/* Timeline */}
@@ -536,9 +536,11 @@ export function MonitoringAuditTrail() {
       {!query.isLoading && total > 0 && (
         <Pagination
           page={page}
+          pageSize={pageSize}
           totalPages={totalPages}
           total={total}
           onPageChange={setPage}
+          onPageSizeChange={handleSetPageSize}
         />
       )}
     </div>

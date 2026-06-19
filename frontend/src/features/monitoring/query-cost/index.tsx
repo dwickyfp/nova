@@ -31,7 +31,7 @@ import {
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
   Select,
   SelectContent,
@@ -204,6 +204,16 @@ export function MonitoringQueryCost() {
       )
     },
   })
+
+  const userOptions = useMemo(() => {
+    if (!historyQuery.data?.items) return []
+    return [...new Set(historyQuery.data.items.map(i => i.user_name).filter(Boolean))] as string[]
+  }, [historyQuery.data])
+
+  const databaseOptions = useMemo(() => {
+    if (!historyQuery.data?.items) return []
+    return [...new Set(historyQuery.data.items.map(i => i.database_name).filter(Boolean))] as string[]
+  }, [historyQuery.data])
 
   /* ---- derived ---- */
 
@@ -509,23 +519,17 @@ export function MonitoringQueryCost() {
 
       {/* ── Filter Bar ── */}
       <div className='flex flex-wrap items-center gap-3'>
-        <Input
-          placeholder='Filter by user…'
+        <SearchableSelect
+          options={userOptions}
           value={userFilter}
-          onChange={(e) => {
-            setUserFilter(e.target.value)
-            setPage(1)
-          }}
-          className='w-[180px]'
+          onChange={(v) => { setUserFilter(v); setPage(1) }}
+          label='User'
         />
-        <Input
-          placeholder='Filter by database…'
+        <SearchableSelect
+          options={databaseOptions}
           value={databaseFilter}
-          onChange={(e) => {
-            setDatabaseFilter(e.target.value)
-            setPage(1)
-          }}
-          className='w-[180px]'
+          onChange={(v) => { setDatabaseFilter(v); setPage(1) }}
+          label='Database'
         />
         <div className='ml-auto text-sm text-muted-foreground'>
           {total} {total === 1 ? 'query' : 'queries'}

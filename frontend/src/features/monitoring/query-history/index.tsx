@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Card, CardContent } from '@/components/ui/card'
 
 type QueryHistoryItem = {
@@ -70,14 +71,21 @@ export function MonitoringQueryHistory() {
 
   // Fetch stats
   const statsQuery = useQuery<QueryStatsResponse>({
-    queryKey: ['monitoring-query-stats'],
-    queryFn: () => api.get<QueryStatsResponse>('/monitoring/queries/stats'),
+    queryKey: ['query-history-stats'],
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (searchQuery) params.set('search', searchQuery)
+      if (statusFilter) params.set('status', statusFilter)
+      if (userFilter) params.set('user_name', userFilter)
+      if (databaseFilter) params.set('database_name', databaseFilter)
+      return api.get<QueryStatsResponse>(`/query/history/stats?${params.toString()}`)
+    },
   })
 
   // Fetch history
   const historyQuery = useQuery<QueryHistoryResponse>({
     queryKey: [
-      'monitoring-query-history',
+      'query-history',
       page,
       pageSize,
       statusFilter,
@@ -95,7 +103,7 @@ export function MonitoringQueryHistory() {
       if (databaseFilter) params.set('database_name', databaseFilter)
       if (searchQuery) params.set('search', searchQuery)
       return api.get<QueryHistoryResponse>(
-        `/monitoring/queries/history?${params.toString()}`
+        `/query/history?${params.toString()}`
       )
     },
   })
@@ -105,6 +113,16 @@ export function MonitoringQueryHistory() {
   const totalPages = Math.ceil(total / pageSize)
 
   const stats = statsQuery.data
+
+  const userOptions = useMemo(() => {
+    if (!historyQuery.data?.items) return []
+    return [...new Set(historyQuery.data.items.map((i) => i.user_name).filter(Boolean))] as string[]
+  }, [historyQuery.data])
+
+  const databaseOptions = useMemo(() => {
+    if (!historyQuery.data?.items) return []
+    return [...new Set(historyQuery.data.items.map((i) => i.database_name).filter(Boolean))] as string[]
+  }, [historyQuery.data])
 
   // Handle errors with useEffect to avoid spamming toasts on every render
   useEffect(() => {
@@ -138,7 +156,7 @@ export function MonitoringQueryHistory() {
     setter: (value: string) => void,
     value: string
   ) => {
-    setter(value === 'all' ? '' : value)
+    setter(value)
     setPage(1)
     setExpandedRow(null)
   }
@@ -253,38 +271,28 @@ export function MonitoringQueryHistory() {
 
       {/* Filter Bar */}
       <div className='flex flex-wrap items-center gap-3'>
-        <Select
-          value={statusFilter || 'all'}
-          onValueChange={(value: string) => handleFilterChange(setStatusFilter, value)}
-        >
-          <SelectTrigger className='w-[140px]'>
-            <SelectValue placeholder='Status' />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='all'>All Status</SelectItem>
-            <SelectItem value='SUCCESS'>Success</SelectItem>
-            <SelectItem value='ERROR'>Error</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Input
-          placeholder='User...'
-          value={userFilter}
-          onChange={(e) => {
-            setUserFilter(e.target.value)
-            setPage(1)
-          }}
-          className='w-[150px]'
+        <SearchableSelect
+          options={['SUCCESS', 'ERROR']}
+          value={statusFilter}
+          onChange={(value: string) => handleFilterChange(setStatusFilter, value)}
+          label='Status'
+          icon={<CheckCircle2 size={14} />}
         />
 
-        <Input
-          placeholder='Database...'
+        <SearchableSelect
+          options={userOptions}
+          value={userFilter}
+          onChange={(value: string) => handleFilterChange(setUserFilter, value)}
+          label='User'
+          icon={<User size={14} />}
+        />
+
+        <SearchableSelect
+          options={databaseOptions}
           value={databaseFilter}
-          onChange={(e) => {
-            setDatabaseFilter(e.target.value)
-            setPage(1)
-          }}
-          className='w-[150px]'
+          onChange={(value: string) => handleFilterChange(setDatabaseFilter, value)}
+          label='Database'
+          icon={<Database size={14} />}
         />
 
         <Input

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -17,7 +17,7 @@ import {
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
   Select,
   SelectContent,
@@ -171,6 +171,16 @@ export function MonitoringDataLoads() {
   const totalPages = Math.ceil(total / pageSize)
   const stats = statsQuery.data
 
+  const databaseOptions = useMemo(() => {
+    if (!loadsQuery.data?.items) return []
+    return [...new Set(loadsQuery.data.items.map(i => i.db_name).filter(Boolean))] as string[]
+  }, [loadsQuery.data])
+
+  const typeOptions = useMemo(() => {
+    if (!loadsQuery.data?.items) return []
+    return [...new Set(loadsQuery.data.items.map(i => i.load_type).filter(Boolean))] as string[]
+  }, [loadsQuery.data])
+
   // ----- Error toasts ------------------------------------------------------
 
   useEffect(() => {
@@ -198,12 +208,6 @@ export function MonitoringDataLoads() {
 
   const handlePageSizeChange = (size: string) => {
     setPageSize(Number(size))
-    setPage(1)
-    setExpandedRow(null)
-  }
-
-  const applyFilter = (setter: (v: string) => void, value: string) => {
-    setter(value === 'all' ? '' : value)
     setPage(1)
     setExpandedRow(null)
   }
@@ -299,42 +303,23 @@ export function MonitoringDataLoads() {
 
       {/* Filter Bar */}
       <div className='flex flex-wrap items-center gap-3'>
-        <Select
-          value={stateFilter || 'all'}
-          onValueChange={(v) => applyFilter(setStateFilter, v)}
-        >
-          <SelectTrigger className='w-[150px]'>
-            <SelectValue placeholder='State' />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='all'>All States</SelectItem>
-            <SelectItem value='FINISHED'>Finished</SelectItem>
-            <SelectItem value='CANCELLED'>Cancelled</SelectItem>
-            <SelectItem value='LOADING'>Loading</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <div className='flex items-center gap-1.5'>
-          <Database className='h-4 w-4 text-muted-foreground' />
-          <Input
-            placeholder='Database…'
-            value={dbFilter}
-            onChange={(e) => {
-              setDbFilter(e.target.value)
-              setPage(1)
-            }}
-            className='w-[160px]'
-          />
-        </div>
-
-        <Input
-          placeholder='Load type…'
+        <SearchableSelect
+          options={['FINISHED', 'CANCELLED', 'LOADING']}
+          value={stateFilter}
+          onChange={(v) => { setStateFilter(v); setPage(1) }}
+          label='State'
+        />
+        <SearchableSelect
+          options={databaseOptions}
+          value={dbFilter}
+          onChange={(v) => { setDbFilter(v); setPage(1) }}
+          label='Database'
+        />
+        <SearchableSelect
+          options={typeOptions}
           value={typeFilter}
-          onChange={(e) => {
-            setTypeFilter(e.target.value)
-            setPage(1)
-          }}
-          className='w-[140px]'
+          onChange={(v) => { setTypeFilter(v); setPage(1) }}
+          label='Type'
         />
 
         <div className='ml-auto text-sm text-muted-foreground'>

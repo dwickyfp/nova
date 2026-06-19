@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -163,11 +164,6 @@ export function MonitoringTasks() {
     setPage(1)
   }
 
-  const handleStateFilterChange = (value: string) => {
-    setStateFilter(value === 'all' ? '' : value)
-    setPage(1)
-  }
-
   return (
     <div className='space-y-8'>
       {/* Header */}
@@ -293,20 +289,15 @@ export function MonitoringTasks() {
 
         {/* Filter Bar */}
         <div className='flex flex-wrap items-center gap-3'>
-          <Select
-            value={stateFilter || 'all'}
-            onValueChange={handleStateFilterChange}
-          >
-            <SelectTrigger className='w-[140px]'>
-              <SelectValue placeholder='State' />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value='all'>All States</SelectItem>
-              <SelectItem value='SUCCESS'>Success</SelectItem>
-              <SelectItem value='FAILED'>Failed</SelectItem>
-              <SelectItem value='RUNNING'>Running</SelectItem>
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            options={['SUCCESS', 'FAILED', 'RUNNING']}
+            value={stateFilter}
+            onChange={(v) => {
+              setStateFilter(v)
+              setPage(1)
+            }}
+            label='State'
+          />
 
           <div className='ml-auto text-sm text-muted-foreground'>
             {total} {total === 1 ? 'run' : 'runs'}
