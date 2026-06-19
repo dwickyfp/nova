@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ClerkRouteRouteImport } from './routes/clerk/route'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authenticated/query-history'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
 import { Route as errors404RouteImport } from './routes/(errors)/404'
@@ -62,6 +63,12 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedQueryHistoryRoute =
+  AuthenticatedQueryHistoryRouteImport.update({
+    id: '/query-history',
+    path: '/query-history',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const errors503Route = errors503RouteImport.update({
   id: '/(errors)/503',
   path: '/503',
@@ -268,6 +275,7 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/query-history': typeof AuthenticatedQueryHistoryRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
@@ -302,6 +310,7 @@ export interface FileRoutesByTo {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/query-history': typeof AuthenticatedQueryHistoryRoute
   '/': typeof AuthenticatedIndexRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
@@ -343,6 +352,7 @@ export interface FileRoutesById {
   '/(errors)/404': typeof errors404Route
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
+  '/_authenticated/query-history': typeof AuthenticatedQueryHistoryRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
@@ -383,6 +393,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/query-history'
     | '/errors/$error'
     | '/monitoring/active'
     | '/monitoring/audit'
@@ -417,6 +428,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/query-history'
     | '/'
     | '/errors/$error'
     | '/monitoring/active'
@@ -457,6 +469,7 @@ export interface FileRouteTypes {
     | '/(errors)/404'
     | '/(errors)/500'
     | '/(errors)/503'
+    | '/_authenticated/query-history'
     | '/_authenticated/'
     | '/_authenticated/errors/$error'
     | '/_authenticated/monitoring/active'
@@ -517,6 +530,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/query-history': {
+      id: '/_authenticated/query-history'
+      path: '/query-history'
+      fullPath: '/query-history'
+      preLoaderRoute: typeof AuthenticatedQueryHistoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/(errors)/503': {
@@ -817,6 +837,7 @@ const AuthenticatedSettingsRouteRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonitoringRouteRoute: typeof AuthenticatedMonitoringRouteRouteWithChildren
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
+  AuthenticatedQueryHistoryRoute: typeof AuthenticatedQueryHistoryRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedAppsIndexRoute: typeof AuthenticatedAppsIndexRoute
@@ -831,6 +852,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMonitoringRouteRoute:
     AuthenticatedMonitoringRouteRouteWithChildren,
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
+  AuthenticatedQueryHistoryRoute: AuthenticatedQueryHistoryRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedAppsIndexRoute: AuthenticatedAppsIndexRoute,

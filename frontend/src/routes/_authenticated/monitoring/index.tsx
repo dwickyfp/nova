@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { MonitoringQueryHistory } from '@/features/monitoring/query-history'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/monitoring/')({
-  component: MonitoringQueryHistory,
+  beforeLoad: async () => {
+    throw redirect({ to: '/query-history' })
+  },
 })

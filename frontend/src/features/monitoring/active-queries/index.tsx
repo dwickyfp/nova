@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -7,12 +7,23 @@ import {
   CheckCircle,
   Zap,
   AlertTriangle,
+  ChevronsLeft,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsRight,
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
   Dialog,
   DialogContent,
@@ -66,6 +77,8 @@ export function MonitoringActiveQueries() {
   const [userFilter, setUserFilter] = useState('')
   const [databaseFilter, setDatabaseFilter] = useState('')
   const [killTarget, setKillTarget] = useState<ActiveQuery | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const { data, isLoading, isFetching, refetch } = useQuery<ActiveQuery[]>({
     queryKey: ['monitoring', 'active-queries'],
@@ -90,16 +103,36 @@ export function MonitoringActiveQueries() {
   })
 
   const queries = data ?? []
+
+  // Extract unique options for SearchableSelect
+  const userOptions = useMemo(() => {
+    return [...new Set(queries.map((q) => q.user).filter(Boolean))] as string[]
+  }, [queries])
+
+  const databaseOptions = useMemo(() => {
+    return [...new Set(queries.map((q) => q.db).filter(Boolean))] as string[]
+  }, [queries])
+
+  // Client-side filter
   const filtered = queries.filter((q) => {
-    if (userFilter && !q.user.toLowerCase().includes(userFilter.toLowerCase()))
-      return false
-    if (
-      databaseFilter &&
-      !(q.db ?? '').toLowerCase().includes(databaseFilter.toLowerCase())
-    )
-      return false
+    if (userFilter && q.user !== userFilter) return false
+    if (databaseFilter && q.db !== databaseFilter) return false
     return true
   })
+
+  // Client-side pagination
+  const total = filtered.length
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const pageStart = total === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const pageEnd = Math.min(safePage * pageSize, total)
+  const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  const handlePageChange = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)))
+  const handlePageSizeChange = (v: string) => {
+    setPageSize(Number(v))
+    setPage(1)
+  }
 
   return (
     <div className='space-y-4'>
@@ -133,17 +166,17 @@ export function MonitoringActiveQueries() {
       </div>
 
       <div className='flex gap-2'>
-        <Input
-          placeholder='Filter by user...'
+        <SearchableSelect
+          options={userOptions}
           value={userFilter}
-          onChange={(e) => setUserFilter(e.target.value)}
-          className='max-w-xs'
+          onChange={(v) => { setUserFilter(v); setPage(1) }}
+          label='User'
         />
-        <Input
-          placeholder='Filter by database...'
+        <SearchableSelect
+          options={databaseOptions}
           value={databaseFilter}
-          onChange={(e) => setDatabaseFilter(e.target.value)}
-          className='max-w-xs'
+          onChange={(v) => { setDatabaseFilter(v); setPage(1) }}
+          label='Database'
         />
       </div>
 
@@ -157,65 +190,134 @@ export function MonitoringActiveQueries() {
           <p className='mt-2 text-sm text-muted-foreground'>No active queries</p>
         </div>
       ) : (
-        <div className='rounded-md border'>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Host</TableHead>
-                <TableHead>Database</TableHead>
-                <TableHead>Command</TableHead>
-                <TableHead>Time</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Query</TableHead>
-                <TableHead className='text-right'>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((query) => (
-                <TableRow key={query.id}>
-                  <TableCell className='font-mono text-xs'>
-                    {query.id}
-                  </TableCell>
-                  <TableCell>{query.user}</TableCell>
-                  <TableCell className='font-mono text-xs'>
-                    {query.host}
-                  </TableCell>
-                  <TableCell>{query.db ?? '—'}</TableCell>
-                  <TableCell>
-                    <span
-                      className={cn(
-                        'inline-block rounded px-2 py-0.5 text-xs font-medium',
-                        getCommandColor(query.command)
-                      )}
-                    >
-                      {query.command}
-                    </span>
-                  </TableCell>
-                  <TableCell className='font-mono text-xs'>
-                    {formatDuration(query.time ?? 0)}
-                  </TableCell>
-                  <TableCell className='text-xs'>{query.state}</TableCell>
-                  <TableCell className='max-w-xs truncate font-mono text-xs text-muted-foreground'>
-                    {query.info ?? '—'}
-                  </TableCell>
-                  <TableCell className='text-right'>
-                    <Button
-                      variant='ghost'
-                      size='sm'
-                      onClick={() => setKillTarget(query)}
-                      className='text-destructive hover:text-destructive'
-                    >
-                      <XCircle className='h-4 w-4' />
-                      Kill
-                    </Button>
-                  </TableCell>
+        <>
+          <div className='rounded-md border'>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>User</TableHead>
+                  <TableHead>Host</TableHead>
+                  <TableHead>Database</TableHead>
+                  <TableHead>Command</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead>Query</TableHead>
+                  <TableHead className='text-right'>Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {paged.map((query) => (
+                  <TableRow key={query.id}>
+                    <TableCell className='font-mono text-xs'>
+                      {query.id}
+                    </TableCell>
+                    <TableCell>{query.user}</TableCell>
+                    <TableCell className='font-mono text-xs'>
+                      {query.host}
+                    </TableCell>
+                    <TableCell>{query.db ?? '—'}</TableCell>
+                    <TableCell>
+                      <span
+                        className={cn(
+                          'inline-block rounded px-2 py-0.5 text-xs font-medium',
+                          getCommandColor(query.command)
+                        )}
+                      >
+                        {query.command}
+                      </span>
+                    </TableCell>
+                    <TableCell className='font-mono text-xs'>
+                      {formatDuration(query.time ?? 0)}
+                    </TableCell>
+                    <TableCell className='text-xs'>{query.state}</TableCell>
+                    <TableCell className='max-w-xs truncate font-mono text-xs text-muted-foreground'>
+                      {query.info ?? '—'}
+                    </TableCell>
+                    <TableCell className='text-right'>
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        onClick={() => setKillTarget(query)}
+                        className='text-destructive hover:text-destructive'
+                      >
+                        <XCircle className='h-4 w-4' />
+                        Kill
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination */}
+          <div className='flex items-center justify-between px-2'>
+            <div className='flex items-center gap-4'>
+              <div className='flex items-center gap-2 text-sm'>
+                <span className='text-muted-foreground'>Rows per page:</span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={handlePageSizeChange}
+                >
+                  <SelectTrigger className='w-[70px]'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='10'>10</SelectItem>
+                    <SelectItem value='25'>25</SelectItem>
+                    <SelectItem value='50'>50</SelectItem>
+                    <SelectItem value='100'>100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <span className='text-sm text-muted-foreground'>
+                Showing {pageStart}–{pageEnd} of {total}
+              </span>
+            </div>
+            <div className='flex items-center gap-1'>
+              <span className='me-2 text-sm text-muted-foreground'>
+                Page {safePage} of {totalPages}
+              </span>
+              <Button
+                variant='outline'
+                size='icon'
+                className='h-8 w-8'
+                onClick={() => handlePageChange(1)}
+                disabled={safePage === 1}
+              >
+                <ChevronsLeft className='h-4 w-4' />
+              </Button>
+              <Button
+                variant='outline'
+                size='icon'
+                className='h-8 w-8'
+                onClick={() => handlePageChange(safePage - 1)}
+                disabled={safePage === 1}
+              >
+                <ChevronLeft className='h-4 w-4' />
+              </Button>
+              <Button
+                variant='outline'
+                size='icon'
+                className='h-8 w-8'
+                onClick={() => handlePageChange(safePage + 1)}
+                disabled={safePage >= totalPages}
+              >
+                <ChevronRight className='h-4 w-4' />
+              </Button>
+              <Button
+                variant='outline'
+                size='icon'
+                className='h-8 w-8'
+                onClick={() => handlePageChange(totalPages)}
+                disabled={safePage >= totalPages}
+              >
+                <ChevronsRight className='h-4 w-4' />
+              </Button>
+            </div>
+          </div>
+        </>
       )}
 
       <Dialog open={!!killTarget} onOpenChange={() => setKillTarget(null)}>
@@ -264,4 +366,3 @@ export function MonitoringActiveQueries() {
     </div>
   )
 }
-

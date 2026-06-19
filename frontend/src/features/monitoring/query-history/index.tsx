@@ -1,11 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Clock,
   CheckCircle2,
-  XCircle,
-  Activity,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -27,7 +24,6 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { SearchableSelect } from '@/components/ui/searchable-select'
-import { Card, CardContent } from '@/components/ui/card'
 
 type QueryHistoryItem = {
   log_id: string
@@ -52,35 +48,14 @@ type QueryHistoryResponse = {
   total: number
 }
 
-type QueryStatsResponse = {
-  total: number
-  avg_duration_ms: number
-  error_count: number
-  success_count: number
-  error_rate: number
-}
-
 export function MonitoringQueryHistory() {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [pageSize, setPageSize] = useState(10)
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [userFilter, setUserFilter] = useState<string>('')
   const [databaseFilter, setDatabaseFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
-
-  // Fetch stats
-  const statsQuery = useQuery<QueryStatsResponse>({
-    queryKey: ['query-history-stats'],
-    queryFn: () => {
-      const params = new URLSearchParams()
-      if (searchQuery) params.set('search', searchQuery)
-      if (statusFilter) params.set('status', statusFilter)
-      if (userFilter) params.set('user_name', userFilter)
-      if (databaseFilter) params.set('database_name', databaseFilter)
-      return api.get<QueryStatsResponse>(`/query/history/stats?${params.toString()}`)
-    },
-  })
 
   // Fetch history
   const historyQuery = useQuery<QueryHistoryResponse>({
@@ -106,13 +81,14 @@ export function MonitoringQueryHistory() {
         `/query/history?${params.toString()}`
       )
     },
+    placeholderData: keepPreviousData,
   })
 
   const items = historyQuery.data?.items ?? []
   const total = historyQuery.data?.total ?? 0
-  const totalPages = Math.ceil(total / pageSize)
-
-  const stats = statsQuery.data
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const pageEnd = Math.min(page * pageSize, total)
 
   const userOptions = useMemo(() => {
     if (!historyQuery.data?.items) return []
@@ -132,14 +108,6 @@ export function MonitoringQueryHistory() {
       })
     }
   }, [historyQuery.error])
-
-  useEffect(() => {
-    if (statsQuery.error) {
-      toast.error('Failed to load query statistics', {
-        description: statsQuery.error.message,
-      })
-    }
-  }, [statsQuery.error])
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage)
@@ -182,6 +150,32 @@ export function MonitoringQueryHistory() {
     return sql.slice(0, maxLength).trim() + '...'
   }
 
+  const getStatusBadgeClassName = (status: string) => {
+    const normalizedStatus = status.toUpperCase()
+
+    if (normalizedStatus === 'SUCCESS') {
+      return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
+    }
+
+    if (
+      normalizedStatus === 'FAILED' ||
+      normalizedStatus === 'FAILURE' ||
+      normalizedStatus === 'ERROR'
+    ) {
+      return 'border-transparent bg-red-600 text-white hover:bg-red-600'
+    }
+
+    if (
+      normalizedStatus === 'RUNNING' ||
+      normalizedStatus === 'IN_PROGRESS' ||
+      normalizedStatus === 'PENDING'
+    ) {
+      return 'border-transparent bg-amber-500 text-white hover:bg-amber-500'
+    }
+
+    return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
+  }
+
   return (
     <div className='space-y-6'>
       {/* Header */}
@@ -190,83 +184,6 @@ export function MonitoringQueryHistory() {
         <p className='text-sm text-muted-foreground'>
           Browse and search previously executed queries across all workspaces.
         </p>
-      </div>
-
-      {/* Stats Cards */}
-      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <Activity className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Total Queries
-                </p>
-                <p className='text-2xl font-bold'>
-                  {stats?.total ?? '—'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <Clock className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Avg Duration
-                </p>
-                <p className='text-2xl font-bold'>
-                  {stats ? formatDuration(stats.avg_duration_ms) : '—'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <CheckCircle2 className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Success Rate
-                </p>
-                <p className='text-2xl font-bold'>
-                  {stats
-                    ? `${((stats.success_count / (stats.total || 1)) * 100).toFixed(1)}%`
-                    : '—'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className='rounded-md border border-border'>
-          <CardContent className='pt-6'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-md bg-muted p-2'>
-                <XCircle className='h-4 w-4 text-muted-foreground' />
-              </div>
-              <div>
-                <p className='text-xs font-medium text-muted-foreground'>
-                  Error Count
-                </p>
-                <p className='text-2xl font-bold'>
-                  {stats?.error_count ?? '—'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Filter Bar */}
@@ -311,7 +228,19 @@ export function MonitoringQueryHistory() {
       </div>
 
       {/* Data Table */}
-      <div className='rounded-md border border-border'>
+      <div className='relative rounded-md border border-border'>
+        {historyQuery.isFetching && !historyQuery.isLoading ? (
+          <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
+            <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
+              <div className='h-1.5 w-full overflow-hidden bg-muted'>
+                <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
+              </div>
+              <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
+                Loading next results...
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className='overflow-x-auto'>
           <table className='w-full'>
             <thead className='border-b border-border bg-muted/50'>
@@ -394,13 +323,10 @@ export function MonitoringQueryHistory() {
                       </td>
                       <td className='px-4 py-3'>
                         <Badge
-                          variant={
-                            item.status === 'SUCCESS' ? 'default' : 'destructive'
-                          }
+                          variant='secondary'
                           className={cn(
-                            'text-xs',
-                            item.status === 'SUCCESS' &&
-                              'bg-primary text-primary-foreground hover:bg-primary/90'
+                            'text-xs font-medium',
+                            getStatusBadgeClassName(item.status)
                           )}
                         >
                           {item.status}
@@ -469,7 +395,7 @@ export function MonitoringQueryHistory() {
       </div>
 
       {/* Pagination */}
-      <div className='flex items-center justify-between gap-4'>
+      <div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
         <div className='flex items-center gap-2 text-sm'>
           <span className='text-muted-foreground'>Rows per page:</span>
           <Select
@@ -480,16 +406,19 @@ export function MonitoringQueryHistory() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value='10'>10</SelectItem>
               <SelectItem value='25'>25</SelectItem>
               <SelectItem value='50'>50</SelectItem>
-              <SelectItem value='100'>100</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        <div className='flex items-center gap-2'>
+        <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
           <span className='text-sm text-muted-foreground'>
-            Page {page} of {totalPages || 1}
+            Showing {pageStart}-{pageEnd} of {total}
+          </span>
+          <span className='text-sm text-muted-foreground'>
+            Page {page} of {totalPages}
           </span>
           <div className='flex items-center gap-1'>
             <Button

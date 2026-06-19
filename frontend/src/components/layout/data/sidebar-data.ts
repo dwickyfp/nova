@@ -99,7 +99,7 @@ export const sidebarData: SidebarData = {
           items: [
             {
               title: 'Query History',
-              url: '/monitoring',
+              url: '/query-history',
               icon: Clock,
             },
             {
