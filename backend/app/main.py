@@ -25,6 +25,7 @@ from app.modules.users.router import router as users_router
 from app.modules.ai_ml.router import router as ai_router
 from app.modules.workspaces.router import router as workspaces_router
 from app.modules.monitoring.router import router as monitoring_router
+from app.modules.explorer.router import router as explorer_router
 # from app.modules.query.router import router as query_router
 # from app.modules.objects.router import router as objects_router
 # from app.modules.tables.router import router as tables_router
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(tables_router, prefix=f"{prefix}/tables", tags=["tables"])
     app.include_router(views_router, prefix=f"{prefix}/views", tags=["views"])
     app.include_router(stages_router, prefix=f"{prefix}/stages", tags=["stages"])
+    app.include_router(explorer_router, prefix=f"{prefix}/explorer", tags=["explorer"])
     app.include_router(users_router, prefix=f"{prefix}/users", tags=["users"])
     app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["ai"])
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])

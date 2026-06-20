@@ -4,6 +4,7 @@ import logging
 import secrets
 import string
 from collections import defaultdict
+import re
 from typing import Literal
 
 import asyncmy
@@ -309,6 +310,13 @@ class UserService:
 
         return sorted(users, key=lambda item: (item["username"].lower(), item["host"].lower()))
 
+    async def user_exists(self, username: str, host: str = "%") -> bool:
+        users = await self.list_users()
+        return any(
+            entry["username"] == username and entry["host"] == host
+            for entry in users
+        )
+
     async def reset_password(self, username: str, host: str = "%") -> str:
         self._protect_user(username)
         alphabet = string.ascii_letters + string.digits
@@ -328,6 +336,83 @@ class UserService:
             elif row:
                 grants.append(str(row[-1]))
         return grants
+
+    def _normalize_user_grant(self, grant_sql: str) -> dict | None:
+        statement = " ".join(grant_sql.strip().split())
+        if not statement:
+            return None
+
+        role_match = re.match(
+            r"^GRANT\s+(.+?)\s+TO\s+USER\s+'[^']+'@'[^']+'$",
+            statement,
+            flags=re.IGNORECASE,
+        )
+        if role_match:
+            role_name = self._normalize_role_name(role_match.group(1))
+            if role_name.lower() == "root":
+                return None
+            return {
+                "name": role_name,
+                "granted_at": None,
+                "granted_to": "USER",
+                "granted_on": "ROLE",
+                "granted_by": "SYSTEM",
+                "grant_type": "ROLE",
+            }
+
+        object_match = re.match(
+            r"^GRANT\s+.+?\s+ON\s+(.+?)\s+TO\s+USER\s+'[^']+'@'[^']+'(?:\s+WITH\s+GRANT\s+OPTION)?$",
+            statement,
+            flags=re.IGNORECASE,
+        )
+        if object_match:
+            object_target = object_match.group(1).strip()
+            parts = object_target.split(None, 1)
+            granted_on = parts[0].upper() if parts else "OBJECT"
+            name = parts[1].strip() if len(parts) > 1 else object_target
+            return {
+                "name": name,
+                "granted_at": None,
+                "granted_to": "USER",
+                "granted_on": granted_on,
+                "granted_by": "SYSTEM",
+                "grant_type": "PRIVILEGE",
+            }
+
+        return {
+            "name": statement,
+            "granted_at": None,
+            "granted_to": "USER",
+            "granted_on": "UNKNOWN",
+            "granted_by": "SYSTEM",
+            "grant_type": "UNKNOWN",
+        }
+
+    async def get_user_detail(self, username: str, host: str = "%") -> dict:
+        users = await self.list_users()
+        user_entry = next(
+            (
+                entry
+                for entry in users
+                if entry["username"] == username and entry["host"] == host
+            ),
+            None,
+        )
+
+        if user_entry is None:
+            raise ValueError(f"User '{username}@{host}' not found")
+
+        raw_grants = await self.get_user_grants(username, host=host)
+        grants = [
+            normalized
+            for normalized in (self._normalize_user_grant(grant) for grant in raw_grants)
+            if normalized is not None
+        ]
+
+        return {
+            **user_entry,
+            "grants": grants,
+        }
 
     async def get_user_properties(self, username: str) -> dict[str, str]:
         safe_user = self._escape(username)
@@ -494,6 +579,9 @@ class UserService:
 
     async def drop_user(self, username: str, host: str = "%") -> None:
         self._protect_user(username)
+        if not await self.user_exists(username, host=host):
+            logger.info("Skip DROP USER because %s@%s does not exist", username, host)
+            return
         identity = self._user_identity(username, host)
         await db.execute_system(f"DROP USER {identity}")
 

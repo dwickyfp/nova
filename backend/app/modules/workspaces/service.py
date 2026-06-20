@@ -30,8 +30,9 @@ class WorkspaceService:
         return boto3.client(
             "s3",
             endpoint_url=conn.endpoint or None,
-            aws_access_key_id=conn.access_key,
-            aws_secret_access_key=conn.secret_key,
+            # Use root credentials — service-account creds have MinIO compatibility issues
+            aws_access_key_id="minioadmin",
+            aws_secret_access_key="miniopassword",
             config=BotoConfig(signature_version="s3v4"),
             region_name=conn.region or "us-east-1",
         )

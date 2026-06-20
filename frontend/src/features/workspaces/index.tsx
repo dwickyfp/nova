@@ -2081,7 +2081,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
     )
   }
 
-  if (queryResult.warnings?.length) {
+  if (queryResult.warnings?.length && !queryResult.columns.length) {
     return (
       <div className='p-4 text-sm text-destructive'>
         {queryResult.warnings.map((w, i) => (
@@ -2116,6 +2116,15 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
   const startIdx = (page - 1) * pageSize
   const pageRows = sortedRows.slice(startIdx, startIdx + pageSize)
 
+  // Warnings indicator (shown alongside data, not replacing it)
+  const warningsBanner = queryResult.warnings?.length ? (
+    <div className='border-b border-border bg-amber-500/10 px-4 py-2 text-xs text-amber-600 dark:text-amber-400'>
+      {queryResult.warnings.map((w, i) => (
+        <div key={i}>{w}</div>
+      ))}
+    </div>
+  ) : null
+
   function handleSort(colIdx: number) {
     if (sortCol === colIdx) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -2128,6 +2137,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
 
   return (
     <div className='flex h-full flex-col'>
+      {warningsBanner}
       <div className='min-h-0 flex-1 overflow-auto'>
         <table className='w-full border-separate border-spacing-0 text-sm'>
           <thead className='sticky top-0 z-10 bg-background'>
@@ -3780,10 +3790,16 @@ function MonacoSqlEditor({
       return response.items
     }
 
-    const stageFileMatch = textUntilPosition.match(/@([A-Za-z0-9_]+)\.([\w.-]*)$/)
+    const stageFileMatch = textUntilPosition.match(/@([A-Za-z0-9_-]+)\.([\w./-]*)$/)
     if (stageFileMatch) {
+      const stageName = stageFileMatch[1]
+      const filePrefix = stageFileMatch[2] ?? ''
+      // Support folder traversal: @stage.folder.subfolder.
+      const lastDot = filePrefix.lastIndexOf('.')
+      const folderPath = lastDot >= 0 ? filePrefix.substring(0, lastDot) : ''
+      const namePrefix = lastDot >= 0 ? filePrefix.substring(lastDot + 1) : filePrefix
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=stage_file&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&stage=${encodeURIComponent(stageFileMatch[1])}&prefix=${encodeURIComponent(stageFileMatch[2] ?? '')}`
+        `/query/completions?kind=stage_file&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&stage=${encodeURIComponent(stageName)}&folder=${encodeURIComponent(folderPath)}&prefix=${encodeURIComponent(namePrefix)}`
       )
       return response.items
     }

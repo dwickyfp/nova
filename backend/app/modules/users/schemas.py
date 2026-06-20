@@ -125,6 +125,35 @@ class UserDefaultRolesResponse(BaseModel):
     roles: list[str] = Field(default_factory=list)
 
 
+class UserGrantRow(BaseModel):
+    """Normalized grant row for user detail screens."""
+
+    name: str
+    granted_at: str | None = None
+    granted_to: str
+    granted_on: str
+    granted_by: str = "SYSTEM"
+    grant_type: str
+
+
+class UserDetailResponse(BaseModel):
+    """Aggregate user detail payload for the admin detail page."""
+
+    username: str
+    host: str
+    identity: str
+    is_protected: bool
+    roles: list[str] = Field(default_factory=list)
+    default_roles: list[str] = Field(default_factory=list)
+    default_role_mode: DefaultRoleMode = "none"
+    auth_plugin: str | None = None
+    auth_mode: str = "native_password"
+    password_enabled: bool = False
+    last_login: str | None = None
+    properties: dict[str, str] = Field(default_factory=dict)
+    grants: list[UserGrantRow] = Field(default_factory=list)
+
+
 class RoleCreate(BaseModel):
     """Request body for creating a role."""
 

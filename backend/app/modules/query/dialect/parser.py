@@ -47,17 +47,19 @@ class ParsedSQL:
 
 # Pattern: @stage_name[.path.parts...]
 # Captures: @word.word.word...
+# Supports hyphens in stage names and filenames (e.g. @my-stage.data-2026-06-19.csv)
 _STAGE_PATTERN = re.compile(
-    r'@([a-zA-Z_][a-zA-Z0-9_]*)'  # stage name
-    r'((?:\.[a-zA-Z0-9_]+)*)'       # optional .path.parts
-    r'(/)?'                          # optional trailing slash (directory)
-    r'(?:\s|$|;|,|\)|\()'           # boundary
+    r'@([a-zA-Z_][a-zA-Z0-9_-]*)'   # stage name (letters, digits, underscores, hyphens)
+    r'((?:\.[a-zA-Z0-9_-]+)*)'        # optional .path.parts (supports hyphens)
+    r'(/)?'                           # optional trailing slash (directory)
+    r'(?:\s|$|;|,|\)|\()'            # boundary
 )
 
 # File extension pattern
 _FILE_EXTENSIONS = {
     'csv', 'tsv', 'json', 'parquet', 'orc', 'avro',
     'txt', 'gz', 'bz2', 'snappy', 'zstd', 'lzo',
+    'xlsx', 'xls', 'xml', 'log', 'sql', 'ndjson', 'jsonl',
 }
 
 

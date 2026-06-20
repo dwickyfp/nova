@@ -51,7 +51,7 @@
 ### STAGES
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.STAGES (
+CREATE TABLE NOVA_SYSTEM.CONFIG_STAGES (
     id                    VARCHAR(64) PRIMARY KEY,
     name                  VARCHAR(128) NOT NULL,
     database_name         VARCHAR(128) NOT NULL,
@@ -68,7 +68,7 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ### PINNED_QUERIES
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.PINNED_QUERIES (
+CREATE TABLE NOVA_SYSTEM.CONFIG_PINNED_QUERIES (
     id              VARCHAR(64) PRIMARY KEY,
     user_name       VARCHAR(128) NOT NULL,
     name            VARCHAR(256) NOT NULL,
@@ -85,7 +85,7 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ### USER_PREFERENCES
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.USER_PREFERENCES (
+CREATE TABLE NOVA_SYSTEM.CONFIG_USER_PREFERENCES (
     user_name       VARCHAR(128),
     pref_key        VARCHAR(128),
     pref_value      TEXT,
@@ -98,12 +98,12 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ### AI_PROVIDERS (LLM Provider Connections)
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.AI_PROVIDERS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_AI_PROVIDERS (
     id              VARCHAR(64) PRIMARY KEY,
     name            VARCHAR(128) NOT NULL,          -- "OpenAI", "Anthropic", "My vLLM"
     type            VARCHAR(32) NOT NULL,           -- openai, anthropic, openai_compatible
     endpoint        VARCHAR(512) NOT NULL,          -- https://api.openai.com/v1
-    api_key_env     VARCHAR(128),                   -- env var name (never store actual key)
+    api_key         VARCHAR(512),                   -- API key stored directly (configurable via UI)
     default_params  TEXT,                            -- JSON: {"temperature": 0.7}
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -116,7 +116,7 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ### AI_MODELS (LLM/Embedding Models per Provider)
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.AI_MODELS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_AI_MODELS (
     id              VARCHAR(64) PRIMARY KEY,
     provider_id     VARCHAR(64) NOT NULL,           -- FK to AI_PROVIDERS
     name            VARCHAR(128) NOT NULL,          -- "gpt-4o", "claude-sonnet-4"
@@ -128,14 +128,14 @@ CREATE TABLE NOVA_SYSTEM.CONFIG.AI_MODELS (
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_by      VARCHAR(128)
 ) PRIMARY KEY(id)
-DISTRIBUTED BY HASH(provider_id) BUCKETS 1
+DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ```
 
 ### OBJECT_TAGS
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.OBJECT_TAGS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_OBJECT_TAGS (
     object_type     VARCHAR(32),
     object_name     VARCHAR(512),
     tag_key         VARCHAR(128),
@@ -150,7 +150,7 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ### DASHBOARDS
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.DASHBOARDS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_DASHBOARDS (
     id              VARCHAR(64) PRIMARY KEY,
     name            VARCHAR(256) NOT NULL,
     description     TEXT,
@@ -165,7 +165,7 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ### DASHBOARD_WIDGETS
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.DASHBOARD_WIDGETS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_DASHBOARD_WIDGETS (
     id              VARCHAR(64) PRIMARY KEY,
     dashboard_id    VARCHAR(64),
     title           VARCHAR(256),
@@ -191,7 +191,7 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ### LOG
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.AUDIT.LOG (
+CREATE TABLE NOVA_SYSTEM.AUDIT_LOG (
     log_id        BIGINT AUTO_INCREMENT,
     timestamp     DATETIME DEFAULT CURRENT_TIMESTAMP,
     user_name     VARCHAR(128),
@@ -220,7 +220,7 @@ PROPERTIES(
 ### FILE_MANIFEST
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.STAGE.FILE_MANIFEST (
+CREATE TABLE NOVA_SYSTEM.STAGE_FILE_MANIFEST (
     file_id       BIGINT AUTO_INCREMENT,
     stage_id      VARCHAR(64),
     stage_name    VARCHAR(128),
@@ -248,7 +248,7 @@ PROPERTIES("replication_num"="1");
 ### LOAD_HISTORY
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.LINEAGE.LOAD_HISTORY (
+CREATE TABLE NOVA_SYSTEM.LINEAGE_LOAD_HISTORY (
     load_id       BIGINT AUTO_INCREMENT,
     timestamp     DATETIME DEFAULT CURRENT_TIMESTAMP,
     user_name     VARCHAR(128),
@@ -276,7 +276,7 @@ PROPERTIES(
 ### TABLE_STATS
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.QUALITY.TABLE_STATS (
+CREATE TABLE NOVA_SYSTEM.QUALITY_TABLE_STATS (
     stat_id         BIGINT AUTO_INCREMENT,
     snapshot_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
     table_fullname  VARCHAR(256),
@@ -303,7 +303,7 @@ PROPERTIES(
 ### QUERY_STATS
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.USAGE.QUERY_STATS (
+CREATE TABLE NOVA_SYSTEM.USAGE_QUERY_STATS (
     stat_id            BIGINT AUTO_INCREMENT,
     date               DATE,
     user_name          VARCHAR(128),
@@ -332,18 +332,18 @@ PROPERTIES("replication_num"="1");
 ```sql
 -- List all stages
 SELECT name, database_name, schema_name, storage_connection, base_prefix
-FROM NOVA_SYSTEM.CONFIG.STAGES
+FROM NOVA_SYSTEM.CONFIG_STAGES
 ORDER BY database_name, schema_name, name;
 
 -- Saved queries for current user
 SELECT name, sql_text, is_shared
-FROM NOVA_SYSTEM.CONFIG.PINNED_QUERIES
+FROM NOVA_SYSTEM.CONFIG_PINNED_QUERIES
 WHERE user_name = 'analyst' OR is_shared = TRUE
 ORDER BY created_at DESC;
 
 -- User preferences
 SELECT pref_key, pref_value
-FROM NOVA_SYSTEM.CONFIG.USER_PREFERENCES
+FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES
 WHERE user_name = 'admin';
 ```
 
@@ -353,32 +353,32 @@ WHERE user_name = 'admin';
 -- Top users today
 SELECT user_name, COUNT(*) AS actions,
        SUM(CASE WHEN status='ERROR' THEN 1 ELSE 0 END) AS errors
-FROM NOVA_SYSTEM.AUDIT.LOG
+FROM NOVA_SYSTEM.AUDIT_LOG
 WHERE DATE(timestamp) = CURDATE()
 GROUP BY user_name ORDER BY actions DESC;
 
 -- Data lineage: where did table data come from?
 SELECT source_type, source_path, rows_loaded, timestamp
-FROM NOVA_SYSTEM.LINEAGE.LOAD_HISTORY
+FROM NOVA_SYSTEM.LINEAGE_LOAD_HISTORY
 WHERE target_table = 'DATALAKE.bronze.orders'
 ORDER BY timestamp DESC;
 
 -- Stale tables (>24h no load)
 SELECT target_table, MAX(timestamp) AS last_load,
        TIMESTAMPDIFF(HOUR, MAX(timestamp), NOW()) AS hours_since
-FROM NOVA_SYSTEM.LINEAGE.LOAD_HISTORY
+FROM NOVA_SYSTEM.LINEAGE_LOAD_HISTORY
 WHERE status = 'SUCCESS'
 GROUP BY target_table HAVING hours_since > 24;
 
 -- Storage per stage
 SELECT stage_name, COUNT(*) AS files, SUM(file_size)/1e9 AS total_gb
-FROM NOVA_SYSTEM.STAGE.FILE_MANIFEST
+FROM NOVA_SYSTEM.STAGE_FILE_MANIFEST
 WHERE is_deleted = FALSE
 GROUP BY stage_name;
 
 -- P95 query latency trend
 SELECT date, AVG(p95_duration_ms) AS avg_p95_ms
-FROM NOVA_SYSTEM.USAGE.QUERY_STATS
+FROM NOVA_SYSTEM.USAGE_QUERY_STATS
 GROUP BY date ORDER BY date DESC LIMIT 30;
 ```
 
@@ -414,16 +414,16 @@ async def init_nova_system():
         sr_execute(f"CREATE SCHEMA IF NOT EXISTS NOVA_SYSTEM.{schema}")
     
     # CONFIG (Primary Key tables)
-    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.STAGES (...) PRIMARY KEY(id) ...")
-    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.PINNED_QUERIES (...) PRIMARY KEY(id) ...")
-    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.USER_PREFERENCES (...) ...")
+    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STAGES (...) PRIMARY KEY(id) ...")
+    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_PINNED_QUERIES (...) PRIMARY KEY(id) ...")
+    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_USER_PREFERENCES (...) ...")
     
     # Analytics (Duplicate Key tables)
-    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT.LOG (...) PRIMARY KEY(log_id) ...")
-    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.STAGE.FILE_MANIFEST (...) PRIMARY KEY(file_id) ...")
-    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.LINEAGE.LOAD_HISTORY (...) PRIMARY KEY(load_id) ...")
-    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUALITY.TABLE_STATS (...) PRIMARY KEY(stat_id) ...")
-    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.USAGE.QUERY_STATS (...) PRIMARY KEY(stat_id) ...")
+    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (...) PRIMARY KEY(log_id) ...")
+    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.STAGE_FILE_MANIFEST (...) PRIMARY KEY(file_id) ...")
+    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.LINEAGE_LOAD_HISTORY (...) PRIMARY KEY(load_id) ...")
+    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUALITY_TABLE_STATS (...) PRIMARY KEY(stat_id) ...")
+    sr_execute("CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.USAGE_QUERY_STATS (...) PRIMARY KEY(stat_id) ...")
     
     print("✅ NOVA_SYSTEM initialized (6 schemas, 8 tables)")
 ```

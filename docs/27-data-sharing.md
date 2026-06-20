@@ -95,5 +95,5 @@ SELECT * FROM shared_data_from_nova.analytics.order_summary;
 | Access control | StarRocks GRANT/REVOKE on views |
 | Data masking | Apply masking policies before sharing |
 | Row filtering | Apply row access policies before sharing |
-| Audit | Log all access to shared objects in NOVA_SYSTEM.AUDIT.LOG |
+| Audit | Log all access to shared objects in NOVA_SYSTEM.AUDIT_LOG |
 | Encryption | Data encrypted at rest (storage) and in transit (TLS) |

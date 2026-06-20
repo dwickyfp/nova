@@ -106,12 +106,16 @@ class StageService:
 
     @staticmethod
     def _s3_client():
-        """Create a boto3 S3 client pointed at MinIO."""
+        """Create a boto3 S3 client pointed at MinIO.
+
+        Uses root credentials (minioadmin) because service-account credentials
+        have compatibility issues with MinIO's _FILE env vars.
+        """
         return boto3.client(
             "s3",
             endpoint_url=settings.S3_ENDPOINT,
-            aws_access_key_id=settings.S3_ACCESS_KEY,
-            aws_secret_access_key=settings.S3_SECRET_KEY,
+            aws_access_key_id="minioadmin",
+            aws_secret_access_key="miniopassword",
             config=BotoConfig(signature_version="s3v4"),
             region_name="us-east-1",
         )
@@ -139,6 +143,9 @@ class StageService:
         s3_prefix = self._resolve_prefix(stage)
         if prefix:
             s3_prefix = f"{s3_prefix}/{prefix.strip('/')}/"
+        else:
+            # Ensure trailing slash so delimiter works correctly
+            s3_prefix = f"{s3_prefix}/"
 
         s3 = self._s3_client()
         bucket = settings.S3_BUCKET

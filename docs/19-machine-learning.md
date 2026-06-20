@@ -146,7 +146,7 @@ class AIFunctionService:
         return json.dumps({
             "endpoint_url": m.endpoint,
             "model": m.model,
-            "api-key": m.api_key_env,
+            "api-key": m.api_key,
         })
 ```
 
@@ -286,11 +286,11 @@ CREATE ML_MODEL <name> TYPE = <type> INPUT = (<query>) ...;
 
 -- LIST models
 SHOW ML_MODELS;
-SELECT * FROM NOVA_SYSTEM.ML.MODELS;
+SELECT * FROM NOVA_SYSTEM.ML_MODELS;
 
 -- MODEL details
 DESC ML_MODEL <name>;
-SELECT * FROM NOVA_SYSTEM.ML.MODEL_VERSIONS WHERE model_name = '<name>';
+SELECT * FROM NOVA_SYSTEM.ML_MODEL_VERSIONS WHERE model_name = '<name>';
 
 -- VERSIONING
 ALTER ML_MODEL <name> ADD VERSION 'v2' FROM <training_query>;
@@ -316,7 +316,7 @@ DROP ML_MODEL <name>;
 ```sql
 CREATE SCHEMA IF NOT EXISTS NOVA_SYSTEM.ML;
 
-CREATE TABLE NOVA_SYSTEM.ML.MODELS (
+CREATE TABLE NOVA_SYSTEM.ML_MODELS (
     model_id        VARCHAR(64) PRIMARY KEY,
     model_name      VARCHAR(128) NOT NULL,
     model_type      VARCHAR(32),         -- FORECAST, CLASSIFICATION, ANOMALY_DETECTION
@@ -327,7 +327,7 @@ CREATE TABLE NOVA_SYSTEM.ML.MODELS (
 ) PRIMARY KEY(model_id) DISTRIBUTED BY HASH(model_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
-CREATE TABLE NOVA_SYSTEM.ML.MODEL_VERSIONS (
+CREATE TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS (
     version_id      VARCHAR(64) PRIMARY KEY,
     model_name      VARCHAR(128),
     version_name    VARCHAR(32),
@@ -341,7 +341,7 @@ CREATE TABLE NOVA_SYSTEM.ML.MODEL_VERSIONS (
 ) PRIMARY KEY(version_id) DISTRIBUTED BY HASH(version_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
-CREATE TABLE NOVA_SYSTEM.ML.MODEL_ALIASES (
+CREATE TABLE NOVA_SYSTEM.ML_MODEL_ALIASES (
     alias_name      VARCHAR(128),
     model_name      VARCHAR(128),
     version_name    VARCHAR(32),
@@ -370,12 +370,12 @@ No Ollama, no hardcoded models — fully configurable.
 
 ```sql
 -- AI Provider (connection to LLM service)
-CREATE TABLE NOVA_SYSTEM.CONFIG.AI_PROVIDERS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_AI_PROVIDERS (
     id              VARCHAR(64) PRIMARY KEY,
     name            VARCHAR(128) NOT NULL,          -- "OpenAI", "Anthropic", "My vLLM"
     type            VARCHAR(32) NOT NULL,           -- openai, anthropic, openai_compatible
     endpoint        VARCHAR(512) NOT NULL,          -- https://api.openai.com/v1
-    api_key_env     VARCHAR(128),                   -- env var name (never store actual key)
+    api_key         VARCHAR(512),                   -- API key stored directly (configurable via UI)
     default_params  TEXT,                            -- JSON: {"temperature": 0.7}
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -385,7 +385,7 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 -- AI Model (belongs to a provider)
-CREATE TABLE NOVA_SYSTEM.CONFIG.AI_MODELS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_AI_MODELS (
     id              VARCHAR(64) PRIMARY KEY,
     provider_id     VARCHAR(64) NOT NULL,           -- FK to AI_PROVIDERS
     name            VARCHAR(128) NOT NULL,          -- "gpt-4o", "claude-sonnet-4"
@@ -397,7 +397,7 @@ CREATE TABLE NOVA_SYSTEM.CONFIG.AI_MODELS (
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_by      VARCHAR(128)
 ) PRIMARY KEY(id)
-DISTRIBUTED BY HASH(provider_id) BUCKETS 1
+DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 ```
 
@@ -513,7 +513,7 @@ SQL: CREATE ML_MODEL ... TYPE = FORECAST ...
     → Trains model using Python (Prophet/statsmodels/sklearn)
     → Serializes model (pickle)
     → Stores artifact in object storage (via stage)
-    → Registers metadata in NOVA_SYSTEM.ML.MODELS
+    → Registers metadata in NOVA_SYSTEM.ML_MODELS
 
 SQL: SELECT ML_FORECAST('model_name', 30) ...
     → Nova backend receives query

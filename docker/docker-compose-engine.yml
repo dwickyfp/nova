@@ -49,6 +49,13 @@ services:
       TZ: ${TZ:-Asia/Jakarta}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # Override ALL built-in _FILE env vars from MinIO image
+      # Use space character to effectively blank them (empty string removes the var)
+      MINIO_ROOT_USER_FILE: " "
+      MINIO_ROOT_PASSWORD_FILE: " "
+      MINIO_ACCESS_KEY_FILE: " "
+      MINIO_SECRET_KEY_FILE: " "
+      MINIO_KMS_SECRET_KEY_FILE: " "
     volumes:
       - minio_data:/data
       - /usr/share/zoneinfo/Asia/Jakarta:/usr/share/zoneinfo/Asia/Jakarta:ro

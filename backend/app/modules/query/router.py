@@ -130,6 +130,7 @@ async def get_query_completions(
     role: str | None = None,
     table: str | None = None,
     stage: str | None = None,
+    folder: str | None = None,
     user: dict = Depends(get_current_user),
 ):
     result = await query_service.get_completions(
@@ -142,6 +143,7 @@ async def get_query_completions(
         role=role,
         table=table,
         stage=stage,
+        folder=folder,
     )
     return CompletionResponse(**result)
 

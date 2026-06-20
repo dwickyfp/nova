@@ -45,7 +45,7 @@ Client (any MySQL client)
 │  4. Dialect rewrite: @stage → FILES() + creds             │
 │  5. Forward to StarRocks                                  │
 │  6. Return results to client                              │
-│  7. Audit log → NOVA_SYSTEM.AUDIT.LOG                     │
+│  7. Audit log → NOVA_SYSTEM.AUDIT_LOG                     │
 │                                                            │
 └──────────────────────────┬─────────────────────────────────┘
                            │ MySQL protocol (port 9030)
@@ -449,11 +449,11 @@ Every query through the proxy is logged:
 
 ```python
 def _audit(self, user, original_sql, rewritten_sql, status, duration_ms, error=None):
-    """Log to NOVA_SYSTEM.AUDIT.LOG via separate connection."""
+    """Log to NOVA_SYSTEM.AUDIT_LOG via separate connection."""
     try:
         conn = get_admin_connection()
         conn.cursor().execute("""
-            INSERT INTO NOVA_SYSTEM.AUDIT.LOG
+            INSERT INTO NOVA_SYSTEM.AUDIT_LOG
             (timestamp, user_name, action, sql_text, rewritten_sql, status, duration_ms, error_msg)
             VALUES (NOW(), %s, 'QUERY', %s, %s, %s, %s, %s)
         """, [user, original_sql, rewritten_sql, status, duration_ms, error])
@@ -551,7 +551,7 @@ stream {
 | Password in transit | TLS/SSL on proxy (configure in nginx or directly) |
 | Password storage | Never stored — verified per-connection against StarRocks |
 | SQL injection | StarRocks handles parameterized queries |
-| Audit | Every query logged to NOVA_SYSTEM.AUDIT.LOG |
+| Audit | Every query logged to NOVA_SYSTEM.AUDIT_LOG |
 | Rate limiting | Implement in proxy (max queries/minute per user) |
 | Connection limits | Configurable max_connections |
 

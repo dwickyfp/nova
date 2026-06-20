@@ -1,4 +1,5 @@
 import {
+  Bot,
   Clock,
   Database,
   LayoutDashboard,
@@ -28,6 +29,11 @@ export const sidebarData: SidebarData = {
       title: 'Data Management',
       items: [
         {
+          title: 'Database Explorer',
+          url: '/database-explorer',
+          icon: Database,
+        },
+        {
           title: 'Workspaces',
           url: '/workspaces',
           icon: Database,
@@ -41,6 +47,11 @@ export const sidebarData: SidebarData = {
           title: 'Users & Roles',
           url: '/users',
           icon: Users,
+        },
+        {
+          title: 'AI Providers',
+          url: '/ai-providers',
+          icon: Bot,
         },
       ],
     },

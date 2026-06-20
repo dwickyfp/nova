@@ -26,8 +26,8 @@ UI                       → read-only view of connections (no edit)
 | Bucket | `nova.yaml` | ❌ |
 | Access key | `nova.yaml` + `.env` | ❌ |
 | Secret key | `nova.yaml` + `.env` | ❌ |
-| Stage name | `NOVA_SYSTEM.CONFIG.STAGES` | ✅ |
-| Stage prefix | `NOVA_SYSTEM.CONFIG.STAGES` | ✅ |
+| Stage name | `NOVA_SYSTEM.CONFIG_STAGES` | ✅ |
+| Stage prefix | `NOVA_SYSTEM.CONFIG_STAGES` | ✅ |
 
 ---
 

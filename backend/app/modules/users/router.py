@@ -11,6 +11,7 @@ from app.modules.users.schemas import (
     UserAuthenticationResponse,
     UserCreate,
     UserDefaultRolesResponse,
+    UserDetailResponse,
     UserListResponse,
     UserResetPasswordResponse,
     UserResponse,
@@ -149,6 +150,20 @@ async def get_user_grants(
     try:
         grants = await user_service.get_user_grants(username, host=host)
         return {"username": username, "host": host, "grants": grants, "count": len(grants)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{username}/detail", response_model=UserDetailResponse)
+async def get_user_detail(
+    username: str,
+    host: str = Query("%"),
+    user: dict = Depends(get_current_user),
+):
+    try:
+        return UserDetailResponse(**await user_service.get_user_detail(username, host=host))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

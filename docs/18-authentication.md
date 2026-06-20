@@ -28,7 +28,7 @@ Step 2: User opens Nova (http://localhost:3000)
   Login: nova_admin / nova (default password)
 
 Step 3: API detects first login
-  Check: NOVA_SYSTEM.CONFIG.USER_PREFERENCES
+  Check: NOVA_SYSTEM.CONFIG_USER_PREFERENCES
          WHERE user_name = '__system__' AND pref_key = 'setup_complete'
   Result: not found → SETUP_REQUIRED
 
@@ -134,7 +134,7 @@ async def setup(session_id: str, new_password: str, confirm_password: str):
 
     # 3. Mark setup complete
     execute_as_root("""
-        INSERT INTO NOVA_SYSTEM.CONFIG.USER_PREFERENCES
+        INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES
         (user_name, pref_key, pref_value, updated_at)
         VALUES ('__system__', 'setup_complete', 'true', NOW())
     """)
@@ -149,7 +149,7 @@ def is_system_setup_complete() -> bool:
     """Check if the initial setup has been completed."""
     try:
         result = execute_as_root("""
-            SELECT pref_value FROM NOVA_SYSTEM.CONFIG.USER_PREFERENCES
+            SELECT pref_value FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES
             WHERE user_name = '__system__' AND pref_key = 'setup_complete'
         """)
         return result.get("rows") and result["rows"][0][0] == "true"

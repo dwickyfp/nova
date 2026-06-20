@@ -16,9 +16,13 @@ from app.modules.ai_ml.schemas import (
     AIModelCreate,
     AIModelListResponse,
     AIModelResponse,
+    AIModelUpdate,
     AIProviderCreate,
     AIProviderListResponse,
     AIProviderResponse,
+    AIProviderUpdate,
+    TestConnectionRequest,
+    TestConnectionResponse,
 )
 from app.modules.ai_ml.service import ai_service
 
@@ -62,6 +66,48 @@ async def delete_provider(
         raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
 
 
+@router.put("/providers/{provider_id}", response_model=AIProviderResponse)
+async def update_provider(
+    provider_id: str,
+    body: AIProviderUpdate,
+    user: dict = Depends(get_current_user),
+):
+    """Update an existing AI provider."""
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    try:
+        result = await ai_service.update_provider(provider_id, data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
+    return AIProviderResponse(**result)
+
+
+# ── Test Connection ──────────────────────────────────────────────
+
+
+@router.post("/test-connection", response_model=TestConnectionResponse)
+async def test_connection(
+    body: TestConnectionRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Test connectivity to an LLM provider endpoint.
+
+    Hits the provider's /models endpoint to verify:
+    - Endpoint URL is reachable
+    - API key (if required) is valid
+    - Returns list of available model IDs
+    """
+    result = await ai_service.test_connection(
+        provider_type=body.type,
+        endpoint=body.endpoint,
+        api_key=body.api_key,
+    )
+    return TestConnectionResponse(**result)
+
+
 # ── Models ─────────────────────────────────────────────────────
 
 
@@ -102,3 +148,22 @@ async def delete_model(
     deleted = await ai_service.delete_model(model_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
+
+
+@router.put("/models/{model_id}", response_model=AIModelResponse)
+async def update_model(
+    model_id: str,
+    body: AIModelUpdate,
+    user: dict = Depends(get_current_user),
+):
+    """Update an existing AI model."""
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    try:
+        result = await ai_service.update_model(model_id, data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
+    return AIModelResponse(**result)

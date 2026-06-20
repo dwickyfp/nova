@@ -17,7 +17,7 @@ ANALYTICS.raw.import    →  azure://nova-backup/analytics/raw/import/
 
 Users see: `@stage1.data.file.csv`
 Admin configures: storage connection in `nova.yaml` once.
-Stage definitions stored in: `NOVA_SYSTEM.CONFIG.STAGES`
+Stage definitions stored in: `NOVA_SYSTEM.CONFIG_STAGES`
 
 ---
 
@@ -34,7 +34,7 @@ Storage:  [dropdown of configured connections]
 ```
 
 **Under the hood:**
-1. Register stage in `NOVA_SYSTEM.CONFIG.STAGES` (name, database, schema, storage_connection ref, base_prefix)
+1. Register stage in `NOVA_SYSTEM.CONFIG_STAGES` (name, database, schema, storage_connection ref, base_prefix)
 2. Create prefix "folder" in object storage (empty marker object)
 
 ### List Stages

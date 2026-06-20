@@ -153,7 +153,7 @@ Tag databases, tables, columns with key-value metadata.
 ### Implementation (NOVA_SYSTEM)
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.OBJECT_TAGS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_OBJECT_TAGS (
     object_type     VARCHAR(32),    -- DATABASE, TABLE, COLUMN
     object_name     VARCHAR(512),   -- db.table.column
     tag_key         VARCHAR(128),   -- pii, owner, team, cost_center
@@ -193,7 +193,7 @@ Visualize data flow: which tables feed into which.
 
 ### Implementation
 
-Parse `NOVA_SYSTEM.AUDIT.LOG` to build dependency graph:
+Parse `NOVA_SYSTEM.AUDIT_LOG` to build dependency graph:
 
 ```python
 # services/lineage_service.py
@@ -201,7 +201,7 @@ def build_lineage(target_table: str) -> dict:
     """Parse INSERT INTO ... SELECT FROM to build lineage."""
     result = sr_execute(f"""
         SELECT sql_text, timestamp
-        FROM NOVA_SYSTEM.AUDIT.LOG
+        FROM NOVA_SYSTEM.AUDIT_LOG
         WHERE action IN ('INSERT', 'CREATE_TABLE', 'CTAS')
         AND target LIKE '%{target_table}%'
         AND status = 'SUCCESS'

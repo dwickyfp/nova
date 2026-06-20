@@ -108,6 +108,22 @@ def _resolve_endpoint(endpoint: str) -> str:
     return endpoint
 
 
+def to_docker_endpoint(endpoint: str) -> str:
+    """Convert a host-side endpoint back to docker-internal for StarRocks.
+
+    e.g. http://127.0.0.1:9000 → http://minio:9000
+    StarRocks runs inside Docker and can only resolve docker-internal hostnames.
+    """
+    if not endpoint:
+        return endpoint
+    parsed = urlparse(endpoint)
+    # Map localhost/127.0.0.1 → minio (the Docker service name)
+    if parsed.hostname in {"127.0.0.1", "localhost", "0.0.0.0"}:
+        port = parsed.port or 9000
+        return f"{parsed.scheme}://minio:{port}"
+    return endpoint
+
+
 @lru_cache(maxsize=1)
 def load_nova_app_config() -> NovaAppConfig:
     path = Path(settings.NOVA_CONFIG_PATH)

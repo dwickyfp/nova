@@ -14,8 +14,8 @@ def get_credential_params(storage_type: str = "s3") -> dict[str, str]:
     """
     if storage_type == "s3":
         params = {
-            "aws.s3.access_key": settings.S3_ACCESS_KEY,
-            "aws.s3.secret_key": settings.S3_SECRET_KEY,
+            "aws.s3.access_key": "minioadmin",
+            "aws.s3.secret_key": "miniopassword",
         }
         if settings.S3_ENDPOINT:
             params["aws.s3.endpoint"] = settings.S3_ENDPOINT

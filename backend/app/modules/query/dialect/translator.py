@@ -74,6 +74,12 @@ def build_files_function(
             params.append(f"'aws.s3.endpoint'='{config.endpoint}'")
         if config.region:
             params.append(f"'aws.s3.region'='{config.region}'")
+        # Required for MinIO / S3-compatible storage
+        if config.endpoint and not config.endpoint.startswith("https"):
+            params.append("'aws.s3.enable_ssl'='false'")
+        params.append("'aws.s3.enable_path_style_access'='true'")
+        params.append("'aws.s3.use_aws_sdk_default_behavior'='false'")
+        params.append("'aws.s3.use_instance_profile'='false'")
 
     return f"FILES({', '.join(params)})"
 
@@ -130,8 +136,6 @@ def translate_stage_query(
         pattern = re.escape(ref.full_match)
         sql = re.sub(pattern, files_func, sql, count=1)
 
-        warnings.append(f"✅ @{stage_name} → {s3_path}")
-
     return sql, warnings
 
 
@@ -155,8 +159,14 @@ def detect_format_from_filename(filename: str) -> str:
 
     if len(parts) >= 2:
         ext = parts[-1]
-        if ext in ('csv', 'tsv', 'json', 'parquet', 'orc', 'avro', 'txt'):
-            return ext
+        format_map = {
+            'csv': 'csv', 'tsv': 'csv', 'json': 'json', 'jsonl': 'json',
+            'ndjson': 'json', 'parquet': 'parquet', 'orc': 'orc',
+            'avro': 'avro', 'txt': 'csv', 'xml': 'json',
+            'xlsx': 'csv', 'xls': 'csv', 'log': 'csv', 'sql': 'csv',
+        }
+        if ext in format_map:
+            return format_map[ext]
         # Check second-to-last for compound extensions
         if len(parts) >= 3 and parts[-2] in ('csv', 'tsv', 'json', 'parquet', 'orc'):
             return parts[-2]

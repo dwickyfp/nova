@@ -1,6 +1,6 @@
 # StarRocks Objects — Complete Reference Guide
 
-> **Version**: StarRocks 4.1.1 | **Last Updated**: 2025-06-20
+> **Version**: StarRocks 4.1.1 | **Last Updated**: 2026-06-20
 > **Mode**: Shared-nothing (single FE + single BE)
 
 ---
@@ -8,25 +8,26 @@
 ## Table of Contents
 
 1. [Object Hierarchy](#object-hierarchy)
-2. [Catalog](#catalog)
-3. [Database](#database)
-4. [Table](#table)
-5. [View](#view)
-6. [Materialized View](#materialized-view)
-7. [Function](#function)
-8. [Task](#task)
-9. [Pipe](#pipe)
-10. [Resource](#resource)
-11. [Resource Group](#resource-group)
-12. [Warehouse](#warehouse)
-13. [Storage Volume](#storage-volume)
-14. [Load Jobs](#load-jobs)
-15. [Routine Load](#routine-load)
-16. [Backup & Restore](#backup--restore)
-17. [Cluster Nodes](#cluster-nodes)
-18. [System Databases](#system-databases)
-19. [SHOW Commands Quick Reference](#show-commands-quick-reference)
-20. [information_schema Tables (58)](#information_schema-tables)
+2. [Nova Object Hierarchy (Reference Guide)](#nova-object-hierarchy-reference-guide)
+3. [Catalog](#catalog)
+4. [Database](#database)
+5. [Table](#table)
+6. [View](#view)
+7. [Materialized View](#materialized-view)
+8. [Function](#function)
+9. [Task](#task)
+10. [Pipe](#pipe)
+11. [Resource](#resource)
+12. [Resource Group](#resource-group)
+13. [Warehouse](#warehouse)
+14. [Storage Volume](#storage-volume)
+15. [Load Jobs](#load-jobs)
+16. [Routine Load](#routine-load)
+17. [Backup & Restore](#backup--restore)
+18. [Cluster Nodes](#cluster-nodes)
+19. [System Databases](#system-databases)
+20. [SHOW Commands Quick Reference](#show-commands-quick-reference)
+21. [information_schema Tables (58)](#information_schema-tables)
 
 ---
 
@@ -75,6 +76,288 @@ StarRocks Cluster
 | **Three-Part Notation** | `catalog.database.table` — fully qualified reference |
 | **Session Context** | `SET CATALOG x` + `USE db` sets the working context |
 | **information_schema** | Uses `def` as catalog name (MySQL compat), NOT `default_catalog` |
+
+### Nova Object Hierarchy (Reference Guide)
+
+> This is the **target state** for Nova — not all objects exist yet.
+> Use this as a blueprint when implementing new features.
+>
+> **Nova Custom Layer**: Stages and Workspace Entries are Nova-specific
+> abstractions NOT native to StarRocks. They are implemented via Nova backend
+> (metadata in `NOVA_SYSTEM` tables + object storage + SQL rewrite to `FILES()`).
+> They appear in the hierarchy as virtual objects alongside native StarRocks objects.
+
+```
+default_catalog (Internal Catalog)
+│
+├── 🗄️ NOVA_SYSTEM (Database — Internal Metadata)
+│   │
+│   ├── 📋 TABLES (17 — all exist ✅)
+│   │   ├── CONFIG_STAGES              ← PK table — storage stage definitions
+│   │   ├── CONFIG_PINNED_QUERIES      ← PK table — saved SQL queries
+│   │   ├── CONFIG_USER_PREFERENCES    ← PK table — per-user settings
+│   │   ├── CONFIG_WORKSPACE_ENTRIES   ← PK table — workspace file tree
+│   │   ├── CONFIG_AI_PROVIDERS        ← PK table — LLM provider connections
+│   │   ├── CONFIG_AI_MODELS           ← PK table — LLM/embedding models
+│   │   ├── CONFIG_OBJECT_TAGS         ← PK table — tag metadata
+│   │   ├── CONFIG_DASHBOARDS          ← PK table — dashboard definitions
+│   │   ├── CONFIG_DASHBOARD_WIDGETS   ← PK table — widget definitions
+│   │   ├── ML_MODELS                  ← Duplicate Key — trained ML models
+│   │   ├── ML_MODEL_VERSIONS          ← Duplicate Key — model version history
+│   │   ├── ML_MODEL_ALIASES           ← Duplicate Key — model aliases
+│   │   ├── AUDIT_LOG                  ← Duplicate Key, range partitioned — query audit
+│   │   ├── STAGE_FILE_MANIFEST        ← Duplicate Key — file inventory per stage
+│   │   ├── LINEAGE_LOAD_HISTORY       ← Duplicate Key, range partitioned — load provenance
+│   │   ├── QUALITY_TABLE_STATS        ← Duplicate Key — table health snapshots
+│   │   └── USAGE_QUERY_STATS          ← Duplicate Key, range partitioned — query analytics
+│   │
+│   ├── 📁 NOVA CUSTOM LAYER (not native StarRocks — 🔧 Nova backend managed)
+│   │   │
+│   │   │  These are virtual objects implemented by Nova backend.
+│   │   │  Metadata lives in NOVA_SYSTEM tables, data lives in object storage.
+│   │   │  SQL `@stage` syntax is rewritten to StarRocks `FILES()` by backend.
+│   │   │
+│   │   ├── 📦 STAGE                   ← Named virtual folder backed by object storage
+│   │   │   │  Metadata: CONFIG_STAGES (id, name, database_name, schema_name,
+│   │   │   │            storage_connection, base_prefix)
+│   │   │   │  Files:   STAGE_FILE_MANIFEST (file_id, stage_id, file_path, file_name,
+│   │   │   │            file_size, file_format, uploaded_at, uploaded_by, checksum)
+│   │   │   │  Storage: Object storage (MinIO/S3/Azure/GCS/OSS) via nova.yaml connections
+│   │   │   │  SQL:     `@stage1.file.csv` → rewritten to `FILES('path'='...', 'format'='csv')`
+│   │   │   │
+│   │   │   ├── @stage1/               ← User-facing: browse, upload, download, query
+│   │   │   │   ├── 📁 data/
+│   │   │   │   │   ├── 📄 payments.csv      2.3 MB
+│   │   │   │   │   ├── 📄 orders.parquet    12 MB
+│   │   │   │   │   └── 📄 customers.json    890 KB
+│   │   │   │   └── 📁 archive/
+│   │   │   │       └── 📄 daily_report.csv  45 KB
+│   │   │   │
+│   │   │   ├── Access Control: Schema-bound (SELECT=read, INSERT=write, ALL=delete)
+│   │   │   └── Providers: MinIO, S3, Azure Blob, GCS, OSS, Ceph (pluggable)
+│   │   │
+│   │   └── 🗂️ WORKSPACE ENTRY        ← User's virtual file tree in Nova UI
+│   │       │  Metadata: CONFIG_WORKSPACE_ENTRIES (id, user_name, parent_path, name,
+│   │       │            entry_type, object_key, size_bytes, etag, is_deleted)
+│   │       │  Storage: Object storage (same provider as stages)
+│   │       │
+│   │       ├── 📁 my-workspace/       ← Per-user workspace root
+│   │       │   ├── 📁 queries/        ← Saved SQL files
+│   │       │   ├── 📁 exports/        ← Query result exports
+│   │       │   └── 📁 uploads/        ← User-uploaded files
+│   │       │
+│   │       └── Features: Upload, download, create folder, delete, soft-delete (is_deleted)
+│   │
+│   ├── 👁️ VIEWS (planned — 🔲 not yet created)
+│   │   ├── v_active_providers         ← SELECT from CONFIG_AI_PROVIDERS WHERE is_active = true
+│   │   ├── v_model_catalog            ← JOIN CONFIG_AI_PROVIDERS + CONFIG_AI_MODELS
+│   │   ├── v_audit_summary            ← Aggregated audit stats per user/day
+│   │   ├── v_stage_inventory          ← JOIN CONFIG_STAGES + STAGE_FILE_MANIFEST
+│   │   ├── v_load_success_rate        ← LINEAGE_LOAD_HISTORY aggregated by status
+│   │   ├── v_table_freshness          ← QUALITY_TABLE_STATS latest snapshot per table
+│   │   └── v_query_top_users          ← USAGE_QUERY_STATS top N by query_count
+│   │
+│   ├── 📊 MATERIALIZED VIEWS (planned — 🔲 not yet created)
+│   │   ├── mv_daily_audit_stats       ← REFRESH ASYNC EVERY 1 HOUR — audit counts per user/day
+│   │   ├── mv_hourly_load_stats       ← REFRESH ASYNC EVERY 1 HOUR — load success/fail counts
+│   │   ├── mv_daily_usage_summary     ← REFRESH ASYNC EVERY 1 DAY — query stats aggregation
+│   │   ├── mv_table_health_latest     ← REFRESH ASYNC EVERY 6 HOUR — latest quality snapshot
+│   │   └── mv_provider_model_counts   ← REFRESH ASYNC EVERY 30 MINUTE — model count per provider
+│   │
+│   └── ⚙️ FUNCTIONS / UDFs (planned — 🔲 not yet created)
+│       ├── ai_complete(provider_model, prompt)     ← LLM completion via registered provider
+│       ├── ai_sentiment(text, model)               ← Sentiment: positive/negative/neutral
+│       ├── ai_summarize(text, max_words, model)    ← Text summarization
+│       ├── ai_translate(text, src, tgt, model)     ← Language translation
+│       ├── ai_classify(text, categories, model)    ← Text classification
+│       ├── ai_extract(text, fields, model)         ← Entity extraction (returns JSON)
+│       ├── ai_embed(model, text)                   ← Embedding generation (returns vector)
+│       └── ai_filter(condition, text, model)       ← Boolean filter (true/false)
+│
+├── 🗄️ NOVA_DEMO (Database — E-Commerce Sample)
+│   ├── 📋 TABLES (3 — all exist ✅)
+│   │   ├── customers                  ← PK table — 10 rows
+│   │   ├── orders                     ← PK table — 15 rows
+│   │   └── order_items                ← PK table — 16 rows
+│   ├── 📁 STAGES (planned — 🔲 via Nova custom layer)
+│   │   └── @demo_stage/               ← Stage for demo data uploads
+│   ├── 👁️ VIEWS (planned — 🔲)
+│   │   ├── v_customer_order_summary   ← JOIN customers + orders + order_items
+│   │   └── v_top_products             ← Best-selling products by revenue
+│   └── 📊 MATERIALIZED VIEWS (planned — 🔲)
+│       └── mv_monthly_sales           ← REFRESH ASYNC EVERY 1 DAY — monthly revenue summary
+│
+├── 🗄️ NOVA_CATALOG (Database — Product Catalog & Inventory)
+│   ├── 📋 TABLES (3 — all exist ✅)
+│   │   ├── products                   ← PK table — 12 rows
+│   │   ├── categories                 ← PK table — 7 rows (hierarchical)
+│   │   └── warehouses                 ← PK table — 4 rows
+│   ├── 📁 STAGES (planned — 🔲 via Nova custom layer)
+│   │   └── @catalog_stage/            ← Stage for product catalog file imports
+│   ├── 👁️ VIEWS (planned — 🔲)
+│   │   ├── v_product_catalog          ← JOIN products + categories
+│   │   └── v_inventory_by_warehouse   ← Stock levels per warehouse
+│   └── 📊 MATERIALIZED VIEWS (planned — 🔲)
+│       └── mv_stock_alerts            ← REFRESH ASYNC EVERY 1 HOUR — low stock products
+│
+├── 🗄️ NOVA_ANALYTICS (Database — Business Intelligence)
+│   ├── 📋 TABLES (4 — all exist ✅)
+│   │   ├── campaigns                  ← PK table — 8 rows
+│   │   ├── channel_performance        ← PK table — 12 rows
+│   │   ├── invoices                   ← PK table — 10 rows
+│   │   └── monthly_revenue            ← PK table — 7 rows
+│   ├── 📁 STAGES (planned — 🔲 via Nova custom layer)
+│   │   └── @analytics_stage/          ← Stage for analytics data imports
+│   ├── 👁️ VIEWS (planned — 🔲)
+│   │   ├── v_campaign_roi             ← JOIN campaigns + channel_performance
+│   │   └── v_invoice_aging            ← Invoice status by age (overdue analysis)
+│   └── 📊 MATERIALIZED VIEWS (planned — 🔲)
+│       ├── mv_channel_performance     ← REFRESH ASYNC EVERY 1 DAY — aggregated channel metrics
+│       └── mv_revenue_trend           ← REFRESH ASYNC EVERY 1 DAY — monthly revenue trend
+│
+└── 🗄️ External Catalogs (planned — 🔲 not yet created)
+    ├── hive_catalog                   ← Hive Metastore connector
+    ├── iceberg_catalog                 ← Apache Iceberg connector
+    └── jdbc_catalog                    ← JDBC connector (PostgreSQL, MySQL, etc.)
+
+Instance-Level Objects:
+├── 👤 USER: nova_admin (ACCOUNTADMIN)
+├── 🎭 ROLE: ACCOUNTADMIN
+├── 🔧 Nova Backend (custom — not StarRocks native)
+│   ├── 📦 Storage Connections         ← Configured in nova.yaml (MinIO/S3/Azure/GCS/OSS)
+│   │   ├── production                 ← minio://nova-stages/
+│   │   └── backup                     ← s3://nova-backup/
+│   ├── 📝 SQL Rewriter                ← @stage → FILES() rewrite engine
+│   └── 🔐 Access Checker              ← Schema-bound RBAC for stages/workspace
+├── 🌐 GLOBAL FUNCTIONS (planned — 🔲)
+│   └── ai_query_default(model, prompt) ← Instance-level default LLM call
+└── 📚 REPOSITORY (planned — 🔲)
+    └── nova_backup                     ← Backup destination for snapshot-based recovery
+```
+
+### Object Status Legend
+
+| Symbol | Meaning |
+|--------|---------|
+| ✅ | Exists in current Nova deployment |
+| 🔲 | Planned — not yet created (blueprint for future implementation) |
+| 🔧 | Nova custom layer — NOT native StarRocks, implemented via Nova backend |
+
+### Native vs Custom Layer
+
+| Layer | Objects | StarRocks Native? | Storage |
+|-------|---------|-------------------|---------|
+| **Native** | Table, View, MV, Function, Pipe | ✅ Yes | StarRocks BE (local disk) |
+| **Nova Custom** | Stage, Workspace Entry | ❌ No | Object storage (MinIO/S3/Azure/GCS/OSS) |
+| **Hybrid** | STAGE_FILE_MANIFEST (table) | ✅ Table is native | Metadata in StarRocks, files in object storage |
+
+> Stages appear in the hierarchy as virtual objects. They are NOT created via
+> `CREATE STAGE` DDL (that doesn't exist in StarRocks). Instead, Nova backend
+> manages stage metadata in `CONFIG_STAGES` + files in `STAGE_FILE_MANIFEST` +
+> actual files in object storage, and rewrites `@stage` SQL to `FILES()`.
+
+### Implementation Priority
+
+| Priority | Object Type | Target | Purpose |
+|----------|-------------|--------|---------|
+| **P1** | Nova Custom: Stages | All databases | File upload/download/query via `@stage` syntax |
+| **P1** | Nova Custom: Workspace | NOVA_SYSTEM | Per-user virtual file tree |
+| **P1** | Views | NOVA_SYSTEM | Simplify admin dashboard queries (audit, usage, lineage) |
+| **P1** | MVs | NOVA_SYSTEM | Accelerate dashboard charts (async refresh, pre-aggregated) |
+| **P2** | UDFs (AI) | NOVA_SYSTEM | `ai_complete`, `ai_sentiment`, `ai_embed` wrappers |
+| **P2** | Views | NOVA_DEMO | Demo dashboard views (sales summary, top products) |
+| **P3** | MVs | NOVA_ANALYTICS | Campaign ROI, revenue trend acceleration |
+| **P3** | External Catalog | Instance | JDBC catalog for cross-database queries |
+| **P4** | Global Functions | Instance | Instance-level AI defaults |
+| **P4** | Repository | Instance | Backup/restore capability |
+
+### Cross-Check: StarRocks Native Objects vs Nova Usage
+
+> Verified against running StarRocks 4.1.1 cluster on 2026-06-20.
+> All commands tested via `docker exec nova-starrocks-fe mysql`.
+
+#### Database-Level Objects (inside a database)
+
+| Object | StarRocks Native? | SQL DDL | Nova Status | Nova Usage |
+|--------|-------------------|---------|-------------|------------|
+| **Table** | ✅ Native | `CREATE TABLE` | ✅ 27 tables exist | Core storage (CONFIG_*, ML_*, AUDIT_LOG, demo data) |
+| **View** | ✅ Native | `CREATE VIEW` | 🔲 Planned | Saved queries for dashboards (v_audit_summary, etc.) |
+| **Materialized View** | ✅ Native | `CREATE MATERIALIZED VIEW` | 🔲 Planned | Dashboard acceleration (mv_daily_audit_stats, etc.) |
+| **Function (UDF)** | ✅ Native | `CREATE FUNCTION` | 🔲 Planned | AI wrappers (ai_complete, ai_sentiment, ai_embed) |
+| **Pipe** | ✅ Native | `CREATE PIPE` | 🔲 Potential | Auto-ingest stage files into tables (watches S3/MinIO) |
+| **Routine Load** | ✅ Native | `CREATE ROUTINE LOAD` | 🔲 Potential | Kafka streaming ingestion (real-time data pipelines) |
+| **Load Job** | ✅ Native | `INSERT INTO ... SELECT * FROM FILES(...)` | 🔲 Potential | Batch file loads from stages (tracked in info_schema.loads) |
+| **Stage** | ❌ Nova Custom | N/A (no DDL) | 🔲 Planned | Virtual folder on object storage (Nova backend managed) |
+| **Workspace Entry** | ❌ Nova Custom | N/A (no DDL) | 🔲 Planned | Per-user file tree (Nova backend managed) |
+
+#### Instance-Level Objects (outside catalogs)
+
+| Object | StarRocks Native? | SQL DDL | Nova Status | Nova Usage |
+|--------|-------------------|---------|-------------|------------|
+| **User** | ✅ Native | `CREATE USER` | ✅ nova_admin exists | Authentication + RBAC |
+| **Role** | ✅ Native | `CREATE ROLE` | ✅ ACCOUNTADMIN exists | Privilege container |
+| **Global Function** | ✅ Native | `CREATE GLOBAL FUNCTION` | 🔲 Planned | Instance-level AI defaults |
+| **Resource** | ✅ Native | `CREATE EXTERNAL RESOURCE` | 🔲 Potential | Spark/broker for ETL (legacy, prefer External Catalog) |
+| **Resource Group** | ✅ Native | `CREATE RESOURCE GROUP` | 🔲 Potential | Workload isolation (CPU/memory quotas per user/role) |
+| **Storage Volume** | ✅ Native | `CREATE STORAGE VOLUME` | ❌ N/A | Shared-data mode only (Nova uses shared-nothing) |
+| **Warehouse** | ✅ Native | `CREATE WAREHOUSE` | ❌ N/A | Shared-data mode only (`SHOW WAREHOUSES` → unsupported) |
+| **Repository** | ✅ Native | `CREATE REPOSITORY` | 🔲 Planned | Backup destination for snapshot-based recovery |
+| **Security Integration** | ✅ Native | `CREATE SECURITY INTEGRATION` | 🔲 Potential | SSO/SAML/LDAP auth (empty currently) |
+| **Storage Connection** | ❌ Nova Custom | N/A | ✅ In nova.yaml | Object storage credentials (MinIO/S3/Azure/GCS/OSS) |
+| **SQL Rewriter** | ❌ Nova Custom | N/A | 🔲 Planned | @stage → FILES() rewrite engine |
+| **Access Checker** | ❌ Nova Custom | N/A | 🔲 Planned | Schema-bound RBAC for stages/workspace |
+
+#### Built-in AI Functions (verified in StarRocks 4.1.1)
+
+```
+SHOW BUILTIN FUNCTIONS LIKE 'ai%';
+→ ai_query
+```
+
+| Function | Native? | Nova Plan |
+|----------|---------|-----------|
+| `ai_query(prompt, config_json)` | ✅ Built-in | Use directly for SQL-native LLM calls |
+| `ai_complete` | ❌ Not built-in | Implement as UDF wrapper around ai_query |
+| `ai_sentiment` | ❌ Not built-in | Implement as UDF wrapper |
+| `ai_summarize` | ❌ Not built-in | Implement as UDF wrapper |
+| `ai_embed` | ❌ Not built-in | Implement as UDF wrapper |
+
+> Only `ai_query` is built-in. All other AI functions (ai_complete, ai_sentiment, etc.)
+> need to be implemented as Nova UDFs that wrap `ai_query()` with provider config
+> from `CONFIG_AI_PROVIDERS` + `CONFIG_AI_MODELS`.
+
+#### How Nova Custom Objects Relate to StarRocks Native
+
+```
+┌─ Nova Custom Layer ─────────────────────────────────┐
+│                                                       │
+│  Stage (Nova) ──rewrite──→ FILES() (StarRocks)       │
+│       │                        │                      │
+│       │ metadata               │ loads data           │
+│       ▼                        ▼                      │
+│  CONFIG_STAGES (table)   target_table (table)        │
+│  STAGE_FILE_MANIFEST     ──via──→ Pipe (native)      │
+│       │                        │                      │
+│       │ files in               │ auto-ingest          │
+│       ▼                        ▼                      │
+│  Object Storage          information_schema.loads    │
+│  (MinIO/S3/...)          information_schema.pipes    │
+│                                                       │
+└───────────────────────────────────────────────────────┘
+```
+
+> **Key insight**: Nova Stages can leverage native StarRocks **Pipes** for
+> continuous file ingestion. A Pipe watches a file location (S3/MinIO) and
+> auto-loads new files into a target table. This means:
+>
+> 1. User uploads file to Stage → file lands in object storage
+> 2. Nova creates a Pipe pointing to that stage prefix
+> 3. Pipe auto-ingests file into target table
+> 4. Load tracked in `information_schema.loads` + `information_schema.pipes`
+> 5. Lineage recorded in `LINEAGE_LOAD_HISTORY`
+>
+> This combines Nova Custom Layer (Stage) with StarRocks Native (Pipe) for
+> a seamless file-to-table pipeline.
 
 ---
 

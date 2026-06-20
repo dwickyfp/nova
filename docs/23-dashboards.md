@@ -62,7 +62,7 @@
 │                                                          │
 │  Query:                                                  │
 │  SELECT DATE(timestamp) AS dt, COUNT(*) AS loads         │
-│  FROM NOVA_SYSTEM.AUDIT.LOG                              │
+│  FROM NOVA_SYSTEM.AUDIT_LOG                              │
 │  WHERE action = 'LOAD'                                  │
 │  GROUP BY dt ORDER BY dt                                 │
 │                                                          │
@@ -81,7 +81,7 @@
 ## Data Model
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.DASHBOARDS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_DASHBOARDS (
     id              VARCHAR(64) PRIMARY KEY,
     name            VARCHAR(256) NOT NULL,
     description     TEXT,
@@ -91,7 +91,7 @@ CREATE TABLE NOVA_SYSTEM.CONFIG.DASHBOARDS (
 ) PRIMARY KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
-CREATE TABLE NOVA_SYSTEM.CONFIG.DASHBOARD_WIDGETS (
+CREATE TABLE NOVA_SYSTEM.CONFIG_DASHBOARD_WIDGETS (
     id              VARCHAR(64) PRIMARY KEY,
     dashboard_id    VARCHAR(64),
     title           VARCHAR(256),

@@ -37,7 +37,7 @@ User-facing configuration data. Low volume, infrequent writes, frequent reads.
 ### STAGES
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.STAGES (
+CREATE TABLE NOVA_SYSTEM.CONFIG_STAGES (
     id                    VARCHAR(64) PRIMARY KEY,
     name                  VARCHAR(128) NOT NULL,
     database_name         VARCHAR(128) NOT NULL,
@@ -72,7 +72,7 @@ PROPERTIES(
 ### PINNED_QUERIES
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.PINNED_QUERIES (
+CREATE TABLE NOVA_SYSTEM.CONFIG_PINNED_QUERIES (
     id              VARCHAR(64) PRIMARY KEY,
     user_name       VARCHAR(128) NOT NULL,
     name            VARCHAR(256) NOT NULL,
@@ -95,7 +95,7 @@ PROPERTIES(
 ### USER_PREFERENCES
 
 ```sql
-CREATE TABLE NOVA_SYSTEM.CONFIG.USER_PREFERENCES (
+CREATE TABLE NOVA_SYSTEM.CONFIG_USER_PREFERENCES (
     user_name       VARCHAR(128),
     pref_key        VARCHAR(128),
     pref_value      TEXT,
@@ -159,16 +159,16 @@ async def init_nova_system():
         sr_execute(f"CREATE SCHEMA IF NOT EXISTS NOVA_SYSTEM.{schema}")
     
     # CONFIG tables
-    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.STAGES (...)""")
-    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.PINNED_QUERIES (...)""")
-    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG.USER_PREFERENCES (...)""")
+    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_STAGES (...)""")
+    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_PINNED_QUERIES (...)""")
+    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_USER_PREFERENCES (...)""")
     
     # Analytics tables
-    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT.LOG (...)""")
-    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.STAGE.FILE_MANIFEST (...)""")
-    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.LINEAGE.LOAD_HISTORY (...)""")
-    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUALITY.TABLE_STATS (...)""")
-    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.USAGE.QUERY_STATS (...)""")
+    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (...)""")
+    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.STAGE_FILE_MANIFEST (...)""")
+    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.LINEAGE_LOAD_HISTORY (...)""")
+    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUALITY_TABLE_STATS (...)""")
+    sr_execute("""CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.USAGE_QUERY_STATS (...)""")
     
     print("✅ NOVA_SYSTEM initialized")
 ```
@@ -182,32 +182,32 @@ async def init_nova_system():
 class StageRepository:
     def create(self, stage: Stage):
         sr_execute(
-            "INSERT INTO NOVA_SYSTEM.CONFIG.STAGES VALUES (%s,%s,%s,%s,%s,%s,NOW(),%s)",
+            "INSERT INTO NOVA_SYSTEM.CONFIG_STAGES VALUES (%s,%s,%s,%s,%s,%s,NOW(),%s)",
             [stage.id, stage.name, stage.database_name, stage.schema_name,
              stage.storage_connection, stage.base_prefix, stage.created_by]
         )
     
     def find(self, db: str, schema: str, name: str):
         return sr_execute(
-            "SELECT * FROM NOVA_SYSTEM.CONFIG.STAGES WHERE database_name=%s AND schema_name=%s AND name=%s",
+            "SELECT * FROM NOVA_SYSTEM.CONFIG_STAGES WHERE database_name=%s AND schema_name=%s AND name=%s",
             [db, schema, name]
         )
     
     def delete(self, stage_id: str):
-        sr_execute("DELETE FROM NOVA_SYSTEM.CONFIG.STAGES WHERE id=%s", [stage_id])
+        sr_execute("DELETE FROM NOVA_SYSTEM.CONFIG_STAGES WHERE id=%s", [stage_id])
 
 
 # Preference CRUD (upsert = INSERT INTO Primary Key table)
 class PreferenceRepository:
     def set(self, user: str, key: str, value: str):
         sr_execute(
-            "INSERT INTO NOVA_SYSTEM.CONFIG.USER_PREFERENCES VALUES (%s,%s,%s,NOW())",
+            "INSERT INTO NOVA_SYSTEM.CONFIG_USER_PREFERENCES VALUES (%s,%s,%s,NOW())",
             [user, key, value]
         )
     
     def get(self, user: str, key: str):
         result = sr_execute(
-            "SELECT pref_value FROM NOVA_SYSTEM.CONFIG.USER_PREFERENCES WHERE user_name=%s AND pref_key=%s",
+            "SELECT pref_value FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES WHERE user_name=%s AND pref_key=%s",
             [user, key]
         )
         return result['rows'][0][0] if result['rows'] else None

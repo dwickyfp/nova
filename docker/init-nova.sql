@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AI_PROVIDERS (
   name           VARCHAR(128) NOT NULL,
   type           VARCHAR(32) NOT NULL,
   endpoint       VARCHAR(512) NOT NULL,
-  api_key_env    VARCHAR(128),
+  api_key        VARCHAR(512),
   default_params TEXT,
   is_active      BOOLEAN DEFAULT "true",
   created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,

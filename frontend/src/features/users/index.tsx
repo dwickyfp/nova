@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   ChevronsLeft,
   ChevronsRight,
@@ -17,6 +18,7 @@ import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -376,6 +378,7 @@ function Pagination({
 }
 
 export function Users() {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -389,6 +392,8 @@ export function Users() {
   const [createUserOpen, setCreateUserOpen] = useState(false)
   const [createRoleOpen, setCreateRoleOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
+  const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null)
+  const [deleteUserSubmitting, setDeleteUserSubmitting] = useState(false)
   const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(null)
   const [generatedPassword, setGeneratedPassword] = useState('')
   const [passwordResetSubmitting, setPasswordResetSubmitting] = useState(false)
@@ -636,15 +641,21 @@ export function Users() {
     }
   }
 
-  async function handleDeleteUser(user: AdminUser) {
-    if (!window.confirm(`Delete user ${user.username}@${user.host}?`)) return
+  async function handleDeleteUser() {
+    if (!deletingUser) return
 
+    setDeleteUserSubmitting(true)
     try {
-      await api.delete(`/users/${encodeURIComponent(user.username)}?host=${encodeURIComponent(user.host)}`)
+      await api.delete(
+        `/users/${encodeURIComponent(deletingUser.username)}?host=${encodeURIComponent(deletingUser.host)}`,
+      )
       toast.success('User deleted')
+      setDeletingUser(null)
       await loadBaseData(false)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to delete user')
+    } finally {
+      setDeleteUserSubmitting(false)
     }
   }
 
@@ -957,7 +968,7 @@ export function Users() {
                       {loading ? (
                         <tr>
                           <td
-                            colSpan={4}
+                            colSpan={5}
                             className='px-4 py-12 text-center text-sm text-muted-foreground'
                           >
                             Loading users...
@@ -966,7 +977,7 @@ export function Users() {
                       ) : visibleUsers.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={4}
+                            colSpan={5}
                             className='px-4 py-12 text-center text-sm text-muted-foreground'
                           >
                             No users found
@@ -976,7 +987,13 @@ export function Users() {
                         visibleUsers.map((user) => (
                           <tr
                             key={user.identity}
-                            className='border-b border-border transition-colors hover:bg-muted/50'
+                            className='cursor-pointer border-b border-border transition-colors hover:bg-muted/50'
+                            onClick={() =>
+                              navigate({
+                                to: '/users/$username',
+                                params: { username: user.username },
+                              })
+                            }
                           >
                             <td className='px-4 py-3 align-top'>
                               <div className='space-y-1'>
@@ -1007,7 +1024,10 @@ export function Users() {
                                 <span className='text-xs text-muted-foreground'>None</span>
                               )}
                             </td>
-                            <td className='px-4 py-3 align-top'>
+                            <td
+                              className='px-4 py-3 align-top'
+                              onClick={(event) => event.stopPropagation()}
+                            >
                               {user.roles.length ? (
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -1031,7 +1051,10 @@ export function Users() {
                                 <span className='text-xs text-muted-foreground'>0 role</span>
                               )}
                             </td>
-                            <td className='px-4 py-3 align-top'>
+                            <td
+                              className='px-4 py-3 align-top'
+                              onClick={(event) => event.stopPropagation()}
+                            >
                               <div className='flex justify-end'>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -1080,7 +1103,7 @@ export function Users() {
                                       variant='destructive'
                                       onSelect={(event) => {
                                         event.preventDefault()
-                                        void handleDeleteUser(user)
+                                        setDeletingUser(user)
                                       }}
                                       disabled={user.is_protected}
                                     >
@@ -1468,6 +1491,36 @@ export function Users() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(deletingUser)}
+        onOpenChange={(open) => {
+          if (!open && !deleteUserSubmitting) {
+            setDeletingUser(null)
+          }
+        }}
+        title='Delete user'
+        desc={
+          deletingUser ? (
+            <>
+              This will permanently delete user{' '}
+              <span className='font-medium text-foreground'>
+                {deletingUser.username}@{deletingUser.host}
+              </span>
+              .
+            </>
+          ) : (
+            'This will permanently delete the selected user.'
+          )
+        }
+        confirmText={deleteUserSubmitting ? 'Deleting...' : 'Delete'}
+        cancelBtnText='Cancel'
+        destructive
+        isLoading={deleteUserSubmitting}
+        handleConfirm={() => {
+          void handleDeleteUser()
+        }}
+      />
 
       <Sheet open={Boolean(editingUser)} onOpenChange={(open) => !open && setEditingUser(null)}>
         <SheetContent className='w-full sm:max-w-2xl'>
