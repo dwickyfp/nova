@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   ListTodo,
   Shield,
+  SquareChartGantt,
   TrendingUp,
   Upload,
   Users,
@@ -29,13 +30,13 @@ export const sidebarData: SidebarData = {
       title: 'Data Management',
       items: [
         {
-          title: 'Database Explorer',
-          url: '/database-explorer',
-          icon: Database,
-        },
-        {
           title: 'Workspaces',
           url: '/workspaces',
+          icon: SquareChartGantt,
+        },
+        {
+          title: 'Database Explorer',
+          url: '/database-explorer',
           icon: Database,
         },
       ],

@@ -409,6 +409,7 @@ export function WorkspacesPage() {
   const saveTimerRef = useRef<number | null>(null)
   const stateSaveTimerRef = useRef<number | null>(null)
   const editorContentRef = useRef('')
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
     queryKey: ['workspace-tree'],
@@ -507,7 +508,13 @@ export function WorkspacesPage() {
       window.clearTimeout(saveTimerRef.current)
     }
     saveTimerRef.current = window.setTimeout(() => {
+      setSaveStatus('saving')
       void saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, activeTab.role)
+        .then(() => {
+          setSaveStatus('saved')
+          window.setTimeout(() => setSaveStatus('idle'), 2000)
+        })
+        .catch(() => setSaveStatus('idle'))
     }, 700)
     return () => {
       if (saveTimerRef.current) {
@@ -1236,6 +1243,14 @@ export function WorkspacesPage() {
                     <Play className='size-4' />
                     Run
                   </Button>
+                )}
+                {saveStatus !== 'idle' && (
+                  <span className={cn(
+                    'text-xs transition-opacity',
+                    saveStatus === 'saving' ? 'text-muted-foreground' : 'text-green-600 dark:text-green-400'
+                  )}>
+                    {saveStatus === 'saving' ? 'Saving...' : '✓ Saved'}
+                  </span>
                 )}
                 <Button
                   size='sm'
