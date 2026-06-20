@@ -65,31 +65,23 @@ import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
 import { DatabaseSchemaSelector } from './database-schema-selector'
+import {
+  type CompletionResponse,
+  extractStageCompletionContext,
+  formatStageCompletionDetail,
+  getStageCompletionInsertText,
+  shouldTriggerStageSuggestions,
+} from './stage-completion'
 import { useTheme } from '@/context/theme-provider'
 import { InlineSelect } from './inline-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import {
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-} from '@/components/ui/sidebar'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { SidebarMenu, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubItem } from '@/components/ui/sidebar'
 
 type WorkspaceEntry = {
   id: string
@@ -143,10 +135,6 @@ type QueryResponse = {
   needs_confirmation?: boolean
 }
 
-type CompletionResponse = {
-  items: Array<{ label: string; type: string }>
-}
-
 type SchemaResponse = {
   schemas: Array<{ name: string }>
 }
@@ -189,185 +177,475 @@ type HistoryResponse = {
   total: number
 }
 
-type MonacoEditorInstance =
-  Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0]
+type MonacoEditorInstance = Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0]
 
 let activeSqlEditorInstance: MonacoEditorInstance | null = null
 
 const SQL_KEYWORDS = [
   // Core DQL
-  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'NOT IN',
-  'BETWEEN', 'LIKE', 'IS NULL', 'IS NOT NULL', 'AS', 'DISTINCT',
-  'ALL', 'ANY', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
-  'CAST', 'COALESCE', 'NULLIF', 'IF', 'IFNULL',
+  'SELECT',
+  'FROM',
+  'WHERE',
+  'AND',
+  'OR',
+  'NOT',
+  'IN',
+  'NOT IN',
+  'BETWEEN',
+  'LIKE',
+  'IS NULL',
+  'IS NOT NULL',
+  'AS',
+  'DISTINCT',
+  'ALL',
+  'ANY',
+  'EXISTS',
+  'CASE',
+  'WHEN',
+  'THEN',
+  'ELSE',
+  'END',
+  'CAST',
+  'COALESCE',
+  'NULLIF',
+  'IF',
+  'IFNULL',
   // Joins
-  'JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL OUTER JOIN',
-  'CROSS JOIN', 'ON', 'USING',
+  'JOIN',
+  'INNER JOIN',
+  'LEFT JOIN',
+  'RIGHT JOIN',
+  'FULL OUTER JOIN',
+  'CROSS JOIN',
+  'ON',
+  'USING',
   // Aggregation & Grouping
-  'GROUP BY', 'HAVING', 'ORDER BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET',
-  'WITH ROLLUP', 'WITH',
+  'GROUP BY',
+  'HAVING',
+  'ORDER BY',
+  'ASC',
+  'DESC',
+  'LIMIT',
+  'OFFSET',
+  'WITH ROLLUP',
+  'WITH',
   // Set Operations
-  'UNION', 'UNION ALL', 'INTERSECT', 'EXCEPT', 'MINUS',
+  'UNION',
+  'UNION ALL',
+  'INTERSECT',
+  'EXCEPT',
+  'MINUS',
   // Subquery
-  'LATERAL', 'TABLESAMPLE',
+  'LATERAL',
+  'TABLESAMPLE',
   // Window Functions
-  'OVER', 'PARTITION BY', 'ROWS', 'RANGE', 'UNBOUNDED PRECEDING',
-  'UNBOUNDED FOLLOWING', 'CURRENT ROW',
+  'OVER',
+  'PARTITION BY',
+  'ROWS',
+  'RANGE',
+  'UNBOUNDED PRECEDING',
+  'UNBOUNDED FOLLOWING',
+  'CURRENT ROW',
   // DML
-  'INSERT INTO', 'INSERT INTO ... VALUES', 'INSERT INTO ... SELECT',
-  'UPDATE', 'DELETE FROM', 'DELETE', 'MERGE INTO',
-  'VALUES', 'SET', 'ON DUPLICATE KEY UPDATE',
-  'ON CONFLICT DO UPDATE', 'ON CONFLICT DO NOTHING',
+  'INSERT INTO',
+  'INSERT INTO ... VALUES',
+  'INSERT INTO ... SELECT',
+  'UPDATE',
+  'DELETE FROM',
+  'DELETE',
+  'MERGE INTO',
+  'VALUES',
+  'SET',
+  'ON DUPLICATE KEY UPDATE',
+  'ON CONFLICT DO UPDATE',
+  'ON CONFLICT DO NOTHING',
   // DDL
-  'CREATE TABLE', 'CREATE VIEW', 'CREATE MATERIALIZED VIEW',
-  'CREATE INDEX', 'CREATE DATABASE', 'CREATE FUNCTION',
-  'CREATE EXTERNAL TABLE', 'CREATE ROUTINE LOAD',
-  'CREATE PIPE', 'CREATE RESOURCE', 'CREATE STORAGE VOLUME',
-  'ALTER TABLE', 'ALTER VIEW', 'ALTER DATABASE',
-  'DROP TABLE', 'DROP VIEW', 'DROP DATABASE', 'DROP INDEX',
-  'DROP MATERIALIZED VIEW', 'DROP FUNCTION',
-  'TRUNCATE TABLE', 'RENAME TABLE',
-  'ADD COLUMN', 'DROP COLUMN', 'MODIFY COLUMN',
+  'CREATE TABLE',
+  'CREATE VIEW',
+  'CREATE MATERIALIZED VIEW',
+  'CREATE INDEX',
+  'CREATE DATABASE',
+  'CREATE FUNCTION',
+  'CREATE EXTERNAL TABLE',
+  'CREATE ROUTINE LOAD',
+  'CREATE PIPE',
+  'CREATE RESOURCE',
+  'CREATE STORAGE VOLUME',
+  'ALTER TABLE',
+  'ALTER VIEW',
+  'ALTER DATABASE',
+  'DROP TABLE',
+  'DROP VIEW',
+  'DROP DATABASE',
+  'DROP INDEX',
+  'DROP MATERIALIZED VIEW',
+  'DROP FUNCTION',
+  'TRUNCATE TABLE',
+  'RENAME TABLE',
+  'ADD COLUMN',
+  'DROP COLUMN',
+  'MODIFY COLUMN',
   // Transaction & Session
-  'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT',
-  'SET VARIABLE', 'SET PROPERTY', 'SET CATALOG',
+  'BEGIN',
+  'COMMIT',
+  'ROLLBACK',
+  'SAVEPOINT',
+  'SET VARIABLE',
+  'SET PROPERTY',
+  'SET CATALOG',
   // Data Loading
-  'LOAD LABEL', 'CANCEL LOAD', 'SHOW LOAD',
-  'STREAM LOAD', 'BROKER LOAD', 'ROUTINE LOAD',
-  'SHOW STREAM LOAD', 'CANCEL STREAM LOAD',
+  'LOAD LABEL',
+  'CANCEL LOAD',
+  'SHOW LOAD',
+  'STREAM LOAD',
+  'BROKER LOAD',
+  'ROUTINE LOAD',
+  'SHOW STREAM LOAD',
+  'CANCEL STREAM LOAD',
   // StarRocks-specific
-  'SHOW DATABASES', 'SHOW TABLES', 'SHOW COLUMNS',
-  'SHOW CREATE TABLE', 'SHOW PROCESSLIST', 'SHOW VARIABLES',
-  'SHOW BACKENDS', 'SHOW FRONTENDS', 'SHOW BROKER',
-  'SHOW RESOURCES', 'SHOW ROUTINE LOAD',
-  'SHOW MATERIALIZED VIEWS', 'SHOW PARTITIONS',
-  'SHOW TABLET', 'SHOW SNAPSHOT', 'SHOW CATALOGS',
-  'DESC', 'DESCRIBE', 'EXPLAIN', 'EXPLAIN VERBOSE',
-  'EXPLAIN COSTS', 'EXPLAIN ANALYZE',
-  'ANALYZE TABLE', 'ANALYZE PROFILE',
-  'KILL QUERY', 'KILL CONNECTION',
-  'GRANT', 'REVOKE', 'CREATE USER', 'DROP USER', 'ALTER USER',
-  'CREATE ROLE', 'DROP ROLE', 'GRANT ROLE',
-  'SHOW GRANTS', 'SHOW ROLES',
-  'ADMIN', 'ADMIN SET', 'ADMIN SHOW',
-  'REFRESH', 'REFRESH MATERIALIZED VIEW',
-  'SUBMIT', 'CANCEL', 'RECOVER',
-  'INSTALL', 'UNINSTALL', 'SHOW PLUGINS',
+  'SHOW DATABASES',
+  'SHOW TABLES',
+  'SHOW COLUMNS',
+  'SHOW CREATE TABLE',
+  'SHOW PROCESSLIST',
+  'SHOW VARIABLES',
+  'SHOW BACKENDS',
+  'SHOW FRONTENDS',
+  'SHOW BROKER',
+  'SHOW RESOURCES',
+  'SHOW ROUTINE LOAD',
+  'SHOW MATERIALIZED VIEWS',
+  'SHOW PARTITIONS',
+  'SHOW TABLET',
+  'SHOW SNAPSHOT',
+  'SHOW CATALOGS',
+  'DESC',
+  'DESCRIBE',
+  'EXPLAIN',
+  'EXPLAIN VERBOSE',
+  'EXPLAIN COSTS',
+  'EXPLAIN ANALYZE',
+  'ANALYZE TABLE',
+  'ANALYZE PROFILE',
+  'KILL QUERY',
+  'KILL CONNECTION',
+  'GRANT',
+  'REVOKE',
+  'CREATE USER',
+  'DROP USER',
+  'ALTER USER',
+  'CREATE ROLE',
+  'DROP ROLE',
+  'GRANT ROLE',
+  'SHOW GRANTS',
+  'SHOW ROLES',
+  'ADMIN',
+  'ADMIN SET',
+  'ADMIN SHOW',
+  'REFRESH',
+  'REFRESH MATERIALIZED VIEW',
+  'SUBMIT',
+  'CANCEL',
+  'RECOVER',
+  'INSTALL',
+  'UNINSTALL',
+  'SHOW PLUGINS',
   // Aggregate Functions
-  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
-  'COUNT(DISTINCT', 'APPROX_COUNT_DISTINCT', 'NDV',
-  'GROUP_CONCAT', 'BITMAP_UNION', 'BITMAP_INTERSECT',
-  'HLL_UNION', 'HLL_CARDINALITY', 'PERCENTILE_APPROX',
-  'VARIANCE', 'VAR_SAMP', 'VAR_POP',
-  'STDDEV', 'STDDEV_SAMP', 'STDDEV_POP',
-  'ANY_VALUE', 'BIT_AND', 'BIT_OR', 'BIT_XOR',
+  'COUNT',
+  'SUM',
+  'AVG',
+  'MIN',
+  'MAX',
+  'COUNT(DISTINCT',
+  'APPROX_COUNT_DISTINCT',
+  'NDV',
+  'GROUP_CONCAT',
+  'BITMAP_UNION',
+  'BITMAP_INTERSECT',
+  'HLL_UNION',
+  'HLL_CARDINALITY',
+  'PERCENTILE_APPROX',
+  'VARIANCE',
+  'VAR_SAMP',
+  'VAR_POP',
+  'STDDEV',
+  'STDDEV_SAMP',
+  'STDDEV_POP',
+  'ANY_VALUE',
+  'BIT_AND',
+  'BIT_OR',
+  'BIT_XOR',
   // String Functions
-  'CONCAT', 'CONCAT_WS', 'LENGTH', 'CHAR_LENGTH',
-  'LOWER', 'UPPER', 'LCASE', 'UCASE',
-  'LTRIM', 'RTRIM', 'TRIM', 'LPAD', 'RPAD',
-  'SUBSTR', 'SUBSTRING', 'LEFT', 'RIGHT',
-  'REPLACE', 'REVERSE', 'REPEAT', 'SPACE',
-  'LOCATE', 'INSTR', 'POSITION',
-  'HEX', 'UNHEX', 'ENCODE', 'DECODE',
-  'SPLIT', 'SPLIT_PART', 'REGEXP_REPLACE', 'REGEXP_EXTRACT',
-  'STR_TO_MAP', 'PARSE_URL', 'URL_ENCODE', 'URL_DECODE',
-  'CHAR', 'ASCII', 'FROM_BASE64', 'TO_BASE64',
-  'MONEY_FORMAT', 'FORMAT',
+  'CONCAT',
+  'CONCAT_WS',
+  'LENGTH',
+  'CHAR_LENGTH',
+  'LOWER',
+  'UPPER',
+  'LCASE',
+  'UCASE',
+  'LTRIM',
+  'RTRIM',
+  'TRIM',
+  'LPAD',
+  'RPAD',
+  'SUBSTR',
+  'SUBSTRING',
+  'LEFT',
+  'RIGHT',
+  'REPLACE',
+  'REVERSE',
+  'REPEAT',
+  'SPACE',
+  'LOCATE',
+  'INSTR',
+  'POSITION',
+  'HEX',
+  'UNHEX',
+  'ENCODE',
+  'DECODE',
+  'SPLIT',
+  'SPLIT_PART',
+  'REGEXP_REPLACE',
+  'REGEXP_EXTRACT',
+  'STR_TO_MAP',
+  'PARSE_URL',
+  'URL_ENCODE',
+  'URL_DECODE',
+  'CHAR',
+  'ASCII',
+  'FROM_BASE64',
+  'TO_BASE64',
+  'MONEY_FORMAT',
+  'FORMAT',
   // Date/Time Functions
-  'NOW', 'CURDATE', 'CURTIME', 'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
-  'DATE', 'DATETIME', 'TIMESTAMP',
-  'DATE_ADD', 'DATE_SUB', 'DATE_DIFF', 'DATEDIFF',
-  'DATE_FORMAT', 'DATE_TRUNC', 'DATE_SLICE',
-  'YEAR', 'MONTH', 'DAY', 'HOUR', 'MINUTE', 'SECOND',
-  'WEEK', 'WEEKDAY', 'DAYOFWEEK', 'DAYOFYEAR', 'QUARTER',
-  'FROM_UNIXTIME', 'UNIX_TIMESTAMP', 'TO_DATE',
-  'STR_TO_DATE', 'TIME_TO_SEC', 'SEC_TO_TIME',
-  'MONTHS_ADD', 'MONTHS_SUB', 'YEARS_ADD', 'YEARS_SUB',
-  'HOURS_ADD', 'HOURS_SUB', 'MINUTES_ADD', 'MINUTES_SUB',
-  'SECONDS_ADD', 'SECONDS_SUB', 'MILLISECONDS_ADD',
-  'LAST_DAY', 'NEXT_DAY',
-  'TIME_SLICE', 'NOW', 'UTC_TIMESTAMP',
+  'NOW',
+  'CURDATE',
+  'CURTIME',
+  'CURRENT_DATE',
+  'CURRENT_TIME',
+  'CURRENT_TIMESTAMP',
+  'DATE',
+  'DATETIME',
+  'TIMESTAMP',
+  'DATE_ADD',
+  'DATE_SUB',
+  'DATE_DIFF',
+  'DATEDIFF',
+  'DATE_FORMAT',
+  'DATE_TRUNC',
+  'DATE_SLICE',
+  'YEAR',
+  'MONTH',
+  'DAY',
+  'HOUR',
+  'MINUTE',
+  'SECOND',
+  'WEEK',
+  'WEEKDAY',
+  'DAYOFWEEK',
+  'DAYOFYEAR',
+  'QUARTER',
+  'FROM_UNIXTIME',
+  'UNIX_TIMESTAMP',
+  'TO_DATE',
+  'STR_TO_DATE',
+  'TIME_TO_SEC',
+  'SEC_TO_TIME',
+  'MONTHS_ADD',
+  'MONTHS_SUB',
+  'YEARS_ADD',
+  'YEARS_SUB',
+  'HOURS_ADD',
+  'HOURS_SUB',
+  'MINUTES_ADD',
+  'MINUTES_SUB',
+  'SECONDS_ADD',
+  'SECONDS_SUB',
+  'MILLISECONDS_ADD',
+  'LAST_DAY',
+  'NEXT_DAY',
+  'TIME_SLICE',
+  'NOW',
+  'UTC_TIMESTAMP',
   // Math Functions
-  'ABS', 'CEIL', 'CEILING', 'FLOOR', 'ROUND', 'TRUNCATE',
-  'MOD', 'POWER', 'POW', 'SQRT', 'EXP', 'LN', 'LOG', 'LOG2', 'LOG10',
-  'SIGN', 'PI', 'E', 'RAND', 'RANDOM',
-  'SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN', 'ATAN2',
-  'DEGREES', 'RADIANS', 'COT',
-  'CONV', 'BIN', 'GREATEST', 'LEAST',
-  'WIDTH_BUCKET', 'Pmod',
+  'ABS',
+  'CEIL',
+  'CEILING',
+  'FLOOR',
+  'ROUND',
+  'TRUNCATE',
+  'MOD',
+  'POWER',
+  'POW',
+  'SQRT',
+  'EXP',
+  'LN',
+  'LOG',
+  'LOG2',
+  'LOG10',
+  'SIGN',
+  'PI',
+  'E',
+  'RAND',
+  'RANDOM',
+  'SIN',
+  'COS',
+  'TAN',
+  'ASIN',
+  'ACOS',
+  'ATAN',
+  'ATAN2',
+  'DEGREES',
+  'RADIANS',
+  'COT',
+  'CONV',
+  'BIN',
+  'GREATEST',
+  'LEAST',
+  'WIDTH_BUCKET',
+  'Pmod',
   // Conditional Functions
-  'CASE WHEN', 'IF', 'IFNULL', 'NULLIF', 'COALESCE',
-  'NVL', 'NVL2', 'DECODE',
+  'CASE WHEN',
+  'IF',
+  'IFNULL',
+  'NULLIF',
+  'COALESCE',
+  'NVL',
+  'NVL2',
+  'DECODE',
   // JSON Functions
-  'JSON_OBJECT', 'JSON_ARRAY', 'JSON_EXTRACT', 'JSON_QUERY',
-  'JSON_VALUE', 'JSON_SET', 'JSON_REPLACE', 'JSON_REMOVE',
-  'JSON_INSERT', 'JSON_KEYS', 'JSON_TYPE',
-  'GET_JSON_STRING', 'GET_JSON_INT', 'GET_JSON_DOUBLE',
-  'JSON_EACH', 'PARSE_JSON', 'TO_JSON',
+  'JSON_OBJECT',
+  'JSON_ARRAY',
+  'JSON_EXTRACT',
+  'JSON_QUERY',
+  'JSON_VALUE',
+  'JSON_SET',
+  'JSON_REPLACE',
+  'JSON_REMOVE',
+  'JSON_INSERT',
+  'JSON_KEYS',
+  'JSON_TYPE',
+  'GET_JSON_STRING',
+  'GET_JSON_INT',
+  'GET_JSON_DOUBLE',
+  'JSON_EACH',
+  'PARSE_JSON',
+  'TO_JSON',
   // Array Functions
-  'ARRAY', 'ARRAY_AGG', 'ARRAY_CONCAT', 'ARRAY_CONTAINS',
-  'ARRAY_LENGTH', 'ARRAY_SLICE', 'ARRAY_DISTINCT',
-  'ARRAY_SORT', 'ARRAY_JOIN', 'ARRAY_MAX', 'ARRAY_MIN',
-  'ARRAY_SUM', 'ARRAY_AVG', 'ARRAY_POSITION',
-  'ARRAY_REMOVE', 'ARRAY_MAP', 'ARRAY_FILTER',
-  'ARRAY_GENERATE', 'ARRAY_TO_STRING',
-  'ARRAYS_OVERLAP', 'ARRAYS_INTERSECT', 'CARDINALITY',
+  'ARRAY',
+  'ARRAY_AGG',
+  'ARRAY_CONCAT',
+  'ARRAY_CONTAINS',
+  'ARRAY_LENGTH',
+  'ARRAY_SLICE',
+  'ARRAY_DISTINCT',
+  'ARRAY_SORT',
+  'ARRAY_JOIN',
+  'ARRAY_MAX',
+  'ARRAY_MIN',
+  'ARRAY_SUM',
+  'ARRAY_AVG',
+  'ARRAY_POSITION',
+  'ARRAY_REMOVE',
+  'ARRAY_MAP',
+  'ARRAY_FILTER',
+  'ARRAY_GENERATE',
+  'ARRAY_TO_STRING',
+  'ARRAYS_OVERLAP',
+  'ARRAYS_INTERSECT',
+  'CARDINALITY',
   // Map Functions
-  'MAP', 'MAP_KEYS', 'MAP_VALUES', 'MAP_CONCAT',
-  'MAP_FROM_ARRAYS', 'ELEMENT_AT',
+  'MAP',
+  'MAP_KEYS',
+  'MAP_VALUES',
+  'MAP_CONCAT',
+  'MAP_FROM_ARRAYS',
+  'ELEMENT_AT',
   // Window Functions (named)
-  'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'NTILE',
-  'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE',
-  'NTH_VALUE', 'CUME_DIST', 'PERCENT_RANK',
+  'ROW_NUMBER',
+  'RANK',
+  'DENSE_RANK',
+  'NTILE',
+  'LAG',
+  'LEAD',
+  'FIRST_VALUE',
+  'LAST_VALUE',
+  'NTH_VALUE',
+  'CUME_DIST',
+  'PERCENT_RANK',
   // Bitmap Functions
-  'BITMAP_EMPTY', 'BITMAP_HASH', 'BITMAP_HAS',
-  'BITMAP_COUNT', 'BITMAP_OR', 'BITMAP_AND', 'BITMAP_XOR',
-  'BITMAP_NOT', 'BITMAP_AGG', 'TO_BITMAP',
-  'BITMAP_FROM_STRING', 'BITMAP_TO_STRING',
-  'BITMAP_FROM_BINARY', 'BITMAP_TO_BINARY',
-  'BITMAP_FROM_ARRAY', 'BITMAP_TO_ARRAY',
-  'SUB_BITMAP', 'BITMAP_MAX', 'BITMAP_MIN',
-  'BITMAP_ANDNOT', 'BITMAP_SUBSET_LIMIT',
-  'BITMAP_SUBSET_IN_RANGE', 'BITMAP_REMOVE',
+  'BITMAP_EMPTY',
+  'BITMAP_HASH',
+  'BITMAP_HAS',
+  'BITMAP_COUNT',
+  'BITMAP_OR',
+  'BITMAP_AND',
+  'BITMAP_XOR',
+  'BITMAP_NOT',
+  'BITMAP_AGG',
+  'TO_BITMAP',
+  'BITMAP_FROM_STRING',
+  'BITMAP_TO_STRING',
+  'BITMAP_FROM_BINARY',
+  'BITMAP_TO_BINARY',
+  'BITMAP_FROM_ARRAY',
+  'BITMAP_TO_ARRAY',
+  'SUB_BITMAP',
+  'BITMAP_MAX',
+  'BITMAP_MIN',
+  'BITMAP_ANDNOT',
+  'BITMAP_SUBSET_LIMIT',
+  'BITMAP_SUBSET_IN_RANGE',
+  'BITMAP_REMOVE',
   // HLL Functions
-  'HLL_EMPTY', 'HLL_HASH', 'HLL_UNION_AGG',
-  'HLL_RAW_AGG', 'HLL_MERGE',
+  'HLL_EMPTY',
+  'HLL_HASH',
+  'HLL_UNION_AGG',
+  'HLL_RAW_AGG',
+  'HLL_MERGE',
   // Hash Functions
-  'MD5', 'MD5SUM', 'MURMUR_HASH3_32', 'MURMUR_HASH3_64',
-  'XXHASH_32', 'XXHASH_64', 'SHA2', 'SHA',
+  'MD5',
+  'MD5SUM',
+  'MURMUR_HASH3_32',
+  'MURMUR_HASH3_64',
+  'XXHASH_32',
+  'XXHASH_64',
+  'SHA2',
+  'SHA',
   // Utility
-  'SLEEP', 'UUID', 'LAST_QUERY_ID', 'CONNECTION_ID',
-  'DATABASE', 'SCHEMA', 'VERSION', 'CURRENT_USER',
-  'SESSION_USER', 'USER',
+  'SLEEP',
+  'UUID',
+  'LAST_QUERY_ID',
+  'CONNECTION_ID',
+  'DATABASE',
+  'SCHEMA',
+  'VERSION',
+  'CURRENT_USER',
+  'SESSION_USER',
+  'USER',
   // Table Function
-  'UNNEST', 'GENERATE', 'FILES',
+  'UNNEST',
+  'GENERATE',
+  'FILES',
   // ML / AI Functions (StarRocks 3.x)
-  'ML_PREDICT', 'AI_COMPLETE',
+  'ML_PREDICT',
+  'AI_COMPLETE',
 ]
 
 export function WorkspacesPage() {
   const queryClient = useQueryClient()
-  const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases'>(
-    'workspaces'
-  )
+  const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases'>('workspaces')
   const [secondaryCollapsed, setSecondaryCollapsed] = useState(false)
   const [workspaceSearch, setWorkspaceSearch] = useState('')
   const [databaseSearch, setDatabaseSearch] = useState('')
   const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({})
   const [openTabIds, setOpenTabIds] = useState<string[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
-  const [expandedWorkspacePaths, setExpandedWorkspacePaths] = useState<
-    Record<string, boolean>
-  >({ '': true })
-  const [expandedDatabases, setExpandedDatabases] = useState<
-    Record<string, boolean>
-  >({})
-  const [expandedSchemas, setExpandedSchemas] = useState<Record<string, boolean>>(
-    {}
-  )
-  const [schemasByDatabase, setSchemasByDatabase] = useState<
-    Record<string, Array<{ name: string }>>
-  >({})
+  const [expandedWorkspacePaths, setExpandedWorkspacePaths] = useState<Record<string, boolean>>({ '': true })
+  const [expandedDatabases, setExpandedDatabases] = useState<Record<string, boolean>>({})
+  const [expandedSchemas, setExpandedSchemas] = useState<Record<string, boolean>>({})
+  const [schemasByDatabase, setSchemasByDatabase] = useState<Record<string, Array<{ name: string }>>>({})
   const [resultsHeight, setResultsHeight] = useState(350)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
   const [resultsTab, setResultsTab] = useState<'results' | 'history' | 'explain' | 'chart'>('results')
@@ -427,10 +705,7 @@ export function WorkspacesPage() {
   })
 
   const historyQuery = useQuery<HistoryResponse>({
-    queryKey: [
-      'query-history',
-      historyFilter === 'file' ? activeTabId : 'all',
-    ],
+    queryKey: ['query-history', historyFilter === 'file' ? activeTabId : 'all'],
     queryFn: () =>
       api.get<HistoryResponse>(
         `/query/history?limit=50${historyFilter === 'file' && activeTabId ? `&file_id=${encodeURIComponent(activeTabId)}` : ''}`
@@ -459,18 +734,9 @@ export function WorkspacesPage() {
           title: entry.name,
           content: '',
           savedContent: '',
-          database:
-            tree.defaults.database ??
-            context.defaults.database ??
-            context.databases[0] ??
-            '',
-          schema:
-            tree.defaults.schema ??
-            context.defaults.schema ??
-            context.schemas[0] ??
-            'default',
-          role:
-            tree.defaults.role ?? context.defaults.role ?? context.roles[0] ?? '',
+          database: tree.defaults.database ?? context.defaults.database ?? context.databases[0] ?? '',
+          schema: tree.defaults.schema ?? context.defaults.schema ?? context.schemas[0] ?? 'default',
+          role: tree.defaults.role ?? context.defaults.role ?? context.roles[0] ?? '',
           loaded: false,
         }
       }
@@ -558,13 +824,7 @@ export function WorkspacesPage() {
     const handleBeforeUnload = () => {
       if (!activeTab) return
       if (activeTab.loaded && activeTab.content !== activeTab.savedContent) {
-        void saveFile(
-          activeTab.id,
-          activeTab.content,
-          activeTab.database,
-          activeTab.schema,
-          activeTab.role
-        )
+        void saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, activeTab.role)
       }
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
@@ -627,7 +887,16 @@ export function WorkspacesPage() {
         window.clearTimeout(stateSaveTimerRef.current)
       }
     }
-  }, [activeTab?.database, activeTab?.role, activeTab?.schema, activeTabId, openTabIds, queryContextQuery.data, secondaryCollapsed, workspaceTreeQuery.data])
+  }, [
+    activeTab?.database,
+    activeTab?.role,
+    activeTab?.schema,
+    activeTabId,
+    openTabIds,
+    queryContextQuery.data,
+    secondaryCollapsed,
+    workspaceTreeQuery.data,
+  ])
 
   async function openTab(id: string) {
     const file = await api.get<WorkspaceFileResponse>(`/workspaces/files/${id}`)
@@ -641,35 +910,15 @@ export function WorkspacesPage() {
         title: file.entry.name,
         content: file.content,
         savedContent: file.content,
-        database:
-          prev[id]?.database ??
-          defaults?.database ??
-          context?.defaults.database ??
-          context?.databases[0] ??
-          '',
-        schema:
-          prev[id]?.schema ??
-          defaults?.schema ??
-          context?.defaults.schema ??
-          'default',
-        role:
-          prev[id]?.role ??
-          defaults?.role ??
-          context?.defaults.role ??
-          context?.roles[0] ??
-          '',
+        database: prev[id]?.database ?? defaults?.database ?? context?.defaults.database ?? context?.databases[0] ?? '',
+        schema: prev[id]?.schema ?? defaults?.schema ?? context?.defaults.schema ?? 'default',
+        role: prev[id]?.role ?? defaults?.role ?? context?.defaults.role ?? context?.roles[0] ?? '',
         loaded: true,
       },
     }))
   }
 
-  async function saveFile(
-    id: string,
-    content: string,
-    database: string,
-    schema: string,
-    role: string
-  ) {
+  async function saveFile(id: string, content: string, database: string, schema: string, role: string) {
     const response = await api.put<WorkspaceFileResponse>(`/workspaces/files/${id}`, {
       content,
       database,
@@ -721,15 +970,8 @@ export function WorkspacesPage() {
               queryContextQuery.data?.defaults.database ??
               queryContextQuery.data?.databases[0] ??
               '',
-            schema:
-              activeTab?.schema ??
-              queryContextQuery.data?.defaults.schema ??
-              'default',
-            role:
-              activeTab?.role ??
-              queryContextQuery.data?.defaults.role ??
-              queryContextQuery.data?.roles[0] ??
-              '',
+            schema: activeTab?.schema ?? queryContextQuery.data?.defaults.schema ?? 'default',
+            role: activeTab?.role ?? queryContextQuery.data?.defaults.role ?? queryContextQuery.data?.roles[0] ?? '',
             loaded: true,
           },
         }))
@@ -777,7 +1019,11 @@ export function WorkspacesPage() {
       return
     }
     try {
-      await api.post('/workspaces/rename', { id: tabId, name: trimmed, parent_path: '' })
+      await api.post('/workspaces/rename', {
+        id: tabId,
+        name: trimmed,
+        parent_path: '',
+      })
       setTabs((prev) => ({
         ...prev,
         [tabId]: { ...prev[tabId], title: trimmed },
@@ -795,9 +1041,7 @@ export function WorkspacesPage() {
     const sql = editorContentRef.current.trim() || activeTab.content.trim()
     if (!sql) return
     if (!confirmDestructive && isDestructiveSql(sql)) {
-      const ok = window.confirm(
-        'This query looks destructive. Do you want to run it?'
-      )
+      const ok = window.confirm('This query looks destructive. Do you want to run it?')
       if (!ok) return
       return runQuery(true)
     }
@@ -810,55 +1054,57 @@ export function WorkspacesPage() {
     const startTime = Date.now()
     timerRef.current = setInterval(() => setElapsedMs(Date.now() - startTime), 100)
     try {
-      const response = await api.post<QueryResponse[]>('/query/execute', {
-        sql,
-        database: activeTab.database || null,
-        schema: activeTab.schema || null,
-        role: activeTab.role || null,
-        max_rows: 500,
-        file_id: activeTab.id,
-        confirm_destructive: confirmDestructive,
-      }, controller.signal)
+      const response = await api.post<QueryResponse[]>(
+        '/query/execute',
+        {
+          sql,
+          database: activeTab.database || null,
+          schema: activeTab.schema || null,
+          role: activeTab.role || null,
+          max_rows: 500,
+          file_id: activeTab.id,
+          confirm_destructive: confirmDestructive,
+        },
+        controller.signal
+      )
       setQueryResults(response)
       void queryClient.invalidateQueries({ queryKey: ['query-history'] })
       if (activeTab.content !== activeTab.savedContent) {
-        await saveFile(
-          activeTab.id,
-          activeTab.content,
-          activeTab.database,
-          activeTab.schema,
-          activeTab.role
-        )
+        await saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, activeTab.role)
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        setQueryResults([{
-          success: false,
-          columns: [],
-          rows: [],
-          row_count: 0,
-          affected_rows: 0,
-          elapsed_ms: Date.now() - startTime,
-          original_sql: sql,
-          executed_sql: '',
-          warnings: [`Query cancelled after ${((Date.now() - startTime) / 1000).toFixed(1)}s`],
-          destructive: false,
-          needs_confirmation: false,
-        }])
+        setQueryResults([
+          {
+            success: false,
+            columns: [],
+            rows: [],
+            row_count: 0,
+            affected_rows: 0,
+            elapsed_ms: Date.now() - startTime,
+            original_sql: sql,
+            executed_sql: '',
+            warnings: [`Query cancelled after ${((Date.now() - startTime) / 1000).toFixed(1)}s`],
+            destructive: false,
+            needs_confirmation: false,
+          },
+        ])
       } else {
-        setQueryResults([{
-          success: false,
-          columns: [],
-          rows: [],
-          row_count: 0,
-          affected_rows: 0,
-          elapsed_ms: 0,
-          original_sql: sql,
-          executed_sql: '',
-          warnings: [error instanceof Error ? error.message : 'Query failed'],
-          destructive: false,
-          needs_confirmation: false,
-        }])
+        setQueryResults([
+          {
+            success: false,
+            columns: [],
+            rows: [],
+            row_count: 0,
+            affected_rows: 0,
+            elapsed_ms: 0,
+            original_sql: sql,
+            executed_sql: '',
+            warnings: [error instanceof Error ? error.message : 'Query failed'],
+            destructive: false,
+            needs_confirmation: false,
+          },
+        ])
       }
       void queryClient.invalidateQueries({ queryKey: ['query-history'] })
     } finally {
@@ -913,9 +1159,7 @@ export function WorkspacesPage() {
         return obj
       })
       const worksheet = XLSX.utils.json_to_sheet(data)
-      const sheetName = queryResults.length === 1
-        ? baseName.slice(0, 31)
-        : `Result ${idx + 1}`
+      const sheetName = queryResults.length === 1 ? baseName.slice(0, 31) : `Result ${idx + 1}`
       XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
     })
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
@@ -966,21 +1210,14 @@ export function WorkspacesPage() {
       </Header>
 
       <div className='flex min-h-0 flex-1 overflow-hidden border-t'>
-        <aside
-          className={cn(
-            'border-r bg-muted/20 transition-all duration-200',
-            secondaryCollapsed ? 'w-14' : 'w-80'
-          )}
-        >
+        <aside className={cn('border-r bg-muted/20 transition-all duration-200', secondaryCollapsed ? 'w-14' : 'w-80')}>
           <div className='flex h-full min-h-0 flex-col'>
             <div className='border-b px-3 py-3'>
               <div className='flex items-center justify-between gap-2'>
                 {!secondaryCollapsed && (
                   <Tabs
                     value={sidebarTab}
-                    onValueChange={(value) =>
-                      setSidebarTab(value as 'workspaces' | 'databases')
-                    }
+                    onValueChange={(value) => setSidebarTab(value as 'workspaces' | 'databases')}
                     className='w-full'
                   >
                     <TabsList className='grid w-full grid-cols-2'>
@@ -989,17 +1226,8 @@ export function WorkspacesPage() {
                     </TabsList>
                   </Tabs>
                 )}
-                <Button
-                  variant='outline'
-                  size='icon'
-                  onClick={() => setSecondaryCollapsed((prev) => !prev)}
-                >
-                  <ChevronRight
-                    className={cn(
-                      'size-4 transition-transform',
-                      !secondaryCollapsed && 'rotate-180'
-                    )}
-                  />
+                <Button variant='outline' size='icon' onClick={() => setSecondaryCollapsed((prev) => !prev)}>
+                  <ChevronRight className={cn('size-4 transition-transform', !secondaryCollapsed && 'rotate-180')} />
                 </Button>
               </div>
               {!secondaryCollapsed && sidebarTab === 'workspaces' && (
@@ -1024,21 +1252,13 @@ export function WorkspacesPage() {
                     <div className='relative flex-1'>
                       <Search className='absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground' />
                       <Input
-                        value={
-                          sidebarTab === 'workspaces'
-                            ? workspaceSearch
-                            : databaseSearch
-                        }
+                        value={sidebarTab === 'workspaces' ? workspaceSearch : databaseSearch}
                         onChange={(event) =>
                           sidebarTab === 'workspaces'
                             ? setWorkspaceSearch(event.target.value)
                             : setDatabaseSearch(event.target.value)
                         }
-                        placeholder={
-                          sidebarTab === 'workspaces'
-                            ? 'Search files'
-                            : 'Search databases'
-                        }
+                        placeholder={sidebarTab === 'workspaces' ? 'Search files' : 'Search databases'}
                         className='pl-9'
                       />
                     </div>
@@ -1050,11 +1270,19 @@ export function WorkspacesPage() {
                         setRefreshing(true)
                         setTimeout(() => setRefreshing(false), 1000)
                         if (sidebarTab === 'workspaces') {
-                          void queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
+                          void queryClient.invalidateQueries({
+                            queryKey: ['workspace-tree'],
+                          })
                         } else {
-                          void queryClient.invalidateQueries({ queryKey: ['object-databases'] })
-                          void queryClient.invalidateQueries({ queryKey: ['db-schemas'] })
-                          void queryClient.invalidateQueries({ queryKey: ['schema-tree'] })
+                          void queryClient.invalidateQueries({
+                            queryKey: ['object-databases'],
+                          })
+                          void queryClient.invalidateQueries({
+                            queryKey: ['db-schemas'],
+                          })
+                          void queryClient.invalidateQueries({
+                            queryKey: ['schema-tree'],
+                          })
                         }
                       }}
                     >
@@ -1092,10 +1320,7 @@ export function WorkspacesPage() {
                                 queryContextQuery.data?.defaults.database ??
                                 queryContextQuery.data?.databases[0] ??
                                 '',
-                              schema:
-                                activeTab?.schema ??
-                                queryContextQuery.data?.defaults.schema ??
-                                'default',
+                              schema: activeTab?.schema ?? queryContextQuery.data?.defaults.schema ?? 'default',
                               role:
                                 activeTab?.role ??
                                 queryContextQuery.data?.defaults.role ??
@@ -1183,34 +1408,38 @@ export function WorkspacesPage() {
                     )}
                     {/* 3-dot menu + close — hidden when renaming */}
                     {!isRenaming && (
-                    <div className={cn(
-                      'absolute right-1 z-20 flex items-center gap-0.5 rounded-sm transition-opacity',
-                      isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                    )}>
-                      <TabMenuButton
-                        onRename={() => {
-                          setRenameValue(tab.title)
-                          setRenamingTabId(id)
-                        }}
-                        onDownload={() => {
-                          const blob = new Blob([tab.content], { type: 'text/sql' })
-                          const url = URL.createObjectURL(blob)
-                          const a = document.createElement('a')
-                          a.href = url
-                          a.download = tab.title.endsWith('.sql') ? tab.title : `${tab.title}.sql`
-                          a.click()
-                          URL.revokeObjectURL(url)
-                        }}
-                        onClose={() => closeTab(id)}
-                      />
-                      <X
-                        className='size-3.5 shrink-0 cursor-pointer rounded-sm p-0.5 hover:bg-muted-foreground/20'
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          closeTab(id)
-                        }}
-                      />
-                    </div>
+                      <div
+                        className={cn(
+                          'absolute right-1 z-20 flex items-center gap-0.5 rounded-sm transition-opacity',
+                          isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                        )}
+                      >
+                        <TabMenuButton
+                          onRename={() => {
+                            setRenameValue(tab.title)
+                            setRenamingTabId(id)
+                          }}
+                          onDownload={() => {
+                            const blob = new Blob([tab.content], {
+                              type: 'text/sql',
+                            })
+                            const url = URL.createObjectURL(blob)
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = tab.title.endsWith('.sql') ? tab.title : `${tab.title}.sql`
+                            a.click()
+                            URL.revokeObjectURL(url)
+                          }}
+                          onClose={() => closeTab(id)}
+                        />
+                        <X
+                          className='size-3.5 shrink-0 cursor-pointer rounded-sm p-0.5 hover:bg-muted-foreground/20'
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            closeTab(id)
+                          }}
+                        />
+                      </div>
                     )}
                   </div>
                 )
@@ -1230,11 +1459,7 @@ export function WorkspacesPage() {
             <>
               <div className='flex flex-wrap items-center gap-3 px-4 py-3'>
                 {running ? (
-                  <Button
-                    size='sm'
-                    variant='destructive'
-                    onClick={() => abortRef.current?.abort()}
-                  >
+                  <Button size='sm' variant='destructive' onClick={() => abortRef.current?.abort()}>
                     <Square className='size-4' />
                     Cancel {(elapsedMs / 1000).toFixed(1)}s
                   </Button>
@@ -1245,10 +1470,12 @@ export function WorkspacesPage() {
                   </Button>
                 )}
                 {saveStatus !== 'idle' && (
-                  <span className={cn(
-                    'text-xs transition-opacity',
-                    saveStatus === 'saving' ? 'text-muted-foreground' : 'text-green-600 dark:text-green-400'
-                  )}>
+                  <span
+                    className={cn(
+                      'text-xs transition-opacity',
+                      saveStatus === 'saving' ? 'text-muted-foreground' : 'text-green-600 dark:text-green-400'
+                    )}
+                  >
                     {saveStatus === 'saving' ? 'Saving...' : '✓ Saved'}
                   </span>
                 )}
@@ -1257,9 +1484,7 @@ export function WorkspacesPage() {
                   variant='outline'
                   title='Format SQL (Ctrl+Shift+F)'
                   onClick={() => {
-                    activeSqlEditorInstance
-                      ?.getAction('editor.action.formatDocument')
-                      ?.run()
+                    activeSqlEditorInstance?.getAction('editor.action.formatDocument')?.run()
                   }}
                 >
                   <Braces className='size-4' />
@@ -1291,11 +1516,7 @@ export function WorkspacesPage() {
                   <DatabaseSchemaSelector
                     databases={queryContextQuery.data?.databases ?? []}
                     selectedDatabase={activeTab.database}
-                    schemas={
-                      activeTab.database
-                        ? (schemasByDatabase[activeTab.database] ?? [])
-                        : []
-                    }
+                    schemas={activeTab.database ? (schemasByDatabase[activeTab.database] ?? []) : []}
                     selectedSchema={activeTab.schema}
                     onSelectDatabase={async (value) => {
                       const schemas = await api.get<SchemaResponse>(
@@ -1317,7 +1538,10 @@ export function WorkspacesPage() {
                     onSelectSchema={(value) =>
                       setTabs((prev) => ({
                         ...prev,
-                        [activeTab.id]: { ...prev[activeTab.id], schema: value },
+                        [activeTab.id]: {
+                          ...prev[activeTab.id],
+                          schema: value,
+                        },
                       }))
                     }
                   />
@@ -1355,9 +1579,7 @@ export function WorkspacesPage() {
                   }
                   className={cn(
                     'mx-4 mt-2 flex shrink-0 flex-col overflow-hidden rounded-t-xl border bg-background',
-                    isResizingResults
-                      ? 'transition-none'
-                      : 'transition-[height] duration-200 ease-in-out'
+                    isResizingResults ? 'transition-none' : 'transition-[height] duration-200 ease-in-out'
                   )}
                 >
                   {!resultsCollapsed && (
@@ -1376,12 +1598,7 @@ export function WorkspacesPage() {
                       className='mb-1.5 mr-1 rounded p-0.5 hover:bg-muted'
                       onClick={() => setResultsCollapsed((prev) => !prev)}
                     >
-                      <ChevronDown
-                        className={cn(
-                          'size-3.5 transition-transform',
-                          resultsCollapsed && '-rotate-90'
-                        )}
-                      />
+                      <ChevronDown className={cn('size-3.5 transition-transform', resultsCollapsed && '-rotate-90')} />
                     </button>
                     <div className='flex items-end gap-0'>
                       <button
@@ -1397,7 +1614,9 @@ export function WorkspacesPage() {
                         Results
                         {queryResults && queryResults.length > 0 && (
                           <span className='text-muted-foreground'>
-                            {queryResults.reduce((s, r) => s + r.row_count, 0)}r • {queryResults.reduce((s, r) => s + r.elapsed_ms, 0).toFixed(0)}ms
+                            {queryResults.reduce((s, r) => s + r.row_count, 0)}r •{' '}
+                            {queryResults.reduce((s, r) => s + r.elapsed_ms, 0).toFixed(0)}
+                            ms
                           </span>
                         )}
                       </button>
@@ -1530,7 +1749,10 @@ export function WorkspacesPage() {
                         editorContentRef.current = sql
                         setTabs((prev) => ({
                           ...prev,
-                          [activeTab.id]: { ...prev[activeTab.id], content: sql },
+                          [activeTab.id]: {
+                            ...prev[activeTab.id],
+                            content: sql,
+                          },
                         }))
                       }}
                       onReRun={(sql) => {
@@ -1538,7 +1760,10 @@ export function WorkspacesPage() {
                         editorContentRef.current = sql
                         setTabs((prev) => ({
                           ...prev,
-                          [activeTab.id]: { ...prev[activeTab.id], content: sql },
+                          [activeTab.id]: {
+                            ...prev[activeTab.id],
+                            content: sql,
+                          },
                         }))
                         void runQuery()
                       }}
@@ -1557,9 +1782,7 @@ export function WorkspacesPage() {
                       )}
                     </div>
                   )}
-                  {!resultsCollapsed && resultsTab === 'chart' && (
-                    <ChartVisualization queryResult={activeResult} />
-                  )}
+                  {!resultsCollapsed && resultsTab === 'chart' && <ChartVisualization queryResult={activeResult} />}
                 </div>
               </div>
             </>
@@ -1594,16 +1817,7 @@ function WorkspaceTree({
   return (
     <div className='px-2 py-3'>
       <SidebarMenu>
-        {renderWorkspaceEntries(
-          '',
-          entries,
-          activeEntryId,
-          expandedPaths,
-          onTogglePath,
-          onOpen,
-          onRename,
-          onDelete
-        )}
+        {renderWorkspaceEntries('', entries, activeEntryId, expandedPaths, onTogglePath, onOpen, onRename, onDelete)}
       </SidebarMenu>
     </div>
   )
@@ -1621,24 +1835,14 @@ function renderWorkspaceEntries(
 ): React.ReactNode {
   return entries
     .filter((entry) => entry.parent_path === parentPath)
-    .sort((a, b) =>
-      a.entry_type === b.entry_type
-        ? a.name.localeCompare(b.name)
-        : a.entry_type === 'folder'
-          ? -1
-          : 1
-    )
+    .sort((a, b) => (a.entry_type === b.entry_type ? a.name.localeCompare(b.name) : a.entry_type === 'folder' ? -1 : 1))
     .map((entry) => {
       const isFolder = entry.entry_type === 'folder'
       const isOpen = expandedPaths[entry.path] ?? false
 
       if (isFolder) {
         return (
-          <Collapsible
-            key={entry.id}
-            open={isOpen}
-            onOpenChange={() => onTogglePath(entry.path)}
-          >
+          <Collapsible key={entry.id} open={isOpen} onOpenChange={() => onTogglePath(entry.path)}>
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
                 <button
@@ -1646,17 +1850,9 @@ function renderWorkspaceEntries(
                   className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted'
                 >
                   <ChevronRight
-                    className={cn(
-                      'size-4 shrink-0 transition-transform duration-200',
-                      isOpen && 'rotate-90'
-                    )}
+                    className={cn('size-4 shrink-0 transition-transform duration-200', isOpen && 'rotate-90')}
                   />
-                  <Folder
-                    className={cn(
-                      'size-4 shrink-0 text-primary',
-                      isOpen && 'text-primary/80'
-                    )}
-                  />
+                  <Folder className={cn('size-4 shrink-0 text-primary', isOpen && 'text-primary/80')} />
                   <span className='truncate'>{entry.name}</span>
                 </button>
               </CollapsibleTrigger>
@@ -1689,10 +1885,9 @@ function renderWorkspaceEntries(
             )}
             onClick={() => onOpen(entry)}
           >
-            <FileCode className={cn(
-              'size-4 shrink-0',
-              entry.id === activeEntryId ? 'text-primary' : 'text-muted-foreground'
-            )} />
+            <FileCode
+              className={cn('size-4 shrink-0', entry.id === activeEntryId ? 'text-primary' : 'text-muted-foreground')}
+            />
             <span className='truncate'>{entry.name}</span>
           </button>
         </SidebarMenuItem>
@@ -1726,7 +1921,10 @@ function TabMenuButton({
       <button
         type='button'
         className='rounded-sm p-0.5 hover:bg-muted-foreground/20'
-        onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen(!open)
+        }}
       >
         <MoreHorizontal className='size-3.5' />
       </button>
@@ -1735,14 +1933,22 @@ function TabMenuButton({
           <button
             type='button'
             className='flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted'
-            onClick={(e) => { e.stopPropagation(); onRename(); setOpen(false) }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onRename()
+              setOpen(false)
+            }}
           >
             <Pencil className='size-3.5' /> Rename
           </button>
           <button
             type='button'
             className='flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted'
-            onClick={(e) => { e.stopPropagation(); onDownload(); setOpen(false) }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onDownload()
+              setOpen(false)
+            }}
           >
             <Download className='size-3.5' /> Download SQL
           </button>
@@ -1750,7 +1956,11 @@ function TabMenuButton({
           <button
             type='button'
             className='flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted'
-            onClick={(e) => { e.stopPropagation(); onClose(); setOpen(false) }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose()
+              setOpen(false)
+            }}
           >
             <X className='size-3.5' /> Close
           </button>
@@ -1775,9 +1985,7 @@ function DatabaseExplorer({
   onToggleDatabase: (name: string) => void
   onToggleSchema: (key: string) => void
   role?: string
-  setSchemasByDatabase: Dispatch<
-    SetStateAction<Record<string, Array<{ name: string }>>>
-  >
+  setSchemasByDatabase: Dispatch<SetStateAction<Record<string, Array<{ name: string }>>>>
 }) {
   return (
     <div className='px-2 py-3'>
@@ -1814,9 +2022,7 @@ function DatabaseNode({
   onToggleDatabase: (name: string) => void
   onToggleSchema: (key: string) => void
   role?: string
-  setSchemasByDatabase: Dispatch<
-    SetStateAction<Record<string, Array<{ name: string }>>>
-  >
+  setSchemasByDatabase: Dispatch<SetStateAction<Record<string, Array<{ name: string }>>>>
 }) {
   const schemasQuery = useQuery<SchemaResponse>({
     queryKey: ['db-schemas', database, role],
@@ -1845,10 +2051,7 @@ function DatabaseNode({
             className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted'
           >
             <ChevronRight
-              className={cn(
-                'size-4 shrink-0 transition-transform duration-200',
-                expanded && 'rotate-90'
-              )}
+              className={cn('size-4 shrink-0 transition-transform duration-200', expanded && 'rotate-90')}
             />
             <Database className='size-4 shrink-0 text-primary' />
             <span className='truncate font-medium'>{database}</span>
@@ -1905,10 +2108,7 @@ function SchemaNode({
             className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted'
           >
             <ChevronRight
-              className={cn(
-                'size-4 shrink-0 transition-transform duration-200',
-                expanded && 'rotate-90'
-              )}
+              className={cn('size-4 shrink-0 transition-transform duration-200', expanded && 'rotate-90')}
             />
             <Folder className='size-4 shrink-0 text-amber-500' />
             <span className='truncate'>{schema}</span>
@@ -1949,9 +2149,7 @@ function ObjectGroup({
   const isTables = title === 'Tables'
   return (
     <div>
-      <div className='px-2 py-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase'>
-        {title}
-      </div>
+      <div className='px-2 py-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase'>{title}</div>
       <div className='space-y-0.5'>
         {items.map((item) => (
           <SidebarMenuSubItem key={item.name}>
@@ -1973,7 +2171,14 @@ function ObjectGroup({
   )
 }
 
-type ColumnInfo = { name: string; type: string; null: string; key: string; default: string | null; extra: string }
+type ColumnInfo = {
+  name: string
+  type: string
+  null: string
+  key: string
+  default: string | null
+  extra: string
+}
 
 function TableItemWithPopover({ name, database, schema }: { name: string; database: string; schema: string }) {
   const [hovered, setHovered] = useState(false)
@@ -1993,10 +2198,11 @@ function TableItemWithPopover({ name, database, schema }: { name: string; databa
     const t = type.toUpperCase()
     if (/INT|BIGINT|SMALLINT|TINYINT|FLOAT|DOUBLE|DECIMAL|NUMERIC|NUMBER/.test(t))
       return <Hash className='size-3 shrink-0 text-blue-500' />
-    if (/DATE|TIME|TIMESTAMP/.test(t))
-      return <Clock className='size-3 shrink-0 text-emerald-500' />
+    if (/DATE|TIME|TIMESTAMP/.test(t)) return <Clock className='size-3 shrink-0 text-emerald-500' />
     if (/BOOL/.test(t))
-      return <span className='flex size-3 shrink-0 items-center justify-center text-[9px] font-bold text-orange-500'>B</span>
+      return (
+        <span className='flex size-3 shrink-0 items-center justify-center text-[9px] font-bold text-orange-500'>B</span>
+      )
     return <Type className='size-3 shrink-0 text-violet-500' />
   }
 
@@ -2016,38 +2222,38 @@ function TableItemWithPopover({ name, database, schema }: { name: string; databa
         <Table2 className='size-3.5 shrink-0 text-primary' />
         <span className='truncate'>{name}</span>
       </button>
-      {hovered && rect && createPortal(
-        <div
-          className='fixed z-[9999] w-64 rounded-md border bg-popover p-0 shadow-lg'
-          style={{ left: rect.right + 8, top: rect.top }}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-        >
-          <div className='border-b px-3 py-1.5 text-xs font-medium text-muted-foreground'>
-            <FileCode className='mr-1.5 inline size-3' />
-            {name}
-            {columnsQuery.data && (
-              <span className='ml-1 text-muted-foreground/60'>• {columnsQuery.data.count} columns</span>
-            )}
-          </div>
-          <div className='max-h-[240px] overflow-auto py-1'>
-            {columnsQuery.isLoading && (
-              <div className='px-3 py-2 text-xs text-muted-foreground'>Loading columns…</div>
-            )}
-            {columnsQuery.data?.columns.map((col) => (
-              <div key={col.name} className='flex items-center gap-2 px-3 py-1 text-xs'>
-                {typeIcon(col.type)}
-                <span className='flex-1 truncate font-medium'>{col.name}</span>
-                <span className='shrink-0 text-muted-foreground'>{col.type}</span>
-              </div>
-            ))}
-            {columnsQuery.isError && (
-              <div className='px-3 py-2 text-xs text-destructive'>Failed to load columns</div>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
+      {hovered &&
+        rect &&
+        createPortal(
+          <div
+            className='fixed z-[9999] w-64 rounded-md border bg-popover p-0 shadow-lg'
+            style={{ left: rect.right + 8, top: rect.top }}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+          >
+            <div className='border-b px-3 py-1.5 text-xs font-medium text-muted-foreground'>
+              <FileCode className='mr-1.5 inline size-3' />
+              {name}
+              {columnsQuery.data && (
+                <span className='ml-1 text-muted-foreground/60'>• {columnsQuery.data.count} columns</span>
+              )}
+            </div>
+            <div className='max-h-[240px] overflow-auto py-1'>
+              {columnsQuery.isLoading && (
+                <div className='px-3 py-2 text-xs text-muted-foreground'>Loading columns…</div>
+              )}
+              {columnsQuery.data?.columns.map((col) => (
+                <div key={col.name} className='flex items-center gap-2 px-3 py-1 text-xs'>
+                  {typeIcon(col.type)}
+                  <span className='flex-1 truncate font-medium'>{col.name}</span>
+                  <span className='shrink-0 text-muted-foreground'>{col.type}</span>
+                </div>
+              ))}
+              {columnsQuery.isError && <div className='px-3 py-2 text-xs text-destructive'>Failed to load columns</div>}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
@@ -2057,7 +2263,12 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
   const [pageSize, setPageSize] = useState(100)
   const [sortCol, setSortCol] = useState<number | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; rowIdx: number; colIdx: number } | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number
+    y: number
+    rowIdx: number
+    colIdx: number
+  } | null>(null)
 
   // Close context menu on click outside
   useEffect(() => {
@@ -2089,11 +2300,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
   }, [queryResult])
 
   if (!queryResult) {
-    return (
-      <div className='p-4 text-sm text-muted-foreground'>
-        Run a query to inspect table output here.
-      </div>
-    )
+    return <div className='p-4 text-sm text-muted-foreground'>Run a query to inspect table output here.</div>
   }
 
   if (queryResult.warnings?.length && !queryResult.columns.length) {
@@ -2107,24 +2314,22 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
   }
 
   if (!queryResult.columns.length) {
-    return (
-      <div className='p-4 text-sm'>
-        Query completed. Affected rows: {queryResult.affected_rows}
-      </div>
-    )
+    return <div className='p-4 text-sm'>Query completed. Affected rows: {queryResult.affected_rows}</div>
   }
 
   // Sort rows
-  const sortedRows = sortCol !== null
-    ? [...queryResult.rows].sort((a, b) => {
-        const av = a[sortCol], bv = b[sortCol]
-        if (av === null && bv === null) return 0
-        if (av === null) return 1
-        if (bv === null) return -1
-        const cmp = av < bv ? -1 : av > bv ? 1 : 0
-        return sortDir === 'asc' ? cmp : -cmp
-      })
-    : queryResult.rows
+  const sortedRows =
+    sortCol !== null
+      ? [...queryResult.rows].sort((a, b) => {
+          const av = a[sortCol],
+            bv = b[sortCol]
+          if (av === null && bv === null) return 0
+          if (av === null) return 1
+          if (bv === null) return -1
+          const cmp = av < bv ? -1 : av > bv ? 1 : 0
+          return sortDir === 'asc' ? cmp : -cmp
+        })
+      : queryResult.rows
 
   // Paginate
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize))
@@ -2162,14 +2367,20 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
               </th>
               {queryResult.columns.map((column, colIndex) => {
                 const sample = queryResult.rows[0]?.[colIndex]
-                const typeIcon = typeof sample === 'number' ? '#'
-                  : typeof sample === 'boolean' ? '⊙'
-                  : typeof sample === 'string'
-                    ? (String(sample).match(/^\d{4}-\d{2}-\d{2}/) ? '◷'
-                      : String(sample).match(/^[\d.,]+$/) ? '#'
-                      : 'A')
-                    : sample === null ? '∅'
-                    : '?'
+                const typeIcon =
+                  typeof sample === 'number'
+                    ? '#'
+                    : typeof sample === 'boolean'
+                      ? '⊙'
+                      : typeof sample === 'string'
+                        ? String(sample).match(/^\d{4}-\d{2}-\d{2}/)
+                          ? '◷'
+                          : String(sample).match(/^[\d.,]+$/)
+                            ? '#'
+                            : 'A'
+                        : sample === null
+                          ? '∅'
+                          : '?'
                 const isSorted = sortCol === colIndex
                 return (
                   <th
@@ -2179,9 +2390,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
                   >
                     <span className='mr-1 text-muted-foreground'>{typeIcon}</span>
                     {column}
-                    {isSorted && (
-                      <span className='ml-1 text-primary'>{sortDir === 'asc' ? '↑' : '↓'}</span>
-                    )}
+                    {isSorted && <span className='ml-1 text-primary'>{sortDir === 'asc' ? '↑' : '↓'}</span>}
                   </th>
                 )
               })}
@@ -2199,11 +2408,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
                     className='border-b border-r border-border px-2 py-1 whitespace-nowrap'
                     onContextMenu={(e) => handleCellContext(e, startIdx + rowIndex, cellIndex)}
                   >
-                    {cell === null ? (
-                      <span className='text-muted-foreground italic'>NULL</span>
-                    ) : (
-                      String(cell)
-                    )}
+                    {cell === null ? <span className='text-muted-foreground italic'>NULL</span> : String(cell)}
                   </td>
                 ))}
               </tr>
@@ -2239,7 +2444,10 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
           <select
             className='rounded border border-border bg-background px-1.5 py-0.5 text-xs'
             value={pageSize}
-            onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value))
+              setPage(1)
+            }}
           >
             <option value={25}>25 / page</option>
             <option value={50}>50 / page</option>
@@ -2249,82 +2457,77 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
         </div>
       </div>
       {/* Right-click context menu */}
-      {ctxMenu && queryResult && (() => {
-        const { rowIdx, colIdx, x, y } = ctxMenu
-        const allRows = sortedRows
-        const cellVal = allRows[rowIdx]?.[colIdx]
-        const row = allRows[rowIdx]
-        const col = allRows.map((r) => r[colIdx])
-        const colName = queryResult.columns[colIdx]
-        return (
-          <div
-            className='fixed z-[9999] min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-lg'
-            style={{ left: x, top: y }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className='mb-1 truncate border-b border-border px-2 py-1 text-[11px] text-muted-foreground'>
-              {colName} — Row {rowIdx + 1}
+      {ctxMenu &&
+        queryResult &&
+        (() => {
+          const { rowIdx, colIdx, x, y } = ctxMenu
+          const allRows = sortedRows
+          const cellVal = allRows[rowIdx]?.[colIdx]
+          const row = allRows[rowIdx]
+          const col = allRows.map((r) => r[colIdx])
+          const colName = queryResult.columns[colIdx]
+          return (
+            <div
+              className='fixed z-[9999] min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-lg'
+              style={{ left: x, top: y }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className='mb-1 truncate border-b border-border px-2 py-1 text-[11px] text-muted-foreground'>
+                {colName} — Row {rowIdx + 1}
+              </div>
+              <button
+                type='button'
+                className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+                onClick={() => {
+                  copyToClipboard(cellVal === null ? 'NULL' : String(cellVal))
+                  setCtxMenu(null)
+                }}
+              >
+                <Copy className='size-3.5' /> Copy cell value
+              </button>
+              <button
+                type='button'
+                className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+                onClick={() => {
+                  copyToClipboard(row.map((c) => (c === null ? 'NULL' : String(c))).join('\t'))
+                  setCtxMenu(null)
+                }}
+              >
+                <Copy className='size-3.5' /> Copy row (TSV)
+              </button>
+              <button
+                type='button'
+                className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+                onClick={() => {
+                  copyToClipboard(col.map((c) => (c === null ? 'NULL' : String(c))).join('\n'))
+                  setCtxMenu(null)
+                }}
+              >
+                <Copy className='size-3.5' /> Copy column ({colName})
+              </button>
+              <div className='my-1 border-t border-border' />
+              <button
+                type='button'
+                className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+                onClick={() => {
+                  const header = queryResult.columns.join('\t')
+                  const body = allRows.map((r) => r.map((c) => (c === null ? '' : String(c))).join('\t'))
+                  copyToClipboard([header, ...body].join('\n'))
+                  setCtxMenu(null)
+                }}
+              >
+                <Copy className='size-3.5' /> Copy all (CSV)
+              </button>
             </div>
-            <button
-              type='button'
-              className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
-              onClick={() => { copyToClipboard(cellVal === null ? 'NULL' : String(cellVal)); setCtxMenu(null) }}
-            >
-              <Copy className='size-3.5' /> Copy cell value
-            </button>
-            <button
-              type='button'
-              className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
-              onClick={() => { copyToClipboard(row.map((c) => c === null ? 'NULL' : String(c)).join('\t')); setCtxMenu(null) }}
-            >
-              <Copy className='size-3.5' /> Copy row (TSV)
-            </button>
-            <button
-              type='button'
-              className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
-              onClick={() => { copyToClipboard(col.map((c) => c === null ? 'NULL' : String(c)).join('\n')); setCtxMenu(null) }}
-            >
-              <Copy className='size-3.5' /> Copy column ({colName})
-            </button>
-            <div className='my-1 border-t border-border' />
-            <button
-              type='button'
-              className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
-              onClick={() => {
-                const header = queryResult.columns.join('\t')
-                const body = allRows.map((r) => r.map((c) => c === null ? '' : String(c)).join('\t'))
-                copyToClipboard([header, ...body].join('\n'))
-                setCtxMenu(null)
-              }}
-            >
-              <Copy className='size-3.5' /> Copy all (CSV)
-            </button>
-          </div>
-        )
-      })()}
+          )
+        })()}
     </div>
   )
 }
 
 // ── Chart Visualization ─────────────────────────────────────────────
-const CHART_COLORS = [
-  '#5b8def',
-  '#2dd4bf',
-  '#f59e0b',
-  '#f97316',
-  '#a78bfa',
-  '#f472b6',
-  '#38bdf8',
-  '#34d399',
-]
-const MONOCHROME_CHART_COLORS = [
-  '#5b8def',
-  '#76a0ef',
-  '#90b4f2',
-  '#aac7f5',
-  '#c4daf8',
-  '#deedfb',
-]
+const CHART_COLORS = ['#5b8def', '#2dd4bf', '#f59e0b', '#f97316', '#a78bfa', '#f472b6', '#38bdf8', '#34d399']
+const MONOCHROME_CHART_COLORS = ['#5b8def', '#76a0ef', '#90b4f2', '#aac7f5', '#c4daf8', '#deedfb']
 const CHART_EMPTY_OPTION = '__none__'
 const CHART_TYPE_OPTIONS = [
   { value: 'bar', label: 'Bar chart' },
@@ -2412,9 +2615,7 @@ function summarizeValues(values: number[], aggregate: AggregateType) {
     case 'median': {
       const sorted = [...values].sort((a, b) => a - b)
       const midpoint = Math.floor(sorted.length / 2)
-      return sorted.length % 2 === 0
-        ? (sorted[midpoint - 1] + sorted[midpoint]) / 2
-        : sorted[midpoint]
+      return sorted.length % 2 === 0 ? (sorted[midpoint - 1] + sorted[midpoint]) / 2 : sorted[midpoint]
     }
     case 'sum':
     default:
@@ -2430,8 +2631,7 @@ function formatNumberCompact(value: number) {
 }
 
 function getSeriesColors(colorMode: ColorMode, count: number) {
-  const palette =
-    colorMode === 'single' ? MONOCHROME_CHART_COLORS : CHART_COLORS
+  const palette = colorMode === 'single' ? MONOCHROME_CHART_COLORS : CHART_COLORS
 
   return Array.from({ length: count }, (_, index) => palette[index % palette.length])
 }
@@ -2493,16 +2693,12 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
   }, [columnTypes, queryResult])
 
   const xCandidates = useMemo(
-    () =>
-      queryResult?.columns.filter((_, index) => columnTypes[index] !== 'null') ??
-      [],
+    () => queryResult?.columns.filter((_, index) => columnTypes[index] !== 'null') ?? [],
     [columnTypes, queryResult]
   )
 
   const numericCandidates = useMemo(
-    () =>
-      queryResult?.columns.filter((_, index) => columnTypes[index] === 'number') ??
-      [],
+    () => queryResult?.columns.filter((_, index) => columnTypes[index] === 'number') ?? [],
     [columnTypes, queryResult]
   )
 
@@ -2510,15 +2706,9 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
   useEffect(() => {
     if (!queryResult?.columns.length) return
 
-    const textColumns = queryResult.columns.filter(
-      (_, index) => columnTypes[index] === 'text'
-    )
-    const dateColumns = queryResult.columns.filter(
-      (_, index) => columnTypes[index] === 'date'
-    )
-    const numberColumns = queryResult.columns.filter(
-      (_, index) => columnTypes[index] === 'number'
-    )
+    const textColumns = queryResult.columns.filter((_, index) => columnTypes[index] === 'text')
+    const dateColumns = queryResult.columns.filter((_, index) => columnTypes[index] === 'date')
+    const numberColumns = queryResult.columns.filter((_, index) => columnTypes[index] === 'number')
 
     const nextXColumn =
       dateColumns[0] ??
@@ -2568,10 +2758,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
     if (numericCandidates.length === 0) return []
 
     const normalized = yCols.filter(
-      (column, index) =>
-        column &&
-        numericCandidates.includes(column) &&
-        yCols.indexOf(column) === index
+      (column, index) => column && numericCandidates.includes(column) && yCols.indexOf(column) === index
     )
 
     return chartType === 'pie' ? normalized.slice(0, 1) : normalized
@@ -2612,22 +2799,14 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
     const sortData = (rows: Array<Record<string, string | number>>) => {
       if (sortMode === 'none') return rows
 
-      const primarySeriesKey = Object.keys(rows[0] ?? {}).filter(
-        (key) => key !== xCol
-      )
+      const primarySeriesKey = Object.keys(rows[0] ?? {}).filter((key) => key !== xCol)
 
       return [...rows].sort((left, right) => {
         if (sortMode === 'x-asc') return compareChartValues(left[xCol], right[xCol])
         if (sortMode === 'x-desc') return compareChartValues(right[xCol], left[xCol])
 
-        const leftTotal = primarySeriesKey.reduce(
-          (sum, key) => sum + (parseNumericValue(left[key]) ?? 0),
-          0
-        )
-        const rightTotal = primarySeriesKey.reduce(
-          (sum, key) => sum + (parseNumericValue(right[key]) ?? 0),
-          0
-        )
+        const leftTotal = primarySeriesKey.reduce((sum, key) => sum + (parseNumericValue(left[key]) ?? 0), 0)
+        const rightTotal = primarySeriesKey.reduce((sum, key) => sum + (parseNumericValue(right[key]) ?? 0), 0)
 
         return sortMode === 'y-asc' ? leftTotal - rightTotal : rightTotal - leftTotal
       })
@@ -2643,9 +2822,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
         }
       }
 
-      const groupValues = Array.from(
-        new Set(rawRecords.map((record) => formatChartLabel(record[groupBy])))
-      ).slice(0, 8)
+      const groupValues = Array.from(new Set(rawRecords.map((record) => formatChartLabel(record[groupBy])))).slice(0, 8)
 
       const bucketMap = new Map<string, Record<string, number[]>>()
       rawRecords.forEach((record) => {
@@ -2662,9 +2839,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
         bucketMap.set(bucketKey, existing)
       })
 
-      const xValues = Array.from(
-        new Set(rawRecords.map((record) => formatChartLabel(record[xCol])))
-      )
+      const xValues = Array.from(new Set(rawRecords.map((record) => formatChartLabel(record[xCol]))))
 
       const seriesColors = getSeriesColors(colorMode, groupValues.length)
       const data = sortData(
@@ -2674,10 +2849,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
           groupValues.forEach((groupValue) => {
             const bucket = bucketMap.get(`${xValue}:::${groupValue}`)
             const values = bucket?.[groupValue] ?? []
-            row[groupValue] =
-              activeAggregate === 'count'
-                ? values.length
-                : summarizeValues(values, activeAggregate)
+            row[groupValue] = activeAggregate === 'count' ? values.length : summarizeValues(values, activeAggregate)
           })
 
           return row
@@ -2706,12 +2878,10 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
 
       rawRecords.forEach((record) => {
         const xValue = formatChartLabel(record[xCol])
-        const bucket =
-          groupedRows.get(xValue) ??
-          {
-            xLabel: xValue,
-            metrics: {},
-          }
+        const bucket = groupedRows.get(xValue) ?? {
+          xLabel: xValue,
+          metrics: {},
+        }
 
         if (activeAggregate === 'count') {
           bucket.metrics.__count__ = [...(bucket.metrics.__count__ ?? []), 1]
@@ -2726,8 +2896,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
         groupedRows.set(xValue, bucket)
       })
 
-      const seriesKeys =
-        activeAggregate === 'count' ? ['__count__'] : effectiveYColumns
+      const seriesKeys = activeAggregate === 'count' ? ['__count__'] : effectiveYColumns
       const seriesColors = getSeriesColors(colorMode, seriesKeys.length)
       const data = sortData(
         Array.from(groupedRows.values()).map((bucket) => {
@@ -2735,10 +2904,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
 
           seriesKeys.forEach((key) => {
             const values = bucket.metrics[key] ?? []
-            row[key] =
-              activeAggregate === 'count'
-                ? values.length
-                : summarizeValues(values, activeAggregate)
+            row[key] = activeAggregate === 'count' ? values.length : summarizeValues(values, activeAggregate)
           })
 
           return row
@@ -2807,9 +2973,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
     !groupBy &&
     availableMetricOptions.some((column) => !effectiveYColumns.includes(column)) &&
     effectiveYColumns.length < 4
-  const chartTitle =
-    CHART_TYPE_OPTIONS.find((option) => option.value === chartType)?.label ??
-    'Chart'
+  const chartTitle = CHART_TYPE_OPTIONS.find((option) => option.value === chartType)?.label ?? 'Chart'
   const hasChartData = chartModel.data.length > 0 && chartModel.series.length > 0
   const isDarkMode = resolvedTheme === 'dark'
   const axisTickStyle = {
@@ -2819,18 +2983,14 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
   const axisLineStyle = {
     stroke: isDarkMode ? 'rgba(148, 163, 184, 0.26)' : 'hsl(var(--border))',
   }
-  const gridStroke = isDarkMode
-    ? 'rgba(71, 85, 105, 0.38)'
-    : 'hsl(var(--border))'
+  const gridStroke = isDarkMode ? 'rgba(71, 85, 105, 0.38)' : 'hsl(var(--border))'
   const tooltipContentStyle = {
     backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.96)' : 'hsl(var(--popover))',
     border: `1px solid ${isDarkMode ? 'rgba(71, 85, 105, 0.7)' : 'hsl(var(--border))'}`,
     borderRadius: 12,
     color: isDarkMode ? '#e2e8f0' : 'hsl(var(--foreground))',
     fontSize: 12,
-    boxShadow: isDarkMode
-      ? '0 18px 40px rgba(2, 6, 23, 0.38)'
-      : '0 12px 28px rgba(15, 23, 42, 0.08)',
+    boxShadow: isDarkMode ? '0 18px 40px rgba(2, 6, 23, 0.38)' : '0 12px 28px rgba(15, 23, 42, 0.08)',
   }
   const tooltipLabelStyle = {
     color: isDarkMode ? '#f8fafc' : 'hsl(var(--foreground))',
@@ -2857,12 +3017,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
           className='absolute right-2 top-2 z-10 inline-flex size-8 items-center justify-center rounded-md border border-border bg-background/90 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground'
           onClick={() => setBuilderCollapsed((current) => !current)}
         >
-          <ChevronLeft
-            className={cn(
-              'size-4 transition-transform',
-              builderCollapsed && 'rotate-180'
-            )}
-          />
+          <ChevronLeft className={cn('size-4 transition-transform', builderCollapsed && 'rotate-180')} />
         </button>
 
         {builderCollapsed ? (
@@ -2885,259 +3040,219 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
               </div>
 
               <div className='space-y-4'>
-            <div className='space-y-2'>
-              <label className='text-xs font-medium text-muted-foreground'>
-                Chart type
-              </label>
-              <Select
-                value={chartType}
-                onValueChange={(value) => setChartType(value as ChartType)}
-              >
-                <SelectTrigger className='h-10 bg-muted/30'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CHART_TYPE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className='border-t border-border pt-4'>
-              <div className='space-y-2'>
-                <label className='text-xs font-medium text-muted-foreground'>
-                  X-axis
-                </label>
-                <Select value={xCol} onValueChange={setXCol}>
-                  <SelectTrigger className='h-10 bg-muted/30'>
-                    <div className='flex min-w-0 items-center gap-2'>
-                      <Type className='size-3.5 text-muted-foreground' />
+                <div className='space-y-2'>
+                  <label className='text-xs font-medium text-muted-foreground'>Chart type</label>
+                  <Select value={chartType} onValueChange={(value) => setChartType(value as ChartType)}>
+                    <SelectTrigger className='h-10 bg-muted/30'>
                       <SelectValue />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {xCandidates.map((column) => (
-                      <SelectItem key={column} value={column}>
-                        {column}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CHART_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className='mt-4 space-y-2'>
-                <label className='text-xs font-medium text-muted-foreground'>
-                  Sort
-                </label>
-                <Select
-                  value={sortMode}
-                  onValueChange={(value) => setSortMode(value as SortMode)}
-                >
-                  <SelectTrigger className='h-10 bg-muted/30'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SORT_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className='border-t border-border pt-4'>
-              <div className='flex items-center justify-between'>
-                <label className='text-xs font-medium text-muted-foreground'>
-                  Y-axis
-                </label>
-                {canAddMetric ? (
-                  <Button
-                    type='button'
-                    variant='ghost'
-                    size='sm'
-                    className='h-7 px-2 text-xs'
-                    onClick={() => {
-                      const nextMetric = availableMetricOptions.find(
-                        (column) => !effectiveYColumns.includes(column)
-                      )
-                      if (!nextMetric) return
-                      setYCols((current) => [...current, nextMetric])
-                    }}
-                  >
-                    <Plus className='mr-1 size-3.5' />
-                    Add column
-                  </Button>
-                ) : null}
-              </div>
-
-              <div className='mt-2 space-y-2'>
-                {effectiveYColumns.map((column, index) => (
-                  <div key={`${column}-${index}`} className='flex items-center gap-2'>
-                    <Select
-                      value={column}
-                      onValueChange={(value) =>
-                        setYCols((current) => {
-                          const next = [...current]
-                          next[index] = value
-                          return next
-                        })
-                      }
-                    >
-                      <SelectTrigger className='h-10 flex-1 bg-muted/30'>
+                <div className='border-t border-border pt-4'>
+                  <div className='space-y-2'>
+                    <label className='text-xs font-medium text-muted-foreground'>X-axis</label>
+                    <Select value={xCol} onValueChange={setXCol}>
+                      <SelectTrigger className='h-10 bg-muted/30'>
                         <div className='flex min-w-0 items-center gap-2'>
-                          <Hash className='size-3.5 text-muted-foreground' />
+                          <Type className='size-3.5 text-muted-foreground' />
                           <SelectValue />
                         </div>
                       </SelectTrigger>
                       <SelectContent>
-                        {availableMetricOptions.map((metric) => (
-                          <SelectItem key={metric} value={metric}>
-                            {metric}
+                        {xCandidates.map((column) => (
+                          <SelectItem key={column} value={column}>
+                            {column}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    {effectiveYColumns.length > 1 ? (
+                  </div>
+
+                  <div className='mt-4 space-y-2'>
+                    <label className='text-xs font-medium text-muted-foreground'>Sort</label>
+                    <Select value={sortMode} onValueChange={(value) => setSortMode(value as SortMode)}>
+                      <SelectTrigger className='h-10 bg-muted/30'>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SORT_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className='border-t border-border pt-4'>
+                  <div className='flex items-center justify-between'>
+                    <label className='text-xs font-medium text-muted-foreground'>Y-axis</label>
+                    {canAddMetric ? (
                       <Button
                         type='button'
                         variant='ghost'
-                        size='icon'
-                        className='size-9 shrink-0'
-                        onClick={() =>
-                          setYCols((current) =>
-                            current.filter((_, metricIndex) => metricIndex !== index)
+                        size='sm'
+                        className='h-7 px-2 text-xs'
+                        onClick={() => {
+                          const nextMetric = availableMetricOptions.find(
+                            (column) => !effectiveYColumns.includes(column)
                           )
-                        }
+                          if (!nextMetric) return
+                          setYCols((current) => [...current, nextMetric])
+                        }}
                       >
-                        <X className='size-3.5' />
+                        <Plus className='mr-1 size-3.5' />
+                        Add column
                       </Button>
                     ) : null}
                   </div>
-                ))}
-              </div>
 
-              {groupBy ? (
-                <p className='mt-2 text-[11px] text-muted-foreground'>
-                  Grouped charts use the first Y-axis metric as the measure for each split series.
-                </p>
-              ) : null}
-            </div>
-
-            <div className='space-y-4 border-t border-border pt-4'>
-              <div className='space-y-2'>
-                <label className='text-xs font-medium text-muted-foreground'>
-                  Aggregate
-                </label>
-                <Select
-                  value={aggregate}
-                  onValueChange={(value) => setAggregate(value as AggregateType)}
-                >
-                  <SelectTrigger className='h-10 bg-muted/30'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AGGREGATE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
+                  <div className='mt-2 space-y-2'>
+                    {effectiveYColumns.map((column, index) => (
+                      <div key={`${column}-${index}`} className='flex items-center gap-2'>
+                        <Select
+                          value={column}
+                          onValueChange={(value) =>
+                            setYCols((current) => {
+                              const next = [...current]
+                              next[index] = value
+                              return next
+                            })
+                          }
+                        >
+                          <SelectTrigger className='h-10 flex-1 bg-muted/30'>
+                            <div className='flex min-w-0 items-center gap-2'>
+                              <Hash className='size-3.5 text-muted-foreground' />
+                              <SelectValue />
+                            </div>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableMetricOptions.map((metric) => (
+                              <SelectItem key={metric} value={metric}>
+                                {metric}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {effectiveYColumns.length > 1 ? (
+                          <Button
+                            type='button'
+                            variant='ghost'
+                            size='icon'
+                            className='size-9 shrink-0'
+                            onClick={() =>
+                              setYCols((current) => current.filter((_, metricIndex) => metricIndex !== index))
+                            }
+                          >
+                            <X className='size-3.5' />
+                          </Button>
+                        ) : null}
+                      </div>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                  </div>
 
-              <div className='space-y-2'>
-                <label className='text-xs font-medium text-muted-foreground'>
-                  Group by
-                </label>
-                <Select
-                  value={groupBy || CHART_EMPTY_OPTION}
-                  onValueChange={(value) =>
-                    setGroupBy(value === CHART_EMPTY_OPTION ? '' : value)
-                  }
-                >
-                  <SelectTrigger className='h-10 bg-muted/30'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={CHART_EMPTY_OPTION}>None</SelectItem>
-                    {xCandidates
-                      .filter((column) => column !== xCol)
-                      .map((column) => (
-                        <SelectItem key={column} value={column}>
-                          {column}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className='space-y-2'>
-                <label className='text-xs font-medium text-muted-foreground'>
-                  Color
-                </label>
-                <Select
-                  value={colorMode}
-                  onValueChange={(value) => setColorMode(value as ColorMode)}
-                >
-                  <SelectTrigger className='h-10 bg-muted/30'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COLOR_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className='space-y-4 border-t border-border pt-4'>
-              <div className='space-y-2'>
-                <div className='flex items-center justify-between'>
-                  <label className='text-xs font-medium text-muted-foreground'>
-                    X-axis label
-                  </label>
-                  <Switch
-                    checked={showXAxisLabel}
-                    onCheckedChange={setShowXAxisLabel}
-                  />
+                  {groupBy ? (
+                    <p className='mt-2 text-[11px] text-muted-foreground'>
+                      Grouped charts use the first Y-axis metric as the measure for each split series.
+                    </p>
+                  ) : null}
                 </div>
-                <Input
-                  value={xAxisLabel}
-                  onChange={(event) => setXAxisLabel(event.target.value)}
-                  placeholder={xCol}
-                  disabled={!showXAxisLabel}
-                  className='h-10'
-                />
-              </div>
 
-              <div className='space-y-2'>
-                <div className='flex items-center justify-between'>
-                  <label className='text-xs font-medium text-muted-foreground'>
-                    Y-axis label
-                  </label>
-                  <Switch
-                    checked={showYAxisLabel}
-                    onCheckedChange={setShowYAxisLabel}
-                  />
+                <div className='space-y-4 border-t border-border pt-4'>
+                  <div className='space-y-2'>
+                    <label className='text-xs font-medium text-muted-foreground'>Aggregate</label>
+                    <Select value={aggregate} onValueChange={(value) => setAggregate(value as AggregateType)}>
+                      <SelectTrigger className='h-10 bg-muted/30'>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AGGREGATE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className='space-y-2'>
+                    <label className='text-xs font-medium text-muted-foreground'>Group by</label>
+                    <Select
+                      value={groupBy || CHART_EMPTY_OPTION}
+                      onValueChange={(value) => setGroupBy(value === CHART_EMPTY_OPTION ? '' : value)}
+                    >
+                      <SelectTrigger className='h-10 bg-muted/30'>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={CHART_EMPTY_OPTION}>None</SelectItem>
+                        {xCandidates
+                          .filter((column) => column !== xCol)
+                          .map((column) => (
+                            <SelectItem key={column} value={column}>
+                              {column}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className='space-y-2'>
+                    <label className='text-xs font-medium text-muted-foreground'>Color</label>
+                    <Select value={colorMode} onValueChange={(value) => setColorMode(value as ColorMode)}>
+                      <SelectTrigger className='h-10 bg-muted/30'>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COLOR_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <Input
-                  value={yAxisLabel}
-                  onChange={(event) => setYAxisLabel(event.target.value)}
-                  placeholder={effectiveYColumns[0] ?? 'Value'}
-                  disabled={!showYAxisLabel}
-                  className='h-10'
-                />
+
+                <div className='space-y-4 border-t border-border pt-4'>
+                  <div className='space-y-2'>
+                    <div className='flex items-center justify-between'>
+                      <label className='text-xs font-medium text-muted-foreground'>X-axis label</label>
+                      <Switch checked={showXAxisLabel} onCheckedChange={setShowXAxisLabel} />
+                    </div>
+                    <Input
+                      value={xAxisLabel}
+                      onChange={(event) => setXAxisLabel(event.target.value)}
+                      placeholder={xCol}
+                      disabled={!showXAxisLabel}
+                      className='h-10'
+                    />
+                  </div>
+
+                  <div className='space-y-2'>
+                    <div className='flex items-center justify-between'>
+                      <label className='text-xs font-medium text-muted-foreground'>Y-axis label</label>
+                      <Switch checked={showYAxisLabel} onCheckedChange={setShowYAxisLabel} />
+                    </div>
+                    <Input
+                      value={yAxisLabel}
+                      onChange={(event) => setYAxisLabel(event.target.value)}
+                      placeholder={effectiveYColumns[0] ?? 'Value'}
+                      disabled={!showYAxisLabel}
+                      className='h-10'
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
             </div>
           </ScrollArea>
         )}
@@ -3151,8 +3266,8 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
               <h3 className='text-sm font-semibold text-foreground'>{chartTitle}</h3>
             </div>
             <p className='text-xs text-muted-foreground'>
-              {queryResult.row_count.toLocaleString()} rows in result •{' '}
-              {chartModel.data.length.toLocaleString()} plotted groups
+              {queryResult.row_count.toLocaleString()} rows in result • {chartModel.data.length.toLocaleString()}{' '}
+              plotted groups
             </p>
           </div>
 
@@ -3163,10 +3278,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                   key={series.key}
                   className='inline-flex items-center gap-2 rounded-full border border-border/80 bg-muted/25 px-2.5 py-1 text-[11px] text-muted-foreground'
                 >
-                  <span
-                    className='size-2 rounded-full'
-                    style={{ backgroundColor: series.color }}
-                  />
+                  <span className='size-2 rounded-full' style={{ backgroundColor: series.color }} />
                   <span className='max-w-[140px] truncate'>{series.label}</span>
                 </div>
               ))}
@@ -3223,13 +3335,14 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       }
                     />
                     <Tooltip
-                      formatter={(value) =>
-                        formatNumberCompact(Number(value ?? 0))
-                      }
+                      formatter={(value) => formatNumberCompact(Number(value ?? 0))}
                       contentStyle={tooltipContentStyle}
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
-                      cursor={{ stroke: isDarkMode ? 'rgba(148, 163, 184, 0.24)' : 'rgba(15, 23, 42, 0.1)', strokeWidth: 1 }}
+                      cursor={{
+                        stroke: isDarkMode ? 'rgba(148, 163, 184, 0.24)' : 'rgba(15, 23, 42, 0.1)',
+                        strokeWidth: 1,
+                      }}
                     />
                     {chartModel.series.map((series) => (
                       <Line
@@ -3252,14 +3365,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                   <AreaChart data={chartModel.data}>
                     <defs>
                       {chartModel.series.map((series) => (
-                        <linearGradient
-                          key={series.key}
-                          id={`area-gradient-${series.key}`}
-                          x1='0'
-                          y1='0'
-                          x2='0'
-                          y2='1'
-                        >
+                        <linearGradient key={series.key} id={`area-gradient-${series.key}`} x1='0' y1='0' x2='0' y2='1'>
                           <stop offset='0%' stopColor={series.color} stopOpacity={0.55} />
                           <stop offset='100%' stopColor={series.color} stopOpacity={0.04} />
                         </linearGradient>
@@ -3308,13 +3414,14 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       }
                     />
                     <Tooltip
-                      formatter={(value) =>
-                        formatNumberCompact(Number(value ?? 0))
-                      }
+                      formatter={(value) => formatNumberCompact(Number(value ?? 0))}
                       contentStyle={tooltipContentStyle}
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
-                      cursor={{ stroke: isDarkMode ? 'rgba(148, 163, 184, 0.24)' : 'rgba(15, 23, 42, 0.1)', strokeWidth: 1 }}
+                      cursor={{
+                        stroke: isDarkMode ? 'rgba(148, 163, 184, 0.24)' : 'rgba(15, 23, 42, 0.1)',
+                        strokeWidth: 1,
+                      }}
                     />
                     {chartModel.series.map((series) => (
                       <Area
@@ -3331,9 +3438,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                 ) : chartType === 'pie' ? (
                   <PieChart>
                     <Tooltip
-                      formatter={(value) =>
-                        formatNumberCompact(Number(value ?? 0))
-                      }
+                      formatter={(value) => formatNumberCompact(Number(value ?? 0))}
                       contentStyle={tooltipContentStyle}
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
@@ -3366,14 +3471,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                   <BarChart data={chartModel.data} barGap={10}>
                     <defs>
                       {chartModel.series.map((series) => (
-                        <linearGradient
-                          key={series.key}
-                          id={`bar-gradient-${series.key}`}
-                          x1='0'
-                          y1='0'
-                          x2='0'
-                          y2='1'
-                        >
+                        <linearGradient key={series.key} id={`bar-gradient-${series.key}`} x1='0' y1='0' x2='0' y2='1'>
                           <stop offset='0%' stopColor={series.color} stopOpacity={0.95} />
                           <stop offset='100%' stopColor={series.color} stopOpacity={0.75} />
                         </linearGradient>
@@ -3425,9 +3523,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       }
                     />
                     <Tooltip
-                      formatter={(value) =>
-                        formatNumberCompact(Number(value ?? 0))
-                      }
+                      formatter={(value) => formatNumberCompact(Number(value ?? 0))}
                       contentStyle={tooltipContentStyle}
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
@@ -3468,7 +3564,7 @@ const OPERATOR_COLORS: Record<string, string> = {
   'MERGE JOIN': 'text-orange-500',
   JOIN: 'text-orange-500',
   AGGREGATE: 'text-violet-500',
-  'AGGREGATE_NODE': 'text-violet-500',
+  AGGREGATE_NODE: 'text-violet-500',
   SORT: 'text-amber-500',
   'TOP-N': 'text-amber-500',
   ANALYTIC: 'text-pink-500',
@@ -3561,10 +3657,7 @@ function ExplainTreeView({ planText }: { planText: string }) {
               onClick={() => toggleFragment(frag.label)}
             >
               <ChevronRight
-                className={cn(
-                  'size-3.5 shrink-0 transition-transform duration-200',
-                  !isCollapsed && 'rotate-90'
-                )}
+                className={cn('size-3.5 shrink-0 transition-transform duration-200', !isCollapsed && 'rotate-90')}
               />
               <span className='text-primary'>{frag.label}</span>
             </button>
@@ -3593,13 +3686,11 @@ function ExplainNode({ node, depth }: { node: PlanNode; depth: number }) {
       <div
         className={cn(
           'flex items-start gap-1 rounded px-1.5 py-0.5 leading-relaxed',
-          (isOperator || isSink) ? 'font-semibold' : '',
-          (isOperator || isSink) ? colorClass : 'text-muted-foreground'
+          isOperator || isSink ? 'font-semibold' : '',
+          isOperator || isSink ? colorClass : 'text-muted-foreground'
         )}
       >
-        {hasChildren && isOperator && (
-          <ChevronRight className='mt-0.5 size-3 shrink-0 opacity-50' />
-        )}
+        {hasChildren && isOperator && <ChevronRight className='mt-0.5 size-3 shrink-0 opacity-50' />}
         <span className='whitespace-pre-wrap break-all'>{node.line}</span>
       </div>
       {node.children.map((child, ci) => (
@@ -3621,11 +3712,7 @@ function QueryHistory({
   onReRun: (sql: string) => void
 }) {
   if (loading) {
-    return (
-      <div className='flex items-center justify-center p-6 text-sm text-muted-foreground'>
-        Loading history...
-      </div>
-    )
+    return <div className='flex items-center justify-center p-6 text-sm text-muted-foreground'>Loading history...</div>
   }
 
   if (!items.length) {
@@ -3642,9 +3729,7 @@ function QueryHistory({
     const d = new Date(iso)
     const now = new Date()
     const isToday =
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate()
+      d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
     const time = d.toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
@@ -3672,20 +3757,14 @@ function QueryHistory({
               <span
                 className={cn(
                   'inline-flex h-4 items-center rounded px-1 text-[10px] font-medium',
-                  item.status === 'SUCCESS'
-                    ? 'bg-emerald-500/10 text-emerald-600'
-                    : 'bg-red-500/10 text-red-600'
+                  item.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
                 )}
               >
                 {item.status === 'SUCCESS' ? 'OK' : 'ERR'}
               </span>
-              <span className='text-xs text-muted-foreground'>
-                {formatDuration(item.duration_ms)}
-              </span>
+              <span className='text-xs text-muted-foreground'>{formatDuration(item.duration_ms)}</span>
               {item.rows_affected != null && (
-                <span className='text-xs text-muted-foreground'>
-                  {item.rows_affected} rows
-                </span>
+                <span className='text-xs text-muted-foreground'>{item.rows_affected} rows</span>
               )}
               {item.database_name && (
                 <span className='text-xs text-muted-foreground'>
@@ -3693,9 +3772,7 @@ function QueryHistory({
                   {item.schema_name ? `.${item.schema_name}` : ''}
                 </span>
               )}
-              <span className='ml-auto text-[11px] text-muted-foreground'>
-                {formatTime(item.event_time)}
-              </span>
+              <span className='ml-auto text-[11px] text-muted-foreground'>{formatTime(item.event_time)}</span>
             </div>
             <button
               type='button'
@@ -3703,15 +3780,9 @@ function QueryHistory({
               onClick={() => onLoadSql(item.sql_text)}
               title={item.sql_text}
             >
-              <code className='block truncate font-mono text-xs text-foreground/80'>
-                {item.sql_text}
-              </code>
+              <code className='block truncate font-mono text-xs text-foreground/80'>{item.sql_text}</code>
             </button>
-            {item.error_message && (
-              <p className='truncate text-[11px] text-destructive'>
-                {item.error_message}
-              </p>
-            )}
+            {item.error_message && <p className='truncate text-[11px] text-destructive'>{item.error_message}</p>}
           </div>
           <div className='flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100'>
             <Button
@@ -3757,6 +3828,10 @@ function MonacoSqlEditor({
   onRun: () => void
 }) {
   const providerRef = useRef<{ dispose(): void } | null>(null)
+  const completionRequestRef = useRef<{
+    id: number
+    controller: AbortController
+  } | null>(null)
   const onRunRef = useRef(onRun)
   onRunRef.current = onRun
   // Refs for completion provider — prevents stale closure (provider registered once at mount)
@@ -3770,8 +3845,19 @@ function MonacoSqlEditor({
   roleRef.current = role
   const { resolvedTheme } = useTheme()
 
+  useEffect(() => {
+    return () => {
+      completionRequestRef.current?.controller.abort()
+      providerRef.current?.dispose()
+      if (activeSqlEditorInstance) {
+        activeSqlEditorInstance = null
+      }
+    }
+  }, [])
+
   async function provideCompletions(
-    textUntilPosition: string
+    textUntilPosition: string,
+    signal?: AbortSignal
   ): Promise<CompletionResponse['items']> {
     const curValue = valueRef.current
     const curDb = databaseRef.current
@@ -3782,10 +3868,12 @@ function MonacoSqlEditor({
     if (relationContext?.type === 'database') {
       const [databases, objects] = await Promise.all([
         api.get<CompletionResponse>(
-          `/query/completions?kind=database&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`
+          `/query/completions?kind=database&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`,
+          signal
         ),
         api.get<CompletionResponse>(
-          `/query/completions?kind=object&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`
+          `/query/completions?kind=object&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`,
+          signal
         ),
       ])
       return dedupeCompletionItems([...databases.items, ...objects.items])
@@ -3793,36 +3881,33 @@ function MonacoSqlEditor({
 
     if (relationContext?.type === 'schema') {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=schema&database=${encodeURIComponent(relationContext.database)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`
+        `/query/completions?kind=schema&database=${encodeURIComponent(relationContext.database)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`,
+        signal
       )
       return response.items
     }
 
     if (relationContext?.type === 'object') {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=object&database=${encodeURIComponent(relationContext.database)}&schema=${encodeURIComponent(relationContext.schema)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`
+        `/query/completions?kind=object&database=${encodeURIComponent(relationContext.database)}&schema=${encodeURIComponent(relationContext.schema)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`,
+        signal
       )
       return response.items
     }
 
-    const stageFileMatch = textUntilPosition.match(/@([A-Za-z0-9_-]+)\.([\w./-]*)$/)
-    if (stageFileMatch) {
-      const stageName = stageFileMatch[1]
-      const filePrefix = stageFileMatch[2] ?? ''
-      // Support folder traversal: @stage.folder.subfolder.
-      const lastDot = filePrefix.lastIndexOf('.')
-      const folderPath = lastDot >= 0 ? filePrefix.substring(0, lastDot) : ''
-      const namePrefix = lastDot >= 0 ? filePrefix.substring(lastDot + 1) : filePrefix
+    const stageContext = extractStageCompletionContext(textUntilPosition)
+    if (stageContext?.kind === 'stage_path') {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=stage_file&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&stage=${encodeURIComponent(stageName)}&folder=${encodeURIComponent(folderPath)}&prefix=${encodeURIComponent(namePrefix)}`
+        `/query/completions?kind=stage_file&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&stage=${encodeURIComponent(stageContext.stage)}&folder=${encodeURIComponent(stageContext.folder)}&prefix=${encodeURIComponent(stageContext.prefix)}`,
+        signal
       )
       return response.items
     }
 
-    const stageMatch = textUntilPosition.match(/@([\w-]*)$/)
-    if (stageMatch) {
+    if (stageContext?.kind === 'stage') {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=stage&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&prefix=${encodeURIComponent(stageMatch[1] ?? '')}`
+        `/query/completions?kind=stage&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&prefix=${encodeURIComponent(stageContext.prefix)}`,
+        signal
       )
       return response.items
     }
@@ -3832,18 +3917,18 @@ function MonacoSqlEditor({
       const tableName = resolveAliasTable(curValue, aliasMatch[1])
       if (tableName) {
         const response = await api.get<CompletionResponse>(
-          `/query/completions?kind=column&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&table=${encodeURIComponent(tableName)}`
+          `/query/completions?kind=column&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&table=${encodeURIComponent(tableName)}`,
+          signal
         )
         return response.items
       }
     }
 
-    const objectMatch = textUntilPosition.match(
-      /\b(FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]*)$/i
-    )
+    const objectMatch = textUntilPosition.match(/\b(FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]*)$/i)
     if (objectMatch) {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=object&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(objectMatch[2] ?? '')}`
+        `/query/completions?kind=object&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(objectMatch[2] ?? '')}`,
+        signal
       )
       return response.items
     }
@@ -3859,7 +3944,8 @@ function MonacoSqlEditor({
         const fetches = limitedTables.map(async ({ tableName }) => {
           try {
             const response = await api.get<CompletionResponse>(
-              `/query/completions?kind=column&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&table=${encodeURIComponent(tableName)}`
+              `/query/completions?kind=column&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&table=${encodeURIComponent(tableName)}`,
+              signal
             )
             return response.items
           } catch {
@@ -3890,10 +3976,7 @@ function MonacoSqlEditor({
     ).map((keyword) => ({ label: keyword, type: 'keyword' }))
   }
 
-  function handleMount(
-    editor: Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0],
-    monaco: Monaco
-  ) {
+  function handleMount(editor: Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0], monaco: Monaco) {
     activeSqlEditorInstance = editor
     // Define custom Nova themes — light and dark
     monaco.editor.defineTheme('nova-light', {
@@ -3950,16 +4033,16 @@ function MonacoSqlEditor({
     providerRef.current = monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: ['@', '.', ' '],
       provideCompletionItems: async (
-        model: Parameters<
-          Monaco['languages']['registerCompletionItemProvider']
-        >[1] extends { provideCompletionItems: infer T }
+        model: Parameters<Monaco['languages']['registerCompletionItemProvider']>[1] extends {
+          provideCompletionItems: infer T
+        }
           ? T extends (...args: infer A) => unknown
             ? A[0]
             : never
           : never,
-        position: Parameters<
-          Monaco['languages']['registerCompletionItemProvider']
-        >[1] extends { provideCompletionItems: infer T }
+        position: Parameters<Monaco['languages']['registerCompletionItemProvider']>[1] extends {
+          provideCompletionItems: infer T
+        }
           ? T extends (...args: infer A) => unknown
             ? A[1]
             : never
@@ -3971,38 +4054,87 @@ function MonacoSqlEditor({
           endLineNumber: position.lineNumber,
           endColumn: position.column,
         })
-        const items = await provideCompletions(textUntilPosition)
-      return {
-          suggestions: items.map((item) => ({
-            label: item.label,
-            kind:
-              item.type === 'keyword'
-                ? monaco.languages.CompletionItemKind.Keyword
-                : item.type === 'database'
-                  ? monaco.languages.CompletionItemKind.Module
-                  : item.type === 'schema'
-                    ? monaco.languages.CompletionItemKind.Folder
-                    : item.type === 'object'
-                      ? monaco.languages.CompletionItemKind.Field
-                : item.type === 'column'
-                  ? monaco.languages.CompletionItemKind.Field
-                  : item.type === 'stage' || item.type === 'stage_file'
-                    ? monaco.languages.CompletionItemKind.File
-                    : monaco.languages.CompletionItemKind.Variable,
-            insertText: item.label,
-          })),
+        completionRequestRef.current?.controller.abort()
+        const request = {
+          id: (completionRequestRef.current?.id ?? 0) + 1,
+          controller: new AbortController(),
+        }
+        completionRequestRef.current = request
+
+        try {
+          const items = await provideCompletions(textUntilPosition, request.controller.signal)
+          if (completionRequestRef.current?.id !== request.id) {
+            return { suggestions: [] }
+          }
+
+          const stageContext = extractStageCompletionContext(textUntilPosition)
+          const stageRange = stageContext
+            ? {
+                startLineNumber: position.lineNumber,
+                startColumn: Math.max(1, position.column - stageContext.prefix.length),
+                endLineNumber: position.lineNumber,
+                endColumn: position.column,
+              }
+            : undefined
+
+          return {
+            suggestions: items.map((item) => ({
+              label: item.label,
+              kind:
+                item.type === 'keyword'
+                  ? monaco.languages.CompletionItemKind.Keyword
+                  : item.type === 'database'
+                    ? monaco.languages.CompletionItemKind.Module
+                    : item.type === 'schema'
+                      ? monaco.languages.CompletionItemKind.Folder
+                      : item.type === 'object'
+                        ? monaco.languages.CompletionItemKind.Field
+                        : item.type === 'column'
+                          ? monaco.languages.CompletionItemKind.Field
+                          : item.type === 'stage'
+                            ? monaco.languages.CompletionItemKind.Module
+                            : item.type === 'stage_folder'
+                              ? monaco.languages.CompletionItemKind.Folder
+                              : item.type === 'stage_file'
+                                ? monaco.languages.CompletionItemKind.File
+                                : monaco.languages.CompletionItemKind.Variable,
+              insertText: getStageCompletionInsertText(item),
+              detail:
+                item.type === 'stage' || item.type === 'stage_folder' || item.type === 'stage_file'
+                  ? formatStageCompletionDetail(item)
+                  : item.detail,
+              range:
+                item.type === 'stage' || item.type === 'stage_folder' || item.type === 'stage_file'
+                  ? stageRange
+                  : undefined,
+              command: shouldTriggerStageSuggestions(item)
+                ? {
+                    id: 'editor.action.triggerSuggest',
+                    title: 'Show stage contents',
+                  }
+                : undefined,
+            })),
+          }
+        } catch {
+          return { suggestions: [] }
         }
       },
     })
 
     // SQL Formatting — Format Document + Format Selection
-    const formatOpts = { language: 'mysql' as const, keywordCase: 'upper' as const, tabWidth: 2 }
+    const formatOpts = {
+      language: 'mysql' as const,
+      keywordCase: 'upper' as const,
+      tabWidth: 2,
+    }
     monaco.languages.registerDocumentFormattingEditProvider('sql', {
       provideDocumentFormattingEdits(model: any) {
         try {
           const formatted = formatSql(model.getValue(), formatOpts)
           return [{ range: model.getFullModelRange(), text: formatted }]
-        } catch { return [] }
+        } catch {
+          return []
+        }
       },
     })
     monaco.languages.registerDocumentRangeFormattingEditProvider('sql', {
@@ -4011,7 +4143,9 @@ function MonacoSqlEditor({
           const text = model.getValueInRange(range)
           const formatted = formatSql(text, formatOpts)
           return [{ range, text: formatted }]
-        } catch { return [] }
+        } catch {
+          return []
+        }
       },
     })
     // Ctrl+Shift+F keyboard shortcut for format
@@ -4019,7 +4153,9 @@ function MonacoSqlEditor({
       id: 'format-sql',
       label: 'Format SQL',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF],
-      run: (ed) => { ed.getAction('editor.action.formatDocument')?.run() },
+      run: (ed) => {
+        ed.getAction('editor.action.formatDocument')?.run()
+      },
     })
 
     // Ctrl/Cmd+Enter to run query — DOM listener is more reliable than
@@ -4074,7 +4210,9 @@ function dedupeCompletionItems(items: CompletionResponse['items']) {
   })
 }
 
-function extractRelationCompletionContext(text: string):
+function extractRelationCompletionContext(
+  text: string
+):
   | { type: 'database'; prefix: string }
   | { type: 'schema'; database: string; prefix: string }
   | { type: 'object'; database: string; schema: string; prefix: string }
@@ -4091,9 +4229,7 @@ function extractRelationCompletionContext(text: string):
     }
   }
 
-  const schemaMatch = text.match(
-    /\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/i
-  )
+  const schemaMatch = text.match(/\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/i)
   if (schemaMatch) {
     return {
       type: 'schema',
@@ -4102,9 +4238,7 @@ function extractRelationCompletionContext(text: string):
     }
   }
 
-  const databaseMatch = text.match(
-    /\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]*)$/i
-  )
+  const databaseMatch = text.match(/\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]*)$/i)
   if (databaseMatch) {
     return {
       type: 'database',
@@ -4116,8 +4250,7 @@ function extractRelationCompletionContext(text: string):
 }
 
 function resolveAliasTable(sql: string, alias: string) {
-  const regex =
-    /\b(?:FROM|JOIN)\s+([A-Za-z0-9_.`]+)(?:\s+(?:AS\s+)?([A-Za-z0-9_]+))?/gi
+  const regex = /\b(?:FROM|JOIN)\s+([A-Za-z0-9_.`]+)(?:\s+(?:AS\s+)?([A-Za-z0-9_]+))?/gi
   let match: RegExpExecArray | null = regex.exec(sql)
   while (match) {
     if (match[2] === alias) {
@@ -4129,8 +4262,7 @@ function resolveAliasTable(sql: string, alias: string) {
 }
 
 function extractTablesInScope(sql: string): Array<{ tableName: string; alias: string | null }> {
-  const regex =
-    /\b(?:FROM|JOIN)\s+([A-Za-z0-9_.`]+)(?:\s+(?:AS\s+)?([A-Za-z0-9_]+))?/gi
+  const regex = /\b(?:FROM|JOIN)\s+([A-Za-z0-9_.`]+)(?:\s+(?:AS\s+)?([A-Za-z0-9_]+))?/gi
   const tables: Array<{ tableName: string; alias: string | null }> = []
   const seen = new Set<string>()
   let match: RegExpExecArray | null = regex.exec(sql)

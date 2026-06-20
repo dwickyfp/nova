@@ -4,10 +4,6 @@ import { toast } from 'sonner'
 import {
   AlertCircle,
   AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Database,
   User,
   XCircle,
@@ -17,6 +13,11 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
+  SimpleTablePagination,
+  SimpleTableToolbar,
+  SimpleTableViewport,
+} from '@/components/data-table/simple-table-controls'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -24,15 +25,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { SearchableSelect } from '@/components/ui/searchable-select'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 
 type ActiveQuery = {
   id: number
@@ -145,11 +137,15 @@ export function MonitoringActiveQueries() {
   const queries = data ?? []
 
   const userOptions = useMemo(() => {
-    return [...new Set(queries.map((query) => query.user).filter(Boolean))] as string[]
+    return [
+      ...new Set(queries.map((query) => query.user).filter(Boolean)),
+    ] as string[]
   }, [queries])
 
   const databaseOptions = useMemo(() => {
-    return [...new Set(queries.map((query) => query.db).filter(Boolean))] as string[]
+    return [
+      ...new Set(queries.map((query) => query.db).filter(Boolean)),
+    ] as string[]
   }, [queries])
 
   const filteredQueries = useMemo(() => {
@@ -173,8 +169,6 @@ export function MonitoringActiveQueries() {
   const total = filteredQueries.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const safePage = Math.min(page, totalPages)
-  const pageStart = total === 0 ? 0 : (safePage - 1) * pageSize + 1
-  const pageEnd = Math.min(safePage * pageSize, total)
   const pagedQueries = filteredQueries.slice(
     (safePage - 1) * pageSize,
     safePage * pageSize
@@ -182,12 +176,6 @@ export function MonitoringActiveQueries() {
 
   const handlePageChange = (newPage: number) => {
     setPage(Math.max(1, Math.min(newPage, totalPages)))
-    setExpandedRow(null)
-  }
-
-  const handlePageSizeChange = (value: string) => {
-    setPageSize(Number(value))
-    setPage(1)
     setExpandedRow(null)
   }
 
@@ -209,42 +197,34 @@ export function MonitoringActiveQueries() {
         </p>
       </div>
 
-      <div className='flex flex-wrap items-center gap-3'>
-        <SearchableSelect
-          options={userOptions}
-          value={userFilter}
-          onChange={(value: string) => handleFilterChange(setUserFilter, value)}
-          label='User'
-          icon={<User size={14} />}
-        />
+      <SimpleTableToolbar
+        search={searchQuery}
+        onSearchChange={(value) => {
+          setSearchQuery(value)
+          setPage(1)
+          setExpandedRow(null)
+        }}
+        searchPlaceholder='Search query, host, state...'
+        resultLabel={`${total} ${total === 1 ? 'active query' : 'active queries'}`}
+        filters={[
+          {
+            label: 'User',
+            value: userFilter,
+            options: userOptions,
+            onChange: (value) => handleFilterChange(setUserFilter, value),
+            icon: <User size={14} />,
+          },
+          {
+            label: 'Database',
+            value: databaseFilter,
+            options: databaseOptions,
+            onChange: (value) => handleFilterChange(setDatabaseFilter, value),
+            icon: <Database size={14} />,
+          },
+        ]}
+      />
 
-        <SearchableSelect
-          options={databaseOptions}
-          value={databaseFilter}
-          onChange={(value: string) =>
-            handleFilterChange(setDatabaseFilter, value)
-          }
-          label='Database'
-          icon={<Database size={14} />}
-        />
-
-        <Input
-          placeholder='Search query, host, state...'
-          value={searchQuery}
-          onChange={(event) => {
-            setSearchQuery(event.target.value)
-            setPage(1)
-            setExpandedRow(null)
-          }}
-          className='max-w-xs'
-        />
-
-        <div className='ml-auto text-sm text-muted-foreground'>
-          {total} {total === 1 ? 'active query' : 'active queries'}
-        </div>
-      </div>
-
-      <div className='relative rounded-md border border-border'>
+      <SimpleTableViewport>
         {isFetching && !isLoading ? (
           <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
             <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
@@ -258,238 +238,185 @@ export function MonitoringActiveQueries() {
           </div>
         ) : null}
 
-        <div className='overflow-x-auto'>
-          <table className='w-full'>
-            <thead className='border-b border-border bg-muted/50'>
+        <table className='w-full'>
+          <thead>
+            <tr>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                User
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Database
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Command
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Query
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                State
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                Time
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
               <tr>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  User
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Database
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Command
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Query
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  State
-                </th>
-                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                  Time
-                </th>
-                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                  Actions
-                </th>
+                <td
+                  colSpan={7}
+                  className='px-4 py-12 text-center text-sm text-muted-foreground'
+                >
+                  Loading...
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className='px-4 py-12 text-center text-sm text-muted-foreground'
+            ) : pagedQueries.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className='px-4 py-12 text-center text-sm text-muted-foreground'
+                >
+                  No active queries found
+                </td>
+              </tr>
+            ) : (
+              pagedQueries.map((query) => (
+                <Fragment key={query.id}>
+                  <tr
+                    onClick={() =>
+                      setExpandedRow(expandedRow === query.id ? null : query.id)
+                    }
+                    className={cn(
+                      'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
+                      expandedRow === query.id && 'bg-muted/30'
+                    )}
                   >
-                    Loading...
-                  </td>
-                </tr>
-              ) : pagedQueries.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className='px-4 py-12 text-center text-sm text-muted-foreground'
-                  >
-                    No active queries found
-                  </td>
-                </tr>
-              ) : (
-                pagedQueries.map((query) => (
-                  <Fragment key={query.id}>
-                    <tr
-                      onClick={() =>
-                        setExpandedRow(
-                          expandedRow === query.id ? null : query.id
-                        )
-                      }
-                      className={cn(
-                        'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
-                        expandedRow === query.id && 'bg-muted/30'
-                      )}
-                    >
-                      <td className='px-4 py-3 text-sm'>
-                        <div className='flex items-center gap-1.5'>
-                          <User className='h-3 w-3 text-muted-foreground' />
-                          <span className='text-xs'>{query.user}</span>
-                        </div>
-                      </td>
-                      <td className='px-4 py-3 text-sm'>
-                        <div className='flex items-center gap-1.5'>
-                          <Database className='h-3 w-3 text-muted-foreground' />
-                          <span className='text-xs'>{query.db ?? '—'}</span>
-                        </div>
-                      </td>
-                      <td className='px-4 py-3'>
-                        <Badge
-                          variant='secondary'
-                          className={cn(
-                            'text-xs font-medium',
-                            getCommandBadgeClassName(query.command)
-                          )}
-                        >
-                          {query.command}
-                        </Badge>
-                      </td>
-                      <td className='px-4 py-3 text-sm'>
-                        <code className='rounded bg-muted px-1.5 py-0.5 text-xs font-mono'>
-                          {truncateText(query.info ?? '—')}
-                        </code>
-                      </td>
-                      <td className='px-4 py-3'>
-                        <Badge
-                          variant='secondary'
-                          className={cn(
-                            'text-xs font-medium',
-                            getStateBadgeClassName(query.state)
-                          )}
-                        >
-                          {query.state}
-                        </Badge>
-                      </td>
-                      <td className='px-4 py-3 text-right text-xs font-medium'>
-                        {formatDuration(query.time ?? 0)}
-                      </td>
-                      <td className='px-4 py-3 text-right'>
-                        <Button
-                          variant='ghost'
-                          size='sm'
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setKillTarget(query)
-                          }}
-                          className='text-destructive hover:text-destructive'
-                        >
-                          <XCircle className='h-4 w-4' />
-                          Kill
-                        </Button>
-                      </td>
-                    </tr>
-                    {expandedRow === query.id && (
-                      <tr className='border-b border-border bg-muted/20'>
-                        <td colSpan={7} className='px-4 py-4'>
-                          <div className='space-y-3'>
+                    <td className='px-4 py-3 text-sm'>
+                      <div className='flex items-center gap-1.5'>
+                        <User className='h-3 w-3 text-muted-foreground' />
+                        <span className='text-xs'>{query.user}</span>
+                      </div>
+                    </td>
+                    <td className='px-4 py-3 text-sm'>
+                      <div className='flex items-center gap-1.5'>
+                        <Database className='h-3 w-3 text-muted-foreground' />
+                        <span className='text-xs'>{query.db ?? '—'}</span>
+                      </div>
+                    </td>
+                    <td className='px-4 py-3'>
+                      <Badge
+                        variant='secondary'
+                        className={cn(
+                          'text-xs font-medium',
+                          getCommandBadgeClassName(query.command)
+                        )}
+                      >
+                        {query.command}
+                      </Badge>
+                    </td>
+                    <td className='px-4 py-3 text-sm'>
+                      <code className='rounded bg-muted px-1.5 py-0.5 text-xs font-mono'>
+                        {truncateText(query.info ?? '—')}
+                      </code>
+                    </td>
+                    <td className='px-4 py-3'>
+                      <Badge
+                        variant='secondary'
+                        className={cn(
+                          'text-xs font-medium',
+                          getStateBadgeClassName(query.state)
+                        )}
+                      >
+                        {query.state}
+                      </Badge>
+                    </td>
+                    <td className='px-4 py-3 text-right text-xs font-medium'>
+                      {formatDuration(query.time ?? 0)}
+                    </td>
+                    <td className='px-4 py-3 text-right'>
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setKillTarget(query)
+                        }}
+                        className='text-destructive hover:text-destructive'
+                      >
+                        <XCircle className='h-4 w-4' />
+                        Kill
+                      </Button>
+                    </td>
+                  </tr>
+                  {expandedRow === query.id && (
+                    <tr className='border-b border-border bg-muted/20'>
+                      <td colSpan={7} className='px-4 py-4'>
+                        <div className='space-y-3'>
+                          <div>
+                            <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
+                              Full Query
+                            </p>
+                            <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs font-mono'>
+                              {query.info ?? '—'}
+                            </pre>
+                          </div>
+                          <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
                             <div>
-                              <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
-                                Full Query
+                              <span className='font-medium'>
+                                Connection ID:
+                              </span>{' '}
+                              {query.id}
+                            </div>
+                            <div>
+                              <span className='font-medium'>Host:</span>{' '}
+                              {query.host}
+                            </div>
+                            <div>
+                              <span className='font-medium'>Query ID:</span>{' '}
+                              {query.query_id ?? '—'}
+                            </div>
+                            <div>
+                              <span className='font-medium'>Command:</span>{' '}
+                              {query.command}
+                            </div>
+                          </div>
+                          {query.state ? (
+                            <div>
+                              <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground'>
+                                <AlertCircle className='h-3 w-3' />
+                                Current State
                               </p>
-                              <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs font-mono'>
-                                {query.info ?? '—'}
+                              <pre className='rounded-md bg-muted p-3 text-xs font-mono'>
+                                {query.state}
                               </pre>
                             </div>
-                            <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
-                              <div>
-                                <span className='font-medium'>Connection ID:</span>{' '}
-                                {query.id}
-                              </div>
-                              <div>
-                                <span className='font-medium'>Host:</span>{' '}
-                                {query.host}
-                              </div>
-                              <div>
-                                <span className='font-medium'>Query ID:</span>{' '}
-                                {query.query_id ?? '—'}
-                              </div>
-                              <div>
-                                <span className='font-medium'>Command:</span>{' '}
-                                {query.command}
-                              </div>
-                            </div>
-                            {query.state ? (
-                              <div>
-                                <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground'>
-                                  <AlertCircle className='h-3 w-3' />
-                                  Current State
-                                </p>
-                                <pre className='rounded-md bg-muted p-3 text-xs font-mono'>
-                                  {query.state}
-                                </pre>
-                              </div>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))
+            )}
+          </tbody>
+        </table>
+      </SimpleTableViewport>
 
-      <div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-        <div className='flex items-center gap-2 text-sm'>
-          <span className='text-muted-foreground'>Rows per page:</span>
-          <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
-            <SelectTrigger className='w-[70px]'>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value='10'>10</SelectItem>
-              <SelectItem value='25'>25</SelectItem>
-              <SelectItem value='50'>50</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
-          <span className='text-sm text-muted-foreground'>
-            Showing {pageStart}-{pageEnd} of {total}
-          </span>
-          <span className='text-sm text-muted-foreground'>
-            Page {safePage} of {totalPages}
-          </span>
-          <div className='flex items-center gap-1'>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(1)}
-              disabled={safePage === 1}
-              className='h-8 w-8'
-            >
-              <ChevronsLeft className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(safePage - 1)}
-              disabled={safePage === 1}
-              className='h-8 w-8'
-            >
-              <ChevronLeft className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(safePage + 1)}
-              disabled={safePage >= totalPages}
-              className='h-8 w-8'
-            >
-              <ChevronRight className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(totalPages)}
-              disabled={safePage >= totalPages}
-              className='h-8 w-8'
-            >
-              <ChevronsRight className='h-4 w-4' />
-            </Button>
-          </div>
-        </div>
-      </div>
+      <SimpleTablePagination
+        page={safePage}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={handlePageChange}
+        onPageSizeChange={(value) => {
+          setPageSize(value)
+          setPage(1)
+          setExpandedRow(null)
+        }}
+      />
 
       <Dialog open={!!killTarget} onOpenChange={() => setKillTarget(null)}>
         <DialogContent>
@@ -526,7 +453,9 @@ export function MonitoringActiveQueries() {
             </Button>
             <Button
               variant='destructive'
-              onClick={() => (killTarget ? killMutation.mutate(killTarget) : null)}
+              onClick={() =>
+                killTarget ? killMutation.mutate(killTarget) : null
+              }
               disabled={killMutation.isPending}
             >
               {killMutation.isPending ? 'Killing...' : 'Kill Query'}

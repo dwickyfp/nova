@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
-  ChevronsLeft,
-  ChevronsRight,
-  ChevronLeft,
-  ChevronRight,
   Database,
-  KeyRound,
   MoreHorizontal,
   Plus,
   RefreshCw,
   Shield,
-  Trash2,
   Users as UsersIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  SimpleTablePagination,
+  SimpleTableToolbar,
+  SimpleTableViewport,
+} from '@/components/data-table/simple-table-controls'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
@@ -62,7 +61,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { api } from '@/lib/api-client'
@@ -222,7 +220,16 @@ const PRIVILEGE_OPTIONS: Record<PrivilegeScope, string[]> = {
     'CREATE MATERIALIZED VIEW',
     'ALL',
   ],
-  TABLE: ['ALTER', 'DROP', 'SELECT', 'INSERT', 'UPDATE', 'EXPORT', 'DELETE', 'ALL'],
+  TABLE: [
+    'ALTER',
+    'DROP',
+    'SELECT',
+    'INSERT',
+    'UPDATE',
+    'EXPORT',
+    'DELETE',
+    'ALL',
+  ],
   VIEW: ['SELECT', 'ALTER', 'DROP', 'ALL'],
   'MATERIALIZED VIEW': ['SELECT', 'ALTER', 'REFRESH', 'DROP', 'ALL'],
 }
@@ -288,33 +295,6 @@ function objectDescriptor(privilege: RolePrivilege) {
   return 'All databases'
 }
 
-function SectionCard({
-  title,
-  description,
-  children,
-  actions,
-}: {
-  title: string
-  description?: string
-  children: React.ReactNode
-  actions?: React.ReactNode
-}) {
-  return (
-    <section className='rounded-xl border bg-card/70'>
-      <div className='flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4'>
-        <div className='space-y-1'>
-          <h3 className='text-sm font-semibold tracking-tight'>{title}</h3>
-          {description ? (
-            <p className='text-sm text-muted-foreground'>{description}</p>
-          ) : null}
-        </div>
-        {actions}
-      </div>
-      <div className='p-5'>{children}</div>
-    </section>
-  )
-}
-
 function InlineCheckboxList({
   options,
   values,
@@ -327,7 +307,11 @@ function InlineCheckboxList({
   emptyLabel: string
 }) {
   if (options.length === 0) {
-    return <div className='rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground'>{emptyLabel}</div>
+    return (
+      <div className='rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground'>
+        {emptyLabel}
+      </div>
+    )
   }
 
   return (
@@ -336,8 +320,14 @@ function InlineCheckboxList({
         {options.map((option) => {
           const checked = values.includes(option)
           return (
-            <label key={option} className='flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50'>
-              <Checkbox checked={checked} onCheckedChange={() => onToggle(option)} />
+            <label
+              key={option}
+              className='flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50'
+            >
+              <Checkbox
+                checked={checked}
+                onCheckedChange={() => onToggle(option)}
+              />
               <span className='text-sm'>{option}</span>
             </label>
           )
@@ -347,57 +337,29 @@ function InlineCheckboxList({
   )
 }
 
-function Pagination({
-  page,
-  pageCount,
-  onPrevious,
-  onNext,
-}: {
-  page: number
-  pageCount: number
-  onPrevious: () => void
-  onNext: () => void
-}) {
-  return (
-    <div className='flex items-center justify-between gap-3 border-t px-5 py-3 text-sm text-muted-foreground'>
-      <span>
-        Page {pageCount === 0 ? 0 : page} of {pageCount}
-      </span>
-      <div className='flex items-center gap-2'>
-        <Button variant='outline' size='sm' onClick={onPrevious} disabled={page <= 1}>
-          <ChevronLeft className='size-4' />
-          Prev
-        </Button>
-        <Button variant='outline' size='sm' onClick={onNext} disabled={pageCount === 0 || page >= pageCount}>
-          Next
-          <ChevronRight className='size-4' />
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 export function Users() {
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [users, setUsers] = useState<AdminUser[]>([])
   const [roles, setRoles] = useState<RoleSummary[]>([])
   const [databases, setDatabases] = useState<string[]>([])
   const [searchUsers, setSearchUsers] = useState('')
-  const [searchRoles, setSearchRoles] = useState('')
+  const [userAccessFilter, setUserAccessFilter] = useState('')
   const [usersPage, setUsersPage] = useState(1)
-  const [rolesPage, setRolesPage] = useState(1)
+  const [usersPageSize, setUsersPageSize] = useState(PAGE_SIZE)
   const [createUserOpen, setCreateUserOpen] = useState(false)
   const [createRoleOpen, setCreateRoleOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
   const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null)
   const [deleteUserSubmitting, setDeleteUserSubmitting] = useState(false)
-  const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(null)
+  const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(
+    null
+  )
   const [generatedPassword, setGeneratedPassword] = useState('')
   const [passwordResetSubmitting, setPasswordResetSubmitting] = useState(false)
-  const [roleActionState, setRoleActionState] = useState<RoleActionState | null>(null)
+  const [roleActionState, setRoleActionState] =
+    useState<RoleActionState | null>(null)
   const [roleActionSubmitting, setRoleActionSubmitting] = useState(false)
   const [userDetail, setUserDetail] = useState<UserDetail | null>(null)
   const [userDetailLoading] = useState(false)
@@ -407,19 +369,21 @@ export function Users() {
   const [roleSubmitting, setRoleSubmitting] = useState(false)
   const [editingRole, setEditingRole] = useState<RoleSummary | null>(null)
   const [roleDetail, setRoleDetail] = useState<RoleDetail | null>(null)
-  const [roleDetailLoading, setRoleDetailLoading] = useState(false)
-  const [privilegeForm, setPrivilegeForm] = useState<RolePrivilegeFormState>(DEFAULT_PRIVILEGE_FORM)
+  const [roleDetailLoading] = useState(false)
+  const [privilegeForm, setPrivilegeForm] = useState<RolePrivilegeFormState>(
+    DEFAULT_PRIVILEGE_FORM
+  )
   const [memberUserIdentity, setMemberUserIdentity] = useState('')
   const [memberRoleName, setMemberRoleName] = useState('')
   const [objectOptions, setObjectOptions] = useState<string[]>([])
 
   const visibleUsersList = useMemo(
     () => users.filter((user) => user.username.toLowerCase() !== 'root'),
-    [users],
+    [users]
   )
   const visibleRolesList = useMemo(
     () => roles.filter((role) => role.name.toLowerCase() !== 'root'),
-    [roles],
+    [roles]
   )
 
   const userIdentities = useMemo(
@@ -428,7 +392,7 @@ export function Users() {
         label: `${user.username}@${user.host}`,
         value: `${user.username}@@${user.host}`,
       })),
-    [visibleUsersList],
+    [visibleUsersList]
   )
 
   async function loadBaseData(showLoader = true) {
@@ -436,17 +400,22 @@ export function Users() {
     else setRefreshing(true)
 
     try {
-      const [usersResponse, rolesResponse, databasesResponse] = await Promise.all([
-        api.get<{ users: AdminUser[] }>('/users'),
-        api.get<{ roles: RoleSummary[] }>('/users/roles'),
-        api.get<{ databases: string[] }>('/users/databases'),
-      ])
+      const [usersResponse, rolesResponse, databasesResponse] =
+        await Promise.all([
+          api.get<{ users: AdminUser[] }>('/users'),
+          api.get<{ roles: RoleSummary[] }>('/users/roles'),
+          api.get<{ databases: string[] }>('/users/databases'),
+        ])
 
       setUsers(usersResponse.users ?? [])
       setRoles(rolesResponse.roles ?? [])
       setDatabases(databasesResponse.databases ?? [])
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to load administrator data')
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to load administrator data'
+      )
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -458,7 +427,11 @@ export function Users() {
   }, [])
 
   useEffect(() => {
-    if (privilegeForm.scope === 'SYSTEM' || privilegeForm.scope === 'DATABASE' || privilegeForm.scope === 'CATALOG') {
+    if (
+      privilegeForm.scope === 'SYSTEM' ||
+      privilegeForm.scope === 'DATABASE' ||
+      privilegeForm.scope === 'CATALOG'
+    ) {
       setObjectOptions([])
       return
     }
@@ -472,33 +445,43 @@ export function Users() {
     async function loadObjects() {
       try {
         if (privilegeForm.scope === 'TABLE') {
-          const response = await api.get<{ tables: Array<{ name: string } | string> }>(
-            `/objects/databases/${encodeURIComponent(privilegeForm.database)}/tables`,
+          const response = await api.get<{
+            tables: Array<{ name: string } | string>
+          }>(
+            `/objects/databases/${encodeURIComponent(privilegeForm.database)}/tables`
           )
           if (!isCancelled) {
-            const tables = (response.tables ?? []).map((entry) => (typeof entry === 'string' ? entry : entry.name))
+            const tables = (response.tables ?? []).map((entry) =>
+              typeof entry === 'string' ? entry : entry.name
+            )
             setObjectOptions(tables)
           }
           return
         }
 
         if (privilegeForm.scope === 'VIEW') {
-          const response = await api.get<{ views: Array<{ name: string } | string> }>(
-            `/objects/databases/${encodeURIComponent(privilegeForm.database)}/views`,
+          const response = await api.get<{
+            views: Array<{ name: string } | string>
+          }>(
+            `/objects/databases/${encodeURIComponent(privilegeForm.database)}/views`
           )
           if (!isCancelled) {
-            const views = (response.views ?? []).map((entry) => (typeof entry === 'string' ? entry : entry.name))
+            const views = (response.views ?? []).map((entry) =>
+              typeof entry === 'string' ? entry : entry.name
+            )
             setObjectOptions(views)
           }
           return
         }
 
-        const response = await api.get<{ materialized_views: Array<{ name: string } | string> }>(
-          `/objects/databases/${encodeURIComponent(privilegeForm.database)}/objects?type=materialized_view`,
+        const response = await api.get<{
+          materialized_views: Array<{ name: string } | string>
+        }>(
+          `/objects/databases/${encodeURIComponent(privilegeForm.database)}/objects?type=materialized_view`
         )
         if (!isCancelled) {
-          const materializedViews = (response.materialized_views ?? []).map((entry) =>
-            typeof entry === 'string' ? entry : entry.name,
+          const materializedViews = (response.materialized_views ?? []).map(
+            (entry) => (typeof entry === 'string' ? entry : entry.name)
           )
           setObjectOptions(materializedViews)
         }
@@ -516,61 +499,35 @@ export function Users() {
 
   const filteredUsers = useMemo(() => {
     const query = searchUsers.trim().toLowerCase()
-    if (!query) return visibleUsersList
-    return visibleUsersList.filter((user) =>
-      [user.username, user.host, user.auth_mode, user.roles.join(' '), user.default_roles.join(' ')]
+    return visibleUsersList.filter((user) => {
+      if (userAccessFilter === 'Protected' && !user.is_protected) return false
+      if (userAccessFilter === 'Standard' && user.is_protected) return false
+      if (!query) return true
+      return [
+        user.username,
+        user.host,
+        user.auth_mode,
+        user.roles.join(' '),
+        user.default_roles.join(' '),
+      ]
         .join(' ')
         .toLowerCase()
-        .includes(query),
-    )
-  }, [searchUsers, visibleUsersList])
+        .includes(query)
+    })
+  }, [searchUsers, userAccessFilter, visibleUsersList])
 
-  const filteredRoles = useMemo(() => {
-    const query = searchRoles.trim().toLowerCase()
-    if (!query) return visibleRolesList
-    return visibleRolesList.filter((role) => role.name.toLowerCase().includes(query))
-  }, [searchRoles, visibleRolesList])
-
-  const usersPageCount = Math.ceil(filteredUsers.length / PAGE_SIZE)
-  const rolesPageCount = Math.ceil(filteredRoles.length / PAGE_SIZE)
-  const usersPageStart = filteredUsers.length === 0 ? 0 : (usersPage - 1) * PAGE_SIZE + 1
-  const usersPageEnd = Math.min(usersPage * PAGE_SIZE, filteredUsers.length)
+  const usersPageCount = Math.ceil(filteredUsers.length / usersPageSize)
 
   useEffect(() => {
-    setUsersPage((current) => Math.min(Math.max(current, 1), Math.max(usersPageCount, 1)))
+    setUsersPage((current) =>
+      Math.min(Math.max(current, 1), Math.max(usersPageCount, 1))
+    )
   }, [usersPageCount])
 
-  useEffect(() => {
-    setRolesPage((current) => Math.min(Math.max(current, 1), Math.max(rolesPageCount, 1)))
-  }, [rolesPageCount])
-
   const visibleUsers = useMemo(() => {
-    const start = (usersPage - 1) * PAGE_SIZE
-    return filteredUsers.slice(start, start + PAGE_SIZE)
-  }, [filteredUsers, usersPage])
-
-  const visibleRoles = useMemo(() => {
-    const start = (rolesPage - 1) * PAGE_SIZE
-    return filteredRoles.slice(start, start + PAGE_SIZE)
-  }, [filteredRoles, rolesPage])
-
-  async function openEditRole(role: RoleSummary) {
-    setEditingRole(role)
-    setRoleDetail(null)
-    setRoleDetailLoading(true)
-    setPrivilegeForm(DEFAULT_PRIVILEGE_FORM)
-    setMemberUserIdentity('')
-    setMemberRoleName('')
-
-    try {
-      const detail = await api.get<RoleDetail>(`/users/roles/${encodeURIComponent(role.name)}`)
-      setRoleDetail(detail)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to load role details')
-    } finally {
-      setRoleDetailLoading(false)
-    }
-  }
+    const start = (usersPage - 1) * usersPageSize
+    return filteredUsers.slice(start, start + usersPageSize)
+  }, [filteredUsers, usersPage, usersPageSize])
 
   async function handleCreateUser() {
     if (!userForm.username.trim() || !userForm.password.trim()) {
@@ -582,7 +539,9 @@ export function Users() {
       return
     }
 
-    const { sessionProperties } = parseSessionProperties(userForm.sessionProperties)
+    const { sessionProperties } = parseSessionProperties(
+      userForm.sessionProperties
+    )
     const selectedRole = userForm.defaultRole.trim()
 
     setUserSubmitting(true)
@@ -601,7 +560,9 @@ export function Users() {
       setUserForm(DEFAULT_USER_FORM)
       await loadBaseData(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create user')
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to create user'
+      )
     } finally {
       setUserSubmitting(false)
     }
@@ -612,30 +573,46 @@ export function Users() {
 
     const originalRoles = new Set(editingUser.roles)
     const nextRoles = new Set(userForm.grantedRoles)
-    const grantedRolesAdd = [...nextRoles].filter((role) => !originalRoles.has(role))
-    const grantedRolesRemove = [...originalRoles].filter((role) => !nextRoles.has(role))
-    const { sessionProperties, clearKeys } = parseSessionProperties(userForm.sessionProperties)
+    const grantedRolesAdd = [...nextRoles].filter(
+      (role) => !originalRoles.has(role)
+    )
+    const grantedRolesRemove = [...originalRoles].filter(
+      (role) => !nextRoles.has(role)
+    )
+    const { sessionProperties, clearKeys } = parseSessionProperties(
+      userForm.sessionProperties
+    )
 
     setUserSubmitting(true)
     try {
-      await api.put(`/users/${encodeURIComponent(editingUser.username)}?host=${encodeURIComponent(editingUser.host)}`, {
-        password: userForm.password || undefined,
-        granted_roles_add: grantedRolesAdd,
-        granted_roles_remove: grantedRolesRemove,
-        default_role_mode: userForm.defaultRoleMode,
-        default_roles: userForm.defaultRoleMode === 'explicit' ? userForm.defaultRoles : [],
-        max_user_connections: userForm.maxUserConnections ? Number(userForm.maxUserConnections) : null,
-        catalog: userForm.catalog,
-        database: userForm.database,
-        session_properties: sessionProperties,
-        clear_properties: clearKeys,
-      })
+      await api.put(
+        `/users/${encodeURIComponent(editingUser.username)}?host=${encodeURIComponent(editingUser.host)}`,
+        {
+          password: userForm.password || undefined,
+          granted_roles_add: grantedRolesAdd,
+          granted_roles_remove: grantedRolesRemove,
+          default_role_mode: userForm.defaultRoleMode,
+          default_roles:
+            userForm.defaultRoleMode === 'explicit'
+              ? userForm.defaultRoles
+              : [],
+          max_user_connections: userForm.maxUserConnections
+            ? Number(userForm.maxUserConnections)
+            : null,
+          catalog: userForm.catalog,
+          database: userForm.database,
+          session_properties: sessionProperties,
+          clear_properties: clearKeys,
+        }
+      )
       toast.success('User updated successfully')
       setEditingUser(null)
       setUserDetail(null)
       await loadBaseData(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to update user')
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to update user'
+      )
     } finally {
       setUserSubmitting(false)
     }
@@ -647,13 +624,15 @@ export function Users() {
     setDeleteUserSubmitting(true)
     try {
       await api.delete(
-        `/users/${encodeURIComponent(deletingUser.username)}?host=${encodeURIComponent(deletingUser.host)}`,
+        `/users/${encodeURIComponent(deletingUser.username)}?host=${encodeURIComponent(deletingUser.host)}`
       )
       toast.success('User deleted')
       setDeletingUser(null)
       await loadBaseData(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete user')
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to delete user'
+      )
     } finally {
       setDeleteUserSubmitting(false)
     }
@@ -670,12 +649,14 @@ export function Users() {
         password: string
         message: string
       }>(
-        `/users/${encodeURIComponent(resetPasswordUser.username)}/reset-password?host=${encodeURIComponent(resetPasswordUser.host)}`,
+        `/users/${encodeURIComponent(resetPasswordUser.username)}/reset-password?host=${encodeURIComponent(resetPasswordUser.host)}`
       )
       setGeneratedPassword(response.password)
       toast.success('Password reset successfully')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to reset password')
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to reset password'
+      )
     } finally {
       setPasswordResetSubmitting(false)
     }
@@ -690,23 +671,30 @@ export function Users() {
     setRoleActionSubmitting(true)
     try {
       if (roleActionState.mode === 'grant') {
-        await api.post(`/users/${encodeURIComponent(roleActionState.user.username)}/roles`, {
-          role: roleActionState.role,
-          host: roleActionState.user.host,
-        })
+        await api.post(
+          `/users/${encodeURIComponent(roleActionState.user.username)}/roles`,
+          {
+            role: roleActionState.role,
+            host: roleActionState.user.host,
+          }
+        )
       } else {
         await api.delete(
-          `/users/${encodeURIComponent(roleActionState.user.username)}/roles/${encodeURIComponent(roleActionState.role)}?host=${encodeURIComponent(roleActionState.user.host)}`,
+          `/users/${encodeURIComponent(roleActionState.user.username)}/roles/${encodeURIComponent(roleActionState.role)}?host=${encodeURIComponent(roleActionState.user.host)}`
         )
       }
 
       toast.success(
-        roleActionState.mode === 'grant' ? 'Role granted successfully' : 'Role revoked successfully',
+        roleActionState.mode === 'grant'
+          ? 'Role granted successfully'
+          : 'Role revoked successfully'
       )
       setRoleActionState(null)
       await loadBaseData(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to update role')
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to update role'
+      )
     } finally {
       setRoleActionSubmitting(false)
     }
@@ -726,28 +714,18 @@ export function Users() {
       setCreateRoleOpen(false)
       await loadBaseData(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create role')
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to create role'
+      )
     } finally {
       setRoleSubmitting(false)
     }
   }
 
-  async function handleDeleteRole(role: RoleSummary) {
-    if (!window.confirm(`Delete role ${role.name}?`)) return
-
-    try {
-      await api.delete(`/users/roles/${encodeURIComponent(role.name)}`)
-      toast.success('Role deleted')
-      setEditingRole(null)
-      setRoleDetail(null)
-      await loadBaseData(false)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete role')
-    }
-  }
-
   async function refreshRoleDetail(roleName: string) {
-    const detail = await api.get<RoleDetail>(`/users/roles/${encodeURIComponent(roleName)}`)
+    const detail = await api.get<RoleDetail>(
+      `/users/roles/${encodeURIComponent(roleName)}`
+    )
     setRoleDetail(detail)
   }
 
@@ -761,20 +739,26 @@ export function Users() {
           return
         }
         const [username, host] = memberUserIdentity.split('@@')
-        await api.post(`/users/roles/${encodeURIComponent(editingRole.name)}/members`, {
-          member_type: 'user',
-          member_name: username,
-          host,
-        })
+        await api.post(
+          `/users/roles/${encodeURIComponent(editingRole.name)}/members`,
+          {
+            member_type: 'user',
+            member_name: username,
+            host,
+          }
+        )
       } else {
         if (!memberRoleName) {
           toast.error('Select a role first')
           return
         }
-        await api.post(`/users/roles/${encodeURIComponent(editingRole.name)}/members`, {
-          member_type: 'role',
-          member_name: memberRoleName,
-        })
+        await api.post(
+          `/users/roles/${encodeURIComponent(editingRole.name)}/members`,
+          {
+            member_type: 'role',
+            member_name: memberRoleName,
+          }
+        )
       }
 
       toast.success('Role membership updated')
@@ -783,38 +767,56 @@ export function Users() {
       setMemberUserIdentity('')
       setMemberRoleName('')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to update role membership')
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update role membership'
+      )
     }
   }
 
-  async function handleRevokeRoleMember(memberType: 'user' | 'role', memberName: string, host = '%') {
+  async function handleRevokeRoleMember(
+    memberType: 'user' | 'role',
+    memberName: string,
+    host = '%'
+  ) {
     if (!editingRole) return
     try {
-      await api.delete(`/users/roles/${encodeURIComponent(editingRole.name)}/members`, {
-        member_type: memberType,
-        member_name: memberName,
-        host,
-      })
+      await api.delete(
+        `/users/roles/${encodeURIComponent(editingRole.name)}/members`,
+        {
+          member_type: memberType,
+          member_name: memberName,
+          host,
+        }
+      )
       toast.success('Role membership revoked')
       await refreshRoleDetail(editingRole.name)
       await loadBaseData(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to revoke role membership')
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to revoke role membership'
+      )
     }
   }
 
   async function handleGrantPrivilege() {
     if (!editingRole) return
     try {
-      await api.post(`/users/roles/${encodeURIComponent(editingRole.name)}/privileges`, {
-        privilege: privilegeForm.privilege,
-        scope: privilegeForm.scope,
-        selector_mode: privilegeForm.selectorMode,
-        catalog: privilegeForm.catalog || null,
-        database: privilegeForm.database || null,
-        object_name: privilegeForm.objectName || null,
-        with_grant_option: privilegeForm.withGrantOption,
-      })
+      await api.post(
+        `/users/roles/${encodeURIComponent(editingRole.name)}/privileges`,
+        {
+          privilege: privilegeForm.privilege,
+          scope: privilegeForm.scope,
+          selector_mode: privilegeForm.selectorMode,
+          catalog: privilegeForm.catalog || null,
+          database: privilegeForm.database || null,
+          object_name: privilegeForm.objectName || null,
+          with_grant_option: privilegeForm.withGrantOption,
+        }
+      )
       toast.success('Privilege granted')
       await refreshRoleDetail(editingRole.name)
       setPrivilegeForm({
@@ -823,7 +825,9 @@ export function Users() {
         privilege: PRIVILEGE_OPTIONS[privilegeForm.scope][0],
       })
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to grant privilege')
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to grant privilege'
+      )
     }
   }
 
@@ -835,27 +839,36 @@ export function Users() {
 
     let selectorMode: SelectorMode = 'specific'
     if (scope === 'DATABASE' && !database) selectorMode = 'all_databases'
-    if (scope !== 'SYSTEM' && scope !== 'CATALOG' && !objectName && database) selectorMode = 'all_in_database'
-    if (scope !== 'SYSTEM' && scope !== 'CATALOG' && !database && !objectName) selectorMode = 'all_databases'
+    if (scope !== 'SYSTEM' && scope !== 'CATALOG' && !objectName && database)
+      selectorMode = 'all_in_database'
+    if (scope !== 'SYSTEM' && scope !== 'CATALOG' && !database && !objectName)
+      selectorMode = 'all_databases'
 
     try {
-      await api.delete(`/users/roles/${encodeURIComponent(editingRole.name)}/privileges`, {
-        privilege: privilege.PRIVILEGE_TYPE,
-        scope,
-        selector_mode: selectorMode,
-        catalog: privilege.OBJECT_CATALOG ?? null,
-        database: database || null,
-        object_name: objectName || null,
-      })
+      await api.delete(
+        `/users/roles/${encodeURIComponent(editingRole.name)}/privileges`,
+        {
+          privilege: privilege.PRIVILEGE_TYPE,
+          scope,
+          selector_mode: selectorMode,
+          catalog: privilege.OBJECT_CATALOG ?? null,
+          database: database || null,
+          object_name: objectName || null,
+        }
+      )
       toast.success('Privilege revoked')
       await refreshRoleDetail(editingRole.name)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to revoke privilege')
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to revoke privilege'
+      )
     }
   }
 
   function toggleRoleSelection(values: string[], role: string) {
-    return values.includes(role) ? values.filter((item) => item !== role) : [...values, role]
+    return values.includes(role)
+      ? values.filter((item) => item !== role)
+      : [...values, role]
   }
 
   const roleSelectionOptions = visibleRolesList.map((role) => role.name)
@@ -878,46 +891,57 @@ export function Users() {
             </div>
             <h1 className='text-2xl font-bold tracking-tight'>Users & Roles</h1>
             <p className='max-w-3xl text-sm text-muted-foreground'>
-              Manage StarRocks identities, role memberships, default roles, and scoped privileges from one admin surface.
+              Manage StarRocks identities, role memberships, default roles, and
+              scoped privileges from one admin surface.
             </p>
           </div>
-          <Button variant='outline' onClick={() => void loadBaseData(false)} disabled={refreshing || loading}>
-            <RefreshCw className={cn('size-4', (refreshing || loading) && 'animate-spin')} />
+          <Button
+            variant='outline'
+            onClick={() => void loadBaseData(false)}
+            disabled={refreshing || loading}
+          >
+            <RefreshCw
+              className={cn(
+                'size-4',
+                (refreshing || loading) && 'animate-spin'
+              )}
+            />
             Refresh
           </Button>
         </div>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={(value: string) => setActiveTab(value as 'users' | 'roles')}
-          className='flex flex-1 flex-col gap-4'
-        >
-          <TabsList className='grid w-full max-w-sm grid-cols-2'>
-            <TabsTrigger value='users'>Users</TabsTrigger>
-            <TabsTrigger value='roles'>Roles</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value='users' className='m-0 flex flex-col gap-4'>
+        <div className='flex flex-1 flex-col gap-4'>
+          <div className='m-0 flex flex-col gap-4'>
             <div className='space-y-6'>
               <div>
                 <h3 className='text-lg font-medium'>Users</h3>
                 <p className='text-sm text-muted-foreground'>
-                  Review StarRocks identities, authentication mode, role ownership, and default access.
+                  Review StarRocks identities, authentication mode, role
+                  ownership, and default access.
                 </p>
               </div>
 
-              <div className='flex flex-wrap items-center gap-3'>
-                <Input
-                  value={searchUsers}
-                  onChange={(event) => {
-                    setSearchUsers(event.target.value)
-                    setUsersPage(1)
-                  }}
-                  placeholder='Search user, auth, role...'
-                  className='max-w-xs'
-                />
-                <div className='ml-auto flex items-center gap-2 text-sm text-muted-foreground'>
-                  <span>{filteredUsers.length} users</span>
+              <SimpleTableToolbar
+                search={searchUsers}
+                onSearchChange={(value) => {
+                  setSearchUsers(value)
+                  setUsersPage(1)
+                }}
+                searchPlaceholder='Search user, auth, role...'
+                resultLabel={`${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''}`}
+                filters={[
+                  {
+                    label: 'Access',
+                    value: userAccessFilter,
+                    options: ['Protected', 'Standard'],
+                    onChange: (value) => {
+                      setUserAccessFilter(value)
+                      setUsersPage(1)
+                    },
+                    icon: <Shield className='size-3.5' />,
+                  },
+                ]}
+                actions={
                   <Button
                     onClick={() => {
                       setUserForm(DEFAULT_USER_FORM)
@@ -927,10 +951,10 @@ export function Users() {
                     <Plus className='size-4' />
                     Create User
                   </Button>
-                </div>
-              </div>
+                }
+              />
 
-              <div className='relative rounded-md border border-border'>
+              <SimpleTableViewport>
                 {refreshing && !loading ? (
                   <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
                     <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
@@ -943,341 +967,231 @@ export function Users() {
                     </div>
                   </div>
                 ) : null}
-                <div className='overflow-x-auto'>
-                  <table className='w-full'>
-                    <thead className='border-b border-border bg-muted/50'>
-                      <tr>
-                        <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                          Name
-                        </th>
-                        <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                          Last Login
-                        </th>
-                        <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                          Default Role
-                        </th>
-                        <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                          Grant Roles
-                        </th>
-                        <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loading ? (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className='px-4 py-12 text-center text-sm text-muted-foreground'
-                          >
-                            Loading users...
-                          </td>
-                        </tr>
-                      ) : visibleUsers.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className='px-4 py-12 text-center text-sm text-muted-foreground'
-                          >
-                            No users found
-                          </td>
-                        </tr>
-                      ) : (
-                        visibleUsers.map((user) => (
-                          <tr
-                            key={user.identity}
-                            className='cursor-pointer border-b border-border transition-colors hover:bg-muted/50'
-                            onClick={() =>
-                              navigate({
-                                to: '/users/$username',
-                                params: { username: user.username },
-                              })
-                            }
-                          >
-                            <td className='px-4 py-3 align-top'>
-                              <div className='space-y-1'>
-                                <div className='flex flex-wrap items-center gap-2'>
-                                  <span className='text-sm font-medium'>{user.username}</span>
-                                  {user.is_protected ? (
-                                    <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>
-                                      Protected
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </td>
-                            <td className='px-4 py-3 align-top'>
-                              <div className='text-sm'>{formatLastLogin(user.last_login)}</div>
-                            </td>
-                            <td className='px-4 py-3 align-top'>
-                              {user.default_roles[0] ? (
-                                <div className='flex flex-wrap gap-2'>
-                                  <Badge variant='secondary'>{user.default_roles[0]}</Badge>
-                                  {user.roles.length > 1 ? (
-                                    <span className='text-xs text-muted-foreground'>
-                                      +{user.roles.length - 1} role lain
-                                    </span>
-                                  ) : null}
-                                </div>
-                              ) : (
-                                <span className='text-xs text-muted-foreground'>None</span>
-                              )}
-                            </td>
-                            <td
-                              className='px-4 py-3 align-top'
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              {user.roles.length ? (
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant='outline'
-                                      size='sm'
-                                      className='h-8 rounded-full px-3 text-xs'
-                                    >
-                                      {user.roles.length} role{user.roles.length > 1 ? 's' : ''}
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align='start' className='w-48'>
-                                    {user.roles.map((role) => (
-                                      <DropdownMenuItem key={`${user.identity}-${role}`} disabled>
-                                        {role}
-                                      </DropdownMenuItem>
-                                    ))}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              ) : (
-                                <span className='text-xs text-muted-foreground'>0 role</span>
-                              )}
-                            </td>
-                            <td
-                              className='px-4 py-3 align-top'
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <div className='flex justify-end'>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant='ghost' size='icon' className='h-8 w-8'>
-                                      <MoreHorizontal className='h-4 w-4' />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align='end' className='w-44'>
-                                    <DropdownMenuItem
-                                      onSelect={(event) => {
-                                        event.preventDefault()
-                                        setResetPasswordUser(user)
-                                        setGeneratedPassword('')
-                                      }}
-                                      disabled={user.is_protected}
-                                    >
-                                      Reset password
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onSelect={(event) => {
-                                        event.preventDefault()
-                                        setRoleActionState({
-                                          mode: 'grant',
-                                          user,
-                                          role: '',
-                                        })
-                                      }}
-                                      disabled={user.is_protected}
-                                    >
-                                      Grant role
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onSelect={(event) => {
-                                        event.preventDefault()
-                                        setRoleActionState({
-                                          mode: 'revoke',
-                                          user,
-                                          role: user.roles[0] ?? '',
-                                        })
-                                      }}
-                                      disabled={user.is_protected || user.roles.length === 0}
-                                    >
-                                      Revoke role
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      variant='destructive'
-                                      onSelect={(event) => {
-                                        event.preventDefault()
-                                        setDeletingUser(user)
-                                      }}
-                                      disabled={user.is_protected}
-                                    >
-                                      Delete user
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-                <div className='text-sm text-muted-foreground'>
-                  Showing {usersPageStart}-{usersPageEnd} of {filteredUsers.length}
-                </div>
-                <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
-                  <span className='text-sm text-muted-foreground'>
-                    Page {usersPage} of {Math.max(usersPageCount, 1)}
-                  </span>
-                  <div className='flex items-center gap-1'>
-                    <Button
-                      variant='outline'
-                      size='icon'
-                      onClick={() => setUsersPage(1)}
-                      disabled={usersPage === 1}
-                      className='h-8 w-8'
-                    >
-                      <ChevronsLeft className='h-4 w-4' />
-                    </Button>
-                    <Button
-                      variant='outline'
-                      size='icon'
-                      onClick={() => setUsersPage((page) => Math.max(page - 1, 1))}
-                      disabled={usersPage === 1}
-                      className='h-8 w-8'
-                    >
-                      <ChevronLeft className='h-4 w-4' />
-                    </Button>
-                    <Button
-                      variant='outline'
-                      size='icon'
-                      onClick={() => setUsersPage((page) => Math.min(page + 1, Math.max(usersPageCount, 1)))}
-                      disabled={usersPage >= Math.max(usersPageCount, 1)}
-                      className='h-8 w-8'
-                    >
-                      <ChevronRight className='h-4 w-4' />
-                    </Button>
-                    <Button
-                      variant='outline'
-                      size='icon'
-                      onClick={() => setUsersPage(Math.max(usersPageCount, 1))}
-                      disabled={usersPage >= Math.max(usersPageCount, 1)}
-                      className='h-8 w-8'
-                    >
-                      <ChevronsRight className='h-4 w-4' />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value='roles' className='m-0 flex flex-col gap-4'>
-            <SectionCard
-              title='Roles'
-              description='Manage custom StarRocks roles, nested role membership, and scoped privilege grants.'
-              actions={
-                <div className='flex flex-wrap items-center gap-2'>
-                  <Input
-                    value={searchRoles}
-                    onChange={(event) => {
-                      setSearchRoles(event.target.value)
-                      setRolesPage(1)
-                    }}
-                    placeholder='Search role...'
-                    className='w-72'
-                  />
-                  <Button onClick={() => setCreateRoleOpen(true)}>
-                    <Plus className='size-4' />
-                    Create Role
-                  </Button>
-                </div>
-              }
-            >
-              <div className='overflow-hidden rounded-lg border'>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Role</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Mutability</TableHead>
-                      <TableHead className='w-[170px] text-right'>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <table className='w-full'>
+                  <thead>
+                    <tr>
+                      <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                        Name
+                      </th>
+                      <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                        Last Login
+                      </th>
+                      <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                        Default Role
+                      </th>
+                      <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                        Grant Roles
+                      </th>
+                      <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
                     {loading ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className='py-12 text-center text-muted-foreground'>
-                          Loading roles...
-                        </TableCell>
-                      </TableRow>
-                    ) : visibleRoles.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className='py-12 text-center text-muted-foreground'>
-                          No roles found.
-                        </TableCell>
-                      </TableRow>
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className='px-4 py-12 text-center text-sm text-muted-foreground'
+                        >
+                          Loading users...
+                        </td>
+                      </tr>
+                    ) : visibleUsers.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className='px-4 py-12 text-center text-sm text-muted-foreground'
+                        >
+                          No users found
+                        </td>
+                      </tr>
                     ) : (
-                      visibleRoles.map((role) => (
-                        <TableRow key={role.name}>
-                          <TableCell>
-                            <div className='flex flex-wrap items-center gap-2'>
-                              <span className='font-medium'>{role.name}</span>
-                              {role.is_protected ? (
-                                <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>
-                                  Protected
+                      visibleUsers.map((user) => (
+                        <tr
+                          key={user.identity}
+                          className='cursor-pointer border-b border-border transition-colors hover:bg-muted/50'
+                          onClick={() =>
+                            navigate({
+                              to: '/users/$username',
+                              params: { username: user.username },
+                            })
+                          }
+                        >
+                          <td className='px-4 py-3 align-top'>
+                            <div className='space-y-1'>
+                              <div className='flex flex-wrap items-center gap-2'>
+                                <span className='text-sm font-medium'>
+                                  {user.username}
+                                </span>
+                                {user.is_protected ? (
+                                  <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>
+                                    Protected
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            </div>
+                          </td>
+                          <td className='px-4 py-3 align-top'>
+                            <div className='text-sm'>
+                              {formatLastLogin(user.last_login)}
+                            </div>
+                          </td>
+                          <td className='px-4 py-3 align-top'>
+                            {user.default_roles[0] ? (
+                              <div className='flex flex-wrap gap-2'>
+                                <Badge variant='secondary'>
+                                  {user.default_roles[0]}
                                 </Badge>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {role.is_builtin ? (
-                              <Badge variant='outline' className='border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300'>
-                                Built-in
-                              </Badge>
+                                {user.roles.length > 1 ? (
+                                  <span className='text-xs text-muted-foreground'>
+                                    +{user.roles.length - 1} role lain
+                                  </span>
+                                ) : null}
+                              </div>
                             ) : (
-                              <Badge variant='outline' className='border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'>
-                                Custom
-                              </Badge>
+                              <span className='text-xs text-muted-foreground'>
+                                None
+                              </span>
                             )}
-                          </TableCell>
-                          <TableCell className='text-sm text-muted-foreground'>
-                            {role.is_mutable ? 'Privileges and memberships can be updated' : 'Read only'}
-                          </TableCell>
-                          <TableCell>
-                            <div className='flex justify-end gap-2'>
-                              <Button variant='outline' size='sm' onClick={() => void openEditRole(role)}>
-                                <KeyRound className='size-4' />
-                                Manage
-                              </Button>
-                              <Button variant='outline' size='sm' onClick={() => void handleDeleteRole(role)} disabled={!role.is_mutable}>
-                                <Trash2 className='size-4' />
-                                Delete
-                              </Button>
+                          </td>
+                          <td
+                            className='px-4 py-3 align-top'
+                            onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                          >
+                            {user.roles.length ? (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant='outline'
+                                    size='sm'
+                                    className='h-8 rounded-full px-3 text-xs'
+                                  >
+                                    {user.roles.length} role
+                                    {user.roles.length > 1 ? 's' : ''}
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align='start'
+                                  className='w-48'
+                                >
+                                  {user.roles.map((role) => (
+                                    <DropdownMenuItem
+                                      key={`${user.identity}-${role}`}
+                                      disabled
+                                    >
+                                      {role}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            ) : (
+                              <span className='text-xs text-muted-foreground'>
+                                0 role
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            className='px-4 py-3 align-top'
+                            onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                          >
+                            <div className='flex justify-end'>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant='ghost'
+                                    size='icon'
+                                    className='h-8 w-8'
+                                  >
+                                    <MoreHorizontal className='h-4 w-4' />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align='end'
+                                  className='w-44'
+                                >
+                                  <DropdownMenuItem
+                                    onSelect={(event: Event) => {
+                                      event.preventDefault()
+                                      setResetPasswordUser(user)
+                                      setGeneratedPassword('')
+                                    }}
+                                    disabled={user.is_protected}
+                                  >
+                                    Reset password
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={(event: Event) => {
+                                      event.preventDefault()
+                                      setRoleActionState({
+                                        mode: 'grant',
+                                        user,
+                                        role: '',
+                                      })
+                                    }}
+                                    disabled={user.is_protected}
+                                  >
+                                    Grant role
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={(event: Event) => {
+                                      event.preventDefault()
+                                      setRoleActionState({
+                                        mode: 'revoke',
+                                        user,
+                                        role: user.roles[0] ?? '',
+                                      })
+                                    }}
+                                    disabled={
+                                      user.is_protected ||
+                                      user.roles.length === 0
+                                    }
+                                  >
+                                    Revoke role
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    variant='destructive'
+                                    onSelect={(event: Event) => {
+                                      event.preventDefault()
+                                      setDeletingUser(user)
+                                    }}
+                                    disabled={user.is_protected}
+                                  >
+                                    Delete user
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
-                          </TableCell>
-                        </TableRow>
+                          </td>
+                        </tr>
                       ))
                     )}
-                  </TableBody>
-                </Table>
-              </div>
-              <Pagination
-                page={rolesPage}
-                pageCount={rolesPageCount}
-                onPrevious={() => setRolesPage((page) => Math.max(page - 1, 1))}
-                onNext={() => setRolesPage((page) => Math.min(page + 1, Math.max(rolesPageCount, 1)))}
+                  </tbody>
+                </table>
+              </SimpleTableViewport>
+
+              <SimpleTablePagination
+                page={usersPage}
+                pageSize={usersPageSize}
+                total={filteredUsers.length}
+                onPageChange={setUsersPage}
+                onPageSizeChange={(value) => {
+                  setUsersPageSize(value)
+                  setUsersPage(1)
+                }}
               />
-            </SectionCard>
-          </TabsContent>
-        </Tabs>
+            </div>
+          </div>
+        </div>
       </Main>
 
       <Dialog open={createUserOpen} onOpenChange={setCreateUserOpen}>
         <DialogContent className='overflow-hidden border-border bg-[#20252b] p-0 text-white sm:max-w-2xl'>
           <DialogHeader>
             <div className='border-b border-white/10 px-6 py-5 text-center'>
-              <DialogTitle className='text-xl font-semibold text-white'>New user</DialogTitle>
+              <DialogTitle className='text-xl font-semibold text-white'>
+                New user
+              </DialogTitle>
               <DialogDescription className='mt-2 text-sm text-white/60'>
                 Create a new user
               </DialogDescription>
@@ -1290,7 +1204,12 @@ export function Users() {
                   <Label className='text-white/90'>User name</Label>
                   <Input
                     value={userForm.username}
-                    onChange={(event) => setUserForm((current) => ({ ...current, username: event.target.value }))}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                      setUserForm((current) => ({
+                        ...current,
+                        username: event.target.value,
+                      }))
+                    }
                     className='border-white/10 bg-[#1a1e24] text-white'
                   />
                 </div>
@@ -1298,7 +1217,12 @@ export function Users() {
                   <Label className='text-white/90'>Default role</Label>
                   <Select
                     value={userForm.defaultRole}
-                    onValueChange={(value: string) => setUserForm((current) => ({ ...current, defaultRole: value }))}
+                    onValueChange={(value: string) =>
+                      setUserForm((current) => ({
+                        ...current,
+                        defaultRole: value,
+                      }))
+                    }
                   >
                     <SelectTrigger className='w-full border-white/10 bg-[#1a1e24] text-white'>
                       <SelectValue placeholder='Select role' />
@@ -1320,7 +1244,12 @@ export function Users() {
                   <Input
                     type='password'
                     value={userForm.password}
-                    onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                      setUserForm((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))
+                    }
                     className='border-white/10 bg-[#1a1e24] text-white'
                   />
                 </div>
@@ -1329,12 +1258,16 @@ export function Users() {
                   <Input
                     type='password'
                     value={userForm.confirmPassword}
-                    onChange={(event) => setUserForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                      setUserForm((current) => ({
+                        ...current,
+                        confirmPassword: event.target.value,
+                      }))
+                    }
                     className='border-white/10 bg-[#1a1e24] text-white'
                   />
                 </div>
               </div>
-
             </div>
           </div>
           <DialogFooter className='border-t border-white/10 bg-[#20252b] px-6 py-4 sm:justify-end'>
@@ -1369,7 +1302,8 @@ export function Users() {
           <DialogHeader>
             <DialogTitle className='text-white'>Reset Password</DialogTitle>
             <DialogDescription className='text-white/60'>
-              Confirm password reset for {resetPasswordUser?.username}. A new password will be generated and shown once.
+              Confirm password reset for {resetPasswordUser?.username}. A new
+              password will be generated and shown once.
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-4'>
@@ -1417,7 +1351,9 @@ export function Users() {
           <DialogHeader>
             <div className='border-b border-white/10 px-6 py-5 text-center'>
               <DialogTitle className='text-xl font-semibold text-white'>
-                {roleActionState?.mode === 'grant' ? 'Grant User a Role' : 'Revoke User Role'}
+                {roleActionState?.mode === 'grant'
+                  ? 'Grant User a Role'
+                  : 'Revoke User Role'}
               </DialogTitle>
               <DialogDescription className='mt-2 text-sm text-white/60'>
                 {roleActionState?.mode === 'grant'
@@ -1429,7 +1365,9 @@ export function Users() {
           <div className='space-y-5 px-6 py-5'>
             <div className='space-y-2'>
               <Label className='text-white/90'>
-                {roleActionState?.mode === 'grant' ? 'User to receive grant' : 'User to revoke'}
+                {roleActionState?.mode === 'grant'
+                  ? 'User to receive grant'
+                  : 'User to revoke'}
               </Label>
               <Input
                 value={roleActionState ? roleActionState.user.username : ''}
@@ -1439,25 +1377,33 @@ export function Users() {
             </div>
             <div className='space-y-2'>
               <Label className='text-white/90'>
-                {roleActionState?.mode === 'grant' ? 'Role to grant' : 'Role to revoke'}
+                {roleActionState?.mode === 'grant'
+                  ? 'Role to grant'
+                  : 'Role to revoke'}
               </Label>
               <Select
                 value={roleActionState?.role ?? ''}
                 onValueChange={(value: string) =>
-                  setRoleActionState((current) => (current ? { ...current, role: value } : current))
+                  setRoleActionState((current) =>
+                    current ? { ...current, role: value } : current
+                  )
                 }
               >
                 <SelectTrigger className='w-full border-white/10 bg-[#1a1e24] text-white'>
                   <SelectValue
                     placeholder={
-                      roleActionState?.mode === 'grant' ? 'Select a role' : 'Select a granted role'
+                      roleActionState?.mode === 'grant'
+                        ? 'Select a role'
+                        : 'Select a granted role'
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
                   {(roleActionState?.mode === 'grant'
-                    ? roleSelectionOptions.filter((role) => !roleActionState.user.roles.includes(role))
-                    : roleActionState?.user.roles ?? []
+                    ? roleSelectionOptions.filter(
+                        (role) => !roleActionState.user.roles.includes(role)
+                      )
+                    : (roleActionState?.user.roles ?? [])
                   ).map((role) => (
                     <SelectItem key={role} value={role}>
                       {role}
@@ -1522,12 +1468,16 @@ export function Users() {
         }}
       />
 
-      <Sheet open={Boolean(editingUser)} onOpenChange={(open) => !open && setEditingUser(null)}>
+      <Sheet
+        open={Boolean(editingUser)}
+        onOpenChange={(open) => !open && setEditingUser(null)}
+      >
         <SheetContent className='w-full sm:max-w-2xl'>
           <SheetHeader>
             <SheetTitle>Edit User</SheetTitle>
             <SheetDescription>
-              Update password, role assignments, default roles, and supported user properties.
+              Update password, role assignments, default roles, and supported
+              user properties.
             </SheetDescription>
           </SheetHeader>
           <ScrollArea className='flex-1 px-4'>
@@ -1535,14 +1485,19 @@ export function Users() {
               <div className='space-y-5 pb-6'>
                 <div className='rounded-xl border bg-muted/30 p-4'>
                   <div className='flex flex-wrap items-center gap-2'>
-                    <span className='font-semibold'>{editingUser.username}</span>
+                    <span className='font-semibold'>
+                      {editingUser.username}
+                    </span>
                     <Badge variant='outline'>{editingUser.identity}</Badge>
                     {editingUser.is_protected ? (
-                      <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>Protected user</Badge>
+                      <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>
+                        Protected user
+                      </Badge>
                     ) : null}
                   </div>
                   <p className='mt-2 text-sm text-muted-foreground'>
-                    Protected users are kept read only. For `root`, password handling should remain external and deliberate.
+                    Protected users are kept read only. For `root`, password
+                    handling should remain external and deliberate.
                   </p>
                 </div>
 
@@ -1550,12 +1505,28 @@ export function Users() {
                   <div className='rounded-xl border p-4'>
                     <div className='text-sm font-medium'>Authentication</div>
                     {userDetailLoading ? (
-                      <div className='mt-2 text-sm text-muted-foreground'>Loading authentication...</div>
+                      <div className='mt-2 text-sm text-muted-foreground'>
+                        Loading authentication...
+                      </div>
                     ) : (
                       <div className='mt-2 space-y-2 text-sm text-muted-foreground'>
-                        <div>Mode: {userDetail?.authentication.auth_mode ?? editingUser.auth_mode}</div>
-                        <div>Plugin: {userDetail?.authentication.auth_plugin ?? editingUser.auth_plugin ?? 'native_password'}</div>
-                        <div>{(userDetail?.authentication.password_enabled ?? editingUser.password_enabled) ? 'Password enabled' : 'Password disabled'}</div>
+                        <div>
+                          Mode:{' '}
+                          {userDetail?.authentication.auth_mode ??
+                            editingUser.auth_mode}
+                        </div>
+                        <div>
+                          Plugin:{' '}
+                          {userDetail?.authentication.auth_plugin ??
+                            editingUser.auth_plugin ??
+                            'native_password'}
+                        </div>
+                        <div>
+                          {(userDetail?.authentication.password_enabled ??
+                          editingUser.password_enabled)
+                            ? 'Password enabled'
+                            : 'Password disabled'}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1565,7 +1536,10 @@ export function Users() {
                       {userDetail?.grants?.length ? (
                         <div className='space-y-2'>
                           {userDetail.grants.map((grant) => (
-                            <div key={grant} className='rounded-md bg-muted/40 px-2 py-1.5'>
+                            <div
+                              key={grant}
+                              className='rounded-md bg-muted/40 px-2 py-1.5'
+                            >
                               {grant}
                             </div>
                           ))}
@@ -1583,7 +1557,12 @@ export function Users() {
                     <Input
                       type='password'
                       value={userForm.password}
-                      onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))}
+                      onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                        setUserForm((current) => ({
+                          ...current,
+                          password: event.target.value,
+                        }))
+                      }
                       placeholder='Leave empty to keep current password'
                       disabled={editingUser.is_protected}
                     />
@@ -1595,7 +1574,15 @@ export function Users() {
                       <InlineCheckboxList
                         options={roleSelectionOptions}
                         values={userForm.grantedRoles}
-                        onToggle={(role) => setUserForm((current) => ({ ...current, grantedRoles: toggleRoleSelection(current.grantedRoles, role) }))}
+                        onToggle={(role) =>
+                          setUserForm((current) => ({
+                            ...current,
+                            grantedRoles: toggleRoleSelection(
+                              current.grantedRoles,
+                              role
+                            ),
+                          }))
+                        }
                         emptyLabel='No roles available'
                       />
                     </div>
@@ -1607,7 +1594,8 @@ export function Users() {
                           setUserForm((current) => ({
                             ...current,
                             defaultRoleMode: value as DefaultRoleMode,
-                            defaultRoles: value === 'explicit' ? current.defaultRoles : [],
+                            defaultRoles:
+                              value === 'explicit' ? current.defaultRoles : [],
                           }))
                         }
                         disabled={editingUser.is_protected}
@@ -1625,7 +1613,15 @@ export function Users() {
                       <InlineCheckboxList
                         options={roleSelectionOptions}
                         values={userForm.defaultRoles}
-                        onToggle={(role) => setUserForm((current) => ({ ...current, defaultRoles: toggleRoleSelection(current.defaultRoles, role) }))}
+                        onToggle={(role) =>
+                          setUserForm((current) => ({
+                            ...current,
+                            defaultRoles: toggleRoleSelection(
+                              current.defaultRoles,
+                              role
+                            ),
+                          }))
+                        }
                         emptyLabel='No roles available'
                       />
                     </div>
@@ -1637,7 +1633,12 @@ export function Users() {
                       <Input
                         type='number'
                         value={userForm.maxUserConnections}
-                        onChange={(event) => setUserForm((current) => ({ ...current, maxUserConnections: event.target.value }))}
+                        onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                          setUserForm((current) => ({
+                            ...current,
+                            maxUserConnections: event.target.value,
+                          }))
+                        }
                         disabled={editingUser.is_protected}
                       />
                     </div>
@@ -1645,7 +1646,12 @@ export function Users() {
                       <Label>Catalog</Label>
                       <Input
                         value={userForm.catalog}
-                        onChange={(event) => setUserForm((current) => ({ ...current, catalog: event.target.value }))}
+                        onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                          setUserForm((current) => ({
+                            ...current,
+                            catalog: event.target.value,
+                          }))
+                        }
                         disabled={editingUser.is_protected}
                       />
                     </div>
@@ -1653,7 +1659,12 @@ export function Users() {
                       <Label>Database</Label>
                       <Input
                         value={userForm.database}
-                        onChange={(event) => setUserForm((current) => ({ ...current, database: event.target.value }))}
+                        onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                          setUserForm((current) => ({
+                            ...current,
+                            database: event.target.value,
+                          }))
+                        }
                         disabled={editingUser.is_protected}
                       />
                     </div>
@@ -1663,7 +1674,12 @@ export function Users() {
                     <Label>Session Properties</Label>
                     <Textarea
                       value={userForm.sessionProperties}
-                      onChange={(event) => setUserForm((current) => ({ ...current, sessionProperties: event.target.value }))}
+                      onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                        setUserForm((current) => ({
+                          ...current,
+                          sessionProperties: event.target.value,
+                        }))
+                      }
                       rows={7}
                       disabled={editingUser.is_protected}
                     />
@@ -1676,7 +1692,10 @@ export function Users() {
             <Button variant='outline' onClick={() => setEditingUser(null)}>
               Close
             </Button>
-            <Button onClick={() => void handleUpdateUser()} disabled={userSubmitting || Boolean(editingUser?.is_protected)}>
+            <Button
+              onClick={() => void handleUpdateUser()}
+              disabled={userSubmitting || Boolean(editingUser?.is_protected)}
+            >
               {userSubmitting ? 'Saving...' : 'Save Changes'}
             </Button>
           </SheetFooter>
@@ -1687,29 +1706,44 @@ export function Users() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Role</DialogTitle>
-            <DialogDescription>StarRocks roles are created with a single role name, then configured through privileges and memberships.</DialogDescription>
+            <DialogDescription>
+              StarRocks roles are created with a single role name, then
+              configured through privileges and memberships.
+            </DialogDescription>
           </DialogHeader>
           <div className='space-y-2'>
             <Label>Role Name</Label>
-            <Input value={roleFormName} onChange={(event) => setRoleFormName(event.target.value)} placeholder='analyst' />
+            <Input
+              value={roleFormName}
+              onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setRoleFormName(event.target.value)}
+              placeholder='analyst'
+            />
           </div>
           <DialogFooter>
             <Button variant='outline' onClick={() => setCreateRoleOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => void handleCreateRole()} disabled={roleSubmitting}>
+            <Button
+              onClick={() => void handleCreateRole()}
+              disabled={roleSubmitting}
+            >
               {roleSubmitting ? 'Creating...' : 'Create Role'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Sheet open={Boolean(editingRole)} onOpenChange={(open) => !open && setEditingRole(null)}>
+      <Sheet
+        open={Boolean(editingRole)}
+        onOpenChange={(open) => !open && setEditingRole(null)}
+      >
         <SheetContent className='w-full sm:max-w-4xl'>
           <SheetHeader>
             <SheetTitle>Manage Role</SheetTitle>
             <SheetDescription>
-              Update memberships and privileges. Role rename is intentionally not supported because StarRocks does not expose a true role rename workflow.
+              Update memberships and privileges. Role rename is intentionally
+              not supported because StarRocks does not expose a true role rename
+              workflow.
             </SheetDescription>
           </SheetHeader>
           <ScrollArea className='flex-1 px-4'>
@@ -1719,22 +1753,29 @@ export function Users() {
                   <div className='flex flex-wrap items-center gap-2'>
                     <span className='font-semibold'>{editingRole.name}</span>
                     {editingRole.is_builtin ? (
-                      <Badge className='border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300'>Built-in</Badge>
+                      <Badge className='border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300'>
+                        Built-in
+                      </Badge>
                     ) : null}
                     {editingRole.is_protected ? (
-                      <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>Protected</Badge>
+                      <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>
+                        Protected
+                      </Badge>
                     ) : null}
                     {!editingRole.is_mutable ? (
                       <Badge variant='outline'>Read only</Badge>
                     ) : null}
                   </div>
                   <p className='mt-2 text-sm text-muted-foreground'>
-                    Built-in roles and `ACCOUNTADMIN` stay protected. Custom roles can be extended through grants and memberships.
+                    Built-in roles and `ACCOUNTADMIN` stay protected. Custom
+                    roles can be extended through grants and memberships.
                   </p>
                 </div>
 
                 {roleDetailLoading ? (
-                  <div className='rounded-xl border px-4 py-8 text-sm text-muted-foreground'>Loading role detail...</div>
+                  <div className='rounded-xl border px-4 py-8 text-sm text-muted-foreground'>
+                    Loading role detail...
+                  </div>
                 ) : roleDetail ? (
                   <>
                     <div className='grid gap-4 xl:grid-cols-[1.1fr_0.9fr]'>
@@ -1747,13 +1788,24 @@ export function Users() {
                           <div className='mt-3 flex flex-wrap gap-2'>
                             {roleDetail.members.users.length ? (
                               roleDetail.members.users.map((member) => (
-                                <div key={member.identity} className='flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm'>
-                                  <span>{member.username}@{member.host}</span>
+                                <div
+                                  key={member.identity}
+                                  className='flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm'
+                                >
+                                  <span>
+                                    {member.username}@{member.host}
+                                  </span>
                                   {editingRole.is_mutable ? (
                                     <button
                                       type='button'
                                       className='text-muted-foreground transition-colors hover:text-foreground'
-                                      onClick={() => void handleRevokeRoleMember('user', member.username, member.host)}
+                                      onClick={() =>
+                                        void handleRevokeRoleMember(
+                                          'user',
+                                          member.username,
+                                          member.host
+                                        )
+                                      }
                                     >
                                       Remove
                                     </button>
@@ -1761,23 +1813,35 @@ export function Users() {
                                 </div>
                               ))
                             ) : (
-                              <div className='text-sm text-muted-foreground'>No user members yet.</div>
+                              <div className='text-sm text-muted-foreground'>
+                                No user members yet.
+                              </div>
                             )}
                           </div>
                           <div className='mt-4 flex flex-col gap-2 sm:flex-row'>
-                            <Select value={memberUserIdentity} onValueChange={setMemberUserIdentity} disabled={!editingRole.is_mutable}>
+                            <Select
+                              value={memberUserIdentity}
+                              onValueChange={setMemberUserIdentity}
+                              disabled={!editingRole.is_mutable}
+                            >
                               <SelectTrigger className='w-full'>
                                 <SelectValue placeholder='Select user identity' />
                               </SelectTrigger>
                               <SelectContent>
                                 {userIdentities.map((identity) => (
-                                  <SelectItem key={identity.value} value={identity.value}>
+                                  <SelectItem
+                                    key={identity.value}
+                                    value={identity.value}
+                                  >
                                     {identity.label}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
-                            <Button onClick={() => void handleGrantRoleMember('user')} disabled={!editingRole.is_mutable}>
+                            <Button
+                              onClick={() => void handleGrantRoleMember('user')}
+                              disabled={!editingRole.is_mutable}
+                            >
                               Add User
                             </Button>
                           </div>
@@ -1790,32 +1854,50 @@ export function Users() {
                           </div>
                           <div className='mt-3 flex flex-wrap gap-2'>
                             {roleDetail.members.nested_roles.length ? (
-                              roleDetail.members.nested_roles.map((memberRole) => (
-                                <div key={memberRole} className='flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm'>
-                                  <span>{memberRole}</span>
-                                  {editingRole.is_mutable ? (
-                                    <button
-                                      type='button'
-                                      className='text-muted-foreground transition-colors hover:text-foreground'
-                                      onClick={() => void handleRevokeRoleMember('role', memberRole)}
-                                    >
-                                      Remove
-                                    </button>
-                                  ) : null}
-                                </div>
-                              ))
+                              roleDetail.members.nested_roles.map(
+                                (memberRole) => (
+                                  <div
+                                    key={memberRole}
+                                    className='flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm'
+                                  >
+                                    <span>{memberRole}</span>
+                                    {editingRole.is_mutable ? (
+                                      <button
+                                        type='button'
+                                        className='text-muted-foreground transition-colors hover:text-foreground'
+                                        onClick={() =>
+                                          void handleRevokeRoleMember(
+                                            'role',
+                                            memberRole
+                                          )
+                                        }
+                                      >
+                                        Remove
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                )
+                              )
                             ) : (
-                              <div className='text-sm text-muted-foreground'>No nested roles yet.</div>
+                              <div className='text-sm text-muted-foreground'>
+                                No nested roles yet.
+                              </div>
                             )}
                           </div>
                           <div className='mt-4 flex flex-col gap-2 sm:flex-row'>
-                            <Select value={memberRoleName} onValueChange={setMemberRoleName} disabled={!editingRole.is_mutable}>
+                            <Select
+                              value={memberRoleName}
+                              onValueChange={setMemberRoleName}
+                              disabled={!editingRole.is_mutable}
+                            >
                               <SelectTrigger className='w-full'>
                                 <SelectValue placeholder='Select role to grant' />
                               </SelectTrigger>
                               <SelectContent>
                                 {mutableRoleOptions
-                                  .filter((roleName) => roleName !== editingRole.name)
+                                  .filter(
+                                    (roleName) => roleName !== editingRole.name
+                                  )
                                   .map((roleName) => (
                                     <SelectItem key={roleName} value={roleName}>
                                       {roleName}
@@ -1823,7 +1905,10 @@ export function Users() {
                                   ))}
                               </SelectContent>
                             </Select>
-                            <Button onClick={() => void handleGrantRoleMember('role')} disabled={!editingRole.is_mutable}>
+                            <Button
+                              onClick={() => void handleGrantRoleMember('role')}
+                              disabled={!editingRole.is_mutable}
+                            >
                               Add Role
                             </Button>
                           </div>
@@ -1831,13 +1916,20 @@ export function Users() {
                             <>
                               <Separator className='my-4' />
                               <div className='space-y-2'>
-                                <div className='text-sm font-medium'>Granted Into Roles</div>
+                                <div className='text-sm font-medium'>
+                                  Granted Into Roles
+                                </div>
                                 <div className='flex flex-wrap gap-2'>
-                                  {roleDetail.members.parent_roles.map((parentRole) => (
-                                    <Badge key={parentRole} variant='secondary'>
-                                      {parentRole}
-                                    </Badge>
-                                  ))}
+                                  {roleDetail.members.parent_roles.map(
+                                    (parentRole) => (
+                                      <Badge
+                                        key={parentRole}
+                                        variant='secondary'
+                                      >
+                                        {parentRole}
+                                      </Badge>
+                                    )
+                                  )}
                                 </div>
                               </div>
                             </>
@@ -1859,7 +1951,10 @@ export function Users() {
                                 setPrivilegeForm((current) => ({
                                   ...current,
                                   scope: value as PrivilegeScope,
-                                  privilege: PRIVILEGE_OPTIONS[value as PrivilegeScope][0],
+                                  privilege:
+                                    PRIVILEGE_OPTIONS[
+                                      value as PrivilegeScope
+                                    ][0],
                                   selectorMode:
                                     value === 'SYSTEM' || value === 'CATALOG'
                                       ? 'specific'
@@ -1873,7 +1968,11 @@ export function Users() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {(Object.keys(PRIVILEGE_OPTIONS) as PrivilegeScope[]).map((scope) => (
+                                {(
+                                  Object.keys(
+                                    PRIVILEGE_OPTIONS
+                                  ) as PrivilegeScope[]
+                                ).map((scope) => (
                                   <SelectItem key={scope} value={scope}>
                                     {scope}
                                   </SelectItem>
@@ -1887,7 +1986,10 @@ export function Users() {
                             <Select
                               value={privilegeForm.privilege}
                               onValueChange={(value: string) =>
-                                setPrivilegeForm((current) => ({ ...current, privilege: value }))
+                                setPrivilegeForm((current) => ({
+                                  ...current,
+                                  privilege: value,
+                                }))
                               }
                               disabled={!editingRole.is_mutable}
                             >
@@ -1895,16 +1997,22 @@ export function Users() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {PRIVILEGE_OPTIONS[privilegeForm.scope].map((privilege) => (
-                                  <SelectItem key={privilege} value={privilege}>
-                                    {privilege}
-                                  </SelectItem>
-                                ))}
+                                {PRIVILEGE_OPTIONS[privilegeForm.scope].map(
+                                  (privilege) => (
+                                    <SelectItem
+                                      key={privilege}
+                                      value={privilege}
+                                    >
+                                      {privilege}
+                                    </SelectItem>
+                                  )
+                                )}
                               </SelectContent>
                             </Select>
                           </div>
 
-                          {privilegeForm.scope !== 'SYSTEM' && privilegeForm.scope !== 'CATALOG' ? (
+                          {privilegeForm.scope !== 'SYSTEM' &&
+                          privilegeForm.scope !== 'CATALOG' ? (
                             <div className='space-y-2'>
                               <Label>Selector Mode</Label>
                               <Select
@@ -1913,7 +2021,10 @@ export function Users() {
                                   setPrivilegeForm((current) => ({
                                     ...current,
                                     selectorMode: value as SelectorMode,
-                                    objectName: value === 'specific' ? current.objectName : '',
+                                    objectName:
+                                      value === 'specific'
+                                        ? current.objectName
+                                        : '',
                                   }))
                                 }
                                 disabled={!editingRole.is_mutable}
@@ -1922,9 +2033,15 @@ export function Users() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value='specific'>Specific</SelectItem>
-                                  <SelectItem value='all_in_database'>All in database</SelectItem>
-                                  <SelectItem value='all_databases'>All databases</SelectItem>
+                                  <SelectItem value='specific'>
+                                    Specific
+                                  </SelectItem>
+                                  <SelectItem value='all_in_database'>
+                                    All in database
+                                  </SelectItem>
+                                  <SelectItem value='all_databases'>
+                                    All databases
+                                  </SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
@@ -1935,19 +2052,30 @@ export function Users() {
                               <Label>Catalog</Label>
                               <Input
                                 value={privilegeForm.catalog}
-                                onChange={(event) => setPrivilegeForm((current) => ({ ...current, catalog: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                                  setPrivilegeForm((current) => ({
+                                    ...current,
+                                    catalog: event.target.value,
+                                  }))
+                                }
                                 disabled={!editingRole.is_mutable}
                               />
                             </div>
                           ) : null}
 
-                          {privilegeForm.scope !== 'SYSTEM' && privilegeForm.scope !== 'CATALOG' && privilegeForm.selectorMode !== 'all_databases' ? (
+                          {privilegeForm.scope !== 'SYSTEM' &&
+                          privilegeForm.scope !== 'CATALOG' &&
+                          privilegeForm.selectorMode !== 'all_databases' ? (
                             <div className='space-y-2'>
                               <Label>Database</Label>
                               <Select
                                 value={privilegeForm.database}
                                 onValueChange={(value: string) =>
-                                  setPrivilegeForm((current) => ({ ...current, database: value, objectName: '' }))
+                                  setPrivilegeForm((current) => ({
+                                    ...current,
+                                    database: value,
+                                    objectName: '',
+                                  }))
                                 }
                                 disabled={!editingRole.is_mutable}
                               >
@@ -1974,7 +2102,10 @@ export function Users() {
                               <Select
                                 value={privilegeForm.objectName}
                                 onValueChange={(value: string) =>
-                                  setPrivilegeForm((current) => ({ ...current, objectName: value }))
+                                  setPrivilegeForm((current) => ({
+                                    ...current,
+                                    objectName: value,
+                                  }))
                                 }
                                 disabled={!editingRole.is_mutable}
                               >
@@ -1983,7 +2114,10 @@ export function Users() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   {objectOptions.map((objectName) => (
-                                    <SelectItem key={objectName} value={objectName}>
+                                    <SelectItem
+                                      key={objectName}
+                                      value={objectName}
+                                    >
                                       {objectName}
                                     </SelectItem>
                                   ))}
@@ -1996,14 +2130,21 @@ export function Users() {
                             <Checkbox
                               checked={privilegeForm.withGrantOption}
                               onCheckedChange={(checked) =>
-                                setPrivilegeForm((current) => ({ ...current, withGrantOption: checked === true }))
+                                setPrivilegeForm((current) => ({
+                                  ...current,
+                                  withGrantOption: checked === true,
+                                }))
                               }
                               disabled={!editingRole.is_mutable}
                             />
                             <span>With grant option</span>
                           </label>
 
-                          <Button className='w-full' onClick={() => void handleGrantPrivilege()} disabled={!editingRole.is_mutable}>
+                          <Button
+                            className='w-full'
+                            onClick={() => void handleGrantPrivilege()}
+                            disabled={!editingRole.is_mutable}
+                          >
                             Grant Privilege
                           </Button>
                         </div>
@@ -2014,11 +2155,15 @@ export function Users() {
                       <div className='flex items-center justify-between gap-2 border-b px-4 py-3'>
                         <div>
                           <div className='text-sm font-medium'>Privileges</div>
-                          <div className='text-sm text-muted-foreground'>Structured StarRocks grants for supported scopes.</div>
+                          <div className='text-sm text-muted-foreground'>
+                            Structured StarRocks grants for supported scopes.
+                          </div>
                         </div>
-                        <Badge variant='outline'>{roleDetail.privileges.length} grants</Badge>
+                        <Badge variant='outline'>
+                          {roleDetail.privileges.length} grants
+                        </Badge>
                       </div>
-                      <div className='overflow-x-auto'>
+                      <SimpleTableViewport className='max-h-[40vh] rounded-none border-0'>
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -2026,25 +2171,39 @@ export function Users() {
                               <TableHead>Scope</TableHead>
                               <TableHead>Object</TableHead>
                               <TableHead>Grantability</TableHead>
-                              <TableHead className='w-[120px] text-right'>Action</TableHead>
+                              <TableHead className='w-[120px] text-right'>
+                                Action
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {roleDetail.privileges.length ? (
                               roleDetail.privileges.map((privilege, index) => (
-                                <TableRow key={`${privilege.PRIVILEGE_TYPE}-${privilege.OBJECT_TYPE}-${privilege.OBJECT_NAME}-${index}`}>
-                                  <TableCell>{privilege.PRIVILEGE_TYPE ?? '-'}</TableCell>
-                                  <TableCell>{privilege.OBJECT_TYPE ?? 'SYSTEM'}</TableCell>
-                                  <TableCell className='text-sm text-muted-foreground'>{objectDescriptor(privilege)}</TableCell>
+                                <TableRow
+                                  key={`${privilege.PRIVILEGE_TYPE}-${privilege.OBJECT_TYPE}-${privilege.OBJECT_NAME}-${index}`}
+                                >
                                   <TableCell>
-                                    <Badge variant='outline'>{detailGrantLabel(privilege.IS_GRANTABLE)}</Badge>
+                                    {privilege.PRIVILEGE_TYPE ?? '-'}
+                                  </TableCell>
+                                  <TableCell>
+                                    {privilege.OBJECT_TYPE ?? 'SYSTEM'}
+                                  </TableCell>
+                                  <TableCell className='text-sm text-muted-foreground'>
+                                    {objectDescriptor(privilege)}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant='outline'>
+                                      {detailGrantLabel(privilege.IS_GRANTABLE)}
+                                    </Badge>
                                   </TableCell>
                                   <TableCell>
                                     <div className='flex justify-end'>
                                       <Button
                                         variant='outline'
                                         size='sm'
-                                        onClick={() => void handleRevokePrivilege(privilege)}
+                                        onClick={() =>
+                                          void handleRevokePrivilege(privilege)
+                                        }
                                         disabled={!editingRole.is_mutable}
                                       >
                                         Revoke
@@ -2055,14 +2214,17 @@ export function Users() {
                               ))
                             ) : (
                               <TableRow>
-                                <TableCell colSpan={5} className='py-10 text-center text-muted-foreground'>
+                                <TableCell
+                                  colSpan={5}
+                                  className='py-10 text-center text-muted-foreground'
+                                >
                                   No structured privileges found for this role.
                                 </TableCell>
                               </TableRow>
                             )}
                           </TableBody>
                         </Table>
-                      </div>
+                      </SimpleTableViewport>
                     </div>
 
                     <div className='rounded-xl border p-4'>
@@ -2070,7 +2232,10 @@ export function Users() {
                       <div className='mt-3 max-h-48 overflow-auto space-y-2 text-xs text-muted-foreground'>
                         {roleDetail.grants.length ? (
                           roleDetail.grants.map((grant) => (
-                            <div key={grant} className='rounded-md bg-muted/40 px-3 py-2'>
+                            <div
+                              key={grant}
+                              className='rounded-md bg-muted/40 px-3 py-2'
+                            >
                               {grant}
                             </div>
                           ))

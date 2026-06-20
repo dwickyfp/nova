@@ -5,10 +5,6 @@ import {
   Activity,
   AlertCircle,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Code,
   Database,
   FolderOpen,
@@ -18,16 +14,11 @@ import {
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
+  SimpleTablePagination,
+  SimpleTableToolbar,
+  SimpleTableViewport,
+} from '@/components/data-table/simple-table-controls'
 
 interface AuditItem {
   log_id: string
@@ -195,12 +186,11 @@ export function MonitoringAuditTrail() {
   }, [queryItems, searchQuery])
 
   const total = auditQuery.data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1
-  const pageEnd = Math.min(page * pageSize, total)
 
   const userOptions = useMemo(() => {
-    return [...new Set(queryItems.map((item) => item.user_name).filter(Boolean))] as string[]
+    return [
+      ...new Set(queryItems.map((item) => item.user_name).filter(Boolean)),
+    ] as string[]
   }, [queryItems])
 
   const handleFilterChange = (
@@ -217,12 +207,6 @@ export function MonitoringAuditTrail() {
     setExpandedRow(null)
   }
 
-  const handlePageSizeChange = (value: string) => {
-    setPageSize(Number(value))
-    setPage(1)
-    setExpandedRow(null)
-  }
-
   return (
     <div className='space-y-6'>
       <div>
@@ -232,47 +216,40 @@ export function MonitoringAuditTrail() {
         </p>
       </div>
 
-      <div className='flex flex-wrap items-center gap-3'>
-        <SearchableSelect
-          options={EVENT_TYPE_OPTIONS}
-          value={eventType}
-          onChange={(value: string) => handleFilterChange(setEventType, value)}
-          label='Event Type'
-          icon={<Activity size={14} />}
-        />
+      <SimpleTableToolbar
+        search={searchQuery}
+        onSearchChange={(value) => {
+          setSearchQuery(value)
+          setExpandedRow(null)
+        }}
+        searchPlaceholder='Search action, object, SQL...'
+        resultLabel={`${total} ${total === 1 ? 'event' : 'events'}`}
+        filters={[
+          {
+            label: 'Event Type',
+            value: eventType,
+            options: EVENT_TYPE_OPTIONS,
+            onChange: (value) => handleFilterChange(setEventType, value),
+            icon: <Activity size={14} />,
+          },
+          {
+            label: 'Status',
+            value: status,
+            options: STATUS_OPTIONS,
+            onChange: (value) => handleFilterChange(setStatus, value),
+            icon: <CheckCircle2 size={14} />,
+          },
+          {
+            label: 'User',
+            value: userName,
+            options: userOptions,
+            onChange: (value) => handleFilterChange(setUserName, value),
+            icon: <User size={14} />,
+          },
+        ]}
+      />
 
-        <SearchableSelect
-          options={STATUS_OPTIONS}
-          value={status}
-          onChange={(value: string) => handleFilterChange(setStatus, value)}
-          label='Status'
-          icon={<CheckCircle2 size={14} />}
-        />
-
-        <SearchableSelect
-          options={userOptions}
-          value={userName}
-          onChange={(value: string) => handleFilterChange(setUserName, value)}
-          label='User'
-          icon={<User size={14} />}
-        />
-
-        <Input
-          placeholder='Search action, object, SQL...'
-          value={searchQuery}
-          onChange={(event) => {
-            setSearchQuery(event.target.value)
-            setExpandedRow(null)
-          }}
-          className='max-w-xs'
-        />
-
-        <div className='ml-auto text-sm text-muted-foreground'>
-          {total} {total === 1 ? 'event' : 'events'}
-        </div>
-      </div>
-
-      <div className='relative rounded-md border border-border'>
+      <SimpleTableViewport>
         {auditQuery.isFetching && !auditQuery.isLoading ? (
           <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
             <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
@@ -286,255 +263,204 @@ export function MonitoringAuditTrail() {
           </div>
         ) : null}
 
-        <div className='overflow-x-auto'>
-          <table className='w-full'>
-            <thead className='border-b border-border bg-muted/50'>
+        <table className='w-full'>
+          <thead>
+            <tr>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Time
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                User
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Event
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Action
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Status
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                Duration
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                Rows
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {auditQuery.isLoading ? (
               <tr>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Time
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  User
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Event
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Action
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Status
-                </th>
-                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                  Duration
-                </th>
-                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                  Rows
-                </th>
+                <td
+                  colSpan={7}
+                  className='px-4 py-12 text-center text-sm text-muted-foreground'
+                >
+                  Loading...
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {auditQuery.isLoading ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className='px-4 py-12 text-center text-sm text-muted-foreground'
-                  >
-                    Loading...
-                  </td>
-                </tr>
-              ) : filteredItems.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className='px-4 py-12 text-center text-sm text-muted-foreground'
-                  >
-                    No audit events found
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map((item) => {
-                  const EventIcon = EVENT_ICON[item.event_type] ?? Activity
+            ) : filteredItems.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className='px-4 py-12 text-center text-sm text-muted-foreground'
+                >
+                  No audit events found
+                </td>
+              </tr>
+            ) : (
+              filteredItems.map((item) => {
+                const EventIcon = EVENT_ICON[item.event_type] ?? Activity
 
-                  return (
-                    <Fragment key={item.log_id}>
-                      <tr
-                        onClick={() =>
-                          setExpandedRow(
-                            expandedRow === item.log_id ? null : item.log_id
-                          )
-                        }
-                        className={cn(
-                          'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
-                          expandedRow === item.log_id && 'bg-muted/30'
-                        )}
-                      >
-                        <td className='px-4 py-3 text-xs text-muted-foreground whitespace-nowrap'>
-                          {formatTime(item.event_time)}
-                        </td>
-                        <td className='px-4 py-3 text-sm'>
-                          <div className='flex items-center gap-1.5'>
-                            <User className='h-3 w-3 text-muted-foreground' />
-                            <span className='text-xs'>{item.user_name || '—'}</span>
+                return (
+                  <Fragment key={item.log_id}>
+                    <tr
+                      onClick={() =>
+                        setExpandedRow(
+                          expandedRow === item.log_id ? null : item.log_id
+                        )
+                      }
+                      className={cn(
+                        'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
+                        expandedRow === item.log_id && 'bg-muted/30'
+                      )}
+                    >
+                      <td className='px-4 py-3 text-xs text-muted-foreground whitespace-nowrap'>
+                        {formatTime(item.event_time)}
+                      </td>
+                      <td className='px-4 py-3 text-sm'>
+                        <div className='flex items-center gap-1.5'>
+                          <User className='h-3 w-3 text-muted-foreground' />
+                          <span className='text-xs'>
+                            {item.user_name || '—'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className='px-4 py-3'>
+                        <Badge
+                          variant='secondary'
+                          className={cn(
+                            'text-xs font-medium',
+                            getEventBadgeClassName(item.event_type)
+                          )}
+                        >
+                          <EventIcon className='h-3 w-3' />
+                          {item.event_type}
+                        </Badge>
+                      </td>
+                      <td className='px-4 py-3 text-sm'>
+                        <div className='space-y-1'>
+                          <p className='text-xs font-medium'>{item.action}</p>
+                          <p className='text-xs text-muted-foreground'>
+                            {item.object_name
+                              ? `${item.object_type} ${truncateText(item.object_name, 32)}`
+                              : item.object_type || '—'}
+                          </p>
+                        </div>
+                      </td>
+                      <td className='px-4 py-3'>
+                        <Badge
+                          variant='secondary'
+                          className={cn(
+                            'text-xs font-medium',
+                            getStatusBadgeClassName(item.status)
+                          )}
+                        >
+                          {item.status}
+                        </Badge>
+                      </td>
+                      <td className='px-4 py-3 text-right text-xs font-medium'>
+                        {formatDuration(item.duration_ms)}
+                      </td>
+                      <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
+                        {(item.rows_affected ?? 0).toLocaleString()}
+                      </td>
+                    </tr>
+                    {expandedRow === item.log_id ? (
+                      <tr className='border-b border-border bg-muted/20'>
+                        <td colSpan={7} className='px-4 py-4'>
+                          <div className='space-y-3'>
+                            {item.sql_text ? (
+                              <div>
+                                <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
+                                  SQL Text
+                                </p>
+                                <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs font-mono'>
+                                  {item.sql_text}
+                                </pre>
+                              </div>
+                            ) : null}
+
+                            {item.error_message ? (
+                              <div>
+                                <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive'>
+                                  <AlertCircle className='h-3 w-3' />
+                                  Error Message
+                                </p>
+                                <pre className='rounded-md bg-destructive/10 p-3 text-xs font-mono text-destructive'>
+                                  {item.error_message}
+                                </pre>
+                              </div>
+                            ) : null}
+
+                            <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
+                              <div>
+                                <span className='font-medium'>Log ID:</span>{' '}
+                                {item.log_id}
+                              </div>
+                              <div>
+                                <span className='font-medium'>Session:</span>{' '}
+                                {item.session_id || '—'}
+                              </div>
+                              <div>
+                                <span className='font-medium'>IP Address:</span>{' '}
+                                {item.ip_address || '—'}
+                              </div>
+                              <div>
+                                <span className='font-medium'>Database:</span>{' '}
+                                {item.database_name || '—'}
+                              </div>
+                              <div>
+                                <span className='font-medium'>Schema:</span>{' '}
+                                {item.schema_name || '—'}
+                              </div>
+                            </div>
+
+                            {item.database_name || item.schema_name ? (
+                              <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                                <Database className='h-3 w-3' />
+                                <span>
+                                  {item.database_name || '—'}
+                                  {item.schema_name
+                                    ? `.${item.schema_name}`
+                                    : ''}
+                                </span>
+                              </div>
+                            ) : null}
                           </div>
-                        </td>
-                        <td className='px-4 py-3'>
-                          <Badge
-                            variant='secondary'
-                            className={cn(
-                              'text-xs font-medium',
-                              getEventBadgeClassName(item.event_type)
-                            )}
-                          >
-                            <EventIcon className='h-3 w-3' />
-                            {item.event_type}
-                          </Badge>
-                        </td>
-                        <td className='px-4 py-3 text-sm'>
-                          <div className='space-y-1'>
-                            <p className='text-xs font-medium'>{item.action}</p>
-                            <p className='text-xs text-muted-foreground'>
-                              {item.object_name
-                                ? `${item.object_type} ${truncateText(item.object_name, 32)}`
-                                : item.object_type || '—'}
-                            </p>
-                          </div>
-                        </td>
-                        <td className='px-4 py-3'>
-                          <Badge
-                            variant='secondary'
-                            className={cn(
-                              'text-xs font-medium',
-                              getStatusBadgeClassName(item.status)
-                            )}
-                          >
-                            {item.status}
-                          </Badge>
-                        </td>
-                        <td className='px-4 py-3 text-right text-xs font-medium'>
-                          {formatDuration(item.duration_ms)}
-                        </td>
-                        <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
-                          {(item.rows_affected ?? 0).toLocaleString()}
                         </td>
                       </tr>
-                      {expandedRow === item.log_id ? (
-                        <tr className='border-b border-border bg-muted/20'>
-                          <td colSpan={7} className='px-4 py-4'>
-                            <div className='space-y-3'>
-                              {item.sql_text ? (
-                                <div>
-                                  <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
-                                    SQL Text
-                                  </p>
-                                  <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs font-mono'>
-                                    {item.sql_text}
-                                  </pre>
-                                </div>
-                              ) : null}
+                    ) : null}
+                  </Fragment>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </SimpleTableViewport>
 
-                              {item.error_message ? (
-                                <div>
-                                  <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive'>
-                                    <AlertCircle className='h-3 w-3' />
-                                    Error Message
-                                  </p>
-                                  <pre className='rounded-md bg-destructive/10 p-3 text-xs font-mono text-destructive'>
-                                    {item.error_message}
-                                  </pre>
-                                </div>
-                              ) : null}
-
-                              <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
-                                <div>
-                                  <span className='font-medium'>Log ID:</span>{' '}
-                                  {item.log_id}
-                                </div>
-                                <div>
-                                  <span className='font-medium'>Session:</span>{' '}
-                                  {item.session_id || '—'}
-                                </div>
-                                <div>
-                                  <span className='font-medium'>IP Address:</span>{' '}
-                                  {item.ip_address || '—'}
-                                </div>
-                                <div>
-                                  <span className='font-medium'>Database:</span>{' '}
-                                  {item.database_name || '—'}
-                                </div>
-                                <div>
-                                  <span className='font-medium'>Schema:</span>{' '}
-                                  {item.schema_name || '—'}
-                                </div>
-                              </div>
-
-                              {item.database_name || item.schema_name ? (
-                                <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
-                                  <Database className='h-3 w-3' />
-                                  <span>
-                                    {item.database_name || '—'}
-                                    {item.schema_name
-                                      ? `.${item.schema_name}`
-                                      : ''}
-                                  </span>
-                                </div>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-        <div className='flex items-center gap-2 text-sm'>
-          <span className='text-muted-foreground'>Rows per page:</span>
-          <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
-            <SelectTrigger className='w-[70px]'>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value='5'>5</SelectItem>
-              <SelectItem value='10'>10</SelectItem>
-              <SelectItem value='25'>25</SelectItem>
-              <SelectItem value='50'>50</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
-          <span className='text-sm text-muted-foreground'>
-            Showing {pageStart}-{pageEnd} of {total}
-          </span>
-          <span className='text-sm text-muted-foreground'>
-            Page {page} of {totalPages}
-          </span>
-          <div className='flex items-center gap-1'>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(1)}
-              disabled={page === 1}
-              className='h-8 w-8'
-            >
-              <ChevronsLeft className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page === 1}
-              className='h-8 w-8'
-            >
-              <ChevronLeft className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page >= totalPages}
-              className='h-8 w-8'
-            >
-              <ChevronRight className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(totalPages)}
-              disabled={page >= totalPages}
-              className='h-8 w-8'
-            >
-              <ChevronsRight className='h-4 w-4' />
-            </Button>
-          </div>
-        </div>
-      </div>
+      <SimpleTablePagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        pageSizes={[5, 10, 25, 50]}
+        onPageChange={handlePageChange}
+        onPageSizeChange={(value) => {
+          setPageSize(value)
+          setPage(1)
+          setExpandedRow(null)
+        }}
+      />
     </div>
   )
 }

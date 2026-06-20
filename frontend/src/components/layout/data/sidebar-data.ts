@@ -45,9 +45,14 @@ export const sidebarData: SidebarData = {
       title: 'Administrator',
       items: [
         {
-          title: 'Users & Roles',
+          title: 'Users',
           url: '/users',
           icon: Users,
+        },
+        {
+          title: 'Roles',
+          url: '/roles',
+          icon: Shield,
         },
         {
           title: 'AI Providers',

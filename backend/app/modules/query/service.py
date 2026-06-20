@@ -42,6 +42,7 @@ class QueryService:
         if self._minio_creds:
             return self._minio_creds
         from pathlib import Path
+
         env_path = Path(__file__).resolve().parents[4] / "docker" / ".env"
         user, pw = "minioadmin", "minioadmin"
         if env_path.exists():
@@ -91,9 +92,7 @@ class QueryService:
         # 1. Guard: block dangerous SQL
         guard_sql(normalized_sql)
         if is_destructive_sql(normalized_sql) and not confirm_destructive:
-            raise ForbiddenSQLError(
-                "Destructive SQL requires confirmation before execution."
-            )
+            raise ForbiddenSQLError("Destructive SQL requires confirmation before execution.")
 
         # 2. Parse: detect @stage references
         parsed = parse_sql(normalized_sql)
@@ -108,9 +107,7 @@ class QueryService:
             stage_configs = await self._load_stage_configs(database, schema)
 
             try:
-                executed_sql, warnings = translate_stage_query(
-                    parsed, stage_configs
-                )
+                executed_sql, warnings = translate_stage_query(parsed, stage_configs)
             except ValueError as e:
                 return QueryResult(
                     original_sql=sql,
@@ -123,12 +120,14 @@ class QueryService:
             if csv_params:
                 # Inject CSV params into FILES() calls
                 import re
+
                 def _inject_csv(m):
                     content = m.group(1)
                     csv_parts = [f"'{k}'='{v}'" for k, v in csv_params.items()]
                     content = f"{content}, {', '.join(csv_parts)}"
                     return f"FILES({content})"
-                executed_sql = re.sub(r'FILES\(([^)]+)\)', _inject_csv, executed_sql)
+
+                executed_sql = re.sub(r"FILES\(([^)]+)\)", _inject_csv, executed_sql)
 
             # 4. Inject credentials into FILES() calls
             creds = get_credential_params("s3")
@@ -138,12 +137,14 @@ class QueryService:
                 # Inject into any FILES() call that doesn't have credentials
                 if "aws.s3.access_key" not in executed_sql:
                     import re
+
                     def _inject(m):
                         content = m.group(1)
                         if "access_key" not in content:
                             content = f"{content}, {cred_str}"
                         return f"FILES({content})"
-                    executed_sql = re.sub(r'FILES\(([^)]+)\)', _inject, executed_sql)
+
+                    executed_sql = re.sub(r"FILES\(([^)]+)\)", _inject, executed_sql)
 
         # 5. Execute
         password = decrypt_password(encrypted_password)
@@ -295,23 +296,25 @@ class QueryService:
 
         items = []
         for row in result["rows"]:
-            items.append({
-                "log_id": str(row[0]) if row[0] is not None else "",
-                "query_id": row[1] or "",
-                "event_time": str(row[2]) if row[2] else "",
-                "user_name": row[3] or "",
-                "object_name": row[4] or "",
-                "action": row[5] or "",
-                "sql_text": row[6] or "",
-                "status": row[7] or "",
-                "duration_ms": row[8],
-                "rows_affected": row[9],
-                "error_message": row[10],
-                "file_id": row[11],
-                "database_name": row[12],
-                "schema_name": row[13],
-                "session_id": row[14],
-            })
+            items.append(
+                {
+                    "log_id": str(row[0]) if row[0] is not None else "",
+                    "query_id": row[1] or "",
+                    "event_time": str(row[2]) if row[2] else "",
+                    "user_name": row[3] or "",
+                    "object_name": row[4] or "",
+                    "action": row[5] or "",
+                    "sql_text": row[6] or "",
+                    "status": row[7] or "",
+                    "duration_ms": row[8],
+                    "rows_affected": row[9],
+                    "error_message": row[10],
+                    "file_id": row[11],
+                    "database_name": row[12],
+                    "schema_name": row[13],
+                    "session_id": row[14],
+                }
+            )
 
         return {"items": items, "total": total}
 
@@ -464,7 +467,9 @@ class QueryService:
         )
         pref_map = {row[0]: row[1] for row in prefs["rows"]}
         roles = await self._get_roles(username, password)
-        default_db = pref_map.get("workspace.last_database") or (databases[0] if databases else None)
+        default_db = pref_map.get("workspace.last_database") or (
+            databases[0] if databases else None
+        )
         schemas = await self.list_schemas(database=default_db)
         return {
             "roles": roles,
@@ -472,7 +477,8 @@ class QueryService:
             "schemas": schemas,
             "defaults": {
                 "database": default_db,
-                "schema": pref_map.get("workspace.last_schema") or (schemas[0] if schemas else None),
+                "schema": pref_map.get("workspace.last_schema")
+                or (schemas[0] if schemas else None),
                 "role": pref_map.get("workspace.last_role") or (roles[0] if roles else None),
             },
         }
@@ -505,11 +511,15 @@ class QueryService:
             columns = await self._list_columns(username, password, database, table, role)
             return {"items": self._filter_strings(columns, prefix, "column")}
         if kind == "stage":
+            if not database or not schema:
+                return {"items": []}
             stages = await self._list_stages(database, schema)
-            return {"items": self._filter_strings(stages, prefix, "stage")}
+            return {"items": self._stage_completion_items(stages, prefix)}
         if kind == "stage_file" and stage:
+            if not database or not schema:
+                return {"items": []}
             rows = await self._list_stage_files(stage, database, schema, folder=folder)
-            return {"items": self._filter_strings(rows, prefix, "stage_file")}
+            return {"items": self._stage_file_completion_items(rows, prefix)}
 
         objects = await self._list_objects(username, password, database, role)
         return {"items": self._filter_strings(objects, prefix, "object")}
@@ -573,7 +583,13 @@ class QueryService:
         result = await db.execute_system(sql, params or None)
         configs = {}
         for row in result["rows"]:
-            name, db_name, schema_name, storage_conn, base_prefix = row[0], row[1], row[2], row[3], row[4]
+            name, db_name, schema_name, storage_conn, base_prefix = (
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+            )
             conn = get_storage_connection(storage_conn)
             # Fallback base_prefix: {database_name}/{schema_name}/{stage_name}
             resolved_prefix = (base_prefix or "").strip("/")
@@ -671,7 +687,11 @@ class QueryService:
             column_names = None
             if first_fields and second_fields and len(first_fields) == len(second_fields):
                 # Check if first row looks like text (header) and second like data
-                text_count = sum(1 for f in first_fields if not f.strip().replace("-", "").replace(".", "").isdigit())
+                text_count = sum(
+                    1
+                    for f in first_fields
+                    if not f.strip().replace("-", "").replace(".", "").isdigit()
+                )
                 is_header = text_count > len(first_fields) / 2
                 if is_header:
                     # Extract clean column names from header
@@ -706,7 +726,8 @@ class QueryService:
             role=role,
         )
         return [
-            row[0] for row in result.rows
+            row[0]
+            for row in result.rows
             if row and row[0] not in ("_statistics_", "information_schema", "sys")
         ]
 
@@ -752,54 +773,88 @@ class QueryService:
 
     async def _list_stages(
         self,
-        database: str | None,
-        schema: str | None,
+        database: str,
+        schema: str,
     ) -> list[str]:
-        sql = "SELECT name FROM NOVA_SYSTEM.CONFIG_STAGES"
-        params: list[str] = []
-        clauses = []
-        if database:
-            clauses.append("database_name = %s")
-            params.append(database)
-        if schema:
-            clauses.append("schema_name = %s")
-            params.append(schema)
-        if clauses:
-            sql += " WHERE " + " AND ".join(clauses)
-        result = await db.execute_system(sql, params or None)
+        result = await db.execute_system(
+            """
+            SELECT name
+            FROM NOVA_SYSTEM.CONFIG_STAGES
+            WHERE database_name = %s AND schema_name = %s
+            ORDER BY name
+            """,
+            [database, schema],
+        )
         return [row[0] for row in result["rows"]]
 
     async def _list_stage_files(
         self,
         stage_name: str,
-        database: str | None,
-        schema: str | None,
+        database: str,
+        schema: str,
         folder: str | None = None,
-    ) -> list[str]:
+    ) -> list[dict]:
         from app.modules.stages.service import stage_service
 
         result = await db.execute_system(
             """
             SELECT id
             FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE name = %s
-              AND (%s IS NULL OR database_name = %s)
-              AND (%s IS NULL OR schema_name = %s)
+            WHERE name = %s AND database_name = %s AND schema_name = %s
             LIMIT 1
             """,
-            [stage_name, database, database, schema, schema],
+            [stage_name, database, schema],
         )
         if not result["rows"]:
             return []
-        s3_prefix = folder.replace('.', '/') if folder else ""
-        files = await stage_service.list_files(result["rows"][0][0], prefix=s3_prefix)
-        return [file["name"] for file in files]
+        storage_prefix = folder.replace(".", "/") if folder else ""
+        return await stage_service.list_files(result["rows"][0][0], prefix=storage_prefix)
 
     @staticmethod
     def _filter_strings(items: list[str], prefix: str, item_type: str) -> list[dict]:
         lowered = prefix.lower()
         filtered = [item for item in items if item.lower().startswith(lowered)]
         return [{"label": item, "type": item_type} for item in filtered[:50]]
+
+    @staticmethod
+    def _stage_completion_items(items: list[str], prefix: str) -> list[dict]:
+        lowered = prefix.lower()
+        filtered = [item for item in items if item.lower().startswith(lowered)]
+        return [
+            {
+                "label": item,
+                "type": "stage",
+                "insert_text": f"{item}.",
+                "detail": "Stage",
+            }
+            for item in filtered[:50]
+        ]
+
+    @staticmethod
+    def _stage_file_completion_items(items: list[dict], prefix: str) -> list[dict]:
+        lowered = prefix.lower()
+        filtered = sorted(
+            [item for item in items if str(item.get("name", "")).lower().startswith(lowered)],
+            key=lambda item: (
+                not bool(item.get("is_dir")),
+                str(item.get("name", "")).lower(),
+            ),
+        )
+        completions = []
+        for item in filtered[:50]:
+            name = str(item.get("name", ""))
+            is_dir = bool(item.get("is_dir"))
+            completions.append(
+                {
+                    "label": name,
+                    "type": "stage_folder" if is_dir else "stage_file",
+                    "insert_text": f"{name}." if is_dir else name,
+                    "detail": "Folder" if is_dir else "Stage file",
+                    "size": item.get("size"),
+                    "last_modified": item.get("last_modified"),
+                }
+            )
+        return completions
 
     @staticmethod
     def _normalize_default_schema_qualification(sql: str) -> str:

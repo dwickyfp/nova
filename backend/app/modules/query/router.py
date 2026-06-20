@@ -1,6 +1,8 @@
 """Query API router — execute SQL, explain, query history."""
 
 from fastapi import APIRouter, Depends
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from app.core.deps import get_current_user
@@ -34,8 +36,17 @@ class QueryResponse(BaseModel):
     needs_confirmation: bool = False
 
 
+class CompletionItem(BaseModel):
+    label: str
+    type: str
+    insert_text: str | None = None
+    detail: str | None = None
+    size: int | None = None
+    last_modified: datetime | str | None = None
+
+
 class CompletionResponse(BaseModel):
-    items: list[dict]
+    items: list[CompletionItem]
 
 
 @router.post("/execute", response_model=list[QueryResponse])

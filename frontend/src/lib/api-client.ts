@@ -11,7 +11,11 @@ async function request<T>(path: string, options: RequestInit & { signal?: AbortS
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: options.signal })
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
+    signal: options.signal,
+  })
   if (res.status === 401) {
     useAuthStore.getState().auth.reset()
     window.location.href = '/sign-in'
@@ -36,7 +40,7 @@ async function request<T>(path: string, options: RequestInit & { signal?: AbortS
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
   post: <T>(path: string, body?: unknown, signal?: AbortSignal) =>
     request<T>(path, {
       method: 'POST',

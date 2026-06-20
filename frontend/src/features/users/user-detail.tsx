@@ -1,17 +1,13 @@
 import { type ReactNode, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  MoreHorizontal,
-  RefreshCw,
-  Shield,
-} from 'lucide-react'
+import { ArrowLeft, MoreHorizontal, RefreshCw, Shield } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  SimpleTablePagination,
+  SimpleTableToolbar,
+  SimpleTableViewport,
+} from '@/components/data-table/simple-table-controls'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
@@ -23,7 +19,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api-client'
 
 type DefaultRoleMode = 'explicit' | 'all' | 'none'
@@ -43,8 +38,6 @@ type UserDetailResponse = {
   properties: Record<string, string>
 }
 
-const PAGE_SIZE = 10
-
 function formatLastLogin(value: string | null) {
   if (!value) return 'Never'
   const date = new Date(value)
@@ -58,13 +51,7 @@ function formatLastLogin(value: string | null) {
   })
 }
 
-function DetailField({
-  label,
-  value,
-}: {
-  label: string
-  value: ReactNode
-}) {
+function DetailField({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className='space-y-1.5'>
       <p className='text-sm text-muted-foreground'>{label}</p>
@@ -76,30 +63,37 @@ function DetailField({
 export function UserDetailPage({ username }: { username: string }) {
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
+  const [roleTypeFilter, setRoleTypeFilter] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const detailQuery = useQuery<UserDetailResponse>({
     queryKey: ['user-detail', username],
-    queryFn: () => api.get<UserDetailResponse>(`/users/${encodeURIComponent(username)}/detail`),
+    queryFn: () =>
+      api.get<UserDetailResponse>(
+        `/users/${encodeURIComponent(username)}/detail`
+      ),
   })
 
   const detail = detailQuery.data
   const filteredRoles = useMemo(() => {
     const roles = detail?.roles ?? []
     const query = searchQuery.trim().toLowerCase()
-    if (!query) return roles
-    return roles.filter((role) => role.toLowerCase().includes(query))
-  }, [detail?.roles, searchQuery])
+    return roles.filter((role) => {
+      const isDefault = detail?.default_roles.includes(role) ?? false
+      if (roleTypeFilter === 'Default role' && !isDefault) return false
+      if (roleTypeFilter === 'Additional role' && isDefault) return false
+      return !query || role.toLowerCase().includes(query)
+    })
+  }, [detail?.default_roles, detail?.roles, roleTypeFilter, searchQuery])
 
   const total = filteredRoles.length
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const currentPage = Math.min(page, totalPages)
-  const pageStart = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
-  const pageEnd = Math.min(currentPage * PAGE_SIZE, total)
   const visibleRoles = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE
-    return filteredRoles.slice(start, start + PAGE_SIZE)
-  }, [currentPage, filteredRoles])
+    const start = (currentPage - 1) * pageSize
+    return filteredRoles.slice(start, start + pageSize)
+  }, [currentPage, filteredRoles, pageSize])
 
   return (
     <>
@@ -145,18 +139,22 @@ export function UserDetailPage({ username }: { username: string }) {
           </DropdownMenu>
         </div>
 
-        <section className='rounded-2xl border border-border bg-card/60 p-6'>
+        <section className='rounded-xl border bg-card p-6'>
           <div className='mb-6 flex items-center gap-2'>
             <Shield className='h-4 w-4 text-muted-foreground' />
             <h2 className='text-xl font-semibold'>About</h2>
           </div>
 
           {detailQuery.isLoading ? (
-            <div className='py-10 text-sm text-muted-foreground'>Loading user detail...</div>
+            <div className='py-10 text-sm text-muted-foreground'>
+              Loading user detail...
+            </div>
           ) : detailQuery.error ? (
             <div className='space-y-3 py-6'>
               <p className='text-sm text-destructive'>
-                {detailQuery.error instanceof Error ? detailQuery.error.message : 'Failed to load user detail'}
+                {detailQuery.error instanceof Error
+                  ? detailQuery.error.message
+                  : 'Failed to load user detail'}
               </p>
               <Button
                 variant='outline'
@@ -175,9 +173,14 @@ export function UserDetailPage({ username }: { username: string }) {
               <DetailField label='Display name' value={detail.username} />
               <DetailField
                 label='Default role'
-                value={detail.default_roles[0] ? detail.default_roles[0] : 'None'}
+                value={
+                  detail.default_roles[0] ? detail.default_roles[0] : 'None'
+                }
               />
-              <DetailField label='Last login' value={formatLastLogin(detail.last_login)} />
+              <DetailField
+                label='Last login'
+                value={formatLastLogin(detail.last_login)}
+              />
               <DetailField label='Status' value='Enabled' />
               <DetailField
                 label='Roles'
@@ -185,13 +188,19 @@ export function UserDetailPage({ username }: { username: string }) {
                   detail.roles.length ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant='link' className='h-auto p-0 text-base font-normal'>
+                        <Button
+                          variant='link'
+                          className='h-auto p-0 text-base font-normal'
+                        >
                           Granted roles ({detail.roles.length})
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align='start' className='w-56'>
                         {detail.roles.map((role) => (
-                          <DropdownMenuItem key={`${detail.identity}-${role}`} disabled>
+                          <DropdownMenuItem
+                            key={`${detail.identity}-${role}`}
+                            disabled
+                          >
                             {role}
                           </DropdownMenuItem>
                         ))}
@@ -206,26 +215,38 @@ export function UserDetailPage({ username }: { username: string }) {
           ) : null}
         </section>
 
-        <section className='rounded-2xl border border-border bg-card/60 p-6'>
-          <div className='mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4'>
+        <section className='rounded-xl border bg-card p-6'>
+          <div className='mb-5 space-y-4 border-b border-border pb-4'>
             <div className='space-y-1'>
               <p className='text-sm font-medium text-primary'>Roles</p>
               <h2 className='text-2xl font-semibold'>
                 {(detail?.username ?? username).toUpperCase()} has {total} roles
               </h2>
             </div>
-            <Input
-              value={searchQuery}
-              onChange={(event) => {
-                setSearchQuery(event.target.value)
+            <SimpleTableToolbar
+              search={searchQuery}
+              onSearchChange={(value) => {
+                setSearchQuery(value)
                 setPage(1)
               }}
-              placeholder='Search'
-              className='w-full max-w-xs'
+              searchPlaceholder='Search roles...'
+              resultLabel={`${total} role${total !== 1 ? 's' : ''}`}
+              filters={[
+                {
+                  label: 'Assignment',
+                  value: roleTypeFilter,
+                  options: ['Default role', 'Additional role'],
+                  onChange: (value) => {
+                    setRoleTypeFilter(value)
+                    setPage(1)
+                  },
+                  icon: <Shield className='size-3.5' />,
+                },
+              ]}
             />
           </div>
 
-          <div className='relative rounded-md border border-border'>
+          <SimpleTableViewport className='max-h-[44vh]'>
             {detailQuery.isFetching && !detailQuery.isLoading ? (
               <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
                 <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
@@ -238,114 +259,80 @@ export function UserDetailPage({ username }: { username: string }) {
                 </div>
               </div>
             ) : null}
-            <div className='overflow-x-auto'>
-              <table className='w-full'>
-                <thead className='border-b border-border bg-muted/50'>
+            <table className='w-full'>
+              <thead>
+                <tr>
+                  <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                    Role Name
+                  </th>
+                  <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                    Assignment
+                  </th>
+                  <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                    Default Role
+                  </th>
+                  <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {detailQuery.isLoading ? (
                   <tr>
-                    <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                      Role Name
-                    </th>
-                    <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                      Assignment
-                    </th>
-                    <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                      Default Role
-                    </th>
-                    <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                      Status
-                    </th>
+                    <td
+                      colSpan={4}
+                      className='px-4 py-12 text-center text-sm text-muted-foreground'
+                    >
+                      Loading roles...
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {detailQuery.isLoading ? (
-                    <tr>
-                      <td colSpan={4} className='px-4 py-12 text-center text-sm text-muted-foreground'>
-                        Loading roles...
+                ) : visibleRoles.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className='px-4 py-12 text-center text-sm text-muted-foreground'
+                    >
+                      No roles found
+                    </td>
+                  </tr>
+                ) : (
+                  visibleRoles.map((role) => (
+                    <tr
+                      key={role}
+                      className='border-b border-border transition-colors hover:bg-muted/50'
+                    >
+                      <td className='px-4 py-3 text-sm font-medium'>{role}</td>
+                      <td className='px-4 py-3 text-sm text-muted-foreground'>
+                        Role grant
+                      </td>
+                      <td className='px-4 py-3 text-sm'>
+                        {detail?.default_roles.includes(role) ? 'Yes' : 'No'}
+                      </td>
+                      <td className='px-4 py-3 text-right'>
+                        <Badge
+                          variant='secondary'
+                          className='border-transparent bg-emerald-600 text-xs text-white hover:bg-emerald-600'
+                        >
+                          Assigned
+                        </Badge>
                       </td>
                     </tr>
-                  ) : visibleRoles.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className='px-4 py-12 text-center text-sm text-muted-foreground'>
-                        No roles found
-                      </td>
-                    </tr>
-                  ) : (
-                    visibleRoles.map((role) => (
-                      <tr
-                        key={role}
-                        className='border-b border-border transition-colors hover:bg-muted/50'
-                      >
-                        <td className='px-4 py-3 text-sm font-medium'>{role}</td>
-                        <td className='px-4 py-3 text-sm text-muted-foreground'>
-                          Role grant
-                        </td>
-                        <td className='px-4 py-3 text-sm'>
-                          {detail?.default_roles.includes(role) ? 'Yes' : 'No'}
-                        </td>
-                        <td className='px-4 py-3 text-right'>
-                          <Badge
-                            variant='secondary'
-                            className='border-transparent bg-emerald-600 text-xs text-white hover:bg-emerald-600'
-                          >
-                            Assigned
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </SimpleTableViewport>
 
-          <div className='mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-            <div className='text-sm text-muted-foreground'>
-              Showing {pageStart}-{pageEnd} of {total}
-            </div>
-            <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
-              <span className='text-sm text-muted-foreground'>
-                Page {currentPage} of {totalPages}
-              </span>
-              <div className='flex items-center gap-1'>
-                <Button
-                  variant='outline'
-                  size='icon'
-                  onClick={() => setPage(1)}
-                  disabled={currentPage === 1}
-                  className='h-8 w-8'
-                >
-                  <ChevronsLeft className='h-4 w-4' />
-                </Button>
-                <Button
-                  variant='outline'
-                  size='icon'
-                  onClick={() => setPage((value) => Math.max(value - 1, 1))}
-                  disabled={currentPage === 1}
-                  className='h-8 w-8'
-                >
-                  <ChevronLeft className='h-4 w-4' />
-                </Button>
-                <Button
-                  variant='outline'
-                  size='icon'
-                  onClick={() => setPage((value) => Math.min(value + 1, totalPages))}
-                  disabled={currentPage >= totalPages}
-                  className='h-8 w-8'
-                >
-                  <ChevronRight className='h-4 w-4' />
-                </Button>
-                <Button
-                  variant='outline'
-                  size='icon'
-                  onClick={() => setPage(totalPages)}
-                  disabled={currentPage >= totalPages}
-                  className='h-8 w-8'
-                >
-                  <ChevronsRight className='h-4 w-4' />
-                </Button>
-              </div>
-            </div>
-          </div>
+          <SimpleTablePagination
+            page={currentPage}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(value)
+              setPage(1)
+            }}
+          />
         </section>
       </Main>
     </>

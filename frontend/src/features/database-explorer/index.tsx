@@ -467,9 +467,9 @@ function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNode[] {
     children: data.stages.length > 0
       ? data.stages.map((s) => ({
           id: `${db}-stage-${s.name}`,
-          label: `@${s.name}`,
+          label: s.name,
           type: 'stage' as ExplorerNodeType,
-          path: [catalogPath, db, 'Stages', `@${s.name}`],
+          path: [catalogPath, db, 'Stages', s.name],
           database: db,
           metadata: [
             ...(s.storage_connection ? [{ label: 'Connection', value: s.storage_connection }] : []),
@@ -1255,7 +1255,7 @@ function StageFilesPanel({ node }: { node: ExplorerNode }) {
         </div>
         <div className='flex-1 space-y-1'>
           <div className='flex flex-wrap items-center gap-2'>
-            <h1 className='text-3xl font-semibold tracking-tight'>@{stageName}</h1>
+            <h1 className='text-3xl font-semibold tracking-tight'>{stageName}</h1>
             <Badge variant='secondary'>Stage</Badge>
           </div>
           <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
@@ -1281,7 +1281,7 @@ function StageFilesPanel({ node }: { node: ExplorerNode }) {
             onClick={() => setCurrentPath([])}
             className='text-muted-foreground hover:text-foreground transition-colors'
           >
-            @{stageName}
+            {stageName}
           </button>
           {currentPath.map((seg, i) => (
             <Fragment key={i}>

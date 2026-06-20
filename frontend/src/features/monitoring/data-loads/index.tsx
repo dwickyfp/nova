@@ -5,13 +5,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Clock3,
   Database,
-  Search,
   Table2,
   Upload,
   XCircle,
@@ -19,16 +15,11 @@ import {
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  SimpleTablePagination,
+  SimpleTableToolbar,
+  SimpleTableViewport,
+} from '@/components/data-table/simple-table-controls'
 
 type DataLoadItem = {
   label: string
@@ -171,7 +162,9 @@ export function MonitoringDataLoads() {
       if (stateFilter) params.set('state', stateFilter)
       if (dbFilter) params.set('db_name', dbFilter)
       if (typeFilter) params.set('load_type', typeFilter)
-      return api.get<DataLoadsResponse>(`/monitoring/loads?${params.toString()}`)
+      return api.get<DataLoadsResponse>(
+        `/monitoring/loads?${params.toString()}`
+      )
     },
     placeholderData: keepPreviousData,
   })
@@ -202,14 +195,13 @@ export function MonitoringDataLoads() {
   }, [items, searchQuery])
 
   const total = loadsQuery.data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1
-  const pageEnd = Math.min(page * pageSize, total)
 
   const databaseOptions = useMemo(() => {
     if (!loadsQuery.data?.items) return []
     return [
-      ...new Set(loadsQuery.data.items.map((item) => item.db_name).filter(Boolean)),
+      ...new Set(
+        loadsQuery.data.items.map((item) => item.db_name).filter(Boolean)
+      ),
     ] as string[]
   }, [loadsQuery.data])
 
@@ -224,12 +216,6 @@ export function MonitoringDataLoads() {
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage)
-    setExpandedRow(null)
-  }
-
-  const handlePageSizeChange = (newSize: string) => {
-    setPageSize(Number(newSize))
-    setPage(1)
     setExpandedRow(null)
   }
 
@@ -251,50 +237,40 @@ export function MonitoringDataLoads() {
         </p>
       </div>
 
-      <div className='flex flex-wrap items-center gap-3'>
-        <SearchableSelect
-          options={['FINISHED', 'CANCELLED', 'LOADING']}
-          value={stateFilter}
-          onChange={(value: string) => handleFilterChange(setStateFilter, value)}
-          label='State'
-          icon={<CheckCircle2 size={14} />}
-        />
+      <SimpleTableToolbar
+        search={searchQuery}
+        onSearchChange={(value) => {
+          setSearchQuery(value)
+          setExpandedRow(null)
+        }}
+        searchPlaceholder='Search label, table, error...'
+        resultLabel={`${total} ${total === 1 ? 'load' : 'loads'}`}
+        filters={[
+          {
+            label: 'State',
+            value: stateFilter,
+            options: ['FINISHED', 'CANCELLED', 'LOADING'],
+            onChange: (value) => handleFilterChange(setStateFilter, value),
+            icon: <CheckCircle2 size={14} />,
+          },
+          {
+            label: 'Database',
+            value: dbFilter,
+            options: databaseOptions,
+            onChange: (value) => handleFilterChange(setDbFilter, value),
+            icon: <Database size={14} />,
+          },
+          {
+            label: 'Type',
+            value: typeFilter,
+            options: typeOptions,
+            onChange: (value) => handleFilterChange(setTypeFilter, value),
+            icon: <Upload size={14} />,
+          },
+        ]}
+      />
 
-        <SearchableSelect
-          options={databaseOptions}
-          value={dbFilter}
-          onChange={(value: string) => handleFilterChange(setDbFilter, value)}
-          label='Database'
-          icon={<Database size={14} />}
-        />
-
-        <SearchableSelect
-          options={typeOptions}
-          value={typeFilter}
-          onChange={(value: string) => handleFilterChange(setTypeFilter, value)}
-          label='Type'
-          icon={<Upload size={14} />}
-        />
-
-        <div className='relative w-full max-w-xs'>
-          <Search className='pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground' />
-          <Input
-            placeholder='Search label, table, error...'
-            value={searchQuery}
-            onChange={(event) => {
-              setSearchQuery(event.target.value)
-              setExpandedRow(null)
-            }}
-            className='pl-9'
-          />
-        </div>
-
-        <div className='ml-auto text-sm text-muted-foreground'>
-          {total} {total === 1 ? 'load' : 'loads'}
-        </div>
-      </div>
-
-      <div className='relative rounded-md border border-border'>
+      <SimpleTableViewport>
         {loadsQuery.isFetching && !loadsQuery.isLoading ? (
           <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
             <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
@@ -308,337 +284,281 @@ export function MonitoringDataLoads() {
           </div>
         ) : null}
 
-        <div className='overflow-x-auto'>
-          <table className='w-full'>
-            <thead className='border-b border-border bg-muted/50'>
+        <table className='w-full'>
+          <thead>
+            <tr>
+              <th className='w-8 px-3 py-3' />
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Label
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Database
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Table
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Type
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Status
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Progress
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                Scan Rows
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                Sink Rows
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Created
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                Duration
+              </th>
+              <th className='px-4 py-3 text-center text-xs font-medium text-muted-foreground'>
+                Error
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {loadsQuery.isLoading ? (
               <tr>
-                <th className='w-8 px-3 py-3' />
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Label
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Database
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Table
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Type
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Status
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Progress
-                </th>
-                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                  Scan Rows
-                </th>
-                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                  Sink Rows
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Created
-                </th>
-                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                  Duration
-                </th>
-                <th className='px-4 py-3 text-center text-xs font-medium text-muted-foreground'>
-                  Error
-                </th>
+                <td
+                  colSpan={12}
+                  className='px-4 py-12 text-center text-sm text-muted-foreground'
+                >
+                  Loading data loads...
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {loadsQuery.isLoading ? (
-                <tr>
-                  <td
-                    colSpan={12}
-                    className='px-4 py-12 text-center text-sm text-muted-foreground'
-                  >
-                    Loading data loads...
-                  </td>
-                </tr>
-              ) : filteredItems.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={12}
-                    className='px-4 py-12 text-center text-sm text-muted-foreground'
-                  >
-                    No data loads found
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map((item) => {
-                  const rowKey = `${item.label}-${item.create_time}`
-                  const isExpanded = expandedRow === rowKey
-                  const progressPct = Math.round(
-                    (typeof item.progress === 'number' ? item.progress : 0) * 100
-                  )
-                  const hasError = Boolean(item.error_msg)
-                  const normalizedState = item.state.toUpperCase()
+            ) : filteredItems.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={12}
+                  className='px-4 py-12 text-center text-sm text-muted-foreground'
+                >
+                  No data loads found
+                </td>
+              </tr>
+            ) : (
+              filteredItems.map((item) => {
+                const rowKey = `${item.label}-${item.create_time}`
+                const isExpanded = expandedRow === rowKey
+                const progressPct = Math.round(
+                  (typeof item.progress === 'number' ? item.progress : 0) * 100
+                )
+                const hasError = Boolean(item.error_msg)
+                const normalizedState = item.state.toUpperCase()
 
-                  return (
-                    <Fragment key={rowKey}>
-                      <tr
-                        onClick={() =>
-                          setExpandedRow(isExpanded ? null : rowKey)
-                        }
-                        className={cn(
-                          'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
-                          isExpanded && 'bg-muted/30'
+                return (
+                  <Fragment key={rowKey}>
+                    <tr
+                      onClick={() => setExpandedRow(isExpanded ? null : rowKey)}
+                      className={cn(
+                        'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
+                        isExpanded && 'bg-muted/30'
+                      )}
+                    >
+                      <td className='px-3 py-3 text-muted-foreground'>
+                        {isExpanded ? (
+                          <ChevronDown className='h-4 w-4' />
+                        ) : (
+                          <ChevronRight className='h-4 w-4' />
                         )}
-                      >
-                        <td className='px-3 py-3 text-muted-foreground'>
-                          {isExpanded ? (
-                            <ChevronDown className='h-4 w-4' />
-                          ) : (
-                            <ChevronRight className='h-4 w-4' />
-                          )}
-                        </td>
+                      </td>
 
-                        <td className='px-4 py-3'>
-                          <span
-                            className='block max-w-[240px] truncate text-sm font-medium'
-                            title={item.label}
-                          >
-                            {truncate(item.label)}
+                      <td className='px-4 py-3'>
+                        <span
+                          className='block max-w-[240px] truncate text-sm font-medium'
+                          title={item.label}
+                        >
+                          {truncate(item.label)}
+                        </span>
+                      </td>
+
+                      <td className='px-4 py-3'>
+                        <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                          <Database className='h-3.5 w-3.5' />
+                          <span>{item.db_name}</span>
+                        </div>
+                      </td>
+
+                      <td className='px-4 py-3'>
+                        <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
+                          <Table2 className='h-3.5 w-3.5' />
+                          <span>{item.table_name}</span>
+                        </div>
+                      </td>
+
+                      <td className='px-4 py-3'>
+                        <Badge variant='secondary' className='text-xs'>
+                          {item.load_type}
+                        </Badge>
+                      </td>
+
+                      <td className='px-4 py-3'>
+                        <Badge
+                          variant='outline'
+                          className={cn(
+                            'gap-1.5 border-transparent text-xs',
+                            getStateBadgeClassName(item.state)
+                          )}
+                        >
+                          {normalizedState === 'FINISHED' ? (
+                            <CheckCircle2 className='h-3.5 w-3.5' />
+                          ) : null}
+                          {normalizedState === 'LOADING' ? (
+                            <Clock3 className='h-3.5 w-3.5' />
+                          ) : null}
+                          {normalizedState === 'CANCELLED' ? (
+                            <XCircle className='h-3.5 w-3.5' />
+                          ) : null}
+                          {item.state}
+                        </Badge>
+                      </td>
+
+                      <td className='px-4 py-3'>
+                        <div className='flex items-center gap-2'>
+                          <div className='h-1.5 w-20 overflow-hidden rounded-full bg-muted'>
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all',
+                                getProgressBarClassName(item.state)
+                              )}
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                          <span className='text-xs tabular-nums text-muted-foreground'>
+                            {progressPct}%
                           </span>
-                        </td>
+                        </div>
+                      </td>
 
-                        <td className='px-4 py-3'>
-                          <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
-                            <Database className='h-3.5 w-3.5' />
-                            <span>{item.db_name}</span>
-                          </div>
-                        </td>
+                      <td className='px-4 py-3 text-right text-xs tabular-nums text-muted-foreground'>
+                        {(item.scan_rows ?? 0).toLocaleString()}
+                      </td>
 
-                        <td className='px-4 py-3'>
-                          <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
-                            <Table2 className='h-3.5 w-3.5' />
-                            <span>{item.table_name}</span>
-                          </div>
-                        </td>
+                      <td className='px-4 py-3 text-right text-xs tabular-nums text-muted-foreground'>
+                        {(item.sink_rows ?? 0).toLocaleString()}
+                      </td>
 
-                        <td className='px-4 py-3'>
-                          <Badge variant='secondary' className='text-xs'>
-                            {item.load_type}
-                          </Badge>
-                        </td>
+                      <td className='whitespace-nowrap px-4 py-3 text-xs text-muted-foreground'>
+                        {formatShortTime(item.create_time)}
+                      </td>
 
-                        <td className='px-4 py-3'>
-                          <Badge
-                            variant='outline'
-                            className={cn(
-                              'gap-1.5 border-transparent text-xs',
-                              getStateBadgeClassName(item.state)
-                            )}
-                          >
-                            {normalizedState === 'FINISHED' ? (
-                              <CheckCircle2 className='h-3.5 w-3.5' />
-                            ) : null}
-                            {normalizedState === 'LOADING' ? (
-                              <Clock3 className='h-3.5 w-3.5' />
-                            ) : null}
-                            {normalizedState === 'CANCELLED' ? (
-                              <XCircle className='h-3.5 w-3.5' />
-                            ) : null}
-                            {item.state}
-                          </Badge>
-                        </td>
+                      <td className='px-4 py-3 text-right text-xs font-medium'>
+                        {computeDuration(item)}
+                      </td>
 
-                        <td className='px-4 py-3'>
-                          <div className='flex items-center gap-2'>
-                            <div className='h-1.5 w-20 overflow-hidden rounded-full bg-muted'>
-                              <div
-                                className={cn(
-                                  'h-full rounded-full transition-all',
-                                  getProgressBarClassName(item.state)
-                                )}
-                                style={{ width: `${progressPct}%` }}
-                              />
+                      <td className='px-4 py-3 text-center'>
+                        {hasError ? (
+                          <AlertTriangle className='mx-auto h-4 w-4 text-red-500' />
+                        ) : (
+                          <span className='text-muted-foreground'>—</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {isExpanded ? (
+                      <tr className='border-b border-border bg-muted/20'>
+                        <td colSpan={12} className='px-6 py-4'>
+                          <div className='space-y-4'>
+                            <div>
+                              <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
+                                Full Label
+                              </p>
+                              <code className='block break-all rounded-md bg-muted px-3 py-2 text-xs font-mono'>
+                                {item.label}
+                              </code>
                             </div>
-                            <span className='text-xs tabular-nums text-muted-foreground'>
-                              {progressPct}%
-                            </span>
+
+                            <div className='grid gap-3 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3'>
+                              <div>
+                                <span className='font-medium text-foreground'>
+                                  Created:
+                                </span>{' '}
+                                {formatTime(item.create_time)}
+                              </div>
+                              <div>
+                                <span className='font-medium text-foreground'>
+                                  Load Start:
+                                </span>{' '}
+                                {formatTime(item.load_start_time)}
+                              </div>
+                              <div>
+                                <span className='font-medium text-foreground'>
+                                  Commit Time:
+                                </span>{' '}
+                                {formatTime(item.load_commit_time)}
+                              </div>
+                              <div>
+                                <span className='font-medium text-foreground'>
+                                  Finish Time:
+                                </span>{' '}
+                                {formatTime(item.load_finish_time)}
+                              </div>
+                              <div>
+                                <span className='font-medium text-foreground'>
+                                  Duration:
+                                </span>{' '}
+                                {computeDuration(item)}
+                              </div>
+                              <div>
+                                <span className='font-medium text-foreground'>
+                                  Progress:
+                                </span>{' '}
+                                {progressPct}%
+                              </div>
+                              <div>
+                                <span className='font-medium text-foreground'>
+                                  Scan Rows:
+                                </span>{' '}
+                                {(item.scan_rows ?? 0).toLocaleString()}
+                              </div>
+                              <div>
+                                <span className='font-medium text-foreground'>
+                                  Sink Rows:
+                                </span>{' '}
+                                {(item.sink_rows ?? 0).toLocaleString()}
+                              </div>
+                            </div>
+
+                            {item.error_msg ? (
+                              <div>
+                                <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-red-500'>
+                                  <AlertTriangle className='h-3.5 w-3.5' />
+                                  Error Message
+                                </p>
+                                <pre className='overflow-auto rounded-md bg-red-500/10 p-3 text-xs font-mono text-red-500'>
+                                  {item.error_msg}
+                                </pre>
+                              </div>
+                            ) : null}
                           </div>
-                        </td>
-
-                        <td className='px-4 py-3 text-right text-xs tabular-nums text-muted-foreground'>
-                          {(item.scan_rows ?? 0).toLocaleString()}
-                        </td>
-
-                        <td className='px-4 py-3 text-right text-xs tabular-nums text-muted-foreground'>
-                          {(item.sink_rows ?? 0).toLocaleString()}
-                        </td>
-
-                        <td className='whitespace-nowrap px-4 py-3 text-xs text-muted-foreground'>
-                          {formatShortTime(item.create_time)}
-                        </td>
-
-                        <td className='px-4 py-3 text-right text-xs font-medium'>
-                          {computeDuration(item)}
-                        </td>
-
-                        <td className='px-4 py-3 text-center'>
-                          {hasError ? (
-                            <AlertTriangle className='mx-auto h-4 w-4 text-red-500' />
-                          ) : (
-                            <span className='text-muted-foreground'>—</span>
-                          )}
                         </td>
                       </tr>
+                    ) : null}
+                  </Fragment>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </SimpleTableViewport>
 
-                      {isExpanded ? (
-                        <tr className='border-b border-border bg-muted/20'>
-                          <td colSpan={12} className='px-6 py-4'>
-                            <div className='space-y-4'>
-                              <div>
-                                <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
-                                  Full Label
-                                </p>
-                                <code className='block break-all rounded-md bg-muted px-3 py-2 text-xs font-mono'>
-                                  {item.label}
-                                </code>
-                              </div>
-
-                              <div className='grid gap-3 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3'>
-                                <div>
-                                  <span className='font-medium text-foreground'>
-                                    Created:
-                                  </span>{' '}
-                                  {formatTime(item.create_time)}
-                                </div>
-                                <div>
-                                  <span className='font-medium text-foreground'>
-                                    Load Start:
-                                  </span>{' '}
-                                  {formatTime(item.load_start_time)}
-                                </div>
-                                <div>
-                                  <span className='font-medium text-foreground'>
-                                    Commit Time:
-                                  </span>{' '}
-                                  {formatTime(item.load_commit_time)}
-                                </div>
-                                <div>
-                                  <span className='font-medium text-foreground'>
-                                    Finish Time:
-                                  </span>{' '}
-                                  {formatTime(item.load_finish_time)}
-                                </div>
-                                <div>
-                                  <span className='font-medium text-foreground'>
-                                    Duration:
-                                  </span>{' '}
-                                  {computeDuration(item)}
-                                </div>
-                                <div>
-                                  <span className='font-medium text-foreground'>
-                                    Progress:
-                                  </span>{' '}
-                                  {progressPct}%
-                                </div>
-                                <div>
-                                  <span className='font-medium text-foreground'>
-                                    Scan Rows:
-                                  </span>{' '}
-                                  {(item.scan_rows ?? 0).toLocaleString()}
-                                </div>
-                                <div>
-                                  <span className='font-medium text-foreground'>
-                                    Sink Rows:
-                                  </span>{' '}
-                                  {(item.sink_rows ?? 0).toLocaleString()}
-                                </div>
-                              </div>
-
-                              {item.error_msg ? (
-                                <div>
-                                  <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-red-500'>
-                                    <AlertTriangle className='h-3.5 w-3.5' />
-                                    Error Message
-                                  </p>
-                                  <pre className='overflow-auto rounded-md bg-red-500/10 p-3 text-xs font-mono text-red-500'>
-                                    {item.error_msg}
-                                  </pre>
-                                </div>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-        <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-          <span>
-            Showing {pageStart}-{pageEnd} of {total}
-          </span>
-          <span>•</span>
-          <span>Rows per page</span>
-          <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
-            <SelectTrigger className='h-8 w-[76px]'>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value='10'>10</SelectItem>
-              <SelectItem value='25'>25</SelectItem>
-              <SelectItem value='50'>50</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className='flex items-center gap-2 self-end sm:self-auto'>
-          <span className='text-sm text-muted-foreground'>
-            Page {page} of {totalPages}
-          </span>
-          <div className='flex items-center gap-1'>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(1)}
-              disabled={page === 1}
-              className='h-8 w-8'
-            >
-              <ChevronsLeft className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page === 1}
-              className='h-8 w-8'
-            >
-              <ChevronLeft className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page >= totalPages}
-              className='h-8 w-8'
-            >
-              <ChevronRight className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(totalPages)}
-              disabled={page >= totalPages}
-              className='h-8 w-8'
-            >
-              <ChevronsRight className='h-4 w-4' />
-            </Button>
-          </div>
-        </div>
-      </div>
+      <SimpleTablePagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={handlePageChange}
+        onPageSizeChange={(value) => {
+          setPageSize(value)
+          setPage(1)
+          setExpandedRow(null)
+        }}
+      />
     </div>
   )
 }

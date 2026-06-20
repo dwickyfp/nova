@@ -2,10 +2,6 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Bot,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Cpu,
   Loader2,
   MoreHorizontal,
@@ -20,6 +16,11 @@ import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
+import {
+  SimpleTablePagination,
+  SimpleTableToolbar,
+  SimpleTableViewport,
+} from '@/components/data-table/simple-table-controls'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -38,7 +39,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
   Select,
   SelectContent,
@@ -97,8 +97,6 @@ const MODEL_TYPES: { value: ModelType; label: string }[] = [
   { value: 'embedding', label: 'Embedding' },
 ]
 
-const PAGE_SIZES = [10, 25, 50]
-
 const PROVIDER_TYPE_COLORS: Record<ProviderType, string> = {
   openai: 'text-emerald-500',
   anthropic: 'text-orange-500',
@@ -134,11 +132,17 @@ export function AIProviders() {
 
   // Dialog state
   const [providerDialogOpen, setProviderDialogOpen] = useState(false)
-  const [providerEditMode, setProviderEditMode] = useState<'create' | 'edit'>('create')
-  const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
+  const [providerEditMode, setProviderEditMode] = useState<'create' | 'edit'>(
+    'create'
+  )
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(
+    null
+  )
 
   const [modelDialogOpen, setModelDialogOpen] = useState(false)
-  const [modelEditMode, setModelEditMode] = useState<'create' | 'edit'>('create')
+  const [modelEditMode, setModelEditMode] = useState<'create' | 'edit'>(
+    'create'
+  )
   const [editingModelId, setEditingModelId] = useState<string | null>(null)
   const [modelDialogProvider, setModelDialogProvider] =
     useState<ProviderWithModels | null>(null)
@@ -167,9 +171,10 @@ export function AIProviders() {
   const fetchAllModels = useCallback(async () => {
     setLoading(true)
     try {
-      const providerRes = await api.get<{ providers: AIProvider[]; count: number }>(
-        '/ai/providers'
-      )
+      const providerRes = await api.get<{
+        providers: AIProvider[]
+        count: number
+      }>('/ai/providers')
 
       const allProviders: ProviderWithModels[] = []
       for (const p of providerRes.providers) {
@@ -202,7 +207,10 @@ export function AIProviders() {
   const filtered = useMemo(() => {
     let result = providers
     if (typeFilter) {
-      result = result.filter((p) => p.type === typeFilter)
+      const selectedType = PROVIDER_TYPES.find(
+        (type) => type.label === typeFilter
+      )?.value
+      result = result.filter((provider) => provider.type === selectedType)
     }
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -279,7 +287,9 @@ export function AIProviders() {
       setProviderDialogOpen(false)
       await fetchAllModels()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save provider')
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to save provider'
+      )
     } finally {
       setSubmitting(false)
     }
@@ -381,7 +391,8 @@ export function AIProviders() {
         toast.error(result.message)
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to test connection'
+      const msg =
+        err instanceof Error ? err.message : 'Failed to test connection'
       setTestResult({ success: false, message: msg, models: [] })
       toast.error(msg)
     } finally {
@@ -413,10 +424,7 @@ export function AIProviders() {
 
   // ── Render ────────────────────────────────────────────────────
 
-  const typeOptions = useMemo(
-    () => PROVIDER_TYPES.map((t) => t.label),
-    []
-  )
+  const typeOptions = useMemo(() => PROVIDER_TYPES.map((t) => t.label), [])
 
   return (
     <>
@@ -430,9 +438,7 @@ export function AIProviders() {
             onClick={() => fetchAllModels()}
             disabled={loading}
           >
-            <RefreshCw
-              className={cn('size-3.5', loading && 'animate-spin')}
-            />
+            <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
             <span className='hidden sm:inline'>Refresh</span>
           </Button>
           <Button
@@ -459,49 +465,56 @@ export function AIProviders() {
         </div>
 
         {/* Filters */}
-        <div className='mb-4 flex flex-wrap items-center gap-2'>
-          <Input
-            placeholder='Search providers or models...'
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
+        <div className='mb-4'>
+          <SimpleTableToolbar
+            search={search}
+            onSearchChange={(value) => {
+              setSearch(value)
               setPage(1)
             }}
-            className='h-9 max-w-xs'
+            searchPlaceholder='Search providers or models...'
+            resultLabel={`${filtered.length} provider${filtered.length !== 1 ? 's' : ''}`}
+            filters={[
+              {
+                label: 'Type',
+                value: typeFilter,
+                options: typeOptions,
+                onChange: (value) => {
+                  setTypeFilter(value)
+                  setPage(1)
+                },
+                icon: <Cpu size={14} />,
+              },
+            ]}
           />
-          <SearchableSelect
-            options={typeOptions}
-            value={typeFilter}
-            onChange={(v) => {
-              setTypeFilter(v)
-              setPage(1)
-            }}
-            label='Type'
-            icon={<Cpu size={14} />}
-          />
-          <div className='ml-auto flex items-center gap-2 text-sm text-muted-foreground'>
-            <span>
-              {filtered.length} provider{filtered.length !== 1 ? 's' : ''}
-            </span>
-          </div>
         </div>
 
         {/* Table */}
-        <div className='rounded-lg border border-border'>
+        <SimpleTableViewport>
           <table className='w-full text-sm'>
             <thead>
-              <tr className='border-b border-border bg-muted/50'>
-                <th className='px-4 py-3 text-left font-medium'>
+              <tr>
+                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
                   Provider
                 </th>
-                <th className='px-4 py-3 text-left font-medium'>Type</th>
-                <th className='px-4 py-3 text-left font-medium'>Endpoint</th>
-                <th className='px-4 py-3 text-left font-medium'>
+                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                  Type
+                </th>
+                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                  Endpoint
+                </th>
+                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
                   API Key
                 </th>
-                <th className='px-4 py-3 text-center font-medium'>Models</th>
-                <th className='px-4 py-3 text-center font-medium'>Status</th>
-                <th className='px-4 py-3 text-right font-medium'>Actions</th>
+                <th className='px-4 py-3 text-center text-xs font-medium text-muted-foreground'>
+                  Models
+                </th>
+                <th className='px-4 py-3 text-center text-xs font-medium text-muted-foreground'>
+                  Status
+                </th>
+                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -573,7 +586,9 @@ export function AIProviders() {
                             ••••{provider.api_key.slice(-4)}
                           </span>
                         ) : (
-                          <span className='text-xs text-muted-foreground'>—</span>
+                          <span className='text-xs text-muted-foreground'>
+                            —
+                          </span>
                         )}
                       </td>
                       <td className='px-4 py-3 text-center'>
@@ -697,7 +712,8 @@ export function AIProviders() {
                                         </Badge>
                                       </td>
                                       <td className='py-2 pr-4 text-right font-mono text-xs'>
-                                        {model.max_tokens?.toLocaleString() ?? '—'}
+                                        {model.max_tokens?.toLocaleString() ??
+                                          '—'}
                                       </td>
                                       <td className='py-2 pr-4 text-center'>
                                         <Badge
@@ -708,7 +724,9 @@ export function AIProviders() {
                                           }
                                           className='font-normal'
                                         >
-                                          {model.is_active ? 'Active' : 'Inactive'}
+                                          {model.is_active
+                                            ? 'Active'
+                                            : 'Inactive'}
                                         </Badge>
                                       </td>
                                       <td className='py-2 text-right'>
@@ -725,7 +743,10 @@ export function AIProviders() {
                                           <DropdownMenuContent align='end'>
                                             <DropdownMenuItem
                                               onClick={() =>
-                                                openEditModelDialog(provider, model)
+                                                openEditModelDialog(
+                                                  provider,
+                                                  model
+                                                )
                                               }
                                             >
                                               <Pencil className='mr-2 size-3' />
@@ -760,90 +781,28 @@ export function AIProviders() {
                 ))}
             </tbody>
           </table>
-        </div>
+        </SimpleTableViewport>
 
         {/* Pagination */}
-        {filtered.length > 0 && (
-          <div className='mt-4 flex items-center justify-between'>
-            <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-              <span>Rows per page</span>
-              <Select
-                value={String(pageSize)}
-                onValueChange={(v) => {
-                  setPageSize(Number(v))
-                  setPage(1)
-                }}
-              >
-                <SelectTrigger className='h-8 w-[70px]'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZES.map((size) => (
-                    <SelectItem key={size} value={String(size)}>
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className='flex items-center gap-4 text-sm text-muted-foreground'>
-              <span>
-                Showing{' '}
-                {(currentPage - 1) * pageSize + 1}–
-                {Math.min(currentPage * pageSize, filtered.length)} of{' '}
-                {filtered.length}
-              </span>
-              <div className='flex items-center gap-1'>
-                <Button
-                  variant='ghost'
-                  size='sm'
-                  className='h-7 w-7 p-0'
-                  disabled={currentPage === 1}
-                  onClick={() => setPage(1)}
-                >
-                  <ChevronsLeft className='size-3.5' />
-                </Button>
-                <Button
-                  variant='ghost'
-                  size='sm'
-                  className='h-7 w-7 p-0'
-                  disabled={currentPage === 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  <ChevronLeft className='size-3.5' />
-                </Button>
-                <span className='px-2'>
-                  {currentPage} / {totalPages}
-                </span>
-                <Button
-                  variant='ghost'
-                  size='sm'
-                  className='h-7 w-7 p-0'
-                  disabled={currentPage === totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  <ChevronRight className='size-3.5' />
-                </Button>
-                <Button
-                  variant='ghost'
-                  size='sm'
-                  className='h-7 w-7 p-0'
-                  disabled={currentPage === totalPages}
-                  onClick={() => setPage(totalPages)}
-                >
-                  <ChevronsRight className='size-3.5' />
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        <SimpleTablePagination
+          page={currentPage}
+          pageSize={pageSize}
+          total={filtered.length}
+          onPageChange={setPage}
+          onPageSizeChange={(value) => {
+            setPageSize(value)
+            setPage(1)
+          }}
+        />
 
         {/* Provider Dialog (Create + Edit) */}
         <Dialog open={providerDialogOpen} onOpenChange={setProviderDialogOpen}>
           <DialogContent className='max-w-lg'>
             <DialogHeader>
               <DialogTitle>
-                {providerEditMode === 'edit' ? 'Edit Provider' : 'Add AI Provider'}
+                {providerEditMode === 'edit'
+                  ? 'Edit Provider'
+                  : 'Add AI Provider'}
               </DialogTitle>
               <DialogDescription>
                 {providerEditMode === 'edit'
@@ -915,8 +874,8 @@ export function AIProviders() {
                   }
                 />
                 <p className='text-xs text-muted-foreground'>
-                  The API key is stored in the Nova system database and used
-                  for LLM API calls.
+                  The API key is stored in the Nova system database and used for
+                  LLM API calls.
                 </p>
               </div>
               <div className='space-y-2'>
@@ -1013,7 +972,9 @@ export function AIProviders() {
                 {submitting && (
                   <Loader2 className='mr-2 size-3.5 animate-spin' />
                 )}
-                {providerEditMode === 'edit' ? 'Save Changes' : 'Create Provider'}
+                {providerEditMode === 'edit'
+                  ? 'Save Changes'
+                  : 'Create Provider'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1151,10 +1112,7 @@ export function AIProviders() {
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button
-                variant='outline'
-                onClick={() => setDeleteDialog(null)}
-              >
+              <Button variant='outline' onClick={() => setDeleteDialog(null)}>
                 Cancel
               </Button>
               <Button

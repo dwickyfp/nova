@@ -9,10 +9,6 @@ import {
   Database,
   Users,
   Activity,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -29,8 +25,6 @@ import {
 } from 'recharts'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
   Select,
   SelectContent,
@@ -40,6 +34,11 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  SimpleTablePagination,
+  SimpleTableToolbar,
+  SimpleTableViewport,
+} from '@/components/data-table/simple-table-controls'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -260,12 +259,20 @@ export function MonitoringQueryCost() {
 
   const userOptions = useMemo(() => {
     if (!historyQuery.data?.items) return []
-    return [...new Set(historyQuery.data.items.map(i => i.user_name).filter(Boolean))] as string[]
+    return [
+      ...new Set(
+        historyQuery.data.items.map((i) => i.user_name).filter(Boolean)
+      ),
+    ] as string[]
   }, [historyQuery.data])
 
   const databaseOptions = useMemo(() => {
     if (!historyQuery.data?.items) return []
-    return [...new Set(historyQuery.data.items.map(i => i.database_name).filter(Boolean))] as string[]
+    return [
+      ...new Set(
+        historyQuery.data.items.map((i) => i.database_name).filter(Boolean)
+      ),
+    ] as string[]
   }, [historyQuery.data])
 
   /* ---- derived ---- */
@@ -274,7 +281,6 @@ export function MonitoringQueryCost() {
   const aggregation = aggregationQuery.data ?? []
   const items = historyQuery.data?.items ?? []
   const total = historyQuery.data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   const successRate =
     metrics && metrics.query_total > 0
@@ -286,7 +292,10 @@ export function MonitoringQueryCost() {
     copy.sort((a, b) => {
       const dir = sortDir === 'asc' ? 1 : -1
       if (sortField === 'event_time') {
-        return dir * (new Date(a.event_time).getTime() - new Date(b.event_time).getTime())
+        return (
+          dir *
+          (new Date(a.event_time).getTime() - new Date(b.event_time).getTime())
+        )
       }
       return dir * (a[sortField] - b[sortField])
     })
@@ -326,12 +335,6 @@ export function MonitoringQueryCost() {
     setExpandedRow(null)
   }
 
-  const handlePageSizeChange = (size: string) => {
-    setPageSize(Number(size))
-    setPage(1)
-    setExpandedRow(null)
-  }
-
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -343,7 +346,9 @@ export function MonitoringQueryCost() {
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field)
-      return <ArrowUpDown className='ml-1 inline h-3 w-3 text-muted-foreground/50' />
+      return (
+        <ArrowUpDown className='ml-1 inline h-3 w-3 text-muted-foreground/50' />
+      )
     return sortDir === 'asc' ? (
       <ArrowUp className='ml-1 inline h-3 w-3' />
     ) : (
@@ -481,9 +486,7 @@ export function MonitoringQueryCost() {
             </div>
             <Select
               value={groupBy}
-              onValueChange={(v: string) =>
-                setGroupBy(v as 'hour' | 'day')
-              }
+              onValueChange={(v: string) => setGroupBy(v as 'hour' | 'day')}
             >
               <SelectTrigger className='h-10 w-[132px] rounded-xl border-border/70 bg-background/70'>
                 <SelectValue />
@@ -599,282 +602,223 @@ export function MonitoringQueryCost() {
       </Card>
 
       {/* ── Filter Bar ── */}
-      <div className='flex flex-wrap items-center gap-3'>
-        <SearchableSelect
-          options={userOptions}
-          value={userFilter}
-          onChange={(v) => { setUserFilter(v); setPage(1) }}
-          label='User'
-        />
-        <SearchableSelect
-          options={databaseOptions}
-          value={databaseFilter}
-          onChange={(v) => { setDatabaseFilter(v); setPage(1) }}
-          label='Database'
-        />
-        <div className='ml-auto text-sm text-muted-foreground'>
-          {total} {total === 1 ? 'query' : 'queries'}
-        </div>
-      </div>
+      <SimpleTableToolbar
+        resultLabel={`${total} ${total === 1 ? 'query' : 'queries'}`}
+        filters={[
+          {
+            label: 'User',
+            value: userFilter,
+            options: userOptions,
+            onChange: (value) => {
+              setUserFilter(value)
+              setPage(1)
+            },
+          },
+          {
+            label: 'Database',
+            value: databaseFilter,
+            options: databaseOptions,
+            onChange: (value) => {
+              setDatabaseFilter(value)
+              setPage(1)
+            },
+          },
+        ]}
+      />
 
       {/* ── Cost History Table ── */}
-      <div className='rounded-md border border-border'>
-        <div className='overflow-x-auto'>
-          <table className='w-full'>
-            <thead className='border-b border-border bg-muted/50'>
+      <SimpleTableViewport>
+        <table className='w-full'>
+          <thead>
+            <tr>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Time
+                <button
+                  type='button'
+                  onClick={() => toggleSort('event_time')}
+                  className='ml-0.5 inline-flex'
+                >
+                  <SortIcon field='event_time' />
+                </button>
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                User
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Database
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                SQL
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                <button
+                  type='button'
+                  onClick={() => toggleSort('duration_ms')}
+                  className='inline-flex items-center'
+                >
+                  Duration
+                  <SortIcon field='duration_ms' />
+                </button>
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                <button
+                  type='button'
+                  onClick={() => toggleSort('rows_affected')}
+                  className='inline-flex items-center'
+                >
+                  Rows
+                  <SortIcon field='rows_affected' />
+                </button>
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                Status
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {historyQuery.isLoading ? (
               <tr>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Time
-                  <button
-                    type='button'
-                    onClick={() => toggleSort('event_time')}
-                    className='ml-0.5 inline-flex'
-                  >
-                    <SortIcon field='event_time' />
-                  </button>
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  User
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Database
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  SQL
-                </th>
-                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                  <button
-                    type='button'
-                    onClick={() => toggleSort('duration_ms')}
-                    className='inline-flex items-center'
-                  >
-                    Duration
-                    <SortIcon field='duration_ms' />
-                  </button>
-                </th>
-                <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
-                  <button
-                    type='button'
-                    onClick={() => toggleSort('rows_affected')}
-                    className='inline-flex items-center'
-                  >
-                    Rows
-                    <SortIcon field='rows_affected' />
-                  </button>
-                </th>
-                <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
-                  Status
-                </th>
+                <td
+                  colSpan={7}
+                  className='px-4 py-12 text-center text-sm text-muted-foreground'
+                >
+                  Loading…
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {historyQuery.isLoading ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className='px-4 py-12 text-center text-sm text-muted-foreground'
+            ) : sortedItems.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className='px-4 py-12 text-center text-sm text-muted-foreground'
+                >
+                  No cost history found
+                </td>
+              </tr>
+            ) : (
+              sortedItems.map((item) => (
+                <Fragment key={item.log_id}>
+                  <tr
+                    onClick={() =>
+                      setExpandedRow(
+                        expandedRow === item.log_id ? null : item.log_id
+                      )
+                    }
+                    className={cn(
+                      'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
+                      expandedRow === item.log_id && 'bg-muted/30'
+                    )}
                   >
-                    Loading…
-                  </td>
-                </tr>
-              ) : sortedItems.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className='px-4 py-12 text-center text-sm text-muted-foreground'
-                  >
-                    No cost history found
-                  </td>
-                </tr>
-              ) : (
-                sortedItems.map((item) => (
-                  <Fragment key={item.log_id}>
-                    <tr
-                      onClick={() =>
-                        setExpandedRow(
-                          expandedRow === item.log_id ? null : item.log_id
-                        )
-                      }
-                      className={cn(
-                        'cursor-pointer border-b border-border transition-colors hover:bg-muted/50',
-                        expandedRow === item.log_id && 'bg-muted/30'
-                      )}
-                    >
-                      <td className='whitespace-nowrap px-4 py-3 text-xs text-muted-foreground'>
-                        {formatTime(item.event_time)}
-                      </td>
-                      <td className='px-4 py-3 text-sm'>
-                        <div className='flex items-center gap-1.5'>
-                          <Users className='h-3 w-3 text-muted-foreground' />
-                          <span className='text-xs'>{item.user_name}</span>
-                        </div>
-                      </td>
-                      <td className='px-4 py-3 text-sm'>
-                        <div className='flex items-center gap-1.5'>
-                          <Database className='h-3 w-3 text-muted-foreground' />
-                          <span className='text-xs'>
-                            {item.database_name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className='px-4 py-3 text-sm'>
-                        <code className='rounded bg-muted px-1.5 py-0.5 font-mono text-xs'>
-                          {truncateSql(item.sql_text)}
-                        </code>
-                      </td>
-                      <td className='px-4 py-3 text-right text-xs font-medium'>
-                        <span
-                          className={cn(
-                            item.duration_ms > 5000 &&
-                              'font-semibold text-destructive'
-                          )}
-                        >
-                          {formatDuration(item.duration_ms)}
-                        </span>
-                      </td>
-                      <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
-                        {(item.rows_affected ?? 0).toLocaleString()}
-                      </td>
-                      <td className='px-4 py-3'>
-                        <Badge
-                          variant={
-                            item.status === 'SUCCESS'
-                              ? 'default'
-                              : 'destructive'
-                          }
-                          className={cn(
-                            'text-xs',
-                            item.status === 'SUCCESS' &&
-                              'bg-primary text-primary-foreground hover:bg-primary/90'
-                          )}
-                        >
-                          {item.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                    {expandedRow === item.log_id && (
-                      <tr className='border-b border-border bg-muted/20'>
-                        <td colSpan={7} className='px-4 py-4'>
-                          <div className='space-y-3'>
+                    <td className='whitespace-nowrap px-4 py-3 text-xs text-muted-foreground'>
+                      {formatTime(item.event_time)}
+                    </td>
+                    <td className='px-4 py-3 text-sm'>
+                      <div className='flex items-center gap-1.5'>
+                        <Users className='h-3 w-3 text-muted-foreground' />
+                        <span className='text-xs'>{item.user_name}</span>
+                      </div>
+                    </td>
+                    <td className='px-4 py-3 text-sm'>
+                      <div className='flex items-center gap-1.5'>
+                        <Database className='h-3 w-3 text-muted-foreground' />
+                        <span className='text-xs'>{item.database_name}</span>
+                      </div>
+                    </td>
+                    <td className='px-4 py-3 text-sm'>
+                      <code className='rounded bg-muted px-1.5 py-0.5 font-mono text-xs'>
+                        {truncateSql(item.sql_text)}
+                      </code>
+                    </td>
+                    <td className='px-4 py-3 text-right text-xs font-medium'>
+                      <span
+                        className={cn(
+                          item.duration_ms > 5000 &&
+                            'font-semibold text-destructive'
+                        )}
+                      >
+                        {formatDuration(item.duration_ms)}
+                      </span>
+                    </td>
+                    <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
+                      {(item.rows_affected ?? 0).toLocaleString()}
+                    </td>
+                    <td className='px-4 py-3'>
+                      <Badge
+                        variant={
+                          item.status === 'SUCCESS' ? 'default' : 'destructive'
+                        }
+                        className={cn(
+                          'text-xs',
+                          item.status === 'SUCCESS' &&
+                            'bg-primary text-primary-foreground hover:bg-primary/90'
+                        )}
+                      >
+                        {item.status}
+                      </Badge>
+                    </td>
+                  </tr>
+                  {expandedRow === item.log_id && (
+                    <tr className='border-b border-border bg-muted/20'>
+                      <td colSpan={7} className='px-4 py-4'>
+                        <div className='space-y-3'>
+                          <div>
+                            <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
+                              Full SQL Query
+                            </p>
+                            <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs'>
+                              {item.sql_text}
+                            </pre>
+                          </div>
+                          <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
                             <div>
-                              <p className='mb-1.5 text-xs font-medium text-muted-foreground'>
-                                Full SQL Query
-                              </p>
-                              <pre className='max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs'>
-                                {item.sql_text}
-                              </pre>
+                              <span className='font-medium'>Query ID:</span>{' '}
+                              <span className='font-mono'>{item.query_id}</span>
                             </div>
-                            <div className='flex flex-wrap gap-4 text-xs text-muted-foreground'>
-                              <div>
-                                <span className='font-medium'>Query ID:</span>{' '}
-                                <span className='font-mono'>
-                                  {item.query_id}
-                                </span>
-                              </div>
-                              <div>
-                                <span className='font-medium'>Log ID:</span>{' '}
-                                <span className='font-mono'>
-                                  {item.log_id}
-                                </span>
-                              </div>
-                              <div>
-                                <span className='font-medium'>User:</span>{' '}
-                                {item.user_name}
-                              </div>
-                              <div>
-                                <span className='font-medium'>
-                                  Database:
-                                </span>{' '}
-                                {item.database_name}
-                              </div>
-                              <div>
-                                <span className='font-medium'>
-                                  Duration:
-                                </span>{' '}
-                                {formatDuration(item.duration_ms)}
-                              </div>
-                              <div>
-                                <span className='font-medium'>
-                                  Rows Affected:
-                                </span>{' '}
-                                {(item.rows_affected ?? 0).toLocaleString()}
-                              </div>
+                            <div>
+                              <span className='font-medium'>Log ID:</span>{' '}
+                              <span className='font-mono'>{item.log_id}</span>
+                            </div>
+                            <div>
+                              <span className='font-medium'>User:</span>{' '}
+                              {item.user_name}
+                            </div>
+                            <div>
+                              <span className='font-medium'>Database:</span>{' '}
+                              {item.database_name}
+                            </div>
+                            <div>
+                              <span className='font-medium'>Duration:</span>{' '}
+                              {formatDuration(item.duration_ms)}
+                            </div>
+                            <div>
+                              <span className='font-medium'>
+                                Rows Affected:
+                              </span>{' '}
+                              {(item.rows_affected ?? 0).toLocaleString()}
                             </div>
                           </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))
+            )}
+          </tbody>
+        </table>
+      </SimpleTableViewport>
 
       {/* ── Pagination ── */}
-      <div className='flex items-center justify-between gap-4'>
-        <div className='flex items-center gap-2 text-sm'>
-          <span className='text-muted-foreground'>Rows per page:</span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={handlePageSizeChange}
-          >
-            <SelectTrigger className='w-[70px]'>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value='10'>10</SelectItem>
-              <SelectItem value='25'>25</SelectItem>
-              <SelectItem value='50'>50</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className='flex items-center gap-2'>
-          <span className='text-sm text-muted-foreground'>
-            Page {page} of {totalPages || 1}
-          </span>
-          <div className='flex items-center gap-1'>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(1)}
-              disabled={page === 1}
-              className='h-8 w-8'
-            >
-              <ChevronsLeft className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page === 1}
-              className='h-8 w-8'
-            >
-              <ChevronLeft className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(page + 1)}
-              disabled={page >= totalPages}
-              className='h-8 w-8'
-            >
-              <ChevronRight className='h-4 w-4' />
-            </Button>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={() => handlePageChange(totalPages)}
-              disabled={page >= totalPages}
-              className='h-8 w-8'
-            >
-              <ChevronsRight className='h-4 w-4' />
-            </Button>
-          </div>
-        </div>
-      </div>
+      <SimpleTablePagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={handlePageChange}
+        onPageSizeChange={(value) => {
+          setPageSize(value)
+          setPage(1)
+          setExpandedRow(null)
+        }}
+      />
     </div>
   )
 }
