@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   TrendingUp,
@@ -211,9 +211,7 @@ export function MonitoringQueryCost() {
   const [sortField, setSortField] = useState<SortField>('event_time')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
-  const [isScrolling, setIsScrolling] = useState(false)
-  const scrollTimeoutRef = useRef<number | null>(null)
-
+    
   const isDarkMode =
     typeof document !== 'undefined' &&
     document.documentElement.classList.contains('dark')
@@ -255,6 +253,7 @@ export function MonitoringQueryCost() {
         `/monitoring/cost/history?${params.toString()}`
       )
     },
+    placeholderData: keepPreviousData,
   })
 
   const userOptions = useMemo(() => {
@@ -356,35 +355,10 @@ export function MonitoringQueryCost() {
     )
   }
 
-  const handleContainerScroll = () => {
-    setIsScrolling(true)
-
-    if (scrollTimeoutRef.current) {
-      window.clearTimeout(scrollTimeoutRef.current)
-    }
-
-    scrollTimeoutRef.current = window.setTimeout(() => {
-      setIsScrolling(false)
-      scrollTimeoutRef.current = null
-    }, 700)
-  }
-
-  useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current) {
-        window.clearTimeout(scrollTimeoutRef.current)
-      }
-    }
-  }, [])
-
   /* ---- render ---- */
 
   return (
-    <div
-      className='minimal-scrollbar flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pe-1'
-      data-scrolling={isScrolling ? 'true' : 'false'}
-      onScroll={handleContainerScroll}
-    >
+    <div className='minimal-scrollbar flex h-full min-h-0 flex-col gap-6 overflow-y-auto'>
       {/* Header */}
       <div>
         <h3 className='text-lg font-medium'>Query Cost</h3>
@@ -627,7 +601,7 @@ export function MonitoringQueryCost() {
       />
 
       {/* ── Cost History Table ── */}
-      <SimpleTableViewport>
+      <SimpleTableViewport className='min-h-[320px] shrink-0'>
         <table className='w-full'>
           <thead>
             <tr>

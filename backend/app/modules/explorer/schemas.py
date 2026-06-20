@@ -179,6 +179,12 @@ class MaterializedViewDetailResponse(BaseModel):
 class FunctionDetailResponse(BaseModel):
     name: str
     database: str
+    signature: str | None = None
+    return_type: str | None = None
+    function_type: str | None = None
+    properties: str | None = None
+    create_ddl: str | None = None
+    # Legacy fields (kept for backward compat)
     routine_type: str | None = None
     definition: str | None = None
     definer: str | None = None
@@ -199,3 +205,4 @@ class PipeDetailResponse(BaseModel):
     load_status: str | None = None
     last_error: str | None = None
     created_time: datetime | None = None
+    create_ddl: str | None = None

@@ -26,13 +26,13 @@ from app.modules.ai_ml.router import router as ai_router
 from app.modules.workspaces.router import router as workspaces_router
 from app.modules.monitoring.router import router as monitoring_router
 from app.modules.explorer.router import router as explorer_router
+from app.modules.functions.router import router as functions_router
+from app.modules.tasks.router import router as tasks_router
+from app.modules.pipes.router import router as pipes_router
 # from app.modules.query.router import router as query_router
 # from app.modules.objects.router import router as objects_router
 # from app.modules.tables.router import router as tables_router
 # from app.modules.views.router import router as views_router
-# from app.modules.functions.router import router as functions_router
-# from app.modules.tasks.router import router as tasks_router
-# from app.modules.pipes.router import router as pipes_router
 # from app.modules.external_catalogs.router import router as ext_router
 # from app.modules.cluster.router import router as cluster_router
 # from app.modules.resource_groups.router import router as rg_router
@@ -90,6 +90,9 @@ def create_app() -> FastAPI:
     app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["ai"])
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
+    app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])
+    app.include_router(tasks_router, prefix=f"{prefix}/tasks", tags=["tasks"])
+    app.include_router(pipes_router, prefix=f"{prefix}/pipes", tags=["pipes"])
 
     # Future modules:
     # app.include_router(query_router, prefix=f"{prefix}/query", tags=["query"])

@@ -2,9 +2,9 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertCircle,
+  ArrowRightLeft,
   Blocks,
   Box,
-  Boxes,
   ChevronRight,
   Clock3,
   Database,
@@ -146,6 +146,65 @@ type PipeSummary = {
   created_time: string | null
 }
 
+type PipeDetailResponse = {
+  name: string
+  database: string
+  pipe_id: number | null
+  state: string | null
+  target_table: string | null
+  properties: Record<string, string>
+  load_status: string | null
+  last_error: string | null
+  created_time: string | null
+  create_ddl: string | null
+}
+
+type ViewDetailResponse = {
+  name: string
+  database: string
+  definition: string | null
+  definer: string | null
+  security_type: string | null
+  is_updatable: string | null
+  create_ddl: string | null
+}
+
+type MVDetailResponse = {
+  name: string
+  database: string
+  definition: string | null
+  refresh_type: string | null
+  is_active: string | null
+  inactive_reason: string | null
+  task_name: string | null
+  last_refresh_state: string | null
+  last_refresh_error_message: string | null
+  last_refresh_start_time: string | null
+  last_refresh_finished_time: string | null
+  last_refresh_duration: number | null
+  table_rows: number | null
+  query_rewrite_status: string | null
+  creator: string | null
+}
+
+type FunctionDetailResponse = {
+  name: string
+  database: string
+  routine_type: string | null
+  definition: string | null
+  definer: string | null
+  created: string | null
+  last_altered: string | null
+  is_deterministic: string | null
+  sql_data_access: string | null
+  comment: string | null
+  signature: string | null
+  return_type: string | null
+  function_type: string | null
+  properties: string | null
+  create_ddl: string | null
+}
+
 type StageSummary = {
   name: string
   storage_connection: string | null
@@ -247,7 +306,7 @@ function getNodeIcon(type: ExplorerNodeType) {
     case 'view': return Eye
     case 'materialized_view': return Layers3
     case 'function': return Sigma
-    case 'pipe': return Boxes
+    case 'pipe': return ArrowRightLeft
     case 'stage': return Box
   }
 }
@@ -623,6 +682,18 @@ function ExplorerDetail({
   tableDetail,
   tableLoading,
   tableError,
+  pipeDetail,
+  pipeLoading,
+  pipeError,
+  viewDetail,
+  viewLoading,
+  viewError,
+  mvDetail,
+  mvLoading,
+  mvError,
+  fnDetail,
+  fnLoading,
+  fnError,
   catalogsData,
   dbCache,
 }: {
@@ -630,6 +701,18 @@ function ExplorerDetail({
   tableDetail?: TableDetailResponse | null
   tableLoading?: boolean
   tableError?: string | null
+  pipeDetail?: PipeDetailResponse | null
+  pipeLoading?: boolean
+  pipeError?: string | null
+  viewDetail?: ViewDetailResponse | null
+  viewLoading?: boolean
+  viewError?: string | null
+  mvDetail?: MVDetailResponse | null
+  mvLoading?: boolean
+  mvError?: string | null
+  fnDetail?: FunctionDetailResponse | null
+  fnLoading?: boolean
+  fnError?: string | null
   catalogsData?: CatalogsResponse | null
   dbCache?: Map<string, DatabaseObjectsResponse>
 }) {
@@ -1006,7 +1089,7 @@ function ExplorerDetail({
                 <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
                   {cached.pipes.map((p) => (
                     <div key={p.name} className='flex items-center gap-3 rounded-xl border border-border bg-background/60 p-4'>
-                      <Boxes className='h-4 w-4 shrink-0 text-muted-foreground' />
+                      <ArrowRightLeft className='h-4 w-4 shrink-0 text-muted-foreground' />
                       <div className='min-w-0'>
                         <p className='truncate text-sm font-semibold'>{p.name}</p>
                         <div className='mt-0.5 flex gap-2 text-xs text-muted-foreground'>
@@ -1062,6 +1145,444 @@ function ExplorerDetail({
   // ── Stage detail view — file browser ─────────────────────
   if (node.type === 'stage') {
     return <StageFilesPanel node={node} />
+  }
+
+  // ── Pipe detail view ──────────────────────────────────────
+  if (node.type === 'pipe') {
+    if (pipeLoading) {
+      return (
+        <div className='flex h-full min-h-[420px] items-center justify-center'>
+          <div className='flex items-center gap-2 text-sm text-muted-foreground'>
+            <Loader2 className='h-5 w-5 animate-spin' />
+            Loading pipe details...
+          </div>
+        </div>
+      )
+    }
+    if (pipeError) {
+      return (
+        <div className='flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive'>
+          <AlertCircle className='h-4 w-4' />
+          {pipeError}
+        </div>
+      )
+    }
+    if (pipeDetail) {
+      const stateColor =
+        pipeDetail.state === 'RUNNING'
+          ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+          : pipeDetail.state === 'SUSPENDED'
+            ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+            : pipeDetail.state === 'ERROR'
+              ? 'bg-red-500/10 text-red-600 border-red-500/20'
+              : ''
+
+      return (
+        <div className='space-y-5'>
+          {/* Header */}
+          <div className='flex flex-wrap items-center gap-3'>
+            <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
+              <ArrowRightLeft className='h-5 w-5' />
+            </div>
+            <div className='space-y-1'>
+              <div className='flex flex-wrap items-center gap-2'>
+                <h1 className='text-3xl font-semibold tracking-tight'>{pipeDetail.name}</h1>
+                <Badge variant='secondary'>Pipe</Badge>
+                {pipeDetail.state && (
+                  <Badge variant='outline' className={stateColor}>
+                    {pipeDetail.state}
+                  </Badge>
+                )}
+              </div>
+              <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+            </div>
+          </div>
+
+          {/* Properties */}
+          <section className='rounded-2xl border border-border bg-card/60 p-6'>
+            <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+            <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
+              {pipeDetail.pipe_id != null && (
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Pipe ID</p>
+                  <div className='text-base font-medium'>{pipeDetail.pipe_id}</div>
+                </div>
+              )}
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>State</p>
+                <div className='text-base font-medium'>{pipeDetail.state || '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Target Table</p>
+                <div className='text-base font-medium'>{pipeDetail.target_table || '—'}</div>
+              </div>
+              <div className='space-y-1 col-span-2'>
+                <p className='text-sm text-muted-foreground'>Load Status</p>
+                <div className='flex flex-wrap gap-x-4 gap-y-1 text-sm'>
+                  {(() => {
+                    try {
+                      const ls = typeof pipeDetail.load_status === 'string'
+                        ? JSON.parse(pipeDetail.load_status)
+                        : pipeDetail.load_status
+                      return (
+                        <>
+                          {ls.loadedFiles != null && <span className='font-medium'>{ls.loadedFiles} files loaded</span>}
+                          {ls.loadedBytes != null && <span className='text-muted-foreground'>{(ls.loadedBytes / 1024).toFixed(1)} KB</span>}
+                          {ls.lastLoadedTime && <span className='text-muted-foreground'>Last: {ls.lastLoadedTime}</span>}
+                        </>
+                      )
+                    } catch {
+                      return <span className='font-medium break-all'>{pipeDetail.load_status || '—'}</span>
+                    }
+                  })()}
+                </div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Created</p>
+                <div className='text-base font-medium'>
+                  {pipeDetail.created_time ? pipeDetail.created_time.split('T')[0] : '—'}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Pipe Properties (from PROPERTIES column) */}
+          {Object.keys(pipeDetail.properties).length > 0 && (
+            <section className='rounded-2xl border border-border bg-card/60 p-6'>
+              <h2 className='mb-4 text-xl font-semibold'>Pipe Configuration</h2>
+              <div className='grid gap-x-6 gap-y-4 md:grid-cols-2'>
+                {Object.entries(pipeDetail.properties).map(([k, v]) => (
+                  <div key={k} className='space-y-1'>
+                    <p className='text-sm text-muted-foreground'>
+                      {k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                    </p>
+                    <div className='text-base font-medium break-all'>{v}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Last Error */}
+          {pipeDetail.last_error && (
+            <section className='rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+              <h2 className='mb-3 flex items-center gap-2 text-xl font-semibold text-destructive'>
+                <AlertCircle className='h-5 w-5' />
+                Last Error
+              </h2>
+              <pre className='overflow-x-auto whitespace-pre-wrap rounded-lg bg-destructive/5 p-4 text-sm leading-relaxed text-destructive'>
+                {pipeDetail.last_error}
+              </pre>
+            </section>
+          )}
+
+          {/* DDL */}
+          {pipeDetail.create_ddl && (
+            <section className='rounded-2xl border border-border bg-card/60 p-6'>
+              <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
+              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
+                <code>{pipeDetail.create_ddl}</code>
+              </pre>
+            </section>
+          )}
+        </div>
+      )
+    }
+  }
+
+  // ── View detail view ───────────────────────────────────
+  if (node.type === 'view') {
+    if (viewLoading) {
+      return (
+        <div className='flex h-full min-h-[420px] items-center justify-center'>
+          <div className='flex items-center gap-2 text-sm text-muted-foreground'>
+            <Loader2 className='h-5 w-5 animate-spin' />
+            Loading view details...
+          </div>
+        </div>
+      )
+    }
+    if (viewError) {
+      return (
+        <div className='flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+          <div className='flex items-center gap-2 text-sm text-destructive'>
+            <AlertCircle className='h-4 w-4' />
+            {viewError}
+          </div>
+        </div>
+      )
+    }
+    if (viewDetail) {
+      return (
+        <div className='space-y-5'>
+          {/* Header */}
+          <div className='flex flex-wrap items-center gap-3'>
+            <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
+              <Eye className='h-5 w-5' />
+            </div>
+            <div className='space-y-1'>
+              <div className='flex flex-wrap items-center gap-2'>
+                <h1 className='text-3xl font-semibold tracking-tight'>{viewDetail.name}</h1>
+                <Badge variant='secondary'>View</Badge>
+                {viewDetail.is_updatable === 'YES' && (
+                  <Badge variant='outline'>Updatable</Badge>
+                )}
+              </div>
+              <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+            </div>
+          </div>
+
+          {/* Properties */}
+          <section className='rounded-2xl border border-border bg-card/60 p-6'>
+            <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+            <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Definer</p>
+                <div className='text-base font-medium'>{viewDetail.definer || '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Security Type</p>
+                <div className='text-base font-medium'>{viewDetail.security_type || '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Updatable</p>
+                <div className='text-base font-medium'>{viewDetail.is_updatable || '—'}</div>
+              </div>
+            </div>
+          </section>
+
+          {/* DDL */}
+          {viewDetail.create_ddl && (
+            <section className='rounded-2xl border border-border bg-card/60 p-6'>
+              <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
+              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
+                <code>{viewDetail.create_ddl}</code>
+              </pre>
+            </section>
+          )}
+
+          {/* Definition (fallback if no DDL) */}
+          {!viewDetail.create_ddl && viewDetail.definition && (
+            <section className='rounded-2xl border border-border bg-card/60 p-6'>
+              <h2 className='mb-4 text-xl font-semibold'>Definition</h2>
+              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
+                <code>{viewDetail.definition}</code>
+              </pre>
+            </section>
+          )}
+        </div>
+      )
+    }
+  }
+
+  // ── Materialized View detail view ──────────────────────
+  if (node.type === 'materialized_view') {
+    if (mvLoading) {
+      return (
+        <div className='flex h-full min-h-[420px] items-center justify-center'>
+          <div className='flex items-center gap-2 text-sm text-muted-foreground'>
+            <Loader2 className='h-5 w-5 animate-spin' />
+            Loading materialized view details...
+          </div>
+        </div>
+      )
+    }
+    if (mvError) {
+      return (
+        <div className='flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+          <div className='flex items-center gap-2 text-sm text-destructive'>
+            <AlertCircle className='h-4 w-4' />
+            {mvError}
+          </div>
+        </div>
+      )
+    }
+    if (mvDetail) {
+      const activeColor =
+        mvDetail.is_active === 'true'
+          ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+          : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+
+      return (
+        <div className='space-y-5'>
+          {/* Header */}
+          <div className='flex flex-wrap items-center gap-3'>
+            <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
+              <Layers3 className='h-5 w-5' />
+            </div>
+            <div className='space-y-1'>
+              <div className='flex flex-wrap items-center gap-2'>
+                <h1 className='text-3xl font-semibold tracking-tight'>{mvDetail.name}</h1>
+                <Badge variant='secondary'>Materialized View</Badge>
+                {mvDetail.is_active && (
+                  <Badge variant='outline' className={activeColor}>
+                    {mvDetail.is_active === 'true' ? 'Active' : 'Inactive'}
+                  </Badge>
+                )}
+              </div>
+              <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+            </div>
+          </div>
+
+          {/* Properties */}
+          <section className='rounded-2xl border border-border bg-card/60 p-6'>
+            <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+            <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Refresh Type</p>
+                <div className='text-base font-medium'>{mvDetail.refresh_type || '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Last Refresh State</p>
+                <div className='text-base font-medium'>{mvDetail.last_refresh_state || '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Task Name</p>
+                <div className='text-base font-medium'>{mvDetail.task_name || '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Table Rows</p>
+                <div className='text-base font-medium'>{mvDetail.table_rows ?? '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Query Rewrite</p>
+                <div className='text-base font-medium'>{mvDetail.query_rewrite_status || '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Creator</p>
+                <div className='text-base font-medium'>{mvDetail.creator || '—'}</div>
+              </div>
+              {mvDetail.last_refresh_duration != null && (
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Last Refresh Duration</p>
+                  <div className='text-base font-medium'>{mvDetail.last_refresh_duration}ms</div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Last Refresh Error */}
+          {mvDetail.last_refresh_error_message && (
+            <section className='rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+              <h2 className='mb-3 flex items-center gap-2 text-xl font-semibold text-destructive'>
+                <AlertCircle className='h-5 w-5' />
+                Last Refresh Error
+              </h2>
+              <pre className='overflow-x-auto whitespace-pre-wrap rounded-lg bg-destructive/5 p-4 text-sm leading-relaxed text-destructive'>
+                {mvDetail.last_refresh_error_message}
+              </pre>
+            </section>
+          )}
+
+          {/* DDL / Definition */}
+          {mvDetail.definition && (
+            <section className='rounded-2xl border border-border bg-card/60 p-6'>
+              <h2 className='mb-4 text-xl font-semibold'>Definition</h2>
+              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
+                <code>{mvDetail.definition}</code>
+              </pre>
+            </section>
+          )}
+        </div>
+      )
+    }
+  }
+
+  // ── Function detail view ─────────────────────────────
+  if (node.type === 'function') {
+    if (fnLoading) {
+      return (
+        <div className='flex h-full min-h-[420px] items-center justify-center'>
+          <div className='flex items-center gap-2 text-sm text-muted-foreground'>
+            <Loader2 className='h-5 w-5 animate-spin' />
+            Loading function details...
+          </div>
+        </div>
+      )
+    }
+    if (fnError) {
+      return (
+        <div className='flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/5 p-6'>
+          <div className='flex items-center gap-2 text-sm text-destructive'>
+            <AlertCircle className='h-4 w-4' />
+            {fnError}
+          </div>
+        </div>
+      )
+    }
+    if (fnDetail) {
+      return (
+        <div className='space-y-5'>
+          {/* Header */}
+          <div className='flex flex-wrap items-center gap-3'>
+            <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary'>
+              <Sigma className='h-5 w-5' />
+            </div>
+            <div className='space-y-1'>
+              <div className='flex flex-wrap items-center gap-2'>
+                <h1 className='text-3xl font-semibold tracking-tight'>{fnDetail.name}</h1>
+                <Badge variant='secondary'>{fnDetail.function_type || 'Function'}</Badge>
+                {fnDetail.return_type && (
+                  <Badge variant='outline'>→ {fnDetail.return_type}</Badge>
+                )}
+              </div>
+              <p className='text-sm text-muted-foreground'>{node.path.join(' / ')}</p>
+            </div>
+          </div>
+
+          {/* Properties */}
+          <section className='rounded-2xl border border-border bg-card/60 p-6'>
+            <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+            <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
+              {fnDetail.signature && (
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Signature</p>
+                  <div className='text-base font-medium font-mono'>{fnDetail.signature}</div>
+                </div>
+              )}
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Return Type</p>
+                <div className='text-base font-medium'>{fnDetail.return_type || '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Definer</p>
+                <div className='text-base font-medium'>{fnDetail.definer || '—'}</div>
+              </div>
+              <div className='space-y-1'>
+                <p className='text-sm text-muted-foreground'>Deterministic</p>
+                <div className='text-base font-medium'>{fnDetail.is_deterministic || '—'}</div>
+              </div>
+              {fnDetail.created && (
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Created</p>
+                  <div className='text-base font-medium'>{String(fnDetail.created).split('T')[0]}</div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* DDL */}
+          {fnDetail.create_ddl && (
+            <section className='rounded-2xl border border-border bg-card/60 p-6'>
+              <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
+              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
+                <code>{fnDetail.create_ddl}</code>
+              </pre>
+            </section>
+          )}
+
+          {/* Definition fallback */}
+          {!fnDetail.create_ddl && fnDetail.definition && (
+            <section className='rounded-2xl border border-border bg-card/60 p-6'>
+              <h2 className='mb-4 text-xl font-semibold'>Definition</h2>
+              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
+                <code>{fnDetail.definition}</code>
+              </pre>
+            </section>
+          )}
+        </div>
+      )
+    }
   }
 
   // ── Group / generic detail view ──────────────────────────
@@ -1918,6 +2439,46 @@ export function DatabaseExplorerPage() {
     enabled: !!tableQueryDb && !!tableQueryName,
   })
 
+  // Fetch pipe detail when a pipe is selected
+  const pipeQueryDb = selectedNode?.database
+  const pipeQueryName = selectedNode?.type === 'pipe' ? selectedNode.label : null
+
+  const { data: pipeDetail, isLoading: pipeLoading, error: pipeError } = useQuery<PipeDetailResponse>({
+    queryKey: ['explorer-pipe', pipeQueryDb, pipeQueryName],
+    queryFn: () => api.get(`/explorer/databases/${pipeQueryDb}/pipes/${pipeQueryName}`),
+    enabled: !!pipeQueryDb && !!pipeQueryName,
+  })
+
+  // Fetch view detail when a view is selected
+  const viewQueryDb = selectedNode?.database
+  const viewQueryName = selectedNode?.type === 'view' ? selectedNode.label : null
+
+  const { data: viewDetail, isLoading: viewLoading, error: viewError } = useQuery<ViewDetailResponse>({
+    queryKey: ['explorer-view', viewQueryDb, viewQueryName],
+    queryFn: () => api.get(`/explorer/databases/${viewQueryDb}/views/${viewQueryName}`),
+    enabled: !!viewQueryDb && !!viewQueryName,
+  })
+
+  // Fetch MV detail when a materialized view is selected
+  const mvQueryDb = selectedNode?.database
+  const mvQueryName = selectedNode?.type === 'materialized_view' ? selectedNode.label : null
+
+  const { data: mvDetail, isLoading: mvLoading, error: mvError } = useQuery<MVDetailResponse>({
+    queryKey: ['explorer-mv', mvQueryDb, mvQueryName],
+    queryFn: () => api.get(`/explorer/databases/${mvQueryDb}/mvs/${mvQueryName}`),
+    enabled: !!mvQueryDb && !!mvQueryName,
+  })
+
+  // Fetch function detail when a function is selected
+  const fnQueryDb = selectedNode?.database
+  const fnQueryName = selectedNode?.type === 'function' ? selectedNode.label : null
+
+  const { data: fnDetail, isLoading: fnLoading, error: fnError } = useQuery<FunctionDetailResponse>({
+    queryKey: ['explorer-fn', fnQueryDb, fnQueryName],
+    queryFn: () => api.get(`/explorer/databases/${fnQueryDb}/functions/${fnQueryName}`),
+    enabled: !!fnQueryDb && !!fnQueryName,
+  })
+
   // Handlers
   const toggleExpanded = useCallback((id: string) => {
     setExpandedIds((current) => {
@@ -2033,6 +2594,18 @@ export function DatabaseExplorerPage() {
             tableDetail={tableDetail}
             tableLoading={tableLoading}
             tableError={tableError ? String(tableError) : null}
+            pipeDetail={pipeDetail}
+            pipeLoading={pipeLoading}
+            pipeError={pipeError ? String(pipeError) : null}
+            viewDetail={viewDetail}
+            viewLoading={viewLoading}
+            viewError={viewError ? String(viewError) : null}
+            mvDetail={mvDetail}
+            mvLoading={mvLoading}
+            mvError={mvError ? String(mvError) : null}
+            fnDetail={fnDetail}
+            fnLoading={fnLoading}
+            fnError={fnError ? String(fnError) : null}
             catalogsData={catalogsData}
             dbCache={dbCache}
           />

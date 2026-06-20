@@ -67,9 +67,14 @@ import { Header } from '@/components/layout/header'
 import { DatabaseSchemaSelector } from './database-schema-selector'
 import {
   type CompletionResponse,
+  buildStageCompletionPath,
   extractStageCompletionContext,
   formatStageCompletionDetail,
+  getStageFileExtension,
   getStageCompletionInsertText,
+  getStageCompletionKind,
+  getStageCompletionReplacementRange,
+  getStageCompletionSortText,
   shouldTriggerStageSuggestions,
 } from './stage-completion'
 import { useTheme } from '@/context/theme-provider'
@@ -180,6 +185,17 @@ type HistoryResponse = {
 type MonacoEditorInstance = Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0]
 
 let activeSqlEditorInstance: MonacoEditorInstance | null = null
+
+function getSqlForExecution(fallbackSql: string) {
+  const editor = activeSqlEditorInstance
+  const selection = editor?.getSelection()
+  const selectedSql =
+    editor && selection && !selection.isEmpty()
+      ? editor.getModel()?.getValueInRange(selection).trim()
+      : ''
+
+  return selectedSql || fallbackSql.trim()
+}
 
 const SQL_KEYWORDS = [
   // Core DQL
@@ -687,7 +703,6 @@ export function WorkspacesPage() {
   const saveTimerRef = useRef<number | null>(null)
   const stateSaveTimerRef = useRef<number | null>(null)
   const editorContentRef = useRef('')
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
     queryKey: ['workspace-tree'],
@@ -774,13 +789,8 @@ export function WorkspacesPage() {
       window.clearTimeout(saveTimerRef.current)
     }
     saveTimerRef.current = window.setTimeout(() => {
-      setSaveStatus('saving')
       void saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, activeTab.role)
-        .then(() => {
-          setSaveStatus('saved')
-          window.setTimeout(() => setSaveStatus('idle'), 2000)
-        })
-        .catch(() => setSaveStatus('idle'))
+        .catch(() => {})
     }, 700)
     return () => {
       if (saveTimerRef.current) {
@@ -1036,14 +1046,16 @@ export function WorkspacesPage() {
     }
   }
 
-  async function runQuery(confirmDestructive = false) {
+  async function runQuery(confirmDestructive = false, sqlOverride?: string) {
     if (!activeTab) return
-    const sql = editorContentRef.current.trim() || activeTab.content.trim()
+    const sql =
+      sqlOverride?.trim() ||
+      getSqlForExecution(editorContentRef.current || activeTab.content)
     if (!sql) return
     if (!confirmDestructive && isDestructiveSql(sql)) {
       const ok = window.confirm('This query looks destructive. Do you want to run it?')
       if (!ok) return
-      return runQuery(true)
+      return runQuery(true, sql)
     }
     setRunning(true)
     setQueryResults(null)
@@ -1469,16 +1481,6 @@ export function WorkspacesPage() {
                     Run
                   </Button>
                 )}
-                {saveStatus !== 'idle' && (
-                  <span
-                    className={cn(
-                      'text-xs transition-opacity',
-                      saveStatus === 'saving' ? 'text-muted-foreground' : 'text-green-600 dark:text-green-400'
-                    )}
-                  >
-                    {saveStatus === 'saving' ? 'Saving...' : '✓ Saved'}
-                  </span>
-                )}
                 <Button
                   size='sm'
                   variant='outline'
@@ -1765,7 +1767,7 @@ export function WorkspacesPage() {
                             content: sql,
                           },
                         }))
-                        void runQuery()
+                        void runQuery(false, sql)
                       }}
                     />
                   )}
@@ -3855,6 +3857,11 @@ function MonacoSqlEditor({
     }
   }, [])
 
+  useEffect(() => {
+    completionRequestRef.current?.controller.abort()
+    completionRequestRef.current = null
+  }, [database, schema])
+
   async function provideCompletions(
     textUntilPosition: string,
     signal?: AbortSignal
@@ -3863,6 +3870,17 @@ function MonacoSqlEditor({
     const curDb = databaseRef.current
     const curSchema = schemaRef.current
     const curRole = roleRef.current
+
+    // @stage context is exclusive: never mix stage suggestions with SQL
+    // relations, keywords, or Monaco word-based suggestions.
+    const stageContext = extractStageCompletionContext(textUntilPosition)
+    if (stageContext) {
+      const response = await api.get<CompletionResponse>(
+        buildStageCompletionPath(curDb, stageContext),
+        signal
+      )
+      return response.items
+    }
 
     const relationContext = extractRelationCompletionContext(textUntilPosition)
     if (relationContext?.type === 'database') {
@@ -3890,23 +3908,6 @@ function MonacoSqlEditor({
     if (relationContext?.type === 'object') {
       const response = await api.get<CompletionResponse>(
         `/query/completions?kind=object&database=${encodeURIComponent(relationContext.database)}&schema=${encodeURIComponent(relationContext.schema)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`,
-        signal
-      )
-      return response.items
-    }
-
-    const stageContext = extractStageCompletionContext(textUntilPosition)
-    if (stageContext?.kind === 'stage_path') {
-      const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=stage_file&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&stage=${encodeURIComponent(stageContext.stage)}&folder=${encodeURIComponent(stageContext.folder)}&prefix=${encodeURIComponent(stageContext.prefix)}`,
-        signal
-      )
-      return response.items
-    }
-
-    if (stageContext?.kind === 'stage') {
-      const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=stage&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&prefix=${encodeURIComponent(stageContext.prefix)}`,
         signal
       )
       return response.items
@@ -4069,17 +4070,22 @@ function MonacoSqlEditor({
 
           const stageContext = extractStageCompletionContext(textUntilPosition)
           const stageRange = stageContext
-            ? {
-                startLineNumber: position.lineNumber,
-                startColumn: Math.max(1, position.column - stageContext.prefix.length),
-                endLineNumber: position.lineNumber,
-                endColumn: position.column,
-              }
+            ? getStageCompletionReplacementRange(
+                position.lineNumber,
+                position.column,
+                stageContext
+              )
             : undefined
 
           return {
             suggestions: items.map((item) => ({
-              label: item.label,
+              label:
+                getStageCompletionKind(item) === 'file'
+                  ? {
+                      label: item.label,
+                      description: getStageFileExtension(item) ?? 'FILE',
+                    }
+                  : item.label,
               kind:
                 item.type === 'keyword'
                   ? monaco.languages.CompletionItemKind.Keyword
@@ -4091,14 +4097,20 @@ function MonacoSqlEditor({
                         ? monaco.languages.CompletionItemKind.Field
                         : item.type === 'column'
                           ? monaco.languages.CompletionItemKind.Field
-                          : item.type === 'stage'
+                          : getStageCompletionKind(item) === 'stage'
                             ? monaco.languages.CompletionItemKind.Module
-                            : item.type === 'stage_folder'
+                            : getStageCompletionKind(item) === 'folder'
                               ? monaco.languages.CompletionItemKind.Folder
-                              : item.type === 'stage_file'
+                              : getStageCompletionKind(item) === 'file'
                                 ? monaco.languages.CompletionItemKind.File
                                 : monaco.languages.CompletionItemKind.Variable,
               insertText: getStageCompletionInsertText(item),
+              sortText:
+                item.type === 'stage' ||
+                item.type === 'stage_folder' ||
+                item.type === 'stage_file'
+                  ? getStageCompletionSortText(item)
+                  : undefined,
               detail:
                 item.type === 'stage' || item.type === 'stage_folder' || item.type === 'stage_file'
                   ? formatStageCompletionDetail(item)
@@ -4190,6 +4202,11 @@ function MonacoSqlEditor({
         lineHeight: 22,
         automaticLayout: true,
         wordWrap: 'on',
+        wordBasedSuggestions: 'off',
+        suggest: {
+          showWords: false,
+        },
+        suggestOnTriggerCharacters: true,
         scrollBeyondLastLine: false,
         renderLineHighlight: 'none',
         overviewRulerBorder: false,

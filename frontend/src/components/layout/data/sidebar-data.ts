@@ -11,6 +11,7 @@ import {
   Users,
   Zap,
   Activity,
+  Workflow,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -38,6 +39,11 @@ export const sidebarData: SidebarData = {
           title: 'Database Explorer',
           url: '/database-explorer',
           icon: Database,
+        },
+        {
+          title: 'Tasks',
+          url: '/tasks-manager',
+          icon: Workflow,
         },
       ],
     },
@@ -90,7 +96,7 @@ export const sidebarData: SidebarData = {
             },
             {
               title: 'Query Cost',
-              url: '/monitoring/cost',
+              url: '/query-cost',
               icon: TrendingUp,
             },
             {

@@ -1291,7 +1291,7 @@ export function Users() {
 
       <Dialog
         open={Boolean(resetPasswordUser)}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           if (!open) {
             setResetPasswordUser(null)
             setGeneratedPassword('')
@@ -1343,7 +1343,7 @@ export function Users() {
 
       <Dialog
         open={Boolean(roleActionState)}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           if (!open) setRoleActionState(null)
         }}
       >
@@ -1440,7 +1440,7 @@ export function Users() {
 
       <ConfirmDialog
         open={Boolean(deletingUser)}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           if (!open && !deleteUserSubmitting) {
             setDeletingUser(null)
           }
@@ -1470,7 +1470,7 @@ export function Users() {
 
       <Sheet
         open={Boolean(editingUser)}
-        onOpenChange={(open) => !open && setEditingUser(null)}
+        onOpenChange={(open: boolean) => !open && setEditingUser(null)}
       >
         <SheetContent className='w-full sm:max-w-2xl'>
           <SheetHeader>
@@ -1735,7 +1735,7 @@ export function Users() {
 
       <Sheet
         open={Boolean(editingRole)}
-        onOpenChange={(open) => !open && setEditingRole(null)}
+        onOpenChange={(open: boolean) => !open && setEditingRole(null)}
       >
         <SheetContent className='w-full sm:max-w-4xl'>
           <SheetHeader>
@@ -2129,7 +2129,7 @@ export function Users() {
                           <label className='flex items-center gap-3 rounded-lg border px-3 py-2 text-sm'>
                             <Checkbox
                               checked={privilegeForm.withGrantOption}
-                              onCheckedChange={(checked) =>
+                              onCheckedChange={(checked : boolean) =>
                                 setPrivilegeForm((current) => ({
                                   ...current,
                                   withGrantOption: checked === true,

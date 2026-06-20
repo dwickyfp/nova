@@ -67,7 +67,7 @@ def test_stage_file_completion_items_limit_results():
 
 
 @pytest.mark.asyncio
-async def test_stage_completion_requires_active_database_and_schema():
+async def test_stage_completion_requires_active_database():
     service = QueryService()
 
     with (
@@ -78,7 +78,7 @@ async def test_stage_completion_requires_active_database_and_schema():
             username="analyst",
             encrypted_password="encrypted",
             kind="stage",
-            database="analytics",
+            database=None,
             schema=None,
         )
 
@@ -104,10 +104,24 @@ async def test_list_stage_files_uses_slash_storage_prefix():
         result = await service._list_stage_files(
             "sales",
             "analytics",
-            "default",
             folder="raw.daily",
         )
 
     assert result == expected
-    assert execute_system.await_args.args[1] == ["sales", "analytics", "default"]
+    assert execute_system.await_args.args[1] == ["sales", "analytics"]
     list_files.assert_awaited_once_with("stage-id", prefix="raw/daily")
+
+
+@pytest.mark.asyncio
+async def test_list_stages_is_scoped_to_database_only():
+    service = QueryService()
+
+    with patch(
+        "app.modules.query.service.db.execute_system",
+        new=AsyncMock(return_value={"rows": [["raw_data"]]}),
+    ) as execute_system:
+        result = await service._list_stages("NOVA_ANALYTICS")
+
+    assert result == ["raw_data"]
+    assert execute_system.await_args.args[1] == ["NOVA_ANALYTICS"]
+    assert "schema_name" not in execute_system.await_args.args[0].split("WHERE", 1)[1]

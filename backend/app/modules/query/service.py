@@ -511,14 +511,14 @@ class QueryService:
             columns = await self._list_columns(username, password, database, table, role)
             return {"items": self._filter_strings(columns, prefix, "column")}
         if kind == "stage":
-            if not database or not schema:
+            if not database:
                 return {"items": []}
-            stages = await self._list_stages(database, schema)
+            stages = await self._list_stages(database)
             return {"items": self._stage_completion_items(stages, prefix)}
         if kind == "stage_file" and stage:
-            if not database or not schema:
+            if not database:
                 return {"items": []}
-            rows = await self._list_stage_files(stage, database, schema, folder=folder)
+            rows = await self._list_stage_files(stage, database, folder=folder)
             return {"items": self._stage_file_completion_items(rows, prefix)}
 
         objects = await self._list_objects(username, password, database, role)
@@ -774,16 +774,15 @@ class QueryService:
     async def _list_stages(
         self,
         database: str,
-        schema: str,
     ) -> list[str]:
         result = await db.execute_system(
             """
-            SELECT name
+            SELECT DISTINCT name
             FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE database_name = %s AND schema_name = %s
+            WHERE database_name = %s
             ORDER BY name
             """,
-            [database, schema],
+            [database],
         )
         return [row[0] for row in result["rows"]]
 
@@ -791,7 +790,6 @@ class QueryService:
         self,
         stage_name: str,
         database: str,
-        schema: str,
         folder: str | None = None,
     ) -> list[dict]:
         from app.modules.stages.service import stage_service
@@ -800,10 +798,11 @@ class QueryService:
             """
             SELECT id
             FROM NOVA_SYSTEM.CONFIG_STAGES
-            WHERE name = %s AND database_name = %s AND schema_name = %s
+            WHERE name = %s AND database_name = %s
+            ORDER BY schema_name
             LIMIT 1
             """,
-            [stage_name, database, schema],
+            [stage_name, database],
         )
         if not result["rows"]:
             return []

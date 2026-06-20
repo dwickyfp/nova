@@ -133,22 +133,24 @@ class ExplorerRepository:
         ]
 
     async def list_functions(self, database: str) -> list[dict]:
-        """UDFs via information_schema.routines."""
-        sql = (
-            "SELECT ROUTINE_NAME, ROUTINE_TYPE, DEFINER, CREATED "
-            "FROM information_schema.routines "
-            "WHERE ROUTINE_SCHEMA = %s"
-        )
-        result = await db.execute_system(sql, [database])
-        return [
-            {
-                "name": row[0],
-                "routine_type": row[1],
-                "definer": row[2],
-                "created": row[3],
-            }
-            for row in result["rows"]
-        ]
+        """UDFs via SHOW FULL FUNCTIONS."""
+        try:
+            result = await db.execute_system(
+                f"SHOW FULL FUNCTIONS FROM {database}"
+            )
+            return [
+                {
+                    "name": row[0].split("(")[0] if row[0] else "",
+                    "signature": row[0],
+                    "routine_type": row[2] or "FUNCTION",
+                    "definer": None,
+                    "created": None,
+                    "return_type": row[1],
+                }
+                for row in result["rows"]
+            ]
+        except Exception:
+            return []
 
     async def list_pipes(self, database: str) -> list[dict]:
         """Pipes via information_schema.pipes."""
@@ -393,30 +395,31 @@ class ExplorerRepository:
         }
 
     async def get_function_detail(self, database: str, fn: str) -> dict | None:
-        """Function detail from information_schema.routines."""
-        sql = (
-            "SELECT ROUTINE_NAME, ROUTINE_TYPE, ROUTINE_DEFINITION, "
-            "DEFINER, CREATED, LAST_ALTERED, IS_DETERMINISTIC, "
-            "SQL_DATA_ACCESS, ROUTINE_COMMENT "
-            "FROM information_schema.routines "
-            "WHERE ROUTINE_SCHEMA = %s AND ROUTINE_NAME = %s"
-        )
-        result = await db.execute_system(sql, [database, fn])
-        if not result["rows"]:
-            return None
-        r = result["rows"][0]
-        return {
-            "name": r[0],
-            "database": database,
-            "routine_type": r[1],
-            "definition": r[2],
-            "definer": r[3],
-            "created": r[4],
-            "last_altered": r[5],
-            "is_deterministic": r[6],
-            "sql_data_access": r[7],
-            "comment": r[8],
-        }
+        """Function detail via SHOW FULL FUNCTIONS."""
+        try:
+            result = await db.execute_system(
+                f"SHOW FULL FUNCTIONS FROM {database}"
+            )
+            for row in result["rows"]:
+                sig = row[0] if row[0] else ""
+                name = sig.split("(")[0] if sig else ""
+                if name == fn:
+                    return {
+                        "name": name,
+                        "database": database,
+                        "signature": sig,
+                        "return_type": row[1],
+                        "function_type": row[2],
+                        "properties": row[4] if len(row) > 4 else None,
+                        "create_ddl": (
+                            f"CREATE FUNCTION {database}.{sig}\n"
+                            f"RETURNS {row[1]}\n"
+                            f"AS {row[4] if len(row) > 4 else ''}"
+                        ),
+                    }
+        except Exception:
+            pass
+        return None
 
     async def get_pipe_detail(self, database: str, pipe: str) -> dict | None:
         """Pipe detail from information_schema.pipes."""
@@ -434,10 +437,18 @@ class ExplorerRepository:
         props = {}
         if props_raw:
             try:
-                props = json.loads(props_raw) if isinstance(props_raw, str) else props_raw
+                if isinstance(props_raw, str) and props_raw.startswith("{"):
+                    props = json.loads(props_raw)
+                elif isinstance(props_raw, str) and "=" in props_raw:
+                    # Parse StarRocks format: 'key'='value','key2'='value2'
+                    import re
+                    for m in re.finditer(r"'(\w+)'\s*=\s*'([^']*)'", props_raw):
+                        props[m.group(1)] = m.group(2)
+                elif isinstance(props_raw, dict):
+                    props = props_raw
             except (json.JSONDecodeError, TypeError):
                 pass
-        return {
+        detail = {
             "name": r[1],
             "database": database,
             "pipe_id": r[0],
@@ -448,6 +459,21 @@ class ExplorerRepository:
             "last_error": r[6],
             "created_time": r[7],
         }
+
+        # Reconstruct DDL from available info
+        props_str = ", ".join(f'"{k}" = "{v}"' for k, v in props.items()) if props else ""
+        detail["create_ddl"] = (
+            f"CREATE PIPE {database}.{r[1]}\n"
+            f"PROPERTIES (\n"
+            f"    {props_str}\n"
+            f")\n"
+            f"AS\n"
+            f"INSERT INTO {r[3]}\n"
+            f"SELECT ...\n"
+            f"FROM FILES(...)"
+        )
+
+        return detail
 
 
 explorer_repo = ExplorerRepository()

@@ -23,6 +23,24 @@ export type StageCompletionContext =
       prefix: string
     }
 
+export type StageCompletionKind = 'stage' | 'folder' | 'file' | 'other'
+
+export function buildStageCompletionPath(
+  database: string,
+  context: StageCompletionContext
+): string {
+  const params = new URLSearchParams({
+    kind: context.kind === 'stage' ? 'stage' : 'stage_file',
+    database,
+    prefix: context.prefix,
+  })
+  if (context.kind === 'stage_path') {
+    params.set('stage', context.stage)
+    params.set('folder', context.folder)
+  }
+  return `/query/completions?${params.toString()}`
+}
+
 export function extractStageCompletionContext(
   textUntilPosition: string
 ): StageCompletionContext | null {
@@ -61,11 +79,49 @@ export function shouldTriggerStageSuggestions(item: CompletionItem): boolean {
   return item.type === 'stage' || item.type === 'stage_folder'
 }
 
+export function getStageCompletionKind(
+  item: CompletionItem
+): StageCompletionKind {
+  if (item.type === 'stage') return 'stage'
+  if (item.type === 'stage_folder') return 'folder'
+  if (item.type === 'stage_file') return 'file'
+  return 'other'
+}
+
+export function getStageCompletionSortText(item: CompletionItem): string {
+  const kind = getStageCompletionKind(item)
+  const rank =
+    kind === 'folder' ? '0' : kind === 'stage' ? '1' : kind === 'file' ? '2' : '3'
+  return `${rank}-${item.label.toLowerCase()}`
+}
+
+export function getStageCompletionReplacementRange(
+  lineNumber: number,
+  column: number,
+  context: StageCompletionContext
+) {
+  return {
+    startLineNumber: lineNumber,
+    startColumn: Math.max(1, column - context.prefix.length),
+    endLineNumber: lineNumber,
+    endColumn: column,
+  }
+}
+
+export function getStageFileExtension(item: CompletionItem): string | null {
+  if (item.type !== 'stage_file') return null
+  const fileName = item.label.split('/').pop() ?? item.label
+  const extensionIndex = fileName.lastIndexOf('.')
+  if (extensionIndex <= 0 || extensionIndex === fileName.length - 1) return null
+  return fileName.slice(extensionIndex + 1).toUpperCase()
+}
+
 export function formatStageCompletionDetail(item: CompletionItem): string {
   if (item.type === 'stage') return item.detail ?? 'Stage'
   if (item.type === 'stage_folder') return item.detail ?? 'Folder'
 
-  const details = [item.detail ?? 'Stage file']
+  const extension = getStageFileExtension(item)
+  const details = [extension ? `${extension} file` : item.detail ?? 'Stage file']
   if (typeof item.size === 'number') {
     details.push(formatBytes(item.size))
   }
