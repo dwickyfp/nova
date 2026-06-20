@@ -2097,6 +2097,7 @@ interface ResizableSidebarProps {
   searchQuery: string
   setSearchQuery: (v: string) => void
   catalogsLoading: boolean
+  isRefreshing: boolean
   catalogsError: unknown
   filteredTree: ExplorerNode[]
   expandedIds: Set<string>
@@ -2117,6 +2118,7 @@ function ResizableExplorerSidebar({
   searchQuery,
   setSearchQuery,
   catalogsLoading,
+  isRefreshing,
   catalogsError,
   filteredTree,
   expandedIds,
@@ -2240,10 +2242,11 @@ function ResizableExplorerSidebar({
           <button
             type='button'
             onClick={handleRefresh}
-            className='inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+            disabled={isRefreshing || catalogsLoading}
+            className='inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50'
             aria-label='Refresh'
           >
-            <RefreshCw className={cn('h-3.5 w-3.5', catalogsLoading && 'animate-spin')} />
+            <RefreshCw className={cn('h-3.5 w-3.5 transition-transform', (isRefreshing || catalogsLoading) && 'animate-spin')} />
           </button>
         </div>
 
@@ -2313,6 +2316,7 @@ export function DatabaseExplorerPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
   const [selectedId, setSelectedId] = useState('')
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Create Stage dialog state
   const [createStageOpen, setCreateStageOpen] = useState(false)
@@ -2492,7 +2496,10 @@ export function DatabaseExplorerPage() {
   const handleRefresh = useCallback(() => {
     // Don't clear the dbCache on refresh — just refetch catalogs
     // The cache is preserved so expanded databases keep their children
+    setIsRefreshing(true)
     refetchCatalogs()
+    // Minimum 1 second spin animation regardless of API response time
+    setTimeout(() => setIsRefreshing(false), 1000)
   }, [refetchCatalogs])
 
   // Search & filter
@@ -2531,10 +2538,6 @@ export function DatabaseExplorerPage() {
               <DropdownMenuItem>Copy path</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size='sm' className='gap-1.5 text-xs'>
-            Create
-            <ChevronRight className='h-3.5 w-3.5' />
-          </Button>
         </div>
       </Header>
 
@@ -2556,6 +2559,7 @@ export function DatabaseExplorerPage() {
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               catalogsLoading={catalogsLoading}
+              isRefreshing={isRefreshing}
               catalogsError={catalogsError}
               filteredTree={filteredTree}
               expandedIds={expandedIds}

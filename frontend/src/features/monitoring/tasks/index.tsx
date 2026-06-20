@@ -62,7 +62,8 @@ function formatDuration(createTime: string, finishTime: string | null) {
   return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`
 }
 
-function truncateText(value: string, maxLength: number = 80) {
+function truncateText(value: string | undefined | null, maxLength: number = 80) {
+  if (!value) return '—'
   if (value.length <= maxLength) return value
   return `${value.slice(0, maxLength).trim()}...`
 }
@@ -127,7 +128,7 @@ export function MonitoringTasks() {
     if (!normalizedSearchQuery) return queryRuns
 
     return queryRuns.filter((run) =>
-      [run.query_id, run.task_name, run.state, run.error_message ?? ''].some(
+      [run.query_id ?? '', run.task_name ?? '', run.state ?? '', run.error_message ?? ''].some(
         (value) => value.toLowerCase().includes(normalizedSearchQuery)
       )
     )

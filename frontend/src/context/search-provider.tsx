@@ -39,7 +39,10 @@ export const useSearch = () => {
   const searchContext = useContext(SearchContext)
 
   if (!searchContext) {
-    throw new Error('useSearch has to be used within SearchProvider')
+    // Return a safe fallback instead of throwing, so the component
+    // can render gracefully when SearchProvider is not yet mounted
+    // (e.g. during route transitions or hot-reload in development).
+    return { open: false, setOpen: () => {} } as SearchContextType
   }
 
   return searchContext
