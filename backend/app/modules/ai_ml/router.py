@@ -10,6 +10,7 @@ Endpoints under /api/v1/ai:
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from app.core.deps import get_current_user
 from app.modules.ai_ml.schemas import (
@@ -167,3 +168,34 @@ async def update_model(
     if not result:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
     return AIModelResponse(**result)
+
+
+# ── API Key Update ─────────────────────────────────────────────
+
+
+class UpdateAPIKeyRequest(BaseModel):
+    """Update API key for a provider."""
+    api_key: str = Field(..., min_length=1)
+
+
+@router.put("/providers/{provider_id}/api-key")
+async def update_api_key(
+    provider_id: str,
+    req: UpdateAPIKeyRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Update only the API key for a provider. Key is encrypted before storage."""
+    from app.common.crypto import encrypt
+    encrypted_key = encrypt(req.api_key)
+    
+    conn = await ai_service._connect()
+    try:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE NOVA_SYSTEM.CONFIG_AI_PROVIDERS SET api_key = %s WHERE id = %s",
+                (encrypted_key, provider_id),
+            )
+    finally:
+        conn.close()
+    
+    return {"success": True, "message": "API key updated and encrypted"}

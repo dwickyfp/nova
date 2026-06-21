@@ -20,6 +20,7 @@ import asyncmy
 import asyncmy.cursors
 
 from app.core.config import settings
+from app.common.crypto import decrypt as decrypt_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -459,7 +460,7 @@ class LLMFunctionService:
         #   - endpoint_url (optional): custom endpoint URL
         config = {
             "model": model_name or "gpt-4o-mini",
-            "api_key": provider["api_key"],
+            "api_key": decrypt_api_key(provider["api_key"]),
         }
         # Add endpoint_url if provider has a custom one
         # Docker BE can't reach host localhost; use host.docker.internal

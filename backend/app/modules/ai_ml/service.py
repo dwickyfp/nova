@@ -14,6 +14,7 @@ import asyncmy.cursors
 import httpx
 
 from app.core.config import settings
+from app.common.crypto import encrypt, decrypt
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,12 @@ class AIService:
                     "FROM NOVA_SYSTEM.CONFIG_AI_PROVIDERS ORDER BY name"
                 )
                 rows = await cur.fetchall()
-                return [self._deserialize_row(row) for row in rows]
+                result = []
+                for row in rows:
+                    d = self._deserialize_row(row)
+                    d["api_key"] = decrypt(d.get("api_key"))
+                    result.append(d)
+                return result
         finally:
             conn.close()
 
@@ -92,7 +98,7 @@ class AIService:
                         data["name"],
                         data["type"],
                         data["endpoint"],
-                        data.get("api_key"),
+                        encrypt(data.get("api_key")),
                         default_params_json,
                         username,
                     ),
@@ -133,7 +139,7 @@ class AIService:
             "name": data.get("name", existing["name"]),
             "type": data.get("type", existing["type"]),
             "endpoint": data.get("endpoint", existing["endpoint"]),
-            "api_key": data.get("api_key", existing.get("api_key")),
+            "api_key": encrypt(data.get("api_key", decrypt(existing.get("api_key")))),
             "default_params": data.get("default_params", existing.get("default_params")),
             "is_active": data.get("is_active", existing.get("is_active", True)),
             "created_at": existing.get("created_at"),
@@ -159,7 +165,7 @@ class AIService:
                         merged["name"],
                         merged["type"],
                         merged["endpoint"],
-                        merged["api_key"],
+                        encrypt(merged["api_key"]) if merged.get("api_key") else None,
                         default_params_json,
                         merged["is_active"],
                         merged["created_at"],
@@ -192,7 +198,12 @@ class AIService:
                         "FROM NOVA_SYSTEM.CONFIG_AI_MODELS ORDER BY name"
                     )
                 rows = await cur.fetchall()
-                return [self._deserialize_row(row) for row in rows]
+                result = []
+                for row in rows:
+                    d = self._deserialize_row(row)
+                    d["api_key"] = decrypt(d.get("api_key"))
+                    result.append(d)
+                return result
         finally:
             conn.close()
 
