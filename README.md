@@ -602,6 +602,13 @@ incrementally.
 - [ ] Audit logging for proxy queries
 - [ ] Connection pooling and session tracking
 
+## Support Nova
+
+If Nova helps your work or you want to support the direction of the project,
+you can help sustain ongoing development and feature stabilization here:
+
+[![Support Nova](docs/assets/readme/support-nova.svg)](https://ko-fi.com/dwickyferi)
+
 ## License
 
 Internal project — not yet licensed for distribution.

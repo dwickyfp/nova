@@ -3,7 +3,7 @@ import {
   Brain,
   Clock,
   Database,
-  LayoutDashboard,
+  House,
   ListTodo,
   Shield,
   SquareChartGantt,
@@ -22,9 +22,9 @@ export const sidebarData: SidebarData = {
       title: 'General',
       items: [
         {
-          title: 'Dashboard',
+          title: 'Home',
           url: '/',
-          icon: LayoutDashboard,
+          icon: House,
         },
       ],
     },
