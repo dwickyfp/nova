@@ -368,14 +368,14 @@ class LLMFunctionService:
         # All UDF signatures — grant both STRING and VARCHAR(65533)
         # because SQL UDFs use STRING but Java UDFs register as VARCHAR
         udf_signatures = [
-            ("AI_COMPLETE", ["(STRING)", "(VARCHAR(65533))"]),
-            ("AI_SENTIMENT", ["(STRING)", "(VARCHAR(65533))"]),
-            ("AI_CLASSIFY", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
-            ("AI_SUMMARIZE", ["(STRING)", "(VARCHAR(65533))"]),
-            ("AI_EXTRACT", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
-            ("AI_TRANSLATE", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
-            ("AI_FILTER", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
-            ("ML_PREDICT", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            ("AI_COMPLETE", ["(STRING)", "(VARCHAR)", "(VARCHAR(65533))"]),
+            ("AI_SENTIMENT", ["(STRING)", "(VARCHAR)", "(VARCHAR(65533))"]),
+            ("AI_CLASSIFY", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            ("AI_SUMMARIZE", ["(STRING)", "(VARCHAR)", "(VARCHAR(65533))"]),
+            ("AI_EXTRACT", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            ("AI_TRANSLATE", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            ("AI_FILTER", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            ("ML_PREDICT", ["(STRING, STRING)", "(VARCHAR, VARCHAR)", "(VARCHAR(65533), VARCHAR(65533))"]),
         ]
 
         # Roles to grant to (covers all users)

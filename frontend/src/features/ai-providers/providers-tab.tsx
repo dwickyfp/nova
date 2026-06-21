@@ -446,6 +446,12 @@ export function ProvidersTab() {
             icon: <Cpu size={14} />,
           },
         ]}
+        actions={
+          <Button size='sm' className='gap-1.5' onClick={openCreateProviderDialog}>
+            <Plus className='size-3.5' />
+            Add Provider
+          </Button>
+        }
       />
 
       {/* Table */}
