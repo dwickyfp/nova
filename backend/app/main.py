@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 import logging
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+import os
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.common.nova_system import init_nova_system
@@ -28,6 +30,7 @@ from app.modules.users.router import router as users_router
 from app.modules.ai_ml.router import router as ai_router
 from app.modules.llm_functions.router import router as llm_fn_router
 from app.modules.ml_engine.router import router as ml_router
+from app.modules.ml_engine.internal_router import router as ml_internal_router
 from app.modules.workspaces.router import router as workspaces_router
 from app.modules.monitoring.router import router as monitoring_router
 from app.modules.explorer.router import router as explorer_router
@@ -109,11 +112,17 @@ def create_app() -> FastAPI:
     app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["ai"])
     app.include_router(llm_fn_router, prefix=f"{prefix}/ai", tags=["ai"])
     app.include_router(ml_router, prefix=f"{prefix}/ml", tags=["ml"])
+    app.include_router(ml_internal_router, prefix=f"{prefix}/internal/ml", tags=["internal"])
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])
     app.include_router(tasks_router, prefix=f"{prefix}/tasks", tags=["tasks"])
     app.include_router(pipes_router, prefix=f"{prefix}/pipes", tags=["pipes"])
+
+    # Static files for Java UDFs
+    udf_dir = os.path.join(os.path.dirname(__file__), "static", "udf")
+    os.makedirs(udf_dir, exist_ok=True)
+    app.mount("/static/udf", StaticFiles(directory=udf_dir), name="udf_static")
 
     # Future modules:
     # app.include_router(query_router, prefix=f"{prefix}/query", tags=["query"])
