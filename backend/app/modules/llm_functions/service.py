@@ -362,17 +362,20 @@ class LLMFunctionService:
 
         This makes AI_* and ML_* functions behave like native built-ins
         that every user can call without explicit grants.
+        Uses both STRING and VARCHAR(65533) signatures because StarRocks
+        internally maps string→varchar for Java UDFs.
         """
-        # All UDF signatures (must match CREATE GLOBAL FUNCTION signatures)
+        # All UDF signatures — grant both STRING and VARCHAR(65533)
+        # because SQL UDFs use STRING but Java UDFs register as VARCHAR
         udf_signatures = [
-            ("AI_COMPLETE", "(STRING)"),
-            ("AI_SENTIMENT", "(STRING)"),
-            ("AI_CLASSIFY", "(STRING, STRING)"),
-            ("AI_SUMMARIZE", "(STRING)"),
-            ("AI_EXTRACT", "(STRING, STRING)"),
-            ("AI_TRANSLATE", "(STRING, STRING)"),
-            ("AI_FILTER", "(STRING, STRING)"),
-            ("ML_PREDICT", "(STRING, STRING)"),
+            ("AI_COMPLETE", ["(STRING)", "(VARCHAR(65533))"]),
+            ("AI_SENTIMENT", ["(STRING)", "(VARCHAR(65533))"]),
+            ("AI_CLASSIFY", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            ("AI_SUMMARIZE", ["(STRING)", "(VARCHAR(65533))"]),
+            ("AI_EXTRACT", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            ("AI_TRANSLATE", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            ("AI_FILTER", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
+            ("ML_PREDICT", ["(STRING, STRING)", "(VARCHAR(65533), VARCHAR(65533))"]),
         ]
 
         # Roles to grant to (covers all users)
@@ -381,17 +384,19 @@ class LLMFunctionService:
         conn = await self._connect()
         try:
             async with conn.cursor() as cur:
-                for fn_name, fn_sig in udf_signatures:
-                    for role in roles:
-                        try:
-                            await cur.execute(
-                                f"GRANT USAGE ON GLOBAL FUNCTION {fn_name}{fn_sig} TO ROLE {role}"
-                            )
-                        except Exception:
-                            pass  # Role might not exist, skip silently
+                for fn_name, sigs in udf_signatures:
+                    for sig in sigs:
+                        for role in roles:
+                            try:
+                                await cur.execute(
+                                    f"GRANT USAGE ON GLOBAL FUNCTION {fn_name}{sig} TO ROLE {role}"
+                                )
+                            except Exception:
+                                pass  # Signature/role might not exist, skip silently
         finally:
             conn.close()
-        logger.info("Granted USAGE on %d UDFs to %d roles", len(udf_signatures), len(roles))
+        logger.info("Granted USAGE on %d UDF signatures to %d roles", 
+                     sum(len(s) for _, s in udf_signatures), len(roles))
 
     async def register_udf_for_type(self, function_type: str) -> dict:
         """Register the UDF for a specific function type."""

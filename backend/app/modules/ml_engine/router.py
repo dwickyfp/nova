@@ -162,3 +162,24 @@ async def delete_alias(
 ):
     """Delete a model alias."""
     return await ml_engine_service.delete_alias(alias_name)
+
+
+# ── Internal endpoints (no auth, localhost only) ──────────────
+# Used by StarRocks Java UDF to call ML prediction from SQL
+
+from app.modules.ml_engine.schemas import PredictRequest, PredictResponse
+
+@router.post("/internal/predict", response_model=PredictResponse)
+async def internal_predict(req: PredictRequest):
+    """Internal prediction endpoint — no auth required.
+    
+    Used by StarRocks Java UDF (ML_PREDICT) to call ML prediction from SQL.
+    Should only be exposed on localhost.
+    """
+    try:
+        result = await ml_engine_service.predict(req.model_alias, req.features)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")

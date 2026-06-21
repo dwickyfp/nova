@@ -15,7 +15,6 @@ import re
 
 from app.common.audit import write_audit_log
 from app.common.sql_guard import guard_sql
-from app.common.ml_intercept import detect_ml_predict, rewrite_ml_predict_sql
 from app.common.sql_guard import is_destructive_sql, is_unscoped_mutation, split_sql_statements
 from app.core.config import settings
 from app.core.config import get_storage_connection, load_nova_app_config, to_docker_endpoint
@@ -94,22 +93,6 @@ class QueryService:
         guard_sql(normalized_sql)
         if is_destructive_sql(normalized_sql) and not confirm_destructive:
             raise ForbiddenSQLError("Destructive SQL requires confirmation before execution.")
-
-        # 1b. ML intercept: detect ml_predict() calls
-        ml_match = detect_ml_predict(normalized_sql)
-        if ml_match:
-            return await self._execute_ml_predict(
-                sql=sql,
-                normalized_sql=normalized_sql,
-                ml_match=ml_match,
-                username=username,
-                database=database,
-                schema=schema,
-                role=role,
-                max_rows=max_rows,
-                session_id=session_id,
-                file_id=file_id,
-            )
 
         # 2. Parse: detect @stage references
         parsed = parse_sql(normalized_sql)
