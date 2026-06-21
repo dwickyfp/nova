@@ -330,6 +330,16 @@ If an AI function returns a configuration error, create or update its alias in
 the AI Providers page and re-register UDFs. The provider API key is resolved by
 Nova and must not be embedded in worksheet SQL.
 
+## Screenshots
+
+### Database Explorer
+
+![Database Explorer](docs/assets/readme/database-explorer.png)
+
+### Workspaces
+
+![Workspaces](docs/assets/readme/workspaces.png)
+
 ## Architecture
 
 ```mermaid
