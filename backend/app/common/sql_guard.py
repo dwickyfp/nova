@@ -7,6 +7,18 @@ import re
 
 from app.core.exceptions import ForbiddenSQLError
 
+# Nova built-in UDFs — these cannot be dropped by users
+BUILTIN_UDFS = [
+    "AI_COMPLETE",
+    "AI_SENTIMENT",
+    "AI_CLASSIFY",
+    "AI_SUMMARIZE",
+    "AI_EXTRACT",
+    "AI_TRANSLATE",
+    "AI_FILTER",
+    "ML_PREDICT",
+]
+
 BLOCKED_PATTERNS: list[tuple[str, str]] = [
     (r"DROP\s+ROLE\s+ACCOUNTADMIN", "ACCOUNTADMIN role cannot be dropped"),
     (
@@ -15,6 +27,11 @@ BLOCKED_PATTERNS: list[tuple[str, str]] = [
     ),
     (r"ALTER\s+ROLE\s+ACCOUNTADMIN", "ACCOUNTADMIN role cannot be altered"),
     (r"DROP\s+USER\s+.*root", "root user cannot be dropped"),
+    # Guard: prevent dropping Nova built-in UDFs
+    (
+        r"DROP\s+GLOBAL\s+FUNCTION\s+(IF\s+EXISTS\s+)?(AI_COMPLETE|AI_SENTIMENT|AI_CLASSIFY|AI_SUMMARIZE|AI_EXTRACT|AI_TRANSLATE|AI_FILTER|ML_PREDICT)\b",
+        "Cannot drop Nova built-in function. These are managed by the system and auto-registered on startup.",
+    ),
 ]
 
 

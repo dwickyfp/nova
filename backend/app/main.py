@@ -4,6 +4,7 @@ StarRocks management console backend with domain-driven modular architecture.
 """
 
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,8 @@ from app.core.database import db
 from app.core.exceptions import register_exception_handlers
 from app.core.redis import session_store
 
+logger = logging.getLogger(__name__)
+
 # --- Module routers ---
 from app.modules.auth.router import router as auth_router
 from app.modules.objects.router import router as objects_router
@@ -23,6 +26,8 @@ from app.modules.views.router import router as views_router
 from app.modules.stages.router import router as stages_router
 from app.modules.users.router import router as users_router
 from app.modules.ai_ml.router import router as ai_router
+from app.modules.llm_functions.router import router as llm_fn_router
+from app.modules.ml_engine.router import router as ml_router
 from app.modules.workspaces.router import router as workspaces_router
 from app.modules.monitoring.router import router as monitoring_router
 from app.modules.explorer.router import router as explorer_router
@@ -50,6 +55,20 @@ async def lifespan(app: FastAPI):
     await db.init_system_pool()
     await session_store.init()
     await init_nova_system()
+
+    # Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)
+    # so they are available as SQL functions from the start.
+    try:
+        from app.modules.llm_functions.service import llm_function_service
+        result = await llm_function_service.register_all_udfs()
+        logger.info(
+            "LLM UDFs registered: %d ok, %d failed",
+            result["registered"],
+            result["failed"],
+        )
+    except Exception as e:
+        logger.warning("Failed to register LLM UDFs on startup: %s", e)
+
     yield
     # Shutdown
     await session_store.close()
@@ -88,6 +107,8 @@ def create_app() -> FastAPI:
     app.include_router(explorer_router, prefix=f"{prefix}/explorer", tags=["explorer"])
     app.include_router(users_router, prefix=f"{prefix}/users", tags=["users"])
     app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["ai"])
+    app.include_router(llm_fn_router, prefix=f"{prefix}/ai", tags=["ai"])
+    app.include_router(ml_router, prefix=f"{prefix}/ml", tags=["ml"])
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])

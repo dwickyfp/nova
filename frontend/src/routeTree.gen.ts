@@ -23,6 +23,7 @@ import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedRolesIndexRouteImport } from './routes/_authenticated/roles/index'
 import { Route as AuthenticatedMonitoringIndexRouteImport } from './routes/_authenticated/monitoring/index'
+import { Route as AuthenticatedMlModelsIndexRouteImport } from './routes/_authenticated/ml-models/index'
 import { Route as AuthenticatedAiProvidersIndexRouteImport } from './routes/_authenticated/ai-providers/index'
 import { Route as AuthenticatedUsersUsernameRouteImport } from './routes/_authenticated/users/$username'
 import { Route as AuthenticatedRolesNameRouteImport } from './routes/_authenticated/roles/$name'
@@ -107,6 +108,12 @@ const AuthenticatedMonitoringIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedMonitoringRouteRoute,
   } as any)
+const AuthenticatedMlModelsIndexRoute =
+  AuthenticatedMlModelsIndexRouteImport.update({
+    id: '/ml-models/',
+    path: '/ml-models/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAiProvidersIndexRoute =
   AuthenticatedAiProvidersIndexRouteImport.update({
     id: '/ai-providers/',
@@ -165,6 +172,7 @@ export interface FileRoutesByFullPath {
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
+  '/ml-models/': typeof AuthenticatedMlModelsIndexRoute
   '/monitoring/': typeof AuthenticatedMonitoringIndexRoute
   '/roles/': typeof AuthenticatedRolesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -186,6 +194,7 @@ export interface FileRoutesByTo {
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/ai-providers': typeof AuthenticatedAiProvidersIndexRoute
+  '/ml-models': typeof AuthenticatedMlModelsIndexRoute
   '/monitoring': typeof AuthenticatedMonitoringIndexRoute
   '/roles': typeof AuthenticatedRolesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
@@ -210,6 +219,7 @@ export interface FileRoutesById {
   '/_authenticated/roles/$name': typeof AuthenticatedRolesNameRoute
   '/_authenticated/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/_authenticated/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
+  '/_authenticated/ml-models/': typeof AuthenticatedMlModelsIndexRoute
   '/_authenticated/monitoring/': typeof AuthenticatedMonitoringIndexRoute
   '/_authenticated/roles/': typeof AuthenticatedRolesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -234,6 +244,7 @@ export interface FileRouteTypes {
     | '/roles/$name'
     | '/users/$username'
     | '/ai-providers/'
+    | '/ml-models/'
     | '/monitoring/'
     | '/roles/'
     | '/tasks/'
@@ -255,6 +266,7 @@ export interface FileRouteTypes {
     | '/roles/$name'
     | '/users/$username'
     | '/ai-providers'
+    | '/ml-models'
     | '/monitoring'
     | '/roles'
     | '/tasks'
@@ -278,6 +290,7 @@ export interface FileRouteTypes {
     | '/_authenticated/roles/$name'
     | '/_authenticated/users/$username'
     | '/_authenticated/ai-providers/'
+    | '/_authenticated/ml-models/'
     | '/_authenticated/monitoring/'
     | '/_authenticated/roles/'
     | '/_authenticated/tasks/'
@@ -390,6 +403,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonitoringIndexRouteImport
       parentRoute: typeof AuthenticatedMonitoringRouteRoute
     }
+    '/_authenticated/ml-models/': {
+      id: '/_authenticated/ml-models/'
+      path: '/ml-models'
+      fullPath: '/ml-models/'
+      preLoaderRoute: typeof AuthenticatedMlModelsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/ai-providers/': {
       id: '/_authenticated/ai-providers/'
       path: '/ai-providers'
@@ -475,6 +495,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRolesNameRoute: typeof AuthenticatedRolesNameRoute
   AuthenticatedUsersUsernameRoute: typeof AuthenticatedUsersUsernameRoute
   AuthenticatedAiProvidersIndexRoute: typeof AuthenticatedAiProvidersIndexRoute
+  AuthenticatedMlModelsIndexRoute: typeof AuthenticatedMlModelsIndexRoute
   AuthenticatedRolesIndexRoute: typeof AuthenticatedRolesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
@@ -493,6 +514,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRolesNameRoute: AuthenticatedRolesNameRoute,
   AuthenticatedUsersUsernameRoute: AuthenticatedUsersUsernameRoute,
   AuthenticatedAiProvidersIndexRoute: AuthenticatedAiProvidersIndexRoute,
+  AuthenticatedMlModelsIndexRoute: AuthenticatedMlModelsIndexRoute,
   AuthenticatedRolesIndexRoute: AuthenticatedRolesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,

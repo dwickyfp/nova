@@ -1,5 +1,6 @@
 import {
   Bot,
+  Brain,
   Clock,
   Database,
   LayoutDashboard,
@@ -44,6 +45,11 @@ export const sidebarData: SidebarData = {
           title: 'Tasks',
           url: '/tasks-manager',
           icon: Workflow,
+        },
+        {
+          title: 'ML Models',
+          url: '/ml-models',
+          icon: Brain,
         },
       ],
     },

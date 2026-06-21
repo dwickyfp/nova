@@ -179,8 +179,27 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 -- ═══════════════════════════════════════
--- ML Schema (Duplicate tables for analytics)
+-- ML Schema
 -- ═══════════════════════════════════════
+
+-- LLM Function Aliases: maps SQL function names (AI_COMPLETE, AI_SENTIMENT, etc.)
+-- to provider+model configs. Backend reads this to register SQL UDFs.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_MODEL_ALIASES (
+  id              VARCHAR(64) NOT NULL,
+  alias_name      VARCHAR(128) NOT NULL,
+  function_type   VARCHAR(32) NOT NULL,
+  provider_id     VARCHAR(64) NOT NULL,
+  model_id        VARCHAR(64),
+  system_prompt   TEXT,
+  default_params  TEXT,
+  is_default      BOOLEAN DEFAULT "true",
+  is_active       BOOLEAN DEFAULT "true",
+  created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_by      VARCHAR(128)
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODELS (
   model_id    VARCHAR(64) NOT NULL,
@@ -642,3 +661,109 @@ INSERT INTO NOVA_ANALYTICS.monthly_revenue VALUES
 (7, '2025-12-01', 480000000.00, 14400000.00, 465600000.00, 6500, 73846154.00);
 
 SELECT 'NOVA_DEMO + NOVA_CATALOG + NOVA_ANALYTICS sample data loaded!' AS status;
+
+-- ============================================================================
+-- Nova Built-in AI/ML UDFs
+-- ============================================================================
+-- These SQL UDFs are registered as "built-in" functions that behave like
+-- native StarRocks functions. They wrap the built-in ai_query() function
+-- for LLM inference, and provide placeholder ML_PREDICT for classical ML.
+--
+-- On backend startup, the llm_functions module will DROP and re-register
+-- these UDFs with actual provider config (if aliases are configured).
+-- Without aliases, they return a helpful error message.
+--
+-- DROP protection: These UDFs should NOT be dropped manually.
+-- The backend auto-registers them on every startup.
+-- ============================================================================
+
+-- AI_COMPLETE: General LLM completion
+DROP GLOBAL FUNCTION IF EXISTS AI_COMPLETE(STRING);
+CREATE GLOBAL FUNCTION AI_COMPLETE(prompt STRING)
+RETURNS CONCAT('ERROR: AI_COMPLETE not configured. Set up an alias in AI Providers > Functions tab. Input was: prompt=', prompt);
+
+-- AI_SENTIMENT: Sentiment analysis
+DROP GLOBAL FUNCTION IF EXISTS AI_SENTIMENT(STRING);
+CREATE GLOBAL FUNCTION AI_SENTIMENT(txt STRING)
+RETURNS CONCAT('ERROR: AI_SENTIMENT not configured. Set up an alias in AI Providers > Functions tab. Input was: txt=', txt);
+
+-- AI_CLASSIFY: Zero-shot classification
+DROP GLOBAL FUNCTION IF EXISTS AI_CLASSIFY(STRING, STRING);
+CREATE GLOBAL FUNCTION AI_CLASSIFY(txt STRING, categories STRING)
+RETURNS CONCAT('ERROR: AI_CLASSIFY not configured. Set up an alias in AI Providers > Functions tab. Input was: txt=', txt, ', categories=', categories);
+
+-- AI_SUMMARIZE: Text summarization
+DROP GLOBAL FUNCTION IF EXISTS AI_SUMMARIZE(STRING);
+CREATE GLOBAL FUNCTION AI_SUMMARIZE(txt STRING)
+RETURNS CONCAT('ERROR: AI_SUMMARIZE not configured. Set up an alias in AI Providers > Functions tab. Input was: txt=', txt);
+
+-- AI_EXTRACT: Entity extraction
+DROP GLOBAL FUNCTION IF EXISTS AI_EXTRACT(STRING, STRING);
+CREATE GLOBAL FUNCTION AI_EXTRACT(txt STRING, json_schema STRING)
+RETURNS CONCAT('ERROR: AI_EXTRACT not configured. Set up an alias in AI Providers > Functions tab. Input was: txt=', txt, ', json_schema=', json_schema);
+
+-- AI_TRANSLATE: Text translation
+DROP GLOBAL FUNCTION IF EXISTS AI_TRANSLATE(STRING, STRING);
+CREATE GLOBAL FUNCTION AI_TRANSLATE(txt STRING, target_lang STRING)
+RETURNS CONCAT('ERROR: AI_TRANSLATE not configured. Set up an alias in AI Providers > Functions tab. Input was: txt=', txt, ', target_lang=', target_lang);
+
+-- AI_FILTER: Semantic boolean filter
+DROP GLOBAL FUNCTION IF EXISTS AI_FILTER(STRING, STRING);
+CREATE GLOBAL FUNCTION AI_FILTER(txt STRING, criteria STRING)
+RETURNS CONCAT('ERROR: AI_FILTER not configured. Set up an alias in AI Providers > Functions tab. Input was: txt=', txt, ', criteria=', criteria);
+
+-- ML_PREDICT: Classical ML prediction (calls backend API)
+DROP GLOBAL FUNCTION IF EXISTS ML_PREDICT(STRING, STRING);
+CREATE GLOBAL FUNCTION ML_PREDICT(model_alias STRING, features_json STRING)
+RETURNS CONCAT('Use POST /api/v1/ml/predict with {"model_alias":"', model_alias, '","features":', features_json, '} to get prediction');
+
+-- Grant USAGE to all roles so UDFs behave like built-ins
+GRANT USAGE ON GLOBAL FUNCTION AI_COMPLETE(STRING) TO ROLE root;
+GRANT USAGE ON GLOBAL FUNCTION AI_COMPLETE(STRING) TO ROLE db_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_COMPLETE(STRING) TO ROLE cluster_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_COMPLETE(STRING) TO ROLE user_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_COMPLETE(STRING) TO ROLE ACCOUNTADMIN;
+
+GRANT USAGE ON GLOBAL FUNCTION AI_SENTIMENT(STRING) TO ROLE root;
+GRANT USAGE ON GLOBAL FUNCTION AI_SENTIMENT(STRING) TO ROLE db_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_SENTIMENT(STRING) TO ROLE cluster_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_SENTIMENT(STRING) TO ROLE user_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_SENTIMENT(STRING) TO ROLE ACCOUNTADMIN;
+
+GRANT USAGE ON GLOBAL FUNCTION AI_CLASSIFY(STRING, STRING) TO ROLE root;
+GRANT USAGE ON GLOBAL FUNCTION AI_CLASSIFY(STRING, STRING) TO ROLE db_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_CLASSIFY(STRING, STRING) TO ROLE cluster_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_CLASSIFY(STRING, STRING) TO ROLE user_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_CLASSIFY(STRING, STRING) TO ROLE ACCOUNTADMIN;
+
+GRANT USAGE ON GLOBAL FUNCTION AI_SUMMARIZE(STRING) TO ROLE root;
+GRANT USAGE ON GLOBAL FUNCTION AI_SUMMARIZE(STRING) TO ROLE db_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_SUMMARIZE(STRING) TO ROLE cluster_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_SUMMARIZE(STRING) TO ROLE user_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_SUMMARIZE(STRING) TO ROLE ACCOUNTADMIN;
+
+GRANT USAGE ON GLOBAL FUNCTION AI_EXTRACT(STRING, STRING) TO ROLE root;
+GRANT USAGE ON GLOBAL FUNCTION AI_EXTRACT(STRING, STRING) TO ROLE db_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_EXTRACT(STRING, STRING) TO ROLE cluster_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_EXTRACT(STRING, STRING) TO ROLE user_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_EXTRACT(STRING, STRING) TO ROLE ACCOUNTADMIN;
+
+GRANT USAGE ON GLOBAL FUNCTION AI_TRANSLATE(STRING, STRING) TO ROLE root;
+GRANT USAGE ON GLOBAL FUNCTION AI_TRANSLATE(STRING, STRING) TO ROLE db_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_TRANSLATE(STRING, STRING) TO ROLE cluster_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_TRANSLATE(STRING, STRING) TO ROLE user_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_TRANSLATE(STRING, STRING) TO ROLE ACCOUNTADMIN;
+
+GRANT USAGE ON GLOBAL FUNCTION AI_FILTER(STRING, STRING) TO ROLE root;
+GRANT USAGE ON GLOBAL FUNCTION AI_FILTER(STRING, STRING) TO ROLE db_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_FILTER(STRING, STRING) TO ROLE cluster_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_FILTER(STRING, STRING) TO ROLE user_admin;
+GRANT USAGE ON GLOBAL FUNCTION AI_FILTER(STRING, STRING) TO ROLE ACCOUNTADMIN;
+
+GRANT USAGE ON GLOBAL FUNCTION ML_PREDICT(STRING, STRING) TO ROLE root;
+GRANT USAGE ON GLOBAL FUNCTION ML_PREDICT(STRING, STRING) TO ROLE db_admin;
+GRANT USAGE ON GLOBAL FUNCTION ML_PREDICT(STRING, STRING) TO ROLE cluster_admin;
+GRANT USAGE ON GLOBAL FUNCTION ML_PREDICT(STRING, STRING) TO ROLE user_admin;
+GRANT USAGE ON GLOBAL FUNCTION ML_PREDICT(STRING, STRING) TO ROLE ACCOUNTADMIN;
+
+SELECT 'Nova built-in AI/ML UDFs registered and granted!' AS status;

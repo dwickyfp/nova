@@ -18,6 +18,9 @@ dependencies = [
     "cryptography>=44.0.0",
     "python-multipart>=0.0.18",
     "pyyaml>=6.0.3",
+    "scikit-learn>=1.9.0",
+    "joblib>=1.5.3",
+    "numpy>=2.4.6",
 ]
 
 [dependency-groups]

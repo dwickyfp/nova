@@ -269,7 +269,21 @@ class FunctionService:
         return sql
 
     async def drop_udf(self, database: str, name: str) -> str:
-        """Drop a UDF. Returns the SQL executed."""
+        """Drop a UDF. Returns the SQL executed.
+
+        Guards against dropping Nova built-in UDFs (AI_COMPLETE, AI_SENTIMENT, etc).
+        """
+        # Guard: prevent dropping Nova built-in UDFs
+        BUILTIN_UDFS = {
+            "AI_COMPLETE", "AI_SENTIMENT", "AI_CLASSIFY", "AI_SUMMARIZE",
+            "AI_EXTRACT", "AI_TRANSLATE", "AI_FILTER", "ML_PREDICT",
+        }
+        if name.upper() in BUILTIN_UDFS:
+            raise ValueError(
+                f"Cannot drop Nova built-in function '{name}'. "
+                "These are managed by the system and auto-registered on startup."
+            )
+
         qualified = f"{database}.{name}" if database else name
         sql = f"DROP FUNCTION IF EXISTS {qualified}"
 
