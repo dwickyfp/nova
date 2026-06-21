@@ -462,13 +462,24 @@ class LLMFunctionService:
             "model": model_name or "gpt-4o-mini",
             "api_key": decrypt_api_key(provider["api_key"]),
         }
-        # Add endpoint_url if provider has a custom one
-        # Docker BE can't reach host localhost; use host.docker.internal
+        # Add endpoint if provider has a custom one
+        # StarRocks ai_query() uses "endpoint" field (NOT "endpoint_url")
+        # and requires full path to /chat/completions
         if provider.get("endpoint"):
             endpoint = provider["endpoint"]
+            # Docker BE can't reach host localhost; use host.docker.internal
             endpoint = endpoint.replace("localhost", "host.docker.internal")
             endpoint = endpoint.replace("127.0.0.1", "host.docker.internal")
-            config["endpoint_url"] = endpoint
+            # ai_query() needs full path including /chat/completions
+            if not endpoint.endswith("/chat/completions"):
+                # Remove trailing slash
+                endpoint = endpoint.rstrip("/")
+                # Add /chat/completions if not already there
+                if endpoint.endswith("/v1"):
+                    endpoint = endpoint + "/chat/completions"
+                elif not endpoint.endswith("/chat/completions"):
+                    endpoint = endpoint + "/v1/chat/completions"
+            config["endpoint"] = endpoint
 
         # Merge default_params from alias
         if alias.get("default_params"):

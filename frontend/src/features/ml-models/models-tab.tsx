@@ -40,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
@@ -638,200 +639,236 @@ export function ModelsTab() {
 
       {/* Train Model Dialog */}
       <Dialog open={trainDialogOpen} onOpenChange={setTrainDialogOpen}>
-        <DialogContent className='max-w-2xl max-h-[85vh] overflow-y-auto'>
-          <DialogHeader>
+        <DialogContent className='grid max-h-[88vh] grid-rows-[auto_auto_minmax(0,1fr)_auto_auto] overflow-hidden p-0 sm:max-w-[760px]'>
+          <DialogHeader className='px-6 pt-6 pb-4'>
             <DialogTitle>Train New ML Model</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className='max-w-[620px]'>
               Train a classification or regression model using data from a SQL
               query. The model will be stored in StarRocks and can be used for
               predictions via model aliases.
             </DialogDescription>
           </DialogHeader>
-          <div className='space-y-4 py-2'>
-            <div className='grid grid-cols-3 gap-4'>
-              <div className='space-y-2'>
-                <Label htmlFor='model-name'>Model Name</Label>
-                <Input
-                  id='model-name'
-                  placeholder='e.g. churn_predictor'
-                  value={trainForm.model_name}
-                  onChange={(e) =>
-                    setTrainForm((f) => ({
-                      ...f,
-                      model_name: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className='space-y-2'>
-                <Label htmlFor='model-type'>Model Type</Label>
-                <Select
-                  value={trainForm.model_type}
-                  onValueChange={(v) =>
-                    setTrainForm((f) => ({
-                      ...f,
-                      model_type: v as ModelType,
-                      algorithm: v === 'regression' && f.algorithm === 'logistic' ? 'auto' : f.algorithm,
-                    }))
-                  }
-                >
-                  <SelectTrigger id='model-type'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MODEL_TYPES.map((mt) => (
-                      <SelectItem key={mt.value} value={mt.value}>
-                        {mt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className='space-y-2'>
-                <Label htmlFor='algorithm'>Algorithm</Label>
-                <Select
-                  value={trainForm.algorithm}
-                  onValueChange={(v) =>
-                    setTrainForm((f) => ({
-                      ...f,
-                      algorithm: v as Algorithm,
-                    }))
-                  }
-                >
-                  <SelectTrigger id='algorithm'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ALGORITHMS.map((algo) => (
-                      <SelectItem key={algo.value} value={algo.value}>
-                        <span className='flex flex-col'>
-                          <span>{algo.label}</span>
-                          <span className='text-xs text-muted-foreground'>
-                            {algo.description}
-                          </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+          <Separator />
+          <div className='min-h-0 overflow-y-auto px-6 py-5'>
+            <div className='flex flex-col gap-6'>
+              <section className='flex flex-col gap-3'>
+                <div>
+                  <h3 className='text-sm font-medium'>Model Setup</h3>
+                  <p className='text-xs text-muted-foreground'>
+                    Name the model and choose the training strategy.
+                  </p>
+                </div>
+                <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)]'>
+                  <div className='flex min-w-0 flex-col gap-2'>
+                    <Label htmlFor='model-name'>Model Name</Label>
+                    <Input
+                      id='model-name'
+                      placeholder='e.g. churn_predictor'
+                      value={trainForm.model_name}
+                      onChange={(e) =>
+                        setTrainForm((f) => ({
+                          ...f,
+                          model_name: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className='flex min-w-0 flex-col gap-2'>
+                    <Label htmlFor='model-type'>Model Type</Label>
+                    <Select
+                      value={trainForm.model_type}
+                      onValueChange={(v) =>
+                        setTrainForm((f) => ({
+                          ...f,
+                          model_type: v as ModelType,
+                          algorithm:
+                            v === 'regression' && f.algorithm === 'logistic'
+                              ? 'auto'
+                              : f.algorithm,
+                        }))
+                      }
+                    >
+                      <SelectTrigger id='model-type' className='w-full'>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MODEL_TYPES.map((mt) => (
+                          <SelectItem key={mt.value} value={mt.value}>
+                            {mt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className='flex min-w-0 flex-col gap-2 md:col-span-2 lg:col-span-1'>
+                    <Label htmlFor='algorithm'>Algorithm</Label>
+                    <Select
+                      value={trainForm.algorithm}
+                      onValueChange={(v) =>
+                        setTrainForm((f) => ({
+                          ...f,
+                          algorithm: v as Algorithm,
+                        }))
+                      }
+                    >
+                      <SelectTrigger id='algorithm' className='w-full'>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ALGORITHMS.map((algo) => (
+                          <SelectItem key={algo.value} value={algo.value}>
+                            <span className='flex flex-col gap-0.5'>
+                              <span>{algo.label}</span>
+                              <span className='text-xs text-muted-foreground'>
+                                {algo.description}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </section>
 
-            <div className='space-y-2'>
-              <Label htmlFor='training-sql'>Training SQL Query</Label>
-              <Textarea
-                id='training-sql'
-                placeholder='SELECT feature1, feature2, target_column FROM my_table WHERE ...'
-                value={trainForm.training_sql}
-                onChange={(e) =>
-                  setTrainForm((f) => ({
-                    ...f,
-                    training_sql: e.target.value,
-                  }))
-                }
-                rows={4}
-                className='font-mono text-xs'
-              />
-              <p className='text-xs text-muted-foreground'>
-                SQL query that returns the training data. Must include the target column and all feature columns.
-              </p>
-            </div>
+              <section className='flex flex-col gap-3'>
+                <div>
+                  <h3 className='text-sm font-medium'>Training Data</h3>
+                  <p className='text-xs text-muted-foreground'>
+                    Define the query, target, and predictors used for training.
+                  </p>
+                </div>
+                <div className='flex flex-col gap-4'>
+                  <div className='flex min-w-0 flex-col gap-2'>
+                    <Label htmlFor='training-sql'>Training SQL Query</Label>
+                    <Textarea
+                      id='training-sql'
+                      placeholder='SELECT feature1, feature2, target_column FROM my_table WHERE ...'
+                      value={trainForm.training_sql}
+                      onChange={(e) =>
+                        setTrainForm((f) => ({
+                          ...f,
+                          training_sql: e.target.value,
+                        }))
+                      }
+                      rows={5}
+                      className='min-h-32 font-mono text-xs leading-relaxed'
+                    />
+                    <p className='text-xs text-muted-foreground'>
+                      Must return the target column and all feature columns.
+                    </p>
+                  </div>
 
-            <div className='grid grid-cols-3 gap-4'>
-              <div className='space-y-2'>
-                <Label htmlFor='target-column'>Target Column</Label>
-                <Input
-                  id='target-column'
-                  placeholder='e.g. churned'
-                  value={trainForm.target_column}
-                  onChange={(e) =>
-                    setTrainForm((f) => ({
-                      ...f,
-                      target_column: e.target.value,
-                    }))
-                  }
-                />
-                <p className='text-xs text-muted-foreground'>
-                  Column to predict
-                </p>
-              </div>
-              <div className='space-y-2'>
-                <Label htmlFor='feature-columns'>
-                  Feature Columns (optional)
-                </Label>
-                <Input
-                  id='feature-columns'
-                  placeholder='e.g. age, tenure, usage'
-                  value={trainForm.feature_columns}
-                  onChange={(e) =>
-                    setTrainForm((f) => ({
-                      ...f,
-                      feature_columns: e.target.value,
-                    }))
-                  }
-                />
-                <p className='text-xs text-muted-foreground'>
-                  Comma-separated. Empty = all except target
-                </p>
-              </div>
-              <div className='space-y-2'>
-                <Label htmlFor='test-size'>Test Size</Label>
-                <Input
-                  id='test-size'
-                  type='number'
-                  min={0}
-                  max={0.99}
-                  step={0.05}
-                  value={trainForm.test_size}
-                  onChange={(e) =>
-                    setTrainForm((f) => ({
-                      ...f,
-                      test_size: e.target.value,
-                    }))
-                  }
-                />
-                <p className='text-xs text-muted-foreground'>
-                  Fraction held out for testing
-                </p>
-              </div>
-            </div>
+                  <div className='grid gap-4 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(8rem,0.7fr)]'>
+                    <div className='flex min-w-0 flex-col gap-2'>
+                      <Label htmlFor='target-column'>Target Column</Label>
+                      <Input
+                        id='target-column'
+                        placeholder='e.g. churned'
+                        value={trainForm.target_column}
+                        onChange={(e) =>
+                          setTrainForm((f) => ({
+                            ...f,
+                            target_column: e.target.value,
+                          }))
+                        }
+                      />
+                      <p className='text-xs text-muted-foreground'>
+                        Column to predict.
+                      </p>
+                    </div>
+                    <div className='flex min-w-0 flex-col gap-2'>
+                      <Label htmlFor='feature-columns'>
+                        Feature Columns (optional)
+                      </Label>
+                      <Input
+                        id='feature-columns'
+                        placeholder='e.g. age, tenure, usage'
+                        value={trainForm.feature_columns}
+                        onChange={(e) =>
+                          setTrainForm((f) => ({
+                            ...f,
+                            feature_columns: e.target.value,
+                          }))
+                        }
+                      />
+                      <p className='text-xs text-muted-foreground'>
+                        Comma-separated. Empty uses all columns except target.
+                      </p>
+                    </div>
+                    <div className='flex min-w-0 flex-col gap-2'>
+                      <Label htmlFor='test-size'>Test Size</Label>
+                      <Input
+                        id='test-size'
+                        type='number'
+                        min={0}
+                        max={0.99}
+                        step={0.05}
+                        value={trainForm.test_size}
+                        onChange={(e) =>
+                          setTrainForm((f) => ({
+                            ...f,
+                            test_size: e.target.value,
+                          }))
+                        }
+                      />
+                      <p className='text-xs text-muted-foreground'>
+                        Fraction held out.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </section>
 
-            <div className='grid grid-cols-2 gap-4'>
-              <div className='space-y-2'>
-                <Label htmlFor='database-name'>
-                  Database (optional)
-                </Label>
-                <Input
-                  id='database-name'
-                  placeholder='e.g. analytics'
-                  value={trainForm.database_name}
-                  onChange={(e) =>
-                    setTrainForm((f) => ({
-                      ...f,
-                      database_name: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className='space-y-2'>
-                <Label htmlFor='hyperparameters'>
-                  Hyperparameters (JSON, optional)
-                </Label>
-                <Input
-                  id='hyperparameters'
-                  placeholder='{"n_estimators": 100, "max_depth": 5}'
-                  value={trainForm.hyperparameters}
-                  onChange={(e) =>
-                    setTrainForm((f) => ({
-                      ...f,
-                      hyperparameters: e.target.value,
-                    }))
-                  }
-                />
-              </div>
+              <section className='flex flex-col gap-3'>
+                <div>
+                  <h3 className='text-sm font-medium'>Scale Planning</h3>
+                  <p className='text-xs text-muted-foreground'>
+                    Scope the training database and optional tuning parameters.
+                  </p>
+                </div>
+                <div className='grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]'>
+                  <div className='flex min-w-0 flex-col gap-2'>
+                    <Label htmlFor='database-name'>Database (optional)</Label>
+                    <Input
+                      id='database-name'
+                      placeholder='e.g. analytics'
+                      value={trainForm.database_name}
+                      onChange={(e) =>
+                        setTrainForm((f) => ({
+                          ...f,
+                          database_name: e.target.value,
+                        }))
+                      }
+                    />
+                    <p className='text-xs text-muted-foreground'>
+                      Uses the current context when empty.
+                    </p>
+                  </div>
+                  <div className='flex min-w-0 flex-col gap-2'>
+                    <Label htmlFor='hyperparameters'>
+                      Hyperparameters (JSON, optional)
+                    </Label>
+                    <Textarea
+                      id='hyperparameters'
+                      placeholder='{"n_estimators": 100, "max_depth": 5}'
+                      value={trainForm.hyperparameters}
+                      onChange={(e) =>
+                        setTrainForm((f) => ({
+                          ...f,
+                          hyperparameters: e.target.value,
+                        }))
+                      }
+                      rows={3}
+                      className='min-h-20 font-mono text-xs leading-relaxed'
+                    />
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
-          <DialogFooter>
+          <Separator />
+          <DialogFooter className='px-6 pt-4 pb-6'>
             <Button variant='outline' onClick={() => setTrainDialogOpen(false)}>
               Cancel
             </Button>
