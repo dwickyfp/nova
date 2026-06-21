@@ -10,19 +10,19 @@ Pipeline:
 
 from __future__ import annotations
 
-import os
+import json
 import re
+import time
 
 from app.common.audit import write_audit_log
-from app.common.sql_guard import guard_sql
-from app.common.sql_guard import is_destructive_sql, is_unscoped_mutation, split_sql_statements
-from app.core.config import settings
-from app.core.config import get_storage_connection, load_nova_app_config, to_docker_endpoint
+from app.common.sql_guard import guard_sql, is_destructive_sql, split_sql_statements
+from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
 from app.core.security import decrypt_password
 from app.modules.query.dialect.injector import get_credential_params
-from app.modules.query.dialect.parser import CommandType, parse_sql
+from app.modules.query.dialect.ml_model import is_create_ml_model, parse_create_ml_model
+from app.modules.query.dialect.parser import parse_sql
 from app.modules.query.dialect.translator import (
     StorageConfig,
     translate_stage_query,
@@ -93,6 +93,20 @@ class QueryService:
         guard_sql(normalized_sql)
         if is_destructive_sql(normalized_sql) and not confirm_destructive:
             raise ForbiddenSQLError("Destructive SQL requires confirmation before execution.")
+
+        # Nova ML DDL is handled by the Python ML engine, not sent to StarRocks.
+        if is_create_ml_model(normalized_sql):
+            return await self._execute_create_ml_model(
+                sql=sql,
+                normalized_sql=normalized_sql,
+                username=username,
+                encrypted_password=encrypted_password,
+                database=database,
+                role=role,
+                session_id=session_id,
+                file_id=file_id,
+                schema=schema,
+            )
 
         # 2. Parse: detect @stage references
         parsed = parse_sql(normalized_sql)
@@ -248,6 +262,110 @@ class QueryService:
                 results.append(error_result)
                 break
         return results
+
+    async def _execute_create_ml_model(
+        self,
+        *,
+        sql: str,
+        normalized_sql: str,
+        username: str,
+        encrypted_password: str,
+        database: str | None,
+        role: str | None,
+        session_id: str | None,
+        file_id: str | None,
+        schema: str | None,
+    ) -> QueryResult:
+        """Execute Nova CREATE ML_MODEL DDL through the ML engine."""
+        start = time.monotonic()
+        try:
+            statement = parse_create_ml_model(normalized_sql)
+            password = decrypt_password(encrypted_password)
+
+            from app.modules.ml_engine.service import ml_engine_service
+
+            result = await ml_engine_service.train_model(
+                model_name=statement.model_name,
+                model_type=statement.model_type,
+                algorithm=statement.algorithm,
+                training_sql=statement.training_sql,
+                target_column=statement.target_column,
+                feature_columns=statement.feature_columns,
+                hyperparameters=statement.hyperparameters,
+                test_size=statement.test_size,
+                database_name=database,
+                created_by=username,
+                username=username,
+                password=password,
+                role=role,
+            )
+            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            columns = [
+                "model_id",
+                "model_name",
+                "model_type",
+                "algorithm",
+                "version",
+                "status",
+                "training_rows",
+                "feature_columns",
+                "metrics",
+            ]
+            row = [
+                result.get("model_id"),
+                result.get("model_name"),
+                result.get("model_type"),
+                result.get("algorithm"),
+                result.get("version"),
+                result.get("status"),
+                result.get("training_rows"),
+                json.dumps(result.get("feature_columns", [])),
+                json.dumps(result.get("metrics", {})),
+            ]
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="execute",
+                object_type="ml_model",
+                object_name=statement.model_name,
+                status="SUCCESS",
+                sql_text=sql,
+                rewritten_sql=normalized_sql,
+                duration_ms=int(elapsed_ms),
+                rows_affected=result.get("training_rows"),
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+            return QueryResult(
+                columns=columns,
+                rows=[row],
+                row_count=1,
+                affected_rows=int(result.get("training_rows") or 0),
+                elapsed_ms=elapsed_ms,
+                original_sql=sql,
+                executed_sql=normalized_sql,
+            )
+        except Exception as exc:
+            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="execute",
+                object_type="ml_model",
+                object_name=database or "workspace",
+                status="ERROR",
+                sql_text=sql,
+                rewritten_sql=normalized_sql,
+                error_message=str(exc),
+                duration_ms=int(elapsed_ms),
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+            raise
 
     async def get_history(
         self,

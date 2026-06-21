@@ -6,7 +6,7 @@
 import re
 from dataclasses import dataclass
 
-from app.modules.query.dialect.parser import CommandType, ParsedSQL, StageReference
+from app.modules.query.dialect.parser import ParsedSQL, StageReference
 
 
 @dataclass
@@ -130,6 +130,7 @@ def translate_stage_query(
 
         # Build FILES() function
         files_func = build_files_function(s3_path, file_format, config)
+        warnings.append(f"Resolved @{stage_name} reference for execution")
 
         # Replace @stage reference with FILES() call
         # Handle both standalone and boundary cases

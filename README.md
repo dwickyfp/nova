@@ -84,11 +84,251 @@ while preserving Nova's dialect translation, access checks, and audit trail.
 Nova extends the warehouse with approachable ML and AI primitives:
 
 ```sql
-CREATE ML_MODEL revenue_forecast TYPE = FORECAST
-    INPUT = (SELECT event_time, revenue FROM analytics.daily_revenue)
-    TIMESTAMP = 'event_time'
-    TARGET = 'revenue';
+CREATE ML_MODEL order_amount_regression
+TYPE = REGRESSION
+TARGET = total_amount
+ALGORITHM = linear
+TEST_SIZE = 0
+AS SELECT
+  CAST(order_id AS DOUBLE) AS order_id,
+  CAST(customer_id AS DOUBLE) AS customer_id,
+  CAST(total_amount AS DOUBLE) AS total_amount
+FROM orders;
 ```
+
+## Nova custom SQL dialect
+
+Nova supports a small SQL dialect on top of StarRocks. Some commands are
+native StarRocks SQL, while others are intercepted by Nova before they reach
+StarRocks.
+
+Run custom Nova SQL from the SQL Workspace or through the Nova Query API:
+
+```http
+POST /api/v1/query/execute
+```
+
+Do not send Nova-only syntax directly to StarRocks on port `9030`. Direct
+StarRocks connections do not understand commands such as `CREATE ML_MODEL` or
+`@stage` references and will return parser errors such as:
+
+```text
+No viable statement for input 'CREATE ML_MODEL'
+```
+
+### What is custom?
+
+| Feature | Where it works | What Nova does |
+|---|---|---|
+| `CREATE ML_MODEL ... AS SELECT ...` | SQL Workspace, Query API | Intercepts the DDL, runs Python ML training, stores metadata and model versions in `NOVA_SYSTEM` |
+| `@stage.path.file` | SQL Workspace, Query API | Resolves the stage, detects file format, injects credentials, rewrites to StarRocks `FILES(...)` |
+| `AI_COMPLETE`, `AI_SENTIMENT`, `AI_CLASSIFY`, etc. | SQL Workspace after AI functions are registered | Nova manages StarRocks global UDFs and provider aliases |
+| `ML_PREDICT` / prediction APIs | ML API, optionally SQL UDF when configured | Uses registered model aliases and stored model versions |
+
+### 1. Train ML from the SQL Workspace
+
+Nova v1 supports classical `REGRESSION` and `CLASSIFICATION` models from
+worksheet SQL. The training query must return the target column and numeric
+feature columns. The training data is read using the logged-in StarRocks user,
+so normal StarRocks RBAC still applies.
+
+Use database context `NOVA_EXAMPLE` for the seeded demo data.
+
+Regression example:
+
+```sql
+CREATE ML_MODEL demo_order_amount_regression
+TYPE = REGRESSION
+TARGET = total_amount
+ALGORITHM = linear
+TEST_SIZE = 0
+AS SELECT
+  CAST(order_id AS DOUBLE) AS order_id,
+  CAST(customer_id AS DOUBLE) AS customer_id,
+  CAST(total_amount AS DOUBLE) AS total_amount
+FROM orders;
+```
+
+Classification example:
+
+```sql
+CREATE ML_MODEL demo_order_status_classifier
+TYPE = CLASSIFICATION
+TARGET = status
+ALGORITHM = decision_tree
+TEST_SIZE = 0
+AS SELECT
+  CAST(order_id AS DOUBLE) AS order_id,
+  CAST(customer_id AS DOUBLE) AS customer_id,
+  CAST(total_amount AS DOUBLE) AS total_amount,
+  status
+FROM orders;
+```
+
+Supported clauses:
+
+| Clause | Required | Example | Notes |
+|---|---:|---|---|
+| `TYPE` | Yes | `TYPE = REGRESSION` | `REGRESSION` or `CLASSIFICATION` |
+| `TARGET` | Yes | `TARGET = total_amount` | Must be present in the `SELECT` output |
+| `ALGORITHM` | No | `ALGORITHM = random_forest` | `auto`, `linear`, `logistic`, `decision_tree`, `random_forest`, `gradient_boost`, `knn`, `svm` |
+| `TEST_SIZE` | No | `TEST_SIZE = 0.2` | Use `0` for tiny demo datasets |
+| `FEATURES` | No | `FEATURES = (order_id, customer_id)` | Defaults to all columns except target |
+| `HYPERPARAMETERS` | No | `HYPERPARAMETERS = JSON '{"n_estimators": 50}'` | Must be a JSON object |
+| `AS SELECT` | Yes | `AS SELECT ... FROM orders` | Supplies the training data |
+
+The worksheet returns one result row with:
+
+```text
+model_id, model_name, model_type, algorithm, version, status,
+training_rows, feature_columns, metrics
+```
+
+The model is stored in:
+
+```sql
+SELECT model_id, model_name, model_type, target_column, feature_columns, created_at
+FROM NOVA_SYSTEM.ML_MODELS
+ORDER BY created_at DESC;
+```
+
+Model versions and metrics are stored in:
+
+```sql
+SELECT m.model_name, v.version, v.status, v.training_rows, v.metrics, v.created_at
+FROM NOVA_SYSTEM.ML_MODELS m
+JOIN NOVA_SYSTEM.ML_MODEL_VERSIONS v ON m.model_id = v.model_id
+ORDER BY v.created_at DESC;
+```
+
+### 2. Use trained ML models
+
+The reliable v1 path for prediction is the ML API. First create an alias for a
+model version:
+
+```bash
+export NOVA_TOKEN="$(
+  curl -s http://localhost:8000/api/v1/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"username":"root","password":""}' \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
+)"
+```
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ml/aliases \
+  -H "Authorization: Bearer $NOVA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "alias_name": "order_amount_predictor",
+    "model_id": "<model_id from worksheet result>",
+    "version": 1
+  }'
+```
+
+Single prediction:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ml/predict \
+  -H "Authorization: Bearer $NOVA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_alias": "order_amount_predictor",
+    "features": {
+      "order_id": 1016,
+      "customer_id": 5
+    }
+  }'
+```
+
+Batch prediction from SQL:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ml/predict/batch \
+  -H "Authorization: Bearer $NOVA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_alias": "order_amount_predictor",
+    "prediction_sql": "SELECT CAST(order_id AS DOUBLE) AS order_id, CAST(customer_id AS DOUBLE) AS customer_id FROM NOVA_EXAMPLE.orders LIMIT 5",
+    "database_name": "NOVA_EXAMPLE"
+  }'
+```
+
+`ML_PREDICT(...)` exists as a Nova-managed UDF surface, but deployments may
+return a helper message until the runtime UDF is configured. Use the API path
+above for guaranteed v1 predictions.
+
+### 3. Query staged files with `@stage`
+
+`@stage` is a Nova abstraction over storage. Users see stage names and paths,
+not buckets, endpoints, or credentials.
+
+```sql
+SELECT *
+FROM @production.sales.orders.parquet
+WHERE order_date >= CURRENT_DATE - INTERVAL 7 DAY;
+```
+
+Nova rewrites the query to a StarRocks `FILES(...)` call with the correct path,
+format, and credentials. The original credentials never appear in UI state,
+API responses, logs, or `NOVA_SYSTEM` tables.
+
+Common patterns:
+
+```sql
+-- Read a CSV file from a stage.
+SELECT *
+FROM @demo_stage.imports.orders.csv;
+
+-- Create a StarRocks table from staged data.
+CREATE TABLE imported_orders AS
+SELECT *
+FROM @demo_stage.imports.orders.csv;
+
+-- Join staged data with a managed table.
+SELECT o.order_id, o.total_amount, c.first_name
+FROM @demo_stage.imports.orders.csv o
+JOIN customers c ON o.customer_id = c.customer_id;
+```
+
+### 4. Use AI functions in SQL
+
+Nova manages AI provider configuration and StarRocks global UDFs for common LLM
+tasks. Configure providers and function aliases in the AI Providers UI, then
+register or re-register the UDFs from the Functions tab.
+
+Available function surfaces include:
+
+```sql
+SELECT AI_COMPLETE('Write a haiku about databases') AS result;
+
+SELECT AI_SENTIMENT('I love this product') AS sentiment;
+
+SELECT AI_CLASSIFY(
+  'The customer needs help with an invoice',
+  'billing, technical, account, sales'
+) AS category;
+
+SELECT AI_SUMMARIZE(
+  'StarRocks is a high-performance analytical database for real-time workloads...'
+) AS summary;
+
+SELECT AI_EXTRACT(
+  'Jane Doe lives in Jakarta and works as a data engineer.',
+  'name, city, occupation'
+) AS extracted_json;
+
+SELECT AI_TRANSLATE('Good morning', 'Indonesian') AS translated_text;
+
+SELECT AI_FILTER(
+  'The order was delayed and the customer is unhappy.',
+  'is this a support escalation?'
+) AS should_escalate;
+```
+
+If an AI function returns a configuration error, create or update its alias in
+the AI Providers page and re-register UDFs. The provider API key is resolved by
+Nova and must not be embedded in worksheet SQL.
 
 ## Architecture
 

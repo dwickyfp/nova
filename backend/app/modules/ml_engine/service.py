@@ -11,13 +11,14 @@ Tables:
 """
 
 import base64
+import io
 import json
 import logging
+from contextlib import suppress
 from uuid import uuid4
 
 import asyncmy
 import asyncmy.cursors
-import io
 import joblib
 import numpy as np
 from sklearn.ensemble import (
@@ -27,10 +28,6 @@ from sklearn.ensemble import (
     RandomForestRegressor,
 )
 from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-from sklearn.svm import SVC, SVR
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -38,8 +35,13 @@ from sklearn.metrics import (
     mean_squared_error,
     r2_score,
 )
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.svm import SVC, SVR
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from app.core.config import settings
+from app.core.database import db
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +119,9 @@ class MLEngineService:
         test_size: float,
         database_name: str | None,
         created_by: str = "root",
+        username: str | None = None,
+        password: str | None = None,
+        role: str | None = None,
     ) -> dict:
         """Train a model from SQL query data.
 
@@ -125,21 +130,21 @@ class MLEngineService:
         3. Evaluate on test split
         4. Serialize model to base64, store in ML_MODEL_VERSIONS
         """
-        # 1. Fetch training data from StarRocks
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                if database_name:
-                    await cur.execute(f"USE {database_name}")
-                await cur.execute(training_sql)
-                rows = await cur.fetchall()
-                columns = (
-                    [desc[0] for desc in cur.description]
-                    if cur.description
-                    else (list(rows[0].keys()) if rows else [])
-                )
-        finally:
-            conn.close()
+        # 1. Fetch training data from StarRocks. Worksheet-triggered training
+        # uses the logged-in user's connection so StarRocks RBAC remains authoritative.
+        if username is not None and password is not None:
+            rows, columns = await self._fetch_training_data_as_user(
+                username=username,
+                password=password,
+                role=role,
+                database_name=database_name,
+                training_sql=training_sql,
+            )
+        else:
+            rows, columns = await self._fetch_training_data_as_system(
+                database_name=database_name,
+                training_sql=training_sql,
+            )
 
         if not rows:
             raise ValueError("Training SQL returned no rows")
@@ -198,7 +203,11 @@ class MLEngineService:
         # 5. Train/test split
         if test_size > 0 and len(X) >= 20:
             X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=42, stratify=y if model_type == "classification" else None
+                X,
+                y,
+                test_size=test_size,
+                random_state=42,
+                stratify=y if model_type == "classification" else None,
             )
         else:
             X_train, X_test, y_train, y_test = X, X, y, y
@@ -231,7 +240,11 @@ class MLEngineService:
         logger.info("Model trained: %s, metrics=%s", chosen_algo, metrics)
 
         # 8. Serialize model (include label_encoder if used)
-        model_bundle = {"model": model, "feature_columns": feature_columns, "target_column": target_column}
+        model_bundle = {
+            "model": model,
+            "feature_columns": feature_columns,
+            "target_column": target_column,
+        }
         if label_encoder:
             model_bundle["label_encoder"] = label_encoder
         buf = io.BytesIO()
@@ -251,18 +264,29 @@ class MLEngineService:
                 await cur.execute(
                     """INSERT INTO NOVA_SYSTEM.ML_MODELS
                        (model_id, model_type, model_name, target_column, feature_columns,
-                        hyperparameters, training_sql, database_name, created_at, created_by, updated_at)
+                        hyperparameters, training_sql, database_name, created_at, created_by,
+                        updated_at)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, NOW())""",
                     (
-                        model_id, model_type, model_name, target_column,
-                        features_json, hyperparams_json, training_sql,
-                        database_name, created_by,
+                        model_id,
+                        model_type,
+                        model_name,
+                        target_column,
+                        features_json,
+                        hyperparams_json,
+                        training_sql,
+                        database_name,
+                        created_by,
                     ),
                 )
 
                 # Get next version number
                 await cur.execute(
-                    "SELECT COALESCE(MAX(version), 0) + 1 FROM NOVA_SYSTEM.ML_MODEL_VERSIONS WHERE model_id = %s",
+                    """
+                    SELECT COALESCE(MAX(version), 0) + 1
+                    FROM NOVA_SYSTEM.ML_MODEL_VERSIONS
+                    WHERE model_id = %s
+                    """,
                     (model_id,),
                 )
                 version_row = await cur.fetchone()
@@ -271,7 +295,8 @@ class MLEngineService:
                 # Insert model version with binary
                 await cur.execute(
                     """INSERT INTO NOVA_SYSTEM.ML_MODEL_VERSIONS
-                       (model_id, version, status, training_rows, metrics, model_binary, created_at, created_by)
+                       (model_id, version, status, training_rows, metrics, model_binary,
+                        created_at, created_by)
                        VALUES (%s, %s, 'active', %s, %s, %s, NOW(), %s)""",
                     (model_id, version, len(X), metrics_json, model_binary, created_by),
                 )
@@ -354,14 +379,16 @@ class MLEngineService:
                     if label_encoder is not None
                     else model.classes_
                 )
-                probability = {str(c): float(p) for c, p in zip(classes, proba)}
+                probability = {str(c): float(p) for c, p in zip(classes, proba, strict=False)}
             except Exception:
                 pass
 
         return {
             "model_alias": model_alias,
             "model_name": alias_row["model_name"],
-            "prediction": prediction if not isinstance(prediction, np.generic) else prediction.item(),
+            "prediction": (
+                prediction if not isinstance(prediction, np.generic) else prediction.item()
+            ),
             "probability": probability,
             "model_version": alias_row["version"],
         }
@@ -392,7 +419,7 @@ class MLEngineService:
                 )
                 version_row = await cur.fetchone()
                 if not version_row:
-                    raise ValueError(f"Model version not found")
+                    raise ValueError("Model version not found")
 
                 # 2. Fetch prediction data
                 if database_name:
@@ -441,7 +468,7 @@ class MLEngineService:
             if label_encoder is not None:
                 preds = label_encoder.inverse_transform(preds)
 
-            for row, pred in zip(valid_rows, preds):
+            for row, pred in zip(valid_rows, preds, strict=False):
                 pred_val = pred if not isinstance(pred, np.generic) else pred.item()
                 result = dict(row)
                 result["prediction"] = pred_val
@@ -510,10 +537,8 @@ class MLEngineService:
         for v in version_rows:
             v_dict = dict(v)
             if v_dict.get("metrics") and isinstance(v_dict["metrics"], str):
-                try:
+                with suppress(json.JSONDecodeError, TypeError):
                     v_dict["metrics"] = json.loads(v_dict["metrics"])
-                except (json.JSONDecodeError, TypeError):
-                    pass
             if v_dict.get("created_at"):
                 v_dict["created_at"] = str(v_dict["created_at"])
             versions.append(v_dict)
@@ -578,7 +603,8 @@ class MLEngineService:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
                 # Upsert alias (StarRocks supports PRIMARY KEY upsert)
                 await cur.execute(
-                    """INSERT INTO NOVA_SYSTEM.ML_MODEL_ALIASES (alias_name, model_id, version, created_at, updated_at)
+                    """INSERT INTO NOVA_SYSTEM.ML_MODEL_ALIASES
+                       (alias_name, model_id, version, created_at, updated_at)
                        VALUES (%s, %s, %s, NOW(), NOW())""",
                     (alias_name, model_id, version),
                 )
@@ -617,16 +643,65 @@ class MLEngineService:
     # ── Helpers ─────────────────────────────────────────────────
 
     @staticmethod
+    async def _fetch_training_data_as_user(
+        *,
+        username: str,
+        password: str,
+        role: str | None,
+        database_name: str | None,
+        training_sql: str,
+    ) -> tuple[list[dict], list[str]]:
+        async with (
+            db.user_conn(
+                username=username,
+                password=password,
+                database=database_name,
+            ) as conn,
+            conn.cursor(asyncmy.cursors.DictCursor) as cur,
+        ):
+            if role:
+                safe_role = role.replace("`", "").replace("'", "")
+                await cur.execute(f"SET ROLE {safe_role}")
+            await cur.execute(training_sql)
+            rows = await cur.fetchall()
+            columns = (
+                [desc[0] for desc in cur.description]
+                if cur.description
+                else (list(rows[0].keys()) if rows else [])
+            )
+        return list(rows), columns
+
+    async def _fetch_training_data_as_system(
+        self,
+        *,
+        database_name: str | None,
+        training_sql: str,
+    ) -> tuple[list[dict], list[str]]:
+        conn = await self._connect()
+        try:
+            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
+                if database_name:
+                    await cur.execute(f"USE {database_name}")
+                await cur.execute(training_sql)
+                rows = await cur.fetchall()
+                columns = (
+                    [desc[0] for desc in cur.description]
+                    if cur.description
+                    else (list(rows[0].keys()) if rows else [])
+                )
+        finally:
+            conn.close()
+        return list(rows), columns
+
+    @staticmethod
     def _deserialize_model(row: dict) -> dict:
         """Deserialize a model row, parsing JSON fields."""
         result = dict(row)
         for field in ("feature_columns", "hyperparameters", "latest_metrics"):
             val = result.get(field)
             if val and isinstance(val, str):
-                try:
+                with suppress(json.JSONDecodeError, TypeError):
                     result[field] = json.loads(val)
-                except (json.JSONDecodeError, TypeError):
-                    pass
         if result.get("created_at"):
             result["created_at"] = str(result["created_at"])
         return result
