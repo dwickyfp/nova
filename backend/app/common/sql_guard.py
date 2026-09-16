@@ -6,12 +6,24 @@ Matching happens on a *normalized* form of the SQL so that the guard cannot be
 shifted by presentation-level noise in the source text:
 
 * block comments ``/* ... */`` are removed and line comments ``-- ...`` are
-  stripped to end-of-line, and
-* identifier quoting (backtick / double-quote / bracket) around the tokens the
-  patterns look for is collapsed.
+  stripped to end-of-line,
+* identifier quoting (backtick / double-quote / bracket / single-quote) around
+  the tokens the patterns look for is collapsed, and
+* runs of whitespace are squeezed to a single space.
 
-Both transformations preserve string literals verbatim, so a comment marker or
-quote character inside ``'...'`` is never mistaken for syntax.
+The result is that the patterns below never have to tolerate presentation-level
+noise themselves: ``DROP /*x*/ ROLE\\n`ACCOUNTADMIN``` and
+``DROP ROLE ACCOUNTADMIN`` are the same string to every one of them.
+
+Comments go first, since a comment can hide the very keyword or quote a pattern
+is looking for. The remaining two steps are commutative — the quoted-identifier
+rule's lookbehind accepts any run of whitespace, so squeezing before or after it
+yields the same string — but the squeeze is kept last so the ordering is
+unambiguous.
+
+Matching runs with ``re.DOTALL`` so a ``.*`` between keywords also spans a
+newline that survived normalization. ``DESTRUCTIVE_SQL_PATTERN`` and
+``UNSCOPED_MUTATION_PATTERN`` below already used it; the guard now matches.
 """
 
 from __future__ import annotations
@@ -36,45 +48,54 @@ _BUILTIN_UDF_ALTERNATION = "|".join(BUILTIN_UDFS)
 
 BLOCKED_PATTERNS: list[tuple[str, str]] = [
     (
-        r"\bDROP\s+ROLE\s+ACCOUNTADMIN\b",
+        r"\bDROP\s+ROLE\s+(?:IF\s+EXISTS\s+)?ACCOUNTADMIN\b",
         "ACCOUNTADMIN role cannot be dropped",
     ),
+    # `FROM ROLE <role>` and the bare `FROM <role>` form StarRocks also accepts.
+    # The privilege list is bounded by `[^;]*?` rather than `.*` so a match can
+    # never walk past the end of the current statement into the next one.
     (
-        r"\bREVOKE\b.*\bFROM\s+ROLE\s+ACCOUNTADMIN\b",
-        "Cannot revoke privileges from ACCOUNTADMIN",
-    ),
-    # StarRocks also accepts the `REVOKE <priv> ON <obj> FROM <role>` form
-    # without the ROLE keyword.
-    (
-        r"\bREVOKE\b.*\bFROM\s+ACCOUNTADMIN\b",
+        r"\bREVOKE\b[^;]*?\bFROM\s+ROLE\s+ACCOUNTADMIN\b",
         "Cannot revoke privileges from ACCOUNTADMIN",
     ),
     (
-        r"\bALTER\s+ROLE\s+ACCOUNTADMIN\b",
+        r"\bREVOKE\b[^;]*?\bFROM\s+ACCOUNTADMIN\b",
+        "Cannot revoke privileges from ACCOUNTADMIN",
+    ),
+    (
+        r"\bALTER\s+ROLE\s+(?:IF\s+EXISTS\s+)?ACCOUNTADMIN\b",
         "ACCOUNTADMIN role cannot be altered",
     ),
-    # StarRocks drops roles via ALTER ROLE ... RENAME TO ... as well.
+    # StarRocks drops roles via ALTER ROLE ... RENAME TO ... as well. The source
+    # role is `\S+` (it may be a quoted identifier, which normalization has
+    # already unquoted) and ACCOUNTADMIN is the rename *target*.
     (
-        r"\bALTER\s+ROLE\s+\S+\s+RENAME\s+TO\s+ACCOUNTADMIN\b",
+        r"\bALTER\s+ROLE\s+(?:IF\s+EXISTS\s+)?\S+\s+RENAME\s+TO\s+ACCOUNTADMIN\b",
         "ACCOUNTADMIN role cannot be renamed to",
     ),
     (
-        r"\bDROP\s+USER\s+.*root\b",
+        r"\bDROP\s+USER\s+[^;]*?\broot\b",
         "root user cannot be dropped",
     ),
     # Guard: prevent dropping Nova built-in UDFs (any signature)
     (
-        rf"\bDROP\s+GLOBAL\s+FUNCTION\s+(IF\s+EXISTS\s+)?({_BUILTIN_UDF_ALTERNATION})\s*\(",
+        rf"\bDROP\s+GLOBAL\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?({_BUILTIN_UDF_ALTERNATION})\s*\(",
         "Cannot drop Nova built-in function. These are managed by the system and "
         "auto-registered on startup.",
     ),
     # Also guard DROP without signature
     (
-        rf"\bDROP\s+GLOBAL\s+FUNCTION\s+(IF\s+EXISTS\s+)?({_BUILTIN_UDF_ALTERNATION})\s*;",
+        rf"\bDROP\s+GLOBAL\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?({_BUILTIN_UDF_ALTERNATION})\s*;",
         "Cannot drop Nova built-in function. These are managed by the system and "
         "auto-registered on startup.",
     ),
 ]
+
+#: Flags every ``BLOCKED_PATTERNS`` entry is matched with. ``re.DOTALL`` is
+#: required (not optional): the ``.*``-style spans above must be able to cross a
+#: newline, and it keeps this module consistent with
+#: ``DESTRUCTIVE_SQL_PATTERN`` / ``UNSCOPED_MUTATION_PATTERN`` below.
+BLOCKED_PATTERN_FLAGS = re.IGNORECASE | re.DOTALL
 
 # Keywords that terminate an identifier, so quoting only wraps the identifier
 # itself and not the surrounding SQL grammar.
@@ -83,13 +104,24 @@ _KEYWORD_BOUNDARY = (
     r"RENAME|RESTRICT|REVOKE|ROLE|ROLES|SELECT|SYSTEM|TO|USER|USING|WITH"
 )
 
-# Backticks and double quotes wrap an identifier; brackets are accepted too but
-# only when the content is a plain identifier so T-SQL-ish text is not mangled.
+# An identifier may be wrapped in backticks, double quotes, single quotes, or
+# T-SQL brackets. StarRocks accepts the single-quoted form too, and treating it
+# as a string literal rather than an identifier is exactly what let
+# ```REVOKE ... FROM ROLE 'ACCOUNTADMIN'``` slip past the patterns.
+#
+# Only an identifier-shaped body is stripped (``[A-Za-z_][\w$]*``), so a real
+# string literal such as ``'hello world'`` keeps its quotes and stays visible
+# to the patterns as a literal.
 _QUOTED_IDENTIFIER = re.compile(
-    rf"(?:(?<=[\s,(=])|^)(?:`([A-Za-z_][\w$]*)`|\"([A-Za-z_][\w$]*)\"|\[([A-Za-z_][\w$]*)\])"
+    r"""(?:(?<=[\s,(=])|^)(?:`([A-Za-z_][\w$]*)`|"([A-Za-z_][\w$]*)"|\[([A-Za-z_][\w$]*)\]|'([A-Za-z_][\w$]*)')"""
     rf"(?=[\s,;)]|$|\.|(?:(?:{_KEYWORD_BOUNDARY})\b))",
     re.IGNORECASE,
 )
+
+#: Collapse every run of whitespace (including newlines) to one space. Applied
+#: after comment removal and quote collapsing, so patterns can assume single
+#: spaces and never need their own ``\s+`` tolerance for layout.
+_WHITESPACE_RUN = re.compile(r"\s+")
 
 _LINE_COMMENT = re.compile(r"--[^\n]*")
 
@@ -161,14 +193,23 @@ def strip_sql_comments(sql: str) -> str:
 def normalize_sql(sql: str) -> str:
     """Return the canonical form the guard patterns match against.
 
-    Comments are stripped and quoting around identifiers is removed so that
-    ``DROP /*x*/ ROLE `ACCOUNTADMIN``` and ``DROP ROLE ACCOUNTADMIN`` are the
-    same string to every pattern below.
+    Three presentation-level transformations are applied, in this order:
+
+    1. comments are stripped (a comment can hide a quote or a keyword),
+    2. identifier quoting is collapsed — backtick, double-quote, single-quote,
+       and bracket forms alike,
+    3. runs of whitespace are squeezed to a single space.
+
+    Steps 2 and 3 commute (the quoted-identifier lookbehind accepts a whitespace
+    run), but the squeeze is applied last so the result does not depend on that.
+    The upshot is that ``DROP ROLE\\n'ACCOUNTADMIN'`` and
+    ``DROP ROLE ACCOUNTADMIN`` are the same string to every pattern below.
     """
     without_comments = strip_sql_comments(sql)
-    return _QUOTED_IDENTIFIER.sub(
-        lambda m: m.group(1) or m.group(2) or m.group(3), without_comments
+    unquoted = _QUOTED_IDENTIFIER.sub(
+        lambda m: next((g for g in m.groups() if g), m.group(0)), without_comments
     )
+    return _WHITESPACE_RUN.sub(" ", unquoted)
 
 
 def guard_sql(sql: str) -> None:
@@ -184,7 +225,7 @@ def guard_sql(sql: str) -> None:
     if not normalized:
         return
     for pattern, message in BLOCKED_PATTERNS:
-        if re.search(pattern, normalized, re.IGNORECASE):
+        if re.search(pattern, normalized, BLOCKED_PATTERN_FLAGS):
             raise ForbiddenSQLError(message)
 
 
