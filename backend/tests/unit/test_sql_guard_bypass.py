@@ -38,8 +38,92 @@ class TestCommentBypass:
             guard_sql("DROP /*\n multi\n line \n*/ ROLE ACCOUNTADMIN")
 
     def test_nested_comment_markers_do_not_escape(self):
+        # StarRocks does not nest block comments, so this form is genuinely
+        # `DROP */ ROLE ACCOUNTADMIN` to the engine — `*/` closes the comment and
+        # the leftover marker is part of the statement. It is blocked because the
+        # guard sees the real keyword/identifier pair, not a balanced pair of
+        # markers that hid them.
         with pytest.raises(ForbiddenSQLError, match="ACCOUNTADMIN"):
             guard_sql("DROP /* /* nested */ */ ROLE ACCOUNTADMIN")
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "DROP ROLE /* a /* b */ ACCOUNTADMIN",
+            "drop role /* a /* b */ ACCOUNTADMIN",
+            "REVOKE /* a /* b */ ALL ON *.* FROM ROLE ACCOUNTADMIN",
+            "ALTER /* a /* b */ ROLE ACCOUNTADMIN SET DEFAULT ROLE NONE",
+            "ALTER ROLE evil /* a /* b */ RENAME TO ACCOUNTADMIN",
+        ],
+    )
+    def test_single_close_marker_comment_blocked(self, sql):
+        # The comment closes at its only `*/`, so `ACCOUNTADMIN` is live SQL to
+        # the engine and must still be caught even though the scanner keeps the
+        # unterminated remainder hidden.
+        with pytest.raises(ForbiddenSQLError, match="ACCOUNTADMIN"):
+            guard_sql(sql)
+
+    def test_leftover_marker_does_not_hide_the_blocked_statement(self):
+        # Closing at the first `*/` is the engine's rule; the leftover `*/` stays
+        # in the normalized text and every pattern tolerates it, so the statement
+        # reaches the guard instead of being dropped as unreachable comment text.
+        assert normalize_sql("DROP ROLE /* a /* b */ ACCOUNTADMIN") == "DROP ROLE */ ACCOUNTADMIN"
+        with pytest.raises(ForbiddenSQLError, match="ACCOUNTADMIN"):
+            guard_sql("DROP ROLE /* a /* b */ ACCOUNTADMIN")
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            # The marker in each inter-token position, so no single join in the
+            # patterns can be the only one that tolerates it.
+            "DROP /* a /* b */ ROLE ACCOUNTADMIN",
+            "DROP ROLE IF /* a /* b */ EXISTS ACCOUNTADMIN",
+            "REVOKE ALL ON *.* FROM /* a /* b */ ROLE ACCOUNTADMIN",
+            "REVOKE ALL ON *.* /* a /* b */ FROM ROLE ACCOUNTADMIN",
+            "ALTER ROLE /* a /* b */ ACCOUNTADMIN RENAME TO evil",
+            "DROP USER root /* a /* b */",
+            "DROP GLOBAL FUNCTION /* a /* b */ AI_COMPLETE(string)",
+            # Leading marker, before any keyword.
+            "/* /* */ DROP ROLE ACCOUNTADMIN",
+        ],
+    )
+    def test_marker_in_every_position_blocked(self, sql):
+        with pytest.raises(ForbiddenSQLError):
+            guard_sql(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            # Multi-statement: the statement holding the blocked operation must
+            # not be masked by a neighbouring one.
+            "SELECT 1; DROP ROLE ACCOUNTADMIN /* trailing",
+            "SELECT 1; /* a /* b */ DROP ROLE ACCOUNTADMIN",
+        ],
+    )
+    def test_dropped_region_does_not_mask_a_neighbouring_statement(self, sql):
+        with pytest.raises(ForbiddenSQLError, match="ACCOUNTADMIN"):
+            guard_sql(sql)
+
+    def test_unterminated_block_comment_swallows_remainder(self):
+        # An unterminated comment leaves no SQL behind it — neither side of the
+        # split is a complete statement. `strip_sql_comments` keeps its original
+        # contract here; the enforced invariant is the guard's.
+        from app.common.sql_guard import strip_sql_comments
+
+        assert strip_sql_comments("DROP ROLE ACCOUNTADMIN /* trailing") == (
+            "DROP ROLE ACCOUNTADMIN  "
+        )
+        guard_sql("SELECT 1 /* trailing")
+
+    def test_complete_statement_before_unterminated_comment_still_blocked(self):
+        with pytest.raises(ForbiddenSQLError, match="ACCOUNTADMIN"):
+            guard_sql("DROP ROLE ACCOUNTADMIN /* trailing")
+
+    def test_legitimate_query_with_single_close_comment_still_allowed(self):
+        # StarRocks accepts `SELECT /* a /* b */ 1`; treating the first marker as
+        # the closing one must not over-block a legitimate query.
+        guard_sql("SELECT /* a /* b */ 1")
+        guard_sql("SELECT 1 /* a /* b */")
 
     def test_comment_hidden_revoke_blocked(self):
         with pytest.raises(ForbiddenSQLError, match="revoke"):

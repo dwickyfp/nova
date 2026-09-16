@@ -108,6 +108,26 @@ class TestMultiStatementDestructiveIsBlocked:
             )
         assert created["repo"].calls == []
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            # Single-close-marker comments: the comment ends at the first `*/`,
+            # so the statement is live SQL to the engine and must reach the guard.
+            "drop role /* a /* b */ ACCOUNTADMIN",
+            "REVOKE /* a /* b */ ALL ON *.* FROM ROLE ACCOUNTADMIN",
+            "ALTER /* a /* b */ ROLE ACCOUNTADMIN SET DEFAULT ROLE NONE",
+            "ALTER ROLE evil /* a /* b */ RENAME TO ACCOUNTADMIN",
+            "SELECT 1; drop role /* a /* b */ ACCOUNTADMIN",
+            "SELECT 1; REVOKE /* a /* b */ ALL ON *.* FROM ROLE ACCOUNTADMIN",
+        ],
+    )
+    async def test_single_close_marker_comment_blocked(self, patched, sql):
+        make, created = patched
+        svc = make()
+        with pytest.raises(ForbiddenSQLError, match="ACCOUNTADMIN"):
+            await _execute(svc, sql, confirm_destructive=True)
+        assert created["repo"].calls == [], "the bypass reached the engine"
+
 
 class TestSingleStatementBehaviourUnchanged:
     async def test_plain_select_executes(self, patched):
