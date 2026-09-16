@@ -21,6 +21,16 @@ rule's lookbehind accepts any run of whitespace, so squeezing before or after it
 yields the same string — but the squeeze is kept last so the ordering is
 unambiguous.
 
+A block comment is delimited the way StarRocks delimits it — by the first ``*/``
+after the opening ``/*``, never by a matching depth — so the text that survives
+comment removal is the text the engine would parse as SQL. Depth tracking used to
+let a *second* ``*/`` close the comment, which normalized
+``DROP /* a /* b */ ROLE ACCOUNTADMIN`` to ``DROP ROLE`` and blinded every
+pattern. An inner ``/*`` marker is copied through as ``*/`` for the same reason:
+the region it sits in is dropped, and the markers are the only part of it that is
+not plain comment content. An unterminated comment still swallows the remainder
+of the script.
+
 Matching runs with ``re.DOTALL`` so a ``.*`` between keywords also spans a
 newline that survived normalization. ``DESTRUCTIVE_SQL_PATTERN`` and
 ``UNSCOPED_MUTATION_PATTERN`` below already used it; the guard now matches.
@@ -46,46 +56,59 @@ BUILTIN_UDFS = [
 
 _BUILTIN_UDF_ALTERNATION = "|".join(BUILTIN_UDFS)
 
+#: Presentation noise that may survive normalisation between two tokens of a
+#: single statement. An unbalanced block-comment region leaves its leftover
+#: marker behind (``DROP ROLE /* a /* b */ ACCOUNTADMIN`` → ``DROP ROLE */ …``)
+#: and the engine parses straight through it, so the patterns below must too.
+#: Also used for the whitespace-separated joins inside the patterns themselves.
+_GAP = r"(?:\s|/\*|\*/)+"
+
+#: Zero-or-more variant, for a gap that may legitimately be empty (``FUNCTION
+#: AI_COMPLETE(`` has none before the paren).
+_GAP_OPT = r"(?:\s|/\*|\*/)*"
+
 BLOCKED_PATTERNS: list[tuple[str, str]] = [
     (
-        r"\bDROP\s+ROLE\s+(?:IF\s+EXISTS\s+)?ACCOUNTADMIN\b",
+        rf"\bDROP{_GAP}ROLE{_GAP}(?:IF{_GAP}EXISTS{_GAP})?ACCOUNTADMIN\b",
         "ACCOUNTADMIN role cannot be dropped",
     ),
     # `FROM ROLE <role>` and the bare `FROM <role>` form StarRocks also accepts.
     # The privilege list is bounded by `[^;]*?` rather than `.*` so a match can
     # never walk past the end of the current statement into the next one.
     (
-        r"\bREVOKE\b[^;]*?\bFROM\s+ROLE\s+ACCOUNTADMIN\b",
+        rf"\bREVOKE\b[^;]*?\bFROM{_GAP}ROLE{_GAP}ACCOUNTADMIN\b",
         "Cannot revoke privileges from ACCOUNTADMIN",
     ),
     (
-        r"\bREVOKE\b[^;]*?\bFROM\s+ACCOUNTADMIN\b",
+        rf"\bREVOKE\b[^;]*?\bFROM{_GAP}ACCOUNTADMIN\b",
         "Cannot revoke privileges from ACCOUNTADMIN",
     ),
     (
-        r"\bALTER\s+ROLE\s+(?:IF\s+EXISTS\s+)?ACCOUNTADMIN\b",
+        rf"\bALTER{_GAP}ROLE{_GAP}(?:IF{_GAP}EXISTS{_GAP})?ACCOUNTADMIN\b",
         "ACCOUNTADMIN role cannot be altered",
     ),
     # StarRocks drops roles via ALTER ROLE ... RENAME TO ... as well. The source
     # role is `\S+` (it may be a quoted identifier, which normalization has
     # already unquoted) and ACCOUNTADMIN is the rename *target*.
     (
-        r"\bALTER\s+ROLE\s+(?:IF\s+EXISTS\s+)?\S+\s+RENAME\s+TO\s+ACCOUNTADMIN\b",
+        rf"\bALTER{_GAP}ROLE{_GAP}(?:IF{_GAP}EXISTS{_GAP})?\S+{_GAP}RENAME{_GAP}TO{_GAP}ACCOUNTADMIN\b",
         "ACCOUNTADMIN role cannot be renamed to",
     ),
     (
-        r"\bDROP\s+USER\s+[^;]*?\broot\b",
+        rf"\bDROP{_GAP}USER\b[^;]*?\broot\b",
         "root user cannot be dropped",
     ),
     # Guard: prevent dropping Nova built-in UDFs (any signature)
     (
-        rf"\bDROP\s+GLOBAL\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?({_BUILTIN_UDF_ALTERNATION})\s*\(",
+        rf"\bDROP{_GAP}GLOBAL{_GAP}FUNCTION{_GAP}(?:IF{_GAP}EXISTS{_GAP})?"
+        rf"({_BUILTIN_UDF_ALTERNATION}){_GAP_OPT}\(",
         "Cannot drop Nova built-in function. These are managed by the system and "
         "auto-registered on startup.",
     ),
     # Also guard DROP without signature
     (
-        rf"\bDROP\s+GLOBAL\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?({_BUILTIN_UDF_ALTERNATION})\s*;",
+        rf"\bDROP{_GAP}GLOBAL{_GAP}FUNCTION{_GAP}(?:IF{_GAP}EXISTS{_GAP})?"
+        rf"({_BUILTIN_UDF_ALTERNATION}){_GAP_OPT};",
         "Cannot drop Nova built-in function. These are managed by the system and "
         "auto-registered on startup.",
     ),
@@ -157,24 +180,35 @@ def strip_sql_comments(sql: str) -> str:
             continue
 
         if ch == "/" and sql.startswith("/*", i):
-            # Scan with nesting depth so an inner `*/` cannot terminate the
-            # comment early and leave the rest of the text behind as "SQL".
-            depth = 1
+            # StarRocks block comments do NOT nest: the first `*/` after the
+            # opening `/*` closes the comment, an inner `/*` is ordinary text.
+            # Tracking nesting depth instead — letting the *second* `*/` close —
+            # meant ``DROP /* a /* b */ ROLE ACCOUNTADMIN`` normalized to
+            # ``DROP ROLE`` and slipped past every guard pattern, and made an
+            # unterminated comment swallow the rest of the script untouched.
+            #
+            # Closing at the marker the engine closes at is what keeps the
+            # normalized text equal to the SQL the engine actually parses. The
+            # markers still bound the region that gets dropped, and they are the
+            # only thing in it that is not plain comment content: a `*/` before
+            # the closing marker is copied through, since the upstream stream
+            # never sees the text around it as SQL either and dropping it would
+            # be the bypass again — a guard pattern reading a leftover marker
+            # that a real engine accepts.
             j = i + 2
-            while j < length and depth:
+            while j < length and not sql.startswith("*/", j):
                 if sql.startswith("/*", j):
-                    depth += 1
-                    j += 2
-                elif sql.startswith("*/", j):
-                    depth -= 1
+                    # Marker inside the comment: keep it, so the content that
+                    # follows cannot fuse with a keyword outside the region.
+                    out.append("*/")
                     j += 2
                 else:
                     j += 1
+            if j >= length:
+                out.append(" ")
+                break  # unterminated comment swallows the remainder
             out.append(" ")
-            # Unterminated comment swallows the remainder of the script.
-            if depth:
-                break
-            i = j
+            i = j + 2
             continue
 
         if ch == "-" and sql.startswith("--", i):
