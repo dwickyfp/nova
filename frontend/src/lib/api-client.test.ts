@@ -3,14 +3,18 @@ import { api } from './api-client'
 
 const fetchMock = vi.fn()
 
-beforeEach(() => {
-  vi.stubGlobal('fetch', fetchMock)
-  fetchMock.mockResolvedValue({
+function jsonResponse(body: unknown) {
+  return {
     ok: true,
     status: 200,
     headers: new Headers({ 'content-type': 'application/json' }),
-    json: async () => ({ ok: true }),
-  })
+    json: async () => body,
+  }
+}
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', fetchMock)
+  fetchMock.mockResolvedValue(jsonResponse({ ok: true }))
 })
 
 afterEach(() => {
@@ -18,38 +22,41 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('api.patch', () => {
-  it('issues a PATCH request to the API base path', async () => {
-    await api.patch('/api/v1/pipes/my_pipe/suspend')
+function requestedUrl() {
+  return fetchMock.mock.calls[0][0] as string
+}
 
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/v1/api/v1/pipes/my_pipe/suspend')
-    expect(init.method).toBe('PATCH')
+describe('api.patch', () => {
+  it('prefixes the path with the API base exactly once', async () => {
+    await api.patch('/pipes/my_pipe/suspend')
+
+    expect(requestedUrl()).toBe('/api/v1/pipes/my_pipe/suspend')
+  })
+
+  it('issues a PATCH request', async () => {
+    await api.patch('/pipes/my_pipe/suspend')
+
+    expect(fetchMock.mock.calls[0][1].method).toBe('PATCH')
   })
 
   it('serialises a JSON body when one is supplied', async () => {
-    await api.patch('/api/v1/example', { state: 'ACTIVE' })
+    await api.patch('/example', { state: 'ACTIVE' })
 
-    const [, init] = fetchMock.mock.calls[0]
-    expect(init.body).toBe(JSON.stringify({ state: 'ACTIVE' }))
+    expect(fetchMock.mock.calls[0][1].body).toBe(
+      JSON.stringify({ state: 'ACTIVE' })
+    )
   })
 
   it('sends no body when none is supplied', async () => {
-    await api.patch('/api/v1/example')
+    await api.patch('/example')
 
-    const [, init] = fetchMock.mock.calls[0]
-    expect(init.body).toBeUndefined()
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined()
   })
 
   it('returns the unwrapped response body', async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: async () => ({ status: 'SUSPENDED' }),
-    })
+    fetchMock.mockResolvedValue(jsonResponse({ status: 'SUSPENDED' }))
 
-    await expect(api.patch('/api/v1/example')).resolves.toEqual({
+    await expect(api.patch('/example')).resolves.toEqual({
       status: 'SUSPENDED',
     })
   })
@@ -63,8 +70,32 @@ describe('api.patch', () => {
       json: async () => ({ detail: 'Pipe is already suspended' }),
     })
 
-    await expect(api.patch('/api/v1/example')).rejects.toThrow(
+    await expect(api.patch('/example')).rejects.toThrow(
       'Pipe is already suspended'
     )
+  })
+})
+
+// Every caller passes a path relative to API_BASE. A caller repeating the
+// /api/v1 prefix produces /api/v1/api/v1/... which the backend answers with
+// 404, so assert the single-prefix shape for all five verbs.
+describe('API base prefixing', () => {
+  it.each([
+    ['get', () => api.get('/pipes')],
+    ['post', () => api.post('/pipes', {})],
+    ['put', () => api.put('/pipes', {})],
+    ['patch', () => api.patch('/pipes')],
+    ['delete', () => api.delete('/pipes')],
+  ])('builds the %s URL from a single base prefix', async (_method, call) => {
+    await call()
+
+    expect(requestedUrl()).toBe('/api/v1/pipes')
+  })
+
+  it('does not double the prefix for a nested path', async () => {
+    await api.patch('/tasks/my_task/resume')
+
+    expect(requestedUrl()).toBe('/api/v1/tasks/my_task/resume')
+    expect(requestedUrl()).not.toContain('/api/v1/api/v1')
   })
 })

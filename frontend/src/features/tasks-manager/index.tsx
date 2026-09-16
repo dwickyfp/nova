@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { api } from '@/lib/api-client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,61 +10,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { SimpleTablePagination, SimpleTableToolbar, SimpleTableViewport } from '@/components/data-table/simple-table-controls'
 import { Plus, Trash2, Pause, Play, ChevronDown, ChevronRight, ListTodo } from 'lucide-react'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface Task {
-  name: string
-  state: 'ACTIVE' | 'PAUSE'
-  schedule: string
-  database: string
-  sql: string
-  created_at: string
-  interval?: string
-}
-
-interface TaskRun {
-  run_time: string
-  finish_time: string | null
-  state: 'RUNNING' | 'SUCCESS' | 'FAILED'
-  error: string | null
-}
-
-interface TasksResponse {
-  tasks: Task[]
-  total: number
-}
+import {
+  createTask,
+  deleteTask,
+  fetchTaskRuns,
+  fetchTasks,
+  patchTaskState,
+  type Task,
+} from './api'
 
 type StateFilter = 'ALL' | 'ACTIVE' | 'PAUSE'
 type ScheduleType = 'one-time' | 'periodic'
-
-// ---------------------------------------------------------------------------
-// API helpers
-// ---------------------------------------------------------------------------
-
-const fetchTasks = async (): Promise<TasksResponse> =>
-  api.get<TasksResponse>('/api/v1/tasks')
-
-const fetchTaskRuns = async (name: string): Promise<TaskRun[]> => {
-  const res = await api.get<{ runs?: TaskRun[] } | TaskRun[]>(
-    `/api/v1/tasks/${encodeURIComponent(name)}/runs`
-  )
-  return Array.isArray(res) ? res : (res.runs ?? [])
-}
-
-const createTask = async (payload: Record<string, unknown>) =>
-  api.post('/api/v1/tasks', payload)
-
-const patchTaskState = async ({ name, state }: { name: string; state: string }) => {
-  const action = state === 'ACTIVE' ? 'resume' : 'suspend'
-  return api.patch(`/api/v1/tasks/${encodeURIComponent(name)}/${action}`)
-}
-
-const deleteTask = async (name: string) => {
-  await api.delete(`/api/v1/tasks/${encodeURIComponent(name)}`)
-}
 
 // ---------------------------------------------------------------------------
 // Badge helpers
