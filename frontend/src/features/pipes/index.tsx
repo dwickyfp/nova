@@ -1,7 +1,6 @@
 import { Fragment, useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { api } from '@/lib/api-client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,39 +10,16 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { SimpleTablePagination, SimpleTableToolbar, SimpleTableViewport } from '@/components/data-table/simple-table-controls'
 import { Plus, Trash2, Pause, Play, ChevronDown, ChevronRight, Upload } from 'lucide-react'
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-type PipeState = 'RUNNING' | 'SUSPENDED' | 'ERROR'
-type FileState = 'LOADED' | 'LOADING' | 'ERROR'
-
-interface Pipe {
-  name: string
-  state: PipeState
-  database: string
-  sql: string
-  auto_ingest: boolean
-  poll_interval: number
-  batch_size: string
-  batch_files: number
-}
-
-interface PipeFile {
-  file_name: string
-  state: FileState
-  file_size: number
-  error_message: string | null
-}
-
-interface CreatePipePayload {
-  name: string
-  database: string
-  sql: string
-  auto_ingest: boolean
-  poll_interval: number
-  batch_size: string
-  batch_files: number
-}
+import {
+  createPipe,
+  deletePipe,
+  fetchPipeFiles,
+  fetchPipes,
+  togglePipeState,
+  type CreatePipePayload,
+  type FileState,
+  type PipeState,
+} from './api'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -102,21 +78,20 @@ export default function PipesPage() {
 
   const { data: pipes = [], isLoading } = useQuery({
     queryKey: ['pipes', search, dbFilter],
-    queryFn: () => api.get<Pipe[]>('/api/v1/pipes'),
+    queryFn: fetchPipes,
     placeholderData: keepPreviousData,
   })
 
   const { data: pipeFiles } = useQuery({
     queryKey: ['pipe-files', expanded],
-    queryFn: () => api.get<PipeFile[]>(`/api/v1/pipes/${expanded}/files`),
+    queryFn: () => fetchPipeFiles(expanded as string),
     enabled: !!expanded,
   })
 
   // ── Mutations ────────────────────────────────────────────────────────────
 
   const createMutation = useMutation({
-    mutationFn: (payload: CreatePipePayload) =>
-      api.post('/api/v1/pipes', payload),
+    mutationFn: createPipe,
     onSuccess: () => {
       toast.success('Pipe created')
       queryClient.invalidateQueries({ queryKey: ['pipes'] })
@@ -127,8 +102,7 @@ export default function PipesPage() {
   })
 
   const toggleMutation = useMutation({
-    mutationFn: ({ name, action }: { name: string; action: 'suspend' | 'resume' }) =>
-      api.patch(`/api/v1/pipes/${name}`, { action }),
+    mutationFn: togglePipeState,
     onSuccess: () => {
       toast.success('Pipe state updated')
       queryClient.invalidateQueries({ queryKey: ['pipes'] })
@@ -137,7 +111,7 @@ export default function PipesPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (name: string) => api.delete(`/api/v1/pipes/${name}`),
+    mutationFn: deletePipe,
     onSuccess: () => {
       toast.success('Pipe deleted')
       queryClient.invalidateQueries({ queryKey: ['pipes'] })
@@ -164,6 +138,10 @@ export default function PipesPage() {
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  useEffect(() => {
+    setPage((current) => Math.max(0, Math.min(current, pageCount - 1)))
+  }, [pageCount])
 
   // Reset page when filters change
   useEffect(() => { setPage(0) }, [search, dbFilter])
@@ -195,7 +173,7 @@ export default function PipesPage() {
       </div>
 
       {/* Toolbar */}
-      <SimpleTableToolbar>
+      <SimpleTableToolbar resultLabel={`${filtered.length} pipe${filtered.length !== 1 ? 's' : ''}`}>
         <Input
           placeholder="Search pipes…"
           value={search}
@@ -341,10 +319,11 @@ export default function PipesPage() {
 
       {/* Pagination */}
       <SimpleTablePagination
-        page={page}
-        pageCount={pageCount}
-        onPageChange={setPage}
-        totalRows={filtered.length}
+        page={page + 1}
+        pageSize={PAGE_SIZE}
+        total={filtered.length}
+        onPageChange={(next) => setPage(next - 1)}
+        onPageSizeChange={() => {}}
       />
 
       {/* Create Dialog */}

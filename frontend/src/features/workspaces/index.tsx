@@ -3625,7 +3625,11 @@ function ExplainTreeView({ planText }: { planText: string }) {
   function toggleFragment(label: string) {
     setCollapsedFragments((prev) => {
       const next = new Set(prev)
-      next.has(label) ? next.delete(label) : next.add(label)
+      if (next.has(label)) {
+        next.delete(label)
+      } else {
+        next.add(label)
+      }
       return next
     })
   }
