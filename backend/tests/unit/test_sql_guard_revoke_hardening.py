@@ -259,4 +259,9 @@ class TestGuaranteesPreserved:
     def test_revoke_does_not_leak_across_statement_boundary(self):
         # The privilege span is bounded by `[^;]*?`, so a REVOKE naming a safe
         # role cannot be made to match a later ACCOUNTADMIN in the same script.
+        # ``guard_sql`` now anchors per statement as well, so the tail is checked
+        # on its own merits rather than being invisible — and being a clean
+        # literal it is still allowed. See
+        # ``test_defense_in_depth_hardening.TestT1OverBlockingControls`` for the
+        # mirror case, where the tail is a real forbidden statement.
         guard_sql("REVOKE ALL ON *.* FROM ROLE analyst; SELECT 'ACCOUNTADMIN'")

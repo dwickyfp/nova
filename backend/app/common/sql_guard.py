@@ -126,6 +126,53 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 _LINE_COMMENT = re.compile(r"--[^\n]*")
 
 
+#: A single fully-quoted identifier, with no surrounding SQL grammar. Distinct
+#: from ``_QUOTED_IDENTIFIER`` below, which is a *search* pattern that relies on
+#: the lookbehind/lookahead context of a real statement.
+_BARE_QUOTED_IDENTIFIER = re.compile(
+    r"`([A-Za-z_][\w$.]*)`|\"([A-Za-z_][\w$.]*)\"|\[([A-Za-z_][\w$.]*)\]|'([A-Za-z_][\w$.]*)'"
+)
+
+
+def unquote_identifier(value: str) -> str:
+    """Collapse identifier quoting around a bare name, using the same rules as
+    :func:`normalize_sql`.
+
+    ``'ACCOUNTADMIN'``, ``` `ACCOUNTADMIN` ```, ``"ACCOUNTADMIN"`` and
+    ``[ACCOUNTADMIN]`` all reduce to ``ACCOUNTADMIN``; an unquoted name is
+    returned unchanged.
+
+    This exists so that a second control can ask "is this the same identifier?"
+    without re-deriving the quoting rules. ``UserService._protect_role`` and
+    ``guard_sql`` disagreeing about what counts as ACCOUNTADMIN is exactly the
+    kind of drift that turns one bypass into two, so both go through here.
+
+    Only the *identifier-shaped* body is unquoted — the same restriction
+    ``_QUOTED_IDENTIFIER`` applies — so a real string literal keeps its quotes
+    and a value such as ``'ACCOUNT ADMIN'`` is never mistaken for a name.
+    """
+    if not value:
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return stripped
+    match = _BARE_QUOTED_IDENTIFIER.fullmatch(stripped)
+    if match is None:
+        return stripped
+    # Exactly one quoting branch can match, so one group holds the body.
+    return next(group for group in match.groups() if group is not None)
+
+
+def normalize_role_name(role: str) -> str:
+    """Normalize a role name (or a quoted spelling of one) to its bare form.
+
+    Thin alias over :func:`unquote_identifier` carrying the intent for role
+    comparisons, so a reader does not have to know that role identity is
+    expressed as identifier quoting.
+    """
+    return unquote_identifier(role)
+
+
 def strip_sql_comments(sql: str) -> str:
     """Remove block and line comments from SQL, preserving string literals.
 
@@ -215,11 +262,31 @@ def normalize_sql(sql: str) -> str:
 def guard_sql(sql: str) -> None:
     """Check SQL for dangerous operations. Raises ForbiddenSQLError if blocked.
 
+    The whole script is checked statement by statement. A caller that hands over
+    a raw multi-statement blob — every router that passes a DDL string straight
+    through — must not be able to lose the guard for statement 2..N, and a
+    caller that has *already* split (``QueryService.execute``) must not have its
+    statements split a second time. Both hold because splitting is anchored on
+    ``;``: a single statement carries none outside a string literal, so it comes
+    back unchanged. See ``split_sql_statements``.
+
     Args:
-        sql: The SQL statement to check.
+        sql: The SQL statement, or script, to check.
 
     Raises:
-        ForbiddenSQLError: If the SQL matches a blocked pattern.
+        ForbiddenSQLError: If any statement matches a blocked pattern.
+    """
+    for statement in split_sql_statements(sql) or [sql]:
+        _guard_single_statement(statement)
+
+
+def _guard_single_statement(sql: str) -> None:
+    """Match one already-split statement against ``BLOCKED_PATTERNS``.
+
+    The patterns are anchored with ``[^;]*?`` between keywords so a match cannot
+    walk out of the statement it started in; feeding a concatenation of
+    statements here would let the first one borrow the second one's privileged
+    tail. Callers go through ``guard_sql`` instead.
     """
     normalized = normalize_sql(sql).strip().upper()
     if not normalized:
