@@ -6,7 +6,6 @@ import {
   Blocks,
   Box,
   ChevronRight,
-  Clock3,
   Database,
   Eye,
   FileText,
@@ -16,7 +15,6 @@ import {
   Layers3,
   Loader2,
   MoreHorizontal,
-  PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
   Search,
@@ -2196,15 +2194,6 @@ function ResizableExplorerSidebar({
       })
     })
   }, [defaultWidth])
-
-  const handleClose = useCallback(() => {
-    setAnimating(true)
-    setWidth(0)
-    setTimeout(() => {
-      setCollapsed(true)
-      setAnimating(false)
-    }, 200)
-  }, [])
 
   // Collapsed state — show toggle button on left edge of content
   if (collapsed && !animating) {

@@ -128,7 +128,7 @@ export default function PipesPage() {
 
   const toggleMutation = useMutation({
     mutationFn: ({ name, action }: { name: string; action: 'suspend' | 'resume' }) =>
-      api.patch(`/api/v1/pipes/${name}`, { action }),
+      api.patch(`/api/v1/pipes/${encodeURIComponent(name)}/${action}`),
     onSuccess: () => {
       toast.success('Pipe state updated')
       queryClient.invalidateQueries({ queryKey: ['pipes'] })
@@ -165,6 +165,10 @@ export default function PipesPage() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
+  useEffect(() => {
+    setPage((current) => Math.max(0, Math.min(current, pageCount - 1)))
+  }, [pageCount])
+
   // Reset page when filters change
   useEffect(() => { setPage(0) }, [search, dbFilter])
 
@@ -195,7 +199,7 @@ export default function PipesPage() {
       </div>
 
       {/* Toolbar */}
-      <SimpleTableToolbar>
+      <SimpleTableToolbar resultLabel={`${filtered.length} pipe${filtered.length !== 1 ? 's' : ''}`}>
         <Input
           placeholder="Search pipes…"
           value={search}
@@ -341,10 +345,11 @@ export default function PipesPage() {
 
       {/* Pagination */}
       <SimpleTablePagination
-        page={page}
-        pageCount={pageCount}
-        onPageChange={setPage}
-        totalRows={filtered.length}
+        page={page + 1}
+        pageSize={PAGE_SIZE}
+        total={filtered.length}
+        onPageChange={(next) => setPage(next - 1)}
+        onPageSizeChange={() => {}}
       />
 
       {/* Create Dialog */}

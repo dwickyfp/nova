@@ -158,7 +158,7 @@ export function AliasesTab() {
 
   return (
     <div className='space-y-4'>
-      <SimpleTableToolbar>
+      <SimpleTableToolbar resultLabel={`${filtered.length} alias${filtered.length !== 1 ? 'es' : ''}`}>
         <Input
           placeholder='Search aliases...'
           value={search}

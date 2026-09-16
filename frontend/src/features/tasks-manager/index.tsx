@@ -45,24 +45,22 @@ type ScheduleType = 'one-time' | 'periodic'
 // API helpers
 // ---------------------------------------------------------------------------
 
-const fetchTasks = async (): Promise<TasksResponse> => {
-  const res = await api.get('/api/v1/tasks')
-  return res.data
-}
+const fetchTasks = async (): Promise<TasksResponse> =>
+  api.get<TasksResponse>('/api/v1/tasks')
 
 const fetchTaskRuns = async (name: string): Promise<TaskRun[]> => {
-  const res = await api.get(`/api/v1/tasks/${encodeURIComponent(name)}/runs`)
-  return res.data.runs ?? res.data
+  const res = await api.get<{ runs?: TaskRun[] } | TaskRun[]>(
+    `/api/v1/tasks/${encodeURIComponent(name)}/runs`
+  )
+  return Array.isArray(res) ? res : (res.runs ?? [])
 }
 
-const createTask = async (payload: Record<string, unknown>) => {
-  const res = await api.post('/api/v1/tasks', payload)
-  return res.data
-}
+const createTask = async (payload: Record<string, unknown>) =>
+  api.post('/api/v1/tasks', payload)
 
 const patchTaskState = async ({ name, state }: { name: string; state: string }) => {
-  const res = await api.patch(`/api/v1/tasks/${encodeURIComponent(name)}`, { state })
-  return res.data
+  const action = state === 'ACTIVE' ? 'resume' : 'suspend'
+  return api.patch(`/api/v1/tasks/${encodeURIComponent(name)}/${action}`)
 }
 
 const deleteTask = async (name: string) => {
@@ -256,7 +254,7 @@ export default function TasksManager() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   // Data
-  const { data, isLoading, placeholderData } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['tasks'],
     queryFn: fetchTasks,
     placeholderData: keepPreviousData,
@@ -336,7 +334,7 @@ export default function TasksManager() {
       </div>
 
       {/* Toolbar */}
-      <SimpleTableToolbar>
+      <SimpleTableToolbar resultLabel={`${filtered.length} task${filtered.length !== 1 ? 's' : ''}`}>
         <div className="flex items-center gap-2 flex-1">
           <Input
             placeholder="Search tasks…"
@@ -403,11 +401,11 @@ export default function TasksManager() {
 
       {/* Pagination */}
       <SimpleTablePagination
-        page={safePage}
-        pageCount={totalPages}
+        page={safePage + 1}
         pageSize={PAGE_SIZE}
         total={filtered.length}
-        onPageChange={setPage}
+        onPageChange={(next) => setPage(next - 1)}
+        onPageSizeChange={() => {}}
       />
 
       {/* Create Dialog */}

@@ -57,6 +57,7 @@ type SimpleTableToolbarProps = {
   resultLabel: string
   filters?: SimpleTableFilter[]
   actions?: React.ReactNode
+  children?: React.ReactNode
 }
 
 export function SimpleTableToolbar({
@@ -66,6 +67,7 @@ export function SimpleTableToolbar({
   resultLabel,
   filters = [],
   actions,
+  children,
 }: SimpleTableToolbarProps) {
   return (
     <div className='flex flex-wrap items-center gap-2'>
@@ -88,6 +90,7 @@ export function SimpleTableToolbar({
           className='h-9'
         />
       ))}
+      {children}
       <div className='ml-auto flex items-center gap-2'>
         <span className='text-sm text-muted-foreground'>{resultLabel}</span>
         {actions}
