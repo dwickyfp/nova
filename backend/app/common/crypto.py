@@ -62,3 +62,16 @@ def decrypt(ciphertext: str | None) -> str | None:
     except Exception as e:
         logger.error("Decryption failed: %s", e)
         return ciphertext  # Return as-is on error
+
+
+def mask_secret(plaintext: str | None, visible: int = 4) -> str | None:
+    """Mask a secret for display, keeping only the last ``visible`` characters.
+
+    Values shorter than the visible window are fully masked. Returns None when
+    there is nothing to mask.
+    """
+    if not plaintext:
+        return None
+    tail = plaintext[-visible:] if len(plaintext) > visible else ""
+    return f"{'•' * 4}{tail}" if tail else "•" * 4
+

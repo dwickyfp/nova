@@ -14,7 +14,7 @@ import asyncmy.cursors
 import httpx
 
 from app.core.config import settings
-from app.common.crypto import encrypt, decrypt
+from app.common.crypto import encrypt, decrypt, mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,12 @@ class AIService:
     # ── Providers ──────────────────────────────────────────────
 
     async def list_providers(self) -> list[dict]:
-        """List all registered AI providers."""
+        """List all registered AI providers, with the API key masked.
+
+        The stored key is never returned — callers get ``has_api_key`` plus a
+        masked preview so the UI can render ``••••abcd`` without the plaintext
+        ever leaving the backend (AGENTS.md: credential-invisible).
+        """
         conn = await self._connect()
         try:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
@@ -57,14 +62,18 @@ class AIService:
                 result = []
                 for row in rows:
                     d = self._deserialize_row(row)
-                    d["api_key"] = decrypt(d.get("api_key"))
+                    d = self._mask_api_key(d)
                     result.append(d)
                 return result
         finally:
             conn.close()
 
-    async def get_provider(self, provider_id: str) -> dict | None:
-        """Get a single provider by ID."""
+    async def get_provider(self, provider_id: str, *, reveal: bool = False) -> dict | None:
+        """Get a single provider by ID.
+
+        The API key is masked unless ``reveal=True`` (internal callers only,
+        e.g. building an outbound LLM request).
+        """
         conn = await self._connect()
         try:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
@@ -75,9 +84,47 @@ class AIService:
                     (provider_id,),
                 )
                 row = await cur.fetchone()
-                return self._deserialize_row(row) if row else None
+                if not row:
+                    return None
+                d = self._deserialize_row(row)
+                return d if reveal else self._mask_api_key(d)
         finally:
             conn.close()
+
+    async def get_provider_api_key(self, provider_id: str) -> str | None:
+        """Return the decrypted API key for a provider. Internal use only."""
+        provider = await self.get_provider(provider_id, reveal=True)
+        if not provider:
+            return None
+        return provider.get("api_key")
+
+    @staticmethod
+    def _api_key_is_set(value: str | None) -> bool:
+        """True when a stored (encrypted) key decrypts to a non-empty value."""
+        if not value:
+            return False
+        try:
+            return bool(decrypt(value))
+        except Exception:
+            # Undecryptable ciphertext still means a key is on file.
+            return True
+
+    @classmethod
+    def _mask_api_key(cls, row: dict) -> dict:
+        """Replace the stored key with a presence flag + masked preview."""
+        raw = row.pop("api_key", None)
+        row["has_api_key"] = cls._api_key_is_set(raw)
+        row["api_key_masked"] = mask_secret(cls._safe_decrypt(raw))
+        return row
+
+    @staticmethod
+    def _safe_decrypt(value: str | None) -> str | None:
+        if not value:
+            return None
+        try:
+            return decrypt(value)
+        except Exception:
+            return None
 
     async def create_provider(self, data: dict, username: str) -> dict | None:
         """INSERT a new AI provider. Returns the created provider."""
