@@ -342,25 +342,48 @@ _BARE_CREDENTIAL_ASSIGNMENT = re.compile(
     re.IGNORECASE,
 )
 
+# Double-quoted value: ``"aws.s3.secret_key"="AKIA…"``. Same family, different
+# quoting on the value — a caller can write this shape by hand and StarRocks
+# accepts it, so it has to be redacted rather than merely detected. Runs after
+# the single-quoted patterns; see ``_redacted_assignment`` for the ordering.
+# Group 1 = the key's opening quote, group 2 = key, group 3 = the operator.
+_DOUBLE_QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
+    rf"(['\"`])({_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)}))\1"
+    r"(\s*(?:=>|=)\s*)\"(?:[^\"]|\"\")*\"",
+    re.IGNORECASE,
+)
+
 #: (pattern, uses_quoted_key) — the quoted-key patterns keep the key's own
 #: quoting, so their group 1 is the quote character and group 2 the key; the
 #: bare pattern has no quoting to preserve, so its group 1 is the key.
 _CREDENTIAL_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
     (_QUOTED_CREDENTIAL_ASSIGNMENT, True),
     (_BARE_CREDENTIAL_ASSIGNMENT, False),
+    (_DOUBLE_QUOTED_CREDENTIAL_ASSIGNMENT, True),
 )
 
 #: Verification pass: any credential assignment left with a populated value,
-#: whatever its quoting or operator. Group 1 is the *value* as written — quoted
-#: (with the quote included, so ``''`` reads as empty) or bare/unterminated.
-#: This is deliberately looser than the redaction patterns: it must find a
-#: survivor even when those patterns mis-parsed the value.
+#: whatever its quoting or operator. The value is *not* captured with a
+#: backreferenced quote run — ``(?P<q>['"]).*?(?P=q)`` lets ``.*?`` match empty
+#: and then satisfies the backreference with zero-width, so the alternative
+#: branch swallows the opening quote and ``strip("'\"")`` turns a live
+#: ``"VALUE"`` into an empty string. The value is taken as a plain run instead
+#: and the quotes are stripped before the comparison, which cannot be fooled
+#: that way.
 _POPULATED_CREDENTIAL = re.compile(
     rf"(?<![\w$.'\"`])(?:['\"`]?{_PROVIDER_PREFIX}\."
     rf"(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)})['\"`]?\s*(?:=>|=)\s*)"
-    r"(?:(?P<q>['\"]).*?(?P=q)|(?P<bare>[^\s,)]+))?",
-    re.IGNORECASE | re.DOTALL,
+    r"(?P<value>[^\s,)]*)",
+    re.IGNORECASE,
 )
+
+
+def _normalized_value(raw: str) -> str:
+    """The value with any wrapping quotes removed, empty if it is only quotes."""
+    value = raw.strip()
+    while len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"`":
+        value = value[1:-1]
+    return value.strip("'\"`")
 
 
 def redact_sql_credentials(sql: str) -> str:
@@ -398,16 +421,15 @@ def redact_sql_credentials(sql: str) -> str:
 def _redaction_is_complete(sql: str) -> bool:
     """True when no credential parameter is still bound to a real value.
 
-    The three patterns above cover the forms the injector emits, including a
-    double quote it does not escape inside a single-quoted value (which stops
-    ``\'[^\']*\'`` early and leaves the tail of the value behind). Rather than
-    trusting them, this re-scans for a populated credential assignment of any
-    shape — quoted, bare, backticked, or with an unquoted value — and reports
-    the statement as unredactable if one is still there.
+    The redaction patterns above cover the forms the injector emits. Rather
+    than trusting them, this re-scans for a populated credential assignment of
+    any shape — single, double or backticked key and value, bare or with an
+    unquoted value — and reports the statement as unredactable if one is still
+    there.
     """
     for match in _POPULATED_CREDENTIAL.finditer(sql):
-        value = match.group("q") or match.group("bare") or ""
-        if value.strip("'\"") and value.strip("'\"") != REDACTED_VALUE:
+        value = _normalized_value(match.group("value"))
+        if value and value != REDACTED_VALUE:
             return False
     return True
 
@@ -417,6 +439,9 @@ def _redacted_assignment(match: re.Match[str], quoted_key: bool) -> str:
 
     The parameter name, its quoting and the operator are preserved verbatim so
     the redacted statement stays syntactically identical to the executed one.
+    Always writes the ``***`` back in single quotes: that is the form the
+    injector emits, and it is what the single-quoted patterns recognise, so a
+    second pass over an already-redacted statement is a no-op.
     """
     if quoted_key:
         quote, key, operator = match.group(1), match.group(2), match.group(3)

@@ -27,6 +27,8 @@ from app.core.exceptions import register_exception_handlers
 
 ACCESS_KEY = "AKIA_EXPLAIN_TESTVALUE_123"
 SECRET_KEY = "SECRET_EXPLAIN_TESTVALUE_456"
+# The single-quoted placeholder redaction writes back.
+REDACTED = "***"
 # Present in the SQL but not a credential parameter — must survive redaction.
 S3_PATH = "s3://stages/explain_probe.csv"
 
@@ -294,6 +296,83 @@ class TestSanitizingResponseType:
             if "explain" in getattr(route, "path", "") or "execute" in getattr(route, "path", "")
         }
         assert SanitizingJSONResponse in classes
+
+
+class TestDoubleQuotedAssignmentIsRedacted:
+    """Negative controls for the ``"key"="value"`` shape.
+
+    ``redact_sql_credentials`` covers the ``'key'='value'`` form the injector
+    emits. A caller can write the double-quoted form by hand, and the first
+    revision of this fix neither redacted it nor noticed it had not: the
+    verification pass captured the value with a backreferenced quote run
+    (``(?P<q>['"]).*?(?P=q)``) where ``.*?`` can match empty and the
+    backreference is then satisfied zero-width, so the remaining alternative
+    branch swallowed the opening quote and ``strip("'\\"")`` emptied a live
+    value. These tests fail if that shape is ever unredacted again.
+    """
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            'FILES("aws.s3.access_key"="AKIA_DQUOTE_PLACEHOLDER")',
+            'FILES("aws.s3.secret_key"="SECRET_DQUOTE_PLACEHOLDER")',
+            'FILES("aws.s3.session_token"="TOKEN_DQUOTE_PLACEHOLDER")',
+            'FILES("aws.s3.secret_key" => "SECRET_DQUOTE_PLACEHOLDER")',
+            'FILES(`aws.s3.secret_key`="SECRET_DQUOTE_PLACEHOLDER")',
+        ],
+    )
+    def test_values_do_not_survive(self, sql):
+        out = redact_sql_credentials(sql)
+        assert "PLACEHOLDER" not in out, f"credential value survived: {out}"
+        assert f"'{REDACTED}'" in out
+
+    def test_key_quoting_is_preserved(self):
+        """Redaction stays value-only — the shape is still readable."""
+        out = redact_sql_credentials('FILES("aws.s3.access_key"="PLACEHOLDER_V")')
+        assert out == 'FILES("aws.s3.access_key"=\'***\')'
+
+    def test_idempotent(self):
+        once = redact_sql_credentials('FILES("aws.s3.access_key"="PLACEHOLDER_V")')
+        assert redact_sql_credentials(once) == once
+
+    def test_verification_pass_sees_a_populated_double_quoted_value(self):
+        """The guard, in isolation, must not be fooled by the empty-match trap."""
+        from app.common.sql_guard import _POPULATED_CREDENTIAL, _normalized_value
+
+        match = _POPULATED_CREDENTIAL.search('FILES("aws.s3.access_key"="LIVEVALUE")')
+        assert match is not None, "the verification pattern missed the assignment"
+        assert _normalized_value(match.group("value")) == "LIVEVALUE"
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "FILES('aws.s3.access_key'='***')",
+            'FILES("aws.s3.access_key"=\'***\')',
+            "FILES('aws.s3.access_key'='')",
+            "FILES('path'='s3://stages/x.csv', 'format'='csv')",
+        ],
+    )
+    def test_redacted_or_empty_values_are_left_alone(self, sql):
+        """No false positives: nothing to hide means nothing rewritten."""
+        try:
+            out = redact_sql_credentials(sql)
+        except CredentialsRedactionError:
+            pytest.fail(f"failed closed on a value that is already redacted: {sql}")
+        assert REDACTED in out or "path" in out
+
+    def test_double_quoted_form_is_redacted_end_to_end(self, explain_client):
+        """The reported shape, through the real response path."""
+        client, repo = explain_client
+        sql = (
+            'SELECT * FROM FILES("path"="s3://stages/x.csv", '
+            f'"aws.s3.access_key"="{ACCESS_KEY}", "aws.s3.secret_key"="{SECRET_KEY}")'
+        )
+        payload = client.post(EXPLAIN_ENDPOINT, json={"sql": sql}).json()
+
+        assert ACCESS_KEY not in str(payload)
+        assert SECRET_KEY not in str(payload)
+        # The engine still gets the caller's own credentials verbatim.
+        assert ACCESS_KEY in repo.calls[-1]
 
 
 class TestGenericErrorHandlerStillWorks:
