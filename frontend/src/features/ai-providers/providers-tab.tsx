@@ -56,7 +56,8 @@ type AIProvider = {
   name: string
   type: ProviderType
   endpoint: string
-  api_key: string | null
+  has_api_key: boolean
+  api_key_masked: string | null
   default_params: Record<string, unknown> | null
   is_active: boolean
   created_at: string | null
@@ -243,7 +244,8 @@ export function ProvidersTab() {
       name: provider.name,
       type: provider.type,
       endpoint: provider.endpoint,
-      api_key: provider.api_key ?? '',
+      // The API never returns the stored key; leave blank to keep it unchanged.
+      api_key: '',
       default_params: provider.default_params
         ? JSON.stringify(provider.default_params)
         : '',
@@ -546,9 +548,9 @@ export function ProvidersTab() {
                       </span>
                     </td>
                     <td className='px-4 py-3'>
-                      {provider.api_key ? (
+                      {provider.has_api_key ? (
                         <span className='font-mono text-xs text-muted-foreground'>
-                          ••••{provider.api_key.slice(-4)}
+                          {provider.api_key_masked ?? '••••'}
                         </span>
                       ) : (
                         <span className='text-xs text-muted-foreground'>

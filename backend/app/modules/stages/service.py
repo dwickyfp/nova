@@ -13,6 +13,7 @@ import boto3
 from botocore.client import Config as BotoConfig
 
 from app.core.config import settings
+from app.modules.query.dialect.injector import resolve_storage_credentials
 
 
 class StageService:
@@ -105,17 +106,20 @@ class StageService:
     # ── S3 / MinIO client ──────────────────────────────────────
 
     @staticmethod
-    def _s3_client():
-        """Create a boto3 S3 client pointed at MinIO.
+    def _s3_client(storage_connection: str | None = None):
+        """Create a boto3 S3 client pointed at the stage's storage connection.
 
-        Uses root credentials (minioadmin) because service-account credentials
-        have compatibility issues with MinIO's _FILE env vars.
+        Credentials are read from `nova.yaml` / env. If the connection has no
+        credentials configured the client is still built (boto3 supports
+        anonymous/instance-profile auth) rather than silently falling back to a
+        hardcoded default.
         """
+        access_key, secret_key = resolve_storage_credentials(storage_connection)
         return boto3.client(
             "s3",
             endpoint_url=settings.S3_ENDPOINT,
-            aws_access_key_id="minioadmin",
-            aws_secret_access_key="miniopassword",
+            aws_access_key_id=access_key or None,
+            aws_secret_access_key=secret_key or None,
             config=BotoConfig(signature_version="s3v4"),
             region_name="us-east-1",
         )
