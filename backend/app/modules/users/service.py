@@ -10,6 +10,7 @@ from typing import Literal
 import asyncmy
 import asyncmy.cursors
 
+from app.common.sql_guard import normalize_role_name
 from app.core.config import settings
 from app.core.database import db
 
@@ -130,20 +131,36 @@ class UserService:
         return properties
 
     def _normalize_role_name(self, role: str) -> str:
-        return role.strip().strip("'`\"")
+        """Reduce a role name to its bare identifier form.
+
+        Delegates to the guard's own unquoting rather than re-deriving the
+        rules: this value is compared against ``PROTECTED_ROLES``, and a second
+        spelling of ``ACCOUNTADMIN`` that only this side knows about would be a
+        bypass in exactly the way ``_protect_role`` used to be.
+        """
+        return normalize_role_name(role)
 
     def _protect_user(self, username: str) -> None:
         if username in PROTECTED_USERS:
             raise PermissionError(f"Cannot modify protected user '{username}'")
 
     def _protect_role(self, role_name: str) -> None:
-        if role_name.upper() in PROTECTED_ROLES:
+        """Refuse to modify a protected role, in any of its accepted spellings.
+
+        StarRocks accepts ``ACCOUNTADMIN``, ``'ACCOUNTADMIN'``, ``"ACCOUNTADMIN"``
+        and `` `ACCOUNTADMIN` `` as the same role. The name is therefore
+        normalized through the same path ``guard_sql`` uses before comparing —
+        otherwise the two controls hold different definitions of identity and a
+        quoted spelling walks past this check while the guard still recognizes
+        it, or vice versa.
+        """
+        if self._normalize_role_name(role_name).upper() in PROTECTED_ROLES:
             raise PermissionError(f"Cannot modify protected role '{role_name}'")
 
     def _role_flags(self, role_name: str) -> dict[str, bool]:
         normalized = role_name.lower()
         is_builtin = normalized in {role.lower() for role in BUILT_IN_ROLES}
-        is_protected = role_name.upper() in PROTECTED_ROLES
+        is_protected = self._normalize_role_name(role_name).upper() in PROTECTED_ROLES
         return {
             "is_builtin": is_builtin,
             "is_protected": is_protected,
@@ -176,20 +193,26 @@ class UserService:
         normalized_privilege = self._validate_privilege(normalized_scope, privilege)
         role_sql = self._quote_ident(role_name)
 
+        # GRANT attaches the grantee with `TO ROLE`; REVOKE detaches it with
+        # `FROM ROLE`. The two are not interchangeable and `TO ROLE` on a REVOKE
+        # is a syntax error, so the builder has to pick the right one per action
+        # rather than emitting one and letting the caller string-replace it.
+        role_clause = self._role_clause(action, role_sql)
+
         if normalized_scope == "SYSTEM":
-            sql = f"{action} {normalized_privilege} ON SYSTEM TO ROLE {role_sql}"
+            sql = f"{action} {normalized_privilege} ON SYSTEM {role_clause}"
         elif normalized_scope == "CATALOG":
             sql = (
                 f"{action} {normalized_privilege} ON CATALOG {self._quote_ident(catalog or '')} "
-                f"TO ROLE {role_sql}"
+                f"{role_clause}"
             )
         elif normalized_scope == "DATABASE":
             if selector_mode == "all_databases":
-                sql = f"{action} {normalized_privilege} ON ALL DATABASES TO ROLE {role_sql}"
+                sql = f"{action} {normalized_privilege} ON ALL DATABASES {role_clause}"
             else:
                 sql = (
                     f"{action} {normalized_privilege} ON DATABASE {self._quote_ident(database or '')} "
-                    f"TO ROLE {role_sql}"
+                    f"{role_clause}"
                 )
         else:
             scope_keyword = normalized_scope
@@ -201,7 +224,7 @@ class UserService:
                 }[normalized_scope]
                 sql = (
                     f"{action} {normalized_privilege} ON ALL {plural} IN ALL DATABASES "
-                    f"TO ROLE {role_sql}"
+                    f"{role_clause}"
                 )
             elif selector_mode == "all_in_database":
                 plural = {
@@ -211,19 +234,32 @@ class UserService:
                 }[normalized_scope]
                 sql = (
                     f"{action} {normalized_privilege} ON ALL {plural} IN DATABASE "
-                    f"{self._quote_ident(database or '')} TO ROLE {role_sql}"
+                    f"{self._quote_ident(database or '')} {role_clause}"
                 )
             else:
                 sql = (
                     f"{action} {normalized_privilege} ON {scope_keyword} "
                     f"{self._quote_ident(database or '')}.{self._quote_ident(object_name or '')} "
-                    f"TO ROLE {role_sql}"
+                    f"{role_clause}"
                 )
 
         if action == "GRANT" and with_grant_option:
             sql += " WITH GRANT OPTION"
 
         return sql
+
+    @staticmethod
+    def _role_clause(action: Literal["GRANT", "REVOKE"], role_sql: str) -> str:
+        """Return ``TO ROLE `x``` for GRANT and ``FROM ROLE `x``` for REVOKE.
+
+        Raising on anything else keeps a future third action from silently
+        inheriting the GRANT wording.
+        """
+        if action == "GRANT":
+            return f"TO ROLE {role_sql}"
+        if action == "REVOKE":
+            return f"FROM ROLE {role_sql}"
+        raise ValueError(f"Unsupported privilege action '{action}'")
 
     async def list_users(self) -> list[dict]:
         conn = await self._root_connect()
@@ -744,7 +780,6 @@ class UserService:
             database=database,
             object_name=object_name,
         )
-        sql = sql.replace(" TO ROLE ", " FROM ROLE ")
         await db.execute_system(sql)
         return sql
 
