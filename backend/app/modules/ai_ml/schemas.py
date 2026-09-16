@@ -20,13 +20,18 @@ class AIProviderCreate(BaseModel):
 
 
 class AIProviderResponse(BaseModel):
-    """Response model for a single AI provider."""
+    """Response model for a single AI provider.
+
+    Never carries the plaintext ``api_key`` (AGENTS.md: credential-invisible).
+    Clients receive ``has_api_key`` plus a masked preview they can render.
+    """
 
     id: str
     name: str
     type: str
     endpoint: str
-    api_key: str | None = None
+    has_api_key: bool = False
+    api_key_masked: str | None = None
     default_params: dict[str, Any] | None = None
     is_active: bool = True
     created_at: datetime | None = None

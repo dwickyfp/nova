@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 from app.common.audit import write_audit_log
 from app.core.config import get_storage_connection, load_nova_app_config
 from app.core.exceptions import StorageError
+from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.workspaces.repository import workspace_repository
 
 
@@ -27,12 +28,13 @@ class WorkspaceService:
     def _client(self):
         config = load_nova_app_config()
         conn = get_storage_connection(config.workspace.storage_connection)
+        # Credentials come from nova.yaml / env — never hardcoded.
+        access_key, secret_key = resolve_storage_credentials(config.workspace.storage_connection)
         return boto3.client(
             "s3",
             endpoint_url=conn.endpoint or None,
-            # Use root credentials — service-account creds have MinIO compatibility issues
-            aws_access_key_id="minioadmin",
-            aws_secret_access_key="miniopassword",
+            aws_access_key_id=access_key or None,
+            aws_secret_access_key=secret_key or None,
             config=BotoConfig(signature_version="s3v4"),
             region_name=conn.region or "us-east-1",
         )

@@ -15,12 +15,19 @@ import re
 import time
 
 from app.common.audit import write_audit_log
-from app.common.sql_guard import guard_sql, is_destructive_sql, split_sql_statements
+from app.common.sql_guard import (
+    guard_sql,
+    is_destructive_sql,
+    split_sql_statements,
+)
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
 from app.core.security import decrypt_password
-from app.modules.query.dialect.injector import get_credential_params
+from app.modules.query.dialect.injector import (
+    get_credential_params,
+    resolve_storage_credentials,
+)
 from app.modules.query.dialect.ml_model import is_create_ml_model, parse_create_ml_model
 from app.modules.query.dialect.parser import parse_sql
 from app.modules.query.dialect.translator import (
@@ -35,30 +42,12 @@ class QueryService:
 
     def __init__(self):
         self._repo = QueryRepository()
-        self._minio_creds: tuple[str, str] | None = None
 
-    def _load_minio_root_creds(self) -> tuple[str, str]:
-        """Load MinIO root credentials from docker .env file."""
-        if self._minio_creds:
-            return self._minio_creds
-        from pathlib import Path
+    def _storage_access_key(self) -> str:
+        return resolve_storage_credentials()[0]
 
-        env_path = Path(__file__).resolve().parents[4] / "docker" / ".env"
-        user, pw = "minioadmin", "minioadmin"
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                if line.startswith("MINIO_ROOT_USER="):
-                    user = line.split("=", 1)[1].strip()
-                elif line.startswith("MINIO_ROOT_PASSWORD="):
-                    pw = line.split("=", 1)[1].strip()
-        self._minio_creds = (user, pw)
-        return self._minio_creds
-
-    def _minio_root_user(self) -> str:
-        return self._load_minio_root_creds()[0]
-
-    def _minio_root_password(self) -> str:
-        return self._load_minio_root_creds()[1]
+    def _storage_secret_key(self) -> str:
+        return resolve_storage_credentials()[1]
 
     async def execute(
         self,
@@ -89,10 +78,20 @@ class QueryService:
         # StarRocks-compatible db.table form before validation/execution.
         normalized_sql = self._normalize_default_schema_qualification(sql)
 
-        # 1. Guard: block dangerous SQL
-        guard_sql(normalized_sql)
-        if is_destructive_sql(normalized_sql) and not confirm_destructive:
-            raise ForbiddenSQLError("Destructive SQL requires confirmation before execution.")
+        # 1. Guard: block dangerous SQL.
+        #
+        # The API accepts multi-statement scripts (`execute_statements`), so the
+        # guard has to run per statement. A guard anchored on the whole blob is
+        # blind to everything after the first `;` — `SELECT 1; DROP TABLE t`
+        # would sail past both the ACCOUNTADMIN patterns and the destructive
+        # confirmation check, and the DROP would then execute for real.
+        statements = split_sql_statements(normalized_sql) or [normalized_sql]
+        for statement in statements:
+            guard_sql(statement)
+            if is_destructive_sql(statement) and not confirm_destructive:
+                raise ForbiddenSQLError(
+                    "Destructive SQL requires confirmation before execution."
+                ) from None
 
         # Nova ML DDL is handled by the Python ML engine, not sent to StarRocks.
         if is_create_ml_model(normalized_sql):
@@ -718,10 +717,8 @@ class QueryService:
                 endpoint=to_docker_endpoint(conn.endpoint),
                 bucket=conn.bucket,
                 base_prefix=resolved_prefix,
-                # Use root credentials for StarRocks FILES() access
-                # (service account creds have AWS SDK v2 compatibility issues with MinIO)
-                access_key=self._minio_root_user(),
-                secret_key=self._minio_root_password(),
+                access_key=self._storage_access_key(),
+                secret_key=self._storage_secret_key(),
                 region=conn.region or "us-east-1",
             )
         return configs

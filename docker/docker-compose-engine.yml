@@ -18,7 +18,7 @@
 # Access:
 #   StarRocks FE:    http://localhost:8030
 #   StarRocks BE:    http://localhost:8040
-#   MinIO Console:   http://localhost:9001  (minioadmin/minioadmin)
+#   MinIO Console:   http://localhost:9001  (see MINIO_ROOT_USER / MINIO_ROOT_PASSWORD)
 #   MinIO API:       http://localhost:9000
 #   MySQL:           mysql -h localhost -P 9030 -u nova_admin -p
 #   Redis:           redis-cli -h localhost -p 6379 -a novaredis
@@ -48,7 +48,7 @@ services:
     environment:
       TZ: ${TZ:-Asia/Jakarta}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniopassword}
       # Override ALL built-in _FILE env vars from MinIO image
       # Use space character to effectively blank them (empty string removes the var)
       MINIO_ROOT_USER_FILE: " "
@@ -90,7 +90,7 @@ services:
     environment:
       TZ: ${TZ:-Asia/Jakarta}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniopassword}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-nova}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-novasecret}
     volumes:

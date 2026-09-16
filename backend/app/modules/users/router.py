@@ -1,8 +1,20 @@
-"""User and role administration API router."""
+"""User and role administration API router.
+
+Every endpoint here is a **security-administration** surface: the service layer
+talks to StarRocks over ``_root_connect()`` (bypassing StarRocks RBAC entirely),
+so the only thing standing between a logged-in user and ``DROP ROLE``,
+``GRANT``, password resets and role membership changes is the check in this
+module. Reads that expose the full user/role inventory are gated too — the
+frontend hides the menu, but AGENTS.md is explicit that the frontend is not a
+security boundary.
+
+Access is granted to the StarRocks administrative roles only. Users holding
+none of them get 403 from ``require_role`` before any SQL is built.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.deps import get_current_user
+from app.core.deps import require_role
 from app.core.exceptions import ForbiddenSQLError
 from app.modules.users.schemas import (
     RoleCreate,
@@ -22,9 +34,19 @@ from app.modules.users.service import user_service
 
 router = APIRouter()
 
+# Roles permitted to administer users and roles. ACCOUNTADMIN is the Nova super
+# user; the rest are the StarRocks system roles that carry user/security
+# administration privileges.
+ADMIN_ROLES = ("ACCOUNTADMIN", "user_admin", "security_admin")
+
+# Built once so routes can use a module-level dependency instead of calling
+# `Depends(...)` in argument defaults (ruff B008).
+_admin = require_role(*ADMIN_ROLES)
+require_admin = Depends(_admin)
+
 
 @router.get("/databases")
-async def list_databases(user: dict = Depends(get_current_user)):
+async def list_databases(user: dict = require_admin):
     try:
         databases = await user_service.list_databases()
         return {"databases": databases, "count": len(databases)}
@@ -33,7 +55,7 @@ async def list_databases(user: dict = Depends(get_current_user)):
 
 
 @router.get("/databases/{db}/tables")
-async def list_tables(db: str, user: dict = Depends(get_current_user)):
+async def list_tables(db: str, user: dict = require_admin):
     try:
         tables = await user_service.list_tables(db)
         return {"database": db, "tables": tables, "count": len(tables)}
@@ -42,7 +64,7 @@ async def list_tables(db: str, user: dict = Depends(get_current_user)):
 
 
 @router.get("", response_model=UserListResponse)
-async def list_users(user: dict = Depends(get_current_user)):
+async def list_users(user: dict = require_admin):
     users = await user_service.list_users()
     return UserListResponse(
         users=[UserResponse(**entry) for entry in users],
@@ -51,7 +73,7 @@ async def list_users(user: dict = Depends(get_current_user)):
 
 
 @router.post("", response_model=UserResponse, status_code=201)
-async def create_user(body: UserCreate, user: dict = Depends(get_current_user)):
+async def create_user(body: UserCreate, user: dict = require_admin):
     try:
         await user_service.create_user(
             username=body.username,
@@ -101,7 +123,7 @@ async def update_user(
     username: str,
     body: UserUpdate,
     host: str = Query("%"),
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         executed = await user_service.update_user(
@@ -131,7 +153,7 @@ async def update_user(
 async def drop_user(
     username: str,
     host: str = Query("%"),
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         await user_service.drop_user(username, host=host)
@@ -145,7 +167,7 @@ async def drop_user(
 async def get_user_grants(
     username: str,
     host: str = Query("%"),
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         grants = await user_service.get_user_grants(username, host=host)
@@ -158,7 +180,7 @@ async def get_user_grants(
 async def get_user_detail(
     username: str,
     host: str = Query("%"),
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         return UserDetailResponse(**await user_service.get_user_detail(username, host=host))
@@ -171,7 +193,7 @@ async def get_user_detail(
 @router.get("/{username}/properties")
 async def get_user_properties(
     username: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         properties = await user_service.get_user_properties(username)
@@ -184,7 +206,7 @@ async def get_user_properties(
 async def get_user_authentication(
     username: str,
     host: str = Query("%"),
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         return UserAuthenticationResponse(**await user_service.get_user_authentication(username, host=host))
@@ -196,7 +218,7 @@ async def get_user_authentication(
 async def get_user_default_roles(
     username: str,
     host: str = Query("%"),
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         return UserDefaultRolesResponse(**await user_service.get_user_default_roles(username, host=host))
@@ -208,7 +230,7 @@ async def get_user_default_roles(
 async def assign_role(
     username: str,
     body: UserRoleAssign,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         await user_service.assign_role(username, body.role, host=body.host)
@@ -221,7 +243,7 @@ async def assign_role(
 async def reset_user_password(
     username: str,
     host: str = Query("%"),
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         password = await user_service.reset_password(username, host=host)
@@ -242,7 +264,7 @@ async def revoke_role(
     username: str,
     role: str,
     host: str = Query("%"),
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         await user_service.revoke_role(username, role, host=host)
@@ -251,13 +273,13 @@ async def revoke_role(
 
 
 @router.get("/roles")
-async def list_roles(user: dict = Depends(get_current_user)):
+async def list_roles(user: dict = require_admin):
     roles = await user_service.list_roles()
     return {"roles": roles, "count": len(roles)}
 
 
 @router.post("/roles", status_code=201)
-async def create_role(body: RoleCreate, user: dict = Depends(get_current_user)):
+async def create_role(body: RoleCreate, user: dict = require_admin):
     try:
         await user_service.create_role(body.role_name)
         return {"message": f"Role '{body.role_name}' created", "role": body.role_name}
@@ -266,7 +288,7 @@ async def create_role(body: RoleCreate, user: dict = Depends(get_current_user)):
 
 
 @router.get("/roles/{name}")
-async def get_role_detail(name: str, user: dict = Depends(get_current_user)):
+async def get_role_detail(name: str, user: dict = require_admin):
     try:
         return await user_service.get_role_detail(name)
     except Exception as e:
@@ -274,7 +296,7 @@ async def get_role_detail(name: str, user: dict = Depends(get_current_user)):
 
 
 @router.delete("/roles/{name}", status_code=204)
-async def drop_role(name: str, user: dict = Depends(get_current_user)):
+async def drop_role(name: str, user: dict = require_admin):
     try:
         await user_service.drop_role(name)
     except PermissionError as e:
@@ -284,7 +306,7 @@ async def drop_role(name: str, user: dict = Depends(get_current_user)):
 
 
 @router.get("/roles/{name}/privileges")
-async def get_role_privileges(name: str, user: dict = Depends(get_current_user)):
+async def get_role_privileges(name: str, user: dict = require_admin):
     try:
         privileges = await user_service.get_role_privileges(name)
         return {"role": name, "privileges": privileges, "count": len(privileges)}
@@ -296,7 +318,7 @@ async def get_role_privileges(name: str, user: dict = Depends(get_current_user))
 async def grant_privilege(
     name: str,
     body: RolePrivilegeChange,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         sql = await user_service.grant_privilege(
@@ -320,7 +342,7 @@ async def grant_privilege(
 async def revoke_privilege(
     name: str,
     body: RolePrivilegeChange,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         sql = await user_service.revoke_privilege(
@@ -340,7 +362,7 @@ async def revoke_privilege(
 
 
 @router.get("/roles/{name}/members")
-async def get_role_members(name: str, user: dict = Depends(get_current_user)):
+async def get_role_members(name: str, user: dict = require_admin):
     try:
         members = await user_service.get_role_members(name)
         return {"role": name, "members": members}
@@ -352,7 +374,7 @@ async def get_role_members(name: str, user: dict = Depends(get_current_user)):
 async def grant_role_member(
     name: str,
     body: RoleMemberChange,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         if body.member_type == "user":
@@ -370,7 +392,7 @@ async def grant_role_member(
 async def revoke_role_member(
     name: str,
     body: RoleMemberChange,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
     try:
         if body.member_type == "user":
