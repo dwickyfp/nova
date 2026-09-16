@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, type RenderResult } from 'vitest-browser-react'
+import { cleanup, render, type RenderResult } from 'vitest-browser-react'
 import { type Locator, userEvent } from 'vitest/browser'
 import { UserAuthForm } from './user-auth-form'
 
@@ -91,11 +91,18 @@ describe('UserAuthForm', () => {
     expect(setUserMock).toHaveBeenCalledWith({
       username: 'analyst',
       roles: ['analyst'],
+      // The login response omits active_role, so getAuthUser falls back to the first role.
+      activeRole: 'analyst',
     })
     expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
   })
 
   it('navigates to a safe internal redirect path', async () => {
+    // Render into a fresh container: vitest only cleans up between tests, so the form
+    // mounted by beforeEach would otherwise still be in the document and every locator
+    // would resolve to two elements.
+    await cleanup()
+
     screen = await render(<UserAuthForm redirectTo='/users?tab=account' />)
     usernameInput = screen.getByRole('textbox', { name: /^Username$/i })
     passwordInput = screen.getByLabelText(/^Password$/i)
