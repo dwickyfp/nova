@@ -522,79 +522,101 @@ Nova is under active development. The architecture and product specifications
 describe the target platform; individual modules may be implemented
 incrementally.
 
+> **Documentation vs implementation — known discrepancy.** `AGENTS.md`
+> ("Project Structure") describes the backend layout as `app/core/`, `app/db/`,
+> `app/models/`, `app/schemas/`, `app/services/`, `app/sql_dialect/`,
+> `app/storage/`, `app/proxy/`, `app/api/v1/endpoints/`. The repository does not
+> use that layout: only `app/core/` and `app/common/` exist as shared packages,
+> and all domain code lives in `app/modules/<domain>/` (routers, services,
+> schemas colocated per module, registered in `app/main.py`). `app/proxy/` does
+> not exist at all — see Phase 8. `AGENTS.md` and this README have not been
+> reconciled; treat `app/modules/` as the real layout until `AGENTS.md` is
+> updated.
+
+Roadmap checkboxes below are marked only where the code in this repository
+proves the item; each line cites its evidence. Lines marked `[ ]` that have
+partial implementation say so explicitly.
+
 ## Roadmap
 
 ### Phase 1 — Foundation & Auth ✅
-- [x] Docker infrastructure (StarRocks FE/BE, MinIO, Redis)
-- [x] FastAPI modular monolith with asyncmy driver
-- [x] JWT + Redis session management
-- [x] StarRocks-native authentication (first-login setup wizard)
-- [x] ACCOUNTADMIN role guard (immutable super user)
-- [x] NOVA_SYSTEM database initialization (CONFIG, AUDIT schemas)
-- [x] Frontend: Sign-in page (split-screen), auth guard, JWT cookie
+- [x] Docker infrastructure (StarRocks FE/BE, MinIO, Redis) — `docker/docker-compose-engine.yml` (starrocks/fe-ubuntu:4.1.1, be-ubuntu:4.1.1, minio, redis:7-alpine)
+- [x] FastAPI modular monolith with asyncmy driver — `backend/app/main.py`, `backend/app/core/database.py:6` (`import asyncmy`)
+- [x] JWT + Redis session management — `backend/app/core/redis.py`, `backend/app/modules/auth/service.py`
+- [x] StarRocks-native authentication (first-login setup wizard) — `backend/app/modules/auth/{router,service}.py`; the frontend implements this as a **setup form inside sign-in**, not a separate wizard route (`frontend/src/features/auth/sign-in/components/user-auth-form.tsx:29,88,147`)
+- [x] ACCOUNTADMIN role guard (immutable super user) — `backend/app/common/sql_guard.py`, `backend/app/core/{deps,exceptions}.py`, `backend/app/modules/users/service.py`
+- [x] NOVA_SYSTEM database initialization (CONFIG, AUDIT) — `docker/init-nova.sql:50-390`, `backend/app/common/nova_system.py`. **Note:** the SQL uses flat `NOVA_SYSTEM.CONFIG_*` / `ML_*` / `AUDIT_*` tables; `AGENTS.md` documents a nested schema layout (`CONFIG.STAGES`, `AUDIT.LOG`) that the code does not use
+- [x] Frontend: Sign-in page (split-screen), auth guard, JWT cookie — `frontend/src/features/auth/sign-in/sign-in-2.tsx` (`lg:grid-cols-2`), `frontend/src/routes/_authenticated/route.tsx`
 
 ### Phase 2 — Query Engine ✅
-- [x] SQL execution via asyncmy per-user connections
-- [x] @stage SQL dialect — parser, translator, credential injector
-- [x] File format auto-detection (CSV, Parquet, JSON, ORC, Avro)
-- [x] Query history with audit logging
-- [x] Destructive SQL guard (DROP, TRUNCATE, DELETE confirmation)
-- [x] Frontend: Monaco editor, results table, multi-tab, Ctrl+Enter
+- [x] SQL execution via asyncmy per-user connections — `backend/app/modules/query/service.py`, `backend/app/core/database.py:63-71`
+- [x] @stage SQL dialect — parser, translator, credential injector — `backend/app/modules/query/dialect/{parser,translator,injector}.py`
+- [x] File format auto-detection (CSV, Parquet, JSON, ORC, Avro) — `backend/app/modules/query/dialect/detector.py:13-14` (magic bytes) + `parser.py:60` (extension list)
+- [x] Query history with audit logging — `backend/app/modules/query/repository.py`, `backend/app/common/audit.py` (14 call sites)
+- [x] Destructive SQL guard (DROP, TRUNCATE, DELETE confirmation) — `backend/app/common/sql_guard.py`, `backend/app/modules/query/service.py:94`
+- [x] Frontend: Monaco editor, results table, multi-tab, Ctrl+Enter — `frontend/src/features/workspaces/index.tsx`
 
 ### Phase 3 — Object Browser ✅
-- [x] Catalog → Database → Schema → Table/View/MV/Function tree
-- [x] SHOW / DESCRIBE / INFORMATION_SCHEMA queries
-- [x] Table column metadata with types
-- [x] Schema browser in sidebar (DatabaseExplorer)
-- [x] Frontend: Object browser panel, schema pre-loading
+- [x] Catalog → Database → Schema → Table/View/MV/Function tree — `backend/app/modules/explorer/router.py`, `frontend/src/features/database-explorer/index.tsx` (`buildCatalogTree`, 2667 lines)
+- [x] SHOW / DESCRIBE / INFORMATION_SCHEMA queries — `backend/app/modules/objects/router.py`, `.../explorer/router.py`
+- [x] Table column metadata with types — `backend/app/modules/objects/router.py:160`
+- [x] Schema browser in sidebar (DatabaseExplorer) — `frontend/src/components/layout/data/sidebar-data.ts` ("Database Explorer")
+- [x] Frontend: Object browser panel, schema pre-loading — `frontend/src/features/database-explorer/index.tsx`
 
-### Phase 4 — Stage & Storage ✅
-- [x] Storage provider abstraction (S3/MinIO)
-- [x] Stage CRUD registered in NOVA_SYSTEM.CONFIG.STAGES
-- [x] File operations: browse, upload, download, delete
-- [x] Schema-bound access control (RBAC on stage files)
-- [x] CTAS from stage, export to stage
-- [x] NOVA_DEMO sample database (customers, products, orders)
+### Phase 4 — Stage & Storage 🔶
+- [x] Storage provider abstraction (S3/MinIO) — `backend/app/core/config.py` + `backend/app/modules/stages/service.py` (boto3/S3 client)
+- [x] Stage CRUD registered in `NOVA_SYSTEM.CONFIG_STAGES` — `backend/app/modules/stages/{router,service}.py`
+- [x] File operations: browse, upload, download, delete — `backend/app/modules/stages/router.py:80-140`
+- [x] CTAS from stage, export to stage — only as dialect command types (`STAGE_LOAD` / `STAGE_EXPORT` in `backend/app/modules/query/dialect/parser.py:23-24`); no dedicated UI or end-to-end test yet
+- [ ] Schema-bound access control (RBAC on stage files) — stage records carry `database_name` / `schema_name`, but no privilege check is enforced in `backend/app/modules/stages/service.py`
+- [x] NOVA_DEMO sample database (customers, orders, order_items) — `docker/init-nova.sql:401-460`. **Note:** `products` lives in `NOVA_CATALOG.products` (`docker/init-nova.sql:494-497`), not in `NOVA_DEMO`
+- [ ] Stage Manager page — no `frontend/src/features/stages/`; only the database-explorer tree can create/list stage files (`frontend/src/features/database-explorer/index.tsx`)
 
 ### Phase 5 — Administration 🔶
-- [x] User management (create, alter, drop, password reset)
-- [x] Role management (create, drop, grant, set default)
-- [x] RBAC enforcement via StarRocks SHOW GRANTS
-- [x] Workspace file persistence (save/load/query files)
-- [ ] Resource groups (CPU/memory quotas, classifiers)
-- [ ] Cluster monitor (FE/BE/CN nodes, health checks)
-- [ ] Function manager (UDF: SQL, Java, Python)
-- [ ] Task manager (SUBMIT TASK, scheduling)
-- [ ] Pipe manager (continuous ingestion, AUTO_INGEST)
+- [x] User management (create, alter, drop, password reset) — `backend/app/modules/users/router.py:44-240`, UI `frontend/src/features/users/`
+- [x] Role management (create, drop, grant, set default) — `backend/app/modules/users/router.py:253-369`, UI `frontend/src/features/roles/`
+- [x] RBAC enforcement via StarRocks SHOW GRANTS — `backend/app/modules/users/router.py:144`, `backend/app/core/deps.py`
+- [x] Workspace file persistence (save/load/query files) — `backend/app/modules/workspaces/{router,service}.py`, UI `frontend/src/features/workspaces/`
+- [ ] Resource groups (CPU/memory quotas, classifiers) — `backend/app/modules/resource_groups/` is an empty stub
+- [ ] Cluster monitor (FE/BE/CN nodes, health checks) — only a metrics endpoint exists (`backend/app/modules/monitoring/router.py:223`); no node/health management. Not to be confused with the monitoring **pages** under Phase 7
+- [x] Function manager (UDF: SQL, Java, Python) — `backend/app/modules/functions/`, registered `backend/app/main.py:118`, UI `frontend/src/features/functions/`
+- [x] Task manager (SUBMIT TASK, scheduling) — `backend/app/modules/tasks/router.py`, registered `backend/app/main.py:119`, UI `frontend/src/features/tasks/`
+- [x] Pipe manager (continuous ingestion, AUTO_INGEST) — `backend/app/modules/pipes/router.py`, registered `backend/app/main.py:120`, UI `frontend/src/features/pipes/`
 
 ### Phase 6 — Advanced Features 🔶
-- [x] AI Provider management (OpenAI, Anthropic, openai-compatible)
-- [x] ML model registry (forecast, classify, anomaly detection)
-- [x] AI SQL functions (AI_SENTIMENT, AI_COMPLETE, AI_TRANSLATE, etc.)
-- [ ] External catalogs (Hive, Iceberg, Paimon, JDBC, Delta Lake)
-- [ ] Dashboards (charts, widgets, auto-refresh)
-- [ ] Backup & restore (snapshots, point-in-time, recycle bin)
-- [ ] Data governance (masking policies, row access, tagging, lineage)
-- [ ] Variables & settings (session/global browser, password policies)
+- [x] AI Provider management (OpenAI, Anthropic, openai-compatible) — `backend/app/modules/ai_ml/router.py`, UI `frontend/src/features/ai-providers/`
+- [x] ML model registry (classification, regression; 8 algorithms) — `backend/app/modules/ml_engine/service.py`, tables `NOVA_SYSTEM.ML_MODELS` / `ML_MODEL_VERSIONS` / `ML_MODEL_ALIASES` (`docker/init-nova.sql:204-234`). **Note:** the listed "forecast / anomaly detection" model types are **not** in the code — `model_type` only accepts `classification|regression` (`backend/app/modules/ml_engine/schemas.py:15-19`)
+- [x] AI SQL functions (AI_COMPLETE, AI_SENTIMENT, AI_SUMMARIZE, AI_TRANSLATE, …) — `backend/app/modules/llm_functions/service.py:34-64`, registered as StarRocks UDFs (`service.py:372-377`)
+- [ ] External catalogs (Hive, Iceberg, Paimon, JDBC, Delta Lake) — `backend/app/modules/external_catalogs/` is an empty stub
+- [ ] Dashboards (charts, widgets, auto-refresh) — `backend/app/modules/dashboards/` is an empty stub; tables only (`NOVA_SYSTEM.CONFIG_DASHBOARDS`, `CONFIG_DASHBOARD_WIDGETS`, `docker/init-nova.sql:152-163`)
+- [ ] Backup & restore (snapshots, point-in-time, recycle bin) — `backend/app/modules/backup/` is an empty stub
+- [ ] Data governance (masking policies, row access, tagging, lineage) — `backend/app/modules/governance/` is an empty stub; `NOVA_SYSTEM.CONFIG_OBJECT_TAGS` and `LINEAGE_LOAD_HISTORY` tables exist unused
+- [ ] Variables & settings (session/global browser, password policies) — `backend/app/modules/variables/` is an empty stub
 - [ ] Compaction manager (manual trigger, score monitoring)
 - [ ] Storage volumes (shared-data mode)
 - [ ] Data sharing (shared views, shared stages, API endpoints)
-- [ ] Data loading (Stream Load, Broker Load, Routine Load)
+- [ ] Data loading (Stream Load, Broker Load, Routine Load) — the Pipe manager (Phase 5) covers continuous ingestion; bulk load paths are not implemented
 - [ ] Data export (INSERT INTO FILES, partitioned unload)
 
 ### Phase 7 — Frontend Pages 🔶
-- [x] Auth: Sign-in, setup wizard, role switcher
-- [x] SQL Workspace: Monaco editor, results panel, tabs
-- [x] Sidebar: Object browser, workspace tree
-- [x] Appearance: Light/Dark/System themes
-- [ ] Stage Manager page
-- [ ] User & Role Management page
-- [ ] AI Providers page
-- [ ] Cluster Monitor page
-- [ ] Dashboards page
+- [x] Auth: Sign-in (split-screen), first-login setup form, role switcher — `frontend/src/features/auth/sign-in/sign-in-2.tsx` (`lg:grid-cols-2`), `.../components/user-auth-form.tsx:29,88,147` (setup form), `frontend/src/routes/_authenticated/index.tsx`
+- [x] SQL Workspace: Monaco editor, results panel, tabs — `frontend/src/features/workspaces/index.tsx`
+- [x] Sidebar: Object browser, workspace tree — `frontend/src/components/layout/data/sidebar-data.ts`
+- [x] Appearance: Light/Dark/System themes — `frontend/src/components/theme-switch.tsx:34,41,48`
+- [ ] Stage Manager page — a Stage Manager page does not exist; stage files are only reachable from the database-explorer tree (`frontend/src/features/database-explorer/index.tsx`). Moving this outside Phase 4 means this item stays `[ ]`
+- [x] User & Role Management page — `frontend/src/features/users/` (20 files), `frontend/src/features/roles/`, routes `frontend/src/routes/_authenticated/users/` + `.../roles/`
+- [x] AI Providers page — `frontend/src/features/ai-providers/`, route `frontend/src/routes/_authenticated/ai-providers/`
+- [ ] Cluster Monitor page — **ambiguous**: there is no node/health page, but 6 monitoring pages exist (`frontend/src/features/monitoring/` — query history, active queries, audit trail, tasks, query cost, data loads; routes `frontend/src/routes/_authenticated/monitoring/`). Leave `[ ]` with a pointer rather than claiming the Phase 5 cluster monitor
+- [x] Monitoring pages (query history, active queries, audit trail, tasks, query cost, data loads) — `frontend/src/features/monitoring/`, `frontend/src/routes/_authenticated/{query-history,active-query,query-cost,monitoring/*}.tsx`
+- [ ] Dashboards page — `frontend/src/features/dashboard/` exists but is the Home dashboard (5 files); no dashboard CRUD/builder page
 - [ ] Admin Settings page
 
 ### Phase 8 — MySQL Protocol Proxy
+Not started. `backend/app/proxy/` does not exist; `docs/arch-07-mysql-proxy.md`
+and `AGENTS.md` document this component as target architecture only. The SQL
+pipeline the proxy would reuse (dialect parse → translate → credential inject)
+does exist under `backend/app/modules/query/dialect/`.
+
 - [ ] TCP listener on port 4406
 - [ ] MySQL wire protocol parser
 - [ ] @stage dialect translation in proxy layer
