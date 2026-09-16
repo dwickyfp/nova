@@ -314,18 +314,23 @@ _PROVIDER_PREFIX = r"[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*"
 #: The placeholder written in place of a redacted value.
 REDACTED_VALUE = "***"
 
+
+class CredentialsRedactionError(RuntimeError):
+    """Raised when a credential-bearing statement cannot be redacted safely.
+
+    Callers must treat this as fatal for the response they were building: the
+    only alternative to redacting is shipping the raw statement, and a malformed
+    or unrecognised credential form must never turn into a credential leak.
+    """
+
 # Single-quoted form: ``'aws.s3.secret_key'='AKIA…'`` — what the injector emits.
 # Group 1 = the key's opening quote, group 2 = key, group 3 = the operator.
-_QUOTED_CREDENTIAL_LITERAL = re.compile(
-    rf"(['\"])({_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)}))\1"
-    r"(\s*=\s*)'[^']*'",
-    re.IGNORECASE,
-)
-
-# Postgres-ish form: ``"aws.s3.secret_key" => 'AKIA…'``.
+# ``=>`` is a separate alternative of the same pattern rather than a second
+# pattern, so the two operators cannot both match the same assignment and mint
+# a second ``***`` in the middle of the first replacement.
 _QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
     rf"(['\"])({_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)}))\1"
-    r"(\s*=>\s*)'[^']*'",
+    r"(\s*(?:=>|=)\s*)'(?:[^']|'')*'",
     re.IGNORECASE,
 )
 
@@ -333,7 +338,7 @@ _QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
 # Group 1 = key, group 2 = the operator.
 _BARE_CREDENTIAL_ASSIGNMENT = re.compile(
     rf"(?<![\w$.'\"`])(`?{_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)})`?)"
-    r"(\s*=\s*)'[^']*'",
+    r"(\s*(?:=>|=)\s*)'(?:[^']|'')*'",
     re.IGNORECASE,
 )
 
@@ -341,9 +346,20 @@ _BARE_CREDENTIAL_ASSIGNMENT = re.compile(
 #: quoting, so their group 1 is the quote character and group 2 the key; the
 #: bare pattern has no quoting to preserve, so its group 1 is the key.
 _CREDENTIAL_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
-    (_QUOTED_CREDENTIAL_LITERAL, True),
     (_QUOTED_CREDENTIAL_ASSIGNMENT, True),
     (_BARE_CREDENTIAL_ASSIGNMENT, False),
+)
+
+#: Verification pass: any credential assignment left with a populated value,
+#: whatever its quoting or operator. Group 1 is the *value* as written — quoted
+#: (with the quote included, so ``''`` reads as empty) or bare/unterminated.
+#: This is deliberately looser than the redaction patterns: it must find a
+#: survivor even when those patterns mis-parsed the value.
+_POPULATED_CREDENTIAL = re.compile(
+    rf"(?<![\w$.'\"`])(?:['\"`]?{_PROVIDER_PREFIX}\."
+    rf"(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)})['\"`]?\s*(?:=>|=)\s*)"
+    r"(?:(?P<q>['\"]).*?(?P=q)|(?P<bare>[^\s,)]+))?",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -359,6 +375,11 @@ def redact_sql_credentials(sql: str) -> str:
     ``'aws.s3.access_key'='AKIA…'`` becomes ``'aws.s3.access_key'='***'``.
 
     No-op for SQL that carries no credential parameters.
+
+    Raises:
+        CredentialsRedactionError: if a credential *value* would survive the
+            substitution. Fails closed — a statement that cannot be redacted
+            must never be returned in its raw form.
     """
     if not sql:
         return sql
@@ -366,7 +387,29 @@ def redact_sql_credentials(sql: str) -> str:
         sql = pattern.sub(
             lambda m, quoted=quoted_key: _redacted_assignment(m, quoted), sql
         )
+    if not _redaction_is_complete(sql):
+        raise CredentialsRedactionError(
+            "credential parameters remain populated after redaction; refusing to "
+            "return the statement"
+        )
     return sql
+
+
+def _redaction_is_complete(sql: str) -> bool:
+    """True when no credential parameter is still bound to a real value.
+
+    The three patterns above cover the forms the injector emits, including a
+    double quote it does not escape inside a single-quoted value (which stops
+    ``\'[^\']*\'`` early and leaves the tail of the value behind). Rather than
+    trusting them, this re-scans for a populated credential assignment of any
+    shape — quoted, bare, backticked, or with an unquoted value — and reports
+    the statement as unredactable if one is still there.
+    """
+    for match in _POPULATED_CREDENTIAL.finditer(sql):
+        value = match.group("q") or match.group("bare") or ""
+        if value.strip("'\"") and value.strip("'\"") != REDACTED_VALUE:
+            return False
+    return True
 
 
 def _redacted_assignment(match: re.Match[str], quoted_key: bool) -> str:

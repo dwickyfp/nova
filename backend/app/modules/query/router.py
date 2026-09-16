@@ -1,15 +1,49 @@
 """Query API router — execute SQL, explain, query history."""
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.common.sql_guard import is_destructive_sql, is_unscoped_mutation, redact_sql_credentials
 from app.core.deps import get_current_user
-from app.common.sql_guard import is_destructive_sql, is_unscoped_mutation
 from app.modules.query.service import query_service
 
 router = APIRouter()
+
+
+class SanitizingJSONResponse(JSONResponse):
+    """JSON response that strips storage credentials from the serialised payload.
+
+    Last line of defence for AGENTS.md §2 (*Credentials NEVER in: API JSON
+    responses*). Controllers already hand over redacted values — ``QueryResult``
+    redacts ``executed_sql`` on construction — so this normally rewrites nothing.
+
+    It exists because that guarantee is only as strong as the weakest caller:
+    any endpoint added later that serialises an engine-bound statement (a plan,
+    a rewrite preview, an error payload) would leak by default. Redacting the
+    bytes here means a single forgotten call site degrades into a cosmetic
+    ``***`` in one field instead of an exfiltrated storage key.
+
+    Redaction is value-only and recursive, so the response keeps its shape and a
+    client can still see which parameters were injected.
+    """
+
+    @staticmethod
+    def _sanitize(value: object) -> object:
+        if isinstance(value, str):
+            return redact_sql_credentials(value)
+        if isinstance(value, dict):
+            return {key: SanitizingJSONResponse._sanitize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [SanitizingJSONResponse._sanitize(item) for item in value]
+        if isinstance(value, tuple):
+            return [SanitizingJSONResponse._sanitize(item) for item in value]
+        return value
+
+    def render(self, content: object) -> bytes:
+        return super().render(self._sanitize(content))
 
 
 class QueryRequest(BaseModel):
@@ -49,7 +83,11 @@ class CompletionResponse(BaseModel):
     items: list[CompletionItem]
 
 
-@router.post("/execute", response_model=list[QueryResponse])
+@router.post(
+    "/execute",
+    response_model=list[QueryResponse],
+    response_class=SanitizingJSONResponse,
+)
 async def execute_query(
     req: QueryRequest,
     user: dict = Depends(get_current_user),
@@ -95,7 +133,11 @@ async def execute_query(
     return responses
 
 
-@router.post("/explain", response_model=QueryResponse)
+@router.post(
+    "/explain",
+    response_model=QueryResponse,
+    response_class=SanitizingJSONResponse,
+)
 async def explain_query(
     req: QueryRequest,
     user: dict = Depends(get_current_user),

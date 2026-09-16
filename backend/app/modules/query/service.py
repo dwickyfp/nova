@@ -168,6 +168,11 @@ class QueryService:
         # that leaves the process (audit row, API response) must carry the
         # redacted form instead: NOVA_SYSTEM and API JSON are on the
         # never-store-credentials list in AGENTS.md.
+        #
+        # Redacted up front rather than read back off the result: the ERROR
+        # branch below needs it too, and the engine call may never return.
+        # ``QueryResult`` redacts ``executed_sql`` as well, so the value the
+        # repository hands back is independently safe.
         redacted_sql = redact_sql_credentials(executed_sql)
         try:
             result = await self._repo.execute_as_user(
@@ -545,6 +550,13 @@ class QueryService:
         """Get EXPLAIN plan for a SQL statement.
 
         Translates @stage references first, then runs EXPLAIN.
+
+        The signal path is the mirror of ``execute()``'s and leaks the same way:
+        the translation injects real storage credentials. The statement handed
+        to the engine therefore keeps them (EXPLAIN has to plan against a real
+        path and real credentials), while ``QueryResult`` replaces the values
+        with ``***`` before the result — the only object the router serialises
+        into the HTTP body — can leave this method.
         """
         normalized_sql = self._normalize_default_schema_qualification(sql)
         guard_sql(normalized_sql)
@@ -557,6 +569,9 @@ class QueryService:
             try:
                 executed_sql, _ = translate_stage_query(parsed, stage_configs)
             except ValueError as e:
+                # ``normalized_sql`` is the user's own text and carries no
+                # injected credential, but it is redacted all the same so every
+                # return path out of this method is uniform.
                 return QueryResult(
                     original_sql=sql,
                     executed_sql=normalized_sql,
@@ -566,13 +581,15 @@ class QueryService:
         explain_sql = f"EXPLAIN {executed_sql}"
         password = decrypt_password(encrypted_password)
 
-        return await self._repo.execute_as_user(
+        result = await self._repo.execute_as_user(
             sql=explain_sql,
             username=username,
             password=password,
             database=database,
             role=role,
         )
+        result.original_sql = sql
+        return result
 
     async def get_context(
         self,
