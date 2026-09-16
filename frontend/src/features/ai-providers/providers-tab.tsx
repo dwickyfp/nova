@@ -8,7 +8,6 @@ import {
   Pencil,
   Plug,
   Plus,
-  RefreshCw,
   Trash2,
   XCircle,
 } from 'lucide-react'

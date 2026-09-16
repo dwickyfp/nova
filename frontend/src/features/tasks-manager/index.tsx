@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { api } from '@/lib/api-client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,63 +10,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { SimpleTablePagination, SimpleTableToolbar, SimpleTableViewport } from '@/components/data-table/simple-table-controls'
 import { Plus, Trash2, Pause, Play, ChevronDown, ChevronRight, ListTodo } from 'lucide-react'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface Task {
-  name: string
-  state: 'ACTIVE' | 'PAUSE'
-  schedule: string
-  database: string
-  sql: string
-  created_at: string
-  interval?: string
-}
-
-interface TaskRun {
-  run_time: string
-  finish_time: string | null
-  state: 'RUNNING' | 'SUCCESS' | 'FAILED'
-  error: string | null
-}
-
-interface TasksResponse {
-  tasks: Task[]
-  total: number
-}
+import {
+  createTask,
+  deleteTask,
+  fetchTaskRuns,
+  fetchTasks,
+  patchTaskState,
+  type Task,
+} from './api'
 
 type StateFilter = 'ALL' | 'ACTIVE' | 'PAUSE'
 type ScheduleType = 'one-time' | 'periodic'
-
-// ---------------------------------------------------------------------------
-// API helpers
-// ---------------------------------------------------------------------------
-
-const fetchTasks = async (): Promise<TasksResponse> => {
-  const res = await api.get('/api/v1/tasks')
-  return res.data
-}
-
-const fetchTaskRuns = async (name: string): Promise<TaskRun[]> => {
-  const res = await api.get(`/api/v1/tasks/${encodeURIComponent(name)}/runs`)
-  return res.data.runs ?? res.data
-}
-
-const createTask = async (payload: Record<string, unknown>) => {
-  const res = await api.post('/api/v1/tasks', payload)
-  return res.data
-}
-
-const patchTaskState = async ({ name, state }: { name: string; state: string }) => {
-  const res = await api.patch(`/api/v1/tasks/${encodeURIComponent(name)}`, { state })
-  return res.data
-}
-
-const deleteTask = async (name: string) => {
-  await api.delete(`/api/v1/tasks/${encodeURIComponent(name)}`)
-}
 
 // ---------------------------------------------------------------------------
 // Badge helpers
@@ -256,7 +209,7 @@ export default function TasksManager() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   // Data
-  const { data, isLoading, placeholderData } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['tasks'],
     queryFn: fetchTasks,
     placeholderData: keepPreviousData,
@@ -336,7 +289,7 @@ export default function TasksManager() {
       </div>
 
       {/* Toolbar */}
-      <SimpleTableToolbar>
+      <SimpleTableToolbar resultLabel={`${filtered.length} task${filtered.length !== 1 ? 's' : ''}`}>
         <div className="flex items-center gap-2 flex-1">
           <Input
             placeholder="Search tasks…"
@@ -403,11 +356,11 @@ export default function TasksManager() {
 
       {/* Pagination */}
       <SimpleTablePagination
-        page={safePage}
-        pageCount={totalPages}
+        page={safePage + 1}
         pageSize={PAGE_SIZE}
         total={filtered.length}
-        onPageChange={setPage}
+        onPageChange={(next) => setPage(next - 1)}
+        onPageSizeChange={() => {}}
       />
 
       {/* Create Dialog */}

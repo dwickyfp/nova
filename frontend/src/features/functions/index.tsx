@@ -70,7 +70,7 @@ function BuiltinFunctionsTab() {
 
   return (
     <div className="space-y-3">
-      <SimpleTableToolbar>
+      <SimpleTableToolbar resultLabel={`${filtered.length} function${filtered.length !== 1 ? 's' : ''}`}>
         <Input
           placeholder="Search functions…"
           value={search}
@@ -328,7 +328,7 @@ function UDFTab() {
 
   return (
     <div className="space-y-3">
-      <SimpleTableToolbar>
+      <SimpleTableToolbar resultLabel={`${filtered.length} function${filtered.length !== 1 ? 's' : ''}`}>
         <Select value={dbFilter} onValueChange={setDbFilter}>
           <SelectTrigger className="w-40 h-8">
             <SelectValue placeholder="All databases" />
