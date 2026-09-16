@@ -518,36 +518,91 @@ def _redacted_assignment(match: re.Match[str], quoted_key: bool) -> str:
 
 
 def split_sql_statements(sql: str) -> list[str]:
-    """Split SQL into individual statements, respecting single-quoted strings.
+    """Split SQL into individual statements, respecting strings and comments.
 
-    Semicolons inside single-quoted strings are not treated as separators.
+    The separators are the ``;`` the *engine* would treat as statement
+    boundaries, so a semicolon inside a single-quoted literal, a ``--`` line
+    comment, or a ``/* ... */`` block comment is text and not a boundary.
+
+    Recognising block comments is not optional: the engine reads
+    ``SELECT /* ; */ 42`` as one statement, and ``DROP /*;*/ ROLE x`` as a single
+    ``DROP ROLE``. A splitter that cut at that ``;`` would hand ``guard_sql``
+    fragments the engine never sees as statements at all — splitting
+    ``DROP /*;*/ ROLE ACCOUNTADMIN`` produced ``DROP /*`` and
+    ``*/ ROLE ACCOUNTADMIN``, so no pattern ever saw the two keywords adjacent
+    and the guard's ``_GAP`` tolerance (written for exactly this shape) was
+    defeated. Splitting on a boundary the engine does not have is a bypass, and
+    it over-blocks clean scripts whose comments merely mention the keywords.
+
+    Comment handling matches :func:`strip_sql_comments`, including the
+    single-close-marker rule: the first ``*/`` closes the region, so
+    ``/* a /* b */`` ends at the first marker and what follows is live SQL.
+    Getting that wrong in the other direction would let a comment swallow a
+    statement boundary the engine honours.
+
     Empty statements are filtered out.
     """
     statements: list[str] = []
     current: list[str] = []
-    in_string = False
     i = 0
-    while i < len(sql):
+    length = len(sql)
+    while i < length:
         ch = sql[i]
-        if ch == "'" and not in_string:
-            in_string = True
+
+        if ch == "'":
+            # Copy the whole literal verbatim, handling '' escapes.
             current.append(ch)
-        elif ch == "'" and in_string:
-            # Check for escaped quote ''
-            if i + 1 < len(sql) and sql[i + 1] == "'":
-                current.append("''")
-                i += 2
+            i += 1
+            while i < length:
+                lit = sql[i]
+                current.append(lit)
+                if lit == "'":
+                    if i + 1 < length and sql[i + 1] == "'":
+                        current.append("'")
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            continue
+
+        if ch == "/" and sql.startswith("/*", i):
+            # Skip the comment region rather than copying it: a `;`, a quote or a
+            # line comment inside it is all plain text. The first `*/` closes it
+            # (see strip_sql_comments), so any inner `/*` is ordinary content.
+            j = i + 2
+            while j < length and not sql.startswith("*/", j):
+                j += 1
+            if j >= length:
+                # Unterminated comment swallows the remainder of the script.
+                current.append(sql[i:])
+                i = length
                 continue
-            in_string = False
-            current.append(ch)
-        elif ch == ";" and not in_string:
+            current.append(sql[i : j + 2])
+            i = j + 2
+            continue
+
+        if ch == "-" and sql.startswith("--", i):
+            newline = sql.find("\n", i)
+            if newline == -1:
+                current.append(sql[i:])
+                i = length
+                continue
+            current.append(sql[i:newline])
+            i = newline
+            continue
+
+        if ch == ";":
             stmt = "".join(current).strip()
             if stmt:
                 statements.append(stmt)
             current = []
-        else:
-            current.append(ch)
+            i += 1
+            continue
+
+        current.append(ch)
         i += 1
+
     # Last statement (no trailing semicolon)
     stmt = "".join(current).strip()
     if stmt:
