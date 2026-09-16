@@ -18,6 +18,7 @@ from app.common.audit import write_audit_log
 from app.common.sql_guard import (
     guard_sql,
     is_destructive_sql,
+    redact_sql_credentials,
     split_sql_statements,
 )
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
@@ -161,6 +162,13 @@ class QueryService:
 
         # 5. Execute
         password = decrypt_password(encrypted_password)
+
+        # The statement sent to the engine carries real storage credentials —
+        # that is unavoidable, FILES() needs them. Everything derived from it
+        # that leaves the process (audit row, API response) must carry the
+        # redacted form instead: NOVA_SYSTEM and API JSON are on the
+        # never-store-credentials list in AGENTS.md.
+        redacted_sql = redact_sql_credentials(executed_sql)
         try:
             result = await self._repo.execute_as_user(
                 sql=executed_sql,
@@ -171,7 +179,7 @@ class QueryService:
                 max_rows=max_rows,
             )
             result.original_sql = sql
-            result.executed_sql = executed_sql
+            result.executed_sql = redacted_sql
             result.warnings = warnings
 
             # Rename $1, $2 columns with CSV header names if detected
@@ -187,7 +195,7 @@ class QueryService:
                 object_name=(database or "") if database else "workspace",
                 status="SUCCESS",
                 sql_text=sql,
-                rewritten_sql=executed_sql,
+                rewritten_sql=redacted_sql,
                 duration_ms=int(result.elapsed_ms),
                 rows_affected=result.affected_rows or result.row_count,
                 session_id=session_id,
@@ -205,7 +213,7 @@ class QueryService:
                 object_name=(database or "") if database else "workspace",
                 status="ERROR",
                 sql_text=sql,
-                rewritten_sql=executed_sql,
+                rewritten_sql=redacted_sql,
                 error_message=str(exc),
                 session_id=session_id,
                 file_id=file_id,

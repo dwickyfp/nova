@@ -218,6 +218,95 @@ def is_unscoped_mutation(sql: str) -> bool:
     return bool(UNSCOPED_MUTATION_PATTERN.search(strip_sql_comments(sql)))
 
 
+# ── Credential redaction ────────────────────────────────────────────────────
+
+#: FILES() parameter suffix (the part after the provider prefix) that holds a
+#: secret. Matching on the suffix covers the whole family in one rule:
+#: ``aws.s3.access_key``, ``azure.account_key``, ``gcs.service_account_key`` …
+CREDENTIAL_PARAM_SUFFIXES: tuple[str, ...] = (
+    "access_key",
+    "secret_key",
+    "session_token",
+    "account_key",
+    "sas_token",
+    "service_account_key",
+)
+
+#: Provider prefixes accepted before a credential suffix. Dots are allowed so
+#: two-segment providers (``aws.s3``, ``azure.blob``, ``gcs.s3``) match.
+_PROVIDER_PREFIX = r"[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*"
+
+#: The placeholder written in place of a redacted value.
+REDACTED_VALUE = "***"
+
+# Single-quoted form: ``'aws.s3.secret_key'='AKIA…'`` — what the injector emits.
+# Group 1 = the key's opening quote, group 2 = key, group 3 = the operator.
+_QUOTED_CREDENTIAL_LITERAL = re.compile(
+    rf"(['\"])({_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)}))\1"
+    r"(\s*=\s*)'[^']*'",
+    re.IGNORECASE,
+)
+
+# Postgres-ish form: ``"aws.s3.secret_key" => 'AKIA…'``.
+_QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
+    rf"(['\"])({_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)}))\1"
+    r"(\s*=>\s*)'[^']*'",
+    re.IGNORECASE,
+)
+
+# Bare or backquoted key: ``aws.s3.secret_key='AKIA…'`` / ``FILES(aws.s3.secret_key=…)``.
+# Group 1 = key, group 2 = the operator.
+_BARE_CREDENTIAL_ASSIGNMENT = re.compile(
+    rf"(?<![\w$.'\"`])(`?{_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)})`?)"
+    r"(\s*=\s*)'[^']*'",
+    re.IGNORECASE,
+)
+
+#: (pattern, uses_quoted_key) — the quoted-key patterns keep the key's own
+#: quoting, so their group 1 is the quote character and group 2 the key; the
+#: bare pattern has no quoting to preserve, so its group 1 is the key.
+_CREDENTIAL_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
+    (_QUOTED_CREDENTIAL_LITERAL, True),
+    (_QUOTED_CREDENTIAL_ASSIGNMENT, True),
+    (_BARE_CREDENTIAL_ASSIGNMENT, False),
+)
+
+
+def redact_sql_credentials(sql: str) -> str:
+    """Replace credential values in ``sql`` with ``***``.
+
+    Used on everything derived from the statement that actually reaches the
+    engine (``QueryResponse.executed_sql``) *before* it is persisted to
+    ``NOVA_SYSTEM.AUDIT_LOG`` or returned to a client. Redaction is value-only:
+    parameter names, paths, formats and the rest of the statement stay intact,
+    so an audit row still documents what was run.
+
+    ``'aws.s3.access_key'='AKIA…'`` becomes ``'aws.s3.access_key'='***'``.
+
+    No-op for SQL that carries no credential parameters.
+    """
+    if not sql:
+        return sql
+    for pattern, quoted_key in _CREDENTIAL_PATTERNS:
+        sql = pattern.sub(
+            lambda m, quoted=quoted_key: _redacted_assignment(m, quoted), sql
+        )
+    return sql
+
+
+def _redacted_assignment(match: re.Match[str], quoted_key: bool) -> str:
+    """Rebuild one credential assignment with the value replaced by ``***``.
+
+    The parameter name, its quoting and the operator are preserved verbatim so
+    the redacted statement stays syntactically identical to the executed one.
+    """
+    if quoted_key:
+        quote, key, operator = match.group(1), match.group(2), match.group(3)
+        return f"{quote}{key}{quote}{operator}'{REDACTED_VALUE}'"
+    key, operator = match.group(1), match.group(2)
+    return f"{key}{operator}'{REDACTED_VALUE}'"
+
+
 def split_sql_statements(sql: str) -> list[str]:
     """Split SQL into individual statements, respecting single-quoted strings.
 
