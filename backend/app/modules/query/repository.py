@@ -1,4 +1,15 @@
-"""Query execution against StarRocks — user-scoped and system-scoped."""
+"""Query execution against StarRocks — user-scoped and system-scoped.
+
+``executed_sql`` is the one field that carries the statement Nova actually ran —
+post ``@stage`` → ``FILES()`` translation, with real storage credentials
+injected because the engine needs them. Every such statement leaves the process
+twice (API JSON body, ``NOVA_SYSTEM.AUDIT_LOG``) and both destinations are on
+the never-store-credentials list in AGENTS.md §2.
+
+Redaction therefore lives here, on the constructor: this is the single point at
+which ``executed_sql`` can enter a ``QueryResult``, so no future code path —
+method, router or helper — can forget it.
+"""
 
 import time
 from dataclasses import dataclass, field
@@ -6,6 +17,7 @@ from dataclasses import dataclass, field
 import asyncmy
 import asyncmy.cursors
 
+from app.common.sql_guard import redact_sql_credentials
 from app.core.config import settings
 from app.core.database import db
 from app.core.exceptions import StarRocksError
@@ -13,7 +25,11 @@ from app.core.exceptions import StarRocksError
 
 @dataclass
 class QueryResult:
-    """Standardized query result."""
+    """Standardized query result.
+
+    ``executed_sql`` is always the *redacted* form; pass the statement verbatim
+    and it comes back with credential values replaced by ``***``.
+    """
 
     columns: list[str] = field(default_factory=list)
     rows: list[list] = field(default_factory=list)
@@ -23,6 +39,9 @@ class QueryResult:
     original_sql: str = ""
     executed_sql: str = ""
     warnings: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.executed_sql = redact_sql_credentials(self.executed_sql)
 
 
 class QueryRepository:
