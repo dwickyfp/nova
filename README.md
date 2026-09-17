@@ -692,8 +692,8 @@ second reconciler. `backend/app/modules/task_orchestration/native.py` reads
 `information_schema.tasks.SCHEDULE` for the native pause marker, and
 `ADMIN SHOW FRONTEND CONFIG LIKE '%task%'` for the FE config (not
 `SHOW VARIABLES`); `Reconciler.reconcile_native` advances a settled node
-(SUCCESS/FAILED), marks a **lost trace** explicitly `abandoned` rather than
-success, and surfaces an **auto-pause** only at the real threshold — the
+(SUCCESS/FAILED), leaves a node with no native row or a failed read untouched,
+and surfaces an **auto-pause** only at the real threshold — the
 engine's `max_task_consecutive_fail_count` (read live as 10) crossed by Nova's
 own persistent `CONFIG_TASKS.consecutive_fail_count` (reset on success), or a
 native `SCHEDULE` pause/suspend marker — to `NOVA_SYSTEM.AUDIT_LOG`. A single
@@ -706,17 +706,21 @@ always `UNKNOWN` and writes nothing (NOVA-46): the archive failure behind it is
 engine-wide — on a fresh FE the fresh-FE 1064 on `_statistics_.task_run_history`
 fires for every `task_runs` read while ordinary statements still succeed — so it
 carries no per-task information and no trace verdict may be drawn from it. The
-lost trace is settled instead by the **durable heartbeat path**:
-`Reconciler.abandon_stale_nodes` (driven by `WorkerService.reconcile_once`)
-abandons a `running` node whose worker heartbeat lapsed — a conditional write
-with a `NODE_ABANDONED` audit — from durable `NOVA_SYSTEM` state, independent of
-the archive (design §3). That is the "task was running when the FE/worker died"
-scenario AC #2 targets, and it cannot fire on a healthy in-flight node. `scan`
-stays a pure read that only reports candidates. Connection acquisition is inside
+same reasoning applies to a no-row read: `MISSING` maps to no state either
+(NOVA-52), because a node that was just submitted (`SUBMIT TASK` sent, its
+`task_runs` row not yet visible) would otherwise be settled `abandoned` while its
+worker is alive. The lost trace is settled instead by the **durable heartbeat
+path**: `Reconciler.abandon_stale_nodes` (driven by
+`WorkerService.reconcile_once`) abandons a `running` node whose worker heartbeat
+lapsed — a conditional write with a `NODE_ABANDONED` audit — from durable
+`NOVA_SYSTEM` state, independent of the archive (design §3). It is the only
+writer of `NODE_ABANDONED`. That is the "task was running when the FE/worker
+died" scenario AC #2 targets, and it cannot fire on a healthy in-flight node.
+`scan` stays a pure read that only reports candidates. Connection acquisition is inside
 the observer's guard, so an unreachable engine degrades to `UNKNOWN` instead of
 raising (NOVA-44). Criterion 7 is verified against the live engine, which
 reports `task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
-Forty-one unit + ten engine integration tests; the runbook is
+Forty-two unit + eleven engine integration tests; the runbook is
 `HOW_TO_RUN.md` §5. The checklist item above stays unchecked until this PR is
 merged.
 
