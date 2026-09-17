@@ -688,17 +688,22 @@ tests cover the acceptance criteria; the runbook is `HOW_TO_RUN.md` §5.
 **Progress note (NOVA-37, 2026-09-18).** Native-state reconciliation is
 implemented as an **extension of the existing `Reconciler`** — there is no
 second reconciler. `backend/app/modules/task_orchestration/native.py` reads
-`information_schema.task_runs` for the nodes of running graph runs and
+`information_schema.task_runs` for the nodes of running graph runs,
+`information_schema.tasks.SCHEDULE` for the native pause marker, and
 `ADMIN SHOW FRONTEND CONFIG LIKE '%task%'` for the FE config (not
 `SHOW VARIABLES`); `Reconciler.reconcile_native` advances a settled node
 (SUCCESS/FAILED), marks a **lost trace** explicitly `abandoned` rather than
-success, surfaces an **auto-pause** (the engine's
-`max_task_consecutive_fail_count`, read live as 10) to `NOVA_SYSTEM.AUDIT_LOG`,
-and is idempotent across repeated passes. A failed native read is `UNKNOWN` and
-writes nothing. Criterion 7 is verified against the live engine, which reports
-`task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
-Fourteen unit + five engine integration tests; the runbook is `HOW_TO_RUN.md`
-§7. The checklist item above stays unchecked until this PR is merged.
+success, and surfaces an **auto-pause** only at the real threshold — the
+engine's `max_task_consecutive_fail_count` (read live as 10) crossed by Nova's
+own persistent `CONFIG_TASKS.consecutive_fail_count` (reset on success), or a
+native `SCHEDULE` pause/suspend marker — to `NOVA_SYSTEM.AUDIT_LOG`. A single
+failure is quiet, so the alarm stays meaningful (NOVA-42). A native row older
+than the node's `started_at` is ignored, so a stale attempt cannot fail a live
+node. A failed native read is `UNKNOWN` and writes nothing. Criterion 7 is
+verified against the live engine, which reports `task_runs_ttl_second = 604800`
+(7 days) — not the wrong 86400 premise. Twenty-two unit + six engine
+integration tests; the runbook is `HOW_TO_RUN.md` §5. The checklist item above
+stays unchecked until this PR is merged.
 
 ## Decision Log
 

@@ -47,6 +47,7 @@ class FakeRepository:
             "id": task_id,
             "name": name,
             "created_by": owner,
+            "consecutive_fail_count": 0,
         }
         return task_id
 
@@ -57,6 +58,7 @@ class FakeRepository:
         state: str = "running",
         *,
         graph_run_id: str = "gr1",
+        started_at: Any = None,
     ) -> dict[str, Any]:
         row = {
             "id": run_id,
@@ -66,6 +68,7 @@ class FakeRepository:
             "state": state,
             "starrocks_query_id": None,
             "error_message": None,
+            "started_at": started_at,
         }
         self.task_runs[run_id] = row
         return row
@@ -89,6 +92,14 @@ class FakeRepository:
             row["error_message"] = error_message
         return True
 
+    async def increment_consecutive_failures(self, task_id: str) -> int:
+        task = self.tasks[task_id]
+        task["consecutive_fail_count"] = task.get("consecutive_fail_count", 0) + 1
+        return task["consecutive_fail_count"]
+
+    async def reset_consecutive_failures(self, task_id: str) -> None:
+        self.tasks[task_id]["consecutive_fail_count"] = 0
+
     async def list_graph_runs_by_state(self, states, *, limit=200):
         return []
 
@@ -104,6 +115,7 @@ class FakeObserver:
         self,
         runs: dict[str, NativeRun] | None = None,
         config: NativeConfig | None = None,
+        schedules: dict[str, str] | None = None,
     ) -> None:
         self.runs = runs or {}
         self.config = config or NativeConfig(
@@ -111,6 +123,7 @@ class FakeObserver:
             max_task_consecutive_fail_count=10,
             available=True,
         )
+        self.schedules = schedules or {}
         self.config_reads = 0
 
     async def read_native_config(self) -> NativeConfig:
@@ -122,6 +135,9 @@ class FakeObserver:
             name: self.runs.get(name, NativeRun(task_name=name, state=NativeState.MISSING))
             for name in task_names
         }
+
+    async def read_schedules(self, task_names: list[str]) -> dict[str, str]:
+        return {name: self.schedules.get(name, "") for name in task_names}
 
 
 @pytest.fixture
@@ -262,8 +278,16 @@ class TestAdvanceFromNative:
 
 
 class TestAutoPause:
-    async def test_failure_surfaces_auto_pause(self, audit):
-        """Criterion 3: a failure is surfaced, never a silent hang."""
+    """Criterion 3, gated on the real threshold (NOVA-42).
+
+    The defect this replaces alarmed on the *first* failure. These tests pin the
+    threshold: failures 1..9 are quiet, the tenth consecutive failure raises the
+    alarm, a success resets the run, and a native pause marker raises it
+    immediately. They also prove the helper signals are wired, not dead.
+    """
+
+    async def test_first_failure_does_not_surface_auto_pause(self, audit):
+        """A single failure is just a failure — no false auto-pause alarm."""
         repo = FakeRepository()
         task_id = repo.add_task("A")
         repo.add_node_run("n1", task_id)
@@ -273,24 +297,211 @@ class TestAutoPause:
 
         report = await _reconciler(repo, observer).reconcile_native()
 
+        assert report.auto_paused == []
+        actions = [e["action"] for e in audit]
+        assert "NODE_FAILED" in actions
+        assert "TASK_AUTO_PAUSE_SUSPECTED" not in actions
+        assert repo.tasks[task_id]["consecutive_fail_count"] == 1
+
+    async def test_tenth_consecutive_failure_surfaces_auto_pause(self, audit):
+        """Failures 1..9 are quiet; the tenth raises the alarm."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        reconciler = _reconciler(
+            repo, FakeObserver({"A": NativeRun(task_name="A", state=NativeState.FAILED)})
+        )
+
+        for attempt in range(1, 10):
+            repo.add_node_run(f"n{attempt}", task_id)
+            report = await reconciler.reconcile_native()
+            assert report.auto_paused == [], f"alarmed early at attempt {attempt}"
+
+        repo.add_node_run("n10", task_id)
+        report = await reconciler.reconcile_native()
+
         assert report.auto_paused == ["A"]
         entry = next(e for e in audit if e["action"] == "TASK_AUTO_PAUSE_SUSPECTED")
-        assert "10" in (entry["error_message"] or "")
-        assert entry["object_name"] == "A"
+        assert "10 consecutive failures" in (entry["error_message"] or "")
 
-    async def test_auto_pause_ceiling_comes_from_the_engine(self, audit):
+    async def test_success_resets_the_consecutive_run(self, audit):
+        """A success breaks the run, so a later failure starts from one again."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        observer = FakeObserver(
+            {"A": NativeRun(task_name="A", state=NativeState.FAILED)}
+        )
+        reconciler = _reconciler(repo, observer)
+        for attempt in range(5):
+            repo.add_node_run(f"n{attempt}", task_id)
+            await reconciler.reconcile_native()
+        assert repo.tasks[task_id]["consecutive_fail_count"] == 5
+
+        repo.add_node_run("ok", task_id)
+        observer.runs["A"] = NativeRun(task_name="A", state=NativeState.SUCCESS)
+        await reconciler.reconcile_native()
+
+        assert repo.tasks[task_id]["consecutive_fail_count"] == 0
+        audit.clear()
+
+        # The next four failures must not alarm: 9 is still below the ceiling.
+        observer.runs["A"] = NativeRun(task_name="A", state=NativeState.FAILED)
+        for attempt in range(4):
+            repo.add_node_run(f"again{attempt}", task_id)
+            report = await reconciler.reconcile_native()
+            assert report.auto_paused == []
+
+    async def test_engine_reported_count_is_honoured(self, audit):
+        """When the engine embeds the count, it is preferred over Nova's own."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run("n1", task_id)
+        observer = FakeObserver(
+            {
+                "A": NativeRun(
+                    task_name="A",
+                    state=NativeState.FAILED,
+                    error_message="task has failed 10 consecutive times",
+                )
+            }
+        )
+
+        report = await _reconciler(repo, observer).reconcile_native()
+
+        assert report.auto_paused == ["A"]
+        # The engine's count is authoritative, so Nova's counter is not bumped.
+        assert repo.tasks[task_id]["consecutive_fail_count"] == 0
+
+    async def test_schedule_pause_marker_surfaces_immediately(self, audit):
+        """Criterion 3: a native pause marker is surfaced on the first failure."""
         repo = FakeRepository()
         task_id = repo.add_task("A")
         repo.add_node_run("n1", task_id)
         observer = FakeObserver(
             {"A": NativeRun(task_name="A", state=NativeState.FAILED)},
-            config=NativeConfig(max_task_consecutive_fail_count=3, available=True),
+            schedules={"A": "PAUSED"},
         )
 
-        await _reconciler(repo, observer).reconcile_native()
+        report = await _reconciler(repo, observer).reconcile_native()
 
+        assert report.auto_paused == ["A"]
+        entry = next(e for e in audit if e["action"] == "TASK_AUTO_PAUSE_SUSPECTED")
+        assert "SCHEDULE" in (entry["error_message"] or "")
+
+    async def test_auto_pause_ceiling_comes_from_the_engine(self, audit):
+        """The threshold read from the engine, not a hardcoded 10."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        reconciler = _reconciler(
+            repo,
+            FakeObserver(
+                {"A": NativeRun(task_name="A", state=NativeState.FAILED)},
+                config=NativeConfig(max_task_consecutive_fail_count=3, available=True),
+            ),
+        )
+
+        for attempt in range(1, 3):
+            repo.add_node_run(f"n{attempt}", task_id)
+            report = await reconciler.reconcile_native()
+            assert report.auto_paused == [], f"alarmed early at attempt {attempt}"
+
+        repo.add_node_run("n3", task_id)
+        report = await reconciler.reconcile_native()
+
+        assert report.auto_paused == ["A"]
         entry = next(e for e in audit if e["action"] == "TASK_AUTO_PAUSE_SUSPECTED")
         assert "3 consecutive" in (entry["error_message"] or "")
+
+    async def test_auto_pause_alarm_is_idempotent_across_passes(self, audit):
+        """Once the node is no longer running, another pass adds no alarm."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        reconciler = _reconciler(
+            repo,
+            FakeObserver(
+                {"A": NativeRun(task_name="A", state=NativeState.FAILED)},
+                config=NativeConfig(max_task_consecutive_fail_count=1, available=True),
+            ),
+        )
+        repo.add_node_run("n1", task_id)
+        await reconciler.reconcile_native()
+        alarms = [e for e in audit if e["action"] == "TASK_AUTO_PAUSE_SUSPECTED"]
+        assert len(alarms) == 1
+
+        second = await reconciler.reconcile_native()
+
+        assert second.auto_paused == []
+        alarms = [e for e in audit if e["action"] == "TASK_AUTO_PAUSE_SUSPECTED"]
+        assert len(alarms) == 1
+
+
+class TestStaleNativeRowGuard:
+    """NOVA-42 second finding: a stale native row must not fail a live node.
+
+    A prior attempt's FAILED row is the newest row only until the in-flight
+    attempt's own run appears. Settling on it would fail a node another worker
+    is still waiting on (and could raise a false auto-pause).
+    """
+
+    async def test_row_older_than_the_node_is_ignored(self, audit):
+        from datetime import datetime
+
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run(
+            "n1", task_id, started_at=datetime(2026, 9, 18, 12, 0, 30)
+        )
+        observer = FakeObserver(
+            {
+                "A": NativeRun(
+                    task_name="A",
+                    state=NativeState.FAILED,
+                    create_time=datetime(2026, 9, 18, 12, 0, 0),
+                )
+            }
+        )
+
+        report = await _reconciler(repo, observer).reconcile_native()
+
+        assert report.advanced == []
+        assert report.auto_paused == []
+        assert repo.task_runs["n1"]["state"] == "running"
+        assert audit == []
+
+    async def test_row_at_or_after_the_node_is_settled(self, audit):
+        from datetime import datetime
+
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run(
+            "n1", task_id, started_at=datetime(2026, 9, 18, 12, 0, 0)
+        )
+        observer = FakeObserver(
+            {
+                "A": NativeRun(
+                    task_name="A",
+                    state=NativeState.FAILED,
+                    create_time=datetime(2026, 9, 18, 12, 0, 0),
+                )
+            }
+        )
+
+        report = await _reconciler(repo, observer).reconcile_native()
+
+        assert report.advanced == ["n1"]
+        assert repo.task_runs["n1"]["state"] == "failed"
+
+    async def test_guard_skips_when_timestamps_are_unknown(self, audit):
+        """No timestamps means no comparison — the row still settles."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run("n1", task_id)
+        observer = FakeObserver(
+            {"A": NativeRun(task_name="A", state=NativeState.FAILED)}
+        )
+
+        report = await _reconciler(repo, observer).reconcile_native()
+
+        assert report.advanced == ["n1"]
 
 
 class TestFrontendConfigParsing:

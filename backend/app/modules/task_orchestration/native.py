@@ -266,6 +266,40 @@ def schedule_is_paused(schedule: str | None) -> bool:
     return any(marker in upper for marker in _PAUSE_MARKERS)
 
 
+async def read_native_schedules(
+    conn: Any, task_names: list[str]
+) -> dict[str, str]:
+    """Read each task's native ``SCHEDULE`` string, best-effort.
+
+    ``information_schema.tasks`` has no ``STATE`` column (design §1), so the
+    ``SCHEDULE`` string is the only native surface that can show a task has
+    been paused/suspended. A read failure yields an empty map; the caller then
+    falls back to its own consecutive-failure counter rather than treating an
+    unreadable schedule as a pause.
+    """
+    if not task_names:
+        return {}
+    placeholders = ", ".join(["%s"] * len(task_names))
+    sql = (
+        "SELECT TASK_NAME, SCHEDULE FROM information_schema.tasks "
+        f"WHERE TASK_NAME IN ({placeholders})"
+    )
+    try:
+        async with _dict_cursor(conn) as cur:
+            await cur.execute(sql, tuple(task_names))
+            rows = _as_dicts(await cur.fetchall())
+    except Exception as exc:
+        logger.warning(
+            "could not read native task schedules: %s", _redact(str(exc))
+        )
+        return {}
+    return {
+        str(row.get("TASK_NAME")): str(row.get("SCHEDULE") or "")
+        for row in rows
+        if row.get("TASK_NAME")
+    }
+
+
 def parse_consecutive_failures(error_message: str | None) -> int | None:
     """Extract a consecutive-failure count the engine embeds in an error.
 

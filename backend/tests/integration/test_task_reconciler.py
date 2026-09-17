@@ -26,7 +26,10 @@ import asyncmy
 import pytest
 import pytest_asyncio
 
-from app.common.nova_system import TASK_ORCHESTRATION_DDL
+from app.common.nova_system import (
+    TASK_ORCHESTRATION_DDL,
+    migrate_task_orchestration_columns,
+)
 from app.core.config import settings
 from app.core.database import db
 from app.modules.task_orchestration.native import (
@@ -97,6 +100,10 @@ async def engine_infra(request):
     await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
     for ddl in TASK_ORCHESTRATION_DDL:
         await db.execute_system(ddl)
+    # A pre-existing test volume predates the consecutive-failure column, which
+    # ``CREATE TABLE IF NOT EXISTS`` cannot add; run the same idempotent
+    # migration the worker runs at startup.
+    await migrate_task_orchestration_columns()
     yield
     await db.close_system_pool()
 
@@ -280,6 +287,78 @@ class TestLostTraceAgainstEngine:
             NativeState.RUNNING.value,
             "running",
         }
+
+
+class TestAutoPauseThresholdAgainstEngine:
+    """Criterion 3: the threshold is read from the real engine, not hardcoded.
+
+    Native runs are supplied by a small observer so the failure count can be
+    driven precisely, while the FE config (``max_task_consecutive_fail_count``)
+    still comes from the live engine — proving the gate uses the engine's value.
+    """
+
+    async def test_engine_config_is_the_threshold(self, engine_infra, cleanup_runs):
+        from app.modules.task_orchestration.native import NativeRun, NativeState
+
+        real_config = await read_native_config()
+        ceiling = real_config.max_task_consecutive_fail_count or 10
+        assert ceiling > 1, "the engine must expose a real threshold for this test"
+
+        class _Observer:
+            async def read_native_config(self):
+                return real_config
+
+            async def read_runs(self, names):
+                return {
+                    n: NativeRun(task_name=n, state=NativeState.FAILED) for n in names
+                }
+
+            async def read_schedules(self, names):
+                return {n: "MANUAL" for n in names}
+
+        suffix = uuid4().hex[:8]
+        name = f"thresh_{suffix}"
+        task = await repo.create_task(
+            {
+                "name": name,
+                "timezone": "UTC",
+                "definition": "INSERT INTO NOVA_SYSTEM.nova_reconcile_probe SELECT 1",
+                "database_name": "NOVA_SYSTEM",
+                "schedule_kind": "manual",
+            },
+            created_by=SR_USER,
+        )
+        cleanup_runs["task"].append(task["id"])
+        run = await repo.create_graph_run(
+            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        )
+        cleanup_runs["graph"].append(run["id"])
+        reconciler = Reconciler(repo, observer=_Observer())
+
+        # Failures 1..ceiling-1 must stay quiet.
+        for attempt in range(1, ceiling):
+            await repo.create_task_run(
+                {
+                    "graph_run_id": run["id"],
+                    "task_id": task["id"],
+                    "state": "running",
+                    "delegated": True,
+                }
+            )
+            report = await reconciler.reconcile_native()
+            assert report.auto_paused == [], f"alarmed at attempt {attempt}/{ceiling}"
+
+        # The ceiling-th consecutive failure raises the alarm.
+        await repo.create_task_run(
+            {
+                "graph_run_id": run["id"],
+                "task_id": task["id"],
+                "state": "running",
+                "delegated": True,
+            }
+        )
+        report = await reconciler.reconcile_native()
+        assert report.auto_paused == [name]
 
 
 class TestLostTraceSettlesThroughWorkerService:

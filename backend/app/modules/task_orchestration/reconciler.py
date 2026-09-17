@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Protocol
 
 from app.common.audit import write_audit_log
@@ -45,8 +46,11 @@ from app.modules.task_orchestration.native import (
     NativeConfig,
     NativeRun,
     NativeState,
+    parse_consecutive_failures,
     read_latest_native_runs,
     read_native_config,
+    read_native_schedules,
+    schedule_is_paused,
 )
 from app.modules.task_orchestration.repository import TaskOrchestrationRepository
 
@@ -59,6 +63,8 @@ class NativeObserver(Protocol):
     async def read_native_config(self) -> NativeConfig: ...
 
     async def read_runs(self, task_names: list[str]) -> dict[str, NativeRun]: ...
+
+    async def read_schedules(self, task_names: list[str]) -> dict[str, str]: ...
 
 
 class EngineNativeObserver:
@@ -76,6 +82,10 @@ class EngineNativeObserver:
     async def read_runs(self, task_names: list[str]) -> dict[str, NativeRun]:
         async with db.system_conn() as conn:
             return await read_latest_native_runs(conn, task_names)
+
+    async def read_schedules(self, task_names: list[str]) -> dict[str, str]:
+        async with db.system_conn() as conn:
+            return await read_native_schedules(conn, task_names)
 
 
 @dataclass
@@ -202,6 +212,7 @@ class Reconciler:
 
         report.config = await self._observer.read_native_config()
         runs = await self._observer.read_runs(names)
+        schedules = await self._observer.read_schedules(names)
         report.observed = len(runs)
 
         for row in running:
@@ -216,7 +227,7 @@ class Reconciler:
             if observed is None:
                 report.unknown.append(name)
                 continue
-            await self._apply(report, row, task, observed)
+            await self._apply(report, row, task, observed, schedules.get(name))
 
         return report
 
@@ -226,6 +237,7 @@ class Reconciler:
         row: dict[str, Any],
         task: dict[str, Any],
         observed: NativeRun,
+        schedule: str | None,
     ) -> None:
         name = str(task["name"])
         node_state = _NATIVE_TO_NODE[observed.state]
@@ -235,6 +247,14 @@ class Reconciler:
             # state may be inferred, so the row is left untouched.
             if observed.state is NativeState.UNKNOWN:
                 report.unknown.append(name)
+            return
+
+        if _is_stale_native_row(row, observed):
+            # The newest native row predates this node's submission, so it is a
+            # leftover from a previous attempt — not this run's outcome. Two
+            # workers share the stream, so a reconciler must not settle a node
+            # another worker is still waiting on. Skip; a later pass sees the
+            # real row (NOVA-42 second finding).
             return
 
         moved = await self._repository.transition_task_run(
@@ -273,31 +293,58 @@ class Reconciler:
                 graph_run_id=str(row.get("graph_run_id") or ""),
             )
 
+        if node_state is NodeState.SUCCESS:
+            # A success breaks the run: the engine's consecutive-failure
+            # counter resets, and so does Nova's (NOVA-37 AC #3).
+            await self._repository.reset_consecutive_failures(str(task["id"]))
+            return
         if node_state is NodeState.FAILED:
-            await self._check_auto_pause(report, task, observed)
+            await self._check_auto_pause(report, task, observed, schedule)
 
     async def _check_auto_pause(
         self,
         report: NativeReconcileReport,
         task: dict[str, Any],
         observed: NativeRun,
+        schedule: str | None,
     ) -> None:
-        """Surface an auto-paused task rather than letting a DAG hang.
+        """Surface an auto-paused task, but only at the real threshold.
 
         The engine pauses a task after ``max_task_consecutive_fail_count``
-        consecutive failures and the pause is not queryable (no ``STATE``
-        column). The signal available is the failure itself: when a task fails
-        on every observed attempt up to the configured ceiling, the DAG cannot
-        advance on its own and that is recorded to the audit log. The configured
-        count is read from the engine when available, else Nova's setting.
+        consecutive failures and exposes neither a count nor a pause flag. Nova
+        therefore keeps its own counter (`CONFIG_TASKS.consecutive_fail_count`,
+        incremented here, reset on success) and compares it against the ceiling
+        read live from the engine. A single failure is just a failure — only
+        reaching the ceiling, or the native schedule already showing a
+        pause/suspend marker, raises the auto-pause alarm. Alarming on every
+        failure would drown the real signal (the defect NOVA-42 reports).
         """
+        name = str(task["name"])
         ceiling = (
             report.config.max_task_consecutive_fail_count
             or self._max_consecutive_fail_count
         )
         if ceiling <= 0:
             return
-        name = str(task["name"])
+
+        # The engine may embed the count in the error text; prefer that when
+        # present, else use Nova's own persistent counter.
+        engine_count = parse_consecutive_failures(observed.error_message)
+        count = engine_count
+        if count is None:
+            count = await self._repository.increment_consecutive_failures(
+                str(task["id"])
+            )
+
+        paused_by_schedule = schedule_is_paused(schedule)
+        if count < ceiling and not paused_by_schedule:
+            return
+
+        reason = (
+            f"native SCHEDULE shows a pause/suspend marker ({schedule!r})"
+            if paused_by_schedule
+            else f"{count} consecutive failures reached the ceiling of {ceiling}"
+        )
         report.auto_paused.append(name)
         await self._audit(
             name,
@@ -305,8 +352,8 @@ class Reconciler:
             action="TASK_AUTO_PAUSE_SUSPECTED",
             status="FAILED",
             error=(
-                f"task {name!r} failed and will auto-pause after {ceiling} "
-                "consecutive failures; the graph cannot advance on its own"
+                f"task {name!r} is auto-paused or about to be: {reason}; "
+                "the graph cannot advance on its own"
             ),
             graph_run_id="",
         )
@@ -331,3 +378,25 @@ class Reconciler:
             error_message=error,
             database_name=graph_run_id or None,
         )
+
+
+def _is_stale_native_row(row: dict[str, Any], observed: NativeRun) -> bool:
+    """Whether ``observed`` is a leftover from a previous attempt.
+
+    The engine's newest row for a task can predate this node's submission when
+    a prior attempt failed and the current one is still in flight. Settling the
+    node on that row would fail a live run (and could raise a false auto-pause),
+    so the write is skipped until a row at or after the node's start appears.
+
+    The comparison is done only when both timestamps are known. ``CREATE_TIME``
+    has second granularity, so a row in the same second as ``started_at`` is
+    accepted — the strict "newer than" guard is reserved for rows that are
+    unambiguously older.
+    """
+    started = row.get("started_at")
+    created = observed.create_time
+    if not isinstance(started, datetime) or not isinstance(created, datetime):
+        return False
+    started_naive = started.replace(tzinfo=None) if started.tzinfo else started
+    created_naive = created.replace(tzinfo=None) if created.tzinfo else created
+    return created_naive < started_naive
