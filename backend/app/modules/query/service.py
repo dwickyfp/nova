@@ -123,10 +123,15 @@ class QueryService:
             try:
                 executed_sql, warnings = translate_stage_query(parsed, stage_configs)
             except ValueError as e:
+                # The statement never reached the engine: no result object is
+                # built by the repository, so this is the only place the failure
+                # can be recorded. ``error`` (not ``warnings``) is what the
+                # router reads for ``success``.
                 return QueryResult(
                     original_sql=sql,
                     executed_sql=normalized_sql,
                     warnings=[f"❌ {e}"],
+                    error=str(e),
                 )
 
             # 3b. CSV auto-detect: read file header to detect delimiter & columns
@@ -246,7 +251,7 @@ class QueryService:
         """
         statements = split_sql_statements(sql)
         if not statements:
-            return [QueryResult(original_sql=sql, warnings=["Empty SQL"])]
+            return [QueryResult(original_sql=sql, warnings=["Empty SQL"], error="Empty SQL")]
 
         results: list[QueryResult] = []
         for stmt_sql in statements:
@@ -265,11 +270,17 @@ class QueryService:
                 )
                 results.append(result)
             except Exception as exc:
-                # Return error result for this statement and stop
+                # Return error result for this statement and stop.
+                #
+                # ``error`` is the explicit failure marker the router reads;
+                # ``warnings`` keeps carrying the message for the operator.
+                # Setting only ``warnings`` is what made this path depend on a
+                # shape-based guess downstream.
                 error_result = QueryResult(
                     original_sql=stmt_sql,
                     executed_sql=stmt_sql,
                     warnings=[str(exc)],
+                    error=str(exc),
                 )
                 results.append(error_result)
                 break
