@@ -106,24 +106,36 @@ jobs:
         working-directory: backend
         run: uv sync --locked
 
+      - name: Start the real engine stack
+        working-directory: backend
+        run: docker compose -f docker-compose.test.yml up -d --wait
+
       - name: Run integration suite against real StarRocks/Redis/MinIO
         working-directory: backend
         run: |
-          # Exit 5 is pytest's "no tests collected". The L3 suite is written in
-          # PR 3 of this workstream; until it lands this job must not report a
-          # false failure, but it must also not report a false success. An
-          # empty suite is tolerated only while tests/integration holds no test
-          # file — the guard below fails the job the moment it should have run.
+          # Runs the whole integration directory rather than `-m engine`.
+          # Nothing under tests/integration is marked `engine` today: the
+          # proxy E2E suite (27 tests, added on main) is unmarked and skips
+          # itself when its own prerequisites are absent. Selecting on a
+          # marker no test carries deselects everything and turns this job
+          # into a green no-op, which is the failure mode this guard exists
+          # to prevent.
+          #
+          # Exit 5 ("no tests collected") fails the job if the directory has
+          # test files but none were collected, so a selection mistake cannot
+          # masquerade as success. A directory with no test files at all is a
+          # warning, not a failure — that state is a missing suite, not a
+          # broken gate.
           set +e
-          uv run pytest tests/integration -m engine -v
+          uv run pytest tests/integration -v
           status=$?
           set -e
           if [ "$status" -eq 5 ]; then
             if [ -n "$(find tests/integration -name 'test_*.py' -print -quit)" ]; then
-              echo "::error::test files exist but none were collected as engine tests"
+              echo "::error::test files exist but none were collected"
               exit 1
             fi
-            echo "::warning::no L3 tests present yet; skipping real-engine assertions"
+            echo "::warning::no integration tests present yet"
             exit 0
           fi
           exit "$status"
@@ -132,6 +144,11 @@ jobs:
         if: failure()
         working-directory: backend
         run: docker compose -f docker-compose.test.yml logs --no-color || true
+
+      - name: Tear down the engine stack
+        if: always()
+        working-directory: backend
+        run: docker compose -f docker-compose.test.yml down -v || true
 
   frontend:
     name: Frontend (lint, build, vitest)
@@ -155,6 +172,11 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          # The pnpm project is frontend/, not the repo root, so the cache key
+          # must point at the lockfile explicitly. Without this, setup-node
+          # looks for pnpm-lock.yaml at the root, fails to find it, and aborts
+          # the job before the install step runs.
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
