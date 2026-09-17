@@ -3,36 +3,36 @@
 import asyncio
 import subprocess
 import time
+from contextlib import suppress
+from pathlib import Path
 
 import asyncmy
 import boto3
 import pytest
 import redis.asyncio as aioredis
 
+#: Repository's backend/ directory — the compose file and uv project live here.
+#: Resolved from this file so the fixtures work regardless of the directory
+#: pytest was launched from (CI runs `pytest tests/integration` from backend/).
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+COMPOSE_FILE = "docker-compose.test.yml"
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Override default event loop to be session-scoped."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+
+def _compose(*args: str) -> None:
+    subprocess.run(
+        ["docker", "compose", "-f", COMPOSE_FILE, *args],
+        check=True,
+        cwd=BACKEND_DIR,
+    )
 
 
 @pytest.fixture(scope="session")
 def docker_services():
     """Spin up all test infrastructure once per test session."""
-    subprocess.run(
-        ["docker-compose", "-f", "docker-compose.test.yml", "up", "-d", "--wait"],
-        check=True,
-        cwd="backend",
-    )
+    _compose("up", "-d", "--wait")
     time.sleep(10)
     yield
-    subprocess.run(
-        ["docker-compose", "-f", "docker-compose.test.yml", "down", "-v"],
-        check=True,
-        cwd="backend",
-    )
+    _compose("down", "-v")
 
 
 @pytest.fixture(scope="session")
@@ -73,10 +73,8 @@ def minio_client(docker_services):
         aws_access_key_id="minioadmin",
         aws_secret_access_key="minioadmin",
     )
-    try:
+    with suppress(Exception):
         client.create_bucket(Bucket="test-stage")
-    except Exception:
-        pass
     return client
 
 

@@ -325,7 +325,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (
   file_id       VARCHAR(64),
   database_name VARCHAR(128),
   schema_name   VARCHAR(128)
-) DUPLICATE KEY(log_id, event_type, event_time)
+) DUPLICATE KEY(log_id, query_id, event_type, event_time)
 PARTITION BY RANGE(event_time) (
   PARTITION p202601 VALUES LESS THAN ("2026-02-01"),
   PARTITION p202602 VALUES LESS THAN ("2026-03-01"),

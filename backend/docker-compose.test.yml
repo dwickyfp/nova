@@ -1,36 +1,122 @@
 services:
   starrocks-fe:
     image: starrocks/fe-ubuntu:4.1.1
+    # `start_fe.sh` directly, NOT the image's bundled fe_entrypoint.sh. That
+    # entrypoint is Kubernetes-only: it derives POD_INDEX from a pod FQDN
+    # (`fe_entrypoint.sh:66`) and then does arithmetic on it
+    # (`[[ "$POD_INDEX" -eq 0 ]]`, :182). In plain compose the pod FQDN is the
+    # container's own hostname, so POD_INDEX becomes a hex id and bash aborts:
+    #   [[: 1966a9ca1f6e: value too great for base (error token is "1966a9ca1f6e")
+    # The container then exits 1 and the healthcheck never passes.
+    #
+    # HOST_TYPE=IP, not FQDN: these tests run on the host (and on the runner)
+    # and reach the engine through mapped ports, so any endpoint the FE hands
+    # back must be an address the host can route to. FQDN would return
+    # `starrocks-be`, which resolves inside the compose network and not from
+    # the runner.
+    user: root
+    command:
+      - /bin/bash
+      - -c
+      - /opt/starrocks/fe/bin/start_fe.sh --host_type IP --logconsole
     ports:
       - "29030:9030"   # MySQL protocol (test port)
       - "28030:8030"   # HTTP
     environment:
       - FE_QUERY_PORT=9030
+      - AWS_EC2_METADATA_DISABLED=true
     healthcheck:
-      test: ["CMD", "mysql", "-h", "127.0.0.1", "-P", "9030", "-u", "root", "-e", "SELECT 1"]
+      # Proves the FE is a live leader, not merely that it accepts a socket.
+      # `SELECT 1` can answer before election completes and would give a flaky
+      # green; this is the check the upstream StarRocks compose uses.
+      #
+      # `\G` (vertical output) is load-bearing: the tabular `show frontends`
+      # puts the value in a separate column, so the literal text `Alive: true`
+      # never appears and the grep can never match.
+      test:
+        - CMD-SHELL
+        - >-
+          mysql -h 127.0.0.1 -P 9030 -u root -e "show frontends\G"
+          | grep -q "Alive: true"
       interval: 5s
-      timeout: 3s
-      retries: 30
+      timeout: 5s
+      retries: 60
+      start_period: 30s
 
   starrocks-be:
     image: starrocks/be-ubuntu:4.1.1
+    # Same image shape, same reason: start_be.sh rather than be_entrypoint.sh.
+    #
+    # The BE must be registered with the FE explicitly. FE_ADDRESS only tells
+    # the BE where to phone home; the FE does not auto-admit it, so a stack
+    # with this image comes up with a healthy BE that SHOW BACKENDS does not
+    # list and every query fails with "Backend node not found". The registration
+    # below is idempotent and tolerant of FE restarts.
+    user: root
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -e
+        /opt/starrocks/be/bin/start_be.sh --logconsole &
+        BE_IP="$$(hostname -i | awk '{print $$1}')"
+        for i in $$(seq 1 60); do
+          if mysql -h starrocks-fe -P 9030 -u root \
+               -e "ALTER SYSTEM ADD BACKEND '$$BE_IP:9050'" 2>/dev/null; then
+            echo "registered BE $$BE_IP with FE"
+            break
+          fi
+          sleep 2
+        done
+        wait
     depends_on:
       starrocks-fe:
         condition: service_healthy
     environment:
       - FE_ADDRESS=starrocks-fe:9010
+      - AWS_EC2_METADATA_DISABLED=true
+    healthcheck:
+      # The BE is only useful once the FE admits it, so health means
+      # "registered and alive", not "process started". `start_be.sh` backgrounds
+      # itself, so a running process proves nothing about cluster membership.
+      test:
+        - CMD-SHELL
+        - >-
+          mysql -h starrocks-fe -P 9030 -u root -e "SHOW BACKENDS\G"
+          | grep -q "Alive: true"
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
 
   minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+    # Pinned release, not `latest`: MinIO withdrew its Docker Hub images, so
+    # `minio/minio:*` no longer pulls ("requested access to the resource is
+    # denied") and the whole stack failed to start. Same reason the StarRocks
+    # images are tagged. Bump deliberately, not implicitly.
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # MinIO serves the S3 API on 29000 inside the network, matching the host
+    # port. The port NUMBER must be identical on both sides, not just mapped.
+    #
+    # The app derives the FILES() endpoint StarRocks uses by rewriting the
+    # hostname of the configured endpoint (`to_docker_endpoint`), keeping the
+    # port. Config load also rewrites `minio` back to the host endpoint
+    # (`_resolve_endpoint`). Those two are only inverses when the port is the
+    # same on both sides. With the usual "29000:9000" mapping, StarRocks was
+    # handed `http://minio:29000` — nothing listening — and every @stage query
+    # failed with "Access storage error. Connection refused".
+    command: server /data --address ":29000" --console-address ":29001"
     ports:
-      - "29000:9000"   # S3 API (test port)
-      - "29001:9001"   # Web console
+      - "29000:29000"  # S3 API, same number both sides so the rewrite is a no-op
+      - "29001:29001"  # Web console
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      # Not `mc ready local`: that alias targets the default :9000, and the API
+      # is on :29000 here, so the probe hangs instead of reporting. Ask the
+      # live server for its health endpoint on the port it actually serves.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:29000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10

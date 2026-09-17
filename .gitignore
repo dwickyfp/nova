@@ -45,7 +45,9 @@ htmlcov/
 # Docker volumes
 docker/data/
 
-# Lockfiles (keep uv.lock, ignore others)
+# Lockfiles. The committed lockfiles are uv.lock (backend) and
+# frontend/pnpm-lock.yaml; CI installs from both with --locked/--frozen-lockfile
+# so the dependency graph a gate runs against is the one under review. Only
+# lockfiles for package managers this repo does not use are ignored.
 package-lock.json
 yarn.lock
-pnpm-lock.yaml

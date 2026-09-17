@@ -49,6 +49,26 @@ default-groups = ["dev"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "engine: requires the real StarRocks/Redis/MinIO stack from docker-compose.test.yml",
+    "slow: excluded from the fast local loop",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+
+[tool.coverage.report]
+# Report-only for now. The floor is enforced in CI once the measured baseline
+# is stable; see docs/testing/STANDARD.md SS7. Do not add fail_under here before
+# the baseline in the CI run summary is reviewed.
+show_missing = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]
 
 [tool.ruff]
 target-version = "py311"
