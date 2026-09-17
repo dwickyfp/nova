@@ -862,6 +862,7 @@ class QueryService:
         column_names: list of header column names if detected, else None
         """
         if not parsed.stage_refs:
+            logger.warning("CSV detect: no stage references in the parsed statement")
             return {}, None
 
         ref = parsed.stage_refs[0]
@@ -870,10 +871,19 @@ class QueryService:
         if ref.file_name and "." in ref.file_name:
             ext = ref.file_name.rsplit(".", 1)[-1].lower()
         if ext not in ("csv", "tsv"):
+            logger.warning("CSV detect: %r is not csv/tsv (ext=%r)", ref.file_name, ext)
             return {}, None
 
         config = stage_configs.get(ref.stage_name)
         if not config:
+            # The stage exists as a row but could not be resolved into a
+            # StorageConfig, so the FILES() call gets no delimiter/header
+            # tuning and the caller sees untuned rows rather than an error.
+            logger.warning(
+                "CSV detect: stage %r is not in the resolved stage configs %r",
+                ref.stage_name,
+                sorted(stage_configs),
+            )
             return {}, None
 
         try:
@@ -898,6 +908,12 @@ class QueryService:
             raw = resp["Body"].read().decode("utf-8", errors="replace")
             lines = raw.split("\n")
             if len(lines) < 2:
+                logger.warning(
+                    "CSV detect: object %r/%r returned %d line(s); cannot detect",
+                    config.bucket,
+                    s3_key,
+                    len(lines),
+                )
                 return {}, None
 
             first_line = lines[0].strip()
