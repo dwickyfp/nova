@@ -32,6 +32,7 @@ from app.core.database import db
 from app.modules.task_orchestration.repository import (
     task_orchestration_repository as repo,
 )
+from app.modules.task_orchestration.schedule import resolve_timezone
 from app.modules.task_orchestration.scheduler import SchedulerTick
 from app.modules.task_orchestration.transport import (
     LeaderLock,
@@ -310,13 +311,14 @@ class TestEngineTimezoneFromEngine:
     ``SELECT @@time_zone`` rather than assuming UTC.
     """
 
-    async def test_reads_a_real_iana_timezone_from_the_engine(self, scheduler_infra):
+    async def test_reads_a_real_timezone_from_the_engine(self, scheduler_infra):
         detected = await repo.get_engine_timezone()
         assert detected, "engine did not report a session timezone"
-        from zoneinfo import ZoneInfo
 
-        # Must be resolvable as an IANA zone (e.g. Asia/Jakarta / Etc/UTC).
-        assert ZoneInfo(detected) is not None
+        # StarRocks may report an IANA key (Asia/Jakarta) or an offset (+07:00);
+        # both must resolve. ZoneInfo alone only handles the IANA form, which is
+        # the assumption that made the offset engine a per-tick failure.
+        assert resolve_timezone(detected) is not None
 
     async def test_interval_fires_with_autodetected_engine_zone(
         self, scheduler_infra, clean_stream, monkeypatch

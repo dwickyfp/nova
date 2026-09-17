@@ -138,6 +138,19 @@ class TestEngineTimeConversion:
         with pytest.raises(ScheduleError):
             naive_engine_time_to_utc(datetime(2026, 1, 1, 9, 0), "Not/AZone")
 
+    def test_offset_engine_timezone_is_read_correctly(self):
+        """NOVA-41: ``@@time_zone`` may be ``+07:00``, not an IANA key."""
+        naive = datetime(2026, 1, 1, 9, 0)
+        assert naive_engine_time_to_utc(naive, "+07:00") == datetime(
+            2026, 1, 1, 2, 0, tzinfo=UTC
+        )
+
+    def test_negative_offset_engine_timezone_is_read_correctly(self):
+        naive = datetime(2026, 1, 1, 9, 0)
+        assert naive_engine_time_to_utc(naive, "-07:00") == datetime(
+            2026, 1, 1, 16, 0, tzinfo=UTC
+        )
+
 
 class TestResolveEngineTimezone:
     """NOVA-39: the zone comes from the engine, never a static default."""
@@ -163,6 +176,19 @@ class TestResolveEngineTimezone:
         monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
         repo = FakeRepository(engine_timezone=None)
         assert await resolve_engine_timezone(repo) == "UTC"
+
+    async def test_offset_engine_zone_is_accepted(self, monkeypatch):
+        """NOVA-41: an offset session zone must not raise per-tick."""
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
+        repo = FakeRepository(engine_timezone="+07:00")
+        assert await resolve_engine_timezone(repo) == "+07:00"
+
+    async def test_unusable_engine_zone_raises_once_at_resolution(self, monkeypatch):
+        """A bad engine zone fails where it is read, not silently per task."""
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
+        repo = FakeRepository(engine_timezone="Not/AZone")
+        with pytest.raises(ScheduleError):
+            await resolve_engine_timezone(repo)
 
 
 class TestEngineTimezoneAnchorRegression:
@@ -194,6 +220,17 @@ class TestEngineTimezoneAnchorRegression:
             datetime(2026, 1, 1, 2, 6, tzinfo=UTC)
         )
         assert plan.due == []
+
+    async def test_offset_engine_zone_still_fires(self):
+        """NOVA-41: an engine reporting ``+07:00`` must fire like Asia/Jakarta."""
+        created = datetime(2026, 1, 1, 9, 0)
+        repo = FakeRepository([make_task("solo", created_at=created)], engine_timezone="+07:00")
+        transport = RecordingTransport()
+        plan = await SchedulerTick(repo, transport).tick(
+            datetime(2026, 1, 1, 2, 6, tzinfo=UTC)
+        )
+        assert len(plan.due) == 1
+        assert len(transport.published) == 1
 
 
 class TestDeterministicRunId:
@@ -267,6 +304,31 @@ class TestPlanTick:
 
     def test_invalid_schedule_is_skipped_not_fatal(self):
         tasks = [make_task("broken", kind="cron", expr="not a cron"), make_task("ok")]
+        plan = plan_tick(tasks, [], NOW)
+        assert [d.task_names for d in plan.due] == [["ok"]]
+        assert plan.skipped == 1
+
+    def test_offset_engine_zone_anchors_a_naive_created_at(self):
+        """NOVA-41: a naive anchor is read in the engine's offset zone."""
+        tasks = [make_task("solo", created_at=datetime(2026, 1, 1, 7, 0))]
+        # 07:00 at UTC+7 is 00:00Z, so the 00:15Z occurrence is due at NOW.
+        plan = plan_tick(tasks, [], NOW, "+07:00")
+        assert [d.task_names for d in plan.due] == [["solo"]]
+
+    def test_unusable_engine_zone_skips_every_task_not_crashes(self):
+        """NOVA-41: a bad anchor zone counts as skipped, not a raised tick.
+
+        ``naive_engine_time_to_utc`` runs before ``latest_occurrence``; it must be
+        inside the same ``ScheduleError`` guard so one bad zone cannot abort the
+        whole tick. The anchor must be naive for the engine zone to be consulted.
+        """
+        tasks = [make_task("solo", created_at=datetime(2026, 1, 1, 9, 0))]
+        bad = plan_tick(tasks, [], NOW, "Not/AZone")
+        assert bad.due == []
+        assert bad.skipped == 1
+
+    def test_one_broken_task_does_not_suppress_a_healthy_one(self):
+        tasks = [make_task("broken", tz="Not/AZone"), make_task("ok")]
         plan = plan_tick(tasks, [], NOW)
         assert [d.task_names for d in plan.due] == [["ok"]]
         assert plan.skipped == 1
