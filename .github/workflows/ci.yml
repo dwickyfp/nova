@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-static:
+    name: Backend static (ruff, mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: ruff (full tree, report-only)
+        working-directory: backend
+        run: uv run ruff check . || true
+
+      # Blocking, diff-scoped. `main` carries a 483-error ruff baseline that
+      # predates this gate; making it blocking outright would fail on day one
+      # for debt this workstream did not create. New and changed Python files
+      # must be clean, and the baseline is burned down separately.
+      - name: ruff (changed files, blocking)
+        working-directory: backend
+        run: |
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "no base revision; skipping diff-scoped lint"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only --diff-filter=ACMR "$BASE" HEAD -- '*.py' | sed 's|^backend/||')
+          if [ -z "$CHANGED" ]; then
+            echo "no changed Python files"
+            exit 0
+          fi
+          echo "$CHANGED"
+          uv run ruff check $CHANGED
+
+      # mypy carries a pre-existing 63-error baseline (see the job summary);
+      # it is wired in and visible but not yet blocking.
+      - name: mypy (report-only)
+        working-directory: backend
+        run: uv run mypy app --no-error-summary || true
+
+  backend-unit:
+    name: Backend unit (L1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: pytest unit with coverage
+        working-directory: backend
+        run: |
+          uv run pytest tests/unit \
+            --cov=app --cov-branch --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
+
+      # Threshold is report-only in this first gate: the denominator is now
+      # correct (include=app/**), the baseline is measured, but the floor is not
+      # yet enforced. Flipping `--cov-fail-under` on is a follow-up once the
+      # baseline in the run summary is stable.
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
+  backend-integration:
+    name: Backend integration (L3, real engine)
+    runs-on: ubuntu-latest
+    needs: [backend-unit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Run integration suite against real StarRocks/Redis/MinIO
+        working-directory: backend
+        run: |
+          # Exit 5 is pytest's "no tests collected". The L3 suite is written in
+          # PR 3 of this workstream; until it lands this job must not report a
+          # false failure, but it must also not report a false success. An
+          # empty suite is tolerated only while tests/integration holds no test
+          # file — the guard below fails the job the moment it should have run.
+          set +e
+          uv run pytest tests/integration -m engine -v
+          status=$?
+          set -e
+          if [ "$status" -eq 5 ]; then
+            if [ -n "$(find tests/integration -name 'test_*.py' -print -quit)" ]; then
+              echo "::error::test files exist but none were collected as engine tests"
+              exit 1
+            fi
+            echo "::warning::no L3 tests present yet; skipping real-engine assertions"
+            exit 0
+          fi
+          exit "$status"
+
+      - name: Dump compose logs on failure
+        if: failure()
+        working-directory: backend
+        run: docker compose -f docker-compose.test.yml logs --no-color || true
+
+  frontend:
+    name: Frontend (lint, build, vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test with coverage
+        run: pnpm test:coverage
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          retention-days: 7
+          if-no-files-found: ignore

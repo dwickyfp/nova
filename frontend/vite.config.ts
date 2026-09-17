@@ -33,13 +33,19 @@ export default defineConfig({
     silent: 'passed-only',
     unstubEnvs: true,
     coverage: {
-      // include: ['src/**/*.{js,jsx,ts,tsx}'], // Uncomment to expand the report to all src/**/* so untested modules appear as 0% coverage.
+      // Report over all source so untested modules surface at 0% instead of
+      // vanishing from the denominator. No `thresholds` yet: the floor is
+      // report-only until the measured baseline is reviewed (see
+      // docs/testing/STANDARD.md SS7).
+      include: ['src/**/*.{js,jsx,ts,tsx}'],
       exclude: [
         'src/components/ui/**',
         'src/assets/**',
         'src/tanstack-table.d.ts',
         'src/routeTree.gen.ts',
         'src/test-utils/**',
+        // Interim: route files are exercised by the L4 Playwright suite, which
+        // does not exist yet. Remove this exclusion when it does (STANDARD SS3).
         'src/routes/**',
       ],
     },
