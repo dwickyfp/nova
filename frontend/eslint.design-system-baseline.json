@@ -21,7 +21,6 @@
     "src/features/tasks-manager/index.tsx",
     "src/features/users/components/data-table-row-actions.tsx",
     "src/features/users/data/data.ts",
-    "src/features/users/index.tsx",
     "src/features/users/user-detail.tsx"
   ]
 }
