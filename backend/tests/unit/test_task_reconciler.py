@@ -42,6 +42,7 @@ class FakeRepository:
         self.tasks: dict[str, dict[str, Any]] = {}
         self.task_runs: dict[str, dict[str, Any]] = {}
         self.graph_runs: dict[str, dict[str, Any]] = {}
+        self.stale_task_runs: list[dict[str, Any]] = []
 
     def add_task(self, name: str, *, owner: str = "alice") -> str:
         task_id = f"id_{name}"
@@ -106,7 +107,7 @@ class FakeRepository:
         return []
 
     async def list_stale_task_runs(self, older_than_seconds, *, limit=200):
-        return []
+        return self.stale_task_runs[:limit]
 
     async def list_stale_graph_runs(self, older_than_seconds, *, limit=200):
         return []
@@ -650,28 +651,27 @@ _ARCHIVE_1064 = (
 )
 
 
-class TestRunTraceSurfaceFailureIsNotUnknown:
-    """NOVA-46: a live engine's trace-surface failure must not hang a node.
+class TestArchiveFailureIsUnknownNotMissing:
+    """NOVA-46 / NOVA-47: a failed read is ``UNKNOWN``, never a settled trace.
 
     On a fresh FE the ``information_schema.task_runs`` read raises 1064 because
-    ``_statistics_.task_run_history`` is not initialized, while the engine keeps
-    answering other statements. The read must not collapse that into
-    ``UNKNOWN`` (which the reconciler maps to "no write") — a lost trace has to
-    reach ``MISSING`` so the node becomes ``abandoned``. A non-surface failure
-    (a transport blip) must still stay ``UNKNOWN`` so healthy work is never
-    abandoned.
+    ``_statistics_.task_run_history`` is not initialized, and it does so for
+    *every* ``task_runs`` read while ordinary statements still succeed. The
+    signal is engine-wide and carries no per-task information, so no verdict
+    about an individual task's trace may be drawn from it. Any failed read —
+    archive 1064, an FE RPC ``getTaskRuns`` failure, or a transport blip; on a
+    live engine or a dead one — is ``UNKNOWN`` and the reconciler writes
+    nothing. Lost traces are settled by the heartbeat path instead.
     """
 
-    async def test_batch_read_1064_with_live_probe_is_missing(self):
+    async def test_batch_read_1064_on_a_live_engine_is_unknown(self):
         conn = _Connection(failures=[("ORDER BY TASK_NAME", _ARCHIVE_1064)])
 
         result = await read_latest_native_runs(conn, ["lost_1"])
 
-        assert result["lost_1"].state is NativeState.MISSING
-        assert any("SELECT 1" in sql for sql in conn.executed)
+        assert result["lost_1"].state is NativeState.UNKNOWN
 
-    async def test_fe_rpc_trace_failure_with_live_engine_is_missing(self):
-        """The other fresh-FE signature (an FE RPC to the BE) is also the surface."""
+    async def test_fe_rpc_getTaskRuns_failure_is_unknown(self):
         conn = _Connection(
             failures=[
                 (
@@ -684,7 +684,7 @@ class TestRunTraceSurfaceFailureIsNotUnknown:
 
         result = await read_latest_native_runs(conn, ["lost_1"])
 
-        assert result["lost_1"].state is NativeState.MISSING
+        assert result["lost_1"].state is NativeState.UNKNOWN
 
     async def test_batch_read_1064_with_dead_engine_is_unknown(self):
         conn = _Connection(
@@ -696,8 +696,8 @@ class TestRunTraceSurfaceFailureIsNotUnknown:
         assert result["A"].state is NativeState.UNKNOWN
         assert result["B"].state is NativeState.UNKNOWN
 
-    async def test_non_surface_failure_on_a_live_engine_is_unknown(self):
-        """A transport blip on a live engine must NOT abandon healthy work."""
+    async def test_transport_blip_on_a_live_engine_is_unknown(self):
+        """A transport blip must NOT abandon healthy work (NOVA-43)."""
         conn = _Connection(
             failures=[("ORDER BY TASK_NAME", "Lost connection to MySQL server during query")]
         )
@@ -706,15 +706,14 @@ class TestRunTraceSurfaceFailureIsNotUnknown:
 
         assert result["A"].state is NativeState.UNKNOWN
 
-    async def test_single_task_1064_with_live_probe_is_missing(self):
+    async def test_single_task_1064_is_unknown(self):
         from app.modules.task_orchestration.native import read_latest_native_run
 
         conn = _Connection(failures=[("ORDER BY CREATE_TIME", _ARCHIVE_1064)])
 
         result = await read_latest_native_run(conn, "lost_1")
 
-        assert result.state is NativeState.MISSING
-        assert any("SELECT 1" in sql for sql in conn.executed)
+        assert result.state is NativeState.UNKNOWN
 
     async def test_single_task_transport_blip_is_unknown(self):
         from app.modules.task_orchestration.native import read_latest_native_run
@@ -727,30 +726,83 @@ class TestRunTraceSurfaceFailureIsNotUnknown:
 
         assert result.state is NativeState.UNKNOWN
 
-    async def test_archive_refusal_settles_the_node_as_abandoned(
+    async def test_archive_failure_does_not_settle_a_running_node(
         self, audit, monkeypatch
     ):
-        """The end-to-end consequence: the node settles, the DAG cannot hang."""
+        """The end-to-end consequence: a failed read writes nothing.
+
+        The node stays ``running`` — it is not abandoned from an uninformative
+        read, and it is not silently succeeded. The heartbeat path settles it
+        once the worker's heartbeat lapses (proven separately).
+        """
         repo = FakeRepository()
         task_id = repo.add_task("lost_1")
         repo.add_node_run("n1", task_id)
 
-        async def archive_refusal(task_names):
+        async def archive_failure(task_names):
             return {
-                name: NativeRun(task_name=name, state=NativeState.MISSING)
+                name: NativeRun(task_name=name, state=NativeState.UNKNOWN)
                 for name in task_names
             }
 
         reconciler = _reconciler(repo, FakeObserver())
-        monkeypatch.setattr(reconciler._observer, "read_runs", archive_refusal)
+        monkeypatch.setattr(reconciler._observer, "read_runs", archive_failure)
 
         report = await reconciler.reconcile_native()
 
-        assert report.lost_traces == ["lost_1"]
-        assert report.unknown == []
-        assert repo.task_runs["n1"]["state"] == "abandoned"
-        actions = [entry["action"] for entry in audit]
-        assert "NODE_ABANDONED" in actions
+        assert report.lost_traces == []
+        assert report.unknown == ["lost_1"]
+        assert repo.task_runs["n1"]["state"] == "running"
+        assert audit == []
+
+
+class TestLostTraceSettledByHeartbeat:
+    """AC #2 via the durable signal: a lapsed heartbeat settles the node.
+
+    The native archive cannot say whether a trace is absent (NOVA-46), so the
+    lost trace is settled here instead: ``scan`` reports a ``RUNNING`` node
+    whose worker heartbeat stopped, independent of any engine read. This is the
+    "task was running when the FE/worker died" scenario, and it cannot fire on
+    a healthy in-flight node because the worker keeps stamping its heartbeat.
+    """
+
+    async def test_stale_heartbeat_is_reported_for_abandonment(self):
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        node = repo.add_node_run("n1", task_id)
+        repo.stale_task_runs.append(node)
+
+        report = await Reconciler(
+            repo, observer=FakeObserver(), heartbeat_timeout_seconds=120
+        ).scan()
+
+        assert report.abandoned_task_runs == ["n1"]
+        assert report.abandoned_graph_runs == ["gr1"]
+
+    async def test_abandoned_node_ids_filters_by_graph_run(self):
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        node = repo.add_node_run("n1", task_id, graph_run_id="gr1")
+        other = repo.add_node_run("n2", task_id, graph_run_id="gr2")
+        repo.stale_task_runs.extend([node, other])
+
+        ids = await Reconciler(
+            repo, observer=FakeObserver(), heartbeat_timeout_seconds=120
+        ).abandoned_node_ids("gr1")
+
+        assert ids == ["n1"]
+
+    async def test_a_healthy_node_is_not_reported(self):
+        """A node whose heartbeat is fresh is never a lost trace."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run("n1", task_id)
+
+        report = await Reconciler(
+            repo, observer=FakeObserver(), heartbeat_timeout_seconds=120
+        ).scan()
+
+        assert report.abandoned_task_runs == []
 
 
 class TestConnectionAcquireTolerance:

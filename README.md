@@ -702,16 +702,19 @@ than the node's `started_at` is ignored, so a stale attempt cannot fail a live
 node. An **empty** read is `MISSING` only when a `SELECT 1` probe on the same
 connection proves the engine is live, so a stale pooled connection after an FE
 death cannot mark healthy work `abandoned` (NOVA-43). A **failed** read is
-`MISSING` only when it carries the run-trace surface's own signature
-(`_statistics_.task_run_history` / `getTaskRuns` — the fresh-FE 1064) **and** the
-probe proves the engine live; every other failure — a transport blip, or any
-failure where the probe also fails — stays `UNKNOWN` and writes nothing, so a
-momentary `Lost connection` cannot discard live work while a genuinely lost
-trace still settles `abandoned` (NOVA-46). Connection acquisition is inside the
+always `UNKNOWN` and writes nothing (NOVA-46): the archive failure behind it is
+engine-wide — on a fresh FE the fresh-FE 1064 on `_statistics_.task_run_history`
+fires for every `task_runs` read while ordinary statements still succeed — so it
+carries no per-task information and no trace verdict may be drawn from it. The
+lost trace is settled instead by the **durable heartbeat path**:
+`Reconciler.scan` abandons a `RUNNING` node whose worker heartbeat lapsed,
+independent of the archive (design §3), which is the "task was running when the
+FE/worker died" scenario AC #2 targets and cannot fire on a healthy in-flight
+node. Connection acquisition is inside the
 observer's guard, so an unreachable engine degrades to `UNKNOWN` instead of
 raising (NOVA-44). Criterion 7 is verified against the live engine, which
 reports `task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
-Thirty-five unit + ten engine integration tests; the runbook is
+Thirty-eight unit + ten engine integration tests; the runbook is
 `HOW_TO_RUN.md` §5. The checklist item above stays unchecked until this PR is
 merged.
 
