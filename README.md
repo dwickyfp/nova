@@ -670,6 +670,15 @@ deterministic graph-run ids for idempotency, and one run per `A → B → [C, D]
 graph. The two checklist items above stay unchecked until that PR is merged; the
 runbook is `HOW_TO_RUN.md` §4.
 
+**Fix (NOVA-39, 2026-09-18).** `SCHEDULER_ENGINE_TIMEZONE` shipped as `UTC`, but
+this project's engine runs `Asia/Jakarta` (`docker/docker-compose-engine.yml`,
+`TZ`). `created_at` is written by `NOW()` as a naive Jakarta `DATETIME`, so reading
+it as UTC shifted every interval anchor +7 h into the future and no interval task
+was ever due. The default is now `Asia/Jakarta`; `nova-scheduler` reads
+`SELECT @@time_zone` at startup and refuses to start on a mismatch (fixed offsets
+such as `+07:00` are accepted as synonyms). The integration suite derives the zone
+from the engine rather than trusting the default.
+
 ## Decision Log
 
 Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.

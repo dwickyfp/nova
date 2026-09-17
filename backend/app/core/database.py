@@ -83,6 +83,21 @@ class StarRocksConnectionFactory:
         finally:
             conn.close()
 
+    async def probe_engine_timezone(self) -> str:
+        """Return the StarRocks session timezone, e.g. ``Asia/Jakarta`` or ``+07:00``.
+
+        Nova writes naive ``DATETIME`` columns with ``NOW()``, so anything that
+        reads them back must know the wall-clock zone the engine used. Reading it
+        from the engine is the only source of truth available; a configured value
+        that disagrees is a silent multi-hour schedule error.
+        """
+        async with self.system_conn() as conn, conn.cursor() as cur:
+            await cur.execute("SELECT @@time_zone")
+            row = await cur.fetchone()
+        if not row:
+            raise RuntimeError("StarRocks did not report @@time_zone")
+        return str(row[0])
+
     async def execute_system(
         self, sql: str, params: list | tuple | None = None
     ) -> dict:

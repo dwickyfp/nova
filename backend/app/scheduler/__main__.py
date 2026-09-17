@@ -23,6 +23,7 @@ import redis.asyncio as aioredis
 
 from app.core.config import settings
 from app.core.database import db
+from app.modules.task_orchestration.schedule import engine_timezone_matches
 from app.modules.task_orchestration.service import build_scheduler_service
 from app.modules.task_orchestration.transport import (
     LeaderLock,
@@ -32,8 +33,43 @@ from app.modules.task_orchestration.transport import (
 logger = logging.getLogger(__name__)
 
 
+class EngineTimezoneMismatchError(RuntimeError):
+    """Raised when SCHEDULER_ENGINE_TIMEZONE disagrees with the engine."""
+
+
+async def _assert_engine_timezone() -> str:
+    """Fail fast unless the configured zone matches the engine's session zone.
+
+    ``created_at`` is written by ``NOW()`` as a naive ``DATETIME`` in the engine's
+    session timezone. If the configured zone disagrees, every interval anchor is
+    silently shifted — the 7-hour bug that made interval tasks never due. The
+    engine is the source of truth, so startup reads ``SELECT @@time_zone`` and
+    refuses to run rather than scheduling wrong.
+    """
+    engine_zone = await db.probe_engine_timezone()
+    configured = settings.SCHEDULER_ENGINE_TIMEZONE
+    if not engine_timezone_matches(configured, engine_zone):
+        raise EngineTimezoneMismatchError(
+            f"SCHEDULER_ENGINE_TIMEZONE={configured!r} does not match the engine "
+            f"session timezone {engine_zone!r}. Set SCHEDULER_ENGINE_TIMEZONE to "
+            f"{engine_zone!r} (or change the engine's time_zone) — a mismatch "
+            "silently shifts every interval anchor and tasks never become due."
+        )
+    logger.info(
+        "engine timezone verified: %s (SCHEDULER_ENGINE_TIMEZONE=%s)",
+        engine_zone,
+        configured,
+    )
+    return engine_zone
+
+
 async def _run() -> None:
     await db.init_system_pool()
+    try:
+        await _assert_engine_timezone()
+    except Exception:
+        await db.close_system_pool()
+        raise
     client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
 
     stop_event = asyncio.Event()

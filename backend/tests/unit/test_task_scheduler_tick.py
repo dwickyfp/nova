@@ -17,6 +17,8 @@ from typing import Any
 
 import pytest
 
+from app.core.config import settings
+from app.core.database import db
 from app.modules.task_orchestration.schedule import ScheduleError
 from app.modules.task_orchestration.scheduler import (
     SchedulerTick,
@@ -129,6 +131,79 @@ class TestEngineTimeConversion:
     def test_unknown_engine_timezone_is_rejected(self):
         with pytest.raises(ScheduleError):
             naive_engine_time_to_utc(datetime(2026, 1, 1, 9, 0), "Not/AZone")
+
+
+class TestAnchorUsesTheEngineTimezone:
+    """Regression for the shipped-default bug: a UTC config against Asia/Jakarta.
+
+    ``created_at`` is written by ``NOW()`` as a naive Jakarta wall-clock. Read as
+    UTC it lands 7 hours in the future, so the anchor sits ahead of ``now`` and no
+    occurrence is ever due. These lock both directions of that behaviour.
+    """
+
+    def _task_with_naive_created_at(self, created_at: datetime) -> dict[str, Any]:
+        return make_task("engine_anchor", created_at=created_at)
+
+    def test_anchor_due_when_configured_zone_matches_the_engine(self, monkeypatch):
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "Asia/Jakarta")
+        # NOW() wrote 07:12 Jakarta = 00:12 UTC, one minute before the 00:17 tick.
+        naive_created = datetime(2026, 1, 1, 7, 12)
+        tasks = [self._task_with_naive_created_at(naive_created)]
+
+        plan = plan_tick(tasks, [], NOW)
+
+        assert len(plan.due) == 1
+        assert plan.due[0].due_at == datetime(2026, 1, 1, 0, 17, tzinfo=UTC)
+
+    def test_anchor_never_due_when_configured_zone_is_wrong(self, monkeypatch):
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "UTC")
+        naive_created = datetime(2026, 1, 1, 7, 12)
+        tasks = [self._task_with_naive_created_at(naive_created)]
+
+        # Interpreted as 07:12 UTC, the anchor is 7 hours ahead of the tick —
+        # nothing is due, which is the shipped-default failure being pinned.
+        assert plan_tick(tasks, [], NOW).due == []
+
+    def test_aware_created_at_is_converted_not_reinterpreted(self, monkeypatch):
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "Not/AZone")
+        aware_created = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        tasks = [self._task_with_naive_created_at(aware_created)]
+
+        plan = plan_tick(tasks, [], NOW)
+
+        assert len(plan.due) == 1
+        assert plan.due[0].due_at == datetime(2026, 1, 1, 0, 15, tzinfo=UTC)
+
+
+class TestSchedulerStartupTimezoneGuard:
+    """``nova-scheduler`` must refuse to start on a zone mismatch, not drift."""
+
+    async def test_matching_engine_zone_starts(self, monkeypatch):
+        from app.scheduler.__main__ import _assert_engine_timezone
+
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "Asia/Jakarta")
+        monkeypatch.setattr(db, "probe_engine_timezone", _probe("Asia/Jakarta"))
+
+        assert await _assert_engine_timezone() == "Asia/Jakarta"
+
+    async def test_mismatched_engine_zone_fails_fast(self, monkeypatch):
+        from app.scheduler.__main__ import (
+            EngineTimezoneMismatchError,
+            _assert_engine_timezone,
+        )
+
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "UTC")
+        monkeypatch.setattr(db, "probe_engine_timezone", _probe("Asia/Jakarta"))
+
+        with pytest.raises(EngineTimezoneMismatchError, match="does not match"):
+            await _assert_engine_timezone()
+
+
+def _probe(zone: str) -> Any:
+    async def _probe_impl() -> str:
+        return zone
+
+    return _probe_impl
 
 
 class TestDeterministicRunId:

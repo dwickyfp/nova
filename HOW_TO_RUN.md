@@ -253,7 +253,14 @@ TASK_STREAM_MAXLEN=10000
 `SCHEDULER_ENGINE_TIMEZONE` harus sama dengan timezone session koneksi
 StarRocks milik scheduler. Nova menulis `created_at` lewat `NOW()` di zona itu
 dan membacanya kembali tanpa tz, jadi scheduler diberi tahu arti wall-clock-nya
-alih-alih diam-diam mengasumsikan UTC.
+alih-alih diam-diam mengasumsikan UTC. Default-nya `Asia/Jakarta` — zona engine
+proyek ini (`docker/docker-compose-engine.yml` menyetel `TZ=Asia/Jakarta`).
+
+Saat start, scheduler membaca `SELECT @@time_zone` dan **menolak start** bila
+nilainya tidak cocok dengan `SCHEDULER_ENGINE_TIMEZONE` (offset seperti `+07:00`
+diterima sebagai sinonim zona IANA yang cocok). Ketidakcocokan menggeser semua
+anchor interval, sehingga task tidak pernah due; gagal dengan jelas memang
+tujuannya.
 
 Hentikan dengan `Ctrl+C`. Hanya satu instance yang boleh jalan pada saat yang
 sama — instance lain menunggu leader-lock dan tidak akan enqueue.

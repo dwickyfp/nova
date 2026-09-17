@@ -27,11 +27,12 @@ import pytest_asyncio
 import redis.asyncio as aioredis
 
 from app.common.nova_system import TASK_ORCHESTRATION_DDL
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.core.database import db
 from app.modules.task_orchestration.repository import (
     task_orchestration_repository as repo,
 )
+from app.modules.task_orchestration.schedule import engine_timezone_matches
 from app.modules.task_orchestration.scheduler import SchedulerTick
 from app.modules.task_orchestration.transport import (
     LeaderLock,
@@ -108,6 +109,19 @@ async def scheduler_infra(request):
     await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
     for ddl in TASK_ORCHESTRATION_DDL:
         await db.execute_system(ddl)
+
+    # The suite must not depend on the shipped default being right: read the
+    # engine's session zone and feed it to the scheduler. The shipped default is
+    # asserted separately, so a wrong default fails here instead of silently
+    # passing (that regression is NOVA-39).
+    engine_zone = await db.probe_engine_timezone()
+    shipped_default = Settings.model_fields["SCHEDULER_ENGINE_TIMEZONE"].default
+    assert engine_timezone_matches(shipped_default, engine_zone), (
+        f"shipped SCHEDULER_ENGINE_TIMEZONE default {shipped_default!r} does not "
+        f"match the engine session timezone {engine_zone!r}; interval anchors "
+        "would be shifted and tasks would never become due"
+    )
+    settings.SCHEDULER_ENGINE_TIMEZONE = engine_zone
 
     client = aioredis.from_url(REDIS_URL, decode_responses=True)
     yield client

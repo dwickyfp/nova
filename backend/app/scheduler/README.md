@@ -30,7 +30,7 @@ Redis reachable at `REDIS_URL`.
 | `SCHEDULER_POLL_INTERVAL_SECONDS` | `15` | Seconds between ticks |
 | `SCHEDULER_LEADER_LOCK_KEY` | `nova:scheduler:leader` | Leader-lock key; one holder ticks |
 | `SCHEDULER_LEADER_LOCK_TTL_SECONDS` | `60` | Lock TTL, renewed each tick |
-| `SCHEDULER_ENGINE_TIMEZONE` | `UTC` | StarRocks session timezone for `NOW()` reads |
+| `SCHEDULER_ENGINE_TIMEZONE` | `Asia/Jakarta` | StarRocks session timezone for `NOW()` reads |
 | `TASK_STREAM_KEY` | `nova:tasks:graph_runs` | Redis Stream the scheduler `XADD`s to |
 | `TASK_STREAM_GROUP` | `nova-workers` | Consumer group the workers read with |
 | `TASK_STREAM_MAXLEN` | `10000` | Approximate stream trim length |
@@ -38,7 +38,14 @@ Redis reachable at `REDIS_URL`.
 `SCHEDULER_ENGINE_TIMEZONE` must match the session timezone of the scheduler's
 StarRocks connection: Nova writes `created_at` with `NOW()` in that zone and reads
 it back naive, so the scheduler is told what the wall-clock means rather than
-silently assuming UTC (the design records `Asia/Jakarta` on the probed FE).
+silently assuming UTC. The default is `Asia/Jakarta`, the zone this project's
+engine runs in (`docker/docker-compose-engine.yml` sets `TZ=Asia/Jakarta`).
+
+At startup the scheduler reads `SELECT @@time_zone` and **refuses to start** if it
+disagrees with `SCHEDULER_ENGINE_TIMEZONE` (a fixed offset like `+07:00` is
+accepted as a synonym for the matching IANA zone). A mismatch would shift every
+interval anchor by the offset difference, so tasks would never become due; failing
+loudly is the point.
 
 ## What a tick does
 

@@ -47,9 +47,13 @@ class Settings(BaseSettings):
     # The StarRocks session timezone of the scheduler's system connection. Nova
     # writes ``NOW()`` values (e.g. ``created_at``) in this zone and reads them
     # back naive, so the scheduler must be told what the wall-clock means.
-    # MUST match the engine's session timezone for this deployment. The design
-    # forbids silently assuming UTC, hence the explicit, configurable name.
-    SCHEDULER_ENGINE_TIMEZONE: str = "UTC"
+    #
+    # The default matches this project's engine, which runs ``Asia/Jakarta``
+    # (docker/docker-compose-engine.yml sets ``TZ=Asia/Jakarta``). The scheduler
+    # probes ``SELECT @@time_zone`` at startup and refuses to start when this
+    # value does not resolve to the same zone, so a wrong default fails loudly
+    # instead of shifting every interval anchor by hours.
+    SCHEDULER_ENGINE_TIMEZONE: str = "Asia/Jakarta"
 
     # --- Task orchestration: Redis Streams transport (nova-scheduler → workers) ---
     # Redis is ephemeral transport only; NOVA_SYSTEM is the source of truth.
