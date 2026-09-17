@@ -8,19 +8,10 @@
     "src/assets/custom/icon-theme-light.tsx",
     "src/assets/custom/icon-theme-system.tsx",
     "src/components/theme-switch.tsx",
-    "src/features/ai-providers/functions-tab.tsx",
-    "src/features/ai-providers/providers-tab.tsx",
     "src/features/auth/sign-in/components/sign-in-visual.tsx",
-    "src/features/dashboard/components/analytics-chart.tsx",
-    "src/features/dashboard/components/overview.tsx",
-    "src/features/dashboard/index.tsx",
-    "src/features/ml-models/models-tab.tsx",
-    "src/features/pipes/index.tsx",
-    "src/features/roles/index.tsx",
-    "src/features/roles/role-detail.tsx",
+    "src/features/_archive/pipes/index.tsx",
     "src/features/tasks-manager/index.tsx",
     "src/features/users/components/data-table-row-actions.tsx",
-    "src/features/users/data/data.ts",
-    "src/features/users/user-detail.tsx"
+    "src/features/users/data/data.ts"
   ]
 }
