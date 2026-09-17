@@ -661,6 +661,15 @@ Staged delivery — 9a metadata + scheduler + worker + delegate-first execution;
 - [ ] **9b** Task graph UI
 - [ ] **9c** `has stream` — `mv_refresh` first, then `partition_change` (`SHOW PARTITIONS` + `VisibleVersion`, one full sweep per evaluation) and `load_event`
 
+**Progress note (NOVA-35, 2026-09-18).** The `nova-scheduler` process and the
+scheduler-side Redis Streams transport are implemented and tested in
+`backend/app/scheduler/` + `backend/app/modules/task_orchestration/`
+(`schedule.py`, `scheduler.py`, `transport.py`, `service.py`): IANA-timezone cron
+and interval next-fire, leader-lock singleton, persist-before-publish ordering,
+deterministic graph-run ids for idempotency, and one run per `A → B → [C, D]`
+graph. The two checklist items above stay unchecked until that PR is merged; the
+runbook is `HOW_TO_RUN.md` §4.
+
 ## Decision Log
 
 Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.
