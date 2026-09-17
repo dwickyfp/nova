@@ -55,7 +55,7 @@ class TestCsvParamsSurviveCredentialPresence:
 
 
 class TestInjectFilesParamsBasics:
-    """The guard is per param group, so the two passes stay independent."""
+    """The guard is **per key**, not per group or per statement."""
 
     def test_injects_when_group_absent(self):
         out = _inject_files_params("SELECT * FROM FILES('path'='s3://b/x.csv')", CSV_PARAMS)
@@ -66,10 +66,11 @@ class TestInjectFilesParamsBasics:
         assert _inject_files_params(already, {"csv.skip_header": "1"}) == already
 
     def test_partial_presence_still_injects_the_missing_keys(self):
-        """A group is present only when *every* key in it is present.
+        """A key is injected only when *that key* is absent.
 
         Guards against a half-injected statement from an earlier pass, which
-        would otherwise stay half-injected forever.
+        would otherwise stay half-injected forever, and against appending a
+        duplicate of the key that is already there.
         """
         half = "SELECT * FROM FILES('path'='s3://b/x.csv', 'csv.skip_header'='1')"
         out = _inject_files_params(half, CSV_PARAMS)
@@ -79,6 +80,51 @@ class TestInjectFilesParamsBasics:
     def test_no_files_call_is_untouched(self):
         sql = "SELECT 1"
         assert _inject_files_params(sql, CSV_PARAMS) == sql
+
+
+class TestMultipleFilesCallsInOneStatement:
+    """Every ``FILES()`` in the statement is handled, independently.
+
+    A statement can reference two stages. The substitution is global by design,
+    so a naive implementation that stopped at the first match — or that used a
+    statement-level "already injected?" flag — would leave the second call
+    untuned and the query would return unparsed rows for whichever stage it
+    skipped.
+    """
+
+    TWO_FILES = (
+        "SELECT * FROM FILES('path'='s3://b/one.csv', 'format'='csv') AS a "
+        "JOIN FILES('path'='s3://b/two.csv', 'format'='csv') AS b ON a.id = b.id"
+    )
+
+    def test_both_calls_receive_the_params(self):
+        out = _inject_files_params(self.TWO_FILES, CSV_PARAMS)
+        assert out.count("csv.column_separator") == 2, out
+        assert out.count("csv.skip_header") == 2, out
+
+    def test_each_call_is_handled_on_its_own_terms(self):
+        """One call already carrying the params must not suppress the other."""
+        mixed = (
+            "SELECT * FROM "
+            "FILES('path'='s3://b/one.csv', 'csv.skip_header'='1') AS a "
+            "JOIN FILES('path'='s3://b/two.csv') AS b ON a.id = b.id"
+        )
+        out = _inject_files_params(mixed, {"csv.skip_header": "1"})
+        # The already-tuned call is left alone; the bare one gains the param.
+        assert out.count("csv.skip_header") == 2, out
+
+    def test_two_calls_stay_idempotent(self):
+        once = _inject_files_params(self.TWO_FILES, CSV_PARAMS)
+        assert _inject_files_params(once, CSV_PARAMS) == once
+
+    def test_credentials_are_not_duplicated_across_two_calls(self):
+        with_creds = (
+            "SELECT * FROM "
+            "FILES('path'='s3://b/one.csv', 'aws.s3.access_key'='K') AS a "
+            "JOIN FILES('path'='s3://b/two.csv', 'aws.s3.access_key'='K') AS b ON a.id = b.id"
+        )
+        out = _inject_files_params(with_creds, CREDENTIALS)
+        assert out.count("aws.s3.access_key") == 2, out
 
 
 class TestPrepareStageSqlOrdering:
