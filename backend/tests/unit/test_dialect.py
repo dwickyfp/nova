@@ -233,6 +233,50 @@ class TestStageVersusVariable:
         result = parse_sql("SELECT * FROM @stage1 WHERE a = '-- x'")
         assert len(result.stage_refs) == 1
 
+    # --- text inside a literal is data, not SQL --------------------------
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 'data from @here' AS note",
+            "SELECT * FROM logs WHERE msg = 'imported from @src'",
+            "SELECT * FROM t WHERE name = 'FROM @x'",
+            "INSERT INTO t VALUES ('COPY INTO @s FROM tbl')",
+            "SELECT 'JOIN @stg'",
+            "SELECT 'USING @stg'",
+            "SELECT 'LIST @stg'",
+            "SELECT 'it''s from @x'",
+            'SELECT "FROM @x"',
+            "SELECT `FROM @x`",
+            "SELECT * FROM t -- FROM @x",
+            "SELECT 1 /* FROM @x */",
+            "SELECT * FROM t /* JOIN @shadow */ WHERE 1",
+            "SELECT * FROM t /*\nFROM @x\n*/ WHERE 1",
+        ],
+    )
+    def test_a_stage_keyword_inside_a_literal_or_comment_is_not_a_stage(self, sql):
+        """The text of a literal is data the engine never parses as SQL.
+
+        NOVA-29: the context classifier scanned the raw text backwards and read
+        the ``FROM`` in ``'FROM @x'`` as the live keyword, so a plain string
+        literal was rewritten into ``FILES(...)`` with storage credentials
+        injected into it. A match inside a literal or comment must be dropped
+        before classification runs, not merely classified differently.
+        """
+        result = parse_sql(sql)
+        assert result.stage_refs == [], f"{sql!r} was read as a stage reference"
+        assert result.command_type == CommandType.REGULAR
+
+    def test_a_real_stage_after_a_literal_still_resolves(self):
+        """Only the literal is data; the live ``FROM @stage1`` still counts."""
+        result = parse_sql("SELECT 'FROM @x' FROM @stage1.data.csv")
+        assert [ref.stage_name for ref in result.stage_refs] == ["stage1"]
+
+    def test_an_unterminated_literal_swallows_the_rest_of_the_statement(self):
+        """An unclosed quote makes the tail data, so no stage is claimed."""
+        assert parse_sql("SELECT 'FROM @x").stage_refs == []
+        assert parse_sql("SELECT 1 /* FROM @x").stage_refs == []
+
     # --- LIST without a stage --------------------------------------------
 
     @pytest.mark.parametrize("sql", ["LIST", "LIST FILES", "LIST TABLES"])
@@ -314,6 +358,30 @@ class TestTranslator:
         parsed = parse_sql("SELECT * FROM @stage1.data.csv WHERE id > 10")
         sql, _ = translate_stage_query(parsed, {"stage1": config})
         assert "WHERE id > 10" in sql
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT * FROM t WHERE name = 'FROM @stage1'",
+            "SELECT 'data from @stage1' AS note",
+            "SELECT 1 /* FROM @stage1 */",
+        ],
+    )
+    def test_translation_leaves_a_literal_naming_a_stage_untouched(self, sql):
+        """The engine must receive the user's SQL byte for byte.
+
+        NOVA-29: a literal that named a real stage was rewritten *inside the
+        literal* into ``FILES(...)`` with the access key and secret key
+        injected, and the unbalanced quotes made the statement unrunnable.
+        """
+        config = self._make_config()
+        parsed = parse_sql(sql)
+        translated, warnings = translate_stage_query(parsed, {"stage1": config})
+        assert translated == sql
+        assert warnings == []
+        assert "testsecret" not in translated
+        assert "testkey" not in translated
+        assert "FILES(" not in translated
 
     def test_detect_format_csv(self):
         assert detect_format_from_filename("data.csv") == "csv"
