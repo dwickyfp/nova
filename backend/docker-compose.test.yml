@@ -1,6 +1,12 @@
 services:
   starrocks-fe:
     image: starrocks/fe-ubuntu:4.1.1
+    # The image's entrypoint is `tini-static --` with no Cmd, and its bundled
+    # fe_entrypoint.sh requires the FE service name as `$1`. Without a command
+    # tini prints its usage and exits 1, so the container never started — on
+    # any architecture. `starrocks-fe` matches the compose service name, which
+    # is what the script probes for leader election.
+    command: ["/opt/starrocks/fe_entrypoint.sh", "starrocks-fe"]
     ports:
       - "29030:9030"   # MySQL protocol (test port)
       - "28030:8030"   # HTTP
@@ -14,6 +20,10 @@ services:
 
   starrocks-be:
     image: starrocks/be-ubuntu:4.1.1
+    # Same image shape as the FE: entrypoint is `tini-static --` with no Cmd,
+    # and be_entrypoint.sh requires the FE service name as `$1`. Without it
+    # the container exits before starting the backend.
+    command: ["/opt/starrocks/be_entrypoint.sh", "starrocks-fe"]
     depends_on:
       starrocks-fe:
         condition: service_healthy
