@@ -26,7 +26,10 @@ import asyncmy
 import pytest
 import pytest_asyncio
 
-from app.common.nova_system import TASK_ORCHESTRATION_DDL
+from app.common.nova_system import (
+    TASK_ORCHESTRATION_DDL,
+    migrate_task_orchestration_columns,
+)
 from app.core.config import settings
 from app.core.database import db
 from app.modules.task_orchestration.repository import (
@@ -102,10 +105,36 @@ async def orchestration_db(request):
 
 
 async def _ensure_ddl() -> None:
-    """Bootstrap NOVA_SYSTEM (the test stack ships without init-nova.sql) then DDL."""
+    """Bootstrap NOVA_SYSTEM (the test stack ships without init-nova.sql) then DDL.
+
+    Also runs the additive column migrations, because the engine stack's
+    ``init-nova.sql`` may have already created ``CONFIG_TASK*`` without the
+    later ``heartbeat_at`` column — ``CREATE TABLE IF NOT EXISTS`` will not
+    evolve it, and the repository selects that column (NOVA-36).
+    """
     await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
     for ddl in TASK_ORCHESTRATION_DDL:
         await db.execute_system(ddl)
+    await migrate_task_orchestration_columns()
+
+
+async def _columns(table: str) -> set[str]:
+    result = await db.execute_system(
+        "SELECT COLUMN_NAME FROM information_schema.columns "
+        "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' AND TABLE_NAME = %s",
+        [table],
+    )
+    return {row[0] for row in result["rows"]}
+
+
+def _repo():
+    """The shared repository singleton, imported lazily to keep this helper
+    next to the tests that use it."""
+    from app.modules.task_orchestration.repository import (
+        task_orchestration_repository,
+    )
+
+    return task_orchestration_repository
 
 
 class TestDdlIdempotency:
@@ -142,6 +171,63 @@ class TestDdlIdempotency:
             ddl = str(result["rows"][0][1]).upper()
             assert "PRIMARY KEY" in ddl, f"{table} is not a Primary Key table"
             assert "DUPLICATE KEY" not in ddl, f"{table} must not be a Duplicate Key table"
+
+
+class TestHeartbeatColumnMigration:
+    """NOVA-36 regression: an old CONFIG_TASK* table must be healed.
+
+    ``docker/init-nova.sql`` (and any deployment created before the worker
+    landed) defines ``CONFIG_TASK_RUNS`` / ``CONFIG_TASK_GRAPH_RUNS`` without
+    ``heartbeat_at``. ``CREATE TABLE IF NOT EXISTS`` is a no-op on the existing
+    table, so the column is absent and every repository read that selects it
+    fails with "Column 'heartbeat_at' cannot be resolved" — which is exactly
+    how L3 went red on PR #46. The migration must add it to a pre-existing
+    old-schema table.
+    """
+
+    async def test_migration_adds_heartbeat_to_an_old_schema_table(self, orchestration_db):
+        table = "CONFIG_TASK_GRAPH_RUNS"
+        # Rebuild the table exactly as an older release left it: no heartbeat.
+        await db.execute_system(f"DROP TABLE IF EXISTS NOVA_SYSTEM.{table}")
+        await db.execute_system(
+            f"""
+            CREATE TABLE NOVA_SYSTEM.{table} (
+                id           VARCHAR(64) NOT NULL,
+                graph_id     VARCHAR(64) NOT NULL,
+                trigger_type VARCHAR(32) NOT NULL,
+                state        VARCHAR(32) NOT NULL,
+                wal_marks    TEXT,
+                started_at   DATETIME,
+                finished_at  DATETIME
+            ) PRIMARY KEY(id)
+            DISTRIBUTED BY HASH(id) BUCKETS 1
+            PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+            """
+        )
+        before = await _columns(table)
+        assert "heartbeat_at" not in before, "fixture did not create an old-schema table"
+
+        await migrate_task_orchestration_columns()
+
+        after = await _columns(table)
+        assert "heartbeat_at" in after, "migration did not add the heartbeat column"
+
+        # The repository read that failed in CI must now succeed.
+        repo = _repo()
+        created = await repo.create_graph_run({"graph_id": f"g_{uuid4().hex[:8]}"})
+        fetched = await repo.get_graph_run(created["id"])
+        assert fetched is not None
+        assert fetched["heartbeat_at"] is None
+        await repo.delete_graph_run(created["id"])
+
+        # Leave the schema as the rest of the suite expects.
+        await _ensure_ddl()
+
+    async def test_migration_is_idempotent_when_the_column_exists(self, orchestration_db):
+        await _ensure_ddl()
+        for _ in range(2):
+            await migrate_task_orchestration_columns()
+        assert "heartbeat_at" in await _columns("CONFIG_TASK_RUNS")
 
 
 class TestNoCredentialColumns:

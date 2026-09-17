@@ -21,6 +21,7 @@ import signal
 
 import redis.asyncio as aioredis
 
+from app.common.nova_system import init_task_orchestration
 from app.core.config import settings
 from app.core.database import db
 from app.modules.task_orchestration.repository import task_orchestration_repository
@@ -78,6 +79,11 @@ async def _run() -> None:
     await db.init_system_pool()
     try:
         await _assert_engine_timezone()
+        # The scheduler reads CONFIG_TASK_GRAPH_RUNS (including heartbeat_at),
+        # so it must ensure the schema exists and is up to date. Idempotent:
+        # creates the tables when absent and adds late columns to a table an
+        # older release (or init-nova.sql) created without them.
+        await init_task_orchestration()
     except Exception:
         await db.close_system_pool()
         raise

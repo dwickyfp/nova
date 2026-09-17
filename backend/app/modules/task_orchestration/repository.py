@@ -24,11 +24,11 @@ _TASK_COLUMNS = (
 )
 _EDGE_COLUMNS = "id, graph_id, parent_task, child_task, created_at"
 _GRAPH_RUN_COLUMNS = (
-    "id, graph_id, trigger_type, state, wal_marks, started_at, finished_at"
+    "id, graph_id, trigger_type, state, wal_marks, started_at, heartbeat_at, finished_at"
 )
 _TASK_RUN_COLUMNS = (
     "id, graph_run_id, task_id, attempt, state, delegated, starrocks_query_id, "
-    "error_message, started_at, finished_at"
+    "error_message, started_at, heartbeat_at, finished_at"
 )
 
 # Edges store task *names* (parent_task/child_task), not ids, so graph membership
@@ -48,7 +48,9 @@ _UPDATABLE_COLUMNS: dict[str, frozenset[str]] = {
         }
     ),
     "edge": frozenset({"parent_task", "child_task"}),
-    "graph_run": frozenset({"trigger_type", "state", "wal_marks", "finished_at"}),
+    "graph_run": frozenset(
+        {"trigger_type", "state", "wal_marks", "heartbeat_at", "finished_at"}
+    ),
     "task_run": frozenset(
         {
             "attempt",
@@ -56,6 +58,7 @@ _UPDATABLE_COLUMNS: dict[str, frozenset[str]] = {
             "delegated",
             "starrocks_query_id",
             "error_message",
+            "heartbeat_at",
             "finished_at",
         }
     ),
@@ -308,6 +311,47 @@ class TaskOrchestrationRepository:
         )
         return bool(result.get("affected"))
 
+    async def list_graph_runs_by_state(
+        self, states: list[str], *, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """Graph runs in any of ``states`` — the reconciler's work list.
+
+        The reconciler polls only graph runs that are actually active, never
+        every task (design §2, resource note).
+        """
+        if not states:
+            return []
+        placeholders = ", ".join(["%s"] * len(states))
+        result = await db.execute_system(
+            f"SELECT {_GRAPH_RUN_COLUMNS} FROM {_GRAPH_RUNS} "
+            f"WHERE state IN ({placeholders}) ORDER BY started_at LIMIT %s",
+            [*states, limit],
+        )
+        runs = [self._to_dict(_GRAPH_RUN_COLUMNS, row) for row in result["rows"]]
+        for run in runs:
+            run["wal_marks"] = self._decode_wal_marks(run["wal_marks"])
+        return runs
+
+    async def transition_graph_run(
+        self, run_id: str, from_states: list[str], to_state: str
+    ) -> bool:
+        """Conditional state write. Returns True only if this caller moved it.
+
+        The ``WHERE state IN (...)`` guard is what makes at-least-once delivery
+        safe: a duplicate delivery finds the row already in ``to_state`` and its
+        update affects no rows, so it cannot re-run the graph.
+        """
+        if not from_states:
+            return False
+        placeholders = ", ".join(["%s"] * len(from_states))
+        finished = ", finished_at = NOW()" if to_state in {"success", "failed", "cancelled"} else ""
+        result = await db.execute_system(
+            f"UPDATE {_GRAPH_RUNS} SET state = %s{finished} "
+            f"WHERE id = %s AND state IN ({placeholders})",
+            [to_state, run_id, *from_states],
+        )
+        return bool(result.get("affected"))
+
     # ── Task runs ──────────────────────────────────────────────
 
     async def create_task_run(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -365,6 +409,136 @@ class TaskOrchestrationRepository:
             f"DELETE FROM {_TASK_RUNS} WHERE id = %s", [run_id]
         )
         return bool(result.get("affected"))
+
+    async def get_node_run(
+        self, graph_run_id: str, task_id: str
+    ) -> dict[str, Any] | None:
+        """The latest attempt row for a node within a graph run, if any."""
+        result = await db.execute_system(
+            f"SELECT {_TASK_RUN_COLUMNS} FROM {_TASK_RUNS} "
+            "WHERE graph_run_id = %s AND task_id = %s "
+            "ORDER BY attempt DESC LIMIT 1",
+            [graph_run_id, task_id],
+        )
+        if not result["rows"]:
+            return None
+        return self._to_dict(_TASK_RUN_COLUMNS, result["rows"][0])
+
+    async def list_node_runs(self, graph_run_id: str) -> list[dict[str, Any]]:
+        """Node rows for a graph run keyed by task id (latest attempt wins)."""
+        runs = await self.list_task_runs(graph_run_id)
+        latest: dict[str, dict[str, Any]] = {}
+        for run in runs:
+            task_id = run.get("task_id")
+            if task_id and (
+                task_id not in latest or run["attempt"] >= latest[task_id]["attempt"]
+            ):
+                latest[task_id] = run
+        return list(latest.values())
+
+    async def transition_task_run(
+        self,
+        run_id: str,
+        from_states: list[str],
+        to_state: str,
+        *,
+        query_id: str | None = None,
+        error_message: str | None = None,
+    ) -> bool:
+        """Conditional node-state write. True only when this caller moved it.
+
+        This is the idempotency point for node execution: a redelivered graph
+        run finds the node already terminal and affects no rows, so the body is
+        never executed twice (design §2, rule 4).
+        """
+        if not from_states:
+            return False
+        placeholders = ", ".join(["%s"] * len(from_states))
+        sets = ["state = %s"]
+        values: list[Any] = [to_state]
+        if query_id is not None:
+            sets.append("starrocks_query_id = %s")
+            values.append(query_id)
+        if error_message is not None:
+            sets.append("error_message = %s")
+            values.append(error_message)
+        if to_state in {"success", "failed", "skipped"}:
+            sets.append("finished_at = NOW()")
+        result = await db.execute_system(
+            f"UPDATE {_TASK_RUNS} SET {', '.join(sets)} "
+            f"WHERE id = %s AND state IN ({placeholders})",
+            [*values, run_id, *from_states],
+        )
+        return bool(result.get("affected"))
+
+    async def create_task_run_once(
+        self, graph_run_id: str, task_id: str, attempt: int = 1
+    ) -> dict[str, Any]:
+        """Create a node run, returning any pre-existing row for the attempt.
+
+        At-least-once delivery means two workers may race to create the same
+        node run. The primary key makes one insert win; the loser reads the
+        winner's row and does not execute.
+        """
+        existing = await self.get_node_run(graph_run_id, task_id)
+        if existing is not None:
+            return existing
+        return await self.create_task_run(
+            {
+                "graph_run_id": graph_run_id,
+                "task_id": task_id,
+                "attempt": attempt,
+                "state": "pending",
+                "delegated": True,
+            }
+        )
+
+    async def mark_task_run_heartbeat(self, run_id: str) -> None:
+        """Refresh a node's liveness stamp while it executes."""
+        await db.execute_system(
+            f"UPDATE {_TASK_RUNS} SET heartbeat_at = NOW() WHERE id = %s", [run_id]
+        )
+
+    async def mark_graph_run_heartbeat(self, run_id: str) -> None:
+        await db.execute_system(
+            f"UPDATE {_GRAPH_RUNS} SET heartbeat_at = NOW() WHERE id = %s", [run_id]
+        )
+
+    async def list_stale_task_runs(
+        self, older_than_seconds: int, *, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """``RUNNING`` node rows whose heartbeat lapsed — abandoned work.
+
+        A row that never stamped a heartbeat falls back to ``started_at``. These
+        are candidates for re-evaluation, not trusted progress (design §2,
+        rule 3): a worker that died mid-node leaves exactly this row.
+        """
+        result = await db.execute_system(
+            f"SELECT {_TASK_RUN_COLUMNS} FROM {_TASK_RUNS} "
+            "WHERE state = 'running' "
+            "AND COALESCE(heartbeat_at, started_at) < "
+            "DATE_SUB(NOW(), INTERVAL %s SECOND) "
+            "ORDER BY started_at LIMIT %s",
+            [older_than_seconds, limit],
+        )
+        return [self._to_dict(_TASK_RUN_COLUMNS, row) for row in result["rows"]]
+
+    async def list_stale_graph_runs(
+        self, older_than_seconds: int, *, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """``RUNNING`` graph runs whose heartbeat lapsed."""
+        result = await db.execute_system(
+            f"SELECT {_GRAPH_RUN_COLUMNS} FROM {_GRAPH_RUNS} "
+            "WHERE state = 'running' "
+            "AND COALESCE(heartbeat_at, started_at) < "
+            "DATE_SUB(NOW(), INTERVAL %s SECOND) "
+            "ORDER BY started_at LIMIT %s",
+            [older_than_seconds, limit],
+        )
+        runs = [self._to_dict(_GRAPH_RUN_COLUMNS, row) for row in result["rows"]]
+        for run in runs:
+            run["wal_marks"] = self._decode_wal_marks(run["wal_marks"])
+        return runs
 
 
 task_orchestration_repository = TaskOrchestrationRepository()
