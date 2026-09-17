@@ -43,6 +43,12 @@ SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
 SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
 _USE_SHARED_STACK = _EXPLICIT_PORT is None
 
+#: Real engine required (real DDL, real CRUD), so this belongs to the L3 job's
+#: `-m engine` selection. The skip-in-fixture behaviour stays: an unreachable
+#: engine is a missing local prerequisite, and the CI job fails on
+#: `skipped == collected` so an all-skip run cannot pass for green.
+pytestmark = pytest.mark.engine
+
 CREDENTIAL_SUBSTRINGS = ("password", "secret", "token", "credential")
 
 

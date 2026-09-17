@@ -61,10 +61,19 @@ def _docker_available() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(
-    not _docker_available(),
-    reason=f"Docker image {MYSQL_IMAGE} is not available locally",
-)
+#: `engine` marks this suite as requiring the real stack from
+#: docker-compose.test.yml, so the L3 CI job can select it with `-m engine`
+#: and a markerless unit run never picks it up. The `skipif` stays: Docker and
+#: a local mysql:8.0 client are genuinely optional for a developer, and a
+#: missing prerequisite should skip, not fail. The CI job fails on
+#: `skipped == collected` precisely so an all-skip run cannot pass for green.
+pytestmark = [
+    pytest.mark.engine,
+    pytest.mark.skipif(
+        not _docker_available(),
+        reason=f"Docker image {MYSQL_IMAGE} is not available locally",
+    ),
+]
 
 
 @dataclass
