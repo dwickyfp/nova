@@ -37,6 +37,26 @@ class Settings(BaseSettings):
     # --- Redis (session store) ---
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # --- Task orchestration: scheduler process (nova-scheduler) ---
+    # The scheduler is a standalone process (`python -m app.scheduler`); the
+    # web process never runs it. All values live here so both processes read
+    # the same source of truth.
+    SCHEDULER_POLL_INTERVAL_SECONDS: float = 15.0
+    SCHEDULER_LEADER_LOCK_KEY: str = "nova:scheduler:leader"
+    SCHEDULER_LEADER_LOCK_TTL_SECONDS: int = 60
+    # The StarRocks session timezone of the scheduler's system connection. Nova
+    # writes ``NOW()`` values (e.g. ``created_at``) in this zone and reads them
+    # back naive, so the scheduler must be told what the wall-clock means.
+    # MUST match the engine's session timezone for this deployment. The design
+    # forbids silently assuming UTC, hence the explicit, configurable name.
+    SCHEDULER_ENGINE_TIMEZONE: str = "UTC"
+
+    # --- Task orchestration: Redis Streams transport (nova-scheduler → workers) ---
+    # Redis is ephemeral transport only; NOVA_SYSTEM is the source of truth.
+    TASK_STREAM_KEY: str = "nova:tasks:graph_runs"
+    TASK_STREAM_GROUP: str = "nova-workers"
+    TASK_STREAM_MAXLEN: int = 10000
+
     # --- Security ---
     SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
     FERNET_KEY: str = ""  # Generated: Fernet.generate_key()
