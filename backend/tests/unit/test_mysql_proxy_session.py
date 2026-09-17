@@ -20,6 +20,7 @@ from app.proxy.session import (
     is_show_databases,
     parse_use_statement,
     split_statements,
+    substitute_user_variables,
 )
 
 
@@ -75,17 +76,35 @@ class TestSetStatements:
     def test_walrus_assignment_operator(self):
         session = SessionState()
         assert handle_set_statement("SET @x := 'abc'", session).handled is True
-        assert session.user_variables["x"] == "abc"
+        assert session.user_variables["x"] == "'abc'"
 
-    def test_single_quotes_are_stripped(self):
+    def test_string_value_keeps_its_quotes(self):
+        """The quotes are part of the value, not decoration.
+
+        Substituting the value into a later statement splices this text in
+        verbatim, so dropping the quotes would turn ``SET @name = 'Andi'``
+        followed by ``SELECT @name`` into ``SELECT Andi`` — a bare identifier,
+        i.e. an unknown column. Storing the literal form is what makes the
+        round trip work.
+        """
         session = SessionState()
         handle_set_statement("SET @name = 'Andi'", session)
-        assert session.user_variables["name"] == "Andi"
+        assert session.user_variables["name"] == "'Andi'"
 
     def test_escaped_quote_inside_a_literal(self):
         session = SessionState()
         handle_set_statement("SET @name = 'it''s'", session)
-        assert session.user_variables["name"] == "it's"
+        assert session.user_variables["name"] == "'it''s'"
+
+    def test_double_quoted_value_is_rewritten_to_single_quotes(self):
+        """Which quote character delimits a string is a SQL-mode detail.
+
+        Rewriting the double-quoted form to the single-quoted one makes the
+        stored text unambiguous regardless of the engine's mode.
+        """
+        session = SessionState()
+        handle_set_statement('SET @name = "Andi"', session)
+        assert session.user_variables["name"] == "'Andi'"
 
     def test_numeric_value_kept_verbatim(self):
         session = SessionState()
@@ -181,6 +200,154 @@ class TestSetStatements:
         handle_set_statement("SET @a = 1", session)
         handle_set_statement("SET @a = 2", session)
         assert session.user_variables["a"] == "2"
+
+
+class TestUserVariableSubstitution:
+    """The read half of ``SET @x = …`` — NOVA-25.
+
+    The write path alone was not a feature: ``SET @x`` was accepted and stored,
+    but ``SELECT @x`` went to the engine untouched, where Nova's ``@stage``
+    pattern claimed it as a stage named ``x`` and failed every read with
+    ``Stage 'x' not found``. These tests pin the substitution that closes it, and
+    the tokenizer rules that keep it from touching text that merely looks like a
+    reference.
+    """
+
+    @staticmethod
+    def _session(**values: str) -> SessionState:
+        session = SessionState()
+        session.user_variables = dict(values)
+        return session
+
+    def test_string_variable_substitutes_into_a_select(self):
+        session = self._session(x="'QA_MARKER_12345'")
+        result = substitute_user_variables("SELECT @x AS val", session)
+        assert result.sql == "SELECT 'QA_MARKER_12345' AS val"
+        assert result.substituted == ["x"]
+
+    def test_numeric_variable_substitutes_as_a_number(self):
+        """``@n`` must splice in unquoted, or ``1 + '5'`` would become a string."""
+        session = self._session(n="5")
+        result = substitute_user_variables("SELECT 1 + @n", session)
+        assert result.sql == "SELECT 1 + 5"
+
+    def test_reference_in_a_where_clause(self):
+        session = self._session(threshold="100")
+        result = substitute_user_variables("SELECT * FROM t WHERE amount > @threshold", session)
+        assert result.sql == "SELECT * FROM t WHERE amount > 100"
+
+    def test_multiple_references_substitute(self):
+        session = self._session(a="1", b="2")
+        result = substitute_user_variables("SELECT @a, @b, @a", session)
+        assert result.sql == "SELECT 1, 2, 1"
+        assert result.substituted == ["a", "b", "a"]
+
+    def test_name_lookup_is_case_insensitive(self):
+        session = self._session(x="1")
+        assert substitute_user_variables("SELECT @X", session).sql == "SELECT 1"
+
+    def test_unset_variable_is_left_for_the_engine(self):
+        """An unknown name is not the proxy's to invent a value for.
+
+        Substituting ``NULL`` would silently change query semantics, and
+        reporting an error would pre-empt the engine's own diagnosis. The
+        reference is left intact and reported to the caller, and — because a
+        bare ``@name`` is no longer a stage reference — the engine answers with
+        its own "unknown user variable" behaviour rather than a stage error.
+        """
+        session = self._session(x="1")
+        result = substitute_user_variables("SELECT @unset", session)
+        assert result.sql == "SELECT @unset"
+        assert result.substituted == []
+        assert result.unknown == ["unset"]
+
+    def test_reference_inside_a_string_literal_is_not_replaced(self):
+        """``'@x'`` is data. Replacing it would corrupt the client's text."""
+        session = self._session(x="'injected'")
+        result = substitute_user_variables("SELECT '@x' AS literal", session)
+        assert result.sql == "SELECT '@x' AS literal"
+        assert result.substituted == []
+
+    def test_reference_inside_a_line_comment_is_not_replaced(self):
+        session = self._session(x="1")
+        result = substitute_user_variables("SELECT 1 -- @x\n", session)
+        assert result.sql == "SELECT 1 -- @x\n"
+        assert result.substituted == []
+
+    def test_reference_inside_a_block_comment_is_not_replaced(self):
+        session = self._session(x="1")
+        result = substitute_user_variables("SELECT /* @x */ 2", session)
+        assert result.sql == "SELECT /* @x */ 2"
+        assert result.substituted == []
+
+    def test_reference_inside_a_backquoted_identifier_is_not_replaced(self):
+        session = self._session(x="1")
+        result = substitute_user_variables("SELECT `@x` FROM t", session)
+        assert result.sql == "SELECT `@x` FROM t"
+        assert result.substituted == []
+
+    def test_system_variable_is_never_substituted(self):
+        """``@@x`` is the engine's, even when a session variable shares the name."""
+        session = self._session(version_comment="'spoofed'")
+        result = substitute_user_variables("SELECT @@version_comment", session)
+        assert result.sql == "SELECT @@version_comment"
+        assert result.substituted == []
+
+    def test_stage_reference_is_left_alone(self):
+        """A dotted reference belongs to the dialect engine.
+
+        ``@products.products_new.csv`` is a stage even when a session variable
+        called ``products`` exists; the stage interpretation is what the engine
+        would otherwise have acted on, and resolving the clash in the client's
+        favour would make a stored value silently shadow a stage.
+        """
+        session = self._session(products="'shadow'")
+        result = substitute_user_variables(
+            "SELECT * FROM @products.products_new.csv", session
+        )
+        assert result.sql == "SELECT * FROM @products.products_new.csv"
+        assert result.substituted == []
+
+    def test_escaped_quote_in_a_literal_does_not_end_the_literal(self):
+        """A naive scanner would treat the ``\\'`` as the closing quote."""
+        session = self._session(x="1")
+        result = substitute_user_variables(r"SELECT 'it\'s @x' AS s", session)
+        assert result.sql == r"SELECT 'it\'s @x' AS s"
+        assert result.substituted == []
+
+    def test_doubled_quote_in_a_literal_does_not_end_the_literal(self):
+        session = self._session(x="1")
+        result = substitute_user_variables("SELECT 'it''s @x' AS s", session)
+        assert result.sql == "SELECT 'it''s @x' AS s"
+        assert result.substituted == []
+
+    def test_substitution_when_a_literal_contains_a_quote_character(self):
+        inner = self._session(x="'O''Brien'")
+        result = substitute_user_variables("SELECT @x", inner)
+        assert result.sql == "SELECT 'O''Brien'"
+
+    def test_name_prefix_is_not_matched(self):
+        """``@xy`` is a different variable from ``@x``."""
+        session = self._session(x="1")
+        result = substitute_user_variables("SELECT @xy", session)
+        assert result.sql == "SELECT @xy"
+        assert result.substituted == []
+        assert result.unknown == ["xy"]
+
+    def test_end_to_end_set_then_select(self):
+        """The exact QA reproduction: ``SET @x = '…'; SELECT @x``."""
+        session = SessionState()
+        handle_set_statement("SET @x = 'QA_MARKER_12345'", session)
+        result = substitute_user_variables("SELECT @x AS val", session)
+        assert result.sql == "SELECT 'QA_MARKER_12345' AS val"
+
+    def test_no_references_leaves_the_statement_untouched(self):
+        session = self._session(x="1")
+        sql = "SELECT 1 FROM NOVA_DEMO.customers"
+        result = substitute_user_variables(sql, session)
+        assert result.sql == sql
+        assert result.substituted == []
+        assert result.unknown == []
 
 
 class TestUseStatement:

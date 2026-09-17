@@ -289,6 +289,209 @@ class TestResultMapping:
         assert wire.columns[0].type_code == TYPE_VAR_STRING
 
 
+class TestColumnTypeInference:
+    """NOVA-26 — the type code must reflect the engine's type, not a guess.
+
+    Clients dispatch on this code to decide the Python/Java object they build,
+    so a ``DECIMAL`` sent as ``TYPE_VAR_STRING`` arrives as ``'1.5'`` and breaks
+    arithmetic. The row comparison in the old docstring — "a wrong guess costs
+    nothing except a client's column-width estimate" — was simply false.
+    """
+
+    @staticmethod
+    def _type_of(value) -> int:
+        """Type code for a column whose sampled values are ``value``.
+
+        ``_column_definition`` expects the column's values across sampled rows,
+        so a bare value is wrapped and a list is taken as the samples.
+        """
+        from app.proxy.executor import _column_definition
+
+        samples = value if isinstance(value, list) else [value]
+        return _column_definition("c", samples).type_code
+
+    def test_decimal_maps_to_newdecimal(self):
+        from decimal import Decimal
+
+        from app.proxy.protocol import TYPE_NEWDECIMAL
+
+        assert self._type_of(Decimal("1.5")) == TYPE_NEWDECIMAL
+
+    def test_date_maps_to_date(self):
+        import datetime
+
+        from app.proxy.protocol import TYPE_DATE
+
+        assert self._type_of(datetime.date(2026, 1, 15)) == TYPE_DATE
+
+    def test_datetime_maps_to_datetime_not_date(self):
+        """``datetime`` subclasses ``date``; the narrower branch must win."""
+        import datetime
+
+        from app.proxy.protocol import TYPE_DATETIME
+
+        assert self._type_of(datetime.datetime(2026, 1, 15, 10, 30)) == TYPE_DATETIME
+
+    def test_timedelta_maps_to_time(self):
+        import datetime
+
+        from app.proxy.protocol import TYPE_TIME
+
+        assert self._type_of(datetime.timedelta(hours=1, minutes=30)) == TYPE_TIME
+
+    def test_time_maps_to_time(self):
+        import datetime
+
+        from app.proxy.protocol import TYPE_TIME
+
+        assert self._type_of(datetime.time(10, 30)) == TYPE_TIME
+
+    def test_float_maps_to_double(self):
+        from app.proxy.protocol import TYPE_DOUBLE
+
+        assert self._type_of(1.5) == TYPE_DOUBLE
+
+    def test_int_maps_to_longlong(self):
+        from app.proxy.protocol import TYPE_LONGLONG
+
+        assert self._type_of(7) == TYPE_LONGLONG
+
+    def test_str_maps_to_var_string(self):
+        from app.proxy.protocol import TYPE_VAR_STRING
+
+        assert self._type_of("x") == TYPE_VAR_STRING
+
+    def test_leading_null_does_not_hide_the_real_type(self):
+        """A null sample must be skipped, not treated as an unknown value.
+
+        ``sample_values`` is one column's values across the sampled rows; a
+        ``NULL`` in the first row is common and must not demote the column.
+        """
+        from decimal import Decimal
+
+        from app.proxy.protocol import TYPE_NEWDECIMAL
+
+        assert self._type_of([None, None, Decimal("1.5")]) == TYPE_NEWDECIMAL
+
+    def test_all_null_column_has_no_type_to_infer(self):
+        from app.proxy.protocol import TYPE_NULL, TYPE_VAR_STRING
+
+        # A VARCHAR is the safe wire default; MySQL itself reports VARCHAR for
+        # an all-NULL expression, so the client sees a string of NULLs.
+        assert self._type_of([None, None]) == TYPE_VAR_STRING
+        assert TYPE_NULL != TYPE_VAR_STRING
+
+
+    def test_mixed_numeric_resultset_keeps_both_types_distinct(self):
+        """The QA case: ``SELECT 1.5 AS a, 2/3 AS b`` in one row.
+
+        Before the fix ``a`` was a string and ``b`` a float; the type must now
+        follow the value the engine produced, not the position in the row.
+        """
+        from decimal import Decimal
+
+        from app.proxy.protocol import TYPE_DOUBLE, TYPE_NEWDECIMAL
+
+        executor = ProxyQueryExecutor(SessionState())
+        wire = executor._to_wire(
+            [
+                QueryResult(
+                    columns=["a", "b"],
+                    rows=[[Decimal("1.5"), 0.6666666666666666]],
+                    row_count=1,
+                )
+            ]
+        )
+        assert wire.columns[0].type_code == TYPE_NEWDECIMAL
+        assert wire.columns[1].type_code == TYPE_DOUBLE
+
+    def test_decimal_values_stay_numeric_text_with_the_right_code(self):
+        """The text is unchanged; only the code that labels it is corrected."""
+        from decimal import Decimal
+
+        from app.proxy.protocol import build_text_row
+
+        executor = ProxyQueryExecutor(SessionState())
+        wire = executor._to_wire(
+            [QueryResult(columns=["d"], rows=[[Decimal("1.5")]], row_count=1)]
+        )
+        assert build_text_row(wire.rows[0], wire.columns) == b"\x031.5"
+
+    def test_bytes_map_to_blob_not_var_string(self):
+        """A binary column must not be labelled as a character type."""
+        from app.proxy.protocol import TYPE_BLOB
+
+        assert self._type_of(b"\x00\x01") == TYPE_BLOB
+
+    def test_unknown_type_still_falls_back_to_var_string(self):
+        """An exotic value (e.g. a JSON wrapper) must not break the response."""
+        from app.proxy.protocol import TYPE_VAR_STRING
+
+        class Exotic:
+            pass
+
+        assert self._type_of(Exotic()) == TYPE_VAR_STRING
+
+
+class TestUserVariableSubstitutionIsWiredIn:
+    """The read path must be connected, not merely available — NOVA-25.
+
+    The unit tests for ``substitute_user_variables`` prove the function works;
+    these prove the executor *calls* it. That distinction is the whole defect:
+    the state was written and nothing read it.
+    """
+
+    async def test_set_then_select_reaches_the_engine_substituted(self, monkeypatch):
+        fake = FakeQueryService()
+        _patch_service(monkeypatch, fake)
+        executor = ProxyQueryExecutor(SessionState())
+
+        # A two-statement script is split by the proxy, so the SELECT is
+        # executed on its own with the stored value spliced in.
+        result = await executor.execute(
+            "SET @x = 'QA_MARKER_12345'; SELECT @x AS val",
+            username="u",
+            connection=object(),
+        )
+
+        assert result.error is None
+        assert len(fake.calls) == 1
+        assert fake.last_sql == "SELECT 'QA_MARKER_12345' AS val"
+
+    async def test_substitution_applies_to_a_separate_later_query(self, monkeypatch):
+        fake = FakeQueryService()
+        _patch_service(monkeypatch, fake)
+        executor = ProxyQueryExecutor(SessionState())
+
+        await executor.execute("SET @threshold = 100", username="u", connection=object())
+        await executor.execute(
+            "SELECT * FROM t WHERE amount > @threshold", username="u", connection=object()
+        )
+
+        assert fake.last_sql == "SELECT * FROM t WHERE amount > 100"
+
+    async def test_stage_reference_is_not_substituted(self, monkeypatch):
+        fake = FakeQueryService()
+        _patch_service(monkeypatch, fake)
+        executor = ProxyQueryExecutor(SessionState())
+
+        await executor.execute(
+            "SELECT * FROM @products.products_new.csv", username="u", connection=object()
+        )
+
+        assert fake.last_sql == "SELECT * FROM @products.products_new.csv"
+
+    async def test_a_literal_that_looks_like_a_reference_is_untouched(self, monkeypatch):
+        fake = FakeQueryService()
+        _patch_service(monkeypatch, fake)
+        executor = ProxyQueryExecutor(SessionState())
+
+        await executor.execute("SET @x = 1", username="u", connection=object())
+        await executor.execute("SELECT '@x' AS s", username="u", connection=object())
+
+        assert fake.last_sql == "SELECT '@x' AS s"
+
+
 class TestShowDatabasesFiltering:
     """``NOVA_SYSTEM`` must not be visible to any client."""
 

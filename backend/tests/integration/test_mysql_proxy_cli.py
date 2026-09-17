@@ -408,3 +408,265 @@ class TestCredentialsStayPrivate:
 
         assert connection.secret_key not in result.output
         assert connection.access_key not in result.output
+
+
+class TestUserVariablesEndToEnd:
+    """NOVA-25 through the wire: ``SET @x = …`` then ``SELECT @x``.
+
+    The QA reproduction is the first test. ``SET @x`` alone always worked — it
+    was the read that failed, with a message about a Nova stage.
+    """
+
+    def test_set_then_select_returns_the_value(self, proxy_server, engine_reachable):
+        """The exact QA command: a marker must survive the round trip."""
+        _, port = proxy_server
+        result = _run_mysql(
+            ["-e", "SET @x = 'QA_MARKER_12345'; SELECT @x AS val"],
+            host=CLIENT_HOST,
+            port=port,
+            database=E2E_DATABASE,
+        )
+
+        assert result.returncode == 0, result.output
+        assert [row[0] for row in result.rows()] == ["QA_MARKER_12345"]
+        assert "not found" not in result.output
+
+    def test_numeric_variable_works_in_arithmetic(self, proxy_server, engine_reachable):
+        """A numeric value must splice in unquoted, so ``1 + 5`` is arithmetic.
+
+        If the value were spliced in quoted, ``1 + '5'`` would still return 6 in
+        MySQL's loose mode, so this asserts the substitution shape through the
+        executor test as well; here it proves the end-to-end path works.
+        """
+        _, port = proxy_server
+        result = _run_mysql(
+            ["-e", "SET @n = 5; SELECT 1 + @n AS total"],
+            host=CLIENT_HOST,
+            port=port,
+            database=E2E_DATABASE,
+        )
+
+        assert result.returncode == 0, result.output
+        assert [row[0] for row in result.rows()] == ["6"]
+
+    def test_variable_survives_across_queries_on_one_connection(
+        self, proxy_server, engine_reachable
+    ):
+        """Two statements in one script share the session state."""
+        _, port = proxy_server
+        result = _run_mysql(
+            ["-e", "SET @marker = 'kept'; SELECT @marker; SELECT @marker"],
+            host=CLIENT_HOST,
+            port=port,
+            database=E2E_DATABASE,
+        )
+
+        assert result.returncode == 0, result.output
+        assert [row[0] for row in result.rows()] == ["kept", "kept"]
+
+    def test_unset_variable_no_longer_reports_a_nova_stage(self, proxy_server, engine_reachable):
+        """An unset variable must not produce a message about a Nova feature."""
+        _, port = proxy_server
+        result = _run_mysql(
+            ["-e", "SELECT @never_set_anywhere AS v"],
+            host=CLIENT_HOST,
+            port=port,
+            database=E2E_DATABASE,
+        )
+
+        assert "Stage" not in result.output
+        assert "not found" not in result.output
+
+    def test_literal_that_looks_like_a_variable_is_untouched(
+        self, proxy_server, engine_reachable
+    ):
+        """``'@x'`` is data and must not be substituted."""
+        _, port = proxy_server
+        result = _run_mysql(
+            ["-e", "SET @x = 'substituted'; SELECT '@x' AS literal"],
+            host=CLIENT_HOST,
+            port=port,
+            database=E2E_DATABASE,
+        )
+
+        assert result.returncode == 0, result.output
+        assert [row[0] for row in result.rows()] == ["@x"]
+
+    def test_stage_query_still_works_with_a_variable_set(self, proxy_server, engine_reachable):
+        """Substitution must not break a genuine ``@stage`` reference."""
+        _, port = proxy_server
+        result = _run_mysql(
+            [
+                "-e",
+                f"SET @unused = 1; SELECT * FROM @{E2E_STAGE}.{E2E_STAGE_FILE} LIMIT 1",
+            ],
+            host=CLIENT_HOST,
+            port=port,
+            database=E2E_DATABASE,
+        )
+
+        assert result.returncode == 0, result.output
+        assert result.rows(), result.output
+
+
+class TestColumnTypeCodes:
+    """NOVA-26 through a real driver: the type code decides the Python object.
+
+    The ``mysql`` CLI cannot see this — ``--batch`` prints every value as text,
+    which is exactly why the defect survived the first round of acceptance
+    testing. A DB-API driver builds its Python values from the type code, so it
+    is the client that proves the fix.
+
+    ``asyncmy`` is used rather than ``pymysql`` because it is already a runtime
+    dependency of this project (``pyproject.toml``), so these tests actually run
+    instead of skipping. The two drivers share the same converter contract — the
+    type code in ``cursor.description`` selects the Python class — which is the
+    property under test.
+    """
+
+    @staticmethod
+    def _query(port: int, sql: str):
+        """Run ``sql`` through asyncmy; return (description, row)."""
+        import asyncmy
+
+        async def _run():
+            conn = await asyncmy.connect(
+                host="127.0.0.1",
+                port=port,
+                user=E2E_USER,
+                password=E2E_PASSWORD,
+                database=E2E_DATABASE,
+            )
+            try:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(sql)
+                    return cursor.description, await cursor.fetchone()
+            finally:
+                conn.close()
+
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_run())
+        finally:
+            loop.close()
+
+    def test_decimal_keeps_its_type_code_and_python_type(self, proxy_server, engine_reachable):
+        from decimal import Decimal
+
+        _, port = proxy_server
+        description, row = self._query(port, "SELECT 1.5 AS dec_col")
+
+        assert description[0][1] == 246  # TYPE_NEWDECIMAL
+        assert isinstance(row[0], Decimal)
+        assert row[0] == Decimal("1.5")
+
+    def test_decimal_supports_client_side_arithmetic(self, proxy_server, engine_reachable):
+        """The business impact QA named: ``'1.5' + 1`` raises TypeError."""
+        from decimal import Decimal
+
+        _, port = proxy_server
+        _, row = self._query(port, "SELECT 1.5 AS dec_col")
+
+        assert isinstance(row[0], Decimal)
+        assert row[0] + 1 == Decimal("2.5")
+
+    def test_date_keeps_its_type_code_and_python_type(self, proxy_server, engine_reachable):
+        import datetime
+
+        _, port = proxy_server
+        description, row = self._query(port, "SELECT CAST('2026-01-15' AS DATE) AS d")
+
+        assert description[0][1] == 10  # TYPE_DATE
+        assert isinstance(row[0], datetime.date)
+
+    def test_integer_column_is_int(self, proxy_server, engine_reachable):
+        _, port = proxy_server
+        description, row = self._query(port, "SELECT 7 AS n")
+
+        assert description[0][1] in (1, 2, 3, 8)  # TINY / SHORT / LONG / LONGLONG
+        assert isinstance(row[0], int)
+        assert row[0] == 7
+
+    def test_double_column_is_double(self, proxy_server, engine_reachable):
+        """A true DOUBLE expression must carry TYPE_DOUBLE, not VAR_STRING.
+
+        ``2.5 + 0.5`` is *decimal* arithmetic on StarRocks and arrives as
+        NEWDECIMAL — the literal spelling of an expression does not determine
+        the engine's type, only its output type does. ``CAST(... AS DOUBLE)``
+        and ``2/3`` are the real DOUBLE cases.
+        """
+        _, port = proxy_server
+        description, row = self._query(port, "SELECT CAST(1.5 AS DOUBLE) AS f")
+
+        assert description[0][1] == 5  # TYPE_DOUBLE
+        assert isinstance(row[0], float)
+
+    def test_float_division_is_double(self, proxy_server, engine_reachable):
+        _, port = proxy_server
+        description, row = self._query(port, "SELECT 2/3 AS f")
+
+        assert description[0][1] == 5  # TYPE_DOUBLE
+        assert isinstance(row[0], float)
+
+    def test_mixed_numeric_row_is_consistent(self, proxy_server, engine_reachable):
+        """``SELECT 1.5 AS a, 2/3 AS b`` must not disagree about types."""
+        from decimal import Decimal
+
+        _, port = proxy_server
+        description, row = self._query(port, "SELECT 1.5 AS a, 2/3 AS b")
+
+        assert description[0][1] == 246  # NEWDECIMAL
+        assert description[1][1] != 253  # not VAR_STRING
+        assert isinstance(row[0], Decimal)
+        assert isinstance(row[1], (float, Decimal))
+
+    def test_string_column_stays_a_string(self, proxy_server, engine_reachable):
+        _, port = proxy_server
+        _, row = self._query(port, "SELECT 'x' AS s")
+
+        assert isinstance(row[0], str)
+
+    def test_proxy_type_codes_match_the_engine(self, proxy_server, engine_reachable):
+        """The same query must describe itself the same way on both ports.
+
+        This is the comparison QA used, as an assertion: direct engine versus
+        proxy, on type code and Python type. The columns cover every type
+        ``_column_definition`` maps.
+
+        Integers are compared by *Python type* rather than by exact type code.
+        The proxy infers a width from the Python value and always reports
+        LONGLONG, while the engine reports the narrowest type that fits (TINY
+        for ``1``); both decode to ``int`` in the client, and the proxy cannot
+        know the engine's declared width because ``QueryResult`` carries only
+        names and values. Widening a reported width is safe — the value is what
+        the client uses — so this is a documented gap rather than a defect.
+        """
+        from app.core.config import settings
+
+        query = (
+            "SELECT 1 AS i, 1.5 AS d, CAST(1.5 AS DOUBLE) AS f, "
+            "CAST('2026-01-15' AS DATE) AS dt, 'x' AS s"
+        )
+        _, port = proxy_server
+        engine_description, engine_row = self._query(
+            settings.STARROCKS_FE_MYSQL_PORT, query
+        )
+        proxy_description, proxy_row = self._query(port, query)
+
+        # Non-integer columns must match on the exact type code.
+        assert proxy_description[1][1] == engine_description[1][1]  # DECIMAL
+        assert proxy_description[2][1] == engine_description[2][1]  # DOUBLE
+        assert proxy_description[3][1] == engine_description[3][1]  # DATE
+        assert proxy_description[4][1] == engine_description[4][1]  # STRING
+
+        # Every column must decode to the same Python class.
+        assert [type(v).__name__ for v in proxy_row] == [
+            type(v).__name__ for v in engine_row
+        ]
+        import datetime
+        from decimal import Decimal
+
+        assert isinstance(proxy_row[1], Decimal)
+        assert isinstance(proxy_row[2], float)
+        assert isinstance(proxy_row[3], datetime.date)
+        assert isinstance(proxy_row[4], str)

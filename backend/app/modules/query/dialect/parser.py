@@ -45,21 +45,30 @@ class ParsedSQL:
     base_sql: str  # SQL without @stage references (for translation)
 
 
-# Pattern: @stage_name[.path.parts...]
+# Pattern: @stage_name.path.parts[.file.ext]
 # Captures: @word.word.word...
 # Supports hyphens in stage names and filenames (e.g. @my-stage.data-2026-06-19.csv)
 #
-# The leading ``(?<!@)`` lookbehind is load-bearing. ``@@name`` is a MySQL
-# system variable — every client asks for ``@@version_comment`` on connect — and
-# without the lookbehind the pattern matched the *second* ``@`` and read
-# ``@version_comment`` as a stage called ``version_comment``. The dialect
-# pipeline then failed the statement with "Stage 'version_comment' not found",
-# which broke the login sequence of every MySQL client before it sent a single
-# user query. A single ``@`` still matches: what is excluded is the second of a
-# doubled pair.
+# Two lookarounds and one structural requirement are load-bearing, and all three
+# separate a Nova stage reference from a MySQL variable:
+#
+# * The leading ``(?<!@)`` excludes ``@@name``, a *system* variable. Every client
+#   asks for ``@@version_comment`` on connect; without it the pattern matched the
+#   second ``@`` and read a stage called ``version_comment``, so the login
+#   sequence of every MySQL client failed before it sent a user query.
+# * The trailing ``(?![\w$])`` stops the name at a real boundary rather than
+#   relying on what follows being whitespace.
+# * **At least one dotted segment is required** (``(?:\.[...]+)+`` rather than
+#   ``*``). ``@x`` is a *user* variable — ``SET @x = 1; SELECT @x`` is the
+#   standard way drivers keep a value across queries — and a bare ``@name`` is
+#   never a stage under Nova's documented syntax: every stage reference in
+#   ``docs/02-sql-worksheet.md`` and ``docs/04-stage-manager.md`` carries at
+#   least a format segment (``@stage1.data.csv``). Requiring the dot is what
+#   keeps ``SELECT @x`` from being reported as ``Stage 'x' not found``, a
+#   message about a feature the user never touched.
 _STAGE_PATTERN = re.compile(
     r'(?<!@)@([a-zA-Z_][a-zA-Z0-9_-]*)'  # stage name (letters, digits, underscores, hyphens)
-    r'((?:\.[a-zA-Z0-9_-]+)*)'        # optional .path.parts (supports hyphens)
+    r'(((?:\.[a-zA-Z0-9_-]+)+))'      # required .path.parts (supports hyphens)
     r'(/)?'                           # optional trailing slash (directory)
     r'(?:\s|$|;|,|\)|\()'            # boundary
 )

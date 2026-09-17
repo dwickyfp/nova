@@ -71,6 +71,79 @@ class TestParser:
         assert result.command_type == CommandType.STAGE_EXPORT
 
 
+class TestStagePatternDoesNotClaimVariables:
+    """A bare ``@name`` is a MySQL variable, not a stage — NOVA-25.
+
+    Nova's stage syntax always carries at least one dotted segment
+    (``@stage1.data.csv``; see ``docs/02-sql-worksheet.md``). Treating a bare
+    ``@name`` as a stage made the dialect engine answer every
+    ``SET @x = 1; SELECT @x`` with ``Stage 'x' not found`` — a message about a
+    feature the user never touched, and the standard way drivers keep a value
+    across queries on one connection.
+
+    ``@stage`` used to match with zero dotted segments, so these cases failed
+    before the pattern required one.
+    """
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT @x",
+            "SELECT 1 + @n",
+            "SELECT @threshold FROM t WHERE amount > @threshold",
+            "SET @my_stage = 1",
+            "SELECT @x AS val",
+        ],
+    )
+    def test_bare_at_name_is_not_a_stage(self, sql):
+        result = parse_sql(sql)
+        assert result.stage_refs == []
+        assert result.command_type == CommandType.REGULAR
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT @@version_comment",
+            "SELECT @@global.x",
+            "SELECT @@session.time_zone",
+        ],
+    )
+    def test_system_variables_are_not_stages(self, sql):
+        """``@@name`` never was a stage; the lookbehind keeps it that way."""
+        assert parse_sql(sql).stage_refs == []
+
+    @pytest.mark.parametrize(
+        ("sql", "stage_name", "file_name"),
+        [
+            ("SELECT * FROM @stage1.data.csv", "stage1", "data.csv"),
+            ("SELECT * FROM @stage1.folder.file.parquet", "stage1", "file.parquet"),
+            ("SELECT * FROM @silver.stage1.data.csv", "silver", "data.csv"),
+            ("SELECT * FROM @DATALAKE.bronze.stage1.data.json", "DATALAKE", "data.json"),
+            ("SELECT * FROM @my-stage.data-2026-06-19.csv", "my-stage", "data-2026-06-19.csv"),
+        ],
+    )
+    def test_documented_stage_forms_still_parse(self, sql, stage_name, file_name):
+        """Requiring a dot must not narrow the real syntax.
+
+        Every form here is taken from ``docs/02-sql-worksheet.md`` and
+        ``docs/04-stage-manager.md``; each carries at least one dotted segment.
+        """
+        result = parse_sql(sql)
+        assert result.command_type == CommandType.STAGE_QUERY
+        assert len(result.stage_refs) == 1
+        assert result.stage_refs[0].stage_name == stage_name
+        assert result.stage_refs[0].file_name == file_name
+
+    def test_a_variable_and_a_stage_in_one_statement(self):
+        """The two must not shadow each other."""
+        result = parse_sql("SELECT @x, * FROM @stage1.data.csv")
+        assert [ref.stage_name for ref in result.stage_refs] == ["stage1"]
+
+    def test_variable_name_does_not_match_a_longer_one(self):
+        """``@xy`` is not ``@x``; the pattern must not truncate at the boundary."""
+        assert parse_sql("SELECT @xy").stage_refs == []
+
+
 # --- Translator Tests ---
 
 
