@@ -73,10 +73,20 @@ it only rewrites references that are really references:
 * `'@x'` inside a string literal is data and is left alone;
 * `-- @x` and `/* @x */` are comments and are left alone;
 * `@@version` is a system variable and is left to the engine;
-* `@stage.data.csv` is a stage reference and is left to the dialect engine.
+* `@stage1.data.csv`, and `@stage1` where the position makes it a stage
+  (`FROM`/`JOIN`/`INTO`/`LIST`), are stage references and are left to the dialect
+  engine — **even when a session variable has the same name.**
 
 A reference with no stored value is left verbatim, and the engine answers for an
 unset variable in its own way (`NULL`).
+
+The last rule is decided by the *same* classifier the dialect engine uses
+(`parser._classify_at_token`), not by the presence of a dot. A name that is both
+a session variable and a stage is ambiguous, and the stage wins: substituting
+the variable would rewrite `SELECT * FROM @stage1` into `SELECT * FROM 'CSV_FILE'`
+and lose the stage, while leaving it lets the client's stage resolve. An earlier
+revision read the stored value first and only checked for a dot afterwards, so
+`SET @stage1 = 1; SELECT * FROM @stage1` substituted — the defect fixed here.
 
 ### Stage or variable: context decides
 

@@ -182,12 +182,36 @@ def _store_value(raw_value: str) -> str:
 
 
 #: A user-variable reference: a single ``@`` followed by a name. The lookbehind
-#: excludes ``@@name`` (a system variable, which the engine resolves) and the
-#: lookahead excludes a trailing ``.`` so stage-like dotted names are left
-#: alone.
+#: excludes ``@@name`` (a system variable, which the engine resolves).
 _USER_VARIABLE_REFERENCE = re.compile(
-    r"(?<!@)@(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?![\w.$])"
+    r"(?<!@)@(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
 )
+
+
+def _parser_classifies_as_stage(statement: str, position: int) -> bool:
+    """Whether ``parser.classify_at_token`` reads ``@name`` at ``position`` as a stage.
+
+    The proxy and the engine must agree on this or one of them rewrites the
+    other's work. ``@x`` in ``SELECT @x`` is a value and must be substituted;
+    ``@stage1`` in ``SELECT * FROM @stage1`` is a stage and must be left alone —
+    the two are spelled identically, so position is the only thing that can
+    separate them, which is exactly what ``parser._classify_at_token`` decides.
+
+    The import is local because ``parser`` pulls in the dialect layer, which the
+    proxy otherwise never touches; keeping it inside the function means a proxy
+    that never sees ``@`` does not pay for it, and the two modules stay
+    independently importable.
+    """
+    try:
+        from app.modules.query.dialect import parser
+    except Exception:
+        # If the dialect layer is unavailable the proxy cannot resolve the
+        # ambiguity; treat it as a variable, which is the pre-existing behaviour.
+        return False
+    stage_match = parser._AT_TOKEN.match(statement, position)
+    if stage_match is None:
+        return False
+    return parser._classify_at_token(statement, stage_match)
 
 
 class SubstitutionResult:
@@ -217,10 +241,15 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
     * ``-- @x`` and ``/* @x */`` — inside a comment, so the engine never sees
       the reference at all;
     * ``@@version`` — a system variable, excluded by the pattern's lookbehind;
-    * ``@stage.col`` — a stage reference, excluded by the trailing-character
-      lookahead. A name that is *both* a session variable and a stage is not
-      resolvable from the text alone; the stage wins, because that is what the
-      engine would otherwise have seen and the ambiguity is the client's.
+    * ``@stage.col`` and ``SELECT * FROM @stage`` — a stage reference, decided by
+      *position* with the same classifier the dialect engine uses
+      (:func:`_parser_classifies_as_stage`). A name that is *both* a session
+      variable and a stage is not resolvable from the text alone; the stage wins,
+      because that is what the engine would otherwise have seen and the ambiguity
+      is the client's. Deciding this by position rather than by a trailing dot is
+      what keeps ``SELECT * FROM @stage1`` and ``LIST FILES @stage1`` from being
+      rewritten into ``SELECT * FROM 'CSV_FILE'`` when the client happens to have
+      a variable of the same name.
 
     A reference with no stored value is left verbatim and reported in
     ``unknown``. Leaving it is deliberate: the engine's own error for an unset
@@ -272,15 +301,21 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
             match = _USER_VARIABLE_REFERENCE.match(statement, index)
             if match:
                 name = match.group("name").lower()
+                if _parser_classifies_as_stage(statement, index):
+                    # ``@stage1`` in ``FROM``/``LIST``/``JOIN``/``INTO`` position,
+                    # or any dotted/slashed ``@stage1.data.csv``: leave it for the
+                    # dialect engine, which is the only thing that can resolve it.
+                    # The stage wins even when a session variable has the same
+                    # name, because this is the same classification the engine is
+                    # about to apply and a substitution here would change what it
+                    # sees.
+                    end = _stage_reference_end(statement, index)
+                    out.append(statement[index:end])
+                    index = end
+                    continue
                 if name in session.user_variables:
                     out.append(session.user_variables[name])
                     substituted.append(name)
-                    index = match.end()
-                    continue
-                if _is_stage_reference(statement, match.end()):
-                    # ``@stage.path`` or ``@stage.file.csv``: leave it for the
-                    # dialect engine, which is the only thing that can resolve it.
-                    out.append(statement[index : match.end()])
                     index = match.end()
                     continue
                 unknown.append(name)
@@ -294,14 +329,22 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
     return SubstitutionResult("".join(out), substituted, unknown)
 
 
-def _is_stage_reference(statement: str, end: int) -> bool:
-    """Whether the token ending at ``end`` continues as a stage path.
+def _stage_reference_end(statement: str, start: int) -> int:
+    """Index just past a stage reference beginning at ``start``.
 
-    ``@stage.data.csv`` is indistinguishable from ``@stage`` followed by
-    ``.data.csv`` by the reference pattern alone, so the caller asks whether a
-    dot follows and lets the stage interpretation win.
+    Consumes the dotted path (and any trailing slash) so the whole
+    ``@stage1.data.csv`` is emitted as one span rather than only ``@stage1``
+    followed by the remaining characters, which would be appended verbatim
+    anyway but would misreport the boundary to anything reading spans.
     """
-    return end < len(statement) and statement[end] == "."
+    try:
+        from app.modules.query.dialect import parser
+    except Exception:
+        return start
+    match = parser._AT_TOKEN.match(statement, start)
+    if match is None:
+        return start
+    return match.end()
 
 
 def _skip_single_quoted(statement: str, start: int) -> int:
