@@ -1,15 +1,29 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CheckCircle2, Database, User, AlertCircle } from 'lucide-react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  Database,
+  SearchX,
+  User,
+} from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import {
+  LoadingLines,
+  RefreshBanner,
+} from '@/components/ui/loading-overlay'
+import { PageHeader } from '@/components/ui/page-header'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
   SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
+import { statusTone } from '../components/status-tone'
 
 type QueryHistoryItem = {
   log_id: string
@@ -135,41 +149,16 @@ export function MonitoringQueryHistory() {
     return sql.slice(0, maxLength).trim() + '...'
   }
 
-  const getStatusBadgeClassName = (status: string) => {
-    const normalizedStatus = status.toUpperCase()
-
-    if (normalizedStatus === 'SUCCESS') {
-      return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
-    }
-
-    if (
-      normalizedStatus === 'FAILED' ||
-      normalizedStatus === 'FAILURE' ||
-      normalizedStatus === 'ERROR'
-    ) {
-      return 'border-transparent bg-red-600 text-white hover:bg-red-600'
-    }
-
-    if (
-      normalizedStatus === 'RUNNING' ||
-      normalizedStatus === 'IN_PROGRESS' ||
-      normalizedStatus === 'PENDING'
-    ) {
-      return 'border-transparent bg-amber-500 text-white hover:bg-amber-500'
-    }
-
-    return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
-  }
+  const hasFilters = Boolean(
+    statusFilter || userFilter || databaseFilter || searchQuery
+  )
 
   return (
     <div className='space-y-6'>
-      {/* Header */}
-      <div>
-        <h3 className='text-lg font-medium'>Query History</h3>
-        <p className='text-sm text-muted-foreground'>
-          Browse and search previously executed queries across all workspaces.
-        </p>
-      </div>
+      <PageHeader
+        title='Query History'
+        description='Browse and search previously executed queries across all workspaces.'
+      />
 
       {/* Filter Bar */}
       <SimpleTableToolbar
@@ -208,16 +197,7 @@ export function MonitoringQueryHistory() {
       {/* Data Table */}
       <SimpleTableViewport>
         {historyQuery.isFetching && !historyQuery.isLoading ? (
-          <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
-            <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
-              <div className='h-1.5 w-full overflow-hidden bg-muted'>
-                <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
-              </div>
-              <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
-                Loading next results...
-              </div>
-            </div>
-          </div>
+          <RefreshBanner label='Loading next results...' />
         ) : null}
         <table className='w-full'>
           <thead>
@@ -248,20 +228,63 @@ export function MonitoringQueryHistory() {
           <tbody>
             {historyQuery.isLoading ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  Loading...
+                <td colSpan={7} className='px-4 py-6'>
+                  <LoadingLines rows={6} />
+                </td>
+              </tr>
+            ) : historyQuery.isError ? (
+              <tr>
+                <td colSpan={7} className='px-4 py-6'>
+                  <EmptyState
+                    variant='error'
+                    icon={AlertCircle}
+                    title='Could not load query history'
+                    description='The monitoring API did not respond. Check the connection and reload.'
+                    action={
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        onClick={() => void historyQuery.refetch()}
+                      >
+                        Retry
+                      </Button>
+                    }
+                  />
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  No queries found
+                <td colSpan={7} className='px-4 py-6'>
+                  <EmptyState
+                    icon={SearchX}
+                    title={
+                      hasFilters
+                        ? 'No queries match these filters'
+                        : 'No queries recorded yet'
+                    }
+                    description={
+                      hasFilters
+                        ? 'Clear the status, user, or database filter to widen the search.'
+                        : 'Query history fills as soon as anyone runs SQL against this workspace.'
+                    }
+                    action={
+                      hasFilters ? (
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          onClick={() => {
+                            setStatusFilter('')
+                            setUserFilter('')
+                            setDatabaseFilter('')
+                            setSearchQuery('')
+                            setPage(1)
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 </td>
               </tr>
             ) : (
@@ -299,15 +322,9 @@ export function MonitoringQueryHistory() {
                       </code>
                     </td>
                     <td className='px-4 py-3'>
-                      <Badge
-                        variant='secondary'
-                        className={cn(
-                          'text-xs font-medium',
-                          getStatusBadgeClassName(item.status)
-                        )}
-                      >
+                      <StatusBadge tone={statusTone(item.status)}>
                         {item.status}
-                      </Badge>
+                      </StatusBadge>
                     </td>
                     <td className='px-4 py-3 text-right text-xs font-medium'>
                       {formatDuration(item.duration_ms)}

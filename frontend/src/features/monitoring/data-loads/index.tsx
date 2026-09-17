@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock3,
   Database,
+  SearchX,
   Table2,
   Upload,
   XCircle,
@@ -15,11 +16,17 @@ import {
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { LoadingLines, RefreshBanner } from '@/components/ui/loading-overlay'
+import { PageHeader } from '@/components/ui/page-header'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
   SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
+import { statusTone } from '../components/status-tone'
 
 type DataLoadItem = {
   label: string
@@ -88,53 +95,15 @@ function truncate(value: string, max: number = 80) {
   return `${value.slice(0, max).trimEnd()}...`
 }
 
-function getStateBadgeClassName(state: string) {
-  const normalizedState = state.toUpperCase()
-
-  if (normalizedState === 'FINISHED') {
-    return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
-  }
-
-  if (
-    normalizedState === 'CANCELLED' ||
-    normalizedState === 'FAILED' ||
-    normalizedState === 'ERROR'
-  ) {
-    return 'border-transparent bg-red-600 text-white hover:bg-red-600'
-  }
-
-  if (
-    normalizedState === 'LOADING' ||
-    normalizedState === 'PENDING' ||
-    normalizedState === 'RUNNING'
-  ) {
-    return 'border-transparent bg-amber-500 text-white hover:bg-amber-500'
-  }
-
-  return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
-}
-
-function getProgressBarClassName(state: string) {
-  const normalizedState = state.toUpperCase()
-
-  if (normalizedState === 'FINISHED') return 'bg-emerald-500'
-  if (
-    normalizedState === 'CANCELLED' ||
-    normalizedState === 'FAILED' ||
-    normalizedState === 'ERROR'
-  ) {
-    return 'bg-red-500'
-  }
-  if (
-    normalizedState === 'LOADING' ||
-    normalizedState === 'PENDING' ||
-    normalizedState === 'RUNNING'
-  ) {
-    return 'bg-amber-500'
-  }
-
-  return 'bg-slate-500'
-}
+/** The progress bar mirrors the status tone so the two never disagree. */
+const PROGRESS_TONE_CLASS = {
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-destructive',
+  info: 'bg-info',
+  neutral: 'bg-muted-foreground',
+  primary: 'bg-primary',
+} as const
 
 export function MonitoringDataLoads() {
   const [page, setPage] = useState(1)
@@ -230,12 +199,10 @@ export function MonitoringDataLoads() {
 
   return (
     <div className='space-y-6'>
-      <div>
-        <h3 className='text-lg font-medium'>Data Loads</h3>
-        <p className='text-sm text-muted-foreground'>
-          Monitor load jobs, progress, and failures in one consistent view.
-        </p>
-      </div>
+      <PageHeader
+        title='Data Loads'
+        description='Monitor load jobs, progress, and failures in one consistent view.'
+      />
 
       <SimpleTableToolbar
         search={searchQuery}
@@ -272,16 +239,7 @@ export function MonitoringDataLoads() {
 
       <SimpleTableViewport>
         {loadsQuery.isFetching && !loadsQuery.isLoading ? (
-          <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
-            <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
-              <div className='h-1.5 w-full overflow-hidden bg-muted'>
-                <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
-              </div>
-              <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
-                Loading data loads...
-              </div>
-            </div>
-          </div>
+          <RefreshBanner label='Loading data loads...' />
         ) : null}
 
         <table className='w-full'>
@@ -326,20 +284,63 @@ export function MonitoringDataLoads() {
           <tbody>
             {loadsQuery.isLoading ? (
               <tr>
-                <td
-                  colSpan={12}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  Loading data loads...
+                <td colSpan={12} className='px-4 py-6'>
+                  <LoadingLines rows={5} />
+                </td>
+              </tr>
+            ) : loadsQuery.isError ? (
+              <tr>
+                <td colSpan={12} className='px-4 py-6'>
+                  <EmptyState
+                    variant='error'
+                    icon={AlertTriangle}
+                    title='Could not load data loads'
+                    description='The monitoring API did not respond. Check the connection and retry.'
+                    action={
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        onClick={() => void loadsQuery.refetch()}
+                      >
+                        Retry
+                      </Button>
+                    }
+                  />
                 </td>
               </tr>
             ) : filteredItems.length === 0 ? (
               <tr>
-                <td
-                  colSpan={12}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  No data loads found
+                <td colSpan={12} className='px-4 py-6'>
+                  <EmptyState
+                    icon={SearchX}
+                    title={
+                      searchQuery || stateFilter || dbFilter || typeFilter
+                        ? 'No loads match these filters'
+                        : 'No load jobs recorded yet'
+                    }
+                    description={
+                      searchQuery || stateFilter || dbFilter || typeFilter
+                        ? 'Clear the state, database, or type filter to widen the search.'
+                        : 'Loads appear here as soon as data is ingested into a table.'
+                    }
+                    action={
+                      searchQuery || stateFilter || dbFilter || typeFilter ? (
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          onClick={() => {
+                            setSearchQuery('')
+                            setStateFilter('')
+                            setDbFilter('')
+                            setTypeFilter('')
+                            setPage(1)
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 </td>
               </tr>
             ) : (
@@ -399,13 +400,7 @@ export function MonitoringDataLoads() {
                       </td>
 
                       <td className='px-4 py-3'>
-                        <Badge
-                          variant='outline'
-                          className={cn(
-                            'gap-1.5 border-transparent text-xs',
-                            getStateBadgeClassName(item.state)
-                          )}
-                        >
+                        <StatusBadge tone={statusTone(item.state)}>
                           {normalizedState === 'FINISHED' ? (
                             <CheckCircle2 className='h-3.5 w-3.5' />
                           ) : null}
@@ -416,7 +411,7 @@ export function MonitoringDataLoads() {
                             <XCircle className='h-3.5 w-3.5' />
                           ) : null}
                           {item.state}
-                        </Badge>
+                        </StatusBadge>
                       </td>
 
                       <td className='px-4 py-3'>
@@ -425,7 +420,7 @@ export function MonitoringDataLoads() {
                             <div
                               className={cn(
                                 'h-full rounded-full transition-all',
-                                getProgressBarClassName(item.state)
+                                PROGRESS_TONE_CLASS[statusTone(item.state)]
                               )}
                               style={{ width: `${progressPct}%` }}
                             />
@@ -454,7 +449,7 @@ export function MonitoringDataLoads() {
 
                       <td className='px-4 py-3 text-center'>
                         {hasError ? (
-                          <AlertTriangle className='mx-auto h-4 w-4 text-red-500' />
+                          <AlertTriangle className='mx-auto h-4 w-4 text-destructive' />
                         ) : (
                           <span className='text-muted-foreground'>—</span>
                         )}
@@ -527,11 +522,11 @@ export function MonitoringDataLoads() {
 
                             {item.error_msg ? (
                               <div>
-                                <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-red-500'>
+                                <p className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-destructive'>
                                   <AlertTriangle className='h-3.5 w-3.5' />
                                   Error Message
                                 </p>
-                                <pre className='overflow-auto rounded-md bg-red-500/10 p-3 text-xs font-mono text-red-500'>
+                                <pre className='overflow-auto rounded-md bg-destructive/10 p-3 text-xs font-mono text-destructive'>
                                   {item.error_msg}
                                 </pre>
                               </div>

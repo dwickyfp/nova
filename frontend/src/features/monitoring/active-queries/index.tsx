@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  Activity,
   AlertCircle,
   AlertTriangle,
   Database,
@@ -10,13 +11,17 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { LoadingLines, RefreshBanner } from '@/components/ui/loading-overlay'
+import { PageHeader } from '@/components/ui/page-header'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
   SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
+import { statusTone } from '../components/status-tone'
 import {
   Dialog,
   DialogContent,
@@ -58,48 +63,12 @@ function truncateText(value: string, maxLength: number = 80) {
   return `${value.slice(0, maxLength).trim()}...`
 }
 
-function getCommandBadgeClassName(command: string) {
-  const normalizedCommand = command.toUpperCase()
-
-  if (normalizedCommand === 'QUERY') {
-    return 'border-transparent bg-sky-600 text-white hover:bg-sky-600'
-  }
-
-  if (normalizedCommand === 'SLEEP') {
-    return 'border-transparent bg-slate-500 text-white hover:bg-slate-500'
-  }
-
-  return 'border-transparent bg-violet-600 text-white hover:bg-violet-600'
-}
-
-function getStateBadgeClassName(state: string) {
-  const normalizedState = state.toUpperCase()
-
-  if (
-    normalizedState.includes('RUN') ||
-    normalizedState.includes('EXEC') ||
-    normalizedState.includes('SEND')
-  ) {
-    return 'border-transparent bg-amber-500 text-white hover:bg-amber-500'
-  }
-
-  if (
-    normalizedState.includes('FINISH') ||
-    normalizedState.includes('DONE') ||
-    normalizedState.includes('OK')
-  ) {
-    return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
-  }
-
-  if (
-    normalizedState.includes('ERROR') ||
-    normalizedState.includes('FAIL') ||
-    normalizedState.includes('KILL')
-  ) {
-    return 'border-transparent bg-red-600 text-white hover:bg-red-600'
-  }
-
-  return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
+/** Command is a classification, not a health state, so it stays informational. */
+function commandTone(command: string) {
+  const normalized = command.toUpperCase()
+  if (normalized === 'QUERY') return 'info' as const
+  if (normalized === 'SLEEP') return 'neutral' as const
+  return 'primary' as const
 }
 
 export function MonitoringActiveQueries() {
@@ -190,12 +159,10 @@ export function MonitoringActiveQueries() {
 
   return (
     <div className='space-y-6'>
-      <div>
-        <h3 className='text-lg font-medium'>Active Queries</h3>
-        <p className='text-sm text-muted-foreground'>
-          View currently running queries and inspect their execution details.
-        </p>
-      </div>
+      <PageHeader
+        title='Active Queries'
+        description='View currently running queries and inspect their execution details.'
+      />
 
       <SimpleTableToolbar
         search={searchQuery}
@@ -226,16 +193,7 @@ export function MonitoringActiveQueries() {
 
       <SimpleTableViewport>
         {isFetching && !isLoading ? (
-          <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
-            <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
-              <div className='h-1.5 w-full overflow-hidden bg-muted'>
-                <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
-              </div>
-              <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
-                Refreshing active queries...
-              </div>
-            </div>
-          </div>
+          <RefreshBanner label='Refreshing active queries...' />
         ) : null}
 
         <table className='w-full'>
@@ -267,20 +225,26 @@ export function MonitoringActiveQueries() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  Loading...
+                <td colSpan={7} className='px-4 py-6'>
+                  <LoadingLines rows={5} />
                 </td>
               </tr>
             ) : pagedQueries.length === 0 ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  No active queries found
+                <td colSpan={7} className='px-4 py-6'>
+                  <EmptyState
+                    icon={Activity}
+                    title={
+                      queries.length > 0
+                        ? 'No active queries match these filters'
+                        : 'Nothing is running right now'
+                    }
+                    description={
+                      queries.length > 0
+                        ? 'Clear the user or database filter to see the full list.'
+                        : 'This view shows queries in flight. It refreshes every 5 seconds.'
+                    }
+                  />
                 </td>
               </tr>
             ) : (
@@ -308,15 +272,9 @@ export function MonitoringActiveQueries() {
                       </div>
                     </td>
                     <td className='px-4 py-3'>
-                      <Badge
-                        variant='secondary'
-                        className={cn(
-                          'text-xs font-medium',
-                          getCommandBadgeClassName(query.command)
-                        )}
-                      >
+                      <StatusBadge tone={commandTone(query.command)}>
                         {query.command}
-                      </Badge>
+                      </StatusBadge>
                     </td>
                     <td className='px-4 py-3 text-sm'>
                       <code className='rounded bg-muted px-1.5 py-0.5 text-xs font-mono'>
@@ -324,15 +282,9 @@ export function MonitoringActiveQueries() {
                       </code>
                     </td>
                     <td className='px-4 py-3'>
-                      <Badge
-                        variant='secondary'
-                        className={cn(
-                          'text-xs font-medium',
-                          getStateBadgeClassName(query.state)
-                        )}
-                      >
+                      <StatusBadge tone={statusTone(query.state)} dot>
                         {query.state}
-                      </Badge>
+                      </StatusBadge>
                     </td>
                     <td className='px-4 py-3 text-right text-xs font-medium'>
                       {formatDuration(query.time ?? 0)}
