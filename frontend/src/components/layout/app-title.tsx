@@ -29,16 +29,9 @@ export function AppTitle() {
               <span className='truncate font-manrope text-lg font-semibold leading-none text-primary'>
                 nova
               </span>
-              <span className='inline-flex h-5 max-w-fit items-center gap-1.5 rounded-md border border-primary/15 bg-primary/5 px-1.5 text-[10px] font-semibold leading-none text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.55)] dark:border-primary/25 dark:bg-primary/10'>
-                <span
-                  className='size-1.5 rounded-full bg-chart-2 shadow-[0_0_0_2px_rgb(20_168_154_/_0.12)]'
-                  aria-hidden='true'
-                />
+              <span className='inline-flex h-5 max-w-fit items-center gap-1.5 rounded-md border border-primary/15 bg-primary/5 px-1.5 text-[10px] font-semibold leading-none text-muted-foreground dark:border-primary/25 dark:bg-primary/10'>
                 <span className='truncate'>
-                  Powered by{' '}
-                  <span className='bg-gradient-to-r from-[#368a98] via-[#368a98] to-[#f6bd1f] bg-clip-text text-transparent'>
-                    StarRocks
-                  </span>
+                  Powered by <span className='text-primary'>StarRocks</span>
                 </span>
               </span>
             </span>
