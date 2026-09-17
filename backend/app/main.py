@@ -72,8 +72,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Failed to register LLM UDFs on startup: %s", e)
 
+    # MySQL protocol proxy. Embedded rather than a second process so the web
+    # service alone is enough to serve port 4406; `python -m app.proxy` runs the
+    # same server standalone. A proxy that cannot bind (port already taken by a
+    # standalone proxy, most likely) must not take the web service down with it.
+    proxy_server = None
+    if settings.PROXY_ENABLED:
+        try:
+            from app.proxy.server import MySQLProxyServer
+
+            proxy_server = MySQLProxyServer()
+            await proxy_server.start()
+        except Exception as e:
+            logger.warning("MySQL proxy did not start: %s", e)
+            proxy_server = None
+
     yield
     # Shutdown
+    if proxy_server is not None:
+        try:
+            await proxy_server.stop()
+        except Exception as e:
+            logger.warning("MySQL proxy did not stop cleanly: %s", e)
     await session_store.close()
     await db.close_system_pool()
 

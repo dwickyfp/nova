@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     STARROCKS_ROOT_USER: str = "root"
     STARROCKS_ROOT_PASSWORD: str = ""
 
+    # --- MySQL protocol proxy ---
+    # Values mirror the ``proxy:`` block in docker/nova.yaml; the defaults here
+    # are what the embedded lifespan uses when nothing overrides them.
+    PROXY_ENABLED: bool = True
+    PROXY_HOST: str = "0.0.0.0"
+    PROXY_PORT: int = 4406
+    PROXY_MAX_CONNECTIONS: int = 100
+    PROXY_CONNECT_TIMEOUT: int = 10
+    PROXY_READ_TIMEOUT: int = 300
+
     # --- Redis (session store) ---
     REDIS_URL: str = "redis://localhost:6379/0"
 

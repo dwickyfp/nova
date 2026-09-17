@@ -610,19 +610,22 @@ partial implementation say so explicitly.
 - [x] Monitoring pages (query history, active queries, audit trail, tasks, query cost, data loads) — `frontend/src/features/monitoring/`, `frontend/src/routes/_authenticated/{query-history,active-query,query-cost,monitoring/*}.tsx`
 - [ ] Dashboards page — `frontend/src/features/dashboard/` exists but is the Home dashboard (5 files); no dashboard CRUD/builder page
 - [ ] Admin Settings page
+### Phase 8 — MySQL Protocol Proxy 🔶
+`backend/app/proxy/` exists and serves a real client. The `mysql` 8.0.46 CLI
+connects to port 4406, authenticates against StarRocks, and runs `SELECT`,
+`SHOW DATABASES`, `USE`, `SET` and `@stage` queries — verified end to end in
+`backend/tests/integration/test_mysql_proxy_cli.py`. Documentation:
+`backend/app/proxy/README.md`.
 
-### Phase 8 — MySQL Protocol Proxy
-Not started. `backend/app/proxy/` does not exist; `docs/arch-07-mysql-proxy.md`
-and `AGENTS.md` document this component as target architecture only. The SQL
-pipeline the proxy would reuse (dialect parse → translate → credential inject)
-does exist under `backend/app/modules/query/dialect/`.
-
-- [ ] TCP listener on port 4406
-- [ ] MySQL wire protocol parser
-- [ ] @stage dialect translation in proxy layer
-- [ ] Credential injection for @stage queries
-- [ ] Audit logging for proxy queries
-- [ ] Connection pooling and session tracking
+- [x] TCP listener on port 4406 — `backend/app/proxy/server.py`; embedded in the FastAPI lifespan (`backend/app/main.py:75`) and runnable standalone via `python -m app.proxy`
+- [x] MySQL wire protocol parser — `backend/app/proxy/protocol.py` (framing, handshake, OK/ERR/EOF, result sets; engine-free)
+- [x] @stage dialect translation in proxy layer — routed through `QueryService.execute_statements` (`backend/app/proxy/executor.py`), so the proxy reuses the pipeline rather than reimplementing it
+- [x] User variables — `SET @x = …` is tracked per connection and `@x` is substituted into later statements (`backend/app/proxy/session.py`); a bare `@name` is no longer claimed as a stage reference (`backend/app/modules/query/dialect/parser.py`)
+- [x] Credential injection for @stage queries — same `QueryService` path; credentials are redacted in results, audit rows and error text
+- [x] Audit logging for proxy queries — every statement lands in `NOVA_SYSTEM.AUDIT_LOG` via `QueryService`
+- [x] Authentication — StarRocks challenge relay (`backend/app/proxy/auth.py`); the proxy never holds a password
+- [ ] Connection pooling and session tracking — not implemented. Each client connection holds one upstream StarRocks session; there is no pool. Per-connection `SET`/`USE` tracking exists (`backend/app/proxy/session.py`), but richer session state is not carried
+- [ ] Prepared statements (`COM_STMT_PREPARE`) — refused with `ER_NOT_SUPPORTED_YET` so drivers fall back to the text protocol
 
 ## Decision Log
 
