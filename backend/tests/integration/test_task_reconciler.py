@@ -128,6 +128,30 @@ async def cleanup_runs(engine_infra):
         await repo.delete_task(task)
 
 
+@pytest_asyncio.fixture
+async def audit_records(monkeypatch, engine_infra):
+    """Capture ``write_audit_log`` so a test can assert the audited action.
+
+    The reconciler audits ``NODE_ABANDONED`` when the heartbeat path settles a
+    lost trace; capturing the call proves the AC #3 audit contract without a
+    separate query.
+    """
+    entries: list[dict] = []
+
+    async def fake_audit(**kwargs):
+        entries.append(kwargs)
+        return "audit-id"
+
+    monkeypatch.setattr(
+        "app.modules.task_orchestration.reconciler.write_audit_log", fake_audit
+    )
+    return {"entries": entries}
+
+
+def _node_actions(audit_records: dict) -> list[str]:
+    return [entry.get("action") for entry in audit_records["entries"]]
+
+
 class TestLostTraceAgainstEngine:
     """Criterion 2 through the durable, archive-independent signal.
 
@@ -139,7 +163,18 @@ class TestLostTraceAgainstEngine:
     engine.
     """
 
-    async def test_missing_native_run_is_abandoned(self, engine_infra, cleanup_runs):
+    async def test_lost_trace_is_abandoned_with_audit(
+        self, engine_infra, cleanup_runs, audit_records
+    ):
+        """AC #2/#3: the heartbeat path settles the node and audits it.
+
+        A node claimed by a worker that then died: the row is running with a
+        heartbeat that never advances. ``scan`` reports it and
+        ``abandon_stale_nodes`` performs the conditional write to ``abandoned``
+        with a ``NODE_ABANDONED`` audit — the durable lost-trace settlement.
+        The negative heartbeat timeout makes the never-stamped row stale
+        immediately without sleeping.
+        """
         suffix = uuid4().hex[:8]
         name = f"lost_{suffix}"
         task = await repo.create_task(
@@ -157,10 +192,6 @@ class TestLostTraceAgainstEngine:
             {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        # A node claimed by a worker that then died: the row is running with a
-        # heartbeat that never advances, so the durable scan reports it. The
-        # heartbeat timeout is set below any real elapsed time so the test is
-        # deterministic without sleeping.
         node = await repo.create_task_run(
             {
                 "graph_run_id": run["id"],
@@ -169,16 +200,25 @@ class TestLostTraceAgainstEngine:
                 "delegated": True,
             }
         )
+        reconciler = Reconciler(repo, heartbeat_timeout_seconds=-1)
 
-        report = await Reconciler(repo, heartbeat_timeout_seconds=-1).scan()
-
+        report = await reconciler.scan()
         assert str(node["id"]) in report.abandoned_task_runs
         assert str(run["id"]) in report.abandoned_graph_runs
 
-    async def test_reconcile_is_idempotent_against_engine(
-        self, engine_infra, cleanup_runs
+        abandoned = await reconciler.abandon_stale_nodes()
+
+        assert str(node["id"]) in {str(row["id"]) for row in abandoned}
+        refreshed = await repo.get_task_run(node["id"])
+        assert refreshed is not None
+        assert refreshed["state"] == "abandoned"
+        assert refreshed["state"] != "success"
+        assert "NODE_ABANDONED" in _node_actions(audit_records)
+
+    async def test_settling_a_lost_trace_is_idempotent(
+        self, engine_infra, cleanup_runs, audit_records
     ):
-        """Criterion 5: a second pass on unchanged state changes nothing."""
+        """Criterion 5: a second pass on the settled row writes nothing."""
         suffix = uuid4().hex[:8]
         name = f"idem_{suffix}"
         task = await repo.create_task(
@@ -206,18 +246,18 @@ class TestLostTraceAgainstEngine:
         )
         reconciler = Reconciler(repo, heartbeat_timeout_seconds=-1)
 
-        first = await reconciler.scan()
-        second = await reconciler.scan()
+        first = await reconciler.abandon_stale_nodes()
+        audit_count = len(audit_records["entries"])
+        second = await reconciler.abandon_stale_nodes()
 
-        assert str(node["id"]) in first.abandoned_task_runs
-        assert second.abandoned_task_runs == first.abandoned_task_runs
-        # The scan is pure reads: the node row is untouched by either pass, so
-        # the caller's conditional abandon-then-re-enqueue stays idempotent.
+        assert str(node["id"]) in {str(row["id"]) for row in first}
+        assert second == []
+        assert len(audit_records["entries"]) == audit_count
         refreshed = await repo.get_task_run(node["id"])
-        assert refreshed is not None and refreshed["state"] == "running"
+        assert refreshed is not None and refreshed["state"] == "abandoned"
 
     async def test_healthy_node_is_never_reported_as_lost(
-        self, engine_infra, cleanup_runs
+        self, engine_infra, cleanup_runs, audit_records
     ):
         """A node whose worker is alive must not be declared lost.
 
@@ -250,10 +290,16 @@ class TestLostTraceAgainstEngine:
             }
         )
 
-        report = await Reconciler(repo, heartbeat_timeout_seconds=3600).scan()
+        reconciler = Reconciler(repo, heartbeat_timeout_seconds=3600)
+        report = await reconciler.scan()
+        abandoned = await reconciler.abandon_stale_nodes()
 
         assert str(node["id"]) not in report.abandoned_task_runs
         assert str(node["id"]) not in report.abandoned_graph_runs
+        assert abandoned == []
+        refreshed = await repo.get_task_run(node["id"])
+        assert refreshed is not None and refreshed["state"] == "running"
+        assert _node_actions(audit_records) == []
 
 
 class TestFrontendConfigRead:
@@ -612,16 +658,16 @@ class TestLostTraceSettlesThroughWorkerService:
     """Criterion 1 + 4: reconcile re-enqueues, and the DAG does not hang."""
 
     async def test_lost_trace_re_enqueues_and_settles_the_graph(
-        self, engine_infra, cleanup_runs
+        self, engine_infra, cleanup_runs, audit_records
     ):
         """A lost trace is settled via the heartbeat path, then re-driven.
 
         This is the restart-safe path: a worker submits a node and dies, so the
-        node's heartbeat stops advancing. The reconciler's durable ``scan``
-        reports it (no engine archive read involved), the graph is re-enqueued
-        from ``NOVA_SYSTEM`` alone, and the worker re-evaluates until the graph
-        settles instead of hanging in ``running`` forever. The native read runs
-        for real against the engine — no ``_ScriptedObserver``.
+        node's heartbeat stops advancing. ``reconcile_once`` abandons the row
+        (audited ``NODE_ABANDONED``) from durable state alone — no engine
+        archive read decides it — then re-enqueues the graph; the worker
+        re-evaluates and the graph settles instead of hanging in ``running``
+        forever. The native read runs for real against the engine.
         """
         from app.modules.task_orchestration.credentials import StaticCredentialProvider
         from app.modules.task_orchestration.execution import DelegateExecutor
@@ -644,7 +690,7 @@ class TestLostTraceSettlesThroughWorkerService:
             {"graph_id": name, "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        await repo.create_task_run(
+        node = await repo.create_task_run(
             {
                 "graph_run_id": run["id"],
                 "task_id": task["id"],
@@ -676,11 +722,18 @@ class TestLostTraceSettlesThroughWorkerService:
 
         await service.reconcile_once()
 
+        # The dead node was abandoned from durable state, and the audit fired.
+        assert "NODE_ABANDONED" in _node_actions(audit_records)
+        # The graph may then re-run the node to success, but it must not remain
+        # hanging in ``running``.
         settled = await repo.get_graph_run(run["id"])
         assert settled is not None
-        # The graph either re-ran the node to success or settled on the
-        # abandoned outcome — either way it must not remain ``running``.
         assert settled["state"] != "running"
+        # Whatever the final state, the original abandoned row was not reported
+        # as success.
+        final_node = await repo.get_task_run(node["id"])
+        assert final_node is not None
+        assert final_node["state"] != "running"
 
 
 class _NullConsumer:

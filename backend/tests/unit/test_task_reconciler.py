@@ -761,9 +761,11 @@ class TestLostTraceSettledByHeartbeat:
 
     The native archive cannot say whether a trace is absent (NOVA-46), so the
     lost trace is settled here instead: ``scan`` reports a ``RUNNING`` node
-    whose worker heartbeat stopped, independent of any engine read. This is the
-    "task was running when the FE/worker died" scenario, and it cannot fire on
-    a healthy in-flight node because the worker keeps stamping its heartbeat.
+    whose worker heartbeat stopped and ``abandon_stale_nodes`` performs the
+    conditional write with ``NODE_ABANDONED`` audit, independent of any engine
+    read. This is the "task was running when the FE/worker died" scenario, and
+    it cannot fire on a healthy in-flight node because the worker keeps stamping
+    its heartbeat.
     """
 
     async def test_stale_heartbeat_is_reported_for_abandonment(self):
@@ -803,6 +805,53 @@ class TestLostTraceSettledByHeartbeat:
         ).scan()
 
         assert report.abandoned_task_runs == []
+
+    async def test_stale_heartbeat_settles_the_node_with_audit(self, audit):
+        """AC #3: the heartbeat path abandons the row, not just reports it."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        node = repo.add_node_run("n1", task_id)
+        repo.stale_task_runs.append(node)
+
+        abandoned = await Reconciler(
+            repo, observer=FakeObserver(), heartbeat_timeout_seconds=120
+        ).abandon_stale_nodes()
+
+        assert [row["id"] for row in abandoned] == ["n1"]
+        assert repo.task_runs["n1"]["state"] == "abandoned"
+        assert [entry["action"] for entry in audit] == ["NODE_ABANDONED"]
+
+    async def test_settling_a_stale_node_is_idempotent(self, audit):
+        """AC #5: a second pass on the same stale row writes nothing."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        node = repo.add_node_run("n1", task_id)
+        repo.stale_task_runs.append(node)
+        reconciler = Reconciler(
+            repo, observer=FakeObserver(), heartbeat_timeout_seconds=120
+        )
+
+        first = await reconciler.abandon_stale_nodes()
+        audit_count = len(audit)
+        second = await reconciler.abandon_stale_nodes()
+
+        assert [row["id"] for row in first] == ["n1"]
+        assert second == []
+        assert len(audit) == audit_count
+        assert repo.task_runs["n1"]["state"] == "abandoned"
+
+    async def test_a_fresh_node_is_never_abandoned(self, audit):
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run("n1", task_id)
+
+        abandoned = await Reconciler(
+            repo, observer=FakeObserver(), heartbeat_timeout_seconds=120
+        ).abandon_stale_nodes()
+
+        assert abandoned == []
+        assert repo.task_runs["n1"]["state"] == "running"
+        assert audit == []
 
 
 class TestConnectionAcquireTolerance:

@@ -707,14 +707,16 @@ engine-wide — on a fresh FE the fresh-FE 1064 on `_statistics_.task_run_histor
 fires for every `task_runs` read while ordinary statements still succeed — so it
 carries no per-task information and no trace verdict may be drawn from it. The
 lost trace is settled instead by the **durable heartbeat path**:
-`Reconciler.scan` abandons a `RUNNING` node whose worker heartbeat lapsed,
-independent of the archive (design §3), which is the "task was running when the
-FE/worker died" scenario AC #2 targets and cannot fire on a healthy in-flight
-node. Connection acquisition is inside the
-observer's guard, so an unreachable engine degrades to `UNKNOWN` instead of
+`Reconciler.abandon_stale_nodes` (driven by `WorkerService.reconcile_once`)
+abandons a `running` node whose worker heartbeat lapsed — a conditional write
+with a `NODE_ABANDONED` audit — from durable `NOVA_SYSTEM` state, independent of
+the archive (design §3). That is the "task was running when the FE/worker died"
+scenario AC #2 targets, and it cannot fire on a healthy in-flight node. `scan`
+stays a pure read that only reports candidates. Connection acquisition is inside
+the observer's guard, so an unreachable engine degrades to `UNKNOWN` instead of
 raising (NOVA-44). Criterion 7 is verified against the live engine, which
 reports `task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
-Thirty-eight unit + ten engine integration tests; the runbook is
+Forty-one unit + eleven engine integration tests; the runbook is
 `HOW_TO_RUN.md` §5. The checklist item above stays unchecked until this PR is
 merged.
 
