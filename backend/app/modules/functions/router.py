@@ -35,10 +35,14 @@ async def list_udfs(
 ):
     """List user-defined functions via SHOW FULL FUNCTIONS."""
     try:
-        functions = await function_service.list_udfs(database=database)
+        functions, databases = await function_service.list_udfs_with_databases(
+            database=database
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list UDFs: {e}")
-    return UDFListResponse(functions=functions, count=len(functions))
+    return UDFListResponse(
+        functions=functions, count=len(functions), databases=databases
+    )
 
 
 @router.post("/udf", response_model=dict, status_code=201)
