@@ -358,7 +358,7 @@ export default function PipesPage() {
               <Textarea
                 id="pipe-sql"
                 rows={4}
-                placeholder="INSERT INTO target SELECT * FROM FILES('s3://bucket/path/')"
+                placeholder="INSERT INTO target SELECT * FROM @stage_name.data.csv"
                 value={form.sql}
                 onChange={(e) => setForm({ ...form, sql: e.target.value })}
               />

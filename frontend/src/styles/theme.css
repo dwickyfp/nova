@@ -11,7 +11,9 @@
   --secondary: oklch(0.968 0.007 247.896);
   --secondary-foreground: oklch(0.208 0.042 265.755);
   --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
+  /* Darkened from oklch(0.554 0.046 257.417) so muted text clears AA on both
+     --background and the warmer --accent surface. */
+  --muted-foreground: oklch(0.532 0.046 257.417);
   --accent: #fff0ed;
   --accent-foreground: #a53126;
   --destructive: oklch(0.577 0.245 27.325);
@@ -23,6 +25,22 @@
     0 1px 2px rgb(15 23 42 / 8%), 0 8px 24px rgb(15 23 42 / 6%);
   --warning: #e89b17;
   --info: #4f7ee8;
+  --success: #14a89a;
+  --danger: var(--destructive);
+
+  /* AA-safe as text on --background in this mode. Base --warning/--info stay
+     usable as fills; these carry the readable-text role. */
+  --warning-strong: #a06b11;
+  --info-strong: #466fcd;
+  --success-strong: #108478;
+
+  /* Surfaces: one token per nesting depth. Opacity variants of --card and
+     --border are not part of the vocabulary. */
+  --surface-1: oklch(0.988 0.002 247.896);
+  --surface-2: oklch(0.997 0.001 247.896);
+  --surface-3: oklch(1 0 0);
+  --surface-border: oklch(0.929 0.013 255.508);
+
   --chart-1: #f05a47;
   --chart-2: #14a89a;
   --chart-3: #e89b17;
@@ -63,6 +81,18 @@
     0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px rgb(0 0 0 / 24%);
   --warning: #f0ad3d;
   --info: #7398ed;
+  --success: #2cc6b6;
+  --danger: var(--destructive);
+
+  --warning-strong: #f0ad3d;
+  --info-strong: #7398ed;
+  --success-strong: #2cc6b6;
+
+  --surface-1: #0e131a;
+  --surface-2: #11161d;
+  --surface-3: #171d26;
+  --surface-border: #28313d;
+
   --chart-1: #f36b5b;
   --chart-2: #2cc6b6;
   --chart-3: #f0ad3d;
@@ -93,8 +123,17 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-danger: var(--danger);
   --color-warning: var(--warning);
+  --color-warning-strong: var(--warning-strong);
   --color-info: var(--info);
+  --color-info-strong: var(--info-strong);
+  --color-success: var(--success);
+  --color-success-strong: var(--success-strong);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-border: var(--surface-border);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
