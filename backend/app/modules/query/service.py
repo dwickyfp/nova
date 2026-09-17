@@ -583,10 +583,16 @@ class QueryService:
                 # ``normalized_sql`` is the user's own text and carries no
                 # injected credential, but it is redacted all the same so every
                 # return path out of this method is uniform.
+                #
+                # ``error`` carries the failure the same way ``execute()`` does:
+                # the statement never reached the engine, so nothing else can
+                # record it, and ``QueryResult.success`` (``error is None``)
+                # would otherwise report a refused translation as a success.
                 return QueryResult(
                     original_sql=sql,
                     executed_sql=normalized_sql,
                     warnings=[f"❌ {e}"],
+                    error=str(e),
                 )
 
         explain_sql = f"EXPLAIN {executed_sql}"
