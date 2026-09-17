@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   CheckCircle,
   Database,
+  SearchX,
   Users,
   Activity,
   ArrowUpDown,
@@ -25,6 +26,7 @@ import {
 } from 'recharts'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
+import { useTheme } from '@/context/theme-provider'
 import {
   Select,
   SelectContent,
@@ -32,13 +34,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import {
+  LoadingLines,
+  LoadingOverlay,
+} from '@/components/ui/loading-overlay'
+import { MetricCard } from '@/components/ui/metric-card'
+import { PageHeader } from '@/components/ui/page-header'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
   SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
+import { statusTone } from '../components/status-tone'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -130,33 +141,31 @@ function formatPeriodLabel(period: string, groupBy: 'hour' | 'day') {
   })
 }
 
-function getChartColors(isDarkMode: boolean) {
-  if (isDarkMode) {
-    return {
-      barTop: '#5da2ff',
-      barBottom: '#2d6cdf',
-      line: '#32d2a4',
-      dotFill: '#0f172a',
-      dotStroke: '#32d2a4',
-      activeDotStroke: '#e5eefc',
-      axis: '#94a3b8',
-      grid: '#334155',
-      tooltipBg: '#111827',
-      tooltipBorder: '#334155',
-    }
-  }
+/**
+ * Recharts needs concrete colour strings, not classes, so the chart reads the
+ * resolved token values off the document instead of carrying its own palette.
+ * That keeps dark mode automatic when a token changes.
+ */
+function readToken(name: string, fallback: string) {
+  if (typeof document === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim()
+  return value || fallback
+}
 
+function getChartColors() {
   return {
-    barTop: '#4f8df7',
-    barBottom: '#2f6fe4',
-    line: '#12b886',
-    dotFill: '#ffffff',
-    dotStroke: '#12b886',
-    activeDotStroke: '#dbe7ff',
-    axis: '#64748b',
-    grid: '#d9e2ec',
-    tooltipBg: '#ffffff',
-    tooltipBorder: '#d9e2ec',
+    barTop: readToken('--chart-1', '#f05a47'),
+    barBottom: readToken('--chart-4', '#4f7ee8'),
+    line: readToken('--chart-2', '#14a89a'),
+    dotFill: readToken('--card', '#ffffff'),
+    dotStroke: readToken('--chart-2', '#14a89a'),
+    activeDotStroke: readToken('--foreground', '#0f172a'),
+    axis: readToken('--muted-foreground', '#64748b'),
+    grid: readToken('--border', '#d9e2ec'),
+    tooltipBg: readToken('--popover', '#ffffff'),
+    tooltipBorder: readToken('--border', '#d9e2ec'),
   }
 }
 
@@ -211,11 +220,11 @@ export function MonitoringQueryCost() {
   const [sortField, setSortField] = useState<SortField>('event_time')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
-    
-  const isDarkMode =
-    typeof document !== 'undefined' &&
-    document.documentElement.classList.contains('dark')
-  const chartColors = getChartColors(isDarkMode)
+  const { resolvedTheme } = useTheme()
+
+  // Tokens resolve to different values per theme, so the chart re-reads them
+  // when the theme flips instead of caching one palette.
+  const chartColors = useMemo(() => getChartColors(), [resolvedTheme])
 
   /* ---- queries ---- */
 
@@ -359,95 +368,73 @@ export function MonitoringQueryCost() {
 
   return (
     <div className='minimal-scrollbar flex h-full min-h-0 flex-col gap-6 overflow-y-auto'>
-      {/* Header */}
-      <div>
-        <h3 className='text-lg font-medium'>Query Cost</h3>
-        <p className='text-sm text-muted-foreground'>
-          Analyze query resource consumption and cost breakdown.
-        </p>
-      </div>
+      <PageHeader
+        title='Query Cost'
+        description='Analyze query resource consumption and cost breakdown.'
+      />
 
-      <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5'>
-        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm'>
-          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
-            <div className='rounded-2xl bg-sky-500/10 p-2.5 text-sky-600 dark:text-sky-300'>
-              <Activity className='h-4.5 w-4.5' />
-            </div>
-            <div className='min-w-0'>
-              <p className='text-sm font-medium text-muted-foreground'>
-                Total Queries
-              </p>
-              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
-                {metrics ? formatNumber(metrics.query_total) : '—'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm'>
-          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
-            <div className='rounded-2xl bg-emerald-500/10 p-2.5 text-emerald-600 dark:text-emerald-300'>
-              <CheckCircle className='h-4.5 w-4.5' />
-            </div>
-            <div className='min-w-0'>
-              <p className='text-sm font-medium text-muted-foreground'>
-                Success Rate
-              </p>
-              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
-                {successRate ? `${successRate}%` : '—'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm'>
-          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
-            <div className='rounded-2xl bg-rose-500/10 p-2.5 text-rose-600 dark:text-rose-300'>
-              <AlertTriangle className='h-4.5 w-4.5' />
-            </div>
-            <div className='min-w-0'>
-              <p className='text-sm font-medium text-muted-foreground'>
-                Error Count
-              </p>
-              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
-                {metrics ? formatNumber(metrics.query_err) : '—'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm'>
-          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
-            <div className='rounded-2xl bg-amber-500/10 p-2.5 text-amber-600 dark:text-amber-300'>
-              <Clock className='h-4.5 w-4.5' />
-            </div>
-            <div className='min-w-0'>
-              <p className='text-sm font-medium text-muted-foreground'>
-                Slow Queries
-              </p>
-              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
-                {metrics ? formatNumber(metrics.slow_query) : '—'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className='rounded-2xl border-border/70 bg-card/85 shadow-sm sm:col-span-2 xl:col-span-1'>
-          <CardContent className='flex min-h-[108px] items-center gap-3 p-5'>
-            <div className='rounded-2xl bg-slate-500/10 p-2.5 text-slate-600 dark:text-slate-300'>
-              <Users className='h-4.5 w-4.5' />
-            </div>
-            <div className='min-w-0'>
-              <p className='text-sm font-medium text-muted-foreground'>
-                Active Connections
-              </p>
-              <p className='mt-0.5 text-3xl font-semibold tracking-tight text-foreground'>
-                {metrics ? formatNumber(metrics.connection_total) : '—'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {metricsQuery.isError ? (
+        <EmptyState
+          variant='error'
+          icon={AlertTriangle}
+          title='Could not load query metrics'
+          description='The monitoring API did not respond. Check the connection and retry.'
+          action={
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => void metricsQuery.refetch()}
+            >
+              Retry
+            </Button>
+          }
+        />
+      ) : (
+        /*
+         * Weight follows the decision: errors and slow queries are what you
+         * act on, totals and connections are context. Six equal cards read as
+         * "nothing here matters".
+         */
+        <div className='grid gap-4 lg:grid-cols-3'>
+          <MetricCard
+            weight='primary'
+            label='Error Count'
+            value={metrics ? formatNumber(metrics.query_err) : '—'}
+            icon={AlertTriangle}
+            tone='danger'
+            hint='Queries that failed in this window'
+          />
+          <MetricCard
+            weight='primary'
+            label='Slow Queries'
+            value={metrics ? formatNumber(metrics.slow_query) : '—'}
+            icon={Clock}
+            tone='warning'
+            hint='Above the slow-query threshold'
+          />
+          <MetricCard
+            weight='primary'
+            label='Success Rate'
+            value={successRate ? `${successRate}%` : '—'}
+            icon={CheckCircle}
+            tone='success'
+            hint={`${metrics ? formatNumber(metrics.query_success) : '—'} of ${metrics ? formatNumber(metrics.query_total) : '—'} succeeded`}
+          />
+          <MetricCard
+            weight='compact'
+            label='Total Queries'
+            value={metrics ? formatNumber(metrics.query_total) : '—'}
+            icon={Activity}
+            tone='info'
+          />
+          <MetricCard
+            weight='compact'
+            label='Active Connections'
+            value={metrics ? formatNumber(metrics.connection_total) : '—'}
+            icon={Users}
+          />
+        </div>
+      )}
 
       <Card className='rounded-2xl border-border/70 bg-card/90 shadow-sm'>
         <CardContent className='p-6 sm:p-7'>
@@ -473,13 +460,34 @@ export function MonitoringQueryCost() {
           </div>
 
           {aggregationQuery.isLoading ? (
-            <div className='flex h-[340px] items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/40 text-sm text-muted-foreground'>
-              Loading chart data…
-            </div>
+            <LoadingOverlay
+              label='Loading chart data'
+              className='min-h-[340px] '
+            />
+          ) : aggregationQuery.isError ? (
+            <EmptyState
+              variant='error'
+              icon={AlertTriangle}
+              title='Could not load chart data'
+              description='The aggregation endpoint did not respond. Check the connection and retry.'
+              className='min-h-[340px] justify-center'
+              action={
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => void aggregationQuery.refetch()}
+                >
+                  Retry
+                </Button>
+              }
+            />
           ) : aggregation.length === 0 ? (
-            <div className='flex h-[340px] items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/40 text-sm text-muted-foreground'>
-              No aggregation data available
-            </div>
+            <EmptyState
+              icon={TrendingUp}
+              title='No activity in this range'
+              description='Nothing ran in the selected hour or day buckets. Widen the grouping or run a query.'
+              className='min-h-[340px] justify-center'
+            />
           ) : (
             <div className='rounded-2xl border border-border/60 bg-background/35 p-3 sm:p-4'>
               <ResponsiveContainer width='100%' height={340}>
@@ -652,20 +660,61 @@ export function MonitoringQueryCost() {
           <tbody>
             {historyQuery.isLoading ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  Loading…
+                <td colSpan={7} className='px-4 py-6'>
+                  <LoadingLines rows={5} />
+                </td>
+              </tr>
+            ) : historyQuery.isError ? (
+              <tr>
+                <td colSpan={7} className='px-4 py-6'>
+                  <EmptyState
+                    variant='error'
+                    icon={AlertTriangle}
+                    title='Could not load cost history'
+                    description='The monitoring API did not respond. Check the connection and retry.'
+                    action={
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        onClick={() => void historyQuery.refetch()}
+                      >
+                        Retry
+                      </Button>
+                    }
+                  />
                 </td>
               </tr>
             ) : sortedItems.length === 0 ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  No cost history found
+                <td colSpan={7} className='px-4 py-6'>
+                  <EmptyState
+                    icon={SearchX}
+                    title={
+                      userFilter || databaseFilter
+                        ? 'No queries match these filters'
+                        : 'No cost history yet'
+                    }
+                    description={
+                      userFilter || databaseFilter
+                        ? 'Clear the user or database filter to widen the search.'
+                        : 'Cost history builds from executed queries. Run SQL to populate it.'
+                    }
+                    action={
+                      userFilter || databaseFilter ? (
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          onClick={() => {
+                            setUserFilter('')
+                            setDatabaseFilter('')
+                            setPage(1)
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 </td>
               </tr>
             ) : (
@@ -716,18 +765,9 @@ export function MonitoringQueryCost() {
                       {(item.rows_affected ?? 0).toLocaleString()}
                     </td>
                     <td className='px-4 py-3'>
-                      <Badge
-                        variant={
-                          item.status === 'SUCCESS' ? 'default' : 'destructive'
-                        }
-                        className={cn(
-                          'text-xs',
-                          item.status === 'SUCCESS' &&
-                            'bg-primary text-primary-foreground hover:bg-primary/90'
-                        )}
-                      >
+                      <StatusBadge tone={statusTone(item.status)}>
                         {item.status}
-                      </Badge>
+                      </StatusBadge>
                     </td>
                   </tr>
                   {expandedRow === item.log_id && (

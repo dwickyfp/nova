@@ -1,15 +1,26 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertCircle, CheckCircle2, Clock, ListTodo } from 'lucide-react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  ListTodo,
+  SearchX,
+} from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { LoadingLines, RefreshBanner } from '@/components/ui/loading-overlay'
+import { PageHeader } from '@/components/ui/page-header'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
   SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
+import { statusTone } from '../components/status-tone'
 
 type TaskRun = {
   query_id: string
@@ -66,24 +77,6 @@ function truncateText(value: string | undefined | null, maxLength: number = 80) 
   if (!value) return '—'
   if (value.length <= maxLength) return value
   return `${value.slice(0, maxLength).trim()}...`
-}
-
-function getStateBadgeClassName(state: string) {
-  const normalizedState = state.toUpperCase()
-
-  if (normalizedState === 'SUCCESS') {
-    return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
-  }
-
-  if (normalizedState === 'FAILED' || normalizedState === 'ERROR') {
-    return 'border-transparent bg-red-600 text-white hover:bg-red-600'
-  }
-
-  if (normalizedState === 'RUNNING' || normalizedState === 'PENDING') {
-    return 'border-transparent bg-amber-500 text-white hover:bg-amber-500'
-  }
-
-  return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
 }
 
 function formatProgress(progress: number | null) {
@@ -149,12 +142,10 @@ export function MonitoringTasks() {
 
   return (
     <div className='space-y-6'>
-      <div>
-        <h3 className='text-lg font-medium'>Tasks</h3>
-        <p className='text-sm text-muted-foreground'>
-          Monitor scheduled and background task runs across the system.
-        </p>
-      </div>
+      <PageHeader
+        title='Tasks'
+        description='Monitor scheduled and background task runs across the system.'
+      />
 
       <SimpleTableToolbar
         search={searchQuery}
@@ -177,16 +168,7 @@ export function MonitoringTasks() {
 
       <SimpleTableViewport>
         {runsQuery.isFetching && !runsQuery.isLoading ? (
-          <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
-            <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
-              <div className='h-1.5 w-full overflow-hidden bg-muted'>
-                <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
-              </div>
-              <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
-                Loading task runs...
-              </div>
-            </div>
-          </div>
+          <RefreshBanner label='Loading task runs...' />
         ) : null}
 
         <table className='w-full'>
@@ -218,20 +200,61 @@ export function MonitoringTasks() {
           <tbody>
             {runsQuery.isLoading ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  Loading...
+                <td colSpan={7} className='px-4 py-6'>
+                  <LoadingLines rows={5} />
+                </td>
+              </tr>
+            ) : runsQuery.isError ? (
+              <tr>
+                <td colSpan={7} className='px-4 py-6'>
+                  <EmptyState
+                    variant='error'
+                    icon={AlertCircle}
+                    title='Could not load task runs'
+                    description='The monitoring API did not respond. Check the connection and retry.'
+                    action={
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        onClick={() => void runsQuery.refetch()}
+                      >
+                        Retry
+                      </Button>
+                    }
+                  />
                 </td>
               </tr>
             ) : filteredRuns.length === 0 ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  No task runs found
+                <td colSpan={7} className='px-4 py-6'>
+                  <EmptyState
+                    icon={SearchX}
+                    title={
+                      searchQuery || stateFilter
+                        ? 'No task runs match this filter'
+                        : 'No task runs recorded yet'
+                    }
+                    description={
+                      searchQuery || stateFilter
+                        ? 'Clear the search or state filter to see every run.'
+                        : 'Scheduled and background task runs appear here once they start.'
+                    }
+                    action={
+                      searchQuery || stateFilter ? (
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          onClick={() => {
+                            setSearchQuery('')
+                            setStateFilter('')
+                            setPage(1)
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 </td>
               </tr>
             ) : (
@@ -268,15 +291,9 @@ export function MonitoringTasks() {
                       {formatTime(run.finish_time)}
                     </td>
                     <td className='px-4 py-3'>
-                      <Badge
-                        variant='secondary'
-                        className={cn(
-                          'text-xs font-medium',
-                          getStateBadgeClassName(run.state)
-                        )}
-                      >
+                      <StatusBadge tone={statusTone(run.state)}>
                         {run.state}
-                      </Badge>
+                      </StatusBadge>
                     </td>
                     <td className='px-4 py-3 text-right text-xs font-medium'>
                       {formatDuration(run.create_time, run.finish_time)}

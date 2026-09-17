@@ -115,10 +115,55 @@ Literal `#rrggbb` dan `#rgb` dilarang di seluruh `src/**`, kecuali
 `src/styles/theme.css` (tempat token didefinisikan) dan nilai monaco yang
 memang bukan CSS.
 
+#### Pengecualian: fallback pembaca token
+
+Hex **diizinkan** kalau ia adalah argumen ke-N (N > 0) dari pemanggilan fungsi
+yang namanya cocok `/^read[A-Za-z]*Token$/` **dan** argumen pertamanya adalah
+literal string yang diawali `--`:
+
+```ts
+readToken('--chart-1', '#f05a47')            // boleh
+readColorToken('--x', 'y', '#d04738')        // boleh
+readToken(someVar, '#d04738')                // dilarang, argumen pertama bukan literal
+readToken('chart-1', '#f05a47')              // dilarang, bukan custom property
+cn('bg-emerald-600', '#d04738')              // dilarang
+`text-[#d04738]`                             // dilarang
+'#d04738'                                    // dilarang
+```
+
+**Kenapa pengecualian ini ada.** `recharts` menerima warna sebagai nilai
+konkret, bukan kelas Tailwind, dan `getComputedStyle` tidak ada di server. Jadi
+fungsi pembaca token **wajib** punya fallback, dan fallback itu wajar berupa
+hex. Tanpa pengecualian, aturan ini menghukum kode yang benar.
+
+**Kenapa berbasis bentuk kode, bukan path berkas.** Pengecualian per-berkas
+(`*/chart-colors.ts`) akan membuat seluruh berkas jadi zona bebas: hex sloppy di
+`className` bisa bersembunyi di dalamnya. Membatasi ke posisi sintaksis yang
+sempit membuat hex hanya sah di dalam pembacaan token, dan tidak bisa dipakai
+untuk hal lain.
+
+#### Jangan pakai `hsl(var(--token))`
+
+Ini justru kelas bug yang aturan ini ada untuk mencegah. Token di `theme.css`
+bernilai `oklch(...)` atau hex, **bukan** triplet HSL. Jadi:
+
+```ts
+// RUSAK. hsl(oklch(...)) bukan CSS yang valid, deklarasinya diabaikan
+// diam-diam dan warna jatuh ke nilai awal SVG.
+fill: 'hsl(var(--muted-foreground))'
+```
+
+Ada 11 situs pola ini di `workspaces/index.tsx` (10) dan `sidebar.tsx` (1),
+semuanya bug laten. Yang benar adalah membaca token lewat `readToken` seperti di
+atas, atau memakai `var(--token)` langsung di CSS, bukan dibungkus `hsl()`.
+
+Catatan penting: gate A2 **tidak** menangkap `hsl(var(--x))` karena tidak ada
+hex di dalamnya. Aturan ini tidak bisa menyelamatkanmu dari pola itu, jadi ini
+larangan yang harus dipegang manusia, bukan mesin.
+
 Saat ini ada 107 hex di `features/`, 43 di antaranya di dalam SVG ilustrasi
-`sign-in-visual.tsx`, 28 di tema Monaco `workspaces/index.tsx`, 20 di
-`query-cost/index.tsx`, dan 12 di `users/index.tsx`. Semuanya masuk daftar
-hutang yang dibersihkan per grup.
+`sign-in-visual.tsx`, 28 di tema Monaco `workspaces/index.tsx`, dan 12 di
+`users/index.tsx`. Semuanya masuk daftar hutang yang dibersihkan per grup.
 
 ### A3. `s3://` dan nama vendor storage dilarang di seluruh `src/**`
 
@@ -135,7 +180,7 @@ hijau dan tidak ada yang bisa merge, jadi hutang itu dicatat sekali di
 
 Aturannya:
 
-- Berkas di daftar baseline **dilewati** oleh gate. 31 berkas terdaftar.
+- Berkas di daftar baseline **dilewati** oleh gate. 24 berkas terdaftar.
 - Semua berkas lain **gagal** saat melanggar, tanpa pengecualian.
 - **Daftar ini tidak boleh ditambah.** Satu-satunya arah perubahan adalah
   menghapus entri saat grup refactor pemiliknya selesai. Menambah entri berarti
@@ -152,6 +197,24 @@ pnpm lint
 
 Pelanggaran baru muncul sebagai `error` dengan nama aturan `nova/semantic-tokens`
 atau `nova/semantic-tokens-features`, dan pesannya menyebut pasal di dokumen ini.
+
+Loji predikat pengecualian A2 diuji terpisah di
+`src/lib/design-system-gate.test.ts` (sembilan kasus, termasuk tiga bentuk yang
+harus gagal). Aturan lengkapnya tidak bisa dijalankan di test runner browser
+karena ESLint tidak bisa di-bundle ke sana; perilaku penuhnya diverifikasi oleh
+`pnpm lint` terhadap berkas nyata.
+
+### Urutan merge PR design system
+
+`theme.css` berubah di lebih dari satu PR, jadi urutannya mengikat:
+
+1. `grup-1-design-system` (aturan, token, gate)
+2. `grup-2-semantic-primitives` (lima primitif)
+3. `grup-3-monitoring-adoption` (adopsi di enam halaman monitoring)
+
+PR berikutnya bergantung pada token yang mendarat di PR sebelumnya. Rebase PR
+lanjutan tanpa mendahulukan yang sebelumnya akan membawa `theme.css` yang
+mengasumsikan keadaan yang belum ada.
 
 ---
 

@@ -9,16 +9,22 @@ import {
   Database,
   FolderOpen,
   LogIn,
+  SearchX,
   User,
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { LoadingLines, RefreshBanner } from '@/components/ui/loading-overlay'
+import { PageHeader } from '@/components/ui/page-header'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
   SimpleTableViewport,
 } from '@/components/data-table/simple-table-controls'
+import { statusTone } from '../components/status-tone'
 
 interface AuditItem {
   log_id: string
@@ -87,40 +93,12 @@ function truncateText(value: string, maxLength: number = 80) {
   return `${value.slice(0, maxLength).trim()}...`
 }
 
-function getEventBadgeClassName(eventType: string) {
-  const normalizedType = eventType.toLowerCase()
-
-  if (normalizedType === 'query') {
-    return 'border-transparent bg-sky-600 text-white hover:bg-sky-600'
-  }
-
-  if (normalizedType === 'workspace') {
-    return 'border-transparent bg-violet-600 text-white hover:bg-violet-600'
-  }
-
-  if (normalizedType === 'login') {
-    return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
-  }
-
-  return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
-}
-
-function getStatusBadgeClassName(status: string) {
-  const normalizedStatus = status.toUpperCase()
-
-  if (normalizedStatus === 'SUCCESS') {
-    return 'border-transparent bg-emerald-600 text-white hover:bg-emerald-600'
-  }
-
-  if (
-    normalizedStatus === 'FAILED' ||
-    normalizedStatus === 'FAILURE' ||
-    normalizedStatus === 'ERROR'
-  ) {
-    return 'border-transparent bg-red-600 text-white hover:bg-red-600'
-  }
-
-  return 'border-transparent bg-slate-600 text-white hover:bg-slate-600'
+/** Event type is a category, not a health state, so it stays informational. */
+function eventTone(eventType: string) {
+  const normalized = eventType.toLowerCase()
+  if (normalized === 'query') return 'info' as const
+  if (normalized === 'workspace') return 'primary' as const
+  return 'neutral' as const
 }
 
 export function MonitoringAuditTrail() {
@@ -209,12 +187,10 @@ export function MonitoringAuditTrail() {
 
   return (
     <div className='space-y-6'>
-      <div>
-        <h3 className='text-lg font-medium'>Audit Trail</h3>
-        <p className='text-sm text-muted-foreground'>
-          Track user actions, schema changes, and access events.
-        </p>
-      </div>
+      <PageHeader
+        title='Audit Trail'
+        description='Track user actions, schema changes, and access events.'
+      />
 
       <SimpleTableToolbar
         search={searchQuery}
@@ -251,16 +227,7 @@ export function MonitoringAuditTrail() {
 
       <SimpleTableViewport>
         {auditQuery.isFetching && !auditQuery.isLoading ? (
-          <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
-            <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
-              <div className='h-1.5 w-full overflow-hidden bg-muted'>
-                <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
-              </div>
-              <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
-                Loading audit events...
-              </div>
-            </div>
-          </div>
+          <RefreshBanner label='Loading audit events...' />
         ) : null}
 
         <table className='w-full'>
@@ -292,20 +259,63 @@ export function MonitoringAuditTrail() {
           <tbody>
             {auditQuery.isLoading ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  Loading...
+                <td colSpan={7} className='px-4 py-6'>
+                  <LoadingLines rows={5} />
+                </td>
+              </tr>
+            ) : auditQuery.isError ? (
+              <tr>
+                <td colSpan={7} className='px-4 py-6'>
+                  <EmptyState
+                    variant='error'
+                    icon={AlertCircle}
+                    title='Could not load the audit trail'
+                    description='The monitoring API did not respond. Check the connection and retry.'
+                    action={
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        onClick={() => void auditQuery.refetch()}
+                      >
+                        Retry
+                      </Button>
+                    }
+                  />
                 </td>
               </tr>
             ) : filteredItems.length === 0 ? (
               <tr>
-                <td
-                  colSpan={7}
-                  className='px-4 py-12 text-center text-sm text-muted-foreground'
-                >
-                  No audit events found
+                <td colSpan={7} className='px-4 py-6'>
+                  <EmptyState
+                    icon={SearchX}
+                    title={
+                      searchQuery || eventType || status || userName
+                        ? 'No events match these filters'
+                        : 'No audit events recorded yet'
+                    }
+                    description={
+                      searchQuery || eventType || status || userName
+                        ? 'Clear the event type, status, or user filter to widen the search.'
+                        : 'Events appear here as soon as someone queries, logs in, or changes a workspace.'
+                    }
+                    action={
+                      searchQuery || eventType || status || userName ? (
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          onClick={() => {
+                            setSearchQuery('')
+                            setEventType('')
+                            setStatus('')
+                            setUserName('')
+                            setPage(1)
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 </td>
               </tr>
             ) : (
@@ -337,16 +347,10 @@ export function MonitoringAuditTrail() {
                         </div>
                       </td>
                       <td className='px-4 py-3'>
-                        <Badge
-                          variant='secondary'
-                          className={cn(
-                            'text-xs font-medium',
-                            getEventBadgeClassName(item.event_type)
-                          )}
-                        >
+                        <StatusBadge tone={eventTone(item.event_type)}>
                           <EventIcon className='h-3 w-3' />
                           {item.event_type}
-                        </Badge>
+                        </StatusBadge>
                       </td>
                       <td className='px-4 py-3 text-sm'>
                         <div className='space-y-1'>
@@ -359,15 +363,9 @@ export function MonitoringAuditTrail() {
                         </div>
                       </td>
                       <td className='px-4 py-3'>
-                        <Badge
-                          variant='secondary'
-                          className={cn(
-                            'text-xs font-medium',
-                            getStatusBadgeClassName(item.status)
-                          )}
-                        >
+                        <StatusBadge tone={statusTone(item.status)}>
                           {item.status}
-                        </Badge>
+                        </StatusBadge>
                       </td>
                       <td className='px-4 py-3 text-right text-xs font-medium'>
                         {formatDuration(item.duration_ms)}
