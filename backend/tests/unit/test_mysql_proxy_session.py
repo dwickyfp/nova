@@ -494,6 +494,52 @@ class TestUserVariableSubstitution:
         assert result.substituted == []
         assert result.unknown == []
 
+    def test_parser_and_substitution_agree_on_every_stage_form(self):
+        """No name the parser calls a stage may be substituted.
+
+        The two layers disagreed once because each derived the rule separately —
+        the parser by position, the proxy by "has a dot" — so a stored variable
+        could shadow a stage the engine would have resolved. Substitution now
+        asks ``parser.is_stage_reference_at``, and this cross-check pins the two
+        together: if either side drifts, a stage name turns up in
+        ``result.substituted`` and the assertion names the statement.
+
+        It is deliberately broader than the unit cases above — it runs the real
+        parser over every stage-introducing form and compares the two answers,
+        rather than re-asserting a list of expected strings.
+
+        The assertion is that no *stage name* appears in ``substituted``. It is
+        not that the statement is returned unchanged: a statement can carry both
+        a stage and a variable (``... WHERE a = @x``), and the variable is
+        supposed to be replaced.
+        """
+        from app.modules.query.dialect.parser import parse_sql
+
+        statements = [
+            "LIST FILES @stage1",
+            "LIST @stage1",
+            "SELECT * FROM @stage1",
+            "SELECT * FROM @stage1.data.csv",
+            "SELECT * FROM @stage1/",
+            "SELECT * FROM @stage1, @stage2",
+            "SELECT * FROM @stage1 AS a, @stage2 AS b",
+            "COPY INTO t FROM @stage1",
+            "COPY INTO @stage1 FROM t",
+            "SELECT * FROM @stage1 WHERE a = @x",
+        ]
+        session = self._session(
+            stage1="'s1'", stage2="'s2'", products="'p'", x="1", a="2"
+        )
+        for sql in statements:
+            stage_names = {ref.stage_name for ref in parse_sql(sql).stage_refs}
+            result = substitute_user_variables(sql, session)
+            shadowed = stage_names.intersection(result.substituted)
+            assert not shadowed, f"{sql}: substituted a stage name {shadowed}"
+            for name in stage_names:
+                assert f"'{name}'" not in result.sql, (
+                    f"{sql}: stage {name!r} was rewritten to its stored value"
+                )
+
 
 class TestUseStatement:
     def test_plain_use(self):

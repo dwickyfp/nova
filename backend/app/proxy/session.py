@@ -189,13 +189,20 @@ _USER_VARIABLE_REFERENCE = re.compile(
 
 
 def _parser_classifies_as_stage(statement: str, position: int) -> bool:
-    """Whether ``parser.classify_at_token`` reads ``@name`` at ``position`` as a stage.
+    """Whether the dialect parser reads ``@name`` at ``position`` as a stage.
 
     The proxy and the engine must agree on this or one of them rewrites the
     other's work. ``@x`` in ``SELECT @x`` is a value and must be substituted;
     ``@stage1`` in ``SELECT * FROM @stage1`` is a stage and must be left alone —
     the two are spelled identically, so position is the only thing that can
-    separate them, which is exactly what ``parser._classify_at_token`` decides.
+    separate them.
+
+    The decision is delegated to ``parser.is_stage_reference_at``, which is the
+    public form of the parser's own rule. An earlier revision reached into
+    ``parser._AT_TOKEN`` and ``parser._classify_at_token``; that worked, but it
+    made the proxy depend on two private internals of another module, so the
+    parser could not reorganise its matcher without breaking the proxy at
+    runtime. The public function is the contract.
 
     The import is local because ``parser`` pulls in the dialect layer, which the
     proxy otherwise never touches; keeping it inside the function means a proxy
@@ -203,15 +210,12 @@ def _parser_classifies_as_stage(statement: str, position: int) -> bool:
     independently importable.
     """
     try:
-        from app.modules.query.dialect import parser
+        from app.modules.query.dialect.parser import is_stage_reference_at
     except Exception:
         # If the dialect layer is unavailable the proxy cannot resolve the
         # ambiguity; treat it as a variable, which is the pre-existing behaviour.
         return False
-    stage_match = parser._AT_TOKEN.match(statement, position)
-    if stage_match is None:
-        return False
-    return parser._classify_at_token(statement, stage_match)
+    return is_stage_reference_at(statement, position)
 
 
 class SubstitutionResult:
@@ -336,15 +340,14 @@ def _stage_reference_end(statement: str, start: int) -> int:
     ``@stage1.data.csv`` is emitted as one span rather than only ``@stage1``
     followed by the remaining characters, which would be appended verbatim
     anyway but would misreport the boundary to anything reading spans.
+
+    Reuses the parser's public classifier rather than its private matcher: the
+    same shape test that decides "is this a stage" also decides where the token
+    ends, and one public entry point keeps both answers consistent.
     """
-    try:
-        from app.modules.query.dialect import parser
-    except Exception:
-        return start
-    match = parser._AT_TOKEN.match(statement, start)
-    if match is None:
-        return start
-    return match.end()
+    from app.modules.query.dialect.parser import stage_reference_end
+
+    return stage_reference_end(statement, start)
 
 
 def _skip_single_quoted(statement: str, start: int) -> int:

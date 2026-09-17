@@ -241,6 +241,46 @@ def _position_is_code(ranges: list[tuple[int, int, str]], position: int) -> bool
     )
 
 
+def is_stage_reference_at(sql: str, position: int) -> bool:
+    """Whether the ``@name`` token starting at ``position`` is a stage reference.
+
+    This is the one place the stage-versus-variable decision is made public, so
+    every layer that has to tell ``@stage1`` from ``@x`` asks here instead of
+    reaching into the matching internals. The proxy's ``SET`` substitution uses
+    it (`substitute_user_variables` in ``app/proxy/session.py``), which is what
+    stops a stored user variable from shadowing a stage the engine would have
+    resolved.
+
+    ``position`` must be the index of the ``@``. A token the pattern does not
+    accept returns ``False``, so a caller can test an arbitrary offset without
+    pre-checking it.
+
+    The rule itself lives in :func:`_classify_at_token`; this wraps it with the
+    token match so callers pass a position rather than a prepared match object.
+    """
+    match = _AT_TOKEN.match(sql, position)
+    if match is None:
+        return False
+    return _classify_at_token(sql, match)
+
+
+def stage_reference_end(sql: str, position: int) -> int:
+    """Index just past the ``@name[.path][/]`` token starting at ``position``.
+
+    The companion to :func:`is_stage_reference_at`: callers that have decided a
+    token *is* a stage still need to know where it ends, so that ``@stage1`` and
+    the ``.data.csv`` that follows it are treated as one span rather than two.
+    Returning ``position`` unchanged when the token does not match keeps the
+    caller's loop making progress without a separate guard.
+
+    ``position`` must be the index of the ``@``.
+    """
+    match = _AT_TOKEN.match(sql, position)
+    if match is None:
+        return position
+    return match.end()
+
+
 def _classify_at_token(sql: str, match: re.Match) -> bool:
     """Whether the ``@name`` at ``match`` is a stage reference.
 
@@ -263,6 +303,9 @@ def _classify_at_token(sql: str, match: re.Match) -> bool:
     of the stage path while ``SELECT * FROM @stage1`` stays in it. The previous
     revision distinguished them by requiring a dot, which also rejected the
     documented bare and directory forms and silently disabled ``LIST``.
+
+    Callers outside this module use :func:`is_stage_reference_at` rather than
+    this match-based form.
 
     The caller is responsible for not calling this on a token that sits inside a
     literal or comment (:func:`parse_sql` filters those out first): the text of

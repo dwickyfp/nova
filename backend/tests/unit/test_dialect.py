@@ -1,5 +1,7 @@
 """Unit tests for @stage SQL dialect — parser, translator, injector, detector."""
 
+import re
+
 import pytest
 
 from app.modules.query.dialect.detector import (
@@ -10,7 +12,9 @@ from app.modules.query.dialect.detector import (
 from app.modules.query.dialect.injector import get_credential_params
 from app.modules.query.dialect.parser import (
     CommandType,
+    is_stage_reference_at,
     parse_sql,
+    stage_reference_end,
 )
 from app.modules.query.dialect.translator import (
     StorageConfig,
@@ -475,6 +479,91 @@ class TestTranslator:
 
     def test_detect_format_unknown_defaults_csv(self):
         assert detect_format_from_filename("data") == "csv"
+
+
+class TestPublicClassificationApi:
+    """``is_stage_reference_at`` / ``stage_reference_end`` are the shared contract.
+
+    The proxy's ``SET`` substitution used to reach into ``_AT_TOKEN`` and
+    ``_classify_at_token``. That worked, but it made another module depend on two
+    private internals, so the matcher could not be reorganised without breaking
+    the proxy at runtime. These functions are the supported entry points, so
+    they get their own tests rather than being exercised only through the proxy.
+    """
+
+    @pytest.mark.parametrize(
+        ("sql", "expected"),
+        [
+            ("SELECT * FROM @stage1", True),
+            ("SELECT * FROM @stage1.data.csv", True),
+            ("SELECT * FROM @stage1/", True),
+            ("SELECT @x", False),
+            ("SELECT 1 + @n", False),
+            # ``@@name`` is a system variable, matched by the lookbehind.
+            ("SELECT @@version", False),
+        ],
+    )
+    def test_classifies_a_token_at_an_offset(self, sql, expected):
+        offset = sql.index("@")
+        if sql[offset : offset + 2] == "@@":
+            offset += 1
+        assert is_stage_reference_at(sql, offset) is expected
+
+    def test_a_bare_reference_with_no_context_is_not_a_stage(self):
+        """Nothing precedes it, so nothing justifies reading it as a stage.
+
+        ``@stage1`` at the head of a statement has no ``FROM``/``LIST`` before
+        it and no dot after it. The classifier declines rather than guessing;
+        ``parse_sql`` is the layer that turns that into "no reference".
+        """
+        assert is_stage_reference_at("@stage1", 0) is False
+        assert is_stage_reference_at("@x", 0) is False
+
+    def test_classifies_at_an_offset_past_a_prefix(self):
+        sql = "SELECT * FROM @stage1 WHERE a = @x"
+        assert is_stage_reference_at(sql, sql.index("@stage1")) is True
+        assert is_stage_reference_at(sql, sql.index("@x")) is False
+
+    def test_a_non_token_offset_is_false_rather_than_an_error(self):
+        """Callers test arbitrary offsets, so a miss must not raise."""
+        assert is_stage_reference_at("SELECT 1", 3) is False
+        assert is_stage_reference_at("SELECT @", 7) is False
+
+    @pytest.mark.parametrize(
+        ("sql", "token", "expected_end"),
+        [
+            # The whole dotted path is one span, not just ``@stage1``.
+            ("@stage1.data.csv", "@stage1", len("@stage1.data.csv")),
+            ("@stage1/", "@stage1", len("@stage1/")),
+            ("@stage1", "@stage1", len("@stage1")),
+        ],
+    )
+    def test_end_covers_the_whole_reference(self, sql, token, expected_end):
+        assert stage_reference_end(sql, sql.index(token)) == expected_end
+
+    def test_end_of_a_non_token_is_the_start(self):
+        """Returning ``start`` keeps a caller's loop making progress."""
+        sql = "SELECT 1"
+        assert stage_reference_end(sql, 3) == 3
+
+    def test_the_api_agrees_with_parse_sql_over_a_range_of_statements(self):
+        """The public predicate must not drift from what ``parse_sql`` reports."""
+        statements = [
+            "SELECT * FROM @stage1",
+            "SELECT * FROM @stage1.data.csv",
+            "SELECT @x",
+            "SELECT 1 + @n",
+            "LIST @stage1",
+            "SELECT * FROM @stage1, @stage2",
+            "SELECT * FROM @stage1 WHERE a = @x",
+        ]
+        for sql in statements:
+            expected = {ref.stage_name for ref in parse_sql(sql).stage_refs}
+            found = set()
+            for match in re.finditer(r"(?<!@)@([A-Za-z_][A-Za-z0-9_]*)", sql):
+                if is_stage_reference_at(sql, match.start()):
+                    found.add(match.group(1))
+            assert found == expected, f"{sql}: {found} != {expected}"
 
 
 class TestBareAndDirectoryStagesReachTranslation:
