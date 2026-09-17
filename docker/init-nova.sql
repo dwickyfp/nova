@@ -178,6 +178,65 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_DASHBOARD_WIDGETS (
 DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
+-- Phase 9 Task Orchestration (NOVA-23) — graph definitions and run history.
+-- Credential-invisible by construction: no password/token/secret/credential
+-- column exists, and wal_marks holds metadata only (partition names, IDs, timestamps).
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASKS (
+  id             VARCHAR(64) NOT NULL,
+  name           VARCHAR(256) NOT NULL,
+  database_name  VARCHAR(128),
+  definition     TEXT,
+  schedule_kind  VARCHAR(32) NOT NULL,
+  schedule_expr  VARCHAR(256),
+  timezone       VARCHAR(64) NOT NULL,
+  when_expr      TEXT,
+  overlap_policy VARCHAR(32),
+  owner_role     VARCHAR(128),
+  created_by     VARCHAR(128),
+  version        BIGINT DEFAULT "1",
+  created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_EDGES (
+  id          VARCHAR(64) NOT NULL,
+  graph_id    VARCHAR(64) NOT NULL,
+  parent_task VARCHAR(256) NOT NULL,
+  child_task  VARCHAR(256) NOT NULL,
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS (
+  id           VARCHAR(64) NOT NULL,
+  graph_id     VARCHAR(64) NOT NULL,
+  trigger_type VARCHAR(32) NOT NULL,
+  state        VARCHAR(32) NOT NULL,
+  wal_marks    TEXT,
+  started_at   DATETIME,
+  finished_at  DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_RUNS (
+  id                 VARCHAR(64) NOT NULL,
+  graph_run_id       VARCHAR(64),
+  task_id            VARCHAR(64),
+  attempt            INT DEFAULT "1",
+  state              VARCHAR(32) NOT NULL,
+  delegated          BOOLEAN DEFAULT "true",
+  starrocks_query_id VARCHAR(128),
+  error_message      TEXT,
+  started_at         DATETIME,
+  finished_at        DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
 -- ═══════════════════════════════════════
 -- ML Schema
 -- ═══════════════════════════════════════
