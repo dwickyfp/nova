@@ -81,6 +81,11 @@ export const TOKEN_READER_NAME = /^read[A-Za-z]*Token$/
  * and getComputedStyle does not exist on the server, so the fallback cannot be
  * removed. Restricting the exemption to that syntactic shape keeps it narrow:
  * the hex still cannot hide inside a className.
+ *
+ * A value built by concatenation (e.g. readToken('--x', '#' + 'd04738')) is
+ * also exempt when it sits directly in that argument slot: the call site is the
+ * only thing that makes the fallback legitimate, and the first argument is
+ * still a literal custom property name.
  */
 export function isTokenFallbackArgument(node) {
   const call = node.parent
@@ -94,6 +99,101 @@ export function isTokenFallbackArgument(node) {
   if (typeof firstArgument.value !== 'string') return false
 
   return firstArgument.value.startsWith('--')
+}
+
+/**
+ * Conservative static string evaluation. It answers only what can be known
+ * from syntax alone, so it cannot false-positive on a value that is genuinely
+ * dynamic:
+ *
+ *  - `null` means "not a statically known string". An Identifier, a call, a
+ *    member access, or a concat with an unknown operand all evaluate to null,
+ *    and null is never matched against a pattern.
+ *  - unknown fragments are not treated as an empty string. A partially
+ *    dynamic value is not reconstructed at all, so `p-2 ${c}` cannot be read
+ *    as the safe literal `p-2` while the palette literal bound to `c` slips
+ *    past — that literal is still caught where it is written.
+ */
+export const UNKNOWN = null
+
+export const staticString = (node) => {
+  if (!node) return UNKNOWN
+
+  switch (node.type) {
+    case 'Literal':
+      return typeof node.value === 'string' ? node.value : UNKNOWN
+
+    case 'TemplateLiteral': {
+      let out = ''
+      for (let i = 0; i < node.quasis.length; i += 1) {
+        out += node.quasis[i].value?.cooked ?? node.quasis[i].value?.raw ?? ''
+        const expression = node.expressions[i]
+        if (!expression) continue
+        const value = staticString(expression)
+        if (value === UNKNOWN) return UNKNOWN
+        out += value
+      }
+      return out
+    }
+
+    case 'BinaryExpression': {
+      if (node.operator !== '+') return UNKNOWN
+      const left = staticString(node.left)
+      const right = staticString(node.right)
+      if (left === UNKNOWN || right === UNKNOWN) return UNKNOWN
+      return left + right
+    }
+
+    case 'CallExpression': {
+      const separator = joinedSeparator(node)
+      if (separator === UNKNOWN) return UNKNOWN
+      const parts = []
+      for (const element of node.callee.object.elements) {
+        if (!element || element.type === 'SpreadElement') return UNKNOWN
+        const value = staticString(element)
+        if (value === UNKNOWN) return UNKNOWN
+        parts.push(value)
+      }
+      return parts.join(separator)
+    }
+
+    default:
+      return UNKNOWN
+  }
+}
+
+/**
+ * Recognises `['a', 'b'].join('-')` and returns the separator, or UNKNOWN for
+ * anything else. The separator itself must be a static string, otherwise the
+ * join result is not knowable.
+ */
+export const joinedSeparator = (node) => {
+  if (node.callee?.type !== 'MemberExpression') return UNKNOWN
+  if (node.callee.computed) return UNKNOWN
+  if (node.callee.property?.name !== 'join') return UNKNOWN
+  if (node.callee.object?.type !== 'ArrayExpression') return UNKNOWN
+
+  const separator = node.arguments?.[0]
+  if (separator === undefined) return ''
+  return staticString(separator)
+}
+
+/**
+ * The concrete strings a value expression denotes, for the gate to test.
+ *
+ * A value assembled purely from literals denotes exactly one string; that is
+ * the case the Literal visitor cannot see, because the palette class or hex
+ * never exists as a single Literal node.
+ *
+ * A value that mixes known text with an unknown fragment denotes no single
+ * string, so this returns nothing for it. It deliberately does not return the
+ * known fragments either: a fragment such as `p-2` is not a value, and
+ * matching fragments in isolation is how a gate starts reporting on strings
+ * the code never builds. The unknown operand is covered where it is written.
+ */
+export const assembledValues = (node) => {
+  const value = staticString(node)
+  return value === UNKNOWN ? [] : [value]
 }
 
 // Selectors cannot see the current filename, so the baseline lives in a rule
@@ -126,12 +226,35 @@ const gate = (checks, { allowTokenFallback = false } = {}) => ({
       }
     }
 
+    // A value assembled from literals is invisible to the Literal visitor: the
+    // palette class never exists as a single Literal node. Reconstructing the
+    // string from syntax closes that, and only that, hole.
+    const testAssembled = (node) => {
+      for (const value of assembledValues(node)) {
+        test(node, value)
+      }
+    }
+
     return {
       Literal(node) {
         test(node, node.value)
       },
       TemplateElement(node) {
         test(node, node.value?.raw)
+      },
+      // Only the outermost expression is evaluated: an inner concat is part of
+      // the parent's reconstructed value, and reporting it separately would
+      // duplicate the diagnostic for one string.
+      'BinaryExpression:exit'(node) {
+        if (node.parent?.type === 'BinaryExpression') return
+        testAssembled(node)
+      },
+      'TemplateLiteral:exit'(node) {
+        testAssembled(node)
+      },
+      'CallExpression[callee.property.name="join"]'(node) {
+        if (node.parent?.type === 'BinaryExpression') return
+        testAssembled(node)
       },
     }
   },
