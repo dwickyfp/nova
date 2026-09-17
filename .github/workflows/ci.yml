@@ -113,31 +113,71 @@ jobs:
       - name: Run integration suite against real StarRocks/Redis/MinIO
         working-directory: backend
         run: |
-          # Runs the whole integration directory rather than `-m engine`.
-          # Nothing under tests/integration is marked `engine` today: the
-          # proxy E2E suite (27 tests, added on main) is unmarked and skips
-          # itself when its own prerequisites are absent. Selecting on a
-          # marker no test carries deselects everything and turns this job
-          # into a green no-op, which is the failure mode this guard exists
-          # to prevent.
+          # Three distinct states, and only one of them is a pass:
           #
-          # Exit 5 ("no tests collected") fails the job if the directory has
-          # test files but none were collected, so a selection mistake cannot
-          # masquerade as success. A directory with no test files at all is a
-          # warning, not a failure — that state is a missing suite, not a
-          # broken gate.
+          #   (a) no test files at all         -> FAIL: missing suite is tracked debt
+          #   (b) files exist, none collected  -> FAIL: a selection or import mistake
+          #   (c) collected, but all skipped   -> FAIL: the engine was never used
+          #
+          # (c) is why this guard counts skips. pytest exits 0 when every test
+          # skips, so a suite that never reached StarRocks would report green —
+          # a vacuous pass, which is worse than a red failure: a red job gets
+          # investigated, a green one ships. `-rs` prints every skip reason, so
+          # "nothing ran" comes with the reason attached.
+          #
+          # The suite is selected by directory rather than `-m engine` for now:
+          # no test under tests/integration carries the marker yet, so a marker
+          # filter would deselect everything. The marker goes in with the tests
+          # that use it, after the rebase that brings the proxy suite onto this
+          # branch.
           set +e
-          uv run pytest tests/integration -v
+          uv run pytest tests/integration -v -rs --junit-xml=integration.xml
           status=$?
           set -e
-          if [ "$status" -eq 5 ]; then
-            if [ -n "$(find tests/integration -name 'test_*.py' -print -quit)" ]; then
-              echo "::error::test files exist but none were collected"
-              exit 1
-            fi
-            echo "::warning::no integration tests present yet"
-            exit 0
+
+          if [ ! -f integration.xml ]; then
+            # pytest died before writing a report (bad option, collection
+            # crash, interpreter error). Surface the exit code rather than
+            # reading a missing file as "no tests".
+            echo "::error::pytest produced no report (exit $status); see the log above"
+            exit "${status:-1}"
           fi
+
+          read -r collected skipped failures errors <<<"$(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("integration.xml").getroot()
+          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+          totals = {"tests": 0, "skipped": 0, "failures": 0, "errors": 0}
+          for suite in suites:
+              for key in totals:
+                  totals[key] += int(suite.get(key, 0))
+          print(totals["tests"], totals["skipped"], totals["failures"], totals["errors"])
+          PY
+          )"
+
+          echo "collected=$collected skipped=$skipped failures=$failures errors=$errors"
+
+          # (a) and (b): nothing collected. Which message applies is decided by
+          # whether test files exist, so the two states stay distinguishable
+          # rather than collapsing into one.
+          if [ "$collected" -eq 0 ]; then
+            if [ -n "$(find tests/integration -name 'test_*.py' -print -quit)" ]; then
+              echo "::error::test files exist but none were collected — a selection or import mistake, not a missing suite"
+            else
+              echo "::error::L3 suite missing — tests/integration holds no test files. Tracked debt (NOVA-28); do not clear this without adding the suite."
+            fi
+            exit 1
+          fi
+
+          # (c): collected, but every one skipped. The engine was not used.
+          # pytest exits 0 here, so this is the only thing standing between a
+          # suite that never ran and a green job.
+          if [ "$skipped" -eq "$collected" ]; then
+            echo "::error::all $collected collected tests skipped — the engine was never used. See the -rs reasons above; this is not a pass."
+            exit 1
+          fi
+
           exit "$status"
 
       - name: Dump compose logs on failure
