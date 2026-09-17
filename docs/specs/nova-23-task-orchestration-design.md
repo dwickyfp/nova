@@ -2,7 +2,7 @@
 
 > Design decisions for cron, DAG, SQL-defined tasks, stream triggers, and a
 > scheduler/worker engine separate from the FastAPI backend.
-> Status: **decisions taken, pending human approval on three product items.**
+> Status: **decisions taken; E1–E3 confirmed 2026-09-17; Phase 9a in progress.**
 > Every constraint marked *verified* was probed against the live
 > `starrocks/fe-ubuntu:4.1.1` instance on 2026-09-17, not read from docs.
 
@@ -369,10 +369,11 @@ queryable, and multi-FE leader failover (only single-FE restart has been observe
 9a is the vertical slice that makes the rest real. 9b is the user-visible surface.
 9c is the feature the user asked for that the engine does not provide.
 
-### Still needs a human decision
+### Previously human-owned, now decided
 
-These shape the user-visible surface or the authorization model, so they are
-raised rather than decided silently:
+These shaped the user-visible surface or the authorization model and were
+confirmed on 2026-09-17. They are recorded here with their original framing so the
+rationale survives; they are no longer open questions.
 
 1. **E1 — confirm the SQL surface.** D9.3 recommends `CREATE TASK … AFTER …` over
    `CREATE DAG … STEP …`. This is the user's SQL, so it needs a yes. Note this is a
