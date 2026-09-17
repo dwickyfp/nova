@@ -11,8 +11,11 @@ Pipeline:
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
+
+import asyncmy
 
 from app.common.audit import write_audit_log
 from app.common.sql_guard import (
@@ -36,6 +39,8 @@ from app.modules.query.dialect.translator import (
     translate_stage_query,
 )
 from app.modules.query.repository import QueryRepository, QueryResult
+
+logger = logging.getLogger(__name__)
 
 
 class QueryService:
@@ -62,6 +67,7 @@ class QueryService:
         session_id: str | None = None,
         confirm_destructive: bool = False,
         file_id: str | None = None,
+        connection: asyncmy.Connection | None = None,
     ) -> QueryResult:
         """Execute SQL with full @stage dialect pipeline.
 
@@ -86,13 +92,33 @@ class QueryService:
         # blind to everything after the first `;` — `SELECT 1; DROP TABLE t`
         # would sail past both the ACCOUNTADMIN patterns and the destructive
         # confirmation check, and the DROP would then execute for real.
+        #
+        # A refusal is an *event*, not just an exception: `DROP ROLE
+        # ACCOUNTADMIN` is the most security-relevant thing a client can attempt
+        # through this pipeline, and AGENTS.md requires every action to reach
+        # NOVA_SYSTEM.AUDIT_LOG. Without the audit call below, the pre-engine
+        # refusals left no trace at all while engine failures were recorded as
+        # ERROR — so "no ERROR rows" did not mean "no failed attempts".
         statements = split_sql_statements(normalized_sql) or [normalized_sql]
-        for statement in statements:
-            guard_sql(statement)
-            if is_destructive_sql(statement) and not confirm_destructive:
-                raise ForbiddenSQLError(
-                    "Destructive SQL requires confirmation before execution."
-                ) from None
+        try:
+            for statement in statements:
+                guard_sql(statement)
+                if is_destructive_sql(statement) and not confirm_destructive:
+                    raise ForbiddenSQLError(
+                        "Destructive SQL requires confirmation before execution."
+                    ) from None
+        except ForbiddenSQLError as exc:
+            await self._audit_engine_result(
+                status="ERROR",
+                sql=sql,
+                username=username,
+                database=database,
+                schema=schema,
+                session_id=session_id,
+                file_id=file_id,
+                error_message=str(exc),
+            )
+            raise
 
         # Nova ML DDL is handled by the Python ML engine, not sent to StarRocks.
         if is_create_ml_model(normalized_sql):
@@ -127,6 +153,22 @@ class QueryService:
                 # built by the repository, so this is the only place the failure
                 # can be recorded. ``error`` (not ``warnings``) is what the
                 # router reads for ``success``.
+                #
+                # "The only place the failure can be recorded" is why the audit
+                # row is written here too: the engine is never called, so the
+                # catch-all around the repository below cannot see this. A
+                # rejected ``@stage`` reference is a refused attempt like any
+                # other and belongs in the log for the same reason.
+                await self._audit_engine_result(
+                    status="ERROR",
+                    sql=sql,
+                    username=username,
+                    database=database,
+                    schema=schema,
+                    session_id=session_id,
+                    file_id=file_id,
+                    error_message=str(e),
+                )
                 return QueryResult(
                     original_sql=sql,
                     executed_sql=normalized_sql,
@@ -166,7 +208,14 @@ class QueryService:
                     executed_sql = re.sub(r"FILES\(([^)]+)\)", _inject, executed_sql)
 
         # 5. Execute
-        password = decrypt_password(encrypted_password)
+        #
+        # ``connection`` is an already-authenticated engine session supplied by
+        # the MySQL proxy, which relays StarRocks' own challenge and therefore
+        # never holds a password (see ``app/proxy/auth.py``). Only the
+        # connection-opening path needs the plaintext, so the decrypt is skipped
+        # when one was injected — otherwise an empty ``encrypted_password``
+        # would raise ``InvalidToken`` before the statement ever ran.
+        password = "" if connection is not None else decrypt_password(encrypted_password)
 
         # The statement sent to the engine carries real storage credentials —
         # that is unavoidable, FILES() needs them. Everything derived from it
@@ -187,6 +236,7 @@ class QueryService:
                 database=database,
                 role=role,
                 max_rows=max_rows,
+                connected=connection,
             )
             result.original_sql = sql
             result.executed_sql = redacted_sql
@@ -232,6 +282,61 @@ class QueryService:
             )
             raise
 
+    async def _audit_engine_result(
+        self,
+        *,
+        status: str,
+        sql: str,
+        username: str,
+        database: str | None,
+        schema: str | None,
+        session_id: str | None,
+        file_id: str | None,
+        error_message: str,
+    ) -> None:
+        """Record a statement that never reached the engine.
+
+        The two paths that use this — the guard refusing a statement and the
+        ``@stage`` translation failing — both return or raise *before* the
+        repository call, so the success/exception audit pair further down
+        ``execute`` never runs for them. Without this, a refused
+        ``DROP ROLE ACCOUNTADMIN`` left no row at all: audit showed engine
+        failures as ``status=ERROR`` and pre-engine refusals as nothing, so the
+        absence of an ERROR row did not mean the absence of a failed attempt.
+
+        ``rewritten_sql`` is passed explicitly as ``None``: nothing was
+        executed, so there is no rewritten form to report. Passing it rather
+        than omitting it keeps the row's shape identical to every other query
+        row, which is what a consumer selecting the column expects.
+
+        The write is **best-effort**. It runs on the failure path, so a failure
+        to *record* a refusal must not replace the refusal: without the guard a
+        broken audit sink would turn a precise "ACCOUNTADMIN role cannot be
+        dropped" into an unrelated pool error, and the client would lose the
+        reason its statement was rejected. The caller re-raises the original
+        exception regardless.
+        """
+        try:
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="execute",
+                object_type="sql",
+                object_name=(database or "") if database else "workspace",
+                status=status,
+                sql_text=sql,
+                rewritten_sql=None,
+                error_message=error_message,
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+        except Exception:
+            logger.exception(
+                "Could not write the audit row for a pre-engine rejection (user=%r)", username
+            )
+
     async def execute_statements(
         self,
         sql: str,
@@ -244,6 +349,7 @@ class QueryService:
         session_id: str | None = None,
         confirm_destructive: bool = False,
         file_id: str | None = None,
+        connection: asyncmy.Connection | None = None,
     ) -> list[QueryResult]:
         """Split SQL into statements and execute each sequentially.
 
@@ -267,6 +373,7 @@ class QueryService:
                     session_id=session_id,
                     confirm_destructive=confirm_destructive,
                     file_id=file_id,
+                    connection=connection,
                 )
                 results.append(result)
             except Exception as exc:
