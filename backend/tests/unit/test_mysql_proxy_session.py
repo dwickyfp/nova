@@ -545,6 +545,20 @@ class TestDollarInVariableNames:
         assert result.sql == "SELECT 1"
         assert result.substituted == ["x$abc"]
 
+
+class TestLiteralAndCommentSafety:
+    """Text that only looks like a reference must survive untouched.
+
+    Split out from ``TestUserVariableSubstitution`` so the tokenizer rules and
+    the ``$`` name rules are read separately.
+    """
+
+    @staticmethod
+    def _session(**values: str) -> SessionState:
+        session = SessionState()
+        session.user_variables = dict(values)
+        return session
+
     def test_escaped_quote_in_a_literal_does_not_end_the_literal(self):
         """A naive scanner would treat the ``\\'`` as the closing quote."""
         session = self._session(x="1")
