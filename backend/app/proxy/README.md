@@ -160,6 +160,13 @@ error, not as a wrong-password failure.
   statement therefore fails with the engine's `LIST` syntax error. Browse-stage
   is a Nova-side feature that needs its own implementation; until then the
   documented syntax is recognised and refused rather than misinterpreted.
+
+  One known wart inside that dead end: `translate_stage_query` substitutes only
+  the `@stage1` text, so the written-out `LIST FILES @stage1` becomes
+  `LIST FILES FILES(...)` — the literal `FILES` keyword is left in place. It
+  costs nothing today because the statement cannot execute either way, and it is
+  the translator's business rather than the parser's. It is recorded here so the
+  `LIST` implementation finds it instead of rediscovering it.
 * **`@stage1/folder/x.csv` (slash paths) and globs (`@stage1.data/*.csv`) are
   not detected.** Both are listed as open defects in `README.md` (SQL dialect),
   and both predate the proxy.
