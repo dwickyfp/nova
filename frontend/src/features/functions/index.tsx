@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { api } from '@/lib/api-client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,35 +10,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { SimpleTableToolbar, SimpleTableViewport } from '@/components/data-table/simple-table-controls'
 import { Plus, Trash2, Code2, ChevronDown, ChevronRight } from 'lucide-react'
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface BuiltinFunction {
-  name: string
-  category: string
-  signature: string
-  return_type: string
-  description: string
-}
-
-interface UserDefinedFunction {
-  name: string
-  database: string
-  function_type: string
-  args: string
-  return_type: string
-  body: string
-}
-
-interface BuiltinResponse {
-  functions: BuiltinFunction[]
-  categories: string[]
-}
-
-interface UDFResponse {
-  functions: UserDefinedFunction[]
-  databases: string[]
-}
+import {
+  createUDF,
+  deleteUDF,
+  fetchBuiltinFunctions,
+  fetchUDFs,
+  type UserDefinedFunction,
+} from './api'
 
 type Tab = 'builtin' | 'udf'
 
@@ -50,9 +27,9 @@ function BuiltinFunctionsTab() {
   const [category, setCategory] = useState('all')
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['functions', 'builtin'],
-    queryFn: () => api.get<BuiltinResponse>('/functions/builtin'),
+    queryFn: fetchBuiltinFunctions,
   })
 
   const categories = data?.categories ?? []
@@ -84,8 +61,8 @@ function BuiltinFunctionsTab() {
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
             {categories.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
+              <SelectItem key={c.name} value={c.name}>
+                {c.name} ({c.count})
               </SelectItem>
             ))}
           </SelectContent>
@@ -111,10 +88,20 @@ function BuiltinFunctionsTab() {
                 </td>
               </tr>
             )}
-            {!isLoading && filtered.length === 0 && (
+            {isError && (
+              <tr>
+                <td colSpan={5} className="px-3 py-8 text-center text-destructive">
+                  Could not load built-in functions: {error instanceof Error ? error.message : 'request failed'}.
+                  Retry by reloading the page.
+                </td>
+              </tr>
+            )}
+            {!isLoading && !isError && filtered.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">
-                  No functions found.
+                  {data?.functions?.length
+                    ? 'No function matches the current search and category filter.'
+                    : 'The engine returned no built-in functions.'}
                 </td>
               </tr>
             )}
@@ -193,7 +180,7 @@ function CreateUDFDialog({
 
   const mutation = useMutation({
     mutationFn: () =>
-      api.post('/functions/udf', {
+      createUDF({
         name,
         database,
         function_type: functionType,
@@ -303,9 +290,9 @@ function UDFTab() {
   const [dbFilter, setDbFilter] = useState('all')
   const [createOpen, setCreateOpen] = useState(false)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['functions', 'udf'],
-    queryFn: () => api.get<UDFResponse>('/functions/udf'),
+    queryFn: fetchUDFs,
   })
 
   const databases = data?.databases ?? []
@@ -315,8 +302,7 @@ function UDFTab() {
   }, [data?.functions, dbFilter])
 
   const deleteMutation = useMutation({
-    mutationFn: (fn: UserDefinedFunction) =>
-      api.delete(`/functions/udf/${fn.database}/${fn.name}`),
+    mutationFn: (fn: UserDefinedFunction) => deleteUDF(fn),
     onSuccess: (_res, fn) => {
       queryClient.invalidateQueries({ queryKey: ['functions', 'udf'] })
       toast.success(`Function "${fn.name}" deleted`)
@@ -369,10 +355,20 @@ function UDFTab() {
                 </td>
               </tr>
             )}
-            {!isLoading && filtered.length === 0 && (
+            {isError && (
+              <tr>
+                <td colSpan={6} className="px-3 py-8 text-center text-destructive">
+                  Could not load user-defined functions: {error instanceof Error ? error.message : 'request failed'}.
+                  Retry by reloading the page.
+                </td>
+              </tr>
+            )}
+            {!isLoading && !isError && filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
-                  No user-defined functions found.
+                  {data?.functions?.length
+                    ? 'No function in the selected database.'
+                    : 'No user-defined functions exist yet. Create one with Create UDF.'}
                 </td>
               </tr>
             )}
