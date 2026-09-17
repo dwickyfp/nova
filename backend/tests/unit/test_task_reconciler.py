@@ -322,6 +322,57 @@ class TestFrontendConfigParsing:
         assert parse_consecutive_failures(None) is None
 
 
+class TestEngineObserverToleratesUnavailableEngine:
+    async def test_read_runs_returns_unknown_when_conn_acquire_fails(self, monkeypatch):
+        """The engine going away is tolerated, not raised, at the observer.
+
+        The failure mode is connection *acquisition* (``system_conn``), which
+        sits above ``read_latest_native_runs``'s own try. A direct caller of
+        ``Reconciler.reconcile_native`` must still get ``UNKNOWN`` and no write,
+        matching criterion 7.
+        """
+        import app.modules.task_orchestration.reconciler as reconciler_module
+        from app.modules.task_orchestration.reconciler import EngineNativeObserver
+
+        class _Boom:
+            async def __aenter__(self):
+                raise RuntimeError("FE unavailable")
+
+            async def __aexit__(self, *exc):
+                return False
+
+        monkeypatch.setattr(reconciler_module.db, "system_conn", lambda: _Boom())
+        runs = await EngineNativeObserver().read_runs(["A", "B"])
+
+        assert {name: run.state for name, run in runs.items()} == {
+            "A": NativeState.UNKNOWN,
+            "B": NativeState.UNKNOWN,
+        }
+
+    async def test_reconcile_native_returns_unknown_when_engine_is_gone(self, monkeypatch):
+        """End to end: a dead engine yields an UNKNOWN report, never a raise."""
+        import app.modules.task_orchestration.reconciler as reconciler_module
+
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run("n1", task_id)
+
+        class _Boom:
+            async def __aenter__(self):
+                raise RuntimeError("FE unavailable")
+
+            async def __aexit__(self, *exc):
+                return False
+
+        monkeypatch.setattr(reconciler_module.db, "system_conn", lambda: _Boom())
+
+        report = await Reconciler(repo, heartbeat_timeout_seconds=120).reconcile_native()
+
+        assert report.unknown == ["A"]
+        assert report.advanced == []
+        assert repo.task_runs["n1"]["state"] == "running"
+
+
 class TestNoRunningNodes:
     async def test_no_running_nodes_reads_no_engine(self):
         """No in-flight work means no engine round trip, no config read."""

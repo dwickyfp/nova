@@ -74,8 +74,21 @@ class EngineNativeObserver:
         return await read_native_config()
 
     async def read_runs(self, task_names: list[str]) -> dict[str, NativeRun]:
-        async with db.system_conn() as conn:
-            return await read_latest_native_runs(conn, task_names)
+        if not task_names:
+            return {}
+        try:
+            async with db.system_conn() as conn:
+                return await read_latest_native_runs(conn, task_names)
+        except Exception as exc:
+            logger.warning(
+                "could not read native task states for %d tasks: %s",
+                len(task_names),
+                exc,
+            )
+            return {
+                name: NativeRun(task_name=name, state=NativeState.UNKNOWN)
+                for name in task_names
+            }
 
 
 @dataclass

@@ -142,6 +142,56 @@ class TestFrontendConfigRead:
         assert config.available is False
         assert config.max_task_consecutive_fail_count is None
 
+    async def test_read_runs_tolerates_unavailable_engine(self, engine_infra, monkeypatch):
+        """The ``read_runs`` arm of criterion 7, against a real engine fixture.
+
+        The reported defect was that only ``read_native_config`` wrapped the
+        connection acquisition: ``read_runs`` let an unavailable engine raise out
+        of ``reconcile_native``. The node row must survive and be reported
+        ``UNKNOWN``. The engine is made unavailable at the acquire boundary
+        because a reachable-but-paused engine still answers the pool.
+        """
+        import app.modules.task_orchestration.reconciler as reconciler_module
+
+        suffix = uuid4().hex[:8]
+        name = f"gone_{suffix}"
+        task = await repo.create_task(
+            {
+                "name": name,
+                "timezone": "UTC",
+                "definition": "INSERT INTO t SELECT 1",
+                "database_name": "NOVA_SYSTEM",
+                "schedule_kind": "manual",
+            },
+            created_by=SR_USER,
+        )
+        cleanup_runs["task"].append(task["id"])
+        run = await repo.create_graph_run(
+            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        )
+        cleanup_runs["graph"].append(run["id"])
+        node = await repo.create_task_run(
+            {
+                "graph_run_id": run["id"],
+                "task_id": task["id"],
+                "state": "running",
+                "delegated": True,
+            }
+        )
+
+        def _dead_engine():
+            raise RuntimeError("(2003, \"Can't connect to MySQL server\")")
+
+        monkeypatch.setattr(reconciler_module.db, "system_conn", _dead_engine)
+        report = await Reconciler(repo).reconcile_native()
+
+        assert name in report.unknown
+        assert report.advanced == []
+        assert report.lost_traces == []
+        refreshed = await repo.get_task_run(node["id"])
+        assert refreshed is not None
+        assert refreshed["state"] == "running"
+
 
 class TestLostTraceAgainstEngine:
     """Criterion 2: an absent native trace is explicit, never success."""
