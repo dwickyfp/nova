@@ -14,7 +14,6 @@
     "src/features/dashboard/components/analytics-chart.tsx",
     "src/features/dashboard/components/overview.tsx",
     "src/features/dashboard/index.tsx",
-    "src/features/database-explorer/index.tsx",
     "src/features/ml-models/models-tab.tsx",
     "src/features/pipes/index.tsx",
     "src/features/roles/index.tsx",

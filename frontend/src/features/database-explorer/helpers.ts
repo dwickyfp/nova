@@ -1,0 +1,282 @@
+import {
+  ArrowRightLeft,
+  Box,
+  Database,
+  Eye,
+  FolderOpen,
+  FolderTree,
+  Layers3,
+  Sigma,
+  Table2,
+} from 'lucide-react'
+import type {
+  CatalogInfo,
+  DatabaseObjectsResponse,
+  ExplorerNode,
+  ExplorerNodeType,
+} from './types'
+
+export function formatBytes(bytes: number | null): string {
+  if (bytes == null || bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+export function stripBackticks(value: string | null): string {
+  if (!value) return '—'
+  return value.replace(/`/g, '')
+}
+
+export function formatModel(model: string | null): string {
+  if (!model) return 'Unknown'
+  return model
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+// ── Icons ─────────────────────────────────────────────────────
+
+export function getNodeIcon(type: ExplorerNodeType) {
+  switch (type) {
+    case 'catalog': return FolderTree
+    case 'database': return Database
+    case 'group': return FolderOpen
+    case 'table': return Table2
+    case 'view': return Eye
+    case 'materialized_view': return Layers3
+    case 'function': return Sigma
+    case 'pipe': return ArrowRightLeft
+    case 'stage': return Box
+  }
+}
+
+export function getNodeTypeLabel(type: ExplorerNodeType) {
+  switch (type) {
+    case 'materialized_view': return 'Materialized View'
+    default: return type.charAt(0).toUpperCase() + type.slice(1)
+  }
+}
+
+// ── Tree utilities ────────────────────────────────────────────
+
+export function filterTree(nodes: ExplorerNode[], query: string): ExplorerNode[] {
+  if (!query) return nodes
+  const results: ExplorerNode[] = []
+  for (const node of nodes) {
+    const children = node.children ? filterTree(node.children, query) : undefined
+    const matchesSelf =
+      node.label.toLowerCase().includes(query) ||
+      getNodeTypeLabel(node.type).toLowerCase().includes(query)
+    if (matchesSelf || (children?.length ?? 0) > 0) {
+      results.push({ ...node, children })
+    }
+  }
+  return results
+}
+
+export function findNodeById(nodes: ExplorerNode[], id: string): ExplorerNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    if (node.children) {
+      const found = findNodeById(node.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+// ── Build catalog root node from API data ─────────────────────
+
+export function buildCatalogTree(catalog: CatalogInfo): ExplorerNode {
+  return {
+    id: `catalog-${catalog.name}`,
+    label: catalog.name === 'default_catalog' ? 'Nova Catalog' : catalog.name,
+    type: 'catalog',
+    path: [catalog.name === 'default_catalog' ? 'Nova Catalog' : catalog.name],
+    metadata: [
+      { label: 'Catalog type', value: catalog.type },
+      { label: 'Databases', value: String(catalog.databases.length) },
+      ...(catalog.comment ? [{ label: 'Comment', value: catalog.comment }] : []),
+    ],
+    children: catalog.databases.map((db) => ({
+      id: `db-${db}`,
+      label: db,
+      type: 'database' as ExplorerNodeType,
+      path: [catalog.name === 'default_catalog' ? 'Nova Catalog' : catalog.name, db],
+      database: db,
+      metadata: [],
+      // Placeholder child to make database nodes appear as expandable
+      children: [{
+        id: `db-${db}-loading`,
+        label: 'Loading...',
+        type: 'group' as ExplorerNodeType,
+        path: [catalog.name === 'default_catalog' ? 'Nova Catalog' : catalog.name, db],
+        database: db,
+        metadata: [],
+      }],
+    })),
+  }
+}
+
+export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNode[] {
+  const db = data.database
+  const catalogPath = 'Nova Catalog'
+  const children: ExplorerNode[] = []
+
+  const emptyNode = (parentId: string, label: string): ExplorerNode => ({
+    id: `${parentId}-empty`,
+    label: 'No Objects Found',
+    type: 'group' as ExplorerNodeType,
+    path: [catalogPath, db, label],
+    database: db,
+    metadata: [],
+    children: [],
+  })
+
+  // Tables group
+  children.push({
+    id: `${db}-tables`,
+    label: 'Tables',
+    type: 'group',
+    path: [catalogPath, db, 'Tables'],
+    database: db,
+    metadata: [{ label: 'Count', value: String(data.tables.length) }],
+    children: data.tables.length > 0
+      ? data.tables.map((t) => ({
+          id: `${db}-table-${t.name}`,
+          label: t.name,
+          type: 'table' as ExplorerNodeType,
+          path: [catalogPath, db, 'Tables', t.name],
+          database: db,
+          metadata: [
+            { label: 'Model', value: formatModel(t.table_model) },
+            { label: 'Engine', value: t.engine || 'StarRocks' },
+            ...(t.row_count != null ? [{ label: 'Rows', value: String(t.row_count) }] : []),
+            ...(t.data_size != null ? [{ label: 'Size', value: formatBytes(t.data_size) }] : []),
+            ...(t.create_time ? [{ label: 'Created', value: t.create_time.split('T')[0] }] : []),
+          ],
+        }))
+      : [emptyNode(`${db}-tables`, 'Tables')],
+  })
+
+  // Views group
+  children.push({
+    id: `${db}-views`,
+    label: 'Views',
+    type: 'group',
+    path: [catalogPath, db, 'Views'],
+    database: db,
+    metadata: [{ label: 'Count', value: String(data.views.length) }],
+    children: data.views.length > 0
+      ? data.views.map((v) => ({
+          id: `${db}-view-${v.name}`,
+          label: v.name,
+          type: 'view' as ExplorerNodeType,
+          path: [catalogPath, db, 'Views', v.name],
+          database: db,
+          metadata: [
+            ...(v.definer ? [{ label: 'Definer', value: v.definer }] : []),
+            ...(v.is_updatable ? [{ label: 'Updatable', value: v.is_updatable }] : []),
+          ],
+        }))
+      : [emptyNode(`${db}-views`, 'Views')],
+  })
+
+  // MVs group
+  children.push({
+    id: `${db}-mvs`,
+    label: 'Materialized Views',
+    type: 'group',
+    path: [catalogPath, db, 'Materialized Views'],
+    database: db,
+    metadata: [{ label: 'Count', value: String(data.materialized_views.length) }],
+    children: data.materialized_views.length > 0
+      ? data.materialized_views.map((m) => ({
+          id: `${db}-mv-${m.name}`,
+          label: m.name,
+          type: 'materialized_view' as ExplorerNodeType,
+          path: [catalogPath, db, 'Materialized Views', m.name],
+          database: db,
+          metadata: [
+            ...(m.refresh_type ? [{ label: 'Refresh', value: m.refresh_type }] : []),
+            { label: 'Active', value: m.is_active == null ? 'Unknown' : m.is_active ? 'Yes' : 'No' },
+            ...(m.last_refresh_state ? [{ label: 'Last refresh', value: m.last_refresh_state }] : []),
+            ...(m.table_rows != null ? [{ label: 'Rows', value: String(m.table_rows) }] : []),
+          ],
+        }))
+      : [emptyNode(`${db}-mvs`, 'Materialized Views')],
+  })
+
+  // Functions group
+  children.push({
+    id: `${db}-functions`,
+    label: 'Functions',
+    type: 'group',
+    path: [catalogPath, db, 'Functions'],
+    database: db,
+    metadata: [{ label: 'Count', value: String(data.functions.length) }],
+    children: data.functions.length > 0
+      ? data.functions.map((f) => ({
+          id: `${db}-fn-${f.name}`,
+          label: f.name,
+          type: 'function' as ExplorerNodeType,
+          path: [catalogPath, db, 'Functions', f.name],
+          database: db,
+          metadata: [
+            ...(f.routine_type ? [{ label: 'Type', value: f.routine_type }] : []),
+            ...(f.definer ? [{ label: 'Definer', value: f.definer }] : []),
+          ],
+        }))
+      : [emptyNode(`${db}-functions`, 'Functions')],
+  })
+
+  // Pipes group
+  children.push({
+    id: `${db}-pipes`,
+    label: 'Pipes',
+    type: 'group',
+    path: [catalogPath, db, 'Pipes'],
+    database: db,
+    metadata: [{ label: 'Count', value: String(data.pipes.length) }],
+    children: data.pipes.length > 0
+      ? data.pipes.map((p) => ({
+          id: `${db}-pipe-${p.name}`,
+          label: p.name,
+          type: 'pipe' as ExplorerNodeType,
+          path: [catalogPath, db, 'Pipes', p.name],
+          database: db,
+          metadata: [
+            ...(p.state ? [{ label: 'State', value: p.state }] : []),
+            ...(p.target_table ? [{ label: 'Target', value: p.target_table }] : []),
+            ...(p.load_status ? [{ label: 'Load status', value: p.load_status }] : []),
+          ],
+        }))
+      : [emptyNode(`${db}-pipes`, 'Pipes')],
+  })
+
+  // Stages group
+  children.push({
+    id: `${db}-stages`,
+    label: 'Stages',
+    type: 'group',
+    path: [catalogPath, db, 'Stages'],
+    database: db,
+    metadata: [{ label: 'Count', value: String(data.stages.length) }],
+    children: data.stages.length > 0
+      ? data.stages.map((s) => ({
+          id: `${db}-stage-${s.name}`,
+          label: s.name,
+          type: 'stage' as ExplorerNodeType,
+          path: [catalogPath, db, 'Stages', s.name],
+          database: db,
+          metadata: [
+            ...(s.storage_connection ? [{ label: 'Connection', value: s.storage_connection }] : []),
+            ...(s.base_prefix ? [{ label: 'Prefix', value: s.base_prefix }] : []),
+          ],
+        }))
+      : [emptyNode(`${db}-stages`, 'Stages')],
+  })
+
+  return children
+}
