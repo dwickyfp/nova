@@ -386,6 +386,8 @@ NOVA_SYSTEM
 | Use overflow-x-scroll | Use overflow-x-auto |
 | Write Java/Spring Boot | Python only (FastAPI) |
 
+**Build-tooling carve-out (NOVA-17, 2026-09-17):** the row above governs **application code**. A Java toolchain is permitted **at build/CI time only** for parser generation — currently `antlr-4.13.2`, used to regenerate Nova's SQL parser from `StarRocks.g4`/`StarRocksLex.g4`. The rule that matters is unchanged: **no JVM in the runtime or request path**, and the generated parser is committed as Python. See the Decision Log in `README.md`.
+
 ---
 
 ## Dependencies
