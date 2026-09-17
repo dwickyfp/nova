@@ -82,8 +82,5 @@ async def get_user_connection(user: dict = Depends(get_current_user)):
                 await cur.execute("SHOW TABLES")
     """
     password = decrypt_password(user["encrypted_password"])
-    conn = await db.user_conn(user["username"], password)
-    try:
+    async with db.user_conn(user["username"], password) as conn:
         yield conn
-    finally:
-        conn.close()
