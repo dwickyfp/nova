@@ -118,4 +118,32 @@ rm -f "$CSV"
 echo "== verify =="
 fe_sql -e "SHOW BACKENDS" | grep -q . && echo "  backends: present"
 fe_sql -e "SELECT 1" >/dev/null && echo "  query path: ok"
+
+# Assert the stage is visible through the app's own config path, not merely
+# present as a row. The proxy suite's CSV pre-read looks the stage up in
+# NOVA_SYSTEM.CONFIG_STAGES joined against the storage connection, and a row
+# that cannot be resolved there yields untuned rows rather than an error —
+# which showed up as an unrelated shape assertion in test_ac3. Failing here
+# instead names the real cause at the point it can still be fixed.
+stage_count="$(fe_sql -N -B -e "SELECT COUNT(*) FROM NOVA_SYSTEM.CONFIG_STAGES WHERE name = 'products'")"
+[ "$stage_count" = "1" ] || {
+  echo "::error::stage 'products' is not registered in NOVA_SYSTEM.CONFIG_STAGES (count=$stage_count)"
+  exit 1
+}
+echo "  stage row: products present"
+
+# The object must be readable at the exact key the stage resolves to, via the
+# same host-side endpoint boto3 uses. Reading it back with the already-pulled
+# mc image proves both the upload and the endpoint agreement before the suite
+# depends on them.
+stage_key="NOVA_ANALYTICS/public/products/products_new.csv"
+if docker run --rm --network host \
+     -e MC_HOST_probe="http://minioadmin:minioadmin@127.0.0.1:${S3_PORT}" \
+     "$MC_IMAGE" stat "probe/stages/${stage_key}" >/dev/null 2>&1; then
+  echo "  stage object: readable over the host endpoint"
+else
+  echo "::error::stage object not readable at the host endpoint http://127.0.0.1:${S3_PORT}/stages/${stage_key}"
+  exit 1
+fi
+
 echo "seed complete"
