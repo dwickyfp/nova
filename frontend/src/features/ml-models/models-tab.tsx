@@ -43,7 +43,6 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api-client'
-import { cn } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -108,23 +107,7 @@ const ALGORITHMS: { value: Algorithm; label: string; description: string }[] = [
   { value: 'svm', label: 'SVM', description: 'Support vector machine' },
 ]
 
-const MODEL_TYPE_COLORS: Record<string, string> = {
-  classification:
-    'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
-  regression:
-    'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
-}
 
-const ALGORITHM_COLORS: Record<string, string> = {
-  linear: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
-  logistic: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
-  decision_tree: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-  random_forest: 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20',
-  gradient_boost: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
-  knn: 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20',
-  svm: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
-  auto: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
-}
 
 const emptyTrainForm = {
   model_name: '',
@@ -361,16 +344,16 @@ export function ModelsTab() {
         </div>
         <div className='flex items-center gap-2'>
           <Badge variant='secondary' className='gap-1 font-mono text-xs'>
-            <CheckCircle2 className='size-3 text-emerald-500' />
+            <CheckCircle2 className='size-3 text-success-strong' />
             {readyCount}/{models.length} ready
           </Badge>
           <Badge variant='outline' className='text-[10px] font-normal' style={{}}>
-            <span className={cn(MODEL_TYPE_COLORS.classification, 'rounded px-1')}>
+            <span className='rounded border-border bg-muted px-1 text-muted-foreground'>
               {classificationCount} classification
             </span>
           </Badge>
           <Badge variant='outline' className='text-[10px] font-normal'>
-            <span className={cn(MODEL_TYPE_COLORS.regression, 'rounded px-1')}>
+            <span className='rounded border-border bg-muted px-1 text-muted-foreground'>
               {regressionCount} regression
             </span>
           </Badge>
@@ -523,10 +506,7 @@ export function ModelsTab() {
                     <td className='px-4 py-3'>
                       <Badge
                         variant='outline'
-                        className={cn(
-                          'text-[10px] font-normal',
-                          MODEL_TYPE_COLORS[model.model_type]
-                        )}
+                        className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
                       >
                         {model.model_type === 'classification'
                           ? 'Classification'
@@ -536,10 +516,7 @@ export function ModelsTab() {
                     <td className='px-4 py-3'>
                       <Badge
                         variant='outline'
-                        className={cn(
-                          'text-[10px] font-normal',
-                          ALGORITHM_COLORS[model.algorithm ?? 'auto']
-                        )}
+                        className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
                       >
                         {getAlgorithmLabel(model.algorithm ?? 'auto')}
                       </Badge>
@@ -553,7 +530,7 @@ export function ModelsTab() {
                       {model.latest_status === 'ready' ? (
                         <Badge
                           variant='secondary'
-                          className='gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                          className='gap-1 border-success/25 bg-success/10 text-success-strong'
                         >
                           <CheckCircle2 className='size-3' />
                           Ready
@@ -912,10 +889,7 @@ export function ModelsTab() {
                   <p>
                     <Badge
                       variant='outline'
-                      className={cn(
-                        'text-[10px] font-normal',
-                        MODEL_TYPE_COLORS[detailDialog.model_type]
-                      )}
+                      className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
                     >
                       {detailDialog.model_type}
                     </Badge>
@@ -926,10 +900,7 @@ export function ModelsTab() {
                   <p>
                     <Badge
                       variant='outline'
-                      className={cn(
-                        'text-[10px] font-normal',
-                        ALGORITHM_COLORS[detailDialog.algorithm ?? 'auto']
-                      )}
+                      className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
                     >
                       {getAlgorithmLabel(detailDialog.algorithm ?? 'auto')}
                     </Badge>

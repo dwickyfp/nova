@@ -268,8 +268,8 @@ export function RoleDetailPage({ name }: { name: string }) {
                     variant='secondary'
                     className={
                       detail.is_protected
-                        ? 'border-transparent bg-amber-600 text-xs text-white hover:bg-amber-600'
-                        : 'border-transparent bg-emerald-600 text-xs text-white hover:bg-emerald-600'
+                        ? 'border-warning/25 bg-warning/10 text-xs text-warning-strong hover:bg-warning/15'
+                        : 'border-success/25 bg-success/10 text-xs text-success-strong hover:bg-success/15'
                     }
                   >
                     {detail.is_protected ? 'Protected' : 'Not Protected'}
@@ -412,7 +412,7 @@ export function RoleDetailPage({ name }: { name: string }) {
                           variant='secondary'
                           className={
                             priv.IS_GRANTABLE?.toUpperCase() === 'YES'
-                              ? 'border-transparent bg-emerald-600 text-xs text-white hover:bg-emerald-600'
+                              ? 'border-success/25 bg-success/10 text-xs text-success-strong hover:bg-success/15'
                               : 'border-transparent bg-muted text-xs text-muted-foreground hover:bg-muted'
                           }
                         >

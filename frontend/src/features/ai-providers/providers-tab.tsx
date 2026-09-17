@@ -94,11 +94,6 @@ const MODEL_TYPES: { value: ModelType; label: string }[] = [
   { value: 'embedding', label: 'Embedding' },
 ]
 
-const PROVIDER_TYPE_COLORS: Record<ProviderType, string> = {
-  openai: 'text-emerald-500',
-  anthropic: 'text-orange-500',
-  openai_compatible: 'text-blue-500',
-}
 
 const emptyProviderForm = {
   name: '',
@@ -527,8 +522,7 @@ export function ProvidersTab() {
                       <div className='flex items-center gap-2'>
                         <Bot
                           className={cn(
-                            'size-4 transition-transform',
-                            PROVIDER_TYPE_COLORS[provider.type],
+                            'size-4 text-muted-foreground transition-transform',
                             expandedProvider === provider.id && 'rotate-90'
                           )}
                         />
@@ -884,12 +878,12 @@ export function ProvidersTab() {
                 className={cn(
                   'flex items-start gap-2 rounded-md border px-3 py-2 text-sm',
                   testResult.success
-                    ? 'border-emerald-500/30 bg-emerald-500/5'
+                    ? 'border-success/30 bg-success/5'
                     : 'border-destructive/30 bg-destructive/5'
                 )}
               >
                 {testResult.success ? (
-                  <CheckCircle2 className='mt-0.5 size-4 shrink-0 text-emerald-500' />
+                  <CheckCircle2 className='mt-0.5 size-4 shrink-0 text-success-strong' />
                 ) : (
                   <XCircle className='mt-0.5 size-4 shrink-0 text-destructive' />
                 )}
@@ -898,7 +892,7 @@ export function ProvidersTab() {
                     className={cn(
                       'font-medium',
                       testResult.success
-                        ? 'text-emerald-600 dark:text-emerald-400'
+                        ? 'text-success-strong'
                         : 'text-destructive'
                     )}
                   >
