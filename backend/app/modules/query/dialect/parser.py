@@ -99,6 +99,60 @@ _EXPRESSION_PRECEDERS = frozenset("+-*/%<>=!|&^,(~")
 #: e.g. ``LIST FILES @stage1`` or ``COPY INTO table FROM @stage``.
 _QUALIFIERS = frozenset({"FILES", "ALL", "DISTINCT"})
 
+#: Keywords that *open* a table-reference position. A comma while one of these
+#: is still the governing clause introduces another table reference, so
+#: ``FROM @stage1, @stage2`` has two stages.
+_TABLE_CLAUSE_OPENERS = frozenset({"FROM", "JOIN", "INTO", "USING"})
+
+#: Keywords that *close* a table-reference position and begin something else:
+#: ``FROM t WHERE @x`` — ``@x`` is a filter operand, not a second table. Also
+#: covers the clause keywords that turn a comma into an expression separator
+#: again, e.g. ``SELECT @x, @y FROM t`` where the ``SELECT`` list ends at
+#: ``FROM``.
+#:
+#: ``ON`` is deliberately **not** here even though it also introduces an
+#: operand position. A join condition may itself be followed by a comma that
+#: returns to the table list — ``FROM a JOIN b ON 1=1, c`` is valid StarRocks —
+#: so ``ON`` is handled separately by :func:`_join_condition_governs`, which
+#: looks for the comma that closes it.
+_CLAUSE_BOUNDARIES = frozenset(
+    {
+        "WHERE",
+        "GROUP",
+        "HAVING",
+        "ORDER",
+        "LIMIT",
+        "SELECT",
+        "SET",
+        "VALUES",
+        "UNION",
+        "EXCEPT",
+        "INTERSECT",
+        "WINDOW",
+        "QUALIFY",
+        "PARTITION",
+        "AND",
+        "OR",
+        "NOT",
+        "IS",
+        "IN",
+        "BETWEEN",
+        "LIKE",
+        "CASE",
+        "WHEN",
+        "THEN",
+        "ELSE",
+        "END",
+        "RETURNING",
+    }
+)
+
+#: Tokens that may appear between a table reference and the comma that follows
+#: it, so the clause scan can step over them instead of stopping: a table alias,
+#: an alias keyword, an index hint, or a join verb. ``FROM @stage1 AS a, ...``
+#: must still see ``FROM`` as the governing clause.
+_TABLE_REFERENCE_NOISE = frozenset({"AS", "BY", "INDEX", "KEY", "USE", "FORCE"})
+
 #: Matches one ``@name`` plus its optional dotted path and slash, without the
 #: trailing boundary requirement — used by the tokenizer, which needs to see the
 #: token in its surrounding context rather than requiring a delimiter.
@@ -196,11 +250,14 @@ def _classify_at_token(sql: str, match: re.Match) -> bool:
 
     * a dotted path or a trailing ``/`` is always a stage
       (``@stage1.data.csv``, ``@stage1/``);
-    * otherwise the token is a stage only when a stage-introducing keyword is
-      the nearest preceding significant token (``FROM @stage1``,
-      ``LIST FILES @stage1``), optionally through a qualifier such as ``FILES``;
-    * everywhere else — after an operator, a comma, an opening paren, or at the
-      head of an expression — it is a variable operand.
+    * after a stage-introducing keyword — ``FROM``/``JOIN``/``INTO``/``LIST``/
+      ``USING``, optionally through a qualifier such as ``FILES`` — it is a
+      stage;
+    * after a comma it depends on which clause the comma sits in: ``FROM a, b``
+      lists table references, so a stage; ``SELECT a, @x`` lists expressions, so
+      a variable. See :func:`_comma_is_in_table_clause`;
+    * everywhere else — after an operator or an opening paren — it is a
+      variable operand.
 
     This is what keeps ``SELECT @x``, ``1 + @n`` and ``SET @my_stage = 1`` out
     of the stage path while ``SELECT * FROM @stage1`` stays in it. The previous
@@ -222,12 +279,172 @@ def _classify_at_token(sql: str, match: re.Match) -> bool:
         return False
 
     word, kind = preceding
+
+    if kind == "punct" and word == ",":
+        return _comma_is_in_table_clause(sql, match.start())
+
     if kind == "ident" and word.upper() in _QUALIFIERS:
         # ``LIST FILES @stage1`` — step back past the qualifier.
         return _nearest_keyword_is_stage_context(sql, match.start())
     if kind == "ident":
         return word.upper() in _STAGE_CONTEXT_KEYWORDS
     return False
+
+
+def _comma_is_in_table_clause(sql: str, position: int) -> bool:
+    """Whether the comma before ``position`` sits in a table-reference list.
+
+    ``SELECT * FROM @stage1, @stage2`` and ``SELECT @x, @y`` differ only in
+    which clause precedes the comma, so the deciding token is the nearest
+    keyword at the same nesting depth that is not part of the reference list
+    itself:
+
+    * a table-clause opener (``FROM``/``JOIN``/``INTO``/``USING``) still governs
+      → the comma introduces another table reference;
+    * a clause boundary (``WHERE``, ``SELECT``, ``GROUP``, …) governs → the
+      comma separates expressions.
+
+    ``ON`` is a join condition rather than either: a reference *inside* it is an
+    operand (``ON a.id = @x``), but the comma that follows it returns to the
+    table list (``FROM a JOIN b ON 1=1, @stage3``, which StarRocks accepts).
+    The scan therefore remembers the last ``ON`` it passed and treats a
+    ``JOIN``/``INTO``/``FROM`` *before* that ``ON`` as still governing, unless a
+    real clause boundary appeared after it.
+
+    Tokens inside parentheses are skipped because a nested subquery has its own
+    clause context: ``FROM (SELECT @x, @y FROM t), @stage2`` must classify
+    ``@stage2`` against the outer ``FROM``, not against the inner ``SELECT``.
+    """
+    tokens = _tokens_before(sql, position)
+    depth = 0
+    saw_on = False
+    for text, kind in reversed(tokens):
+        if kind == "punct":
+            if text == ")":
+                depth += 1
+            elif text == "(":
+                if depth == 0:
+                    # The comma itself is inside these parens — an expression
+                    # list such as ``f(@x, @y)`` — so it is not a table list.
+                    return False
+                depth -= 1
+            continue
+        if depth > 0:
+            continue
+        upper = text.upper()
+        if upper == "ON":
+            saw_on = True
+            continue
+        if upper in _CLAUSE_BOUNDARIES:
+            return False
+        if upper in _TABLE_CLAUSE_OPENERS:
+            # A governing clause found. If an ``ON`` was passed, this opener is
+            # the join's own ``JOIN``/``FROM`` and the reference list continues
+            # past the comma, so it still governs.
+            return True
+        if upper in _TABLE_REFERENCE_NOISE:
+            continue
+        if saw_on:
+            # A name inside the join condition (a table alias, a column, a
+            # function). Keep scanning back; it does not decide anything.
+            continue
+    # No governing clause found (e.g. a bare expression): not a table list.
+    return False
+
+
+def _tokens_before(sql: str, position: int) -> list[tuple[str, str]]:
+    """Tokenise ``sql[:position]`` into ``(text, kind)`` pairs, oldest first.
+
+    Comments are removed first so a keyword hidden inside one cannot govern the
+    clause, matching what the engine parses. ``kind`` is ``"ident"`` for a word
+    (or quoted identifier) and ``"punct"`` for a single punctuation character.
+    """
+    tokens: list[tuple[str, str]] = []
+    text = _strip_line_comments(sql[:position])
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if char.isspace():
+            index += 1
+            continue
+        if char == "/" and text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            index = length if end < 0 else end + 2
+            continue
+        if char == "'":
+            end = _skip_quoted(text, index, "'")
+            tokens.append((text[index:end], "punct"))
+            index = end
+            continue
+        if char == "`":
+            end = _skip_quoted(text, index, "`")
+            tokens.append((text[index:end], "ident"))
+            index = end
+            continue
+        if char == '"':
+            end = _skip_quoted(text, index, '"')
+            tokens.append((text[index:end], "ident"))
+            index = end
+            continue
+        if char.isalnum() or char in "_$":
+            end = index
+            while end < length and (text[end].isalnum() or text[end] in "_$"):
+                end += 1
+            tokens.append((text[index:end], "ident"))
+            index = end
+            continue
+        tokens.append((char, "punct"))
+        index += 1
+    return tokens
+
+
+def _strip_line_comments(text: str) -> str:
+    """Replace each ``--`` comment with a space, preserving ``\\n``.
+
+    Only the newline is replaced by itself; the rest becomes a space so a
+    keyword split across a comment cannot fuse with its neighbour.
+    """
+    out: list[str] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if char == "'":
+            end = _skip_quoted(text, index, "'")
+            out.append(text[index:end])
+            index = end
+            continue
+        if char == "-" and text.startswith("--", index):
+            newline = text.find("\n", index)
+            if newline < 0:
+                out.append(" ")
+                break
+            out.append(" ")
+            out.append("\n")
+            index = newline + 1
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def _skip_quoted(text: str, start: int, quote: str) -> int:
+    """Index just past a quoted run beginning at ``start``."""
+    index = start + 1
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if char == "\\" and index + 1 < length:
+            index += 2
+            continue
+        if char == quote:
+            if index + 1 < length and text[index + 1] == quote:
+                index += 2
+                continue
+            return index + 1
+        index += 1
+    return length
 
 
 def _preceding_significant_token(sql: str, position: int) -> tuple[str, str] | None:
