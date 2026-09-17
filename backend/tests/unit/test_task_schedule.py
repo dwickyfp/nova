@@ -90,6 +90,45 @@ class TestTimezoneResolution:
             next_fire("cron", "0 2 * * *", "", datetime(2026, 1, 1, tzinfo=UTC))
 
 
+class TestOffsetTimezone:
+    """NOVA-41: StarRocks reports offset session zones as ``+07:00``."""
+
+    @pytest.mark.parametrize(
+        ("name", "offset"),
+        [
+            ("+07:00", timedelta(hours=7)),
+            ("-07:00", timedelta(hours=-7)),
+            ("+00:00", timedelta(0)),
+            ("+05:30", timedelta(hours=5, minutes=30)),
+            ("+13:45", timedelta(hours=13, minutes=45)),
+        ],
+    )
+    def test_offset_form_resolves_to_a_fixed_offset(self, name, offset):
+        zone = resolve_timezone(name)
+        assert zone.utcoffset(datetime(2026, 1, 1)) == offset
+
+    def test_whitespace_is_tolerated(self):
+        assert resolve_timezone("  +07:00  ").utcoffset(None) == timedelta(hours=7)
+
+    @pytest.mark.parametrize("name", ["+24:00", "+07:60", "+7:0", "+0700", "07:00", "+"])
+    def test_malformed_offsets_are_rejected(self, name):
+        with pytest.raises(ScheduleError):
+            resolve_timezone(name)
+
+    def test_next_fire_shifts_with_an_offset_zone(self):
+        reference = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        result = next_fire("cron", "0 2 * * *", "+07:00", reference)
+        # 02:00 at UTC+7 is 19:00 UTC the previous day.
+        assert result == datetime(2026, 1, 1, 19, 0, tzinfo=UTC)
+
+    def test_offset_and_equivalent_iana_zone_agree_when_no_dst(self):
+        reference = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        # Asia/Jakarta is UTC+7 year-round.
+        assert next_fire("cron", "0 2 * * *", "+07:00", reference) == next_fire(
+            "cron", "0 2 * * *", "Asia/Jakarta", reference
+        )
+
+
 class TestInterval:
     @pytest.mark.parametrize(
         "expression",
