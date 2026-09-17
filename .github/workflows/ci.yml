@@ -159,7 +159,12 @@ jobs:
           # under tests/integration carry the marker, so the filter is
           # meaningful rather than a deselect-everything no-op.
           set +e
-          uv run pytest tests/integration -m engine -v -rs --junit-xml=integration.xml
+          # `--log-cli-level=WARNING` surfaces the application's own warnings
+          # in the job log. Without it pytest captures them and a failing
+          # assertion only shows its symptom, not the pipeline state that
+          # produced it — which cost several CI cycles on test_ac3.
+          uv run pytest tests/integration -m engine -v -rs \
+            --log-cli-level=WARNING --junit-xml=integration.xml
           status=$?
           set -e
 

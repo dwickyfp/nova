@@ -40,8 +40,14 @@ from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from app.core.config import settings
+from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.core.database import db
+from app.modules.query.dialect.translator import StorageConfig
+from app.modules.query.sql_pipeline import (
+    guard_user_statement,
+    prepare_stage_sql,
+    redact_for_output,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,18 +138,30 @@ class MLEngineService:
         """
         # 1. Fetch training data from StarRocks. Worksheet-triggered training
         # uses the logged-in user's connection so StarRocks RBAC remains authoritative.
+        #
+        # The statement is prepared first — guard, @stage translation, credential
+        # injection — so it reaches the engine in the same shape a worksheet
+        # statement would. ``engine_sql`` carries injected credentials and must
+        # not be logged or persisted; ``training_sql`` below is the redacted form
+        # and is what is stored in NOVA_SYSTEM.ML_MODELS.
+        engine_sql = await self._prepare_training_sql(
+            training_sql=training_sql,
+            database_name=database_name,
+        )
+        stored_training_sql = self._redacted_training_sql(engine_sql)
+
         if username is not None and password is not None:
             rows, columns = await self._fetch_training_data_as_user(
                 username=username,
                 password=password,
                 role=role,
                 database_name=database_name,
-                training_sql=training_sql,
+                training_sql=engine_sql,
             )
         else:
             rows, columns = await self._fetch_training_data_as_system(
                 database_name=database_name,
-                training_sql=training_sql,
+                training_sql=engine_sql,
             )
 
         if not rows:
@@ -274,7 +292,7 @@ class MLEngineService:
                         target_column,
                         features_json,
                         hyperparams_json,
-                        training_sql,
+                        stored_training_sql,
                         database_name,
                         created_by,
                     ),
@@ -641,6 +659,119 @@ class MLEngineService:
         return {"alias_name": alias_name, "deleted": True}
 
     # ── Helpers ─────────────────────────────────────────────────
+
+    async def _prepare_training_sql(
+        self,
+        *,
+        training_sql: str,
+        database_name: str | None,
+    ) -> str:
+        """Put ``training_sql`` through the same pipeline as the SQL worksheet.
+
+        Training SQL is user-supplied and is executed on a connection that
+        carries real storage credentials, so it needs the identical four steps
+        ``query.service`` applies — guard, ``@stage`` translation, credential
+        injection, redaction. It previously had none of them: a user could run
+        arbitrary SQL unguarded, and an ``@stage`` reference was sent to the
+        engine untranslated (``NOVA-28``; the defect is recorded at
+        ``README.md:553``).
+
+        RBAC is not weakened by preparing here: the stage-config read is
+        configuration, and the translated statement is executed on the *user's*
+        connection, so StarRocks still decides what the query may reach.
+
+        **Nothing credential-bearing escapes.** The returned statement is what
+          the engine receives and does carry injected credentials; callers must
+          never log, persist, or return it. Use
+          :meth:`_redacted_training_sql` for anything that leaves the process.
+
+        Raises:
+            ForbiddenSQLError: if the guard blocks the statement.
+            ValueError: if an ``@stage`` reference cannot be translated.
+        """
+        # 1. Guard, exactly as the worksheet does. Training SQL is a SELECT, but
+        # the guard is about what the *user* can reach, not what the endpoint
+        # expects — and `CREATE ML_MODEL` already routes a user-supplied
+        # `training_sql` here, so the surface is not only the /train endpoint.
+        guard_user_statement(training_sql)
+
+        # 2. Resolve stage configs (system read; RBAC is enforced by StarRocks on
+        # the translated statement, which runs on the user's connection).
+        stage_configs = await self._load_stage_configs(database_name)
+
+        # 3. Translate + inject. A statement with no @stage reference passes
+        # through unchanged (and credential-free).
+        prepared = await prepare_stage_sql(training_sql, stage_configs=stage_configs)
+
+        # The engine needs the credential-bearing form; everything else in this
+        # class logs and persists the redacted one instead.
+        logger.debug(
+            "Prepared training SQL for execution: %s", prepared.redacted_sql
+        )
+        return prepared.engine_sql
+
+    @staticmethod
+    def _redacted_training_sql(engine_sql: str) -> str:
+        """The form of ``engine_sql`` that may be logged or persisted.
+
+        Exists so call sites do not have to remember which of the two forms
+        ``_prepare_training_sql`` produces is the safe one. Redaction is
+        value-only, so the statement still documents what ran.
+        """
+        return redact_for_output(engine_sql)
+
+    async def _load_stage_configs(self, database_name: str | None) -> dict[str, StorageConfig]:
+        """Load stage configs for the training SQL's ``@stage`` translation.
+
+        Read on the **system** connection, deliberately. Stage *definition*
+        (name → bucket/prefix/connection) is configuration, not user-scoped
+        data, and the control that matters is enforced where it belongs: the
+        translated ``FILES()`` statement is executed on the user's connection,
+        so StarRocks still grants or denies the read. Reading the config on the
+        system connection cannot widen what the statement can reach.
+
+        (``query.service._load_stage_configs`` is also system-read for the same
+        reason; it takes ``database``/``schema`` as a *filter*, not as a
+        privilege boundary.)
+
+        Any failure returns no configs rather than raising: an unresolvable
+        stage then surfaces as a translation error naming the stage, which is a
+        better message than a driver traceback.
+        """
+        sql = (
+            "SELECT name, database_name, schema_name, storage_connection, base_prefix "
+            "FROM NOVA_SYSTEM.CONFIG_STAGES"
+        )
+        params: list[str] = []
+        if database_name:
+            sql += " WHERE database_name = %s"
+            params.append(database_name)
+
+        try:
+            async with await self._connect() as conn, conn.cursor() as cur:
+                await cur.execute(sql, tuple(params) or None)
+                rows = list(await cur.fetchall())
+        except Exception:
+            logger.warning("Could not load stage configs for training SQL", exc_info=True)
+            return {}
+
+        configs: dict[str, StorageConfig] = {}
+        for row in rows:
+            name, db_name, schema_name, storage_conn, base_prefix = row[:5]
+            conn = get_storage_connection(storage_conn)
+            resolved_prefix = (base_prefix or "").strip("/")
+            if not resolved_prefix:
+                resolved_prefix = f"{db_name}/{schema_name}/{name}"
+            configs[name] = StorageConfig(
+                storage_type=conn.type,
+                endpoint=to_docker_endpoint(conn.endpoint),
+                bucket=conn.bucket,
+                base_prefix=resolved_prefix,
+                access_key=conn.access_key,
+                secret_key=conn.secret_key,
+                region=conn.region or "us-east-1",
+            )
+        return configs
 
     @staticmethod
     async def _fetch_training_data_as_user(
