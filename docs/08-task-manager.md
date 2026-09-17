@@ -136,14 +136,21 @@ time.
 
 The engine also **filters reads by the caller's privileges**: a user with no grants
 on the task's database sees an empty `information_schema.tasks`, while root sees the
-row. Nova nonetheless leaks all tasks, because `TaskService._connect()`
-(`backend/app/modules/tasks/service.py:32-38`) opens a **root** connection with
-`STARROCKS_ROOT_USER` (`:36`) and the router passes only `get_current_user` for
-authentication (`backend/app/modules/tasks/router.py:38,51`) — the user is never
-threaded into the query. This is a pre-existing backend defect, not a StarRocks
-limitation, and it is why the read path shows every task to every signed-in user.
-Fix is mechanical: connect as the calling user via `get_user_connection`
-(`backend/app/core/deps.py:75`), the way `users` and `resource_groups` already do.
+row.
+
+> **Fixed (NOVA-34 / D9.8).** Nova used to leak all tasks: `TaskService._connect()`
+> opened a **root** connection with `STARROCKS_ROOT_USER` and the router passed only
+> `get_current_user` for authentication, so the caller was never threaded into the
+> query. `TaskService` now takes an injected `asyncmy` connection as the first
+> argument of every method, and the router supplies it through
+> `get_user_connection` (`backend/app/core/deps.py`) — the pattern `users` and
+> `object` browsing already use. `GET /tasks` and the rest of the task surface now
+> run as the calling user, and the engine's privilege filter applies. There is no
+> root connection left in `backend/app/modules/tasks/`.
+>
+> `get_user_connection` itself had a latent bug — it did `await db.user_conn(...)`
+> on an `@asynccontextmanager` factory, which raises `TypeError` at request time.
+> It is corrected to `async with db.user_conn(...) as conn:`.
 
 ### Show Tasks
 
