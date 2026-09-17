@@ -183,8 +183,19 @@ def _store_value(raw_value: str) -> str:
 
 #: A user-variable reference: a single ``@`` followed by a name. The lookbehind
 #: excludes ``@@name`` (a system variable, which the engine resolves).
+#:
+#: The name body mirrors ``_ASSIGNMENT`` above: ``[A-Za-z_][\w$]*``. That is the
+#: accept-set the *write* half uses, so the two have to agree — a name the proxy
+#: is willing to store (``SET @col$sum = 'AGG'``) must be a name the *read* half
+#: is willing to match, or the value is stored and then never reachable. A
+#: narrower body here also splits a reference in the middle: with the old
+#: ``[A-Za-z0-9_]*``, ``@x$abc`` matched only ``@x`` and the substitution spliced
+#: the value of ``x`` in front of the leftover ``$abc``, silently corrupting the
+#: statement (``SELECT @x$abc`` → ``SELECT 'XVAL'$abc``). ``\w`` already covers
+#: ``[A-Za-z0-9_]``, and ``$`` is the extra character MySQL allows in a variable
+#: name that this project's parser also accepts (``parser._AT_TOKEN``).
 _USER_VARIABLE_REFERENCE = re.compile(
-    r"(?<!@)@(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+    r"(?<!@)@(?P<name>[A-Za-z_][\w$]*)"
 )
 
 

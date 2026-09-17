@@ -495,6 +495,99 @@ class TestUserVariableSubstitution:
         assert result.unknown == []
 
 
+class TestDollarInVariableNames:
+    """``$`` is part of a name, not a boundary — NOVA-32.
+
+    The write half (``_ASSIGNMENT``) has always accepted ``$`` in a variable
+    name, so ``SET @col$sum = 'AGG'`` stores ``col$sum``. The read half's body
+    was ``[A-Za-z0-9_]*``, which stopped at the ``$``: ``SELECT @col$sum`` was
+    read as ``@col`` (an unknown name, since only ``col$sum`` was stored) and,
+    worse, ``SELECT @x$abc`` with only ``x`` stored matched ``@x`` and spliced
+    its value in front of the leftover ``$abc``, silently rewriting the
+    statement. Matching the full accept-set is what keeps a stored name
+    reachable and stops a reference being split mid-token.
+    """
+
+    @staticmethod
+    def _session(**values: str) -> SessionState:
+        session = SessionState()
+        session.user_variables = dict(values)
+        return session
+
+    def test_reference_with_a_dollar_is_never_split(self):
+        """The QA repro: only ``x`` is stored, so ``@x$abc`` is one unknown name.
+
+        The bug produced ``SELECT 'XVAL'$abc`` — a silent corruption, because it
+        changed the statement without an error. The correct outcome is verbatim
+        passthrough: the engine's own ``unknown variable`` error is honest, and
+        rewriting the text to something the client never wrote is not.
+        """
+        session = self._session(x="'XVAL'")
+        result = substitute_user_variables("SELECT @x$abc", session)
+        assert result.sql == "SELECT @x$abc"
+        assert result.substituted == []
+        assert result.unknown == ["x$abc"]
+
+    def test_a_stored_dollar_name_is_readable_back(self):
+        """The round trip the accept-set mismatch broke."""
+        session = SessionState()
+        handle_set_statement("SET @col$sum = 'AGG'", session)
+        result = substitute_user_variables("SELECT @col$sum", session)
+        assert result.sql == "SELECT 'AGG'"
+        assert result.substituted == ["col$sum"]
+        assert result.unknown == []
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            "SELECT @x$abc",
+            "SELECT * FROM t WHERE a = @x$abc",
+            "SELECT @x$abc + 1",
+        ],
+    )
+    def test_a_dollar_reference_never_yields_a_spliced_prefix(self, statement):
+        """No position may ever turn ``@x$abc`` into ``<value of x>$abc``."""
+        session = self._session(x="'XVAL'")
+        result = substitute_user_variables(statement, session)
+        assert "'XVAL'$abc" not in result.sql
+        assert result.substituted == []
+
+    def test_the_whole_name_decides_not_its_prefix(self):
+        """``@x$abc`` and ``@x`` are different variables when both are set."""
+        session = self._session(x="1", **{"x$abc": "2"})
+        result = substitute_user_variables("SELECT @x$abc, @x", session)
+        assert result.sql == "SELECT 2, 1"
+        assert result.substituted == ["x$abc", "x"]
+
+    def test_trailing_dollar_is_part_of_the_name(self):
+        """``SET @x$ = 1`` stores ``x$``; the read must claim the trailing ``$``."""
+        session = self._session(**{"x$": "9", "x": "1"})
+        result = substitute_user_variables("SELECT @x$", session)
+        assert result.sql == "SELECT 9"
+        assert result.substituted == ["x$"]
+
+    def test_dollar_name_round_trips_through_a_script(self):
+        """End to end over the splitter: ``SET`` consumed, ``SELECT`` reads it."""
+        session = SessionState()
+        handle_set_statement("SET @col$sum = 'AGG'", session)
+        result = substitute_user_variables("SELECT @col$sum AS total", session)
+        assert result.sql == "SELECT 'AGG' AS total"
+
+    def test_dollar_inside_a_literal_is_still_data(self):
+        session = self._session(**{"x$abc": "1"})
+        result = substitute_user_variables("SELECT '@x$abc'", session)
+        assert result.sql == "SELECT '@x$abc'"
+        assert result.substituted == []
+
+    def test_stage_position_still_wins_for_a_dollar_name(self):
+        """The NOVA-31 rule is untouched: a stage reference keeps ``$`` too."""
+        session = self._session(**{"stage1": "'CSV'", "stage$1": "'CSV'"})
+        assert substitute_user_variables("SELECT * FROM @stage1", session).sql == (
+            "SELECT * FROM @stage1"
+        )
+        assert substitute_user_variables("SELECT * FROM @stage$1", session).substituted == []
+
+
 class TestUseStatement:
     def test_plain_use(self):
         assert parse_use_statement("USE NOVA_DEMO") == "NOVA_DEMO"
