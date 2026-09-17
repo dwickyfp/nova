@@ -29,6 +29,28 @@ class QueryResult:
 
     ``executed_sql`` is always the *redacted* form; pass the statement verbatim
     and it comes back with credential values replaced by ``***``.
+
+    ``error`` is the explicit failure marker and the single source of the
+    ``success`` contract (``x-request-id`` aside, ``POST /query/execute``
+    serialises this object). It is ``None`` on success and carries the failure
+    message otherwise. Before it existed the router *inferred* failure from the
+    shape of the result — ``warnings`` non-empty and no columns and no rows —
+    which misreported every successful ``@stage`` DML statement, because
+    ``translate_stage_query`` always appends a warning on the success path
+    (``dialect/translator.py``) while DML returns no ``description``
+    (``columns=[]``, ``row_count=0``).
+
+    The failure sites set it explicitly:
+
+    - repository execution errors — raised as ``StarRocksError``, so no result
+      object reaches the caller;
+    - ``execute_statements`` — the statement that raised becomes
+      ``error=str(exc)``;
+    - ``translate_stage_query`` — the statement Nova refused to run becomes
+      ``error=str(exc)``.
+
+    ``warnings`` stays an informational channel for *non-fatal* notices and
+    never decides failure.
     """
 
     columns: list[str] = field(default_factory=list)
@@ -39,9 +61,19 @@ class QueryResult:
     original_sql: str = ""
     executed_sql: str = ""
     warnings: list[str] = field(default_factory=list)
+    error: str | None = None
 
     def __post_init__(self) -> None:
         self.executed_sql = redact_sql_credentials(self.executed_sql)
+
+    @property
+    def success(self) -> bool:
+        """Whether the statement executed.
+
+        Derived from the explicit marker only — never from the shape of the
+        result. See the class docstring for why that inference was wrong.
+        """
+        return self.error is None
 
 
 class QueryRepository:
