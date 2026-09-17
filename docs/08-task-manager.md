@@ -12,12 +12,35 @@
 | **TaskRun** | Single execution instance of a task |
 | **Schedule** | One-shot or periodic (SCHEDULE EVERY) |
 
+> **Statement surface.** The only task statement StarRocks 4.1.1 has is
+> **`SUBMIT TASK`**. `CREATE TASK` is **not** a valid statement in any form
+> (`No viable statement for input 'CREATE TASK'`), and neither is `DROP TASK` or
+> `SHOW TASKS` — see `docs/GUIDE_OBJECTS.md`. Everything in this document uses
+> `SUBMIT TASK`. The proposed Nova surface `CREATE TASK … AFTER / FINALIZE / WHEN /
+> SCHEDULE`, which lowers to `SUBMIT TASK` plus Nova metadata, is **not implemented
+> yet**; its design lives in `docs/specs/nova-23-task-orchestration-design.md`
+> (Phase 9, grammar patch in 9b). Do not write `CREATE TASK` against the engine.
+
 ### Task States
+
+Verified against a live StarRocks 4.1.1 engine (NOVA-23, 2026-09-17):
+
+> **There is no `STATE` column on `information_schema.tasks`.** Its columns are
+> `TASK_NAME`, `CREATE_TIME`, `SCHEDULE`, `CATALOG`, `DATABASE`, `DEFINITION`,
+> `EXPIRE_TIME`, `PROPERTIES`, `CREATOR`. The `ACTIVE` / `PAUSE` values below were
+> never observable, and `SHOW TASKS` is not a statement in 4.1.1 either
+> (`No viable statement for input 'SHOW TASKS'`). Suspend/resume state is **not
+> queryable** through a documented surface; infer it from the `SCHEDULE` string and
+> your own bookkeeping.
 
 | State | Description |
 |-------|-------------|
-| `ACTIVE` | Task is registered and ready |
-| `PAUSE` | Task is suspended |
+| `ACTIVE` | Task is registered and ready — **not a queryable column** |
+| `PAUSE` | Task is suspended — **not a queryable column** |
+
+Suspended tasks: `ALTER TASK ... SUSPEND` stops future scheduled runs and
+`... RESUME` restarts them (verified: run count stayed flat for 25 s after SUSPEND,
+then advanced after RESUME).
 
 ### TaskRun States
 
@@ -52,6 +75,22 @@ SCHEDULE START('2026-01-01 00:00:00') EVERY(INTERVAL 1 DAY)
 AS INSERT OVERWRITE agg_table SELECT * FROM staging;
 ```
 
+**Verified schedule surface (live 4.1.1, NOVA-23):** the only accepted schedule
+forms are `MANUAL` (omit the clause), `SCHEDULE EVERY(INTERVAL …)`, and
+`SCHEDULE START('<literal>') EVERY(INTERVAL …)`.
+
+**There is no cron support.** `SCHEDULE = 'USING CRON 0 * * * * UTC'` is rejected
+with `Unexpected input '='`; the parser only knows `EVERY` and `START`. Cron — the
+user's primary requested trigger — therefore has **no native StarRocks primitive**
+and must be implemented by Nova. `START` also requires a single-quoted literal, not
+an expression: `START(CURRENT_TIMESTAMP + INTERVAL 15 SECOND)` is rejected.
+
+`START` literals are interpreted in the **session/engine timezone** (`@@time_zone`,
+default `Asia/Jakarta`), not UTC — verified: a literal built from the local wall
+clock fired at the expected wall-clock second, while an equal UTC literal fired
+7 h later. Any Nova scheduler must pin the timezone explicitly rather than assume
+UTC.
+
 ### Alter Task (v4.1)
 
 ```sql
@@ -75,6 +114,36 @@ DROP TASK etl_task;
 DROP TASK IF EXISTS etl_task;
 DROP TASK etl_task FORCE;  -- force drop pipe-internal tasks (v4.1)
 ```
+
+### Authorization model (verified, NOVA-23)
+
+Privileges are checked **at `SUBMIT TASK` time, against the submitting user's
+identity** — not at run time and not against a service account. Verified:
+
+- An unprivileged user (`'nova_limited'@'%'`, no grants) submitting a task whose
+  body needs `INSERT` on `dst` is rejected immediately:
+  `Access denied; you need (at least one of) the INSERT privilege(s) on TABLE dst`.
+  The task row is never created.
+- Granting that same `INSERT` privilege makes the identical `SUBMIT TASK` succeed.
+- The submitter is recorded verbatim: `information_schema.tasks.CREATOR` holds
+  `'nova_limited'@'%'`.
+
+This is good news for Nova: **the engine already enforces RBAC on task definition**,
+so a Nova DAG layer that creates each task under the requesting user's connection
+inherits that enforcement for free. Note the corollary — the run executes with the
+creator's identity, so a privilege revoked after `SUBMIT` is not re-checked at run
+time.
+
+The engine also **filters reads by the caller's privileges**: a user with no grants
+on the task's database sees an empty `information_schema.tasks`, while root sees the
+row. Nova nonetheless leaks all tasks, because `TaskService._connect()`
+(`backend/app/modules/tasks/service.py:32-38`) opens a **root** connection with
+`STARROCKS_ROOT_USER` (`:36`) and the router passes only `get_current_user` for
+authentication (`backend/app/modules/tasks/router.py:38,51`) — the user is never
+threaded into the query. This is a pre-existing backend defect, not a StarRocks
+limitation, and it is why the read path shows every task to every signed-in user.
+Fix is mechanical: connect as the calling user via `get_user_connection`
+(`backend/app/core/deps.py:75`), the way `users` and `resource_groups` already do.
 
 ### Show Tasks
 
@@ -137,13 +206,38 @@ SELECT inspect_task_runs();
 
 ### Task Concurrency
 
+Verified against a live StarRocks 4.1.1 engine (NOVA-23, 2026-09-17). These are
+**FE configs**, read via `ADMIN SHOW FRONTEND CONFIG LIKE '%task%'` — **not**
+session variables. A plain `SHOW VARIABLES LIKE 'task_…'` returns nothing for them
+(and a broad `SHOW VARIABLES LIKE '%task%'` only ever includes them intermittently,
+which is a trap: do not validate them that way). The earlier
+`task_runs_ttl_second = 86400` figure in this doc was **wrong**; the engine default
+is **604800 (7 days)**.
+
 | Config | Default | Description |
 |--------|---------|-------------|
 | `task_runs_concurrency` | 4 | Max parallel TaskRuns |
 | `task_runs_queue_length` | 500 | Max pending TaskRuns |
 | `task_ttl_second` | 86400 | Task TTL (one-shot) |
-| `task_runs_ttl_second` | 86400 | TaskRun TTL |
+| `task_runs_ttl_second` | **604800** | TaskRun TTL — **7 days**, not 24 h |
+| `task_runs_max_history_number` | 10000 | Max TaskRun history retained |
+| `task_runs_timeout_second` | 14400 | TaskRun execute timeout (4 h) |
 | `task_min_schedule_interval_s` | 10 | Minimum schedule interval |
+| `task_check_interval_second` | 60 | Interval of task background scheduled jobs |
+| `max_task_consecutive_fail_count` | 10 | Consecutive failures before the task **auto-pauses** |
+| `enable_task_history_archive` | true | Task run history archiving |
+
+**TaskRun history cannot be deleted.** There is no `CLEAR TASK RUNS` statement
+(rejected at parse) and `DELETE FROM information_schema.task_runs` fails with
+`Where clause is not set`. Dropping a task does **not** delete its run rows — they
+persist until TTL/archive. Any Nova UI that drops a task must not assume the run
+history went with it.
+
+`task_check_interval_second = 60` is the scheduling granularity of the native
+scheduler: a `SCHEDULE EVERY(INTERVAL 10 SECOND)` task is accepted (10 s is the
+minimum), but the FE only scans for due tasks once per minute, so sub-minute
+cadence is not honoured in practice. This is a strong argument for Nova owning
+its own tick (see NOVA-23).
 
 ---
 
@@ -204,3 +298,61 @@ backend/app/modules/task_orchestration/
 - **No callback/trigger** on completion — progress must be observed by polling `information_schema.task_runs`
 - **No conditional branching** (if A fails, run C)
 - For orchestration today, use external tools (Airflow, n8n) that poll `information_schema.task_runs`
+
+### Verified against a live 4.1.1 engine (NOVA-23, 2026-09-17)
+
+All five limitations above were probed directly against
+`starrocks/fe-ubuntu:4.1.1` and confirmed. The rejection messages are the parser's
+own, so these are grammar-level absences, not engine settings awaiting a flag:
+
+| Requested clause | Engine answer |
+|---|---|
+| `AFTER <task>` (dependency) | `Unexpected input 'AFTER', the most similar input is {'PROPERTIES', 'AS', 'SCHEDULE'}` |
+| `WHEN (…)` (stream/condition) | `Unexpected input 'WHEN', the most similar input is {'SCHEDULE', 'PROPERTIES', 'AS'}` |
+| `FINALIZE <stmt>` | `Unexpected input 'INSERT', the most similar input is {<EOF>, ';'}` |
+| `ALLOW_OVERLAPPING_EXECUTION = TRUE` | `Unexpected input 'ALLOW_OVERLAPPING_EXECUTION', the most similar input is {'PROPERTIES', 'AS', 'SCHEDULE'}` |
+| `SCHEDULE = 'USING CRON …'` | `Unexpected input '='` |
+
+**The task body is restricted by the grammar itself, not by runtime validation.**
+`SUBMIT TASK` accepts only CTAS / `INSERT` / `CACHE SELECT` (plus `DESC`/`DESCRIBE`/
+`EXPLAIN`/`CREATE` per the parser's suggestions below). Each of the following was
+rejected at parse time: `CREATE TABLE`, `DROP TABLE`, `UPDATE`, `CREATE VIEW`,
+`SET @x = 1`, and a bare `SELECT 1`. A Nova worker therefore **cannot** be a thin
+wrapper around `SUBMIT TASK` for arbitrary SQL — for anything outside those three
+statements, Nova must execute the statement itself.
+
+Two additional constraints that matter for a Nova scheduler:
+
+- **No run-history hook and no dependency signal** exist, so every
+  "task finished → run the next one" transition must **poll**
+  `information_schema.task_runs`. There is no alternative.
+- **Tasks auto-pause after `max_task_consecutive_fail_count` (10) consecutive
+  failures.** A Nova DAG that a paused task sits in will silently stop advancing
+  unless Nova reconciles this state.
+
+### Provider blocker: `information_schema.partitions` is empty (superseded)
+
+The planned `partition_change` stream provider first assumed
+`information_schema.partitions` could supply a watermark. On the live 4.1.1 engine
+**the table returns 0 rows for every schema**, including Nova's own partitioned
+tables, and stays empty after `ANALYZE TABLE`. It also has no `DATA_VERSION`
+column — that column name does not exist.
+
+**That conclusion was wrong, and the provider is live.** The error was querying an
+unpopulated MySQL-compatibility view instead of the real surface. `SHOW PARTITIONS`
+is the live surface, and its **`VisibleVersion`** column advances per-partition on
+every non-DDL load while untouched partitions stay put (verified: an insert into
+`p1` moved only `p1`; an insert into `p2` moved only `p2`). `partition_change`
+therefore has a real, monotonic, per-partition watermark.
+
+Two operational notes for the provider:
+
+- Use **one full `SHOW PARTITIONS` sweep, then diff in Python**. The `WHERE` filter
+  is accepted but not cheaper than a full scan (measured at 5,000 partitions:
+  full sweep ~110–260 ms; per-partition `WHERE` ~65–150 ms for one row), so
+  per-partition lookups are ~300× slower in aggregate. `IN (...)` is rejected.
+- `SHOW PARTITIONS.UPDATE_TIME` is **DDL-only** and remains unusable as a
+  watermark; `VisibleVersion` is the column to use.
+
+Full rationale and measurements: `docs/specs/nova-23-task-orchestration-design.md`
+§6 / D9.6.

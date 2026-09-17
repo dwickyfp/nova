@@ -110,21 +110,6 @@ const FUNCTION_TYPES: { value: FunctionType; label: string; udfName: string }[] 
     { value: 'embed', label: 'Embed', udfName: 'AI_EMBED' },
   ]
 
-const FUNCTION_TYPE_COLORS: Record<string, string> = {
-  complete: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
-  sentiment:
-    'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-  classify:
-    'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
-  summarize:
-    'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
-  extract:
-    'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20',
-  translate:
-    'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
-  filter: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
-  embed: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
-}
 
 const emptyAliasForm = {
   alias_name: '',
@@ -431,7 +416,7 @@ export function FunctionsTab() {
         </div>
         <div className='flex items-center gap-2'>
           <Badge variant='secondary' className='gap-1 font-mono text-xs'>
-            <BadgeCheck className='size-3 text-emerald-500' />
+            <BadgeCheck className='size-3 text-success-strong' />
             {registeredCount}/{totalUDFCount} registered
           </Badge>
           {failedCount > 0 && (
@@ -485,7 +470,7 @@ export function FunctionsTab() {
                 className='flex items-center gap-3 px-4 py-2.5 text-sm'
               >
                 {status.registered ? (
-                  <CheckCircle2 className='size-3.5 shrink-0 text-emerald-500' />
+                  <CheckCircle2 className='size-3.5 shrink-0 text-success-strong' />
                 ) : (
                   <XCircle className='size-3.5 shrink-0 text-destructive' />
                 )}
@@ -494,10 +479,7 @@ export function FunctionsTab() {
                 </span>
                 <Badge
                   variant='outline'
-                  className={cn(
-                    'text-[10px] font-normal',
-                    FUNCTION_TYPE_COLORS[status.function_type]
-                  )}
+                  className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
                 >
                   {getFunctionTypeLabel(status.function_type)}
                 </Badge>
@@ -636,10 +618,7 @@ export function FunctionsTab() {
                     <td className='px-4 py-3'>
                       <Badge
                         variant='outline'
-                        className={cn(
-                          'text-[10px] font-normal',
-                          FUNCTION_TYPE_COLORS[alias.function_type]
-                        )}
+                        className='border-border bg-muted text-[10px] font-normal text-muted-foreground'
                       >
                         {getFunctionTypeLabel(alias.function_type)}
                       </Badge>
@@ -671,7 +650,7 @@ export function FunctionsTab() {
                         isRegistered ? (
                           <Badge
                             variant='secondary'
-                            className='gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                            className='gap-1 border-success/25 bg-success/10 text-success-strong'
                           >
                             <CheckCircle2 className='size-3' />
                             Registered
