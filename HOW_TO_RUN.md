@@ -341,14 +341,11 @@ docker exec -it nova-redis redis-cli -a nova_redis_2026 XPENDING nova:tasks:grap
 Reconciler berjalan **di dalam proses `nova-worker`**, pada cadence yang sama
 dengan reconcile cycle (`WORKER_RECONCILE_INTERVAL_SECONDS`, default 30 detik).
 Tidak ada proses atau kelas reconciler kedua — `Reconciler` yang sudah ada
-diperluas. Setiap pass melakukan dua hal, berurutan:
+diperluas. Setiap pass melakukan tiga hal, berurutan:
 
 1. **Rekonsiliasi state native.** Membaca `information_schema.task_runs` hanya
    untuk node yang berstatus `running` (bukan setiap task), lalu:
    - memajukan node yang native-nya sudah selesai → `success`/`failed`;
-   - menandai node yang **jejak native-nya hilang** sebagai `abandoned` — state
-     eksplisit, **bukan** sukses. Ini kasus task yang berjalan saat FE mati:
-     barisnya hilang dari `task_runs` tanpa jejak;
    - mengabaikan baris native yang `CREATE_TIME`-nya lebih tua dari
      `started_at` node — baris sisa attempt sebelumnya tidak boleh mem-failkan
      node yang masih in-flight di worker lain;
@@ -366,7 +363,14 @@ diperluas. Setiap pass melakukan dua hal, berurutan:
      Kegagalan tunggal **tidak** memicu alarm auto-pause; kegagalan biasa
      hanya tercatat sebagai `NODE_FAILED`. Ini mencegah alarm fatigue yang
      membuat sinyal auto-pause asli tak terbedakan (NOVA-42).
-2. **Re-enqueue delivery yang hilang** (Redis flush / worker mati).
+2. **Run hilang lewat heartbeat.** `Reconciler.abandon_stale_nodes`—dipanggil
+   `WorkerService.reconcile_once`—meng-abandon setiap baris `running` yang
+   `heartbeat_at`-nya sudah lewat timeout worker
+   (`WORKER_HEARTBEAT_TIMEOUT_SECONDS`), di-transisi kondisional ke `abandoned`
+   dengan audit `NODE_ABANDONED`. Inilah sinyal run hilang yang durable: worker
+   mati berhenti menstempel heartbeat, jadi barisnya ditinggalkan dan graph
+   dievaluasi ulang dengan node itu runnable lagi.
+3. **Re-enqueue delivery yang hilang** (Redis flush / worker mati).
 
 Bila engine tidak tersedia, pembacaan mengembalikan `UNKNOWN` dan **tidak**
 menulis apa pun — kegagalan baca transien tidak boleh disalahartikan sebagai
@@ -389,9 +393,11 @@ pekerjaan yang hilang. Dua hal ini khusus dijaga:
   `getTaskRuns`) sengaja **tidak** dipakai.
 - **Lost trace diselesaikan lewat jalur heartbeat yang durable.** Karena arsip
   tidak bisa dipercaya, trace yang hilang disettle bukan dari `task_runs`
-  melainkan dari state `NOVA_SYSTEM`: `Reconciler.scan` /
-  `list_stale_task_runs` menandai node `RUNNING` yang heartbeat-nya berhenti
-  sebagai `abandoned`, lalu graph di-re-enqueue dari state durable (design §3).
+  melainkan dari state `NOVA_SYSTEM`: `list_stale_task_runs` menemukan node
+  `running` yang heartbeat-nya berhenti, `abandon_stale_nodes` men-transisi
+  kondisional ke `abandoned` (dengan audit `NODE_ABANDONED`), lalu graph
+  di-re-enqueue dari state durable (design §3). `scan` sendiri tetap **pure
+  read** — ia hanya melaporkan kandidat, bukan menulis.
   Ini justru skenario "task berjalan saat FE/worker mati" yang dituju AC #2, dan
   tidak bisa menyala pada node sehat karena worker terus menstamp heartbeat.
 - **Akuisisi koneksi ikut dijaga.** Kegagalan `db.system_conn()` saat FE tidak

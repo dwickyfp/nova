@@ -9,25 +9,27 @@ the stream:
 * **Worker died mid-node.** A node row is left ``running`` with a heartbeat
   that has stopped advancing. It is **abandoned**, not trusted: the graph is
   re-evaluated from the last confirmed node states, and the node is re-run.
-* **Native trace lost or auto-paused.** A node submitted its ``SUBMIT TASK`` and
-  is polling, but the native run's row has vanished (a task running when the FE
-  died leaves no trace, design §1) or the task auto-paused after
-  ``max_task_consecutive_fail_count`` consecutive failures. Neither may hang a
-  DAG silently and neither may be reported as success.
+* **Auto-paused.** The node's task auto-paused after
+  ``max_task_consecutive_fail_count`` consecutive failures. It may not hang a
+  DAG silently and may not be reported as success.
 
-The reconciler runs on a cadence in the worker process. It polls only graph
-runs and node rows that are actually active — never every task — so its cost
-stays proportional to in-flight work.
+A lost native trace is **not** inferred from a failed ``task_runs`` read: the
+archive failure is engine-wide, so it cannot identify one task's absent trace
+(NOVA-46). The durable signal is the worker heartbeat — the "worker died
+mid-node" row above is exactly the lost-trace case.
 
-Native observation is deliberately split from state mutation:
+State mutation is explicit:
 
 * :meth:`Reconciler.scan` performs **pure reads** and returns a report; the
   existing worker service uses it to re-enqueue lost deliveries.
 * :meth:`Reconciler.reconcile_native` reads ``information_schema.task_runs`` for
-  the nodes of running graph runs and advances their persisted state, marking a
-  lost trace ``abandoned`` and surfacing an auto-pause to the audit log.
+  the nodes of running graph runs, advances their persisted state, and surfaces
+  an auto-pause to the audit log; a failed read is ``UNKNOWN`` and writes nothing.
+* :meth:`Reconciler.abandon_stale_nodes` abandons a ``running`` row whose
+  heartbeat lapsed — the lost trace, settled from durable state and audited
+  ``NODE_ABANDONED``.
 
-Both are idempotent: a repeated pass on unchanged engine state performs no
+All are idempotent: a repeated pass on unchanged engine state performs no
 write, because each transition is conditional on the row's current state.
 """
 
@@ -187,6 +189,45 @@ class Reconciler:
             if str(node.get("graph_run_id")) == graph_run_id
         ]
 
+    async def abandon_stale_nodes(self) -> list[dict[str, Any]]:
+        """Settle ``RUNNING`` rows whose worker heartbeat lapsed — the lost trace.
+
+        This is the durable lost-trace signal (design §3): a worker that dies
+        mid-node stops stamping ``heartbeat_at``, so the row is abandoned and the
+        graph is re-evaluated with the node runnable again. It replaces any
+        inference from the engine's archive, which is engine-wide and cannot
+        identify a per-task lost trace (NOVA-46).
+
+        ``scan`` remains a pure read that only reports candidates; this method
+        performs the conditional write (``running`` -> ``abandoned``) so a
+        redelivery or a concurrent pass cannot double-settle. Only the caller
+        that moved the row writes ``NODE_ABANDONED``. Returns the abandoned rows.
+        """
+        stale = await self._repository.list_stale_task_runs(self._heartbeat_timeout)
+        abandoned: list[dict[str, Any]] = []
+        tasks: dict[str, dict[str, Any]] | None = None
+        for node in stale:
+            moved = await self._repository.transition_task_run(
+                str(node["id"]), list(_RUNNING), NodeState.ABANDONED.value
+            )
+            if not moved:
+                continue
+            abandoned.append(node)
+            if tasks is None:
+                tasks = {str(t["id"]): t for t in await self._repository.list_tasks()}
+            task = tasks.get(str(node.get("task_id")))
+            if task is None:
+                continue
+            await self._audit(
+                str(task["name"]),
+                task,
+                action="NODE_ABANDONED",
+                status="ABANDONED",
+                error="worker heartbeat lapsed; the node is abandoned and re-evaluated",
+                graph_run_id=str(node.get("graph_run_id") or ""),
+            )
+        return abandoned
+
     async def reconcile_native(self) -> NativeReconcileReport:
         """Advance running nodes from the engine's ``task_runs``; surface pauses.
 
@@ -194,6 +235,10 @@ class Reconciler:
         because a worker submitted its ``SUBMIT TASK``, so those are the only
         rows whose native trace can settle them. Nothing here executes SQL —
         node execution remains the worker's (design §2).
+
+        A failed read is ``UNKNOWN`` and leaves the row untouched (design §1: an
+        engine-side archive failure can never masquerade as a node's outcome);
+        the lost trace is settled by :meth:`abandon_stale_nodes` (NOVA-46).
         """
         report = NativeReconcileReport()
 
