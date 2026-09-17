@@ -76,11 +76,11 @@ BLOCKED_PATTERNS: list[tuple[str, str]] = [
     # The privilege list is bounded by `[^;]*?` rather than `.*` so a match can
     # never walk past the end of the current statement into the next one.
     (
-        rf"\bREVOKE\b[^;]*?\bFROM{_GAP}ROLE{_GAP}ACCOUNTADMIN\b",
+        rf"\bREVOKE\b[^;]*?\bFROM{_GAP}ROLE{_GAP}(?:IF{_GAP}EXISTS{_GAP})?ACCOUNTADMIN\b",
         "Cannot revoke privileges from ACCOUNTADMIN",
     ),
     (
-        rf"\bREVOKE\b[^;]*?\bFROM{_GAP}ACCOUNTADMIN\b",
+        rf"\bREVOKE\b[^;]*?\bFROM{_GAP}(?:IF{_GAP}EXISTS{_GAP})?ACCOUNTADMIN\b",
         "Cannot revoke privileges from ACCOUNTADMIN",
     ),
     (

@@ -11,6 +11,11 @@ Baselines: ``61d67c7`` allowed all of ``TestSingleQuoteBypass`` and
 ``TestNewlineBypass``; ``TestIfExistsBypass`` is *latent* there (the guard
 allowed it and only the unrelated destructive-statement confirmation stopped it,
 so the ACCOUNTADMIN guard itself was blind).
+
+``TestRevokeIfExistsBypass`` (NOVA-19) covers a regression introduced by the
+``61d67c7`` fix itself: the ``IF EXISTS`` group was added to ``DROP ROLE`` and
+``ALTER ROLE`` but missed on both ``REVOKE`` patterns, so every case in that
+class was allowed on ``7b03cd9``.
 """
 
 import pytest
@@ -154,6 +159,57 @@ class TestIfExistsBypass:
     def test_if_exists_on_ordinary_role_allowed(self):
         # Over-blocking check: the clause itself is legitimate.
         guard_sql("DROP ROLE IF EXISTS analyst")
+
+
+class TestRevokeIfExistsBypass:
+    """NOVA-19 — the ``REVOKE`` patterns were missed by the ``IF EXISTS`` fix.
+
+    ``REVOKE`` joins its target role with ``ROLE`` (or directly), so the group
+    has to sit after ``FROM ROLE`` — and after the bare ``FROM`` form — the same
+    way it sits after ``DROP ROLE`` and ``ALTER ROLE``. Without it the two
+    keywords had to be adjacent and a single ``IF EXISTS`` clause walked the
+    statement past the guard. All of these were allowed on ``7b03cd9``.
+    """
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "REVOKE ALL ON *.* FROM ROLE IF EXISTS ACCOUNTADMIN",
+            "REVOKE ALL ON *.* FROM ROLE IF EXISTS `ACCOUNTADMIN`",
+            "REVOKE ALL ON *.* FROM ROLE IF EXISTS 'ACCOUNTADMIN'",
+            'REVOKE ALL ON *.* FROM ROLE IF EXISTS "ACCOUNTADMIN"',
+            "REVOKE ALL ON *.* FROM ROLE IF EXISTS [ACCOUNTADMIN]",
+            "REVOKE ALL ON *.* FROM IF EXISTS ACCOUNTADMIN",
+            "REVOKE USAGE ON *.* FROM ROLE IF EXISTS ACCOUNTADMIN",
+            "REVOKE SELECT ON *.* FROM IF EXISTS ACCOUNTADMIN",
+            "revoke all on *.* from role if exists accountadmin",
+            "REVOKE ALL ON *.* FROM ROLE\nIF\nEXISTS\nACCOUNTADMIN",
+            "REVOKE ALL /*c*/ ON *.* FROM ROLE IF EXISTS\n'ACCOUNTADMIN'",
+            "REVOKE ALL ON *.* FROM ROLE IF /*c*/ EXISTS ACCOUNTADMIN",
+        ],
+    )
+    def test_revoke_if_exists_accountadmin_blocked(self, sql):
+        with pytest.raises(ForbiddenSQLError, match="ACCOUNTADMIN"):
+            guard_sql(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "REVOKE ALL ON *.* FROM ROLE IF EXISTS analyst",
+            "REVOKE ALL ON *.* FROM IF EXISTS analyst",
+            "REVOKE ALL ON *.* FROM ROLE IF EXISTS 'analyst'",
+            "REVOKE USAGE ON *.* FROM ROLE IF EXISTS analyst",
+        ],
+    )
+    def test_revoke_if_exists_on_ordinary_role_allowed(self, sql):
+        # Over-blocking check: ``IF EXISTS`` on a non-system role is legitimate
+        # and must stay executable.
+        guard_sql(sql)
+
+    def test_revoke_if_exists_does_not_leak_across_statement_boundary(self):
+        # The privilege span is still bounded by `[^;]*?`, so adding the group
+        # did not let a REVOKE naming a safe role reach a later ACCOUNTADMIN.
+        guard_sql("REVOKE ALL ON *.* FROM ROLE IF EXISTS analyst; SELECT 1")
 
 
 class TestBypassComposition:
