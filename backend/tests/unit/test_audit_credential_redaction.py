@@ -84,8 +84,10 @@ def wired(monkeypatch):
         monkeypatch.setattr(
             "app.modules.query.service.decrypt_password", lambda value: "pw"
         )
+        # Credential injection now lives in the shared SQL pipeline, so the
+        # patch target moved with it (NOVA-28 PR 3).
         monkeypatch.setattr(
-            "app.modules.query.service.get_credential_params",
+            "app.modules.query.sql_pipeline.get_credential_params",
             lambda *args, **kwargs: dict(CREDENTIAL_PARAMS),
         )
         return svc, repo, sink
@@ -247,8 +249,11 @@ class TestStagePipelineEndToEnd:
 
         monkeypatch.setattr(service_module, "write_audit_log", sink)
         monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
+        # Injection moved into the shared pipeline (NOVA-28 PR 3).
+        import app.modules.query.sql_pipeline as pipeline_module
+
         monkeypatch.setattr(
-            service_module,
+            pipeline_module,
             "get_credential_params",
             lambda *args, **kwargs: {
                 "aws.s3.access_key": ACCESS_KEY,
