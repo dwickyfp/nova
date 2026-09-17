@@ -107,6 +107,86 @@ _AT_TOKEN = re.compile(
 )
 
 
+def _literal_and_comment_ranges(sql: str) -> list[tuple[int, int, str]]:
+    """``(start, end, kind)`` for every literal and comment span in ``sql``.
+
+    ``end`` is exclusive. ``kind`` is one of ``"single"``, ``"double"``,
+    ``"backtick"``, ``"line_comment"`` or ``"block_comment"``.
+
+    The scanner walks the statement once, left to right, and only ever opens a
+    new span when it is outside every other one — so a quote inside a comment,
+    a ``/*`` inside a literal and a ``--`` inside a literal are all data, not
+    structure. Escapes are honoured the way the engine reads them:
+
+    * ``''`` and ``\\\\`` inside a single-quoted literal, and ``""``/``\\"``
+      inside a double-quoted one, are literal characters, not terminators;
+    * an unterminated literal or comment runs to the end of the statement, which
+      is what MySQL does for an unclosed string and what keeps the tail of a
+      malformed statement from being read as live SQL.
+
+    This is the layer ``_classify_at_token`` was missing: it scanned the raw
+    text backwards and read an ``@name`` inside ``'FROM @x'`` as if the ``FROM``
+    were the SQL keyword. Classifying by context is only sound once the
+    classifier can tell code from data.
+    """
+    ranges: list[tuple[int, int, str]] = []
+    length = len(sql)
+    index = 0
+
+    while index < length:
+        char = sql[index]
+
+        if char == "'":
+            kind = "single"
+        elif char == '"':
+            kind = "double"
+        elif char == "`":
+            kind = "backtick"
+        elif char == "-" and sql.startswith("--", index):
+            newline = sql.find("\n", index)
+            end = length if newline < 0 else newline
+            ranges.append((index, end, "line_comment"))
+            index = end
+            continue
+        elif char == "/" and sql.startswith("/*", index):
+            close = sql.find("*/", index + 2)
+            end = length if close < 0 else close + 2
+            ranges.append((index, end, "block_comment"))
+            index = end
+            continue
+        else:
+            index += 1
+            continue
+
+        quote = char
+        end = index + 1
+        while end < length:
+            if sql[end] == "\\" and end + 1 < length:
+                end += 2
+                continue
+            if sql[end] == quote:
+                if end + 1 < length and sql[end + 1] == quote:
+                    end += 2
+                    continue
+                end += 1
+                break
+            end += 1
+        ranges.append((index, end, kind))
+        index = end
+
+    return ranges
+
+
+def _position_is_code(ranges: list[tuple[int, int, str]], position: int) -> bool:
+    """Whether ``position`` falls between spans rather than inside one.
+
+    Spans never overlap, so a single containment test is exact.
+    """
+    return all(
+        not start <= position < end for start, end, _kind in ranges
+    )
+
+
 def _classify_at_token(sql: str, match: re.Match) -> bool:
     """Whether the ``@name`` at ``match`` is a stage reference.
 
@@ -126,6 +206,11 @@ def _classify_at_token(sql: str, match: re.Match) -> bool:
     of the stage path while ``SELECT * FROM @stage1`` stays in it. The previous
     revision distinguished them by requiring a dot, which also rejected the
     documented bare and directory forms and silently disabled ``LIST``.
+
+    The caller is responsible for not calling this on a token that sits inside a
+    literal or comment (:func:`parse_sql` filters those out first): the text of
+    ``'FROM @x'`` is data, and reading its ``FROM`` as a keyword rewrites the
+    user's own string into a credential-bearing ``FILES()`` call.
     """
     if match.group("path") or match.group("slash"):
         return True
@@ -193,19 +278,30 @@ def _preceding_significant_token(sql: str, position: int) -> tuple[str, str] | N
 
 
 def _strip_comment_tail(sql: str, position: int) -> str:
-    """``sql[:position]`` with every line-comment span removed.
+    """``sql[:position]`` with every comment span blanked out.
 
     Removes both the comment that is still open at ``position`` and any earlier
     one, so the backward scan never stops on comment text. Simply cutting at the
     last ``--`` is not enough: ``FROM -- c\\n @stage1`` has the comment closed by
     its newline, and the text after it is live SQL whose preceding token is
-    still ``FROM`` — cutting would either keep ``c`` or drop ``FROM``.
+    still ``FROM`` — cutting would either keep ``c`` or drop ``FROM``. A block
+    comment is blanked the same way, so ``FROM /* c */ @stage1`` still sees
+    ``FROM``; when it is left open by an unclosed ``/*`` it swallows the rest of
+    the prefix, which is what the engine does with it too.
     """
     out: list[str] = []
     index = 0
     length = min(position, len(sql))
     while index < length:
         char = sql[index]
+
+        if char == "/" and sql.startswith("/*", index):
+            close = sql.find("*/", index + 2)
+            if close < 0 or close >= length:
+                break  # the block comment swallows the rest of the prefix
+            out.append(" ")
+            index = close + 2
+            continue
 
         if char == "'":
             # Copy the whole literal verbatim, honouring '' and \\' escapes, so
@@ -345,6 +441,13 @@ def parse_sql(sql: str) -> ParsedSQL:
     (:func:`_classify_at_token`), because a stage and a user variable share a
     spelling and only their position tells them apart.
 
+    Matches inside a string literal or a comment are dropped before
+    classification: that text is data the engine never parses as SQL, so an
+    ``@name`` there is neither a stage nor a variable. Skipping them is not just
+    cosmetic — a context classifier that reads ``'FROM @x'`` as a keyword and a
+    reference rewrites the user's literal into ``FILES(...)`` and injects
+    storage credentials into it (NOVA-29).
+
     ``LIST`` is a special case. Nova parses it as
     :attr:`CommandType.STAGE_BROWSE`, but nothing implements it and the engine
     has no ``LIST`` statement, so a ``LIST`` that reaches execution always
@@ -358,8 +461,11 @@ def parse_sql(sql: str) -> ParsedSQL:
     """
     command_type = detect_command_type(sql)
 
+    spans = _literal_and_comment_ranges(sql)
     stage_refs = []
     for match in _AT_TOKEN.finditer(sql):
+        if not _position_is_code(spans, match.start()):
+            continue
         if not _classify_at_token(sql, match):
             continue
         stage_refs.append(
