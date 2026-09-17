@@ -42,6 +42,7 @@ from app.modules.task_orchestration.reconciler import Reconciler
 from app.modules.task_orchestration.repository import (
     task_orchestration_repository as repo,
 )
+from tests.integration._nova_system_ddl import ensure_audit_log
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
@@ -101,6 +102,12 @@ async def engine_infra(request):
     await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
     for ddl in TASK_ORCHESTRATION_DDL:
         await db.execute_system(ddl)
+    # The reconciler audits every node transition (NOVA-37 AC #6), so it writes
+    # NOVA_SYSTEM.AUDIT_LOG. ``TASK_ORCHESTRATION_DDL`` does not create that
+    # table (it lives in init-nova.sql, which the dev/test engine omits), and
+    # CI only passes because seed_engine.sh happens to create it first. Create
+    # it here so the suite is self-contained on a clean engine.
+    await ensure_audit_log(SR_HOST, SR_PORT, SR_USER, SR_PASSWORD)
     # A pre-existing test volume predates the consecutive-failure column, which
     # ``CREATE TABLE IF NOT EXISTS`` cannot add; run the same idempotent
     # migration the worker runs at startup.
