@@ -145,20 +145,19 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          # Pinned to the version that generated frontend/pnpm-lock.yaml, so
+          # `--frozen-lockfile` cannot fail on a pnpm version skew between the
+          # developer machine and CI.
+          version: 11.8.0
 
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-        # No `cache: pnpm`: it requires a committed pnpm-lock.yaml, and
-        # frontend/pnpm-lock.yaml is gitignored (.gitignore:51). Until the
-        # lockfile is committed (see PR description), the dependency graph is
-        # resolved fresh on every run and there is nothing stable to key a
-        # cache on.
+          cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
