@@ -336,6 +336,40 @@ Untuk memverifikasi worker mengonsumsi:
 docker exec -it nova-redis redis-cli -a nova_redis_2026 XPENDING nova:tasks:graph_runs nova-workers
 ```
 
+### Rekonsiliasi native (NOVA-37)
+
+Reconciler berjalan **di dalam proses `nova-worker`**, pada cadence yang sama
+dengan reconcile cycle (`WORKER_RECONCILE_INTERVAL_SECONDS`, default 30 detik).
+Tidak ada proses atau kelas reconciler kedua — `Reconciler` yang sudah ada
+diperluas. Setiap pass melakukan dua hal, berurutan:
+
+1. **Rekonsiliasi state native.** Membaca `information_schema.task_runs` hanya
+   untuk node yang berstatus `running` (bukan setiap task), lalu:
+   - memajukan node yang native-nya sudah selesai → `success`/`failed`;
+   - menandai node yang **jejak native-nya hilang** sebagai `abandoned` — state
+     eksplisit, **bukan** sukses. Ini kasus task yang berjalan saat FE mati:
+     barisnya hilang dari `task_runs` tanpa jejak;
+   - membaca config FE lewat `ADMIN SHOW FRONTEND CONFIG LIKE '%task%'` (bukan
+     `SHOW VARIABLES`) untuk `max_task_consecutive_fail_count`;
+   - men-surface **auto-pause** (task berhenti otomatis setelah 10 kegagalan
+     beruntun) ke `NOVA_SYSTEM.AUDIT_LOG` dengan action
+     `TASK_AUTO_PAUSE_SUSPECTED`, supaya DAG tidak menggantung diam-diam.
+2. **Re-enqueue delivery yang hilang** (Redis flush / worker mati).
+
+Bila engine tidak tersedia, pembacaan mengembalikan `UNKNOWN` dan **tidak**
+menulis apa pun — kegagalan baca transien tidak boleh disalahartikan sebagai
+pekerjaan yang hilang. Idempoten: dua kali reconcile pada state yang sama tidak
+mengubah apa pun, karena setiap transisi adalah conditional write.
+
+Nilai config yang dibaca diverifikasi di engine 4.1.1: `task_runs_ttl_second =
+604800` (7 hari) dan `max_task_consecutive_fail_count = 10`. Task periodik
+**tidak** perlu di-re-arm setelah restart FE — yang direkonsiliasi hanya run
+yang jejaknya hilang.
+
+Operasional: tidak ada setting tambahan yang wajib. Override default 10 dengan
+`WORKER_MAX_CONSECUTIVE_FAIL_COUNT` bila deployment memakai nilai FE yang
+berbeda dan `ADMIN SHOW FRONTEND CONFIG` tidak dapat dibaca.
+
 ---
 
 ## 6. Login ke Nova
@@ -473,6 +507,23 @@ idempotensi, dan restart-safety:
 ```bash
 cd backend
 uv run pytest tests/integration/test_task_worker.py -v
+```
+
+Test rekonsiliasi native (unit, tanpa engine/Redis):
+
+```bash
+cd backend
+uv run pytest tests/unit/test_task_reconciler.py
+```
+
+Test integrasi rekonsiliasi (butuh StarRocks; skip otomatis bila tidak ada).
+Membuktikan run-hilang ditandai `abandoned` (bukan sukses), pembacaan config
+lewat `ADMIN SHOW FRONTEND CONFIG` (dan toleran bila engine mati), serta
+idempotensi dua pass:
+
+```bash
+cd backend
+uv run pytest tests/integration/test_task_reconciler.py -v
 ```
 
 ### Frontend
