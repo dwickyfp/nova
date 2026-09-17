@@ -6,7 +6,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.common.sql_guard import is_destructive_sql, is_unscoped_mutation, redact_sql_credentials
+from app.common.sql_guard import (
+    CredentialsRedactionError,
+    is_destructive_sql,
+    is_unscoped_mutation,
+    redact_sql_credentials,
+)
 from app.core.deps import get_current_user
 from app.modules.query.service import query_service
 
@@ -28,12 +33,24 @@ class SanitizingJSONResponse(JSONResponse):
 
     Redaction is value-only and recursive, so the response keeps its shape and a
     client can still see which parameters were injected.
+
+    A string the redactor refuses (``CredentialsRedactionError``) is replaced
+    with a fixed placeholder rather than propagated: this runs inside
+    ``render``, after the controller has already committed to a status code, so
+    an exception here turns *any* response into a 500 — including the error
+    handler's own output. Failing closed means never shipping the string, not
+    crashing the response that carries it.
     """
+
+    REDACTION_FAILED_PLACEHOLDER = "[redacted: unredactable credential value]"
 
     @staticmethod
     def _sanitize(value: object) -> object:
         if isinstance(value, str):
-            return redact_sql_credentials(value)
+            try:
+                return redact_sql_credentials(value)
+            except CredentialsRedactionError:
+                return SanitizingJSONResponse.REDACTION_FAILED_PLACEHOLDER
         if isinstance(value, dict):
             return {key: SanitizingJSONResponse._sanitize(item) for key, item in value.items()}
         if isinstance(value, list):
