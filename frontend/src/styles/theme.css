@@ -48,6 +48,20 @@
   --chart-4: #4f7ee8;
   --chart-5: #d94f86;
 
+  /* Multi-series charts need more hues than the five status-adjacent chart
+     slots above; these carry the categorical palette and its single-tone ramp. */
+  --chart-6: #a78bfa;
+  --chart-7: #f472b6;
+  --chart-8: #38bdf8;
+  --chart-9: #34d399;
+
+  --chart-tone-1: #5b8def;
+  --chart-tone-2: #76a0ef;
+  --chart-tone-3: #90b4f2;
+  --chart-tone-4: #aac7f5;
+  --chart-tone-5: #c4daf8;
+  --chart-tone-6: #deedfb;
+
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
@@ -99,6 +113,18 @@
   --chart-3: #f0ad3d;
   --chart-4: #7398ed;
   --chart-5: #e36a9a;
+
+  --chart-6: #a78bfa;
+  --chart-7: #f472b6;
+  --chart-8: #38bdf8;
+  --chart-9: #34d399;
+
+  --chart-tone-1: #5b8def;
+  --chart-tone-2: #76a0ef;
+  --chart-tone-3: #90b4f2;
+  --chart-tone-4: #aac7f5;
+  --chart-tone-5: #c4daf8;
+  --chart-tone-6: #deedfb;
 }
 
 @theme inline {
@@ -143,6 +169,16 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+  --color-chart-9: var(--chart-9);
+  --color-chart-tone-1: var(--chart-tone-1);
+  --color-chart-tone-2: var(--chart-tone-2);
+  --color-chart-tone-3: var(--chart-tone-3);
+  --color-chart-tone-4: var(--chart-tone-4);
+  --color-chart-tone-5: var(--chart-tone-5);
+  --color-chart-tone-6: var(--chart-tone-6);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
