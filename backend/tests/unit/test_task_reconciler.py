@@ -22,8 +22,10 @@ from app.modules.task_orchestration.native import (
     NativeConfig,
     NativeRun,
     NativeState,
+    fetch_native_runs,
     parse_consecutive_failures,
     read_frontend_config_rows,
+    read_latest_native_runs,
     schedule_is_paused,
 )
 from app.modules.task_orchestration.reconciler import Reconciler
@@ -541,3 +543,131 @@ class TestNoRunningNodes:
         report = await _reconciler(repo, observer).reconcile_native()
         assert report.observed == 0
         assert observer.config_reads == 0
+
+
+class _Cursor:
+    """A cursor that yields scripted rows, or raises on a chosen statement."""
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._rows: list[dict[str, Any]] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def execute(self, sql, params=None):
+        self._conn.executed.append(sql)
+        if self._conn.raise_on and self._conn.raise_on in sql:
+            raise RuntimeError(self._conn.raise_on_error)
+        self._rows = list(self._conn.rows)
+
+    async def fetchall(self):
+        return self._rows
+
+    async def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+
+class _Connection:
+    """A connection whose empties may come from a dead-but-stale session.
+
+    ``rows=[]`` mimics a successful-but-empty read; ``raise_on="SELECT 1"``
+    mimics the liveness probe finding the engine gone, which is exactly the
+    stale-pool state NOVA-43 describes.
+    """
+
+    def __init__(
+        self,
+        rows: list[dict[str, Any]] | None = None,
+        *,
+        raise_on: str | None = None,
+        raise_on_error: str = "engine gone",
+    ) -> None:
+        self.rows = rows if rows is not None else []
+        self.raise_on = raise_on
+        self.raise_on_error = raise_on_error
+        self.executed: list[str] = []
+
+    def cursor(self, *args, **kwargs):
+        return _Cursor(self)
+
+
+class TestStaleReadStillLivenessChecked:
+    """NOVA-43: an empty read is MISSING only if the engine is proven live."""
+
+    async def test_empty_read_with_dead_probe_is_unknown(self):
+        conn = _Connection(rows=[], raise_on="SELECT 1", raise_on_error="transport gone")
+        result = await read_latest_native_runs(conn, ["A"])
+        assert result["A"].state is NativeState.UNKNOWN
+        assert any("SELECT 1" in sql for sql in conn.executed)
+
+    async def test_empty_read_with_live_probe_is_missing(self):
+        conn = _Connection(rows=[])
+        result = await read_latest_native_runs(conn, ["A"])
+        assert result["A"].state is NativeState.MISSING
+
+    async def test_nonempty_read_skips_the_probe(self):
+        conn = _Connection(rows=[{"TASK_NAME": "A", "STATE": "FINISHED"}])
+        result = await read_latest_native_runs(conn, ["A"])
+        assert result["A"].state is NativeState.SUCCESS
+        assert not any("SELECT 1" in sql for sql in conn.executed)
+
+    async def test_dead_probe_never_marks_a_node_abandoned(self, audit, monkeypatch):
+        """The end-to-end consequence: stale empty + dead probe writes nothing."""
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run("n1", task_id)
+
+        async def stale_fetch(task_names):
+            return {n: NativeRun(task_name=n, state=NativeState.UNKNOWN) for n in task_names}
+
+        reconciler = _reconciler(repo, FakeObserver())
+        monkeypatch.setattr(reconciler._observer, "read_runs", stale_fetch)
+
+        report = await reconciler.reconcile_native()
+
+        assert report.lost_traces == []
+        assert repo.task_runs["n1"]["state"] == "running"
+        assert audit == []
+
+
+class TestConnectionAcquireTolerance:
+    """NOVA-44: acquiring a connection must not raise out of the reconciler."""
+
+    async def test_fetch_native_runs_returns_unknown_when_acquire_fails(self, monkeypatch):
+        import app.modules.task_orchestration.native as native_module
+
+        def _boom():
+            raise RuntimeError("can't connect to MySQL server")
+
+        monkeypatch.setattr(native_module.db, "system_conn", _boom)
+
+        result = await fetch_native_runs(["A", "B"])
+
+        assert {n: r.state for n, r in result.items()} == {
+            "A": NativeState.UNKNOWN,
+            "B": NativeState.UNKNOWN,
+        }
+
+    async def test_reconcile_native_degrades_without_raising(self, audit, monkeypatch):
+        import app.modules.task_orchestration.native as native_module
+
+        monkeypatch.setattr(
+            native_module.db,
+            "system_conn",
+            lambda: (_ for _ in ()).throw(RuntimeError("can't connect")),
+        )
+
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run("n1", task_id)
+
+        report = await Reconciler(repo).reconcile_native()
+
+        assert report.advanced == []
+        assert report.lost_traces == []
+        assert repo.task_runs["n1"]["state"] == "running"
+        assert audit == []

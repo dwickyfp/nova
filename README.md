@@ -699,11 +699,16 @@ own persistent `CONFIG_TASKS.consecutive_fail_count` (reset on success), or a
 native `SCHEDULE` pause/suspend marker — to `NOVA_SYSTEM.AUDIT_LOG`. A single
 failure is quiet, so the alarm stays meaningful (NOVA-42). A native row older
 than the node's `started_at` is ignored, so a stale attempt cannot fail a live
-node. A failed native read is `UNKNOWN` and writes nothing. Criterion 7 is
-verified against the live engine, which reports `task_runs_ttl_second = 604800`
-(7 days) — not the wrong 86400 premise. Twenty-two unit + six engine
-integration tests; the runbook is `HOW_TO_RUN.md` §5. The checklist item above
-stays unchecked until this PR is merged.
+node. A failed native read is `UNKNOWN` and writes nothing; an **empty** read is
+`MISSING` only when a `SELECT 1` probe on the same connection proves the engine
+is live, so a stale pooled connection after an FE death cannot mark healthy work
+`abandoned` (NOVA-43). Connection acquisition is inside the observer's guard, so
+an unreachable engine degrades to `UNKNOWN` instead of raising (NOVA-44).
+Criterion 7 is verified against the live engine, which reports
+`task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
+Twenty-eight unit + seven engine integration tests; the runbook is
+`HOW_TO_RUN.md` §5. The checklist item above stays unchecked until this PR is
+merged.
 
 ## Decision Log
 

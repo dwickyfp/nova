@@ -40,16 +40,15 @@ from typing import Any, Protocol
 
 from app.common.audit import write_audit_log
 from app.core.config import settings
-from app.core.database import db
 from app.modules.task_orchestration.dag import NodeState
 from app.modules.task_orchestration.native import (
     NativeConfig,
     NativeRun,
     NativeState,
+    fetch_native_runs,
+    fetch_native_schedules,
     parse_consecutive_failures,
-    read_latest_native_runs,
     read_native_config,
-    read_native_schedules,
     schedule_is_paused,
 )
 from app.modules.task_orchestration.repository import TaskOrchestrationRepository
@@ -73,19 +72,19 @@ class EngineNativeObserver:
     Configuration is read via ``ADMIN SHOW FRONTEND CONFIG LIKE '%task%'`` — the
     FE-config surface, not ``SHOW VARIABLES``. Every read tolerates an
     unavailable engine by returning an ``UNKNOWN``/unavailable result rather
-    than raising, so reconciliation degrades instead of crashing.
+    than raising, so reconciliation degrades instead of crashing. Connection
+    *acquisition* is inside the guard too: when the pool cannot reach the FE,
+    ``db.system_conn()`` is what raises (NOVA-44).
     """
 
     async def read_native_config(self) -> NativeConfig:
         return await read_native_config()
 
     async def read_runs(self, task_names: list[str]) -> dict[str, NativeRun]:
-        async with db.system_conn() as conn:
-            return await read_latest_native_runs(conn, task_names)
+        return await fetch_native_runs(task_names)
 
     async def read_schedules(self, task_names: list[str]) -> dict[str, str]:
-        async with db.system_conn() as conn:
-            return await read_native_schedules(conn, task_names)
+        return await fetch_native_schedules(task_names)
 
 
 @dataclass

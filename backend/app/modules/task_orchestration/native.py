@@ -123,6 +123,8 @@ async def read_latest_native_run(conn: Any, task_name: str) -> NativeRun:
         return NativeRun(task_name=task_name, state=NativeState.UNKNOWN)
 
     if not rows:
+        if not await probe_engine_liveness(conn):
+            return NativeRun(task_name=task_name, state=NativeState.UNKNOWN)
         return NativeRun(task_name=task_name, state=NativeState.MISSING)
     row = rows[0]
     error = row.get("ERROR_MESSAGE")
@@ -136,6 +138,27 @@ async def read_latest_native_run(conn: Any, task_name: str) -> NativeRun:
     )
 
 
+async def probe_engine_liveness(conn: Any) -> bool:
+    """Whether a statement on ``conn`` actually reaches a live engine.
+
+    A pooled connection can keep answering from an established TCP session for
+    a short window after the FE dies, so a query that returns zero rows is not
+    proof the engine is up. ``SELECT 1`` forces a round trip; if it fails, any
+    empty result read on this connection is untrustworthy and must be treated
+    as ``UNKNOWN`` rather than "no rows exist" (NOVA-43).
+
+    Never raises: a probe that cannot run is itself the answer.
+    """
+    try:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT 1")
+            await cur.fetchone()
+    except Exception as exc:
+        logger.warning("engine liveness probe failed: %s", _redact(str(exc)))
+        return False
+    return True
+
+
 async def read_latest_native_runs(
     conn: Any, task_names: list[str]
 ) -> dict[str, NativeRun]:
@@ -143,6 +166,11 @@ async def read_latest_native_runs(
 
     The reconciler polls only graph runs that are actually ``RUNNING`` (design
     §2), so the name list is bounded by in-flight work, not by every task.
+
+    A task with **no rows** is ``MISSING`` only when the engine is proven live
+    on this same connection; otherwise it is ``UNKNOWN``. Without that check a
+    stale pooled connection would report every in-flight task as ``MISSING``,
+    and the reconciler would mark healthy work ``abandoned`` (NOVA-43).
     """
     if not task_names:
         return {}
@@ -164,6 +192,12 @@ async def read_latest_native_runs(
             _redact(str(exc)),
         )
         return {name: NativeRun(task_name=name, state=NativeState.UNKNOWN) for name in task_names}
+
+    if not rows and not await probe_engine_liveness(conn):
+        return {
+            name: NativeRun(task_name=name, state=NativeState.UNKNOWN)
+            for name in task_names
+        }
 
     latest: dict[str, NativeRun] = {}
     for row in rows:
@@ -244,6 +278,43 @@ async def read_native_config(conn: Any | None = None) -> NativeConfig:
     except Exception as exc:
         logger.warning("could not read FE task config: %s", _redact(str(exc)))
         return NativeConfig(available=False)
+
+
+async def fetch_native_runs(task_names: list[str]) -> dict[str, NativeRun]:
+    """Read native runs on a pooled system connection, tolerating an unreachable engine.
+
+    Connection acquisition is inside the guard: when the FE is down,
+    ``db.system_conn()`` is what raises, and the reconciler must degrade to
+    ``UNKNOWN`` rather than propagate (NOVA-44).
+    """
+    try:
+        async with db.system_conn() as conn:
+            return await read_latest_native_runs(conn, task_names)
+    except Exception as exc:
+        logger.warning(
+            "could not acquire a connection to read native runs: %s", _redact(str(exc))
+        )
+        return {
+            name: NativeRun(task_name=name, state=NativeState.UNKNOWN)
+            for name in task_names
+        }
+
+
+async def fetch_native_schedules(task_names: list[str]) -> dict[str, str]:
+    """Read native ``SCHEDULE`` strings, tolerating an unreachable engine.
+
+    Returns an empty map on failure: an unreadable schedule is not a pause
+    marker, so the caller falls back to its failure counter.
+    """
+    try:
+        async with db.system_conn() as conn:
+            return await read_native_schedules(conn, task_names)
+    except Exception as exc:
+        logger.warning(
+            "could not acquire a connection to read native schedules: %s",
+            _redact(str(exc)),
+        )
+        return {}
 
 
 async def _read_config_on(conn: Any, sql: str) -> NativeConfig:

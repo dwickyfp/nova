@@ -370,8 +370,20 @@ diperluas. Setiap pass melakukan dua hal, berurutan:
 
 Bila engine tidak tersedia, pembacaan mengembalikan `UNKNOWN` dan **tidak**
 menulis apa pun — kegagalan baca transien tidak boleh disalahartikan sebagai
-pekerjaan yang hilang. Idempoten: dua kali reconcile pada state yang sama tidak
-mengubah apa pun, karena setiap transisi adalah conditional write.
+pekerjaan yang hilang. Dua hal ini khusus dijaga:
+
+- **Hasil kosong belum tentu "run hilang".** Pool koneksi dapat masih membalas
+  dari sesi TCP lama sesaat setelah FE mati, sehingga query "sukses" dengan 0
+  baris. Karena itu hasil kosong dipercaya sebagai `MISSING` **hanya bila probe
+  `SELECT 1` pada koneksi yang sama membuktikan engine hidup**; jika tidak,
+  hasilnya `UNKNOWN` dan tidak ada write. Tanpa ini, run yang masih sehat akan
+  ditandai `abandoned` saat FE mati (NOVA-43).
+- **Akuisisi koneksi ikut dijaga.** Kegagalan `db.system_conn()` saat FE tidak
+  dapat dijangkau dikembalikan sebagai `UNKNOWN`/map kosong, bukan exception
+  yang keluar dari `reconcile_native` (NOVA-44).
+
+Idempoten: dua kali reconcile pada state yang sama tidak mengubah apa pun,
+karena setiap transisi adalah conditional write.
 
 Nilai config yang dibaca diverifikasi di engine 4.1.1: `task_runs_ttl_second =
 604800` (7 hari) dan `max_task_consecutive_fail_count = 10`. Task periodik
