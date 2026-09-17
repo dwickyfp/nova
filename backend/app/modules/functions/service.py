@@ -218,10 +218,47 @@ class FunctionService:
                 rows = await cur.fetchall()
                 desc = [d[0] for d in cur.description]
 
+        functions, _ = self._project_udfs(rows, desc, database)
+        return functions
+
+    async def list_udfs_with_databases(
+        self, database: str | None = None
+    ) -> tuple[list[UDFResponse], list[str]]:
+        """List UDFs, plus every database holding one.
+
+        Returns ``(functions, databases)`` from a single ``SHOW FULL
+        FUNCTIONS``. The two differ on purpose: ``database`` narrows the
+        listing, but the UI's filter must still offer every choice, so
+        ``databases`` is the unfiltered set. Deriving it here rather than
+        issuing a second query keeps the two views consistent by construction
+        - both come from the same rows.
+
+        A ``GLOBAL`` function reports an empty ``Db`` and contributes nothing
+        to ``databases``.
+        """
+        async with db.system_conn() as conn, conn.cursor() as cur:
+            await cur.execute("SHOW FULL FUNCTIONS")
+            rows = await cur.fetchall()
+            desc = [d[0] for d in cur.description]
+
+        return self._project_udfs(rows, desc, database)
+
+    @staticmethod
+    def _project_udfs(
+        rows: list, desc: list[str], database: str | None
+    ) -> tuple[list[UDFResponse], list[str]]:
+        """Project ``SHOW FULL FUNCTIONS`` rows into functions + databases.
+
+        One pass over the rows serves both outputs, so the listing and the set
+        of filter choices cannot disagree.
+        """
         functions: list[UDFResponse] = []
+        databases: set[str] = set()
         for row in rows:
-            record = dict(zip(desc, row))
+            record = dict(zip(desc, row, strict=False))
             db_name = str(record.get("Db", ""))
+            if db_name:
+                databases.add(db_name)
             if database and db_name != database:
                 continue
             functions.append(
@@ -234,7 +271,7 @@ class FunctionService:
                     return_type=str(record.get("Return_type", "")),
                 )
             )
-        return functions
+        return functions, sorted(databases)
 
     async def create_udf(self, data: UDFCreate) -> str:
         """Build and execute a CREATE FUNCTION statement. Returns the SQL."""

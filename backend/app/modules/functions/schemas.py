@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
 from typing import Literal
+
+from pydantic import BaseModel, Field
 
 
 class FunctionCategory(BaseModel):
@@ -39,6 +40,10 @@ class UDFResponse(BaseModel):
 class UDFListResponse(BaseModel):
     functions: list[UDFResponse]
     count: int
+    #: Databases holding at least one UDF, sorted, derived from the same
+    #: rows as ``functions`` rather than a second query. The UI needs the
+    #: full set even when ``database`` narrows the listing.
+    databases: list[str] = []
 
 
 class BuiltInFunctionListResponse(BaseModel):
