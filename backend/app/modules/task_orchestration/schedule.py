@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 
 _CRON_FIELDS = 5
+
+_OFFSET_RE = re.compile(r"^([+-])(\d{1,2}):(\d{2})$")
+_MAX_OFFSET = timedelta(hours=23, minutes=59)
 
 _INTERVAL_UNITS: dict[str, str] = {
     "second": "seconds",
@@ -58,17 +61,45 @@ class Interval:
         return timedelta(**{_INTERVAL_UNITS[self.unit]: self.amount})
 
 
-def resolve_timezone(name: str) -> ZoneInfo:
-    """Return the IANA ``ZoneInfo`` for ``name`` or raise ``ScheduleError``.
+def _parse_offset(name: str) -> timezone | None:
+    """Return the fixed-offset ``timezone`` for ``[+-]HH:MM``, else ``None``.
 
-    An explicit timezone is mandatory: StarRocks interprets ``START`` literals
-    in the session timezone, so silently defaulting to UTC would fire tasks at
-    the wrong wall-clock moment.
+    StarRocks accepts offset session zones (``SET time_zone='+07:00'``), so
+    ``@@time_zone`` may report a numeric offset rather than an IANA key. A fixed
+    ``timezone`` is the right representation for those: it carries no DST rules,
+    which matches what the engine itself does with an offset.
+    """
+    match = _OFFSET_RE.match(name)
+    if match is None:
+        return None
+    sign = 1 if match.group(1) == "+" else -1
+    hours = int(match.group(2))
+    minutes = int(match.group(3))
+    if minutes > 59:
+        return None
+    value = timedelta(hours=hours, minutes=minutes)
+    if value > _MAX_OFFSET:
+        return None
+    return timezone(sign * value)
+
+
+def resolve_timezone(name: str) -> ZoneInfo | timezone:
+    """Return a zone for ``name`` or raise ``ScheduleError``.
+
+    Accepts an IANA name (``Asia/Jakarta``) primarily, and also the numeric
+    offset form StarRocks reports for offset session zones (``+07:00``). An
+    explicit timezone is mandatory: StarRocks interprets ``START`` literals in
+    the session timezone, so silently defaulting to UTC would fire tasks at the
+    wrong wall-clock moment.
     """
     if not name or not name.strip():
         raise ScheduleError("task timezone is required and must be an IANA name")
+    stripped = name.strip()
+    offset = _parse_offset(stripped)
+    if offset is not None:
+        return offset
     try:
-        return ZoneInfo(name)
+        return ZoneInfo(stripped)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise ScheduleError(f"unknown IANA timezone: {name!r}") from exc
 

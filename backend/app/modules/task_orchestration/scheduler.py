@@ -98,6 +98,7 @@ async def resolve_engine_timezone(repository: TaskOrchestrationRepository) -> st
 
     detected = await repository.get_engine_timezone()
     if detected:
+        resolve_timezone(detected)
         return detected
 
     logger.warning(
@@ -185,11 +186,11 @@ def plan_tick(
             if kind not in SCHEDULED_KINDS:
                 continue
             created_at = task.get("created_at")
-            if isinstance(created_at, datetime):
-                anchor = naive_engine_time_to_utc(created_at, engine_timezone)
-            else:
-                anchor = now
             try:
+                if isinstance(created_at, datetime):
+                    anchor = naive_engine_time_to_utc(created_at, engine_timezone)
+                else:
+                    anchor = now
                 occurrence = latest_occurrence(
                     kind,
                     task.get("schedule_expr") or "",
