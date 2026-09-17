@@ -95,15 +95,28 @@ services:
     # denied") and the whole stack failed to start. Same reason the StarRocks
     # images are tagged. Bump deliberately, not implicitly.
     image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
-    command: server /data --console-address ":9001"
+    # MinIO serves the S3 API on 29000 inside the network, matching the host
+    # port. The port NUMBER must be identical on both sides, not just mapped.
+    #
+    # The app derives the FILES() endpoint StarRocks uses by rewriting the
+    # hostname of the configured endpoint (`to_docker_endpoint`), keeping the
+    # port. Config load also rewrites `minio` back to the host endpoint
+    # (`_resolve_endpoint`). Those two are only inverses when the port is the
+    # same on both sides. With the usual "29000:9000" mapping, StarRocks was
+    # handed `http://minio:29000` — nothing listening — and every @stage query
+    # failed with "Access storage error. Connection refused".
+    command: server /data --address ":29000" --console-address ":29001"
     ports:
-      - "29000:9000"   # S3 API (test port)
-      - "29001:9001"   # Web console
+      - "29000:29000"  # S3 API, same number both sides so the rewrite is a no-op
+      - "29001:29001"  # Web console
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      # Not `mc ready local`: that alias targets the default :9000, and the API
+      # is on :29000 here, so the probe hangs instead of reporting. Ask the
+      # live server for its health endpoint on the port it actually serves.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:29000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
