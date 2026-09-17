@@ -371,7 +371,7 @@ export function RolesPage() {
                           <div className='flex flex-wrap items-center gap-2'>
                             <span className='font-medium'>{role.name}</span>
                             {role.is_protected ? (
-                              <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>
+                              <Badge className='border-destructive/25 bg-destructive/10 text-destructive'>
                                 Protected
                               </Badge>
                             ) : null}
@@ -383,14 +383,14 @@ export function RolesPage() {
                           {role.is_builtin ? (
                             <Badge
                               variant='outline'
-                              className='border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300'
+                              className='border-warning/25 bg-warning/10 text-warning-strong'
                             >
                               Built-in
                             </Badge>
                           ) : (
                             <Badge
                               variant='outline'
-                              className='border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+                              className='border-success/25 bg-success/10 text-success-strong'
                             >
                               Custom
                             </Badge>

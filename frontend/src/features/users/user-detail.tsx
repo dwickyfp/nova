@@ -311,7 +311,7 @@ export function UserDetailPage({ username }: { username: string }) {
                       <td className='px-4 py-3 text-right'>
                         <Badge
                           variant='secondary'
-                          className='border-transparent bg-emerald-600 text-xs text-white hover:bg-emerald-600'
+                          className='border-success/25 bg-success/10 text-xs text-success-strong hover:bg-success/15'
                         >
                           Assigned
                         </Badge>

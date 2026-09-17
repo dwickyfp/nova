@@ -1,4 +1,8 @@
+import { readToken } from '@/lib/read-token'
 import { Area, AreaChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
+
+const axisColor = readToken('--muted-foreground', '#62748e')
+
 
 const data = [
   {
@@ -44,13 +48,13 @@ export function AnalyticsChart() {
       <AreaChart data={data}>
         <XAxis
           dataKey='name'
-          stroke='#888888'
+          stroke={axisColor}
           fontSize={12}
           tickLine={false}
           axisLine={false}
         />
         <YAxis
-          stroke='#888888'
+          stroke={axisColor}
           fontSize={12}
           tickLine={false}
           axisLine={false}
