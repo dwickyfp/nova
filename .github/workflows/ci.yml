@@ -155,13 +155,11 @@ jobs:
           # investigated, a green one ships. `-rs` prints every skip reason, so
           # "nothing ran" comes with the reason attached.
           #
-          # The suite is selected by directory rather than `-m engine` for now:
-          # no test under tests/integration carries the marker yet, so a marker
-          # filter would deselect everything. The marker goes in with the tests
-          # that use it, after the rebase that brings the proxy suite onto this
-          # branch.
+          # `-m engine` selects the suites that need the real stack. Both files
+          # under tests/integration carry the marker, so the filter is
+          # meaningful rather than a deselect-everything no-op.
           set +e
-          uv run pytest tests/integration -v -rs --junit-xml=integration.xml
+          uv run pytest tests/integration -m engine -v -rs --junit-xml=integration.xml
           status=$?
           set -e
 
