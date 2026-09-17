@@ -289,6 +289,130 @@ class TestLostTraceAgainstEngine:
         }
 
 
+_ARCHIVE_1064 = (
+    "ERROR 1064 (HY000): Getting analyzing error. Detail message: "
+    "RepoExecutor execute sql failed: SELECT history_content_json FROM "
+    "_statistics_.task_run_history WHERE TRUE AND task_name = 'x' "
+    "ORDER BY create_time DESC LIMIT 10000."
+)
+
+
+class _ArchivePoisonedConnection:
+    """The real engine connection, with only the archive-reaching read poisoned.
+
+    A fresh FE raises 1064 when a ``task_runs`` read needs
+    ``_statistics_.task_run_history`` before that archive is initialized, while
+    the engine keeps serving every other statement. That race cannot be held
+    deterministically against a warm CI engine by manipulating FE internals, so
+    the failure is injected at the statement boundary instead: the batch read
+    (the one with ``ORDER BY TASK_NAME``) raises the recorded CI error, and every
+    other statement — including the ``SELECT 1`` liveness probe — goes to the
+    live engine untouched.
+
+    This keeps the assertion honest: the reconciler, the classification, and the
+    repository writes all run for real against StarRocks; only the poisoned
+    statement is synthetic.
+    """
+
+    def __init__(self, conn) -> None:
+        self._conn = conn
+        self.executed: list[str] = []
+
+    def cursor(self, *args, **kwargs):
+        return _ArchivePoisonedCursor(self._conn.cursor(*args, **kwargs), self)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        await self._conn.__aexit__(*exc)
+        return False
+
+
+class _ArchivePoisonedCursor:
+    def __init__(self, cur, conn) -> None:
+        self._cur = cur
+        self._conn = conn
+
+    async def __aenter__(self):
+        await self._cur.__aenter__()
+        return self
+
+    async def __aexit__(self, *exc):
+        return await self._cur.__aexit__(*exc)
+
+    async def execute(self, sql, params=None):
+        self._conn.executed.append(sql)
+        if "ORDER BY TASK_NAME" in sql:
+            raise RuntimeError(_ARCHIVE_1064)
+        return await self._cur.execute(sql, params)
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+
+class TestArchiveSurfaceFailureAgainstEngine:
+    """Criterion 2 on a fresh engine: an archive 1064 must not hang a node.
+
+    The warm-engine lost-trace tests above pass only because the archive answers
+    an empty result. This class drives the CI failure through the real engine:
+    the batch ``task_runs`` read raises 1064 while ``SELECT 1`` still succeeds,
+    and a lost trace must reach ``abandoned`` rather than the hanging ``unknown``
+    (NOVA-46). Without the fix the reconciler returns ``unknown`` and the node
+    stays ``running`` — the exact L3 red on ``0c35b9c``.
+    """
+
+    async def test_archive_1064_with_live_engine_abandons_the_lost_trace(
+        self, engine_infra, cleanup_runs, monkeypatch
+    ):
+        import app.modules.task_orchestration.native as native_module
+
+        real_read = native_module.read_latest_native_runs
+
+        async def poisoned_read(conn, task_names):
+            return await real_read(_ArchivePoisonedConnection(conn), task_names)
+
+        suffix = uuid4().hex[:8]
+        name = f"lost1064_{suffix}"
+        task = await repo.create_task(
+            {
+                "name": name,
+                "timezone": "UTC",
+                "definition": "INSERT INTO t SELECT 1",
+                "database_name": "NOVA_SYSTEM",
+                "schedule_kind": "manual",
+            },
+            created_by=SR_USER,
+        )
+        cleanup_runs["task"].append(task["id"])
+        run = await repo.create_graph_run(
+            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        )
+        cleanup_runs["graph"].append(run["id"])
+        node = await repo.create_task_run(
+            {
+                "graph_run_id": run["id"],
+                "task_id": task["id"],
+                "state": "running",
+                "delegated": True,
+            }
+        )
+
+        monkeypatch.setattr(native_module, "read_latest_native_runs", poisoned_read)
+
+        report = await Reconciler(repo).reconcile_native()
+
+        assert name in report.lost_traces, (
+            "archive 1064 on a live engine must still settle a lost trace; "
+            f"got lost_traces={report.lost_traces} unknown={report.unknown}"
+        )
+        assert name not in report.unknown
+        refreshed = await repo.get_task_run(node["id"])
+        assert refreshed is not None
+        assert refreshed["state"] == "abandoned"
+        assert refreshed["state"] != "success"
+
+
 class TestAutoPauseThresholdAgainstEngine:
     """Criterion 3: the threshold is read from the real engine, not hardcoded.
 

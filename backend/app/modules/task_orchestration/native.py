@@ -13,11 +13,20 @@ The reconciler must learn three things from the engine, and nothing else:
 
 Every read is best-effort. The engine's ``information_schema.task_runs`` is
 served by an internal archive read that can fail independently of the task
-(observed as a 1064 on ``_statistics_.task_run_history``), and
-``ADMIN SHOW FRONTEND CONFIG`` is an FE-config statement that may be refused.
-A reconciliation pass that cannot observe must report ``UNKNOWN`` for that
-signal rather than invent a state; the caller decides what to do with an
-unknown.
+(observed as a 1064 on ``_statistics_.task_run_history``, e.g. on a fresh FE
+whose archive is not yet initialized), and ``ADMIN SHOW FRONTEND CONFIG`` is an
+FE-config statement that may be refused.
+
+A read failure is ``UNKNOWN`` unless it carries the run-trace surface's own
+signature (an archive/1064/``getTaskRuns`` failure) **and** a ``SELECT 1`` probe
+proves the engine is alive. In that one case the trace surface is unreadable
+while the engine is reachable, so no run is observable and the tasks are the
+lost-trace ``MISSING`` the reconciler settles to ``abandoned``. Every other
+failure — a transport error, or any failure where the probe also fails — stays
+``UNKNOWN``, because the engine is unreachable or the failure is not the trace
+surface and nothing may be inferred. Collapsing a live engine's run-trace
+failure into ``UNKNOWN`` is what let a genuinely lost trace hang a DAG forever
+(NOVA-46).
 """
 
 from __future__ import annotations
@@ -101,11 +110,40 @@ def _classify(raw: str | None) -> NativeState:
     return NativeState.UNKNOWN
 
 
+#: Markers that identify a read failure as the *run-trace surface* rather than
+#: the engine or the connection. StarRocks reports the uninitialized archive as
+#: a 1064 naming ``_statistics_.task_run_history``; on some builds the same
+#: surface surfaces as an FE RPC failure to the BE while ordinary statements
+#: still succeed. These are the failures NOVA-46 pins: with ``SELECT 1``
+#: proving the engine live, the trace is unobservable, so an absent trace is the
+#: lost-trace case rather than an engine outage.
+_TRACE_SURFACE_MARKERS = (
+    "task_run_history",
+    "ignore_task_run_history_replay_error",
+    "getTaskRuns",
+)
+
+
+def _is_trace_surface_failure(exc: BaseException) -> bool:
+    """Whether ``exc`` is the run-trace surface failing, not the engine.
+
+    Deliberately narrow: a generic connection error ("Lost connection", "Can't
+    connect") does **not** match, so a genuinely unreachable engine still
+    degrades to ``UNKNOWN`` and no healthy node is ever abandoned on a transport
+    blip. Only the archive/run-history surface markers qualify.
+    """
+    message = str(exc).upper()
+    return any(marker.upper() in message for marker in _TRACE_SURFACE_MARKERS)
+
+
 async def read_latest_native_run(conn: Any, task_name: str) -> NativeRun:
     """One best-effort read of a task's latest ``task_runs`` row.
 
     A successful read with no rows is ``MISSING`` — the lost-trace case. A
-    failed read is ``UNKNOWN``; the caller must not treat either as success.
+    failed read is ``UNKNOWN`` **unless** it is the run-trace surface failing on
+    a proven-live engine, in which case there is no observable trace and the
+    result is ``MISSING`` (NOVA-46). The caller must not treat either as
+    success.
     """
     sql = (
         "SELECT TASK_NAME, QUERY_ID, STATE, ERROR_MESSAGE, CREATE_TIME "
@@ -120,6 +158,8 @@ async def read_latest_native_run(conn: Any, task_name: str) -> NativeRun:
         logger.warning(
             "could not read native task state for %s: %s", task_name, _redact(str(exc))
         )
+        if _is_trace_surface_failure(exc) and await probe_engine_liveness(conn):
+            return NativeRun(task_name=task_name, state=NativeState.MISSING)
         return NativeRun(task_name=task_name, state=NativeState.UNKNOWN)
 
     if not rows:
@@ -171,6 +211,22 @@ async def read_latest_native_runs(
     on this same connection; otherwise it is ``UNKNOWN``. Without that check a
     stale pooled connection would report every in-flight task as ``MISSING``,
     and the reconciler would mark healthy work ``abandoned`` (NOVA-43).
+
+    A *failed* batch read is not automatically ``UNKNOWN`` either. The archive
+    read behind ``information_schema.task_runs`` can fail on a fresh FE — the
+    ``_statistics_.task_run_history`` surface is not initialized, so the read
+    raises 1064 (or an FE RPC failure to the BE) while the engine keeps serving
+    ordinary statements. There is no ``task_runs`` query that avoids that
+    surface, so when the failure carries a trace-surface signature and a
+    ``SELECT 1`` probe proves the engine live, the trace is unobservable rather
+    than absent: each batch task is reported ``MISSING``, the explicit
+    lost-trace state the reconciler settles to ``abandoned``. Treating it as
+    ``UNKNOWN`` is what left a genuinely lost trace ``running`` forever
+    (NOVA-46).
+
+    Anything else — a transport error, or any failure where the probe also
+    fails — stays the one true ``UNKNOWN``: the engine is unreachable or the
+    failure is not the trace surface, and nothing may be inferred.
     """
     if not task_names:
         return {}
@@ -191,6 +247,14 @@ async def read_latest_native_runs(
             len(task_names),
             _redact(str(exc)),
         )
+        if _is_trace_surface_failure(exc) and await probe_engine_liveness(conn):
+            # The trace surface is unreadable but the engine is alive, so no
+            # run is observable: the lost-trace case, settled as MISSING.
+            return {
+                name: NativeRun(task_name=name, state=NativeState.MISSING) for name in task_names
+            }
+        # The engine is unreachable or the failure is not the trace surface;
+        # nothing may be inferred.
         return {name: NativeRun(task_name=name, state=NativeState.UNKNOWN) for name in task_names}
 
     if not rows and not await probe_engine_liveness(conn):

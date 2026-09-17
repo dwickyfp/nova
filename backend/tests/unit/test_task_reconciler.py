@@ -560,9 +560,13 @@ class _Cursor:
 
     async def execute(self, sql, params=None):
         self._conn.executed.append(sql)
-        if self._conn.raise_on and self._conn.raise_on in sql:
-            raise RuntimeError(self._conn.raise_on_error)
-        self._rows = list(self._conn.rows)
+        for marker, error in self._conn.failures:
+            if marker in sql:
+                raise RuntimeError(error)
+        if "SELECT 1" in sql:
+            self._rows = list(self._conn.probe_rows)
+        else:
+            self._rows = list(self._conn.rows)
 
     async def fetchall(self):
         return self._rows
@@ -577,6 +581,11 @@ class _Connection:
     ``rows=[]`` mimics a successful-but-empty read; ``raise_on="SELECT 1"``
     mimics the liveness probe finding the engine gone, which is exactly the
     stale-pool state NOVA-43 describes.
+
+    ``failures`` maps a SQL substring to the error that reading it must raise,
+    so NOVA-46's run-trace-surface failure (the batch ``ORDER BY`` statement
+    raising 1064 while ``SELECT 1`` still succeeds) can be replayed: a marker on
+    the batch read alone leaves the probe working.
     """
 
     def __init__(
@@ -585,10 +594,16 @@ class _Connection:
         *,
         raise_on: str | None = None,
         raise_on_error: str = "engine gone",
+        failures: list[tuple[str, str]] | None = None,
+        probe_rows: list[dict[str, Any]] | None = None,
     ) -> None:
         self.rows = rows if rows is not None else []
         self.raise_on = raise_on
         self.raise_on_error = raise_on_error
+        self.failures = list(failures or [])
+        if raise_on is not None:
+            self.failures.append((raise_on, raise_on_error))
+        self.probe_rows = probe_rows if probe_rows is not None else [{"1": 1}]
         self.executed: list[str] = []
 
     def cursor(self, *args, **kwargs):
@@ -632,6 +647,98 @@ class TestStaleReadStillLivenessChecked:
         assert report.lost_traces == []
         assert repo.task_runs["n1"]["state"] == "running"
         assert audit == []
+
+
+_ARCHIVE_1064 = (
+    1064,
+    "Getting analyzing error. Detail message: RepoExecutor execute sql failed: "
+    "SELECT history_content_json FROM _statistics_.task_run_history",
+)
+
+
+class TestRunTraceSurfaceFailureIsNotUnknown:
+    """NOVA-46: a live engine's trace-surface failure must not hang a node.
+
+    On a fresh FE the ``information_schema.task_runs`` read raises 1064 because
+    ``_statistics_.task_run_history`` is not initialized, while the engine keeps
+    answering other statements. The read must not collapse that into
+    ``UNKNOWN`` (which the reconciler maps to "no write") — a lost trace has to
+    reach ``MISSING`` so the node becomes ``abandoned``. A non-surface failure
+    (a transport blip) must still stay ``UNKNOWN`` so healthy work is never
+    abandoned.
+    """
+
+    async def test_archive_1064_with_live_engine_is_missing(self):
+        """Batch 1064 + live probe => the trace is unobservable: MISSING."""
+        conn = _Connection(rows=[], failures=[("ORDER BY TASK_NAME", str(_ARCHIVE_1064))])
+        result = await read_latest_native_runs(conn, ["A"])
+        assert result["A"].state is NativeState.MISSING
+        assert any("SELECT 1" in sql for sql in conn.executed)
+
+    async def test_fe_rpc_trace_failure_with_live_engine_is_missing(self):
+        """The other fresh-FE signature (an FE RPC to the BE) is also the surface."""
+        conn = _Connection(
+            failures=[
+                (
+                    "ORDER BY TASK_NAME",
+                    "1064 FE RPC failure, reason=Internal error processing "
+                    "getTaskRuns: BE:10001, host: unknown",
+                )
+            ]
+        )
+        result = await read_latest_native_runs(conn, ["A"])
+        assert result["A"].state is NativeState.MISSING
+
+    async def test_archive_1064_with_dead_engine_is_unknown(self):
+        """A batch failure where the probe also fails stays UNKNOWN."""
+        conn = _Connection(
+            failures=[
+                ("ORDER BY TASK_NAME", str(_ARCHIVE_1064)),
+                ("SELECT 1", "engine gone"),
+            ]
+        )
+        result = await read_latest_native_runs(conn, ["A", "B"])
+        assert result["A"].state is NativeState.UNKNOWN
+        assert result["B"].state is NativeState.UNKNOWN
+
+    async def test_non_surface_failure_on_a_live_engine_is_unknown(self):
+        """A transport blip on a live engine must NOT abandon healthy work.
+
+        Only the trace surface's own signature earns ``MISSING``; a generic read
+        error could be momentary for a healthy in-flight run, so it stays
+        ``UNKNOWN`` and the node is left running.
+        """
+        conn = _Connection(
+            failures=[("ORDER BY TASK_NAME", "Lost connection to MySQL server during query")]
+        )
+        result = await read_latest_native_runs(conn, ["A"])
+        assert result["A"].state is NativeState.UNKNOWN
+
+    async def test_lost_trace_survives_an_archive_1064_end_to_end(self, audit, monkeypatch):
+        """The consequence that failed L3: a lost trace is abandoned, not hung."""
+        import app.modules.task_orchestration.native as native_module
+
+        conn = _Connection(rows=[], failures=[("ORDER BY TASK_NAME", str(_ARCHIVE_1064))])
+
+        class _ConnCtx:
+            async def __aenter__(self):
+                return conn
+
+            async def __aexit__(self, *exc):
+                return False
+
+        monkeypatch.setattr(native_module.db, "system_conn", lambda: _ConnCtx())
+
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        repo.add_node_run("n1", task_id)
+
+        report = await Reconciler(repo).reconcile_native()
+
+        assert report.lost_traces == ["A"]
+        assert report.unknown == []
+        assert repo.task_runs["n1"]["state"] == "abandoned"
+        assert repo.task_runs["n1"]["state"] != "success"
 
 
 class TestConnectionAcquireTolerance:
