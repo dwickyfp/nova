@@ -83,9 +83,20 @@ kemunculan `bg-card/*` dan 22 kemunculan `border-border/*`; penggantinya adalah
 
 ### 2.4 Grafik
 
-`--chart-1` sampai `--chart-5` hanya untuk seri data di dalam grafik. Warna
-grafik tidak boleh dipakai sebagai warna UI, dan `--success` diambil dari
-`--chart-2` supaya bahasa status dan bahasa grafik tidak bercabang.
+`--chart-1` sampai `--chart-9` dan `--chart-tone-1` sampai `--chart-tone-6`
+hanya untuk seri data di dalam grafik. Warna grafik tidak boleh dipakai sebagai
+warna UI, dan `--success` diambil dari `--chart-2` supaya bahasa status dan
+bahasa grafik tidak bercabang.
+
+- `--chart-1..5` adalah palet kategori lama, dipakai juga oleh `query-cost`.
+- `--chart-6..9` melengkapi palet kategori ke sembilan hue. Chart dengan lebih
+  dari lima seri sebelumnya memakai enam hex ad-hoc di dalam
+  `workspaces/index.tsx`; sekarang semuanya token.
+- `--chart-tone-1..6` adalah ramp satu warna untuk mode "single tone".
+
+Grafik yang butuh warna konkret (recharts) membacanya lewat `readToken` di
+`src/lib/read-token.ts`, bukan menyalin hex. Token dibaca ulang saat tema
+berubah, jadi chart tidak memakai palet lama setelah toggle.
 
 ---
 
