@@ -144,11 +144,12 @@ class MLEngineService:
         # statement would. ``engine_sql`` carries injected credentials and must
         # not be logged or persisted; ``training_sql`` below is the redacted form
         # and is what is stored in NOVA_SYSTEM.ML_MODELS.
-        engine_sql = await self._prepare_training_sql(
-            training_sql=training_sql,
+        engine_sql = await self._prepare_user_sql(
+            sql=training_sql,
             database_name=database_name,
+            what="training",
         )
-        stored_training_sql = self._redacted_training_sql(engine_sql)
+        stored_training_sql = self._redacted_user_sql(engine_sql)
 
         if username is not None and password is not None:
             rows, columns = await self._fetch_training_data_as_user(
@@ -415,6 +416,18 @@ class MLEngineService:
         self, model_alias: str, prediction_sql: str, database_name: str | None
     ) -> dict:
         """Run batch predictions using features from a SQL query."""
+        # 0. Prepare the caller's SQL before anything touches the engine.
+        # `prediction_sql` is user-supplied and runs on the system connection,
+        # which carries storage credentials, so it takes the same four steps as
+        # training: guard, @stage translation, credential injection, redaction.
+        # The returned statement carries injected credentials and must not be
+        # logged or returned; `engine_sql` is consumed only by `cur.execute`.
+        engine_sql = await self._prepare_user_sql(
+            sql=prediction_sql,
+            database_name=database_name,
+            what="prediction",
+        )
+
         # 1. Resolve alias and load model
         conn = await self._connect()
         try:
@@ -442,7 +455,7 @@ class MLEngineService:
                 # 2. Fetch prediction data
                 if database_name:
                     await cur.execute(f"USE {database_name}")
-                await cur.execute(prediction_sql)
+                await cur.execute(engine_sql)
                 rows = await cur.fetchall()
         finally:
             conn.close()
@@ -660,62 +673,67 @@ class MLEngineService:
 
     # ── Helpers ─────────────────────────────────────────────────
 
-    async def _prepare_training_sql(
+    async def _prepare_user_sql(
         self,
         *,
-        training_sql: str,
+        sql: str,
         database_name: str | None,
+        what: str,
     ) -> str:
-        """Put ``training_sql`` through the same pipeline as the SQL worksheet.
+        """Put user-supplied SQL through the same pipeline as the worksheet.
 
-        Training SQL is user-supplied and is executed on a connection that
-        carries real storage credentials, so it needs the identical four steps
-        ``query.service`` applies — guard, ``@stage`` translation, credential
-        injection, redaction. It previously had none of them: a user could run
-        arbitrary SQL unguarded, and an ``@stage`` reference was sent to the
-        engine untranslated (``NOVA-28``; the defect is recorded at
-        ``README.md:553``).
+        Both ML entry points that run caller-supplied SQL — training data and
+        batch prediction — execute it on a connection carrying real storage
+        credentials, so both need the identical four steps ``query.service``
+        applies: guard, ``@stage`` translation, credential injection,
+        redaction. Neither had any of them: a user could run arbitrary SQL
+        unguarded, and an ``@stage`` reference reached the engine untranslated
+        (``NOVA-28``; recorded at ``README.md:553``).
+
+        One helper rather than two near-copies: the second copy is where the
+        paths would drift, and drift on a credential-bearing pipeline is a
+        leak.
 
         RBAC is not weakened by preparing here: the stage-config read is
         configuration, and the translated statement is executed on the *user's*
-        connection, so StarRocks still decides what the query may reach.
+        connection in the training case, so StarRocks still decides what the
+        query may reach.
 
         **Nothing credential-bearing escapes.** The returned statement is what
-          the engine receives and does carry injected credentials; callers must
-          never log, persist, or return it. Use
-          :meth:`_redacted_training_sql` for anything that leaves the process.
+        the engine receives and does carry injected credentials; callers must
+        never log, persist, or return it. Use :meth:`_redacted_user_sql` for
+        anything that leaves the process. ``what`` names the statement in the
+        debug line so an operator can tell which path prepared it.
 
         Raises:
             ForbiddenSQLError: if the guard blocks the statement.
             ValueError: if an ``@stage`` reference cannot be translated.
         """
-        # 1. Guard, exactly as the worksheet does. Training SQL is a SELECT, but
-        # the guard is about what the *user* can reach, not what the endpoint
-        # expects — and `CREATE ML_MODEL` already routes a user-supplied
-        # `training_sql` here, so the surface is not only the /train endpoint.
-        guard_user_statement(training_sql)
+        # 1. Guard, exactly as the worksheet does. These are SELECTs, but the
+        # guard is about what the *user* can reach, not what the endpoint
+        # expects — and `CREATE ML_MODEL` routes a user-supplied `training_sql`
+        # here too, so the surface is not only the /train endpoint.
+        guard_user_statement(sql)
 
-        # 2. Resolve stage configs (system read; RBAC is enforced by StarRocks on
-        # the translated statement, which runs on the user's connection).
+        # 2. Resolve stage configs (system read; RBAC is enforced by StarRocks
+        # on the translated statement).
         stage_configs = await self._load_stage_configs(database_name)
 
         # 3. Translate + inject. A statement with no @stage reference passes
         # through unchanged (and credential-free).
-        prepared = await prepare_stage_sql(training_sql, stage_configs=stage_configs)
+        prepared = await prepare_stage_sql(sql, stage_configs=stage_configs)
 
         # The engine needs the credential-bearing form; everything else in this
         # class logs and persists the redacted one instead.
-        logger.debug(
-            "Prepared training SQL for execution: %s", prepared.redacted_sql
-        )
+        logger.debug("Prepared %s SQL for execution: %s", what, prepared.redacted_sql)
         return prepared.engine_sql
 
     @staticmethod
-    def _redacted_training_sql(engine_sql: str) -> str:
+    def _redacted_user_sql(engine_sql: str) -> str:
         """The form of ``engine_sql`` that may be logged or persisted.
 
         Exists so call sites do not have to remember which of the two forms
-        ``_prepare_training_sql`` produces is the safe one. Redaction is
+        ``_prepare_user_sql`` produces is the safe one. Redaction is
         value-only, so the statement still documents what ran.
         """
         return redact_for_output(engine_sql)
