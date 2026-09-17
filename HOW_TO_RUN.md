@@ -260,6 +260,12 @@ melenceng dari deployment. Meng-hardcode `UTC` (atau zona lain) di config bisa
 menggeser anchor dan membuat task interval tidak pernah due. Isi variabel ini
 hanya bila ingin override eksplisit.
 
+Bila variabel ini **diisi**, saat start scheduler memverifikasinya terhadap
+`@@time_zone` dan **menolak start** bila tidak cocok (offset seperti `+07:00`
+diterima sebagai sinonim zona IANA yang cocok). Override yang salah akan
+menggeser semua anchor interval — kelalaian yang menjadi dasar NOVA-39 — jadi
+lebih baik gagal saat start daripada diam-diam salah.
+
 Hentikan dengan `Ctrl+C`. Hanya satu instance yang boleh jalan pada saat yang
 sama — instance lain menunggu leader-lock dan tidak akan enqueue.
 

@@ -104,6 +104,28 @@ def resolve_timezone(name: str) -> ZoneInfo | timezone:
         raise ScheduleError(f"unknown IANA timezone: {name!r}") from exc
 
 
+def engine_timezone_matches(configured: str, engine_reported: str) -> bool:
+    """Whether ``configured`` and the engine's ``@@time_zone`` mean the same zone.
+
+    ``resolve_timezone`` already accepts both an IANA key and the numeric offset
+    StarRocks reports for offset session zones, so the comparison is done on the
+    instant in question rather than on the spelling: the engine may report
+    ``+07:00`` for a session the override names ``Asia/Jakarta`` (and vice versa),
+    and refusing to start over a synonym would be a false alarm. A genuinely
+    different zone — the 7-hour bug this guards against — still fails.
+    """
+    try:
+        configured_zone = resolve_timezone(configured)
+        engine_zone = resolve_timezone(engine_reported)
+    except ScheduleError:
+        return False
+    reference = datetime(2026, 1, 1, 12, 0)
+    return (
+        reference.replace(tzinfo=configured_zone).utcoffset()
+        == reference.replace(tzinfo=engine_zone).utcoffset()
+    )
+
+
 def parse_cron(expression: str) -> croniter:
     """Parse a 5-field cron expression. Raises ``ScheduleError`` when invalid."""
     if not expression or not expression.strip():

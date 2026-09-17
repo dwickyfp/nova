@@ -41,6 +41,12 @@ with `NOW()` in that zone and reads it back naive. The engine's own answer is th
 only value that cannot drift from the deployment — hardcoding `UTC` shifts the
 anchor and can stop interval tasks firing. Set the variable only to override.
 
+When the variable **is** set, startup verifies it against `@@time_zone` and
+**refuses to start** on a mismatch (a fixed offset such as `+07:00` is accepted as
+a synonym for the matching IANA zone). An override that disagrees would silently
+shift every interval anchor, which is the defect NOVA-39 was filed against — so it
+is a startup error, not a runtime surprise.
+
 ## What a tick does
 
 ```
