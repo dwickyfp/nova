@@ -1,66 +1,27 @@
 """Query API router — execute SQL, explain, query history."""
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
 from datetime import datetime
 
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from app.common.responses import SanitizingJSONResponse
 from app.common.sql_guard import (
-    CredentialsRedactionError,
     is_destructive_sql,
     is_unscoped_mutation,
-    redact_sql_credentials,
 )
 from app.core.deps import get_current_user
 from app.modules.query.service import query_service
 
 router = APIRouter()
 
-
-class SanitizingJSONResponse(JSONResponse):
-    """JSON response that strips storage credentials from the serialised payload.
-
-    Last line of defence for AGENTS.md §2 (*Credentials NEVER in: API JSON
-    responses*). Controllers already hand over redacted values — ``QueryResult``
-    redacts ``executed_sql`` on construction — so this normally rewrites nothing.
-
-    It exists because that guarantee is only as strong as the weakest caller:
-    any endpoint added later that serialises an engine-bound statement (a plan,
-    a rewrite preview, an error payload) would leak by default. Redacting the
-    bytes here means a single forgotten call site degrades into a cosmetic
-    ``***`` in one field instead of an exfiltrated storage key.
-
-    Redaction is value-only and recursive, so the response keeps its shape and a
-    client can still see which parameters were injected.
-
-    A string the redactor refuses (``CredentialsRedactionError``) is replaced
-    with a fixed placeholder rather than propagated: this runs inside
-    ``render``, after the controller has already committed to a status code, so
-    an exception here turns *any* response into a 500 — including the error
-    handler's own output. Failing closed means never shipping the string, not
-    crashing the response that carries it.
-    """
-
-    REDACTION_FAILED_PLACEHOLDER = "[redacted: unredactable credential value]"
-
-    @staticmethod
-    def _sanitize(value: object) -> object:
-        if isinstance(value, str):
-            try:
-                return redact_sql_credentials(value)
-            except CredentialsRedactionError:
-                return SanitizingJSONResponse.REDACTION_FAILED_PLACEHOLDER
-        if isinstance(value, dict):
-            return {key: SanitizingJSONResponse._sanitize(item) for key, item in value.items()}
-        if isinstance(value, list):
-            return [SanitizingJSONResponse._sanitize(item) for item in value]
-        if isinstance(value, tuple):
-            return [SanitizingJSONResponse._sanitize(item) for item in value]
-        return value
-
-    def render(self, content: object) -> bytes:
-        return super().render(self._sanitize(content))
+#: Re-exported for the query-response contract described in AGENTS.md §2: the
+#: class moved to ``app/common/responses`` so the global exception handler can
+#: reuse it without closing an import cycle (``core.exceptions`` →
+#: ``common.responses`` → ``common.sql_guard`` → ``core.exceptions``). The name
+#: stays importable from here because both routers and tests read it from this
+#: module.
+__all__ = ["SanitizingJSONResponse", "router"]
 
 
 class QueryRequest(BaseModel):

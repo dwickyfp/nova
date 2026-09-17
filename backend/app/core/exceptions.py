@@ -1,7 +1,15 @@
 """Global exception handlers for FastAPI."""
 
+from typing import TYPE_CHECKING
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+if TYPE_CHECKING:
+    # Only for the return annotation. The class cannot be imported at module
+    # scope: it pulls in ``app.common.sql_guard``, which imports
+    # ``ForbiddenSQLError`` from *this* module — a cycle that fails app boot.
+    from app.common.responses import SanitizingJSONResponse
 
 
 class NovaException(Exception):
@@ -66,8 +74,25 @@ def register_exception_handlers(app: FastAPI) -> None:
     """Register all custom exception handlers on the FastAPI app."""
 
     @app.exception_handler(NovaException)
-    async def nova_exception_handler(request: Request, exc: NovaException):
-        return JSONResponse(
+    async def nova_exception_handler(
+        request: Request, exc: NovaException
+    ) -> "SanitizingJSONResponse":
+        # Deliberately *not* a plain ``JSONResponse``: ``exc.message`` can carry
+        # an engine error that echoes the statement StarRocks rejected, and for
+        # a ``@stage`` query that statement has the injected storage credentials
+        # in it. ``SanitizingJSONResponse`` reruns the same value-only,
+        # fail-closed redaction the success path uses, so this handler — which
+        # is global and therefore the error path of *every* route — is not the
+        # one call site that forgets. Reverting this to ``JSONResponse``
+        # reintroduces NOVA-21.
+        #
+        # The deferred import is deliberate too: ``exceptions`` and
+        # ``app.common.sql_guard`` are mutually dependent, so the response class
+        # — which pulls the redactor back in — is only importable once this
+        # module is fully defined.
+        from app.common.responses import SanitizingJSONResponse
+
+        return SanitizingJSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.message, "type": type(exc).__name__},
         )
