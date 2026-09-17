@@ -7,8 +7,8 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import urlparse
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 from pydantic_settings import BaseSettings
@@ -56,6 +56,23 @@ class Settings(BaseSettings):
     TASK_STREAM_KEY: str = "nova:tasks:graph_runs"
     TASK_STREAM_GROUP: str = "nova-workers"
     TASK_STREAM_MAXLEN: int = 10000
+
+    # --- Task orchestration: worker process (nova-worker) ---
+    # The worker consumes graph runs and executes nodes as their owner. The
+    # reconciler re-derives work the stream lost (Redis flush, worker death);
+    # a RUNNING row whose heartbeat is older than the abandon window is treated
+    # as abandoned and re-evaluated, never trusted (design §2, rule 3).
+    WORKER_NAME: str = "nova-worker"
+    WORKER_TASK_POLL_INTERVAL_SECONDS: float = 1.0
+    #: A node waits this long for its native TaskRun before being failed. The
+    #: engine's own `task_runs_timeout_second` (4 h) is the hard ceiling.
+    WORKER_TASK_POLL_TIMEOUT_SECONDS: float = 14400.0
+    #: How long a RUNNING node may go without a heartbeat before the reconciler
+    #: abandons and re-evaluates it.
+    WORKER_HEARTBEAT_TIMEOUT_SECONDS: int = 120
+    WORKER_RECONCILE_INTERVAL_SECONDS: float = 30.0
+    #: How many graph runs a worker reads from the stream per drain.
+    WORKER_STREAM_BATCH_SIZE: int = 10
 
     # --- Security ---
     SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"

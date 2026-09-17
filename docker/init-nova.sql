@@ -217,6 +217,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS (
   state        VARCHAR(32) NOT NULL,
   wal_marks    TEXT,
   started_at   DATETIME,
+  heartbeat_at DATETIME,
   finished_at  DATETIME
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
@@ -232,6 +233,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_RUNS (
   starrocks_query_id VARCHAR(128),
   error_message      TEXT,
   started_at         DATETIME,
+  heartbeat_at       DATETIME,
   finished_at        DATETIME
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1

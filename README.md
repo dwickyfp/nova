@@ -653,9 +653,9 @@ Staged delivery — 9a metadata + scheduler + worker + delegate-first execution;
 
 - [ ] **9a** Metadata tables + DAG validation in `NOVA_SYSTEM` (no credentials)
 - [ ] **9a** `nova-scheduler` process — Nova-owned cron/interval tick (`croniter`), separate from the FastAPI backend
-- [ ] **9a** `nova-worker` process — executes graph nodes on the owner's connection (delegate-first)
-- [ ] **9a** Redis Streams transport between scheduler and worker
-- [ ] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause)
+- [x] **9a** `nova-worker` process — executes graph nodes on the owner's connection (delegate-first)
+- [x] **9a** Redis Streams transport between scheduler and worker
+- [x] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause)
 - [ ] **9a** Fix `GET /tasks` to connect as the caller, so the engine's privilege filter is not bypassed
 - [ ] **9b** `CREATE TASK … AFTER / FINALIZE / WHEN / SCHEDULE` added to the existing ANTLR4 `submitTaskStatement` rule (NOVA-BEGIN/NOVA-END patch, `--fuzz=0`, CI drift check); it is a Nova surface, lowered to `SUBMIT TASK`
 - [ ] **9b** Task graph UI
@@ -669,6 +669,21 @@ and interval next-fire, leader-lock singleton, persist-before-publish ordering,
 deterministic graph-run ids for idempotency, and one run per `A → B → [C, D]`
 graph. The two checklist items above stay unchecked until that PR is merged; the
 runbook is `HOW_TO_RUN.md` §4.
+
+**Progress note (NOVA-36, 2026-09-18).** The `nova-worker` process is implemented
+and tested in `backend/app/worker/` +
+`backend/app/modules/task_orchestration/` (`dag.py`, `execution.py`,
+`credentials.py`, `consumer.py`, `worker.py`, `worker_service.py`,
+`reconciler.py`): the DAG state machine (parent-fail fails the graph, `WHEN`
+false skips the subtree, suspend does not hang a join), delegate-first execution
+that submits `SUBMIT TASK` on the **owner's** connection and polls
+`information_schema.task_runs` for completion, conditional state transitions on
+every node/graph write, consumer-group delivery with at-least-once redelivery,
+and a reconciler that re-derives abandoned work from `NOVA_SYSTEM` alone.
+Credentials are resolved per execution from the live session store and discarded
+with the connection; nothing credential-shaped is written to `CONFIG_TASK*`,
+the stream, or a log. Sixteen new unit tests and eighteen engine integration
+tests cover the acceptance criteria; the runbook is `HOW_TO_RUN.md` §5.
 
 ## Decision Log
 
