@@ -57,13 +57,22 @@ class WorkerService:
         return processed
 
     async def reconcile_once(self) -> None:
-        """Re-enqueue graph runs the stream may have lost.
+        """Reconcile native state, then re-enqueue graph runs the stream lost.
 
-        Covers both failure modes: a run persisted but never published (Redis
-        flushed before the push, or the scheduler died between the two), and a
-        run a worker abandoned mid-node. Re-processing an already-settled run is
-        a no-op, so this is safe to run alongside live deliveries.
+        Two independent recoveries, run in order:
+
+        1. **Native trace reconciliation** — advance nodes whose delegated
+           ``SUBMIT TASK`` has settled in ``information_schema.task_runs``,
+           mark a lost trace ``abandoned``, and surface an auto-paused task, so
+           a DAG never hangs silently (NOVA-37).
+        2. **Lost-delivery re-enqueue** — covers a run persisted but never
+           published (Redis flushed before the push, or the scheduler died
+           between the two), and a run a worker abandoned mid-node.
+
+        Re-processing an already-settled run is a no-op, so this is safe to run
+        alongside live deliveries.
         """
+        await self._reconcile_native()
         report = await self._reconciler.scan()
         for graph_run_id in [*report.pending_graph_runs, *report.abandoned_graph_runs]:
             run = await self._repository.get_graph_run(graph_run_id)
@@ -72,6 +81,27 @@ class WorkerService:
             if run.get("state") in {"success", "failed", "cancelled"}:
                 continue
             await self._requeue(run)
+
+    async def _reconcile_native(self) -> None:
+        """Advance running nodes from the engine's native task state.
+
+        A NATIVE reconciliation failure must not stop lost-delivery recovery,
+        so it is caught and logged: the two paths are independent.
+        """
+        try:
+            report = await self._reconciler.reconcile_native()
+        except Exception:
+            logger.exception("native-state reconciliation failed; continuing")
+            return
+        if report.advanced or report.lost_traces or report.auto_paused:
+            logger.info(
+                "native reconcile: %d observed, %d advanced, %d lost traces, "
+                "%d auto-pause suspects",
+                report.observed,
+                len(report.advanced),
+                len(report.lost_traces),
+                len(report.auto_paused),
+            )
 
     async def run_forever(self, stop_event: asyncio.Event) -> None:
         logger.info("nova-worker started; waiting for graph runs")

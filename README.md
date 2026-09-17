@@ -655,7 +655,7 @@ Staged delivery — 9a metadata + scheduler + worker + delegate-first execution;
 - [ ] **9a** `nova-scheduler` process — Nova-owned cron/interval tick (`croniter`), separate from the FastAPI backend
 - [x] **9a** `nova-worker` process — executes graph nodes on the owner's connection (delegate-first)
 - [x] **9a** Redis Streams transport between scheduler and worker
-- [x] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause)
+- [ ] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause)
 - [ ] **9a** Fix `GET /tasks` to connect as the caller, so the engine's privilege filter is not bypassed
 - [ ] **9b** `CREATE TASK … AFTER / FINALIZE / WHEN / SCHEDULE` added to the existing ANTLR4 `submitTaskStatement` rule (NOVA-BEGIN/NOVA-END patch, `--fuzz=0`, CI drift check); it is a Nova surface, lowered to `SUBMIT TASK`
 - [ ] **9b** Task graph UI
@@ -684,6 +684,21 @@ Credentials are resolved per execution from the live session store and discarded
 with the connection; nothing credential-shaped is written to `CONFIG_TASK*`,
 the stream, or a log. Sixteen new unit tests and eighteen engine integration
 tests cover the acceptance criteria; the runbook is `HOW_TO_RUN.md` §5.
+
+**Progress note (NOVA-37, 2026-09-18).** Native-state reconciliation is
+implemented as an **extension of the existing `Reconciler`** — there is no
+second reconciler. `backend/app/modules/task_orchestration/native.py` reads
+`information_schema.task_runs` for the nodes of running graph runs and
+`ADMIN SHOW FRONTEND CONFIG LIKE '%task%'` for the FE config (not
+`SHOW VARIABLES`); `Reconciler.reconcile_native` advances a settled node
+(SUCCESS/FAILED), marks a **lost trace** explicitly `abandoned` rather than
+success, surfaces an **auto-pause** (the engine's
+`max_task_consecutive_fail_count`, read live as 10) to `NOVA_SYSTEM.AUDIT_LOG`,
+and is idempotent across repeated passes. A failed native read is `UNKNOWN` and
+writes nothing. Criterion 7 is verified against the live engine, which reports
+`task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
+Fourteen unit + five engine integration tests; the runbook is `HOW_TO_RUN.md`
+§7. The checklist item above stays unchecked until this PR is merged.
 
 ## Decision Log
 

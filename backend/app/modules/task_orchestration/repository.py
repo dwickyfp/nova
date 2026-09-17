@@ -410,6 +410,23 @@ class TaskOrchestrationRepository:
         )
         return bool(result.get("affected"))
 
+    async def list_running_task_runs(
+        self, *, limit: int = 500
+    ) -> list[dict[str, Any]]:
+        """Node rows currently ``running`` across every graph run.
+
+        The reconciler's work list: a node is ``running`` only because a worker
+        submitted a native ``SUBMIT TASK`` and is waiting on it, so this is the
+        only set whose native trace can advance. It is bounded by in-flight
+        work, not by the number of tasks.
+        """
+        result = await db.execute_system(
+            f"SELECT {_TASK_RUN_COLUMNS} FROM {_TASK_RUNS} "
+            "WHERE state = 'running' ORDER BY started_at LIMIT %s",
+            [limit],
+        )
+        return [self._to_dict(_TASK_RUN_COLUMNS, row) for row in result["rows"]]
+
     async def get_node_run(
         self, graph_run_id: str, task_id: str
     ) -> dict[str, Any] | None:
