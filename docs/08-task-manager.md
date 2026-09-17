@@ -241,12 +241,63 @@ its own tick (see NOVA-23).
 
 ---
 
+## Nova Orchestration Metadata (Phase 9)
+
+The native engine above has **no DAG, no `AFTER`/`WHEN`/`FINALIZE`, no cron, and no
+completion hook**. Nova adds those as its own orchestration layer, separate from the
+native task wrapper in `backend/app/modules/tasks/` (which only administers
+`information_schema.tasks`). Phase 9a ships the **state layer only** — no scheduler,
+worker, or execution.
+
+### Tables
+
+All four live in `NOVA_SYSTEM` as Primary-Key (CRUD) tables, following the flat
+`CONFIG_*` convention in `docker/init-nova.sql`.
+
+| Table | Holds | Key columns |
+|-------|-------|-------------|
+| `CONFIG_TASKS` | one row per task definition | `name`, `definition`, `schedule_kind` (`manual`/`interval`/`cron`), `schedule_expr`, `timezone` (IANA), `when_expr`, `overlap_policy`, `owner_role`, `created_by`, `version` |
+| `CONFIG_TASK_EDGES` | directed `parent_task → child_task` per `graph_id` | one row per edge (supports multi-parent, cycle detection, delete-impact queries) |
+| `CONFIG_TASK_GRAPH_RUNS` | one row per graph execution | `trigger_type`, `state`, `wal_marks` (JSON metadata), `started_at`, `finished_at` |
+| `CONFIG_TASK_RUNS` | one row per node attempt | `graph_run_id`, `task_id`, `attempt`, `state`, `delegated`, `starrocks_query_id`, `error_message` |
+
+### Design rules
+
+- **Credential-invisible (hard invariant).** No column may be named
+  `password`/`secret`/`token`/`credential`, and `wal_marks` holds only metadata
+  (partition names, IDs, timestamps). To reference a credential, store the *name*
+  of the object (e.g. a storage-connection name), never its value. A test reads
+  `information_schema.columns` for `CONFIG_TASK%` and asserts this holds.
+- **Timezones are explicit IANA.** The engine's `SCHEDULE START` literals use the
+  session timezone, so Nova never assumes UTC — every task carries its own `timezone`.
+- **Edges are rows, not a CSV.** Multi-parent graphs and cycle checks become plain
+  queries instead of string surgery. Edges store task **names**
+  (`parent_task`/`child_task`) — not ids — so graph membership is resolved by name,
+  and a task belongs to a graph when it is either endpoint of an edge.
+- **DAG limits** (validated in pure code, no I/O): acyclic, ≤ 1000 nodes, ≤ 100
+  parents and ≤ 100 children per task.
+- **Writes are column-whitelisted.** `update_*` validates payload keys against a
+  per-entity whitelist before building the `SET` clause, so an unknown or
+  injection-shaped key is rejected rather than spliced into SQL. Empty payloads are
+  rejected too.
+
+### Module layout
+
+```
+backend/app/modules/task_orchestration/
+├── schemas.py     # Pydantic models for Task / Edge / GraphRun / TaskRun
+├── repository.py  # CRUD via db.execute_system (no ad-hoc root connections)
+└── graph.py       # pure DAG validation (acyclic, node/parent/child limits)
+```
+
+---
+
 ## Limitations
 
-- **No task dependencies/DAG** — Each task is independent
-- **No callback/trigger** on completion
+- **Native engine has no task dependencies/DAG** — Nova's Phase 9 layer adds them; until the scheduler/worker stages land (9a onward), Nova-shaped DAGs are metadata only and not executed
+- **No callback/trigger** on completion — progress must be observed by polling `information_schema.task_runs`
 - **No conditional branching** (if A fails, run C)
-- For orchestration, use external tools (Airflow, n8n) that poll `information_schema.task_runs`
+- For orchestration today, use external tools (Airflow, n8n) that poll `information_schema.task_runs`
 
 ### Verified against a live 4.1.1 engine (NOVA-23, 2026-09-17)
 
