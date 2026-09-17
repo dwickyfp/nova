@@ -153,6 +153,40 @@ def _reachable(host: str, port: int) -> bool:
         return False
 
 
+async def _latest_rewritten_sql(user_name: str) -> list[str]:
+    """The most recent rewritten statements recorded for ``user_name``.
+
+    Read straight from ``NOVA_SYSTEM.AUDIT_LOG`` over the host-reachable engine
+    port. Only the **redacted** column is selected: the credential-bearing
+    statement is never in this table by design (AGENTS.md credential rule), so
+    this cannot leak a secret even if the redaction regressed.
+    """
+    import asyncmy
+
+    from app.core.config import settings
+
+    conn = await asyncmy.connect(
+        host=settings.STARROCKS_HOST,
+        port=settings.STARROCKS_FE_MYSQL_PORT,
+        user=settings.STARROCKS_ROOT_USER,
+        password=settings.STARROCKS_ROOT_PASSWORD,
+    )
+    try:
+        async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
+            await cur.execute(
+                """
+                SELECT rewritten_sql
+                FROM NOVA_SYSTEM.AUDIT_LOG
+                WHERE user_name = %s AND rewritten_sql IS NOT NULL
+                ORDER BY event_time DESC LIMIT 10
+                """,
+                (user_name,),
+            )
+            return [row["rewritten_sql"] for row in await cur.fetchall()]
+    finally:
+        conn.close()
+
+
 @pytest.fixture(scope="module")
 def proxy_server():
     """A real proxy on an ephemeral port, backed by the real engine.
@@ -279,6 +313,72 @@ class TestAcceptanceCriteria:
         rows = result.rows()
         assert rows, f"@stage query returned no rows:\n{result.output}"
         assert all(len(row) > 1 for row in rows), rows
+
+    def test_ac3_engine_received_the_rewritten_files_statement(
+        self, proxy_server, engine_reachable
+    ):
+        """AC 3 (stronger) — what reached the engine was the *rewrite*.
+
+        ``test_ac3`` proves the rows are right. This proves why: the statement
+        the engine executed was ``FILES()`` with the CSV properties applied,
+        not the user's ``@stage`` text and not a translation that dropped the
+        tuning.
+
+        The audit log is the evidence surface. ``QueryService`` records the
+        **redacted** rewritten statement in ``NOVA_SYSTEM.AUDIT_LOG``, so this
+        reads what was sent without ever handling a credential value — the
+        engine form carries real ones, the stored form does not.
+
+        This is the L1 bug's L3 counterpart: ``_inject_files_params`` once
+        suppressed the CSV pass because the translator had already written
+        credentials into ``FILES()``, and the query then returned the file's
+        raw line text as one column. That failure is invisible in the row count
+        but obvious here.
+        """
+        _, port = proxy_server
+        # Run it first so there is a rewritten statement to inspect, even when
+        # this test is selected on its own.
+        warm = _run_mysql(
+            ["-e", f"SELECT * FROM @{E2E_STAGE}.{E2E_STAGE_FILE} LIMIT 1"],
+            host=CLIENT_HOST,
+            port=port,
+            database=E2E_DATABASE,
+        )
+        assert warm.returncode == 0, warm.output
+
+        rewritten = asyncio.get_event_loop().run_until_complete(
+            _latest_rewritten_sql(E2E_USER)
+        )
+        stage_statements = [sql for sql in rewritten if "FILES(" in sql]
+        assert stage_statements, f"no FILES() rewrite recorded in: {rewritten}"
+
+        statement = stage_statements[0]
+        assert "csv.column_separator" in statement, statement
+        assert "csv.skip_header" in statement, statement
+
+    def test_ac3_rewritten_statement_is_redacted_in_the_audit_row(
+        self, proxy_server, engine_reachable
+    ):
+        """The stored rewrite carries ``***``, never a credential value.
+
+        The engine statement must carry real credentials for ``FILES()`` to
+        work; the audit row must not. Asserted on structure, not on the secret
+        (STANDARD SS10 rule 4).
+        """
+        _, port = proxy_server
+        warm = _run_mysql(
+            ["-e", f"SELECT * FROM @{E2E_STAGE}.{E2E_STAGE_FILE} LIMIT 1"],
+            host=CLIENT_HOST,
+            port=port,
+            database=E2E_DATABASE,
+        )
+        assert warm.returncode == 0, warm.output
+
+        for sql in asyncio.get_event_loop().run_until_complete(
+            _latest_rewritten_sql(E2E_USER)
+        ):
+            assert "minioadmin" not in sql, "a credential value reached the audit row"
+
 
     def test_ac4_wrong_password_is_rejected_with_1045(self, proxy_server, engine_reachable):
         """AC 4 — a bad password gives error 1045, not a hang or a traceback."""
