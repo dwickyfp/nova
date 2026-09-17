@@ -12,6 +12,15 @@
 | **TaskRun** | Single execution instance of a task |
 | **Schedule** | One-shot or periodic (SCHEDULE EVERY) |
 
+> **Statement surface.** The only task statement StarRocks 4.1.1 has is
+> **`SUBMIT TASK`**. `CREATE TASK` is **not** a valid statement in any form
+> (`No viable statement for input 'CREATE TASK'`), and neither is `DROP TASK` or
+> `SHOW TASKS` — see `docs/GUIDE_OBJECTS.md`. Everything in this document uses
+> `SUBMIT TASK`. The proposed Nova surface `CREATE TASK … AFTER / FINALIZE / WHEN /
+> SCHEDULE`, which lowers to `SUBMIT TASK` plus Nova metadata, is **not implemented
+> yet**; its design lives in `docs/specs/nova-23-task-orchestration-design.md`
+> (Phase 9, grammar patch in 9b). Do not write `CREATE TASK` against the engine.
+
 ### Task States
 
 Verified against a live StarRocks 4.1.1 engine (NOVA-23, 2026-09-17):
@@ -270,16 +279,29 @@ Two additional constraints that matter for a Nova scheduler:
   failures.** A Nova DAG that a paused task sits in will silently stop advancing
   unless Nova reconciles this state.
 
-### Provider blocker: `information_schema.partitions` is empty
+### Provider blocker: `information_schema.partitions` is empty (superseded)
 
-The planned `partition_change` stream provider assumed
+The planned `partition_change` stream provider first assumed
 `information_schema.partitions` could supply a watermark. On the live 4.1.1 engine
 **the table returns 0 rows for every schema**, including Nova's own partitioned
-tables, and stays empty after `ANALYZE TABLE`. `SHOW PARTITIONS` *does* return
-data, but its `UPDATE_TIME` column **did not move across three inserts** into the
-partition (it only changes on partition DDL), and `TABLE_ROWS` stayed `0`
-throughout. `information_schema.partitions` therefore has no `DATA_VERSION` column
-either — that column name does not exist.
+tables, and stays empty after `ANALYZE TABLE`. It also has no `DATA_VERSION`
+column — that column name does not exist.
 
-Conclusion: `partition_change` is **not implementable as designed** and needs a
-replacement mechanism or removal; do not schedule it without a fresh design.
+**That conclusion was wrong, and the provider is live.** The error was querying an
+unpopulated MySQL-compatibility view instead of the real surface. `SHOW PARTITIONS`
+is the live surface, and its **`VisibleVersion`** column advances per-partition on
+every non-DDL load while untouched partitions stay put (verified: an insert into
+`p1` moved only `p1`; an insert into `p2` moved only `p2`). `partition_change`
+therefore has a real, monotonic, per-partition watermark.
+
+Two operational notes for the provider:
+
+- Use **one full `SHOW PARTITIONS` sweep, then diff in Python**. The `WHERE` filter
+  is accepted but not cheaper than a full scan (measured at 5,000 partitions:
+  full sweep ~110–260 ms; per-partition `WHERE` ~65–150 ms for one row), so
+  per-partition lookups are ~300× slower in aggregate. `IN (...)` is rejected.
+- `SHOW PARTITIONS.UPDATE_TIME` is **DDL-only** and remains unusable as a
+  watermark; `VisibleVersion` is the column to use.
+
+Full rationale and measurements: `docs/specs/nova-23-task-orchestration-design.md`
+§6 / D9.6.

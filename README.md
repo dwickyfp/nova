@@ -637,7 +637,9 @@ Design decisions taken (D9.1–D9.8, rationale + criteria in the design doc):
 Nova owns the cron/DAG engine rather than adopting a workflow framework; two
 processes (`nova-scheduler` singleton + `nova-worker` fan-out) over Redis Streams
 with `NOVA_SYSTEM` as the only source of truth; the Snowflake-superset
-`CREATE TASK` surface; **delegate-first** authorization (submit `SUBMIT TASK` on
+`CREATE TASK` surface — a **Nova grammar surface, not an engine statement**
+(4.1.1 has only `SUBMIT TASK`; the 9b patch adds `CREATE TASK` and lowers it);
+**delegate-first** authorization (submit `SUBMIT TASK` on
 the owner's own connection so StarRocks enforces RBAC); stream in a later stage with
 all three providers, including `partition_change` on `SHOW PARTITIONS.VisibleVersion`;
 run history snapshotted for graph state; and the `GET /tasks` root-connection RBAC
@@ -652,7 +654,7 @@ Staged delivery — 9a metadata + scheduler + worker + delegate-first execution;
 - [ ] **9a** Redis Streams transport between scheduler and worker
 - [ ] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause)
 - [ ] **9a** Fix `GET /tasks` to connect as the caller, so the engine's privilege filter is not bypassed
-- [ ] **9b** `CREATE TASK … AFTER / FINALIZE / WHEN / SCHEDULE` in the ANTLR4 grammar (NOVA-BEGIN/NOVA-END patch, `--fuzz=0`, CI drift check)
+- [ ] **9b** `CREATE TASK … AFTER / FINALIZE / WHEN / SCHEDULE` added to the existing ANTLR4 `submitTaskStatement` rule (NOVA-BEGIN/NOVA-END patch, `--fuzz=0`, CI drift check); it is a Nova surface, lowered to `SUBMIT TASK`
 - [ ] **9b** Task graph UI
 - [ ] **9c** `has stream` — `mv_refresh` first, then `partition_change` (`SHOW PARTITIONS` + `VisibleVersion`, one full sweep per evaluation) and `load_event`
 

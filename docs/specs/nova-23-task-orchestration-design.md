@@ -32,9 +32,16 @@ below names the axis it was optimised for and the axis it costs.
 These were measured on the running engine. Several contradict the original
 research premises, so they are stated first.
 
+**Scope of these facts:** every row below describes the **engine** as it is on
+`4.1.1` (`4.1.1-14b7e3f`). Where a row mentions the Nova `CREATE TASK` surface it
+says so explicitly; that surface is *not* an engine feature. The distinction
+matters because §3's grammar patch is the thing that makes `CREATE TASK` real, and
+claiming otherwise would point 9b at a statement the parser does not have.
+
 | Fact | Consequence for the design |
 |---|---|
-| **No cron.** `SCHEDULE = 'USING CRON …'` is rejected at parse time (`Unexpected input '='`). Only `MANUAL`, `SCHEDULE EVERY(INTERVAL …)`, `SCHEDULE START('<literal>') EVERY(…)` are accepted | A cron parser and next-fire calculator are **Nova's**, not a translation layer |
+| **The only task statement the engine has is `SUBMIT TASK`.** `CREATE TASK` does not exist in 4.1.1 and is rejected in every form (`No viable statement for input 'CREATE TASK'`). `CREATE TASK … AFTER/FINALIZE/WHEN/OVERLAP_POLICY` is the **proposed Nova surface**, to be added by the 9b grammar patch; it is not an engine statement (see `docs/GUIDE_OBJECTS.md:748`). Nova's existing production path already builds `SUBMIT TASK` (`backend/app/modules/tasks/service.py:112-145`, `docs/08-task-manager.md`) | D9.3's lowering is `CREATE TASK …` (Nova-parsed) → `SUBMIT TASK` (engine) + Nova metadata. The grammar patch must target the existing `submitTaskStatement`/`taskClause`, not invent a statement the engine does not have |
+| **No cron.** On `SUBMIT TASK`, `SCHEDULE = 'USING CRON …'` is rejected at parse time (`Unexpected input '='`). The schedule forms `SUBMIT TASK` accepts are `MANUAL`, `SCHEDULE EVERY(INTERVAL …)`, `SCHEDULE START('<literal>') EVERY(…)` | A cron parser and next-fire calculator are **Nova's**, not a translation layer. `SCHEDULE = 'USING CRON …'` in §3 is Nova-surface syntax (9b), never a string the engine receives |
 | **`START` literals use the session timezone** (`Asia/Jakarta`), not UTC | The scheduler must store an explicit IANA timezone per task and never assume UTC |
 | **`task_runs_ttl_second = 604800` (7 days)**, not 86400 | The "native history is lost in 24 h" premise was wrong; snapshotting is still useful, but for **graph state and lineage**, not data-loss |
 | **No `AFTER` / `WHEN` / `FINALIZE` / `ALLOW_OVERLAPPING_EXECUTION`** — all rejected by the grammar | DAG edges, conditionals, finalizers and overlap policy are Nova metadata |
@@ -123,9 +130,12 @@ would let the polling loop be deleted).
 
 ## 3. D9.3 — SQL surface, and the grammar cost
 
-**Chosen: the Snowflake superset.**
+**Chosen: the Snowflake superset.** The block below is the **proposed Nova
+surface** — it is not valid in StarRocks 4.1.1 today. Only the `SUBMIT TASK` forms
+shown after it are engine statements.
 
 ```sql
+-- Proposed Nova surface (requires the 9b grammar patch; NOT valid on 4.1.1)
 CREATE TASK etl_root
   SCHEDULE = 'USING CRON 0 2 * * * Asia/Jakarta'
   AS INSERT OVERWRITE agg_daily SELECT * FROM staging;
@@ -139,6 +149,32 @@ CREATE TASK etl_notify
   AS INSERT INTO etl_log VALUES (NOW(), 'done');
 ```
 
+The lowering D9.3 must be verifiable against what the engine actually accepts.
+The equivalent engine statements the worker submits are:
+
+```sql
+-- What actually reaches the engine (SUBMIT TASK on the owner's connection)
+SUBMIT TASK etl_root
+  SCHEDULE START('2026-09-18 02:00:00') EVERY(INTERVAL 1 DAY)
+  AS INSERT OVERWRITE agg_daily SELECT * FROM staging;
+
+-- etl_clean and etl_notify have no engine-level DAG clause: their AFTER /
+-- FINALIZE edges live in Nova metadata (CONFIG_TASK_EDGES), and Nova fires
+-- them by polling information_schema.task_runs. Each still lowers to its own
+-- SUBMIT TASK when its turn comes.
+```
+
+Two consequences worth stating plainly:
+
+- The cron expression is **never sent to the engine**. `USING CRON` is rejected by
+  `SUBMIT TASK` (`Unexpected input '='`), so Nova computes the next fire time
+  itself and emits `SCHEDULE START('<literal>') EVERY(INTERVAL …)`, or a one-shot
+  `SUBMIT TASK` for a single occurrence.
+- `AFTER` / `FINALIZE` / `WHEN` / `OVERLAP_POLICY` have **no** engine counterpart —
+  they are Nova grammar and Nova metadata. That is exactly why the lowering is
+  Nova-owned, and why the 9b patch extends `submitTaskStatement` rather than
+  translating to some engine DDL that does not exist.
+
 `CREATE DAG … STEP …` was rejected: it forces Nova to maintain a grammar that is
 *not* a superset of StarRocks forever, and it makes every future StarRocks grammar
 re-sync a merge conflict by construction.
@@ -147,7 +183,8 @@ re-sync a merge conflict by construction.
 of the five new clauses need **no new lexer token** — `AFTER`, `WHEN` and
 `SCHEDULE` already exist, and `AFTER`/`SCHEDULE` are already in `nonReserved`, so
 they can be used as identifiers without conflict. `taskClause` is already
-`taskClause*`, so adding alternatives does not touch `submitTaskStatement`. Only
+`taskClause*`, so the new clauses slot in as additional alternatives **inside**
+`submitTaskStatement` without restructuring that rule. Only
 `FINALIZE`, `CRON` and `OVERLAP_POLICY` need new tokens, and all three **must be
 added to `nonReserved`** — otherwise columns named `finalize`/`cron` break. That
 is a concrete breaking-change risk, not a theoretical one.
@@ -160,6 +197,12 @@ failure.
 **Clean-code consequence:** `CREATE TASK` is *parsed* by Nova and *lowered* to
 `SUBMIT TASK` plus metadata rows — the same parse → translate → execute pipeline
 already used for `@stage` → `FILES()`. No new architectural pattern is introduced.
+The parse step is what 9b adds: the patch introduces the `CREATE TASK … AFTER /
+FINALIZE / WHEN / SCHEDULE` surface into the **existing `submitTaskStatement`
+rule** (its `taskClause*` is already variadic), so Nova keeps one statement parser
+rather than a second DDL path. `docs/08-task-manager.md` documents the current
+`SUBMIT TASK`-only path and is the reference for the statement the lowering must
+produce.
 
 ---
 
@@ -320,7 +363,7 @@ queryable, and multi-FE leader failover (only single-FE restart has been observe
 | Stage | Content | Depends on |
 |---|---|---|
 | **9a** | Metadata tables, DAG validation, `nova-scheduler` tick + cron, `nova-worker`, delegate-first execution, reconciliation | — |
-| **9b** | `CREATE TASK` grammar patch + lowering; task graph UI | 9a |
+| **9b** | Grammar patch adding the `CREATE TASK … AFTER / FINALIZE / WHEN / SCHEDULE` surface to the **existing `submitTaskStatement` rule** (`taskClause*`, upstream `StarRocks.g4` pinned at `4.1.1`), plus the lowering of that surface to `SUBMIT TASK` + `CONFIG_TASK*` metadata; task graph UI | 9a |
 | **9c** | Stream providers: `mv_refresh`, `partition_change` (`SHOW PARTITIONS` + `VisibleVersion`, one full sweep per evaluation), `load_event` | 9a |
 
 9a is the vertical slice that makes the rest real. 9b is the user-visible surface.
@@ -332,7 +375,11 @@ These shape the user-visible surface or the authorization model, so they are
 raised rather than decided silently:
 
 1. **E1 — confirm the SQL surface.** D9.3 recommends `CREATE TASK … AFTER …` over
-   `CREATE DAG … STEP …`. This is the user's SQL, so it needs a yes.
+   `CREATE DAG … STEP …`. This is the user's SQL, so it needs a yes. Note this is a
+   **new Nova grammar surface**, not an engine statement — `CREATE TASK` does not
+   exist in 4.1.1 and is added by the 9b patch over `submitTaskStatement` (§1, §3).
+   **Confirmed 2026-09-17**: `CREATE TASK … AFTER / FINALIZE / WHEN /
+   OVERLAP_POLICY` is the chosen surface.
 2. **E2 — non-delegatable tasks.** With delegate-first (D9.4), Phase 1 supports
    task bodies the engine accepts. Tasks that need arbitrary DDL require a
    dedicated StarRocks service role — a change to the RBAC model, which is a
