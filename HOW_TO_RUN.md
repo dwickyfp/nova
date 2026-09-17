@@ -218,7 +218,55 @@ Karena itu, backend harus tetap berjalan pada port `8000`.
 
 ---
 
-## 4. Login ke Nova
+## 4. Jalankan nova-scheduler
+
+`nova-scheduler` adalah proses terpisah (bukan bagian dari FastAPI) yang
+menghitung waktu cron/interval, menulis baris `CONFIG_TASK_GRAPH_RUNS` ke
+`NOVA_SYSTEM`, lalu mendorong job ke Redis Streams. Proses ini **tidak pernah
+mengeksekusi SQL** ke StarRocks.
+
+Buka terminal baru:
+
+```bash
+cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
+uv run python -m app.scheduler
+```
+
+Prasyarat: StarRocks berjalan dengan tabel `CONFIG_TASK*` (dibuat otomatis saat
+backend start), dan Redis dapat dijangkau.
+
+Setting yang dibutuhkan (default sudah cukup untuk development):
+
+```dotenv
+REDIS_URL=redis://:nova_redis_2026@localhost:6379/0
+
+SCHEDULER_POLL_INTERVAL_SECONDS=15
+SCHEDULER_LEADER_LOCK_KEY=nova:scheduler:leader
+SCHEDULER_LEADER_LOCK_TTL_SECONDS=60
+SCHEDULER_ENGINE_TIMEZONE=Asia/Jakarta
+
+TASK_STREAM_KEY=nova:tasks:graph_runs
+TASK_STREAM_GROUP=nova-workers
+TASK_STREAM_MAXLEN=10000
+```
+
+`SCHEDULER_ENGINE_TIMEZONE` harus sama dengan timezone session koneksi
+StarRocks milik scheduler. Nova menulis `created_at` lewat `NOW()` di zona itu
+dan membacanya kembali tanpa tz, jadi scheduler diberi tahu arti wall-clock-nya
+alih-alih diam-diam mengasumsikan UTC.
+
+Hentikan dengan `Ctrl+C`. Hanya satu instance yang boleh jalan pada saat yang
+sama — instance lain menunggu leader-lock dan tidak akan enqueue.
+
+Untuk memverifikasi job masuk stream:
+
+```bash
+docker exec -it nova-redis redis-cli -a nova_redis_2026 XLEN nova:tasks:graph_runs
+```
+
+---
+
+## 5. Login ke Nova
 
 Buka:
 
@@ -241,7 +289,7 @@ diganti ketika diminta.
 
 ## Urutan Startup Harian
 
-Setelah dependency dan file `.env` selesai disiapkan, gunakan tiga terminal.
+Setelah dependency dan file `.env` selesai disiapkan, gunakan terminal berikut.
 
 ### Terminal 1 — Infrastructure
 
@@ -262,6 +310,13 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```bash
 cd /Users/dwickyferiansyahputra/Public/Research/nova/frontend
 pnpm dev
+```
+
+### Terminal 4 — nova-scheduler (opsional)
+
+```bash
+cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
+uv run python -m app.scheduler
 ```
 
 Kemudian buka:
@@ -304,6 +359,22 @@ docker compose -f docker-compose-engine.yml down -v
 cd backend
 uv run pytest
 uv run ruff check .
+```
+
+Test khusus `nova-scheduler` (unit, tanpa engine/Redis):
+
+```bash
+cd backend
+uv run pytest tests/unit/test_task_schedule.py \
+              tests/unit/test_task_scheduler_tick.py \
+              tests/unit/test_task_scheduler_leader_lock.py
+```
+
+Test integrasi scheduler (butuh StarRocks + Redis; skip otomatis bila tidak ada):
+
+```bash
+cd backend
+uv run pytest tests/integration/test_task_scheduler.py -v
 ```
 
 ### Frontend

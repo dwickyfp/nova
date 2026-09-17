@@ -214,6 +214,13 @@ class TaskOrchestrationRepository:
         )
         return [self._to_dict(_EDGE_COLUMNS, row) for row in result["rows"]]
 
+    async def list_all_edges(self) -> list[dict[str, Any]]:
+        """Every edge, in one query — the scheduler plans all graphs per tick."""
+        result = await db.execute_system(
+            f"SELECT {_EDGE_COLUMNS} FROM {_EDGES} ORDER BY graph_id, id"
+        )
+        return [self._to_dict(_EDGE_COLUMNS, row) for row in result["rows"]]
+
     async def update_edge(self, edge_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         assignments, values = _assignments("edge", data)
         await db.execute_system(
@@ -229,7 +236,7 @@ class TaskOrchestrationRepository:
     # ── Graph runs ─────────────────────────────────────────────
 
     async def create_graph_run(self, data: dict[str, Any]) -> dict[str, Any]:
-        run_id = str(uuid4())
+        run_id = data.get("id") or str(uuid4())
         await db.execute_system(
             f"""
             INSERT INTO {_GRAPH_RUNS}
