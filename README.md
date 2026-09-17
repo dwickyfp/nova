@@ -716,7 +716,7 @@ stays a pure read that only reports candidates. Connection acquisition is inside
 the observer's guard, so an unreachable engine degrades to `UNKNOWN` instead of
 raising (NOVA-44). Criterion 7 is verified against the live engine, which
 reports `task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
-Forty-one unit + eleven engine integration tests; the runbook is
+Forty-one unit + ten engine integration tests; the runbook is
 `HOW_TO_RUN.md` §5. The checklist item above stays unchecked until this PR is
 merged.
 
