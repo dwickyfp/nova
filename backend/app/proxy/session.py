@@ -116,9 +116,10 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
     not recognise returns ``handled=False`` and is executed by the engine,
     which keeps unknown session syntax from being silently swallowed.
 
-    ``SET @x = 1`` is stored. ``SET ROLE`` updates the active role, which is
-    the one session variable with real security weight: it is what the engine
-    receives as the role for subsequent queries. ``SET NAMES`` and the
+    ``SET @x = 1`` is stored and later substituted back by
+    :func:`substitute_user_variables`. ``SET ROLE`` updates the active role,
+    which is the one session variable with real security weight: it is what the
+    engine receives as the role for subsequent queries. ``SET NAMES`` and the
     transaction/no-op family are accepted and dropped.
     """
     text = statement.strip()
@@ -146,13 +147,213 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
                 False,
                 "SET GLOBAL is not supported through the Nova MySQL proxy",
             )
-        session.user_variables[assignment.group("name").lower()] = _strip_quotes(raw_value)
+        name = assignment.group("name").lower()
+        # The *literal* value is stored, not the raw text: the client's own
+        # spelling may be an expression (``SET @x = 1 + 2``) the proxy cannot
+        # evaluate, and the engine never sees the SET. Storing the text and
+        # splicing it back is what the client expects of a session variable, and
+        # it keeps the value usable as a literal at every later call site.
+        session.user_variables[name] = _store_value(raw_value)
         return SetStatementResult(True)
 
     if any(upper.startswith(prefix.upper()) for prefix in _NOOP_PREFIXES):
         return SetStatementResult(True)
 
     return SetStatementResult(False)
+
+
+def _store_value(raw_value: str) -> str:
+    """Normalise a ``SET`` right-hand side into the text to splice back in.
+
+    A quoted value keeps its quotes so the literal round-trips: ``SET @x =
+    'abc'`` must come back as ``'abc'``, not ``abc``, or substituting it into
+    ``SELECT @x`` would produce a bare identifier. An unquoted value is kept
+    verbatim so ``SET @x = 5`` substitutes as the number ``5``.
+    """
+    value = raw_value.strip()
+    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
+        return value
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        # MySQL accepts double quotes as string delimiters by default; the
+        # engine's SQL mode decides, so the double-quoted form is rewritten to
+        # the single-quoted one, which is unambiguous everywhere.
+        return "'" + value[1:-1].replace("'", "''") + "'"
+    return value
+
+
+#: A user-variable reference: a single ``@`` followed by a name. The lookbehind
+#: excludes ``@@name`` (a system variable, which the engine resolves) and the
+#: lookahead excludes a trailing ``.`` so stage-like dotted names are left
+#: alone.
+_USER_VARIABLE_REFERENCE = re.compile(
+    r"(?<!@)@(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?![\w.$])"
+)
+
+
+class SubstitutionResult:
+    """The outcome of substituting session variables into a statement."""
+
+    __slots__ = ("sql", "substituted", "unknown")
+
+    def __init__(self, sql: str, substituted: list[str], unknown: list[str]) -> None:
+        self.sql = sql
+        self.substituted = substituted
+        self.unknown = unknown
+
+
+def substitute_user_variables(statement: str, session: SessionState) -> SubstitutionResult:
+    """Replace ``@name`` references with the values the client set on this session.
+
+    This is the read half of ``SET @x = 1``. Without it the proxy accepts the
+    ``SET``, stores the value, and then forwards ``SELECT @x`` to the engine,
+    where Nova's own ``@stage`` pattern claims ``@x`` as a stage named ``x`` and
+    the query fails with ``Stage 'x' not found``. QA filed that as NOVA-25: the
+    write was green and the read path had never been wired.
+
+    The scan is a tokenizer rather than a regex over the whole statement because
+    substitution must not touch text that only *looks* like a reference:
+
+    * ``'@not_a_var'`` — inside a single-quoted literal, so it is data;
+    * ``-- @x`` and ``/* @x */`` — inside a comment, so the engine never sees
+      the reference at all;
+    * ``@@version`` — a system variable, excluded by the pattern's lookbehind;
+    * ``@stage.col`` — a stage reference, excluded by the trailing-character
+      lookahead. A name that is *both* a session variable and a stage is not
+      resolvable from the text alone; the stage wins, because that is what the
+      engine would otherwise have seen and the ambiguity is the client's.
+
+    A reference with no stored value is left verbatim and reported in
+    ``unknown``. Leaving it is deliberate: the engine's own error for an unset
+    variable is a better diagnosis than anything the proxy can invent, and
+    rewriting it to ``NULL`` would silently change query semantics.
+    """
+    out: list[str] = []
+    substituted: list[str] = []
+    unknown: list[str] = []
+
+    index = 0
+    length = len(statement)
+    while index < length:
+        char = statement[index]
+
+        if char == "'":
+            end = _skip_single_quoted(statement, index)
+            out.append(statement[index:end])
+            index = end
+            continue
+
+        if char == '"':
+            end = _skip_double_quoted(statement, index)
+            out.append(statement[index:end])
+            index = end
+            continue
+
+        if char == "`":
+            end = _skip_backquoted(statement, index)
+            out.append(statement[index:end])
+            index = end
+            continue
+
+        if char == "/" and statement.startswith("/*", index):
+            end = statement.find("*/", index + 2)
+            end = length if end < 0 else end + 2
+            out.append(statement[index:end])
+            index = end
+            continue
+
+        if char == "-" and statement.startswith("--", index):
+            newline = statement.find("\n", index)
+            end = length if newline < 0 else newline
+            out.append(statement[index:end])
+            index = end
+            continue
+
+        if char == "@" and not statement.startswith("@@", index):
+            match = _USER_VARIABLE_REFERENCE.match(statement, index)
+            if match:
+                name = match.group("name").lower()
+                if name in session.user_variables:
+                    out.append(session.user_variables[name])
+                    substituted.append(name)
+                    index = match.end()
+                    continue
+                if _is_stage_reference(statement, match.end()):
+                    # ``@stage.path`` or ``@stage.file.csv``: leave it for the
+                    # dialect engine, which is the only thing that can resolve it.
+                    out.append(statement[index : match.end()])
+                    index = match.end()
+                    continue
+                unknown.append(name)
+                out.append(statement[index : match.end()])
+                index = match.end()
+                continue
+
+        out.append(char)
+        index += 1
+
+    return SubstitutionResult("".join(out), substituted, unknown)
+
+
+def _is_stage_reference(statement: str, end: int) -> bool:
+    """Whether the token ending at ``end`` continues as a stage path.
+
+    ``@stage.data.csv`` is indistinguishable from ``@stage`` followed by
+    ``.data.csv`` by the reference pattern alone, so the caller asks whether a
+    dot follows and lets the stage interpretation win.
+    """
+    return end < len(statement) and statement[end] == "."
+
+
+def _skip_single_quoted(statement: str, start: int) -> int:
+    """Index just past a single-quoted literal that starts at ``start``.
+
+    Handles the doubled-quote escape (``'it''s'``) and a backslash escape, since
+    StarRocks accepts both by default.
+    """
+    index = start + 1
+    length = len(statement)
+    while index < length:
+        char = statement[index]
+        if char == "\\" and index + 1 < length:
+            index += 2
+            continue
+        if char == "'":
+            if index + 1 < length and statement[index + 1] == "'":
+                index += 2
+                continue
+            return index + 1
+        index += 1
+    return length
+
+
+def _skip_double_quoted(statement: str, start: int) -> int:
+    index = start + 1
+    length = len(statement)
+    while index < length:
+        char = statement[index]
+        if char == "\\" and index + 1 < length:
+            index += 2
+            continue
+        if char == '"':
+            if index + 1 < length and statement[index + 1] == '"':
+                index += 2
+                continue
+            return index + 1
+        index += 1
+    return length
+
+
+def _skip_backquoted(statement: str, start: int) -> int:
+    index = start + 1
+    length = len(statement)
+    while index < length:
+        if statement[index] == "`":
+            if index + 1 < length and statement[index + 1] == "`":
+                index += 2
+                continue
+            return index + 1
+        index += 1
+    return length
 
 
 def split_statements(sql: str) -> list[str]:

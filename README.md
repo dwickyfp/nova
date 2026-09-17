@@ -620,6 +620,7 @@ connects to port 4406, authenticates against StarRocks, and runs `SELECT`,
 - [x] TCP listener on port 4406 — `backend/app/proxy/server.py`; embedded in the FastAPI lifespan (`backend/app/main.py:75`) and runnable standalone via `python -m app.proxy`
 - [x] MySQL wire protocol parser — `backend/app/proxy/protocol.py` (framing, handshake, OK/ERR/EOF, result sets; engine-free)
 - [x] @stage dialect translation in proxy layer — routed through `QueryService.execute_statements` (`backend/app/proxy/executor.py`), so the proxy reuses the pipeline rather than reimplementing it
+- [x] User variables — `SET @x = …` is tracked per connection and `@x` is substituted into later statements (`backend/app/proxy/session.py`); a bare `@name` is no longer claimed as a stage reference (`backend/app/modules/query/dialect/parser.py`)
 - [x] Credential injection for @stage queries — same `QueryService` path; credentials are redacted in results, audit rows and error text
 - [x] Audit logging for proxy queries — every statement lands in `NOVA_SYSTEM.AUDIT_LOG` via `QueryService`
 - [x] Authentication — StarRocks challenge relay (`backend/app/proxy/auth.py`); the proxy never holds a password

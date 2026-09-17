@@ -22,6 +22,8 @@ as a stage reference.
 
 from __future__ import annotations
 
+import datetime
+import decimal
 import logging
 from dataclasses import dataclass, field
 
@@ -30,8 +32,13 @@ from app.modules.query.repository import QueryResult
 from app.modules.query.service import query_service
 from app.proxy.protocol import (
     CHARSET_UTF8,
+    TYPE_BLOB,
+    TYPE_DATE,
+    TYPE_DATETIME,
     TYPE_DOUBLE,
     TYPE_LONGLONG,
+    TYPE_NEWDECIMAL,
+    TYPE_TIME,
     TYPE_VAR_STRING,
     ColumnDefinition,
 )
@@ -42,6 +49,7 @@ from app.proxy.session import (
     is_show_databases,
     parse_use_statement,
     split_statements,
+    substitute_user_variables,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,9 +94,20 @@ def _column_definition(name: str, sample_values: list) -> ColumnDefinition:
     """Describe a column using a sample of its values.
 
     ``QueryResult`` carries column *names* and Python values, not StarRocks type
-    metadata, so the type is inferred from the first non-null value. Every
-    column is ultimately sent in text format, so a wrong guess costs nothing
-    except a client's column-width estimate.
+    metadata, so the type is inferred from the first non-null value.
+
+    The type code is **not** cosmetic, which an earlier revision of this
+    docstring got wrong. Clients dispatch on it: ``pymysql``'s converters map a
+    type code to the Python object it builds, so a ``DECIMAL`` sent as
+    ``TYPE_VAR_STRING`` arrives as ``'1.5'`` rather than ``Decimal('1.5')`` and
+    breaks arithmetic (``'1.5' + 1`` raises ``TypeError``). The same is true of
+    the temporal types, and ORMs such as SQLAlchemy and JDBC drivers map columns
+    to model fields off this code.
+
+    The branches are ordered from most to least specific because several of
+    these types are subclasses of each other — ``bool`` of ``int``,
+    ``datetime`` of ``date`` — and testing the superclass first would collapse
+    the narrower type.
     """
     for value in sample_values:
         if value is None:
@@ -97,10 +116,25 @@ def _column_definition(name: str, sample_values: list) -> ColumnDefinition:
             return ColumnDefinition(name=name, type_code=TYPE_LONGLONG, charset=CHARSET_UTF8)
         if isinstance(value, int):
             return ColumnDefinition(name=name, type_code=TYPE_LONGLONG, charset=CHARSET_UTF8)
+        if isinstance(value, decimal.Decimal):
+            return ColumnDefinition(
+                name=name, type_code=TYPE_NEWDECIMAL, charset=CHARSET_UTF8
+            )
         if isinstance(value, float):
             return ColumnDefinition(name=name, type_code=TYPE_DOUBLE, charset=CHARSET_UTF8)
+        # datetime.datetime before datetime.date: the former is a subclass.
+        if isinstance(value, datetime.datetime):
+            return ColumnDefinition(
+                name=name, type_code=TYPE_DATETIME, charset=CHARSET_UTF8
+            )
+        if isinstance(value, datetime.date):
+            return ColumnDefinition(name=name, type_code=TYPE_DATE, charset=CHARSET_UTF8)
+        if isinstance(value, datetime.timedelta):
+            return ColumnDefinition(name=name, type_code=TYPE_TIME, charset=CHARSET_UTF8)
         if isinstance(value, (bytes, bytearray)):
-            return ColumnDefinition(name=name, type_code=TYPE_VAR_STRING, charset=63)
+            return ColumnDefinition(name=name, type_code=TYPE_BLOB, charset=63)
+        if isinstance(value, datetime.time):
+            return ColumnDefinition(name=name, type_code=TYPE_TIME, charset=CHARSET_UTF8)
         break
 
     return ColumnDefinition(name=name, type_code=TYPE_VAR_STRING, charset=CHARSET_UTF8)
@@ -149,7 +183,13 @@ class ProxyQueryExecutor:
             if set_result.handled:
                 continue
 
-            engine_statements.append(statement)
+            # The read half of ``SET @x = …``. Substitution happens after the
+            # ``SET``/``USE`` classification so a statement the proxy owns never
+            # reaches the engine, and before it is queued so the engine sees the
+            # value rather than a reference Nova's own parser would claim as a
+            # stage (NOVA-25).
+            substituted = substitute_user_variables(statement, self._session)
+            engine_statements.append(substituted.sql)
 
         if not engine_statements:
             # Every statement was session-local (a script of ``SET``s, say).

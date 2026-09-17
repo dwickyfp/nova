@@ -53,13 +53,32 @@ the backend — that is where it authenticates.
 | `SELECT ...` / DDL / DML | Executed through `QueryService`, unmodified |
 | `SHOW DATABASES` | Executed, then `NOVA_SYSTEM`, `information_schema`, `sys`, `_statistics_` are filtered out |
 | `USE <db>` | Tracked in the proxy's session and applied to the engine connection |
-| `SET @var = value`, `SET ROLE` | Tracked in the proxy's session; never sent to the engine |
+| `SET @var = value` | Tracked in the proxy's session; later `@var` references are substituted before the statement reaches the engine. Never sent to the engine as a `SET` |
+| `SET ROLE <role>` | Tracked in the proxy's session and applied to each subsequent query |
 | `DROP ROLE ACCOUNTADMIN` / `REVOKE ... ACCOUNTADMIN` | Refused by the guard in `QueryService` |
 
 Every statement goes through `QueryService.execute_statements`, so the
 `@stage` → `FILES()` translation, credential injection, the ACCOUNTADMIN guard
 and the audit write are the *same code* the HTTP API uses. The proxy adds
 transport, session tracking and nothing else.
+
+### User variables
+
+`SET @x = 1` is stored on the session and `@x` is substituted into later
+statements by `session.substitute_user_variables`, which is what drivers and
+ORMs (`pymysql`, SQLAlchemy, dbt, MySQL Shell) rely on to keep a value across
+queries on one connection. The substitution is a tokenizer, not a regex pass, so
+it only rewrites references that are really references:
+
+* `'@x'` inside a string literal is data and is left alone;
+* `-- @x` and `/* @x */` are comments and are left alone;
+* `@@version` is a system variable and is left to the engine;
+* `@stage.data.csv` is a stage reference and is left to the dialect engine.
+
+A reference with no stored value is left verbatim, and the engine answers for an
+unset variable in its own way (`NULL`). Nova's stage pattern requires at least
+one dotted segment (`@stage1.data.csv`), so a bare `@name` is never mistaken for
+a stage.
 
 ## Authentication
 
@@ -136,6 +155,15 @@ error, not as a wrong-password failure.
   protocol cannot express several result sets without
   `CLIENT_MULTI_RESULTS` bookkeeping that the proxy does not implement; the
   first error still wins.
+* **Integer columns are reported as `BIGINT` regardless of their real width.**
+  `_column_definition` infers the type from the Python value, and
+  `QueryResult` carries column names and values but not the engine's declared
+  type. A `TINYINT` column therefore arrives with type code `0x08` where the
+  engine reports `0x01`. Both decode to `int` in every client, so this affects
+  metadata fidelity rather than values; reporting the true width needs the type
+  code carried through `QueryResult`.
+* **An unset user variable is passed through, not rejected.** `SELECT @never_set`
+  reaches the engine and returns `NULL`, which is what StarRocks itself does.
 
 ## Tests
 
