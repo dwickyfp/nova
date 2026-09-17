@@ -37,7 +37,6 @@ import {
   RefreshCw,
   Route,
   Square,
-  RotateCcw,
   Search,
   Table2,
   Type,
@@ -78,6 +77,20 @@ import {
   shouldTriggerStageSuggestions,
 } from './stage-completion'
 import { useTheme } from '@/context/theme-provider'
+import { readToken } from '@/lib/read-token'
+import { ExplainTreeView } from './explain-tree'
+import { QueryHistory } from './query-history'
+import type {
+  HistoryResponse,
+  QueryContextResponse,
+  QueryResponse,
+  SchemaResponse,
+  SchemaTreeResponse,
+  WorkspaceEntry,
+  WorkspaceFileResponse,
+  WorkspaceTabState,
+  WorkspaceTreeResponse,
+} from './types'
 import { InlineSelect } from './inline-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -87,100 +100,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { SidebarMenu, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubItem } from '@/components/ui/sidebar'
-
-type WorkspaceEntry = {
-  id: string
-  name: string
-  parent_path: string
-  path: string
-  entry_type: 'file' | 'folder'
-  size_bytes: number
-}
-
-type WorkspaceTreeResponse = {
-  root_name: string
-  entries: WorkspaceEntry[]
-  open_tabs: string[]
-  active_tab: string | null
-  sidebar_collapsed: boolean
-  defaults: {
-    database?: string | null
-    schema?: string | null
-    role?: string | null
-  }
-}
-
-type WorkspaceFileResponse = {
-  entry: WorkspaceEntry
-  content: string
-}
-
-type QueryContextResponse = {
-  roles: string[]
-  databases: string[]
-  schemas: string[]
-  defaults: {
-    database?: string | null
-    schema?: string | null
-    role?: string | null
-  }
-}
-
-type QueryResponse = {
-  success: boolean
-  columns: string[]
-  rows: Array<Array<string | number | boolean | null>>
-  row_count: number
-  affected_rows: number
-  elapsed_ms: number
-  original_sql: string
-  executed_sql: string
-  warnings: string[]
-  destructive?: boolean
-  needs_confirmation?: boolean
-}
-
-type SchemaResponse = {
-  schemas: Array<{ name: string }>
-}
-
-type SchemaTreeResponse = {
-  database: string
-  schema: string
-  tables: Array<{ name: string; type: string }>
-  views: Array<{ name: string; type: string }>
-  materialized_views: Array<{ name: string; type: string }>
-  stages: Array<{ id: string; name: string; type: string }>
-}
-
-type WorkspaceTabState = {
-  id: string
-  title: string
-  content: string
-  savedContent: string
-  database: string
-  schema: string
-  role: string
-  loaded: boolean
-}
-
-type HistoryItem = {
-  query_id: string
-  event_time: string
-  sql_text: string
-  status: string
-  duration_ms: number | null
-  rows_affected: number | null
-  error_message: string | null
-  file_id: string | null
-  database_name: string | null
-  schema_name: string | null
-}
-
-type HistoryResponse = {
-  items: HistoryItem[]
-  total: number
-}
 
 type MonacoEditorInstance = Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0]
 
@@ -2112,7 +2031,7 @@ function SchemaNode({
             <ChevronRight
               className={cn('size-4 shrink-0 transition-transform duration-200', expanded && 'rotate-90')}
             />
-            <Folder className='size-4 shrink-0 text-amber-500' />
+            <Folder className='size-4 shrink-0 text-muted-foreground' />
             <span className='truncate'>{schema}</span>
           </button>
         </CollapsibleTrigger>
@@ -2199,13 +2118,13 @@ function TableItemWithPopover({ name, database, schema }: { name: string; databa
   function typeIcon(type: string) {
     const t = type.toUpperCase()
     if (/INT|BIGINT|SMALLINT|TINYINT|FLOAT|DOUBLE|DECIMAL|NUMERIC|NUMBER/.test(t))
-      return <Hash className='size-3 shrink-0 text-blue-500' />
-    if (/DATE|TIME|TIMESTAMP/.test(t)) return <Clock className='size-3 shrink-0 text-emerald-500' />
+      return <Hash className='size-3 shrink-0 text-info-strong' />
+    if (/DATE|TIME|TIMESTAMP/.test(t)) return <Clock className='size-3 shrink-0 text-success-strong' />
     if (/BOOL/.test(t))
       return (
-        <span className='flex size-3 shrink-0 items-center justify-center text-[9px] font-bold text-orange-500'>B</span>
+        <span className='flex size-3 shrink-0 items-center justify-center text-[9px] font-bold text-warning-strong'>B</span>
       )
-    return <Type className='size-3 shrink-0 text-violet-500' />
+    return <Type className='size-3 shrink-0 text-primary' />
   }
 
   return (
@@ -2340,7 +2259,7 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
 
   // Warnings indicator (shown alongside data, not replacing it)
   const warningsBanner = queryResult.warnings?.length ? (
-    <div className='border-b border-border bg-amber-500/10 px-4 py-2 text-xs text-amber-600 dark:text-amber-400'>
+    <div className='border-b border-border bg-warning/10 px-4 py-2 text-xs text-warning-strong'>
       {queryResult.warnings.map((w, i) => (
         <div key={i}>{w}</div>
       ))}
@@ -2528,8 +2447,31 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
 }
 
 // ── Chart Visualization ─────────────────────────────────────────────
-const CHART_COLORS = ['#5b8def', '#2dd4bf', '#f59e0b', '#f97316', '#a78bfa', '#f472b6', '#38bdf8', '#34d399']
-const MONOCHROME_CHART_COLORS = ['#5b8def', '#76a0ef', '#90b4f2', '#aac7f5', '#c4daf8', '#deedfb']
+// Categorical series palette, read from tokens so dark mode stays correct.
+// Literal calls keep each read inside the gate's A2 exemption.
+function readSeriesPalette() {
+  return [
+    readToken('--chart-4', '#4f7ee8'),
+    readToken('--chart-2', '#14a89a'),
+    readToken('--chart-3', '#e89b17'),
+    readToken('--chart-1', '#f05a47'),
+    readToken('--chart-6', '#a78bfa'),
+    readToken('--chart-7', '#f472b6'),
+    readToken('--chart-8', '#38bdf8'),
+    readToken('--chart-9', '#34d399'),
+  ]
+}
+
+function readTonePalette() {
+  return [
+    readToken('--chart-tone-1', '#5b8def'),
+    readToken('--chart-tone-2', '#76a0ef'),
+    readToken('--chart-tone-3', '#90b4f2'),
+    readToken('--chart-tone-4', '#aac7f5'),
+    readToken('--chart-tone-5', '#c4daf8'),
+    readToken('--chart-tone-6', '#deedfb'),
+  ]
+}
 const CHART_EMPTY_OPTION = '__none__'
 const CHART_TYPE_OPTIONS = [
   { value: 'bar', label: 'Bar chart' },
@@ -2633,9 +2575,12 @@ function formatNumberCompact(value: number) {
 }
 
 function getSeriesColors(colorMode: ColorMode, count: number) {
-  const palette = colorMode === 'single' ? MONOCHROME_CHART_COLORS : CHART_COLORS
+  const palette = colorMode === 'single' ? readTonePalette() : readSeriesPalette()
 
-  return Array.from({ length: count }, (_, index) => palette[index % palette.length])
+  return Array.from(
+    { length: count },
+    (_, index) => palette[index % palette.length]
+  )
 }
 
 function compareChartValues(
@@ -2956,6 +2901,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
     numericCandidates,
     queryResult,
     rawRecords,
+    resolvedTheme,
     sortMode,
     xCol,
     chartType,
@@ -2977,32 +2923,42 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
     effectiveYColumns.length < 4
   const chartTitle = CHART_TYPE_OPTIONS.find((option) => option.value === chartType)?.label ?? 'Chart'
   const hasChartData = chartModel.data.length > 0 && chartModel.series.length > 0
-  const isDarkMode = resolvedTheme === 'dark'
+  // Re-read whenever the theme flips: tokens resolve to different values.
+  const chartTheme = useMemo(
+    () => ({
+      mutedForeground: readToken('--muted-foreground', '#5c6e87'),
+      border: readToken('--border', '#e0e5ec'),
+      popover: readToken('--popover', '#ffffff'),
+      foreground: readToken('--foreground', '#1e293b'),
+      background: readToken('--background', '#ffffff'),
+    }),
+    [resolvedTheme]
+  )
   const axisTickStyle = {
     fontSize: 11,
-    fill: isDarkMode ? '#94a3b8' : 'hsl(var(--muted-foreground))',
+    fill: chartTheme.mutedForeground,
   }
   const axisLineStyle = {
-    stroke: isDarkMode ? 'rgba(148, 163, 184, 0.26)' : 'hsl(var(--border))',
+    stroke: chartTheme.border,
   }
-  const gridStroke = isDarkMode ? 'rgba(71, 85, 105, 0.38)' : 'hsl(var(--border))'
+  const gridStroke = chartTheme.border
   const tooltipContentStyle = {
-    backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.96)' : 'hsl(var(--popover))',
-    border: `1px solid ${isDarkMode ? 'rgba(71, 85, 105, 0.7)' : 'hsl(var(--border))'}`,
+    backgroundColor: chartTheme.popover,
+    border: `1px solid ${chartTheme.border}`,
     borderRadius: 12,
-    color: isDarkMode ? '#e2e8f0' : 'hsl(var(--foreground))',
+    color: chartTheme.foreground,
     fontSize: 12,
-    boxShadow: isDarkMode ? '0 18px 40px rgba(2, 6, 23, 0.38)' : '0 12px 28px rgba(15, 23, 42, 0.08)',
+    boxShadow: 'var(--inset-shadow)',
   }
   const tooltipLabelStyle = {
-    color: isDarkMode ? '#f8fafc' : 'hsl(var(--foreground))',
+    color: chartTheme.foreground,
     fontWeight: 600,
   }
   const tooltipItemStyle = {
-    color: isDarkMode ? '#cbd5e1' : 'hsl(var(--foreground))',
+    color: chartTheme.mutedForeground,
   }
   const hoverCursorStyle = {
-    fill: isDarkMode ? 'rgba(148, 163, 184, 0.12)' : 'rgba(15, 23, 42, 0.06)',
+    fill: chartTheme.border,
   }
 
   return (
@@ -3342,7 +3298,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
                       cursor={{
-                        stroke: isDarkMode ? 'rgba(148, 163, 184, 0.24)' : 'rgba(15, 23, 42, 0.1)',
+                        stroke: chartTheme.mutedForeground,
                         strokeWidth: 1,
                       }}
                     />
@@ -3357,7 +3313,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                         activeDot={{
                           r: 4,
                           fill: series.color,
-                          stroke: 'hsl(var(--background))',
+                          stroke: chartTheme.background,
                           strokeWidth: 2,
                         }}
                       />
@@ -3421,7 +3377,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
                       cursor={{
-                        stroke: isDarkMode ? 'rgba(148, 163, 184, 0.24)' : 'rgba(15, 23, 42, 0.1)',
+                        stroke: chartTheme.mutedForeground,
                         strokeWidth: 1,
                       }}
                     />
@@ -3454,7 +3410,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       innerRadius='48%'
                       outerRadius='74%'
                       paddingAngle={2}
-                      stroke='hsl(var(--background))'
+                      stroke={chartTheme.background}
                       strokeWidth={2}
                     >
                       {chartModel.data.map((_, index) => (
@@ -3552,268 +3508,6 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-// ── EXPLAIN Tree View ───────────────────────────────────────────────
-const OPERATOR_COLORS: Record<string, string> = {
-  OlapScanNode: 'text-blue-500',
-  OlapScan: 'text-blue-500',
-  EXCHANGE: 'text-emerald-500',
-  'HASH JOIN': 'text-orange-500',
-  'NESTLOOP JOIN': 'text-orange-500',
-  'MERGE JOIN': 'text-orange-500',
-  JOIN: 'text-orange-500',
-  AGGREGATE: 'text-violet-500',
-  AGGREGATE_NODE: 'text-violet-500',
-  SORT: 'text-amber-500',
-  'TOP-N': 'text-amber-500',
-  ANALYTIC: 'text-pink-500',
-  'RESULT SINK': 'text-muted-foreground',
-  'STREAM DATA SINK': 'text-muted-foreground',
-  UNION: 'text-cyan-500',
-  INTERSECT: 'text-cyan-500',
-  EXCEPT: 'text-cyan-500',
-  FILTER: 'text-yellow-600 dark:text-yellow-500',
-  PROJECT: 'text-yellow-600 dark:text-yellow-500',
-}
-
-function getOperatorColor(line: string): string {
-  // Match operator patterns like "0:OlapScanNode", "1:EXCHANGE", "HASH JOIN", etc.
-  const opMatch = line.match(/^\d+:(\w+)/)
-  if (opMatch && OPERATOR_COLORS[opMatch[1]]) return OPERATOR_COLORS[opMatch[1]]
-  // Check for standalone operator names
-  for (const [op, color] of Object.entries(OPERATOR_COLORS)) {
-    if (line.trim().startsWith(op)) return color
-  }
-  return 'text-foreground'
-}
-
-interface PlanNode {
-  line: string
-  indent: number
-  children: PlanNode[]
-}
-
-function parseExplainPlan(text: string): PlanNode[] {
-  const lines = text.split('\n')
-  const root: PlanNode = { line: '', indent: -1, children: [] }
-  const stack: PlanNode[] = [root]
-
-  for (const rawLine of lines) {
-    if (rawLine.trim() === '') continue
-    const indent = rawLine.search(/\S/)
-    const line = rawLine.trim()
-    const node: PlanNode = { line, indent, children: [] }
-
-    // Pop stack until we find a parent with less indentation
-    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
-      stack.pop()
-    }
-    stack[stack.length - 1].children.push(node)
-    stack.push(node)
-  }
-
-  return root.children
-}
-
-function ExplainTreeView({ planText }: { planText: string }) {
-  const tree = useMemo(() => parseExplainPlan(planText), [planText])
-  const [collapsedFragments, setCollapsedFragments] = useState<Set<string>>(new Set())
-
-  function toggleFragment(label: string) {
-    setCollapsedFragments((prev) => {
-      const next = new Set(prev)
-      if (next.has(label)) {
-        next.delete(label)
-      } else {
-        next.add(label)
-      }
-      return next
-    })
-  }
-
-  // Group top-level nodes into PLAN FRAGMENTs
-  const fragments: { label: string; children: PlanNode[] }[] = []
-  let currentFragment: { label: string; children: PlanNode[] } | null = null
-
-  for (const node of tree) {
-    if (node.line.startsWith('PLAN FRAGMENT')) {
-      currentFragment = { label: node.line, children: node.children }
-      fragments.push(currentFragment)
-    } else if (currentFragment) {
-      currentFragment.children.push(node)
-    } else {
-      // Lines before any PLAN FRAGMENT — create an implicit fragment
-      currentFragment = { label: 'Execution Plan', children: [node] }
-      fragments.push(currentFragment)
-    }
-  }
-
-  return (
-    <div className='space-y-1 font-mono text-xs'>
-      {fragments.map((frag, fi) => {
-        const isCollapsed = collapsedFragments.has(frag.label)
-        return (
-          <div key={fi} className='rounded-md border border-border overflow-hidden'>
-            <button
-              type='button'
-              className='flex w-full items-center gap-1.5 bg-muted/40 px-2.5 py-1.5 text-left font-semibold text-foreground hover:bg-muted/60 transition-colors'
-              onClick={() => toggleFragment(frag.label)}
-            >
-              <ChevronRight
-                className={cn('size-3.5 shrink-0 transition-transform duration-200', !isCollapsed && 'rotate-90')}
-              />
-              <span className='text-primary'>{frag.label}</span>
-            </button>
-            {!isCollapsed && (
-              <div className='px-2 py-1.5'>
-                {frag.children.map((node, ni) => (
-                  <ExplainNode key={ni} node={node} depth={0} />
-                ))}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function ExplainNode({ node, depth }: { node: PlanNode; depth: number }) {
-  const isOperator = /^\d+:\w/.test(node.line)
-  const isSink = /^RESULT SINK|^STREAM DATA SINK/.test(node.line)
-  const colorClass = getOperatorColor(node.line)
-  const hasChildren = node.children.length > 0
-
-  return (
-    <div style={{ paddingLeft: depth * 16 }}>
-      <div
-        className={cn(
-          'flex items-start gap-1 rounded px-1.5 py-0.5 leading-relaxed',
-          isOperator || isSink ? 'font-semibold' : '',
-          isOperator || isSink ? colorClass : 'text-muted-foreground'
-        )}
-      >
-        {hasChildren && isOperator && <ChevronRight className='mt-0.5 size-3 shrink-0 opacity-50' />}
-        <span className='whitespace-pre-wrap break-all'>{node.line}</span>
-      </div>
-      {node.children.map((child, ci) => (
-        <ExplainNode key={ci} node={child} depth={depth + 1} />
-      ))}
-    </div>
-  )
-}
-
-function QueryHistory({
-  items,
-  loading,
-  onLoadSql,
-  onReRun,
-}: {
-  items: HistoryItem[]
-  loading: boolean
-  onLoadSql: (sql: string) => void
-  onReRun: (sql: string) => void
-}) {
-  if (loading) {
-    return <div className='flex items-center justify-center p-6 text-sm text-muted-foreground'>Loading history...</div>
-  }
-
-  if (!items.length) {
-    return (
-      <div className='flex flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground'>
-        <Clock className='size-8 opacity-40' />
-        <span>No query history yet.</span>
-      </div>
-    )
-  }
-
-  function formatTime(iso: string) {
-    if (!iso) return ''
-    const d = new Date(iso)
-    const now = new Date()
-    const isToday =
-      d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
-    const time = d.toLocaleTimeString(undefined, {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-    if (isToday) return time
-    return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`
-  }
-
-  function formatDuration(ms: number | null) {
-    if (ms == null) return '—'
-    if (ms < 1000) return `${ms}ms`
-    return `${(ms / 1000).toFixed(1)}s`
-  }
-
-  return (
-    <div className='min-h-0 flex-1 overflow-auto'>
-      {items.map((item) => (
-        <div
-          key={item.query_id}
-          className='group flex items-start gap-3 border-b px-4 py-2.5 last:border-b-0 hover:bg-muted/50'
-        >
-          <div className='flex flex-1 flex-col gap-1 overflow-hidden'>
-            <div className='flex items-center gap-2'>
-              <span
-                className={cn(
-                  'inline-flex h-4 items-center rounded px-1 text-[10px] font-medium',
-                  item.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
-                )}
-              >
-                {item.status === 'SUCCESS' ? 'OK' : 'ERR'}
-              </span>
-              <span className='text-xs text-muted-foreground'>{formatDuration(item.duration_ms)}</span>
-              {item.rows_affected != null && (
-                <span className='text-xs text-muted-foreground'>{item.rows_affected} rows</span>
-              )}
-              {item.database_name && (
-                <span className='text-xs text-muted-foreground'>
-                  {item.database_name}
-                  {item.schema_name ? `.${item.schema_name}` : ''}
-                </span>
-              )}
-              <span className='ml-auto text-[11px] text-muted-foreground'>{formatTime(item.event_time)}</span>
-            </div>
-            <button
-              type='button'
-              className='w-full cursor-pointer text-left'
-              onClick={() => onLoadSql(item.sql_text)}
-              title={item.sql_text}
-            >
-              <code className='block truncate font-mono text-xs text-foreground/80'>{item.sql_text}</code>
-            </button>
-            {item.error_message && <p className='truncate text-[11px] text-destructive'>{item.error_message}</p>}
-          </div>
-          <div className='flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100'>
-            <Button
-              type='button'
-              size='icon'
-              variant='ghost'
-              className='size-6'
-              title='Copy SQL'
-              onClick={() => navigator.clipboard.writeText(item.sql_text)}
-            >
-              <Copy className='size-3' />
-            </Button>
-            <Button
-              type='button'
-              size='icon'
-              variant='ghost'
-              className='size-6'
-              title='Load into editor & run'
-              onClick={() => onReRun(item.sql_text)}
-            >
-              <RotateCcw className='size-3' />
-            </Button>
-          </div>
-        </div>
-      ))}
     </div>
   )
 }
@@ -4001,11 +3695,11 @@ function MonacoSqlEditor({
         { token: 'predefined', foreground: 'd04738' },
       ],
       colors: {
-        'editor.background': '#ffffff',
-        'editor.foreground': '#2c3e50',
-        'editor.lineHighlightBackground': '#f8f9fa',
-        'editor.selectionBackground': '#d0473820',
-        'editorCursor.foreground': '#d04738',
+        'editor.background': readToken('--card', '#ffffff'),
+        'editor.foreground': readToken('--foreground', '#2c3e50'),
+        'editor.lineHighlightBackground': readToken('--muted', '#f8f9fa'),
+        'editor.selectionBackground': readToken('--accent', '#fff0ed'),
+        'editorCursor.foreground': readToken('--primary', '#d04738'),
       },
     })
     monaco.editor.defineTheme('nova-dark', {
@@ -4025,11 +3719,11 @@ function MonacoSqlEditor({
         { token: 'predefined', foreground: 'f36b5b' },
       ],
       colors: {
-        'editor.background': '#0f1117',
-        'editor.foreground': '#e2e8f0',
-        'editor.lineHighlightBackground': '#1a1d2e',
-        'editor.selectionBackground': '#d0473840',
-        'editorCursor.foreground': '#e45a49',
+        'editor.background': readToken('--card', '#0f1117'),
+        'editor.foreground': readToken('--foreground', '#e2e8f0'),
+        'editor.lineHighlightBackground': readToken('--muted', '#1a1d2e'),
+        'editor.selectionBackground': readToken('--accent', '#202833'),
+        'editorCursor.foreground': readToken('--primary', '#d04538'),
       },
     })
     monaco.editor.setTheme(resolvedTheme === 'dark' ? 'nova-dark' : 'nova-light')
