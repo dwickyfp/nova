@@ -165,6 +165,75 @@ class TestResolveEngineTimezone:
         assert await resolve_engine_timezone(repo) == "UTC"
 
 
+class TestSchedulerStartupTimezoneGuard:
+    """NOVA-39: an explicit override that contradicts the engine must stop startup.
+
+    Auto-detect cannot be wrong, so the guard only exists to catch a pinned
+    ``SCHEDULER_ENGINE_TIMEZONE`` that disagrees with ``SELECT @@time_zone`` — the
+    case where an operator forces the 7-hour anchor shift back in.
+    """
+
+    def _probe(self, zone: str | None):
+        async def _get_engine_timezone() -> str | None:
+            return zone
+
+        return _get_engine_timezone
+
+    async def test_auto_detect_returns_the_engine_zone(self, monkeypatch):
+        from app.modules.task_orchestration.repository import (
+            task_orchestration_repository as repo,
+        )
+        from app.scheduler.__main__ import _assert_engine_timezone
+
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
+        monkeypatch.setattr(repo, "get_engine_timezone", self._probe("Asia/Jakarta"))
+        assert await _assert_engine_timezone() == "Asia/Jakarta"
+
+    async def test_blank_override_is_treated_as_auto_detect(self, monkeypatch):
+        from app.modules.task_orchestration.repository import (
+            task_orchestration_repository as repo,
+        )
+        from app.scheduler.__main__ import _assert_engine_timezone
+
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "   ")
+        monkeypatch.setattr(repo, "get_engine_timezone", self._probe("Asia/Jakarta"))
+        assert await _assert_engine_timezone() == "Asia/Jakarta"
+
+    async def test_matching_override_starts(self, monkeypatch):
+        from app.modules.task_orchestration.repository import (
+            task_orchestration_repository as repo,
+        )
+        from app.scheduler.__main__ import _assert_engine_timezone
+
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "+07:00")
+        monkeypatch.setattr(repo, "get_engine_timezone", self._probe("Asia/Jakarta"))
+        assert await _assert_engine_timezone() == "Asia/Jakarta"
+
+    async def test_mismatched_override_fails_fast(self, monkeypatch):
+        from app.modules.task_orchestration.repository import (
+            task_orchestration_repository as repo,
+        )
+        from app.scheduler.__main__ import (
+            EngineTimezoneMismatchError,
+            _assert_engine_timezone,
+        )
+
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "UTC")
+        monkeypatch.setattr(repo, "get_engine_timezone", self._probe("Asia/Jakarta"))
+        with pytest.raises(EngineTimezoneMismatchError, match="does not match"):
+            await _assert_engine_timezone()
+
+    async def test_silent_engine_does_not_block_start(self, monkeypatch):
+        from app.modules.task_orchestration.repository import (
+            task_orchestration_repository as repo,
+        )
+        from app.scheduler.__main__ import _assert_engine_timezone
+
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "UTC")
+        monkeypatch.setattr(repo, "get_engine_timezone", self._probe(None))
+        assert await _assert_engine_timezone() is None
+
+
 class TestEngineTimezoneAnchorRegression:
     """NOVA-39: an Asia/Jakarta engine must not push the anchor +7h ahead."""
 

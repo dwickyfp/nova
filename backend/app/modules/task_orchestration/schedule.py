@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
@@ -71,6 +71,53 @@ def resolve_timezone(name: str) -> ZoneInfo:
         return ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise ScheduleError(f"unknown IANA timezone: {name!r}") from exc
+
+
+_OFFSET_RE = re.compile(r"^([+-])(\d{2}):?(\d{2})$")
+
+
+def _fixed_offset(name: str) -> timezone:
+    """Parse a MySQL-style fixed offset (``+07:00``) into a ``timezone``.
+
+    StarRocks reports ``@@time_zone`` as an IANA name when the session was set to
+    one, but as a numeric offset when it was set with ``SET time_zone = '+07:00'``.
+    Both are valid engine reports and both must be comparable to a configured
+    override, so the offset form is parsed rather than rejected.
+    """
+    match = _OFFSET_RE.match(name.strip())
+    if match is None:
+        raise ScheduleError(f"unrecognised engine timezone: {name!r}")
+    sign = 1 if match.group(1) == "+" else -1
+    hours, minutes = int(match.group(2)), int(match.group(3))
+    return timezone(sign * timedelta(hours=hours, minutes=minutes))
+
+
+def _parse_zone(value: str) -> ZoneInfo | timezone:
+    """Parse an IANA name or a MySQL-style fixed offset; raise ``ScheduleError``."""
+    try:
+        return resolve_timezone(value)
+    except ScheduleError:
+        return _fixed_offset(value)
+
+
+def engine_timezone_matches(configured: str, engine_reported: str) -> bool:
+    """Whether ``configured`` and the engine's ``@@time_zone`` mean the same zone.
+
+    The comparison is done on the instant in question, not on the spelling: the
+    engine may report ``+07:00`` for a session the override names ``Asia/Jakarta``
+    (and vice versa), and refusing to start over a synonym would be a false alarm.
+    A genuinely different zone — the 7-hour bug this guards against — still fails.
+    """
+    try:
+        configured_zone = _parse_zone(configured)
+        engine_zone = _parse_zone(engine_reported)
+    except ScheduleError:
+        return False
+    reference = datetime(2026, 1, 1, 12, 0)
+    return (
+        reference.replace(tzinfo=configured_zone).utcoffset()
+        == reference.replace(tzinfo=engine_zone).utcoffset()
+    )
 
 
 def parse_cron(expression: str) -> croniter:
