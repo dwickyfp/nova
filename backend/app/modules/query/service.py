@@ -18,27 +18,21 @@ import time
 import asyncmy
 
 from app.common.audit import write_audit_log
-from app.common.sql_guard import (
-    guard_sql,
-    is_destructive_sql,
-    redact_sql_credentials,
-    split_sql_statements,
-)
+from app.common.sql_guard import split_sql_statements
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
 from app.core.security import decrypt_password
-from app.modules.query.dialect.injector import (
-    get_credential_params,
-    resolve_storage_credentials,
-)
+from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.dialect.ml_model import is_create_ml_model, parse_create_ml_model
 from app.modules.query.dialect.parser import parse_sql
-from app.modules.query.dialect.translator import (
-    StorageConfig,
-    translate_stage_query,
-)
+from app.modules.query.dialect.translator import StorageConfig
 from app.modules.query.repository import QueryRepository, QueryResult
+from app.modules.query.sql_pipeline import (
+    guard_user_statement,
+    prepare_stage_sql,
+    redact_for_output,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,13 +79,7 @@ class QueryService:
         # StarRocks-compatible db.table form before validation/execution.
         normalized_sql = self._normalize_default_schema_qualification(sql)
 
-        # 1. Guard: block dangerous SQL.
-        #
-        # The API accepts multi-statement scripts (`execute_statements`), so the
-        # guard has to run per statement. A guard anchored on the whole blob is
-        # blind to everything after the first `;` — `SELECT 1; DROP TABLE t`
-        # would sail past both the ACCOUNTADMIN patterns and the destructive
-        # confirmation check, and the DROP would then execute for real.
+        # 1. Guard: block dangerous SQL, per statement (shared with ml_engine).
         #
         # A refusal is an *event*, not just an exception: `DROP ROLE
         # ACCOUNTADMIN` is the most security-relevant thing a client can attempt
@@ -99,14 +87,12 @@ class QueryService:
         # NOVA_SYSTEM.AUDIT_LOG. Without the audit call below, the pre-engine
         # refusals left no trace at all while engine failures were recorded as
         # ERROR — so "no ERROR rows" did not mean "no failed attempts".
-        statements = split_sql_statements(normalized_sql) or [normalized_sql]
+        #
+        # The guard itself moved to `sql_pipeline.guard_user_statement` so
+        # ml_engine applies the identical rule; the audit stays here because it
+        # is this service's record of the attempt, not part of the rule.
         try:
-            for statement in statements:
-                guard_sql(statement)
-                if is_destructive_sql(statement) and not confirm_destructive:
-                    raise ForbiddenSQLError(
-                        "Destructive SQL requires confirmation before execution."
-                    ) from None
+            guard_user_statement(normalized_sql, confirm_destructive=confirm_destructive)
         except ForbiddenSQLError as exc:
             await self._audit_engine_result(
                 status="ERROR",
@@ -141,13 +127,24 @@ class QueryService:
         warnings = []
         csv_column_names: list[str] | None = None
 
-        # 3. Translate @stage → FILES() if needed
+        # 3. Translate @stage → FILES() and inject credentials, through the
+        # shared pipeline so this path and ml_engine's cannot drift apart.
         if parsed.stage_refs:
             # Load stage configs from NOVA_SYSTEM
             stage_configs = await self._load_stage_configs(database, schema)
 
+            # 3b. CSV auto-detect: read file header to detect delimiter & columns.
+            # I/O, so it happens here and its result is passed into the pure
+            # preparation step.
+            csv_params, csv_column_names = await self._detect_csv_params(parsed, stage_configs)
+
             try:
-                executed_sql, warnings = translate_stage_query(parsed, stage_configs)
+                prepared = await prepare_stage_sql(
+                    normalized_sql,
+                    stage_configs=stage_configs,
+                    csv_params=csv_params,
+                    csv_columns=csv_column_names,
+                )
             except ValueError as e:
                 # The statement never reached the engine: no result object is
                 # built by the repository, so this is the only place the failure
@@ -176,36 +173,13 @@ class QueryService:
                     error=str(e),
                 )
 
-            # 3b. CSV auto-detect: read file header to detect delimiter & columns
-            csv_params, csv_column_names = await self._detect_csv_params(parsed, stage_configs)
-            if csv_params:
-                # Inject CSV params into FILES() calls
-                import re
-
-                def _inject_csv(m):
-                    content = m.group(1)
-                    csv_parts = [f"'{k}'='{v}'" for k, v in csv_params.items()]
-                    content = f"{content}, {', '.join(csv_parts)}"
-                    return f"FILES({content})"
-
-                executed_sql = re.sub(r"FILES\(([^)]+)\)", _inject_csv, executed_sql)
-
-            # 4. Inject credentials into FILES() calls
-            creds = get_credential_params("s3")
-            if creds:
-                cred_parts = [f"'{k}'='{v}'" for k, v in creds.items()]
-                cred_str = ", ".join(cred_parts)
-                # Inject into any FILES() call that doesn't have credentials
-                if "aws.s3.access_key" not in executed_sql:
-                    import re
-
-                    def _inject(m):
-                        content = m.group(1)
-                        if "access_key" not in content:
-                            content = f"{content}, {cred_str}"
-                        return f"FILES({content})"
-
-                    executed_sql = re.sub(r"FILES\(([^)]+)\)", _inject, executed_sql)
+            executed_sql = prepared.engine_sql
+            warnings = prepared.warnings
+            csv_column_names = prepared.csv_columns
+        else:
+            prepared = await prepare_stage_sql(normalized_sql)
+            executed_sql = prepared.engine_sql
+            warnings = prepared.warnings
 
         # 5. Execute
         #
@@ -227,7 +201,7 @@ class QueryService:
         # branch below needs it too, and the engine call may never return.
         # ``QueryResult`` redacts ``executed_sql`` as well, so the value the
         # repository hands back is independently safe.
-        redacted_sql = redact_sql_credentials(executed_sql)
+        redacted_sql = redact_for_output(executed_sql)
         try:
             result = await self._repo.execute_as_user(
                 sql=executed_sql,
@@ -677,7 +651,7 @@ class QueryService:
         into the HTTP body — can leave this method.
         """
         normalized_sql = self._normalize_default_schema_qualification(sql)
-        guard_sql(normalized_sql)
+        guard_user_statement(normalized_sql)
 
         parsed = parse_sql(normalized_sql)
         executed_sql = normalized_sql
@@ -685,7 +659,9 @@ class QueryService:
         if parsed.stage_refs:
             stage_configs = await self._load_stage_configs(database, None)
             try:
-                executed_sql, _ = translate_stage_query(parsed, stage_configs)
+                prepared = await prepare_stage_sql(
+                    normalized_sql, stage_configs=stage_configs
+                )
             except ValueError as e:
                 # ``normalized_sql`` is the user's own text and carries no
                 # injected credential, but it is redacted all the same so every
@@ -701,6 +677,8 @@ class QueryService:
                     warnings=[f"❌ {e}"],
                     error=str(e),
                 )
+
+            executed_sql = prepared.engine_sql
 
         explain_sql = f"EXPLAIN {executed_sql}"
         password = decrypt_password(encrypted_password)
