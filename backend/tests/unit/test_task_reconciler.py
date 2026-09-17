@@ -2,8 +2,10 @@
 
 These prove the acceptance criteria an engine cannot easily show, with fakes:
 
-* a **lost trace** — a running node whose native row vanished — is marked
+* a **lost trace** — a running node whose worker heartbeat lapsed — is marked
   ``abandoned``, an explicit state, never success;
+* a **fresh node with no native row** is never settled by ``reconcile_native``
+  (no abandon, no audit) — only the heartbeat path may settle it;
 * a settled native run advances the node (``SUCCESS``/``FAILED``);
 * **auto-pause** (the engine's ``max_task_consecutive_fail_count``) is surfaced
   to the audit log instead of letting a DAG hang silently;
@@ -162,8 +164,15 @@ def _reconciler(repo: FakeRepository, observer: FakeObserver) -> Reconciler:
 
 
 class TestLostTrace:
-    async def test_missing_native_run_is_abandoned_not_success(self, audit):
-        """Criterion 2: a run that vanished is an explicit non-success state."""
+    async def test_missing_native_run_is_not_settled(self, audit):
+        """NOVA-52: no native row proves nothing per-task, so nothing settles.
+
+        A ``MISSING`` observation must not abandon the node via
+        ``reconcile_native``: the engine's archive is engine-wide and carries no
+        per-task information. The lost trace is the heartbeat path's job
+        (``abandon_stale_nodes``), which is the only writer of
+        ``NODE_ABANDONED``.
+        """
         repo = FakeRepository()
         task_id = repo.add_task("A")
         repo.add_node_run("n1", task_id)
@@ -173,14 +182,14 @@ class TestLostTrace:
 
         report = await _reconciler(repo, observer).reconcile_native()
 
-        assert report.lost_traces == ["A"]
-        assert repo.task_runs["n1"]["state"] == "abandoned"
-        actions = [entry["action"] for entry in audit]
-        assert "NODE_ABANDONED" in actions
+        assert report.lost_traces == []
+        assert report.advanced == []
+        assert repo.task_runs["n1"]["state"] == "running"
         assert repo.task_runs["n1"]["state"] != "success"
+        assert audit == []
 
-    async def test_lost_trace_is_idempotent(self, audit):
-        """Criterion 5: a second pass on unchanged state writes nothing."""
+    async def test_missing_native_run_is_idempotent(self, audit):
+        """Criterion 5: repeated passes on a MISSING read change nothing."""
         repo = FakeRepository()
         task_id = repo.add_task("A")
         repo.add_node_run("n1", task_id)
@@ -195,6 +204,7 @@ class TestLostTrace:
 
         assert second.advanced == []
         assert second.lost_traces == []
+        assert repo.task_runs["n1"]["state"] == "running"
         assert len(audit) == audit_count
 
     async def test_unknown_read_does_not_write(self, audit):
@@ -850,6 +860,32 @@ class TestLostTraceSettledByHeartbeat:
         ).abandon_stale_nodes()
 
         assert abandoned == []
+        assert repo.task_runs["n1"]["state"] == "running"
+        assert audit == []
+
+    async def test_reconcile_native_never_abandons_a_fresh_inflight_node(self, audit):
+        """NOVA-52 fail-before: a fresh node with no native row stays running.
+
+        A worker that just sent ``SUBMIT TASK`` has a running row and a fresh
+        heartbeat but no ``task_runs`` row yet. ``reconcile_native`` reads that
+        as ``MISSING``; before the fix it settled the node as ``abandoned`` and
+        wrote ``NODE_ABANDONED``. No observation from the engine's archive may
+        settle a node — only the lapsed heartbeat may.
+        """
+        repo = FakeRepository()
+        task_id = repo.add_task("qa_healthy")
+        repo.add_node_run("n1", task_id)
+        observer = FakeObserver(
+            {"qa_healthy": NativeRun(task_name="qa_healthy", state=NativeState.MISSING)}
+        )
+
+        reconciler = _reconciler(repo, observer)
+        scan_report = await reconciler.scan()
+        native_report = await reconciler.reconcile_native()
+
+        assert scan_report.abandoned_task_runs == []
+        assert native_report.advanced == []
+        assert native_report.lost_traces == []
         assert repo.task_runs["n1"]["state"] == "running"
         assert audit == []
 

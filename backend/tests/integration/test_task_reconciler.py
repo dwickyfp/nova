@@ -6,9 +6,9 @@ acceptance criteria that only a real engine can:
 * **criterion 7** — config is read through ``ADMIN SHOW FRONTEND CONFIG LIKE
   '%task%'`` (the FE-config surface, **not** ``SHOW VARIABLES``), and an
   unavailable engine is tolerated rather than fatal;
-* **criterion 2** — a node whose native trace vanished from
-  ``information_schema.task_runs`` is marked ``abandoned`` (an explicit
-  non-success state), not silently succeeded.
+* **criterion 2** — a node whose worker heartbeat lapsed is marked ``abandoned``
+  (an explicit non-success state), not silently succeeded, while a fresh node
+  with no native row is left ``running`` (NOVA-46 / NOVA-52).
 
 StarRocks is optional: when it is unreachable the module skips rather than
 fails. Point at an already-running engine via::
@@ -297,6 +297,55 @@ class TestLostTraceAgainstEngine:
         assert str(node["id"]) not in report.abandoned_task_runs
         assert str(node["id"]) not in report.abandoned_graph_runs
         assert abandoned == []
+        refreshed = await repo.get_task_run(node["id"])
+        assert refreshed is not None and refreshed["state"] == "running"
+        assert _node_actions(audit_records) == []
+
+    async def test_reconcile_native_never_settles_a_fresh_node_without_a_native_row(
+        self, engine_infra, cleanup_runs, audit_records
+    ):
+        """NOVA-52: a fresh node with no ``task_runs`` row is not abandoned.
+
+        The worker just sent ``SUBMIT TASK``: the node row is ``running`` with a
+        fresh heartbeat, but the engine has no settled ``task_runs`` row yet
+        (the task name below has never been scheduled). ``reconcile_native``
+        must leave the row and the audit untouched — the archive cannot prove a
+        per-task lost trace. Before the fix this path wrote ``abandoned`` and
+        ``NODE_ABANDONED`` even though the worker was alive.
+        """
+        suffix = uuid4().hex[:8]
+        name = f"qa_healthy_{suffix}"
+        task = await repo.create_task(
+            {
+                "name": name,
+                "timezone": "UTC",
+                "definition": "INSERT INTO NOVA_SYSTEM.nova_reconcile_probe SELECT 1",
+                "database_name": "NOVA_SYSTEM",
+                "schedule_kind": "manual",
+            },
+            created_by=SR_USER,
+        )
+        cleanup_runs["task"].append(task["id"])
+        run = await repo.create_graph_run(
+            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        )
+        cleanup_runs["graph"].append(run["id"])
+        node = await repo.create_task_run(
+            {
+                "graph_run_id": run["id"],
+                "task_id": task["id"],
+                "state": "running",
+                "delegated": True,
+            }
+        )
+        reconciler = Reconciler(repo, heartbeat_timeout_seconds=3600)
+
+        scan_report = await reconciler.scan()
+        native_report = await reconciler.reconcile_native()
+
+        assert scan_report.abandoned_task_runs == []
+        assert native_report.advanced == []
+        assert native_report.lost_traces == []
         refreshed = await repo.get_task_run(node["id"])
         assert refreshed is not None and refreshed["state"] == "running"
         assert _node_actions(audit_records) == []

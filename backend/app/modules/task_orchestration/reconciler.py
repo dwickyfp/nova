@@ -113,15 +113,19 @@ class NativeReconcileReport:
     config: NativeConfig = field(default_factory=NativeConfig)
 
 
-#: Native observation -> persisted node state. ``MISSING`` maps to ``abandoned``
-#: (lost trace is explicit and non-successful); ``UNKNOWN`` maps to ``None``,
-#: meaning "leave the row unchanged".
+#: Native observation -> persisted node state. Only a *settled* native row
+#: (``SUCCESS``/``FAILED``) advances a node. ``MISSING``, ``PENDING``,
+#: ``RUNNING`` and ``UNKNOWN`` all map to ``None``, meaning "leave the row
+#: unchanged": the engine's archive is engine-wide and cannot prove that a
+#: particular task's trace is absent, so a read with no row must never settle a
+#: node on its own. The lost trace is settled by :meth:`Reconciler.abandon_stale_nodes`
+#: once the worker's heartbeat lapses (NOVA-46 / NOVA-52).
 _NATIVE_TO_NODE: dict[NativeState, NodeState | None] = {
     NativeState.SUCCESS: NodeState.SUCCESS,
     NativeState.FAILED: NodeState.FAILED,
     NativeState.PENDING: None,
     NativeState.RUNNING: None,
-    NativeState.MISSING: NodeState.ABANDONED,
+    NativeState.MISSING: None,
     NativeState.UNKNOWN: None,
 }
 
@@ -237,8 +241,12 @@ class Reconciler:
         node execution remains the worker's (design §2).
 
         A failed read is ``UNKNOWN`` and leaves the row untouched (design §1: an
-        engine-side archive failure can never masquerade as a node's outcome);
-        the lost trace is settled by :meth:`abandon_stale_nodes` (NOVA-46).
+        engine-side archive failure can never masquerade as a node's outcome).
+        A read with no row (``MISSING``) is likewise not a verdict: the archive
+        is engine-wide and cannot prove a per-task trace is gone, so it must not
+        settle the node (NOVA-52). The lost trace is settled by
+        :meth:`abandon_stale_nodes` (NOVA-46) — it is the only writer of
+        ``NODE_ABANDONED``.
         """
         report = NativeReconcileReport()
 
@@ -287,8 +295,9 @@ class Reconciler:
         node_state = _NATIVE_TO_NODE[observed.state]
 
         if node_state is None:
-            # RUNNING/PENDING: still in flight. UNKNOWN: a failed read — no
-            # state may be inferred, so the row is left untouched.
+            # RUNNING/PENDING: still in flight. MISSING: no native row, which
+            # proves nothing per-task. UNKNOWN: a failed read — no state may be
+            # inferred. All leave the row untouched.
             if observed.state is NativeState.UNKNOWN:
                 report.unknown.append(name)
             return
@@ -313,29 +322,18 @@ class Reconciler:
             return
         report.advanced.append(str(row["id"]))
 
-        if node_state is NodeState.ABANDONED:
-            report.lost_traces.append(name)
-            await self._audit(
-                name,
-                task,
-                action="NODE_ABANDONED",
-                status="ABANDONED",
-                error="native trace lost; the run did not survive in task_runs",
-                graph_run_id=str(row.get("graph_run_id") or ""),
-            )
-        else:
-            await self._audit(
-                name,
-                task,
-                action="NODE_" + node_state.value.upper(),
-                status=(
-                    "SUCCESS"
-                    if node_state is NodeState.SUCCESS
-                    else node_state.value.upper()
-                ),
-                error=observed.error_message,
-                graph_run_id=str(row.get("graph_run_id") or ""),
-            )
+        await self._audit(
+            name,
+            task,
+            action="NODE_" + node_state.value.upper(),
+            status=(
+                "SUCCESS"
+                if node_state is NodeState.SUCCESS
+                else node_state.value.upper()
+            ),
+            error=observed.error_message,
+            graph_run_id=str(row.get("graph_run_id") or ""),
+        )
 
         if node_state is NodeState.SUCCESS:
             # A success breaks the run: the engine's consecutive-failure
