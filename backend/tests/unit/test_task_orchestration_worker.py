@@ -461,6 +461,93 @@ class TestRestartSafety:
         assert [r["id"] for r in pending] == ["gr1"]
 
 
+class TestEngineObservationResilience:
+    """The engine's task-run surface can fail; observing it must not gate the submit.
+
+    On some FEs ``information_schema.task_runs`` is served by an internal
+    archive read that fails with a 1064 (e.g. a corrupt/absent
+    ``_statistics_.task_run_history``). A failure reading the *watermark* must
+    not stop the submit — the submit is where the owner's RBAC is enforced, and
+    a graph node on a forbidden table must surface the engine's 5203 privilege
+    refusal, not the observation error.
+    """
+
+    async def test_watermark_failure_does_not_block_the_submit(self, monkeypatch):
+        submitted: list[str] = []
+
+        class _Conn:
+            def cursor(self, *args):
+                return _Cursor()
+
+        class _Cursor:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def execute(self, statement, params=None):
+                submitted.append(statement)
+
+            async def fetchone(self):
+                return None
+
+        from app.modules.task_orchestration import execution as execution_module
+
+        class _Ctx:
+            async def __aenter__(self):
+                return _Conn()
+
+            async def __aexit__(self, *exc):
+                return False
+
+        async def failing_watermark(self, conn, name):
+            raise RuntimeError(
+                '(1064, "RepoExecutorexecute sql failed: SELECT history_content_json '
+                'FROM _statistics_.task_run_history ...")'
+            )
+
+        async def _no_wait(self, conn, name, *, watermark, heartbeat=None):
+            return ExecutionResult(query_id="q1", state="FINISHED")
+
+        monkeypatch.setattr(execution_module.db, "system_conn", _Ctx)
+        monkeypatch.setattr(execution_module.db, "user_conn", lambda *a, **k: _Ctx())
+        monkeypatch.setattr(
+            execution_module.DelegateExecutor, "_latest_create_time", failing_watermark
+        )
+        monkeypatch.setattr(
+            execution_module.DelegateExecutor, "_await_completion", _no_wait
+        )
+
+        executor = DelegateExecutor(StaticCredentialProvider({"bob": "pw"}))
+        result = await executor.execute(
+            TaskSpec("A", "INSERT INTO secret SELECT 1", database="db"), "bob"
+        )
+        assert result.state == "FINISHED"
+        assert submitted and submitted[0].startswith("SUBMIT TASK")
+
+    async def test_poll_failure_is_retried_not_fatal(self):
+        calls = {"n": 0}
+
+        executor = DelegateExecutor(
+            StaticCredentialProvider({"bob": "pw"}),
+            poll_interval=0.0,
+            poll_timeout=5.0,
+        )
+
+        async def flaky(conn, name, watermark):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise RuntimeError("transient FE RPC failure")
+            return ExecutionResult(query_id="q1", state="FINISHED")
+
+        executor._newest_run_after = flaky  # type: ignore[method-assign]
+
+        result = await executor._await_completion(object(), "A", watermark=None)
+        assert result.state == "FINISHED"
+        assert calls["n"] == 3
+
+
 class TestCredentialInvisible:
     async def test_task_rows_carry_no_credential(self, audit):
         repo = FakeRepository()
