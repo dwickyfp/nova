@@ -21,7 +21,11 @@ services:
       - FE_ADDRESS=starrocks-fe:9010
 
   minio:
-    image: minio/minio:latest
+    # Pinned release, not `latest`: MinIO withdrew its Docker Hub images, so
+    # `minio/minio:*` no longer pulls ("requested access to the resource is
+    # denied") and the whole stack failed to start. Same reason the StarRocks
+    # images are tagged. Bump deliberately, not implicitly.
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: server /data --console-address ":9001"
     ports:
       - "29000:9000"   # S3 API (test port)
