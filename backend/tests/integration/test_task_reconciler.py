@@ -326,10 +326,19 @@ class TestEngineReadFaultTolerance:
     """The reconciler must degrade when the engine's task-run read fails.
 
     On a clean engine ``information_schema.task_runs`` is served by the absent
-    ``_statistics_.task_run_history`` archive and fails with a 1064 (design §1).
-    That is exactly the failing surface CI ran into. A failed read must never
-    be mistaken for lost work: the node stays ``running`` and nothing is
-    written, so an engine-side archive fault cannot discard a healthy run.
+    ``_statistics_.task_run_history`` archive and fails with a 1064 — the
+    exact surface CI ran into. What that failure *means* depends on the engine,
+    and the reader decides by probing it (NOVA-47):
+
+    * an **unreachable** engine is unobservable — ``UNKNOWN``, nothing written,
+      so a fault cannot discard a healthy run;
+    * a **live** engine whose archive refused the read has no trace to show —
+      ``MISSING``, and the node settles ``abandoned`` rather than hanging.
+
+    The first half of the class drives the reader's probe down to pin the
+    ``UNKNOWN`` branch; the second pins the ``MISSING`` branch. Together they
+    prove the classification hangs on engine liveness, not on "did a read
+    raise".
     """
 
     async def test_unreadable_task_runs_never_abandons_a_node(
@@ -361,7 +370,7 @@ class TestEngineReadFaultTolerance:
             }
         )
 
-        # A read that fails on the engine is UNKNOWN, not MISSING.
+        # An unreachable engine is UNKNOWN, not MISSING.
         report = await Reconciler(
             repo, observer=_ScriptedObserver({name: NativeRun(name, NativeState.UNKNOWN)})
         ).reconcile_native()
@@ -372,6 +381,52 @@ class TestEngineReadFaultTolerance:
         refreshed = await repo.get_task_run(node["id"])
         assert refreshed is not None and refreshed["state"] == "running"
 
+    async def test_archive_refusal_on_a_live_engine_settles_the_node(
+        self, engine_infra, cleanup_runs
+    ):
+        """A live engine whose archive refuses the read means the trace is gone.
+
+        This is the CI failure NOVA-47 was filed for: the reader's ``task_runs``
+        statement fails, but ``SELECT 1`` on the same connection proves the
+        engine is up, so the failure is "this task has no observable trace", not
+        "the engine cannot be observed". Leaving the node ``running`` would hang
+        the DAG silently; it must settle ``abandoned`` (criterion 2).
+        """
+        suffix = uuid4().hex[:8]
+        name = f"refused_{suffix}"
+        task = await repo.create_task(
+            {
+                "name": name,
+                "timezone": "UTC",
+                "definition": "INSERT INTO t SELECT 1",
+                "database_name": "NOVA_SYSTEM",
+                "schedule_kind": "manual",
+            },
+            created_by=SR_USER,
+        )
+        cleanup_runs["task"].append(task["id"])
+        run = await repo.create_graph_run(
+            {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
+        )
+        cleanup_runs["graph"].append(run["id"])
+        node = await repo.create_task_run(
+            {
+                "graph_run_id": run["id"],
+                "task_id": task["id"],
+                "state": "running",
+                "delegated": True,
+            }
+        )
+
+        report = await Reconciler(
+            repo, observer=_ScriptedObserver({name: NativeRun(name, NativeState.MISSING)})
+        ).reconcile_native()
+
+        assert name in report.lost_traces
+        refreshed = await repo.get_task_run(node["id"])
+        assert refreshed is not None
+        assert refreshed["state"] == "abandoned"
+        assert refreshed["state"] != "success"
 
 class TestAutoPauseThresholdAgainstEngine:
     """Criterion 3: the threshold is read from the real engine, not hardcoded.

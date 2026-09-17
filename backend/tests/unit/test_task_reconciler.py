@@ -562,6 +562,8 @@ class _Cursor:
         self._conn.executed.append(sql)
         if self._conn.raise_on and self._conn.raise_on in sql:
             raise RuntimeError(self._conn.raise_on_error)
+        if self._conn.raise_on_probe and "SELECT 1" in sql:
+            raise RuntimeError(self._conn.raise_on_error)
         self._rows = list(self._conn.rows)
 
     async def fetchall(self):
@@ -576,7 +578,9 @@ class _Connection:
 
     ``rows=[]`` mimics a successful-but-empty read; ``raise_on="SELECT 1"``
     mimics the liveness probe finding the engine gone, which is exactly the
-    stale-pool state NOVA-43 describes.
+    stale-pool state NOVA-43 describes. ``raise_on_probe=True`` is the NOVA-47
+    variant: the *task_runs* read fails (the archive 1064) while the probe on
+    the same connection still succeeds, proving the engine is live.
     """
 
     def __init__(
@@ -585,10 +589,12 @@ class _Connection:
         *,
         raise_on: str | None = None,
         raise_on_error: str = "engine gone",
+        raise_on_probe: bool = False,
     ) -> None:
         self.rows = rows if rows is not None else []
         self.raise_on = raise_on
         self.raise_on_error = raise_on_error
+        self.raise_on_probe = raise_on_probe
         self.executed: list[str] = []
 
     def cursor(self, *args, **kwargs):
@@ -632,6 +638,101 @@ class TestStaleReadStillLivenessChecked:
         assert report.lost_traces == []
         assert repo.task_runs["n1"]["state"] == "running"
         assert audit == []
+
+
+class TestArchiveFailureOnLiveEngineIsLostTrace:
+    """NOVA-47: a live engine whose archive refuses a task is a lost trace.
+
+    The engine serves ``information_schema.task_runs`` through an internal
+    archive read that raises 1064 on ``_statistics_.task_run_history`` for a
+    task with no history row — the CI signature. The engine is proven live on
+    the same connection, so the only thing the failure establishes is that the
+    trace is absent: ``MISSING``, not ``UNKNOWN``. Classifying it ``UNKNOWN``
+    leaves the node ``running`` forever, the silent hang criterion 2 forbids.
+    """
+
+    async def test_batch_read_1064_with_live_probe_is_missing(self):
+        conn = _Connection(
+            raise_on="task_runs",
+            raise_on_error=(
+                '(1064, "RepoExecutorexecute sql failed: SELECT history_content_json '
+                "FROM _statistics_.task_run_history WHERE TRUE AND task_name = "
+                "'lost_1' ORDER BY create_time DESC LIMIT 10000.\")"
+            ),
+        )
+
+        result = await read_latest_native_runs(conn, ["lost_1"])
+
+        assert result["lost_1"].state is NativeState.MISSING
+        assert any("SELECT 1" in sql for sql in conn.executed)
+
+    async def test_batch_read_1064_with_dead_probe_stays_unknown(self, monkeypatch):
+        import app.modules.task_orchestration.native as native_module
+
+        conn = _Connection(
+            raise_on="task_runs",
+            raise_on_error='(1064, "archive read failed")',
+        )
+
+        async def dead_probe(_conn):
+            return False
+
+        monkeypatch.setattr(native_module, "probe_engine_liveness", dead_probe)
+
+        result = await read_latest_native_runs(conn, ["A"])
+
+        assert result["A"].state is NativeState.UNKNOWN
+
+    async def test_single_task_1064_with_live_probe_is_missing(self):
+        from app.modules.task_orchestration.native import read_latest_native_run
+
+        conn = _Connection(
+            raise_on="task_runs",
+            raise_on_error='(1064, "archive read failed")',
+        )
+
+        result = await read_latest_native_run(conn, "lost_1")
+
+        assert result.state is NativeState.MISSING
+        assert any("SELECT 1" in sql for sql in conn.executed)
+
+    async def test_single_task_1064_with_dead_probe_stays_unknown(self):
+        from app.modules.task_orchestration.native import read_latest_native_run
+
+        conn = _Connection(
+            raise_on="task_runs",
+            raise_on_error='(1064, "archive read failed")',
+            raise_on_probe=True,
+        )
+
+        result = await read_latest_native_run(conn, "A")
+
+        assert result.state is NativeState.UNKNOWN
+
+    async def test_archive_refusal_settles_the_node_as_abandoned(
+        self, audit, monkeypatch
+    ):
+        """The end-to-end consequence: the node settles, the DAG cannot hang."""
+        repo = FakeRepository()
+        task_id = repo.add_task("lost_1")
+        repo.add_node_run("n1", task_id)
+
+        async def archive_refusal(task_names):
+            return {
+                name: NativeRun(task_name=name, state=NativeState.MISSING)
+                for name in task_names
+            }
+
+        reconciler = _reconciler(repo, FakeObserver())
+        monkeypatch.setattr(reconciler._observer, "read_runs", archive_refusal)
+
+        report = await reconciler.reconcile_native()
+
+        assert report.lost_traces == ["lost_1"]
+        assert report.unknown == []
+        assert repo.task_runs["n1"]["state"] == "abandoned"
+        actions = [entry["action"] for entry in audit]
+        assert "NODE_ABANDONED" in actions
 
 
 class TestConnectionAcquireTolerance:

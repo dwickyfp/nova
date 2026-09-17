@@ -15,9 +15,19 @@ Every read is best-effort. The engine's ``information_schema.task_runs`` is
 served by an internal archive read that can fail independently of the task
 (observed as a 1064 on ``_statistics_.task_run_history``), and
 ``ADMIN SHOW FRONTEND CONFIG`` is an FE-config statement that may be refused.
-A reconciliation pass that cannot observe must report ``UNKNOWN`` for that
-signal rather than invent a state; the caller decides what to do with an
-unknown.
+
+A read that fails is not automatically ``UNKNOWN``. The two failure classes
+must be told apart, because conflating them hangs DAGs (NOVA-47):
+
+* the **engine is unreachable** — nothing may be inferred, so the read is
+  ``UNKNOWN`` and the caller must not write;
+* the **engine is live but the archive surface refused this task** (the 1064
+  above, typically for a task with no history row) — the read did reach a live
+  engine, and the task's trace **is** absent, so it is ``MISSING``. Reporting
+  ``UNKNOWN`` here is exactly the silent hang the reconciler exists to prevent.
+
+The live engine is the ground truth for which class applies: a ``SELECT 1``
+probe on the same connection is run before an exception is classified.
 """
 
 from __future__ import annotations
@@ -105,7 +115,10 @@ async def read_latest_native_run(conn: Any, task_name: str) -> NativeRun:
     """One best-effort read of a task's latest ``task_runs`` row.
 
     A successful read with no rows is ``MISSING`` — the lost-trace case. A
-    failed read is ``UNKNOWN``; the caller must not treat either as success.
+    failed read is ``MISSING`` when the engine is proven live on this same
+    connection (the archive surface refused this one task), and ``UNKNOWN``
+    only when the engine itself cannot be reached (NOVA-47). The caller must
+    treat neither as success.
     """
     sql = (
         "SELECT TASK_NAME, QUERY_ID, STATE, ERROR_MESSAGE, CREATE_TIME "
@@ -120,7 +133,8 @@ async def read_latest_native_run(conn: Any, task_name: str) -> NativeRun:
         logger.warning(
             "could not read native task state for %s: %s", task_name, _redact(str(exc))
         )
-        return NativeRun(task_name=task_name, state=NativeState.UNKNOWN)
+        state = await _classify_read_failure(conn)
+        return NativeRun(task_name=task_name, state=state)
 
     if not rows:
         if not await probe_engine_liveness(conn):
@@ -159,6 +173,26 @@ async def probe_engine_liveness(conn: Any) -> bool:
     return True
 
 
+async def _classify_read_failure(conn: Any) -> NativeState:
+    """What a failed ``task_runs`` read means, given a liveness probe.
+
+    The engine's archive surface refusing a statement is a signal about the
+    *read*, not about the engine. When ``SELECT 1`` still succeeds on the same
+    connection, the engine is live and reachable, and the only thing the
+    failure establishes is that this task's trace **cannot be observed** — the
+    lost-trace case, which must settle ``abandoned`` rather than hang
+    ``running`` forever (NOVA-47, design §1). Only a dead engine is genuinely
+    unobservable, and that is ``UNKNOWN``.
+
+    The asymmetry is deliberate and matches ``scan``: a false ``MISSING`` on a
+    live engine costs a re-run, while a missed ``MISSING`` hangs a DAG
+    silently for as long as the failure persists.
+    """
+    if await probe_engine_liveness(conn):
+        return NativeState.MISSING
+    return NativeState.UNKNOWN
+
+
 async def read_latest_native_runs(
     conn: Any, task_names: list[str]
 ) -> dict[str, NativeRun]:
@@ -171,6 +205,12 @@ async def read_latest_native_runs(
     on this same connection; otherwise it is ``UNKNOWN``. Without that check a
     stale pooled connection would report every in-flight task as ``MISSING``,
     and the reconciler would mark healthy work ``abandoned`` (NOVA-43).
+
+    A **failed** read classifies the same way, through the same probe
+    (NOVA-47): live engine -> ``MISSING`` for every name in the batch, dead
+    engine -> ``UNKNOWN``. The batch shares one statement, so a failure is
+    about the archive surface as a whole; the probe, not the batch, decides
+    whether that failure is "no trace" or "cannot observe".
     """
     if not task_names:
         return {}
@@ -191,7 +231,8 @@ async def read_latest_native_runs(
             len(task_names),
             _redact(str(exc)),
         )
-        return {name: NativeRun(task_name=name, state=NativeState.UNKNOWN) for name in task_names}
+        state = await _classify_read_failure(conn)
+        return {name: NativeRun(task_name=name, state=state) for name in task_names}
 
     if not rows and not await probe_engine_liveness(conn):
         return {
