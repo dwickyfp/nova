@@ -6,7 +6,9 @@ import { SignOutDialog } from './sign-out-dialog'
 const navigate = vi.fn()
 const reset = vi.fn()
 
-const MOCK_HREF = 'https://app.test/dashboard?tab=1'
+const MOCK_ORIGIN = 'https://app.test'
+const MOCK_PATH = '/dashboard?tab=1'
+const MOCK_HREF = `${MOCK_ORIGIN}${MOCK_PATH}`
 
 vi.mock('@/stores/auth-store', () => ({
   useAuthStore: () => ({
@@ -19,13 +21,21 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   return {
     ...actual,
     useNavigate: () => navigate,
-    useLocation: () => ({ href: MOCK_HREF }),
   }
 })
+
+// SignOutDialog reads window.location directly, so the test drives that global instead
+// of mocking useLocation. Otherwise the assertion compares against whatever URL the
+// browser harness happens to serve and passes or fails by environment.
+function stubWindowLocation(href: string) {
+  const url = new URL(href)
+  window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+}
 
 describe('SignOutDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    stubWindowLocation(MOCK_HREF)
   })
 
   it('calls auth.reset and navigates to sign-in with current location as redirect', async () => {
@@ -38,7 +48,23 @@ describe('SignOutDialog', () => {
     expect(reset).toHaveBeenCalledOnce()
     expect(navigate).toHaveBeenCalledWith({
       to: '/sign-in',
-      search: { redirect: MOCK_HREF },
+      search: { redirect: MOCK_PATH },
+      replace: true,
+    })
+  })
+
+  it('preserves the current query string and hash in the redirect', async () => {
+    stubWindowLocation('https://app.test/workspaces?tab=stages#files')
+
+    const { getByRole } = await render(
+      <SignOutDialog open onOpenChange={vi.fn()} />
+    )
+
+    await userEvent.click(getByRole('button', { name: /^Sign out$/i }))
+
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/sign-in',
+      search: { redirect: '/workspaces?tab=stages#files' },
       replace: true,
     })
   })

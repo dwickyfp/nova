@@ -109,9 +109,13 @@ describe('SearchProvider and CommandMenu', () => {
 
     await openCommandPalette(screen)
 
-    await userEvent.click(screen.getByText('Tasks'))
+    // 'Tasks' labels two nav items (/tasks-manager and the nested /tasks), so target
+    // the Data Management entry by its accessible name and not merely by its text.
+    await userEvent.click(
+      screen.getByRole('option', { name: 'Tasks', exact: true })
+    )
 
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/tasks' })
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/tasks-manager' })
     await expect
       .element(screen.getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
       .not.toBeInTheDocument()
@@ -123,8 +127,10 @@ describe('SearchProvider and CommandMenu', () => {
 
     await openCommandPalette(screen)
 
+    // Sub-items render as "<group title> <sub title>"; the Audit Trail label lives at
+    // /monitoring/audit under the Monitoring group.
     await userEvent.click(
-      getByRole('option', { name: 'Monitoring /monitoring/audit' })
+      getByRole('option', { name: 'Monitoring Audit Trail' })
     )
 
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/monitoring/audit' })
