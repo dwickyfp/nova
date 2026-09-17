@@ -198,8 +198,12 @@ SELECT inspect_task_runs();
 ### Task Concurrency
 
 Verified against a live StarRocks 4.1.1 engine (NOVA-23, 2026-09-17). These are
-real `SHOW VARIABLES` entries — the earlier `task_runs_ttl_second = 86400` figure
-in this doc was **wrong**; the engine default is **604800 (7 days)**.
+**FE configs**, read via `ADMIN SHOW FRONTEND CONFIG LIKE '%task%'` — **not**
+session variables. A plain `SHOW VARIABLES LIKE 'task_…'` returns nothing for them
+(and a broad `SHOW VARIABLES LIKE '%task%'` only ever includes them intermittently,
+which is a trap: do not validate them that way). The earlier
+`task_runs_ttl_second = 86400` figure in this doc was **wrong**; the engine default
+is **604800 (7 days)**.
 
 | Config | Default | Description |
 |--------|---------|-------------|
@@ -212,6 +216,13 @@ in this doc was **wrong**; the engine default is **604800 (7 days)**.
 | `task_min_schedule_interval_s` | 10 | Minimum schedule interval |
 | `task_check_interval_second` | 60 | Interval of task background scheduled jobs |
 | `max_task_consecutive_fail_count` | 10 | Consecutive failures before the task **auto-pauses** |
+| `enable_task_history_archive` | true | Task run history archiving |
+
+**TaskRun history cannot be deleted.** There is no `CLEAR TASK RUNS` statement
+(rejected at parse) and `DELETE FROM information_schema.task_runs` fails with
+`Where clause is not set`. Dropping a task does **not** delete its run rows — they
+persist until TTL/archive. Any Nova UI that drops a task must not assume the run
+history went with it.
 
 `task_check_interval_second = 60` is the scheduling granularity of the native
 scheduler: a `SCHEDULE EVERY(INTERVAL 10 SECOND)` task is accepted (10 s is the
