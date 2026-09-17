@@ -13,6 +13,7 @@ import pytest
 
 from app.modules.task_orchestration.schedule import (
     ScheduleError,
+    engine_timezone_matches,
     is_due,
     latest_occurrence,
     next_fire,
@@ -127,6 +128,30 @@ class TestOffsetTimezone:
         assert next_fire("cron", "0 2 * * *", "+07:00", reference) == next_fire(
             "cron", "0 2 * * *", "Asia/Jakarta", reference
         )
+class TestEngineTimezoneAlignment:
+    """NOVA-39: the startup guard compares an override against ``@@time_zone``."""
+
+    def test_matching_iana_names_agree(self):
+        assert engine_timezone_matches("Asia/Jakarta", "Asia/Jakarta") is True
+
+    def test_utc_override_against_jakarta_engine_is_rejected(self):
+        assert engine_timezone_matches("UTC", "Asia/Jakarta") is False
+
+    def test_engine_reporting_fixed_offset_still_matches(self):
+        assert engine_timezone_matches("Asia/Jakarta", "+07:00") is True
+
+    def test_configured_fixed_offset_against_named_engine_matches(self):
+        assert engine_timezone_matches("+07:00", "Asia/Jakarta") is True
+
+    def test_different_fixed_offset_is_rejected(self):
+        assert engine_timezone_matches("+07:00", "+00:00") is False
+
+    @pytest.mark.parametrize(
+        ("configured", "engine"),
+        [("Not/AZone", "UTC"), ("UTC", "Not/AZone"), ("UTC", "SYSTEM")],
+    )
+    def test_unusable_values_are_not_a_match(self, configured, engine):
+        assert engine_timezone_matches(configured, engine) is False
 
 
 class TestInterval:
