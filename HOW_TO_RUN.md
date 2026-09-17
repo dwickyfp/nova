@@ -552,12 +552,31 @@ uv run pytest tests/unit/test_task_reconciler.py
 Test integrasi rekonsiliasi (butuh StarRocks; skip otomatis bila tidak ada).
 Membuktikan run-hilang ditandai `abandoned` (bukan sukses), pembacaan config
 lewat `ADMIN SHOW FRONTEND CONFIG` (dan toleran bila engine mati), serta
-idempotensi dua pass:
+idempotensi dua pass.
+
+Suite ini **self-contained**: fixture-nya membuat `NOVA_SYSTEM.AUDIT_LOG`
+sendiri, jadi tidak perlu `seed_engine.sh` lebih dulu. Menunjuk engine test
+yang sudah jalan lewat env var:
 
 ```bash
 cd backend
+NOVA_ORCH_SR_PORT=29030 NOVA_ORCH_SR_HOST=127.0.0.1 \
+  uv run pytest tests/integration/test_task_reconciler.py -v
+```
+
+Bila engine belum jalan, naikkan stack test lebih dulu (lalu jalankan perintah
+di atas tanpa env var, atau dengan env var yang sesuai):
+
+```bash
+cd backend
+docker compose -f docker-compose.test.yml up -d --wait
 uv run pytest tests/integration/test_task_reconciler.py -v
 ```
+
+Catatan: suite test integrasi lain yang menulis `NOVA_SYSTEM.AUDIT_LOG`
+(mis. `test_tasks_rbac_connection.py`) juga membuat tabel itu sendiri. Untuk
+suite warisan yang masih mengandalkan environment pra-seed, jalankan
+`bash tests/integration/seed_engine.sh` setelah stack naik.
 
 ### Frontend
 
