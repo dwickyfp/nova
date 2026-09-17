@@ -460,6 +460,31 @@ class TestRestartSafety:
         pending = await repo.list_graph_runs_by_state(["pending", "running"])
         assert [r["id"] for r in pending] == ["gr1"]
 
+    async def test_running_node_does_not_loop_the_drive_cycle(self, audit):
+        """NOVA-52: a ready-but-unclaimable node must not spin ``_drive``.
+
+        A live worker holds the node ``running``; this delivery sees it as
+        ``ready`` (a standalone node's parents are vacuously satisfied) but
+        cannot claim it. Re-evaluating would see the same state forever, so the
+        delivery must return ``RUNNING`` and let the live worker or the
+        reconciler settle it. This is the loop QA reproduced on a fresh engine.
+        """
+        repo = FakeRepository()
+        repo.add_task("A")
+        repo.add_graph_run("gr1", "id_A", state="running")
+        live = await repo.create_task_run_once("gr1", "id_A")
+        live["state"] = "running"
+
+        executor = RecordingExecutor()
+        state = await asyncio.wait_for(
+            GraphRunWorker(repo, executor).handle(GraphRunJob("gr1", "id_A")),
+            timeout=5,
+        )
+
+        assert state == GraphState.RUNNING
+        assert repo.task_runs[live["id"]]["state"] == "running"
+        assert executor.submissions == []
+
 
 class TestEngineObservationResilience:
     """The engine's task-run surface can fail; observing it must not gate the submit.
