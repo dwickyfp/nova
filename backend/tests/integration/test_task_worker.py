@@ -305,9 +305,9 @@ class TestDelegateFirstRbac:
             "denied" in message
             or "priv" in message
             or "access" in message
-            or "repoexecute" in message
+            # The engine's task executor prefix (`RepoExecutorexecute ...`).
+            or "repoexecut" in message
         ), f"unexpected failure surface: {message!r}"
-
     async def test_owner_with_the_grant_succeeds(self, worker_infra, cleanup_runs):
         suffix = uuid4().hex[:8]
         name = f"allow_{suffix}"
@@ -323,7 +323,9 @@ class TestDelegateFirstRbac:
         state = await GraphRunWorker(repo, _executor()).handle(
             GraphRunJob(run_id, f"g_{suffix}")
         )
-        assert state == GraphState.SUCCESS
+        node = await repo.get_node_run(run_id, ids[name])
+        detail = node["error_message"] if node else None
+        assert state == GraphState.SUCCESS, f"allowed run failed: {detail!r}"
         node = await repo.get_node_run(run_id, ids[name])
         assert node is not None and node["starrocks_query_id"]
 
