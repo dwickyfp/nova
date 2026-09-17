@@ -328,7 +328,7 @@ class TestEngineReadFaultTolerance:
     On a clean engine ``information_schema.task_runs`` is served by the absent
     ``_statistics_.task_run_history`` archive and fails with a 1064 — the
     exact surface CI ran into. What that failure *means* depends on the engine,
-    and the reader decides by probing it (NOVA-47):
+    and the reader decides by probing it (NOVA-46):
 
     * an **unreachable** engine is unobservable — ``UNKNOWN``, nothing written,
       so a fault cannot discard a healthy run;
@@ -386,7 +386,7 @@ class TestEngineReadFaultTolerance:
     ):
         """A live engine whose archive refuses the read means the trace is gone.
 
-        This is the CI failure NOVA-47 was filed for: the reader's ``task_runs``
+        This is the CI failure NOVA-46 was filed for: the reader's ``task_runs``
         statement fails, but ``SELECT 1`` on the same connection proves the
         engine is up, so the failure is "this task has no observable trace", not
         "the engine cannot be observed". Leaving the node ``running`` would hang

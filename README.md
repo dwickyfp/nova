@@ -699,14 +699,19 @@ own persistent `CONFIG_TASKS.consecutive_fail_count` (reset on success), or a
 native `SCHEDULE` pause/suspend marker — to `NOVA_SYSTEM.AUDIT_LOG`. A single
 failure is quiet, so the alarm stays meaningful (NOVA-42). A native row older
 than the node's `started_at` is ignored, so a stale attempt cannot fail a live
-node. A failed native read is `UNKNOWN` and writes nothing; an **empty** read is
-`MISSING` only when a `SELECT 1` probe on the same connection proves the engine
-is live, so a stale pooled connection after an FE death cannot mark healthy work
-`abandoned` (NOVA-43). Connection acquisition is inside the observer's guard, so
-an unreachable engine degrades to `UNKNOWN` instead of raising (NOVA-44).
-Criterion 7 is verified against the live engine, which reports
-`task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
-Twenty-eight unit + seven engine integration tests; the runbook is
+node. An **empty** read is `MISSING` only when a `SELECT 1` probe on the same
+connection proves the engine is live, so a stale pooled connection after an FE
+death cannot mark healthy work `abandoned` (NOVA-43). A **failed** read is
+`MISSING` only when it carries the run-trace surface's own signature
+(`_statistics_.task_run_history` / `getTaskRuns` — the fresh-FE 1064) **and** the
+probe proves the engine live; every other failure — a transport blip, or any
+failure where the probe also fails — stays `UNKNOWN` and writes nothing, so a
+momentary `Lost connection` cannot discard live work while a genuinely lost
+trace still settles `abandoned` (NOVA-46). Connection acquisition is inside the
+observer's guard, so an unreachable engine degrades to `UNKNOWN` instead of
+raising (NOVA-44). Criterion 7 is verified against the live engine, which
+reports `task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
+Thirty-five unit + nine engine integration tests; the runbook is
 `HOW_TO_RUN.md` §5. The checklist item above stays unchecked until this PR is
 merged.
 

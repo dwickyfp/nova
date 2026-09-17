@@ -378,6 +378,15 @@ pekerjaan yang hilang. Dua hal ini khusus dijaga:
   `SELECT 1` pada koneksi yang sama membuktikan engine hidup**; jika tidak,
   hasilnya `UNKNOWN` dan tidak ada write. Tanpa ini, run yang masih sehat akan
   ditandai `abandoned` saat FE mati (NOVA-43).
+- **Kegagalan baca hanya `MISSING` bila itu kegagalan surface trace.** Di FE
+  yang baru, `information_schema.task_runs` gagal dengan 1064 pada
+  `_statistics_.task_run_history` walau engine tetap melayani statement lain —
+  tidak ada trace yang bisa diobservasi, jadi node harus settle `abandoned`
+  (`MISSING`), bukan menggantung. Namun klasifikasi itu **sempit**: hanya
+  kegagalan yang membawa tanda surface trace (`task_run_history` /
+  `getTaskRuns`) **dan** lolos probe `SELECT 1` yang menjadi `MISSING`. Kegagalan
+  transport apa pun pada engine yang hidup tetap `UNKNOWN` dan tidak menulis
+  apa-apa, supaya blip sesaat tidak membuang pekerjaan sehat (NOVA-46).
 - **Akuisisi koneksi ikut dijaga.** Kegagalan `db.system_conn()` saat FE tidak
   dapat dijangkau dikembalikan sebagai `UNKNOWN`/map kosong, bukan exception
   yang keluar dari `reconcile_native` (NOVA-44).
