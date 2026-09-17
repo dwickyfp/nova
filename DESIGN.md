@@ -52,9 +52,15 @@ mendefinisikan warna.
 
 **Aturan varian.** Token dasar (`--warning`, `--info`, `--success`) adalah warna
 yang aman dipakai sebagai **latar** dengan `-foreground` gelap di atasnya.
-Varian `-strong` adalah warna yang lolos AA sebagai **teks** di atas
-`--background` pada mode yang sama. Ini yang membedakan `text-warning` dari
+Varian `-strong` adalah warna yang lolos AA sebagai **teks**, dan diukur di
+ketiga permukaan tempatnya benar-benar muncul: `--background`, tint `/10` dari
+warna dasarnya sendiri, dan `--accent`. Ini yang membedakan `text-warning` dari
 `text-warning-strong`.
+
+Mengukur hanya di atas `--background` tidak cukup: tint `/10` menaikkan
+luminansi latar, dan itu yang menjatuhkan `#a06b11` ke 4.21:1 saat dipakai di
+dalam `StatusBadge`. Nilai sekarang (`#986411`, `#4369c4`, `#107c70`) dipilih
+supaya lolos di ketiganya sekaligus.
 
 ### 2.3 Permukaan
 
@@ -168,6 +174,21 @@ Setiap tampilan data wajib punya keadaan kosong, memuat, dan error. Keadaan
 kosong menyebut sebab dan langkah berikutnya, bukan hanya "No data". Keadaan
 memuat memakai primitif `LoadingOverlay` yang akan dibangun di Grup 2, bukan
 animasi ad-hoc per halaman.
+
+Primitif untuk tiga keadaan ini ada di `src/components/ui/`:
+
+| Primitif | Untuk | Jangan dipakai untuk |
+|---|---|---|
+| `StatusBadge` | Satu keadaan berlabel: sukses, peringatan, info, gagal, netral | Angka atau metrik, itu `MetricCard` |
+| `EmptyState` | Daftar/tabel kosong, dengan sebab dan aksi | Error muat data, pakai `variant='error'` |
+| `PageHeader` | Judul halaman plus deskripsi dan aksi level halaman | Judul section di dalam halaman |
+| `MetricCard` | Satu angka yang menjawab satu pertanyaan, dengan bobot hierarki | Bulk angka tanpa keputusan, itu tabel |
+| `LoadingOverlay` / `LoadingLines` / `RefreshBanner` | Muat pertama, muat daftar, refresh di atas data lama | Skeleton buatan sendiri |
+
+`StatusBadge` hanya memakai token status (`--success-strong`,
+`--warning-strong`, `--info-strong`, `--danger`), tidak pernah emerald/teal/sky
+mentah. `MetricCard` mewarnai ikon, tidak pernah angkanya: angka tetap
+`--foreground` supaya netral dan terbaca.
 
 ### B3. Aksi yang terlihat harus punya perilaku
 
