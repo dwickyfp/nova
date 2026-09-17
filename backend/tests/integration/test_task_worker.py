@@ -25,7 +25,6 @@ skips rather than fails. Point at an already-running engine via::
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 from uuid import uuid4
 
@@ -61,8 +60,6 @@ _USE_SHARED_STACK = _EXPLICIT_PORT is None
 REDIS_URL = os.getenv("NOVA_ORCH_REDIS_URL", "redis://127.0.0.1:26379/0")
 
 pytestmark = pytest.mark.engine
-
-logger = logging.getLogger(__name__)
 
 #: A restricted user and the table it must not read. The owner of the
 #: "forbidden" task is this user; the "allowed" task belongs to root.
@@ -175,22 +172,6 @@ async def _seed_rbac_fixture() -> None:
     await db.execute_system(
         f"GRANT INSERT, SELECT ON {FORBIDDEN_DB}.allowed TO '{RESTRICTED_USER}'"
     )
-    # The engine's task executor opportunistically reads its internal task
-    # history archive (`_statistics_.task_run_history`) while it runs a task.
-    # On some FEs that read is performed as the *submitter*, so a restricted
-    # user gets a 1064 from the engine's own query instead of the task's real
-    # outcome — observed on the CI runner, not reproducible on every engine.
-    # The archive is unrelated to the worker's contract (Nova never queries it;
-    # it polls `information_schema.task_runs`), so disable it for these tests.
-    # This keeps the suite deterministic across engine builds rather than
-    # depending on a grant whose effect varies with when the engine creates the
-    # archive table.
-    try:
-        await db.execute_system(
-            "ADMIN SET FRONTEND CONFIG ('enable_task_history_archive' = 'false')"
-        )
-    except Exception as exc:  # pragma: no cover - older FE may not allow it
-        logger.warning("could not disable task history archive: %s", exc)
 
 
 @pytest_asyncio.fixture
@@ -296,20 +277,17 @@ class TestDelegateFirstRbac:
         assert states[ids[name]] == "failed"
         node = await repo.get_node_run(run_id, ids[name])
         assert node is not None
-        # The durable contract is the state above: the engine refused the run.
-        # The message is the engine's own surface for that refusal. It is
-        # normally the 5203 privilege error, but the engine can wrap a denied
-        # body in its task executor's error, so accept either while still
-        # requiring the failure to be an engine-side refusal, not a Nova error.
-        message = (node["error_message"] or "").lower()
-        assert message, "a failed node must record the engine's error"
-        assert (
-            "denied" in message
-            or "priv" in message
-            or "access" in message
-            # The engine's task executor prefix (`RepoExecutorexecute ...`).
-            or "repoexecut" in message
-        ), f"unexpected failure surface: {message!r}"
+        # The proof is that the engine itself refused the body at submit time,
+        # on the owner's connection: the recorded error is StarRocks' own
+        # privilege-denial surface (error 5203 / "Access denied ... INSERT
+        # privilege(s) on TABLE secret"), not a Nova-side error and not the
+        # engine executor's internal failure. Nothing else counts as
+        # delegate-first RBAC enforcement.
+        message = (node["error_message"] or "")
+        assert "5203" in message, f"expected an engine privilege refusal, got {message!r}"
+        assert "denied" in message.lower(), f"not a privilege denial: {message!r}"
+        assert "secret" in message, f"denial names the wrong object: {message!r}"
+
     async def test_owner_with_the_grant_succeeds(self, worker_infra, cleanup_runs):
         suffix = uuid4().hex[:8]
         name = f"allow_{suffix}"
@@ -325,9 +303,7 @@ class TestDelegateFirstRbac:
         state = await GraphRunWorker(repo, _executor()).handle(
             GraphRunJob(run_id, f"g_{suffix}")
         )
-        node = await repo.get_node_run(run_id, ids[name])
-        detail = node["error_message"] if node else None
-        assert state == GraphState.SUCCESS, f"allowed run failed: {detail!r}"
+        assert state == GraphState.SUCCESS
         node = await repo.get_node_run(run_id, ids[name])
         assert node is not None and node["starrocks_query_id"]
 

@@ -186,6 +186,17 @@ class DelegateExecutor:
         The plaintext password is resolved inside this call and dropped when the
         ``async with`` closes the connection.
 
+        **The owner's connection exists to submit, nothing else.** Its entire
+        purpose is that StarRocks checks the body's privileges against the
+        owner, so a forbidden table is refused by the engine (5203) at
+        ``SUBMIT TASK``. Perception of the run's outcome is Nova's own
+        bookkeeping and must not be gated by the owner's grants: on some FEs the
+        ``information_schema.task_runs`` read is backed by an internal archive
+        table the owner cannot see, and polling as the owner turned the
+        engine's real refusal into an unrelated internal 1064. So the submit
+        runs on the owner connection and the watermark/poll runs on the system
+        connection.
+
         ``heartbeat``, when given, is awaited on each poll so a long native run
         keeps its node row visibly alive; a worker that dies stops stamping and
         the reconciler can then tell the row is abandoned.
@@ -200,20 +211,37 @@ class DelegateExecutor:
             )
 
         statement = build_submit_task(spec)
-        password = await self._credentials.password_for(owner)
 
+        # The watermark is read before the submit so the new run can be
+        # identified by being strictly newer. It is read on the system
+        # connection for the reason in the docstring, and it is **best-effort**:
+        # the engine's ``information_schema.task_runs`` is served by an internal
+        # archive read that can fail independently of the task (observed as a
+        # 1064 on `_statistics_.task_run_history`). Losing the watermark only
+        # costs precision in identifying the new run — the poll falls back to
+        # the newest run — so it must never stop the submit, which is where the
+        # owner's RBAC is actually enforced.
+        watermark: datetime | None = None
+        try:
+            async with db.system_conn() as observer:
+                watermark = await self._latest_create_time(observer, spec.name)
+        except Exception as exc:
+            logger.warning(
+                "could not read the task-run watermark for %s; continuing: %s",
+                spec.name,
+                _redact(str(exc)),
+            )
+
+        password = await self._credentials.password_for(owner)
         async with db.user_conn(owner, password, database=spec.database) as conn:
-            # Drop the local reference as early as possible; the connection owns
-            # whatever it needs from here on.
+            # Drop the local reference as early as possible; the connection
+            # owns whatever it needs from here on.
             del password
-            # The watermark is read in the engine's own session timezone. Both
-            # sides of the later comparison are naive engine DATETIMEs, so no
-            # UTC conversion can offset them (the engine runs Asia/Jakarta
-            # here, and a UTC-naive comparison would silently skip the run).
-            watermark = await self._latest_create_time(conn, spec.name)
             await self._submit(conn, statement)
+
+        async with db.system_conn() as observer:
             result = await self._await_completion(
-                conn, spec.name, watermark=watermark, heartbeat=heartbeat
+                observer, spec.name, watermark=watermark, heartbeat=heartbeat
             )
 
         if result.state in _FAILURE_STATES:
@@ -267,10 +295,22 @@ class DelegateExecutor:
         Losing the run row (an FE restart drops in-flight runs with no trace,
         design §1) is not success: after the timeout the node is reported
         failed so the graph does not advance on an unknown outcome.
+
+        A transient read failure is neither: the engine's task-run surface can
+        fail while the run itself is fine, so a failed poll is retried until the
+        deadline rather than failing the node on the first error.
         """
         deadline = asyncio.get_running_loop().time() + self._poll_timeout
         while True:
-            result = await self._newest_run_after(conn, task_name, watermark)
+            try:
+                result = await self._newest_run_after(conn, task_name, watermark)
+            except Exception as exc:
+                logger.warning(
+                    "task-run poll for %s failed; retrying: %s",
+                    task_name,
+                    _redact(str(exc)),
+                )
+                result = None
             if result is not None and result.state not in _PENDING_STATES:
                 return result
 
