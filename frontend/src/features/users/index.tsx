@@ -5,6 +5,7 @@ import {
   MoreHorizontal,
   Plus,
   RefreshCw,
+  SearchX,
   Shield,
   Users as UsersIcon,
 } from 'lucide-react'
@@ -17,6 +18,8 @@ import {
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
+import { EmptyState } from '@/components/ui/empty-state'
+import { LoadingLines } from '@/components/ui/loading-overlay'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -990,20 +993,43 @@ export function Users() {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td
-                          colSpan={5}
-                          className='px-4 py-12 text-center text-sm text-muted-foreground'
-                        >
-                          Loading users...
+                        <td colSpan={5} className='px-4 py-6'>
+                          <LoadingLines rows={5} />
                         </td>
                       </tr>
                     ) : visibleUsers.length === 0 ? (
                       <tr>
-                        <td
-                          colSpan={5}
-                          className='px-4 py-12 text-center text-sm text-muted-foreground'
-                        >
-                          No users found
+                        <td colSpan={5} className='px-4 py-6'>
+                          <EmptyState
+                            icon={filteredUsers.length === 0 && (searchUsers || userAccessFilter)
+                              ? SearchX
+                              : UsersIcon}
+                            title={
+                              filteredUsers.length === 0 && (searchUsers || userAccessFilter)
+                                ? 'No users match these filters'
+                                : 'No users yet'
+                            }
+                            description={
+                              filteredUsers.length === 0 && (searchUsers || userAccessFilter)
+                                ? 'Clear the search or the Protected/Standard filter to see every user.'
+                                : 'Users appear here once they are created, or are provisioned in StarRocks.'
+                            }
+                            action={
+                              filteredUsers.length === 0 && (searchUsers || userAccessFilter) ? (
+                                <Button
+                                  variant='outline'
+                                  size='sm'
+                                  onClick={() => {
+                                    setSearchUsers('')
+                                    setUserAccessFilter('')
+                                    setUsersPage(1)
+                                  }}
+                                >
+                                  Clear filters
+                                </Button>
+                              ) : undefined
+                            }
+                          />
                         </td>
                       </tr>
                     ) : (
@@ -1025,7 +1051,7 @@ export function Users() {
                                   {user.username}
                                 </span>
                                 {user.is_protected ? (
-                                  <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>
+                                  <Badge className='border-destructive/25 bg-destructive/10 text-destructive'>
                                     Protected
                                   </Badge>
                                 ) : null}
@@ -1186,13 +1212,13 @@ export function Users() {
       </Main>
 
       <Dialog open={createUserOpen} onOpenChange={setCreateUserOpen}>
-        <DialogContent className='overflow-hidden border-border bg-[#20252b] p-0 text-white sm:max-w-2xl'>
+        <DialogContent className='overflow-hidden border-border bg-popover p-0 text-popover-foreground sm:max-w-2xl'>
           <DialogHeader>
-            <div className='border-b border-white/10 px-6 py-5 text-center'>
-              <DialogTitle className='text-xl font-semibold text-white'>
+            <div className='border-b border-border px-6 py-5 text-center'>
+              <DialogTitle className='text-xl font-semibold text-popover-foreground'>
                 New user
               </DialogTitle>
-              <DialogDescription className='mt-2 text-sm text-white/60'>
+              <DialogDescription className='mt-2 text-sm text-muted-foreground'>
                 Create a new user
               </DialogDescription>
             </div>
@@ -1201,7 +1227,7 @@ export function Users() {
             <div className='grid gap-5'>
               <div className='grid gap-4 sm:grid-cols-2'>
                 <div className='space-y-2'>
-                  <Label className='text-white/90'>User name</Label>
+                  <Label className='text-foreground'>User name</Label>
                   <Input
                     value={userForm.username}
                     onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -1210,11 +1236,11 @@ export function Users() {
                         username: event.target.value,
                       }))
                     }
-                    className='border-white/10 bg-[#1a1e24] text-white'
+                    className='border-border bg-card text-popover-foreground'
                   />
                 </div>
                 <div className='space-y-2'>
-                  <Label className='text-white/90'>Default role</Label>
+                  <Label className='text-foreground'>Default role</Label>
                   <Select
                     value={userForm.defaultRole}
                     onValueChange={(value: string) =>
@@ -1224,7 +1250,7 @@ export function Users() {
                       }))
                     }
                   >
-                    <SelectTrigger className='w-full border-white/10 bg-[#1a1e24] text-white'>
+                    <SelectTrigger className='w-full border-border bg-card text-popover-foreground'>
                       <SelectValue placeholder='Select role' />
                     </SelectTrigger>
                     <SelectContent>
@@ -1240,7 +1266,7 @@ export function Users() {
 
               <div className='grid gap-4 sm:grid-cols-2'>
                 <div className='space-y-2'>
-                  <Label className='text-white/90'>Password</Label>
+                  <Label className='text-foreground'>Password</Label>
                   <Input
                     type='password'
                     value={userForm.password}
@@ -1250,11 +1276,11 @@ export function Users() {
                         password: event.target.value,
                       }))
                     }
-                    className='border-white/10 bg-[#1a1e24] text-white'
+                    className='border-border bg-card text-popover-foreground'
                   />
                 </div>
                 <div className='space-y-2'>
-                  <Label className='text-white/90'>Confirm password</Label>
+                  <Label className='text-foreground'>Confirm password</Label>
                   <Input
                     type='password'
                     value={userForm.confirmPassword}
@@ -1264,24 +1290,24 @@ export function Users() {
                         confirmPassword: event.target.value,
                       }))
                     }
-                    className='border-white/10 bg-[#1a1e24] text-white'
+                    className='border-border bg-card text-popover-foreground'
                   />
                 </div>
               </div>
             </div>
           </div>
-          <DialogFooter className='border-t border-white/10 bg-[#20252b] px-6 py-4 sm:justify-end'>
+          <DialogFooter className='border-t border-border bg-popover px-6 py-4 sm:justify-end'>
             <Button
               variant='outline'
               onClick={() => setCreateUserOpen(false)}
-              className='border-white/10 bg-transparent text-white hover:bg-white/5 hover:text-white'
+              className='border-border bg-transparent hover:bg-accent hover:text-foreground'
             >
               Cancel
             </Button>
             <Button
               onClick={() => void handleCreateUser()}
               disabled={userSubmitting}
-              className='bg-blue-600 text-white hover:bg-blue-500'
+              className='bg-primary text-primary-foreground hover:bg-primary/90'
             >
               {userSubmitting ? 'Creating...' : 'Create User'}
             </Button>
@@ -1298,22 +1324,22 @@ export function Users() {
           }
         }}
       >
-        <DialogContent className='border-border bg-[#20252b] text-white sm:max-w-lg'>
+        <DialogContent className='border-border bg-popover text-popover-foreground sm:max-w-lg'>
           <DialogHeader>
-            <DialogTitle className='text-white'>Reset Password</DialogTitle>
-            <DialogDescription className='text-white/60'>
+            <DialogTitle className='text-popover-foreground'>Reset Password</DialogTitle>
+            <DialogDescription className='text-muted-foreground'>
               Confirm password reset for {resetPasswordUser?.username}. A new
               password will be generated and shown once.
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-4'>
-            <div className='rounded-lg border border-white/10 bg-[#1a1e24] px-4 py-3 text-sm text-white/80'>
+            <div className='rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground'>
               This action will replace the user password immediately.
             </div>
             {generatedPassword ? (
               <div className='space-y-2'>
-                <Label className='text-white/90'>Generated password</Label>
-                <div className='rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 font-mono text-sm text-emerald-100'>
+                <Label className='text-foreground'>Generated password</Label>
+                <div className='rounded-lg border border-success/25 bg-success/10 px-4 py-3 font-mono text-sm text-success-strong'>
                   {generatedPassword}
                 </div>
               </div>
@@ -1326,14 +1352,14 @@ export function Users() {
                 setResetPasswordUser(null)
                 setGeneratedPassword('')
               }}
-              className='border-white/10 bg-transparent text-white hover:bg-white/5 hover:text-white'
+              className='border-border bg-transparent hover:bg-accent hover:text-foreground'
             >
               Close
             </Button>
             <Button
               onClick={() => void handleResetPassword()}
               disabled={passwordResetSubmitting || Boolean(generatedPassword)}
-              className='bg-blue-600 text-white hover:bg-blue-500'
+              className='bg-primary text-primary-foreground hover:bg-primary/90'
             >
               {passwordResetSubmitting ? 'Resetting...' : 'Reset Password'}
             </Button>
@@ -1347,15 +1373,15 @@ export function Users() {
           if (!open) setRoleActionState(null)
         }}
       >
-        <DialogContent className='border-border bg-[#20252b] p-0 text-white sm:max-w-xl'>
+        <DialogContent className='border-border bg-popover p-0 text-popover-foreground sm:max-w-xl'>
           <DialogHeader>
-            <div className='border-b border-white/10 px-6 py-5 text-center'>
-              <DialogTitle className='text-xl font-semibold text-white'>
+            <div className='border-b border-border px-6 py-5 text-center'>
+              <DialogTitle className='text-xl font-semibold text-popover-foreground'>
                 {roleActionState?.mode === 'grant'
                   ? 'Grant User a Role'
                   : 'Revoke User Role'}
               </DialogTitle>
-              <DialogDescription className='mt-2 text-sm text-white/60'>
+              <DialogDescription className='mt-2 text-sm text-muted-foreground'>
                 {roleActionState?.mode === 'grant'
                   ? 'Grant one role at a time to the selected user.'
                   : 'Revoke one granted role at a time from the selected user.'}
@@ -1364,7 +1390,7 @@ export function Users() {
           </DialogHeader>
           <div className='space-y-5 px-6 py-5'>
             <div className='space-y-2'>
-              <Label className='text-white/90'>
+              <Label className='text-foreground'>
                 {roleActionState?.mode === 'grant'
                   ? 'User to receive grant'
                   : 'User to revoke'}
@@ -1372,11 +1398,11 @@ export function Users() {
               <Input
                 value={roleActionState ? roleActionState.user.username : ''}
                 readOnly
-                className='border-white/10 bg-[#1a1e24] text-white'
+                className='border-border bg-card text-popover-foreground'
               />
             </div>
             <div className='space-y-2'>
-              <Label className='text-white/90'>
+              <Label className='text-foreground'>
                 {roleActionState?.mode === 'grant'
                   ? 'Role to grant'
                   : 'Role to revoke'}
@@ -1389,7 +1415,7 @@ export function Users() {
                   )
                 }
               >
-                <SelectTrigger className='w-full border-white/10 bg-[#1a1e24] text-white'>
+                <SelectTrigger className='w-full border-border bg-card text-popover-foreground'>
                   <SelectValue
                     placeholder={
                       roleActionState?.mode === 'grant'
@@ -1413,18 +1439,18 @@ export function Users() {
               </Select>
             </div>
           </div>
-          <DialogFooter className='border-t border-white/10 bg-[#20252b] px-6 py-4 sm:justify-end'>
+          <DialogFooter className='border-t border-border bg-popover px-6 py-4 sm:justify-end'>
             <Button
               variant='outline'
               onClick={() => setRoleActionState(null)}
-              className='border-white/10 bg-transparent text-white hover:bg-white/5 hover:text-white'
+              className='border-border bg-transparent hover:bg-accent hover:text-foreground'
             >
               Cancel
             </Button>
             <Button
               onClick={() => void handleRoleActionSubmit()}
               disabled={roleActionSubmitting || !roleActionState?.role}
-              className='bg-blue-600 text-white hover:bg-blue-500'
+              className='bg-primary text-primary-foreground hover:bg-primary/90'
             >
               {roleActionSubmitting
                 ? roleActionState?.mode === 'grant'
@@ -1490,7 +1516,7 @@ export function Users() {
                     </span>
                     <Badge variant='outline'>{editingUser.identity}</Badge>
                     {editingUser.is_protected ? (
-                      <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>
+                      <Badge className='border-destructive/25 bg-destructive/10 text-destructive'>
                         Protected user
                       </Badge>
                     ) : null}
@@ -1753,12 +1779,12 @@ export function Users() {
                   <div className='flex flex-wrap items-center gap-2'>
                     <span className='font-semibold'>{editingRole.name}</span>
                     {editingRole.is_builtin ? (
-                      <Badge className='border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300'>
+                      <Badge className='border-warning/25 bg-warning/10 text-warning-strong'>
                         Built-in
                       </Badge>
                     ) : null}
                     {editingRole.is_protected ? (
-                      <Badge className='border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300'>
+                      <Badge className='border-destructive/25 bg-destructive/10 text-destructive'>
                         Protected
                       </Badge>
                     ) : null}
