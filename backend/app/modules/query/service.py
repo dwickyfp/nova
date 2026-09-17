@@ -952,7 +952,16 @@ class QueryService:
             return params, column_names
 
         except Exception:
-            # Silently fall back to defaults if detection fails
+            # Falling back to defaults is correct — a CSV that cannot be
+            # pre-read still loads, without delimiter or header tuning. What is
+            # NOT correct is doing it silently: a boto3 failure here (unreachable
+            # endpoint, missing credential) makes the query return typed rows
+            # where the caller expected a header, which surfaces as a confusing
+            # shape assertion far from the cause. Name it in the log instead.
+            logger.exception(
+                "CSV parameter detection failed for stage %r; falling back to defaults",
+                ref.stage_name,
+            )
             return {}, None
 
     async def _list_user_databases(
