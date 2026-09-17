@@ -25,6 +25,7 @@ skips rather than fails. Point at an already-running engine via::
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from uuid import uuid4
 
@@ -60,6 +61,8 @@ _USE_SHARED_STACK = _EXPLICIT_PORT is None
 REDIS_URL = os.getenv("NOVA_ORCH_REDIS_URL", "redis://127.0.0.1:26379/0")
 
 pytestmark = pytest.mark.engine
+
+logger = logging.getLogger(__name__)
 
 #: A restricted user and the table it must not read. The owner of the
 #: "forbidden" task is this user; the "allowed" task belongs to root.
@@ -172,23 +175,22 @@ async def _seed_rbac_fixture() -> None:
     await db.execute_system(
         f"GRANT INSERT, SELECT ON {FORBIDDEN_DB}.allowed TO '{RESTRICTED_USER}'"
     )
-    # The engine's task executor reads ``_statistics_.task_run_history`` under
-    # the *submitter's* identity while it runs a task (error surface on 4.1.1:
-    # `RepoExecutorexecute ... SELECT history_content_json FROM
-    # _statistics_.task_run_history`). Without this grant the engine's own
-    # executor fails on that internal read and reports a 1064 instead of the
-    # real outcome, so a user who may run tasks must be able to read the task
-    # history surface. The forbidden-table denial is unaffected: it is checked
-    # separately and still fails.
-    #
-    # ``_statistics_`` is created lazily by the engine on the first task run, so
-    # it may not exist yet when this fixture runs; create it first or the GRANT
-    # itself fails with "cannot find db: _statistics_". The engine repopulates
-    # the table on demand, so an empty database is harmless.
-    await db.execute_system("CREATE DATABASE IF NOT EXISTS _statistics_")
-    await db.execute_system(
-        f"GRANT SELECT ON _statistics_.* TO '{RESTRICTED_USER}'"
-    )
+    # The engine's task executor opportunistically reads its internal task
+    # history archive (`_statistics_.task_run_history`) while it runs a task.
+    # On some FEs that read is performed as the *submitter*, so a restricted
+    # user gets a 1064 from the engine's own query instead of the task's real
+    # outcome — observed on the CI runner, not reproducible on every engine.
+    # The archive is unrelated to the worker's contract (Nova never queries it;
+    # it polls `information_schema.task_runs`), so disable it for these tests.
+    # This keeps the suite deterministic across engine builds rather than
+    # depending on a grant whose effect varies with when the engine creates the
+    # archive table.
+    try:
+        await db.execute_system(
+            "ADMIN SET FRONTEND CONFIG ('enable_task_history_archive' = 'false')"
+        )
+    except Exception as exc:  # pragma: no cover - older FE may not allow it
+        logger.warning("could not disable task history archive: %s", exc)
 
 
 @pytest_asyncio.fixture
