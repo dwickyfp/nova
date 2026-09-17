@@ -735,8 +735,12 @@ class TestLostTraceSettlesThroughWorkerService:
             created_by=SR_USER,
         )
         cleanup_runs["task"].append(task["id"])
+        # The production standalone graph key is the task **id** (see
+        # ``scheduler.build_graphs``), not the name. Using the name here would
+        # let the graph settle via "graph has no nodes" and mask whether the
+        # heartbeat path actually drove the node.
         run = await repo.create_graph_run(
-            {"graph_id": name, "trigger_type": "manual", "state": "running"}
+            {"graph_id": task["id"], "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
         node = await repo.create_task_run(
@@ -769,20 +773,23 @@ class TestLostTraceSettlesThroughWorkerService:
             reconciler=Reconciler(repo, heartbeat_timeout_seconds=-1),
         )
 
-        await service.reconcile_once()
+        # A dead worker's graph must be re-driven to a terminal state, not hang:
+        # bound the call so an infinite ``_drive`` loop fails instead of stalling
+        # the suite.
+        await asyncio.wait_for(service.reconcile_once(), timeout=60)
 
-        # The dead node was abandoned from durable state, and the audit fired.
+        # The node was settled by the heartbeat path, and the audit fired. This
+        # is what proves the node did not merely vanish behind a graph-level
+        # failure.
         assert "NODE_ABANDONED" in _node_actions(audit_records)
-        # The graph may then re-run the node to success, but it must not remain
-        # hanging in ``running``.
-        settled = await repo.get_graph_run(run["id"])
-        assert settled is not None
-        assert settled["state"] != "running"
-        # Whatever the final state, the original abandoned row was not reported
-        # as success.
+        # The abandoned node must then be re-evaluated by the worker, so it ends
+        # in a settled state (its body runs) rather than remaining ``running``.
         final_node = await repo.get_task_run(node["id"])
         assert final_node is not None
-        assert final_node["state"] != "running"
+        assert final_node["state"] == "success"
+        settled = await repo.get_graph_run(run["id"])
+        assert settled is not None
+        assert settled["state"] == "success"
 
 
 class _NullConsumer:
