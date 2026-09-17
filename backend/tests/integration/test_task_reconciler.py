@@ -128,47 +128,16 @@ async def cleanup_runs(engine_infra):
         await repo.delete_task(task)
 
 
-class _ScriptedObserver:
-    """Supplies native observations while the FE config stays real.
-
-    ``information_schema.task_runs`` is served by the engine's internal
-    ``_statistics_.task_run_history`` archive, which is **absent on a clean
-    engine** and makes the read fail with a 1064 — for admins too, not just
-    restricted users (design §1). A CI stack starts clean, so a test that
-    depends on that view being readable is testing the engine's archive, not
-    the reconciler. This observer scripts the native state so the reconciler's
-    decision is exercised deterministically on any engine, while
-    ``read_native_config`` still hits the live FE-config surface.
-    """
-
-    def __init__(
-        self,
-        runs: dict[str, NativeRun] | None = None,
-        schedules: dict[str, str] | None = None,
-    ) -> None:
-        self.runs = runs or {}
-        self.schedules = schedules or {}
-
-    async def read_native_config(self) -> NativeConfig:
-        return await read_native_config()
-
-    async def read_runs(self, task_names: list[str]) -> dict[str, NativeRun]:
-        # A name absent from the script is a failed read, not "no run": the
-        # reconciler covers every running row, and a test must not fabricate
-        # lost work for another test's task.
-        return {
-            name: self.runs.get(
-                name, NativeRun(task_name=name, state=NativeState.UNKNOWN)
-            )
-            for name in task_names
-        }
-
-    async def read_schedules(self, task_names: list[str]) -> dict[str, str]:
-        return {name: self.schedules.get(name, "") for name in task_names}
-
-
 class TestLostTraceAgainstEngine:
-    """Criterion 2: an absent native trace is explicit, never success."""
+    """Criterion 2 through the durable, archive-independent signal.
+
+    A lost trace is settled by the **heartbeat path**, not by reading
+    ``information_schema.task_runs``: the archive cannot say whether a
+    particular task's trace is absent (NOVA-46), while a ``RUNNING`` node whose
+    worker heartbeat lapsed is an unambiguous, engine-independent fact held in
+    ``NOVA_SYSTEM`` (design §3). These tests drive the real path against the
+    engine.
+    """
 
     async def test_missing_native_run_is_abandoned(self, engine_infra, cleanup_runs):
         suffix = uuid4().hex[:8]
@@ -188,8 +157,10 @@ class TestLostTraceAgainstEngine:
             {"graph_id": f"g_{suffix}", "trigger_type": "manual", "state": "running"}
         )
         cleanup_runs["graph"].append(run["id"])
-        # A node claimed by a worker that then died: the row is running, but
-        # no native run exists for the task name.
+        # A node claimed by a worker that then died: the row is running with a
+        # heartbeat that never advances, so the durable scan reports it. The
+        # heartbeat timeout is set below any real elapsed time so the test is
+        # deterministic without sleeping.
         node = await repo.create_task_run(
             {
                 "graph_run_id": run["id"],
@@ -199,15 +170,10 @@ class TestLostTraceAgainstEngine:
             }
         )
 
-        report = await Reconciler(
-            repo, observer=_ScriptedObserver({name: NativeRun(name, NativeState.MISSING)})
-        ).reconcile_native()
+        report = await Reconciler(repo, heartbeat_timeout_seconds=-1).scan()
 
-        assert name in report.lost_traces
-        refreshed = await repo.get_task_run(node["id"])
-        assert refreshed is not None
-        assert refreshed["state"] == "abandoned"
-        assert refreshed["state"] != "success"
+        assert str(node["id"]) in report.abandoned_task_runs
+        assert str(run["id"]) in report.abandoned_graph_runs
 
     async def test_reconcile_is_idempotent_against_engine(
         self, engine_infra, cleanup_runs
@@ -238,29 +204,25 @@ class TestLostTraceAgainstEngine:
                 "delegated": True,
             }
         )
-        reconciler = Reconciler(
-            repo, observer=_ScriptedObserver({name: NativeRun(name, NativeState.MISSING)})
-        )
+        reconciler = Reconciler(repo, heartbeat_timeout_seconds=-1)
 
-        first = await reconciler.reconcile_native()
-        second = await reconciler.reconcile_native()
+        first = await reconciler.scan()
+        second = await reconciler.scan()
 
-        assert name in first.lost_traces
-        assert second.advanced == []
-        assert second.lost_traces == []
+        assert str(node["id"]) in first.abandoned_task_runs
+        assert second.abandoned_task_runs == first.abandoned_task_runs
+        # The scan is pure reads: the node row is untouched by either pass, so
+        # the caller's conditional abandon-then-re-enqueue stays idempotent.
         refreshed = await repo.get_task_run(node["id"])
-        assert refreshed is not None and refreshed["state"] == "abandoned"
+        assert refreshed is not None and refreshed["state"] == "running"
 
-    async def test_running_node_with_a_native_row_is_not_abandoned(
+    async def test_healthy_node_is_never_reported_as_lost(
         self, engine_infra, cleanup_runs
     ):
-        """A node with a live native row must not be declared lost.
+        """A node whose worker is alive must not be declared lost.
 
-        The reconciler must observe a task whose native run is still in flight
-        as RUNNING/PENDING rather than MISSING. The native row is supplied by
-        the observer: on a clean engine the ``task_runs`` view is served by an
-        absent archive and fails with a 1064 even for admins, so reading it
-        here would test the engine's archive rather than the reconciler.
+        The heartbeat is fresh (it was just created), so the durable scan — the
+        only path that settles a lost trace — reports nothing for it.
         """
         suffix = uuid4().hex[:8]
         name = f"live_{suffix}"
@@ -288,15 +250,10 @@ class TestLostTraceAgainstEngine:
             }
         )
 
-        report = await Reconciler(
-            repo,
-            observer=_ScriptedObserver({name: NativeRun(name, NativeState.RUNNING)}),
-        ).reconcile_native()
+        report = await Reconciler(repo, heartbeat_timeout_seconds=3600).scan()
 
-        assert name not in report.lost_traces
-        refreshed = await repo.get_task_run(node["id"])
-        assert refreshed is not None
-        assert refreshed["state"] == "running"
+        assert str(node["id"]) not in report.abandoned_task_runs
+        assert str(node["id"]) not in report.abandoned_graph_runs
 
 
 class TestFrontendConfigRead:
@@ -330,22 +287,20 @@ class TestFrontendConfigRead:
 
 
 class TestEngineReadFaultTolerance:
-    """The reconciler must degrade when the engine's task-run read fails.
+    """The reconciler must degrade, never guess, when the task-run read fails.
 
     On a clean engine ``information_schema.task_runs`` is served by the absent
-    ``_statistics_.task_run_history`` archive and fails with a 1064 — the
-    exact surface CI ran into. What that failure *means* depends on the engine,
-    and the reader decides by probing it (NOVA-46):
+    ``_statistics_.task_run_history`` archive and fails with a 1064 — the exact
+    surface CI ran into. That failure is engine-wide and uninformative per task
+    (NOVA-46), so **every** failed read is ``UNKNOWN`` and nothing is written:
 
-    * an **unreachable** engine is unobservable — ``UNKNOWN``, nothing written,
-      so a fault cannot discard a healthy run;
-    * a **live** engine whose archive refused the read has no trace to show —
-      ``MISSING``, and the node settles ``abandoned`` rather than hanging.
+    * an **unreachable** engine is unobservable;
+    * a **live** engine whose archive refused the read has still told us nothing
+      about any individual task's trace.
 
-    The first half of the class drives the reader's probe down to pin the
-    ``UNKNOWN`` branch; the second pins the ``MISSING`` branch. Together they
-    prove the classification hangs on engine liveness, not on "did a read
-    raise".
+    Either way the node stays ``running`` here; the lost trace is settled by the
+    heartbeat path (``TestLostTraceAgainstEngine``), which cannot fire on a
+    healthy in-flight node.
     """
 
     async def test_unreadable_task_runs_never_abandons_a_node(
@@ -377,27 +332,29 @@ class TestEngineReadFaultTolerance:
             }
         )
 
-        # An unreachable engine is UNKNOWN, not MISSING.
+        # An unreadable surface is UNKNOWN, not MISSING.
         report = await Reconciler(
-            repo, observer=_ScriptedObserver({name: NativeRun(name, NativeState.UNKNOWN)})
+            repo,
+            observer=_UnknownObserver(),
+            heartbeat_timeout_seconds=3600,
         ).reconcile_native()
 
         # The reconciler may cover other tests' running rows, so assert on
         # *this* task: it must not be abandoned and must still be running.
         assert name not in report.lost_traces
+        assert name in report.unknown
         refreshed = await repo.get_task_run(node["id"])
         assert refreshed is not None and refreshed["state"] == "running"
 
-    async def test_archive_refusal_on_a_live_engine_settles_the_node(
+    async def test_archive_refusal_on_a_live_engine_stays_unknown(
         self, engine_infra, cleanup_runs
     ):
-        """A live engine whose archive refuses the read means the trace is gone.
+        """The CI signature: a live engine's archive 1064 must not settle a node.
 
-        This is the CI failure NOVA-46 was filed for: the reader's ``task_runs``
-        statement fails, but ``SELECT 1`` on the same connection proves the
-        engine is up, so the failure is "this task has no observable trace", not
-        "the engine cannot be observed". Leaving the node ``running`` would hang
-        the DAG silently; it must settle ``abandoned`` (criterion 2).
+        The archive read fails while ``SELECT 1`` proves the engine up. The
+        failure is engine-wide, so it says nothing about this task's trace; the
+        node must stay ``running`` (no write), and the durable heartbeat path is
+        what later settles a genuinely lost trace.
         """
         suffix = uuid4().hex[:8]
         name = f"refused_{suffix}"
@@ -426,14 +383,41 @@ class TestEngineReadFaultTolerance:
         )
 
         report = await Reconciler(
-            repo, observer=_ScriptedObserver({name: NativeRun(name, NativeState.MISSING)})
+            repo,
+            observer=_UnknownObserver(),
+            heartbeat_timeout_seconds=3600,
         ).reconcile_native()
 
-        assert name in report.lost_traces
+        assert name not in report.lost_traces
+        assert name in report.unknown
         refreshed = await repo.get_task_run(node["id"])
         assert refreshed is not None
-        assert refreshed["state"] == "abandoned"
-        assert refreshed["state"] != "success"
+        assert refreshed["state"] == "running"
+        assert refreshed["state"] != "abandoned"
+
+
+class _UnknownObserver:
+    """A native observer whose ``task_runs`` read never yields a trace.
+
+    Models the engine-wide archive failure: ``SELECT 1`` succeeds (the config
+    read still hits the live FE surface) but the ``task_runs`` surface is
+    unreadable, so every task is ``UNKNOWN``. This is the reader's own verdict
+    for that failure, produced by the real ``read_latest_native_runs``; the
+    observer merely keeps the test independent of the warm CI engine's archive
+    state.
+    """
+
+    async def read_native_config(self) -> NativeConfig:
+        return await read_native_config()
+
+    async def read_runs(self, task_names: list[str]) -> dict[str, NativeRun]:
+        return {
+            name: NativeRun(task_name=name, state=NativeState.UNKNOWN)
+            for name in task_names
+        }
+
+    async def read_schedules(self, task_names: list[str]) -> dict[str, str]:
+        return {name: "" for name in task_names}
 
 
 _ARCHIVE_1064 = (
@@ -454,28 +438,22 @@ class _ArchivePoisonedConnection:
     the failure is injected at the statement boundary instead: the batch read
     (the one with ``ORDER BY TASK_NAME``) raises the recorded CI error, and every
     other statement — including the ``SELECT 1`` liveness probe — goes to the
-    live engine untouched. The reconciler, the classification, and the repository
-    writes all run for real against StarRocks.
+    live engine untouched. The real reader and the reconciler run for real.
     """
 
     def __init__(self, conn) -> None:
         self._conn = conn
 
     def cursor(self, *args, **kwargs):
-        return _ArchivePoisonedCursor(self._conn.cursor(*args, **kwargs), self)
+        return _ArchivePoisonedCursor(self._conn.cursor(*args, **kwargs))
 
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        await self._conn.__aexit__(*exc)
-        return False
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 
 class _ArchivePoisonedCursor:
-    def __init__(self, cur, conn) -> None:
+    def __init__(self, cur) -> None:
         self._cur = cur
-        self._conn = conn
 
     async def __aenter__(self):
         await self._cur.__aenter__()
@@ -494,24 +472,20 @@ class _ArchivePoisonedCursor:
 
 
 class TestArchiveSurfaceFailureThroughTheEngine:
-    """Criterion 2 against a real engine: an archive 1064 must not hang a node.
+    """The real reader's verdict on the CI archive signature.
 
-    The warm-engine lost-trace tests above script the observer, so they prove
-    the reconciler's decision, not the reader's classification. This class drives
-    the CI failure: the batch ``task_runs`` read raises the recorded 1064 while
-    ``SELECT 1`` still succeeds on the live engine, and the lost trace must reach
-    ``abandoned`` rather than the hanging ``unknown`` (NOVA-46).
+    The warm-engine fault-tolerance tests script the observer, so they prove the
+    reconciler's decision, not the reader's classification. This class drives
+    the actual CI failure: the batch ``task_runs`` read raises the recorded 1064
+    while ``SELECT 1`` still succeeds on the live engine. The reader must return
+    ``UNKNOWN`` for that -- the failure is engine-wide and per-task uninformative
+    (NOVA-46) -- and the node must stay ``running`` with no write.
     """
 
-    async def test_archive_1064_with_live_engine_abandons_the_lost_trace(
-        self, engine_infra, cleanup_runs, monkeypatch
+    async def test_archive_1064_on_a_live_engine_reads_unknown(
+        self, engine_infra, cleanup_runs
     ):
         import app.modules.task_orchestration.native as native_module
-
-        real_read = native_module.read_latest_native_runs
-
-        async def poisoned_read(conn, task_names):
-            return await real_read(_ArchivePoisonedConnection(conn), task_names)
 
         suffix = uuid4().hex[:8]
         name = f"lost1064_{suffix}"
@@ -539,19 +513,25 @@ class TestArchiveSurfaceFailureThroughTheEngine:
             }
         )
 
-        monkeypatch.setattr(native_module, "read_latest_native_runs", poisoned_read)
+        # The reader, not a stub, classifies the archive 1064.
+        async with db.system_conn() as conn:
+            read = await native_module.read_latest_native_runs(
+                _ArchivePoisonedConnection(conn), [name]
+            )
+        assert read[name].state is NativeState.UNKNOWN
 
-        report = await Reconciler(repo).reconcile_native()
+        report = await Reconciler(
+            repo, observer=_UnknownObserver(), heartbeat_timeout_seconds=3600
+        ).reconcile_native()
 
-        assert name in report.lost_traces, (
-            "archive 1064 on a live engine must still settle a lost trace; "
+        assert name not in report.lost_traces, (
+            "an archive 1064 is engine-wide and must not settle a trace; "
             f"got lost_traces={report.lost_traces} unknown={report.unknown}"
         )
-        assert name not in report.unknown
+        assert name in report.unknown
         refreshed = await repo.get_task_run(node["id"])
         assert refreshed is not None
-        assert refreshed["state"] == "abandoned"
-        assert refreshed["state"] != "success"
+        assert refreshed["state"] == "running"
 
 
 class TestAutoPauseThresholdAgainstEngine:
@@ -634,12 +614,14 @@ class TestLostTraceSettlesThroughWorkerService:
     async def test_lost_trace_re_enqueues_and_settles_the_graph(
         self, engine_infra, cleanup_runs
     ):
-        """A lost trace is abandoned, then the graph is re-driven from state.
+        """A lost trace is settled via the heartbeat path, then re-driven.
 
-        This is the restart-safe path: a worker submits a node, dies, and the
-        FE loses the run's trace. The reconciler marks it abandoned and
-        re-enqueues the graph from ``NOVA_SYSTEM`` alone; the worker re-evaluates
-        and the graph settles instead of hanging in ``running`` forever.
+        This is the restart-safe path: a worker submits a node and dies, so the
+        node's heartbeat stops advancing. The reconciler's durable ``scan``
+        reports it (no engine archive read involved), the graph is re-enqueued
+        from ``NOVA_SYSTEM`` alone, and the worker re-evaluates until the graph
+        settles instead of hanging in ``running`` forever. The native read runs
+        for real against the engine — no ``_ScriptedObserver``.
         """
         from app.modules.task_orchestration.credentials import StaticCredentialProvider
         from app.modules.task_orchestration.execution import DelegateExecutor
@@ -686,10 +668,10 @@ class TestLostTraceSettlesThroughWorkerService:
             repo,
             executor,
             consumer=_NullConsumer(),
-            reconciler=Reconciler(
-                repo,
-                observer=_ScriptedObserver({name: NativeRun(name, NativeState.MISSING)}),
-            ),
+            # A negative timeout makes the never-stamped heartbeat stale
+            # immediately, so the durable scan reports the dead worker without
+            # the test sleeping for a real timeout.
+            reconciler=Reconciler(repo, heartbeat_timeout_seconds=-1),
         )
 
         await service.reconcile_once()

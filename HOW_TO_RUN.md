@@ -378,15 +378,22 @@ pekerjaan yang hilang. Dua hal ini khusus dijaga:
   `SELECT 1` pada koneksi yang sama membuktikan engine hidup**; jika tidak,
   hasilnya `UNKNOWN` dan tidak ada write. Tanpa ini, run yang masih sehat akan
   ditandai `abandoned` saat FE mati (NOVA-43).
-- **Kegagalan baca hanya `MISSING` bila itu kegagalan surface trace.** Di FE
-  yang baru, `information_schema.task_runs` gagal dengan 1064 pada
-  `_statistics_.task_run_history` walau engine tetap melayani statement lain —
-  tidak ada trace yang bisa diobservasi, jadi node harus settle `abandoned`
-  (`MISSING`), bukan menggantung. Namun klasifikasi itu **sempit**: hanya
-  kegagalan yang membawa tanda surface trace (`task_run_history` /
-  `getTaskRuns`) **dan** lolos probe `SELECT 1` yang menjadi `MISSING`. Kegagalan
-  transport apa pun pada engine yang hidup tetap `UNKNOWN` dan tidak menulis
-  apa-apa, supaya blip sesaat tidak membuang pekerjaan sehat (NOVA-46).
+- **Kegagalan baca selalu `UNKNOWN`, jangan menebak.** Di FE yang baru,
+  `information_schema.task_runs` gagal dengan 1064 pada
+  `_statistics_.task_run_history` walau engine tetap melayani statement lain.
+  Kegagalan itu **engine-wide dan tidak informatif per task**: ia muncul untuk
+  setiap pembacaan `task_runs`, jadi tidak bisa menentukan apakah trace sebuah
+  task tertentu hilang. Vonis apa pun darinya akan membuang baris sehat
+  (NOVA-43/NOVA-46) — karena itu setiap kegagalan baca dikembalikan sebagai
+  `UNKNOWN` dan tidak ada write. Klasifikasi per-surface (`task_run_history` /
+  `getTaskRuns`) sengaja **tidak** dipakai.
+- **Lost trace diselesaikan lewat jalur heartbeat yang durable.** Karena arsip
+  tidak bisa dipercaya, trace yang hilang disettle bukan dari `task_runs`
+  melainkan dari state `NOVA_SYSTEM`: `Reconciler.scan` /
+  `list_stale_task_runs` menandai node `RUNNING` yang heartbeat-nya berhenti
+  sebagai `abandoned`, lalu graph di-re-enqueue dari state durable (design §3).
+  Ini justru skenario "task berjalan saat FE/worker mati" yang dituju AC #2, dan
+  tidak bisa menyala pada node sehat karena worker terus menstamp heartbeat.
 - **Akuisisi koneksi ikut dijaga.** Kegagalan `db.system_conn()` saat FE tidak
   dapat dijangkau dikembalikan sebagai `UNKNOWN`/map kosong, bukan exception
   yang keluar dari `reconcile_native` (NOVA-44).
