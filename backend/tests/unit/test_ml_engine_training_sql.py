@@ -109,8 +109,8 @@ class TestTrainingSqlIsGuarded:
         )
 
         with pytest.raises(ForbiddenSQLError):
-            await service._prepare_training_sql(
-                training_sql="DROP ROLE ACCOUNTADMIN", database_name=None
+            await service._prepare_user_sql(
+                sql="DROP ROLE ACCOUNTADMIN", database_name=None, what="training"
             )
 
         # Nothing was executed — the guard fired before a connection was used.
@@ -126,13 +126,13 @@ class TestTrainingSqlIsGuarded:
     )
     async def test_every_accountadmin_form_is_blocked(self, service, sql):
         with pytest.raises(ForbiddenSQLError):
-            await service._prepare_training_sql(training_sql=sql, database_name=None)
+            await service._prepare_user_sql(sql=sql, database_name=None, what="training")
 
     async def test_multistatement_script_cannot_hide_a_blocked_tail(self, service):
         """A guard anchored on the whole blob would miss everything after `;`."""
         with pytest.raises(ForbiddenSQLError):
-            await service._prepare_training_sql(
-                training_sql="SELECT 1; DROP ROLE ACCOUNTADMIN", database_name=None
+            await service._prepare_user_sql(
+                sql="SELECT 1; DROP ROLE ACCOUNTADMIN", database_name=None, what="training"
             )
 
 
@@ -145,8 +145,8 @@ class TestTrainingSqlStageTranslation:
 
         monkeypatch.setattr(MLEngineService, "_load_stage_configs", stage_configs)
 
-        engine_sql = await service._prepare_training_sql(
-            training_sql="SELECT * FROM @stage1.data.csv", database_name=None
+        engine_sql = await service._prepare_user_sql(
+            sql="SELECT * FROM @stage1.data.csv", database_name=None, what="training"
         )
 
         # Translated to FILES() and credential-bearing. The translator injects
@@ -158,8 +158,8 @@ class TestTrainingSqlStageTranslation:
         assert f"'{STAGE_SECRET_KEY}'" in engine_sql
 
     async def test_plain_select_passes_through_unchanged(self, service):
-        engine_sql = await service._prepare_training_sql(
-            training_sql="SELECT age, churned FROM customers", database_name=None
+        engine_sql = await service._prepare_user_sql(
+            sql="SELECT age, churned FROM customers", database_name=None, what="training"
         )
         assert engine_sql == "SELECT age, churned FROM customers"
         assert "aws.s3.access_key" not in engine_sql
@@ -178,10 +178,10 @@ class TestNoCredentialMaterialEscapes:
 
         monkeypatch.setattr(MLEngineService, "_load_stage_configs", stage_configs)
 
-        engine_sql = await service._prepare_training_sql(
-            training_sql="SELECT * FROM @stage1.data.csv", database_name=None
+        engine_sql = await service._prepare_user_sql(
+            sql="SELECT * FROM @stage1.data.csv", database_name=None, what="training"
         )
-        redacted = service._redacted_training_sql(engine_sql)
+        redacted = service._redacted_user_sql(engine_sql)
 
         # The engine form carries the credentials @stage needs...
         assert STAGE_ACCESS_KEY in engine_sql
