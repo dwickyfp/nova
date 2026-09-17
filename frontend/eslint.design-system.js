@@ -72,10 +72,34 @@ const STORAGE_MESSAGE =
 const normalize = (filename) =>
   filename.replace(/\\/g, '/').replace(/^.*?\/src\//, 'src/')
 
+export const TOKEN_READER_NAME = /^read[A-Za-z]*Token$/
+
+/**
+ * A hex literal is a legitimate fallback when it is an argument to a token
+ * reader whose first argument names a custom property, e.g.
+ * readToken('--chart-1', '#f05a47'). Recharts needs concrete colour strings
+ * and getComputedStyle does not exist on the server, so the fallback cannot be
+ * removed. Restricting the exemption to that syntactic shape keeps it narrow:
+ * the hex still cannot hide inside a className.
+ */
+export function isTokenFallbackArgument(node) {
+  const call = node.parent
+  if (!call || call.type !== 'CallExpression') return false
+
+  if (call.callee.type !== 'Identifier') return false
+  if (!TOKEN_READER_NAME.test(call.callee.name)) return false
+
+  const firstArgument = call.arguments[0]
+  if (!firstArgument || firstArgument.type !== 'Literal') return false
+  if (typeof firstArgument.value !== 'string') return false
+
+  return firstArgument.value.startsWith('--')
+}
+
 // Selectors cannot see the current filename, so the baseline lives in a rule
 // wrapper instead of config matching: a grandfathered file is reported at
 // "off" strength, everything else fails the build.
-const gate = (checks) => ({
+const gate = (checks, { allowTokenFallback = false } = {}) => ({
   meta: {
     type: 'problem',
     docs: {
@@ -86,15 +110,19 @@ const gate = (checks) => ({
   },
   create(context) {
     const grandfathered = baseline.has(normalize(context.filename))
-    const report = (node, message) =>
-      context.report({ node, message })
 
     if (grandfathered) return {}
 
     const test = (node, value) => {
       if (typeof value !== 'string') return
       for (const [pattern, message] of checks) {
-        if (new RegExp(pattern).test(value)) report(node, message)
+        const isHexCheck = pattern === HEX_PATTERN
+        if (isHexCheck && allowTokenFallback && isTokenFallbackArgument(node)) {
+          continue
+        }
+        if (new RegExp(pattern).test(value)) {
+          context.report({ node, message })
+        }
       }
     }
 
@@ -122,16 +150,24 @@ const REPOSITORY_CHECKS = [
 
 export const novaPlugin = {
   rules: {
-    'semantic-tokens': gate(REPOSITORY_CHECKS),
-    'semantic-tokens-features': gate(FEATURE_CHECKS),
+    'semantic-tokens': gate(REPOSITORY_CHECKS, { allowTokenFallback: true }),
+    'semantic-tokens-features': gate(FEATURE_CHECKS, {
+      allowTokenFallback: true,
+    }),
   },
 }
+
+// Tests are excluded because a gate test must contain the very patterns it
+// asserts are rejected. Excluding them does not weaken the gate: no test file
+// renders the app, so a hex there cannot reach the UI.
+const TEST_FILE = '**/*.test.{ts,tsx}'
 
 // Order matters: the feature scope comes last so it replaces the repo-wide
 // rule for files it matches.
 export default [
   {
     files: ['src/**/*.{ts,tsx}'],
+    ignores: [TEST_FILE],
     plugins: { nova: novaPlugin },
     rules: {
       'nova/semantic-tokens': 'error',
@@ -139,6 +175,7 @@ export default [
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
+    ignores: [TEST_FILE],
     rules: {
       'nova/semantic-tokens': 'off',
       'nova/semantic-tokens-features': 'error',
