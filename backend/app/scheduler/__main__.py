@@ -23,6 +23,8 @@ import redis.asyncio as aioredis
 
 from app.core.config import settings
 from app.core.database import db
+from app.modules.task_orchestration.repository import task_orchestration_repository
+from app.modules.task_orchestration.schedule import engine_timezone_matches
 from app.modules.task_orchestration.service import build_scheduler_service
 from app.modules.task_orchestration.transport import (
     LeaderLock,
@@ -32,8 +34,53 @@ from app.modules.task_orchestration.transport import (
 logger = logging.getLogger(__name__)
 
 
+class EngineTimezoneMismatchError(RuntimeError):
+    """Raised when an explicit SCHEDULER_ENGINE_TIMEZONE disagrees with the engine."""
+
+
+async def _assert_engine_timezone() -> str | None:
+    """Fail fast when an explicit zone override contradicts the engine.
+
+    By default the zone is auto-detected from ``SELECT @@time_zone`` and cannot be
+    wrong. When an operator pins ``SCHEDULER_ENGINE_TIMEZONE``, startup verifies it
+    against the engine: a mismatch shifts every interval anchor by the offset
+    difference — the 7-hour bug that made interval tasks never due — so refusing
+    to run is the safe failure. Returns the effective zone, or ``None`` when the
+    engine stays silent and there is nothing to verify against.
+    """
+    engine_zone = await task_orchestration_repository.get_engine_timezone()
+    if engine_zone is None:
+        logger.warning(
+            "engine reported no session timezone; skipping the timezone guard"
+        )
+        return None
+    configured = (settings.SCHEDULER_ENGINE_TIMEZONE or "").strip()
+    if not configured:
+        logger.info("engine timezone auto-detected: %s", engine_zone)
+        return engine_zone
+    if not engine_timezone_matches(configured, engine_zone):
+        raise EngineTimezoneMismatchError(
+            f"SCHEDULER_ENGINE_TIMEZONE={configured!r} does not match the engine "
+            f"session timezone {engine_zone!r}. It is an override for unusual "
+            "deployments only; unset it to use the engine's zone, or set it to "
+            f"{engine_zone!r} — a mismatch silently shifts every interval anchor "
+            "and tasks never become due."
+        )
+    logger.info(
+        "engine timezone verified: %s (SCHEDULER_ENGINE_TIMEZONE=%s)",
+        engine_zone,
+        configured,
+    )
+    return engine_zone
+
+
 async def _run() -> None:
     await db.init_system_pool()
+    try:
+        await _assert_engine_timezone()
+    except Exception:
+        await db.close_system_pool()
+        raise
     client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
 
     stop_event = asyncio.Event()
