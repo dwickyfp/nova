@@ -148,16 +148,31 @@ def _inject_files_params(sql: str, params: dict[str, str]) -> str:
     """Add ``params`` to every ``FILES()`` call in ``sql`` that lacks them.
 
     A single ``FILES()`` per statement in practice; the substitution covers all
-    of them so a statement with two stage references is not half-injected. The
-    ``access_key`` presence check keeps a second pass from double-injecting,
-    which would produce a statement the engine rejects.
+    of them so a statement with two stage references is not half-injected. A
+    second pass over an already-injected statement is a no-op, which matters
+    because this runs once for CSV properties and again for credentials.
+
+    The "already present" test is **per key**, and deliberately not the obvious
+    `if "access_key" in content` guard. That guard is wrong here: the
+    translator emits credentials itself, so on the CSV pass it saw an
+    `access_key` belonging to the *credential* group and skipped the CSV
+    properties entirely. The result was a stage query returning the file's raw
+    line text as one column instead of parsed columns — `csv.column_separator`
+    and `csv.skip_header` never reached the engine. Keying on the names being
+    injected is what makes the two passes independent.
     """
 
     def _inject(match: re.Match[str]) -> str:
         content = match.group(1)
-        if "access_key" in content:
+        # Per key, not per group: a partially-injected statement must gain only
+        # the keys it lacks. Injecting the whole group when *some* key is
+        # present would emit a duplicate parameter, which the engine rejects.
+        missing = [
+            (key, value) for key, value in params.items() if f"'{key}'" not in content
+        ]
+        if not missing:
             return match.group(0)
-        parts = [f"'{key}'='{value}'" for key, value in params.items()]
+        parts = [f"'{key}'='{value}'" for key, value in missing]
         return f"FILES({content}, {', '.join(parts)})"
 
     return re.sub(r"FILES\(([^)]+)\)", _inject, sql)
