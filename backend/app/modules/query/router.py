@@ -68,6 +68,7 @@ class QueryResponse(BaseModel):
     warnings: list[str] = []
     destructive: bool = False
     needs_confirmation: bool = False
+    error: str | None = None
 
 
 class CompletionItem(BaseModel):
@@ -113,10 +114,17 @@ async def execute_query(
 
     responses = []
     for result in results:
-        is_error = bool(result.warnings) and not result.columns and result.row_count == 0
+        # ``success`` is the statement's own verdict, carried explicitly on the
+        # result (``QueryResult.error``) rather than inferred from the shape of
+        # what came back. The shape heuristic that used to live here —
+        # ``bool(warnings) and not columns and row_count == 0`` — read a
+        # successful ``@stage`` DML statement as a failure: ``COPY INTO`` has no
+        # ``description`` so it returns no columns and no rows, while
+        # ``translate_stage_query`` appends a warning on its success path.
+        # ``warnings`` remains informational only.
         responses.append(
             QueryResponse(
-                success=not is_error,
+                success=result.success,
                 columns=result.columns,
                 rows=result.rows,
                 row_count=result.row_count,
@@ -128,6 +136,7 @@ async def execute_query(
                 destructive=is_destructive_sql(result.original_sql),
                 needs_confirmation=is_destructive_sql(result.original_sql)
                 or is_unscoped_mutation(result.original_sql),
+                error=result.error,
             )
         )
     return responses
@@ -155,7 +164,7 @@ async def explain_query(
     )
 
     return QueryResponse(
-        success=True,
+        success=result.success,
         columns=result.columns,
         rows=result.rows,
         row_count=result.row_count,
