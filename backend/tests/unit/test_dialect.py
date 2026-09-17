@@ -11,7 +11,6 @@ from app.modules.query.dialect.injector import get_credential_params
 from app.modules.query.dialect.parser import (
     CommandType,
     parse_sql,
-    parse_stage_reference,
 )
 from app.modules.query.dialect.translator import (
     StorageConfig,
@@ -20,7 +19,6 @@ from app.modules.query.dialect.translator import (
     detect_format_from_filename,
     translate_stage_query,
 )
-
 
 # --- Parser Tests ---
 
@@ -188,6 +186,85 @@ class TestStageVersusVariable:
     def test_two_stages_in_one_statement(self):
         result = parse_sql("SELECT * FROM @stage1 JOIN @stage2.data.csv")
         assert [ref.stage_name for ref in result.stage_refs] == ["stage1", "stage2"]
+
+    # --- comma-separated table lists --------------------------------------
+
+    @pytest.mark.parametrize(
+        ("sql", "expected"),
+        [
+            ("SELECT * FROM @stage1, @stage2", ["stage1", "stage2"]),
+            (
+                "SELECT * FROM @stage1 AS a, @stage2 AS b",
+                ["stage1", "stage2"],
+            ),
+            (
+                "SELECT * FROM @stage1, @stage2, @stage3",
+                ["stage1", "stage2", "stage3"],
+            ),
+            ("SELECT * FROM t, @stage1", ["stage1"]),
+            ("SELECT * FROM @stage1, t, @stage2", ["stage1", "stage2"]),
+            (
+                "SELECT * FROM @stage1 a, @stage2 b, @stage3 c",
+                ["stage1", "stage2", "stage3"],
+            ),
+        ],
+    )
+    def test_a_comma_in_a_from_list_introduces_another_stage(self, sql, expected):
+        """A comma in a table list inherits the clause, it does not end it.
+
+        Treating every comma as an expression separator lost the second
+        reference in ``FROM @stage1, @stage2`` — one of the forms the previous
+        regex handled, so it was a regression. The distinguishing question is
+        which clause the comma sits in, and it is answered by
+        ``_comma_is_in_table_clause``.
+        """
+        result = parse_sql(sql)
+        assert [ref.stage_name for ref in result.stage_refs] == expected
+
+    @pytest.mark.parametrize(
+        ("sql", "expected"),
+        [
+            ("SELECT @x, @y", []),
+            ("SELECT @x, @y FROM @stage1", ["stage1"]),
+            ("SELECT 1 + @n, @m", []),
+            ("SELECT @x, @y FROM @stage1, @stage2", ["stage1", "stage2"]),
+            ("SELECT COALESCE(@x, @y)", []),
+            ("SELECT * FROM t WHERE a IN (@x, @y)", []),
+            ("SELECT @x FROM t GROUP BY @y", []),
+        ],
+    )
+    def test_a_comma_in_an_expression_list_does_not_create_stages(
+        self, sql, expected
+    ):
+        """The other half: an expression comma must stay a variable operand."""
+        result = parse_sql(sql)
+        assert [ref.stage_name for ref in result.stage_refs] == expected
+
+    def test_a_join_condition_operand_is_not_a_stage(self):
+        """``ON a.id = @x`` — ``@x`` is a comparison operand, not a table."""
+        result = parse_sql("SELECT * FROM t JOIN @stage1 ON a.id = @x")
+        assert [ref.stage_name for ref in result.stage_refs] == ["stage1"]
+
+    def test_a_comma_after_a_join_condition_returns_to_the_table_list(self):
+        """``FROM a JOIN b ON 1=1, c`` is valid StarRocks.
+
+        The comma ends the join condition and resumes the table list, so the
+        reference after it is a stage.
+        """
+        result = parse_sql("SELECT * FROM @s1 JOIN @s2 ON 1=1, @s3")
+        assert [ref.stage_name for ref in result.stage_refs] == ["s1", "s2", "s3"]
+
+    def test_a_subquery_has_its_own_clause_context(self):
+        """A nested ``SELECT`` must not govern the outer ``FROM``.
+
+        ``FROM (SELECT @x, @y FROM t), @stage2`` — the inner comma is an
+        expression separator, the outer one introduces a table reference.
+        """
+        inner = parse_sql("SELECT * FROM (SELECT @x, @y FROM t), @stage2")
+        assert [ref.stage_name for ref in inner.stage_refs] == ["stage2"]
+
+        both = parse_sql("SELECT * FROM (SELECT * FROM @stage1), @stage2")
+        assert [ref.stage_name for ref in both.stage_refs] == ["stage1", "stage2"]
 
     # --- comments must not change the answer -----------------------------
 
@@ -438,7 +515,26 @@ class TestBareAndDirectoryStagesReachTranslation:
         assert "@stage1" not in translated, f"{sql!r} reached the engine untranslated"
         assert "FILES(" in translated
 
+    def test_every_stage_in_a_comma_list_is_rewritten(self):
+        """Both references must reach the engine as ``FILES(...)``.
+
+        The count assertion in the parser tests is not enough on its own: a
+        reference that parses but is never substituted still ships ``@stage2``
+        to StarRocks, where no such table exists. This runs the translation and
+        checks the text the engine would actually receive.
+        """
+        parsed = parse_sql("SELECT * FROM @stage1, @stage2")
+        translated, _ = translate_stage_query(
+            parsed, {"stage1": self._config("a"), "stage2": self._config("b")}
+        )
+
+        assert "@stage" not in translated, translated
+        assert translated.count("FILES(") == 2, translated
+        assert "s3://stages/a" in translated
+        assert "s3://stages/b" in translated
+
     def test_translation_builds_the_directory_path_for_a_bare_stage(self):
+
         """A bare stage names the prefix itself, not a file under it."""
         parsed = parse_sql("SELECT * FROM @stage1")
         translated, warnings = translate_stage_query(parsed, {"stage1": self._config()})
