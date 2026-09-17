@@ -453,6 +453,112 @@ class TestUserVariableSubstitution:
         assert result.substituted == []
         assert result.unknown == []
 
+
+class TestDollarInVariableNames:
+    """``$`` is legal inside a name on both sides of the session.
+
+    ``_ASSIGNMENT`` accepts it — ``SET @x$abc = 'V'`` stores the key
+    ``x$abc`` — so the read half has to accept it too. It is not decoration:
+    ``$`` is common in client-side names (``@col$sum``), and a reference regex
+    that stops before it both corrupts the statement and makes a stored variable
+    unreadable.
+    """
+
+    @staticmethod
+    def _session(**values: str) -> SessionState:
+        session = SessionState()
+        session.user_variables = dict(values)
+        return session
+
+    def test_a_dollar_name_is_not_split_into_a_prefix_substitution(self):
+        """The regression this class exists for.
+
+        Before the accept-set matched ``_ASSIGNMENT``, only ``@x`` was consumed,
+        so ``SELECT @x$abc`` became ``SELECT 'V'$abc`` — a different expression
+        sent to the engine with no error raised.
+        """
+        session = self._session(x="'V'")
+        result = substitute_user_variables("SELECT @x$abc", session)
+        assert result.sql == "SELECT @x$abc"
+        assert result.substituted == []
+
+    def test_a_dollar_name_is_never_partially_spliced(self):
+        """The failure mode: the value of ``@x`` landing before ``$abc``."""
+        session = self._session(x="'V'", x_="'W'")
+        result = substitute_user_variables("SELECT @x$abc", session)
+        assert "'V'$abc" not in result.sql
+        assert "'W'$abc" not in result.sql
+
+    def test_dollar_variable_round_trips_through_set(self):
+        """``SET @x$abc = 'V'; SELECT @x$abc`` reads back the stored value."""
+        session = SessionState()
+        handle_set_statement("SET @x$abc = 'V'", session)
+        assert session.user_variables["x$abc"] == "'V'"
+        result = substitute_user_variables("SELECT @x$abc", session)
+        assert result.sql == "SELECT 'V'"
+        assert result.substituted == ["x$abc"]
+        assert result.unknown == []
+
+    def test_dollar_variable_is_not_reported_under_the_truncated_name(self):
+        """A stored ``x$abc`` must not surface as an unset ``x``.
+
+        The old regex matched ``@x`` and reported ``x`` in ``unknown`` — the
+        wrong diagnosis for a variable the proxy itself had accepted.
+        """
+        session = SessionState()
+        handle_set_statement("SET @x$abc = 'DOLLAR_VAL'", session)
+        result = substitute_user_variables("SELECT @x$abc", session)
+        assert result.unknown == []
+        assert result.substituted == ["x$abc"]
+
+    def test_a_realistic_dollar_column_name_substitutes(self):
+        """``@col$sum`` is the shape QA cited as reachable in practice."""
+        session = self._session(**{"col$sum": "'AGG'"})
+        result = substitute_user_variables("SELECT @col$sum", session)
+        assert result.sql == "SELECT 'AGG'"
+        assert result.substituted == ["col$sum"]
+
+    def test_a_dollar_name_does_not_shadow_a_stage(self):
+        """Widening the name does not change which positions are stages."""
+        session = self._session(stage1="'CSV_FILE'")
+        for statement in (
+            "SELECT * FROM @stage1",
+            "LIST FILES @stage1",
+            "SELECT * FROM @stage1.data.csv",
+        ):
+            result = substitute_user_variables(statement, session)
+            assert result.sql == statement
+            assert result.substituted == []
+
+    def test_unset_dollar_name_is_left_for_the_engine(self):
+        """An unset ``@x$abc`` is reported whole, not as its ``@x`` prefix."""
+        session = SessionState()
+        result = substitute_user_variables("SELECT @x$abc", session)
+        assert result.sql == "SELECT @x$abc"
+        assert result.substituted == []
+        assert result.unknown == ["x$abc"]
+
+    def test_dollar_name_case_is_lowercased_like_any_other(self):
+        session = SessionState()
+        handle_set_statement("SET @X$Abc = 1", session)
+        result = substitute_user_variables("SELECT @x$abc", session)
+        assert result.sql == "SELECT 1"
+        assert result.substituted == ["x$abc"]
+
+
+class TestLiteralAndCommentSafety:
+    """Text that only looks like a reference must survive untouched.
+
+    Split out from ``TestUserVariableSubstitution`` so the tokenizer rules and
+    the ``$`` name rules are read separately.
+    """
+
+    @staticmethod
+    def _session(**values: str) -> SessionState:
+        session = SessionState()
+        session.user_variables = dict(values)
+        return session
+
     def test_escaped_quote_in_a_literal_does_not_end_the_literal(self):
         """A naive scanner would treat the ``\\'`` as the closing quote."""
         session = self._session(x="1")
