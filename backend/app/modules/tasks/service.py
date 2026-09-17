@@ -1,18 +1,17 @@
 """Task Manager service — submit, schedule, and monitor StarRocks tasks.
 
-Uses the asyncmy direct-connection pattern (root system connection) with
-try/finally for every operation, matching the stages service convention.
+Every method takes the caller's StarRocks ``asyncmy.Connection`` as its first
+argument. The connection is opened by ``get_user_connection`` in the dependency
+layer, so queries run **as the authenticated user** and the engine's own
+privilege filter applies. Nothing here holds or opens a root connection.
 """
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
-
-import asyncmy
-import asyncmy.cursors
-
-from app.core.config import settings
+from typing import Any, Protocol
 
 from .schemas import (
     TaskResponse,
@@ -22,21 +21,44 @@ from .schemas import (
 log = logging.getLogger(__name__)
 
 
+class TaskCursor(Protocol):
+    """The slice of asyncmy's cursor surface the service actually uses."""
+
+    async def __aenter__(self) -> TaskCursor: ...
+    async def __aexit__(self, *exc_info: Any) -> None: ...
+    async def execute(self, sql: str, params: Any = None) -> None: ...
+    async def fetchall(self) -> list[dict]: ...
+    async def fetchone(self) -> dict | None: ...
+
+
+class TaskConnection(Protocol):
+    """A StarRocks connection supplying cursors.
+
+    Structural typing keeps mypy happy without asyncmy stubs and, more
+    importantly, documents the injection contract: the service needs *a*
+    connection, not specifically a root one.
+    """
+
+    def cursor(self, cursor_class: Any = None) -> TaskCursor: ...
+
+
+def _dict_cursor(conn: TaskConnection) -> TaskCursor:
+    """Open a row-as-dict cursor on *conn*.
+
+    Real asyncmy connections must be told to return mappings. ``asyncmy`` ships
+    no stubs, so the import is hidden from mypy via ``importlib`` while the
+    service keeps the runtime behaviour the previous implementation had.
+    """
+    dict_cursor = importlib.import_module("asyncmy.cursors").DictCursor
+    return conn.cursor(dict_cursor)
+
+
 class TaskService:
-    """Business logic for StarRocks task management."""
+    """Business logic for StarRocks task management.
 
-    # ── DB helpers ──────────────────────────────────────────────
-
-    @staticmethod
-    async def _connect() -> asyncmy.Connection:
-        """Create a direct asyncmy connection to StarRocks (system admin)."""
-        return await asyncmy.connect(
-            host=settings.STARROCKS_HOST,
-            port=settings.STARROCKS_FE_MYSQL_PORT,
-            user=settings.STARROCKS_ROOT_USER,
-            password=settings.STARROCKS_ROOT_PASSWORD,
-            autocommit=True,
-        )
+    Stateless by construction: the connection is injected per call, so the
+    singleton never pins a connection (and never a root one).
+    """
 
     # ── Helpers ─────────────────────────────────────────────────
 
@@ -83,34 +105,28 @@ class TaskService:
 
     # ── Task CRUD ───────────────────────────────────────────────
 
-    async def list_tasks(self) -> list[TaskResponse]:
-        """List all tasks from information_schema.tasks."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute("SELECT * FROM information_schema.tasks")
-                rows = await cur.fetchall()
-                return [self._row_to_task(r) for r in rows]
-        finally:
-            conn.close()
+    async def list_tasks(self, conn: TaskConnection) -> list[TaskResponse]:
+        """List tasks visible to the connection's user."""
+        async with _dict_cursor(conn) as cur:
+            await cur.execute("SELECT * FROM information_schema.tasks")
+            rows = await cur.fetchall()
+            return [self._row_to_task(r) for r in rows]
 
-    async def get_task(self, name: str) -> TaskResponse | None:
-        """Get a single task by name."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT * FROM information_schema.tasks "
-                    "WHERE TASK_NAME = %s",
-                    (name,),
-                )
-                row = await cur.fetchone()
-                return self._row_to_task(row) if row else None
-        finally:
-            conn.close()
+    async def get_task(
+        self, conn: TaskConnection, name: str
+    ) -> TaskResponse | None:
+        """Get a single task by name, if the caller can see it."""
+        async with _dict_cursor(conn) as cur:
+            await cur.execute(
+                "SELECT * FROM information_schema.tasks "
+                "WHERE TASK_NAME = %s",
+                (name,),
+            )
+            row = await cur.fetchone()
+            return self._row_to_task(row) if row else None
 
-    async def create_task(self, data: dict) -> dict:
-        """Build and execute a SUBMIT TASK statement.
+    async def create_task(self, conn: TaskConnection, data: dict) -> dict:
+        """Build and execute a SUBMIT TASK statement on the caller's connection.
 
         Scheduling variants:
           - One-shot:  ``SUBMIT TASK name AS sql;``
@@ -155,74 +171,56 @@ class TaskService:
         parts.append(f"AS {sql}")
 
         submit_sql = " ".join(parts)
-        log.info("Submitting task: %s", submit_sql)
+        # The statement carries the body SQL, never a credential; log the task
+        # name only so credentials in a body can never reach the log.
+        log.info("Submitting task %s", name)
 
-        conn = await self._connect()
         try:
             async with conn.cursor() as cur:
                 await cur.execute(submit_sql)
-            return {"success": True, "task_name": name, "sql": submit_sql}
         except Exception as exc:
-            log.error("SUBMIT TASK failed: %s", exc)
+            log.error("SUBMIT TASK %s failed: %s", name, exc)
             raise
-        finally:
-            conn.close()
+        return {"success": True, "task_name": name, "sql": submit_sql}
 
-    async def suspend_task(self, name: str) -> dict:
+    async def suspend_task(self, conn: TaskConnection, name: str) -> dict:
         """Suspend (pause) a running periodic task."""
-        alter_sql = f"ALTER TASK `{name}` SUSPEND"
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(alter_sql)
-            return {"success": True, "task_name": name, "action": "suspended"}
-        finally:
-            conn.close()
+        async with conn.cursor() as cur:
+            await cur.execute(f"ALTER TASK `{name}` SUSPEND")
+        return {"success": True, "task_name": name, "action": "suspended"}
 
-    async def resume_task(self, name: str) -> dict:
+    async def resume_task(self, conn: TaskConnection, name: str) -> dict:
         """Resume a suspended periodic task."""
-        alter_sql = f"ALTER TASK `{name}` RESUME"
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(alter_sql)
-            return {"success": True, "task_name": name, "action": "resumed"}
-        finally:
-            conn.close()
+        async with conn.cursor() as cur:
+            await cur.execute(f"ALTER TASK `{name}` RESUME")
+        return {"success": True, "task_name": name, "action": "resumed"}
 
-    async def drop_task(self, name: str, force: bool = False) -> dict:
+    async def drop_task(self, conn: TaskConnection, name: str, force: bool = False) -> dict:
         """Drop a task.  When *force* is True, uses IF EXISTS + FORCE."""
-        if force:
-            drop_sql = f"DROP TASK IF EXISTS `{name}` FORCE"
-        else:
-            drop_sql = f"DROP TASK `{name}`"
+        drop_sql = (
+            f"DROP TASK IF EXISTS `{name}` FORCE" if force else f"DROP TASK `{name}`"
+        )
 
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(drop_sql)
-            return {"success": True, "task_name": name, "action": "dropped"}
-        finally:
-            conn.close()
+        async with conn.cursor() as cur:
+            await cur.execute(drop_sql)
+        return {"success": True, "task_name": name, "action": "dropped"}
 
     # ── Task runs ───────────────────────────────────────────────
 
-    async def list_task_runs(self, task_name: str) -> list[TaskRunResponse]:
-        """List runs for a task from information_schema.task_runs."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT * FROM information_schema.task_runs "
-                    "WHERE TASK_NAME = %s "
-                    "ORDER BY CREATE_TIME DESC",
-                    (task_name,),
-                )
-                rows = await cur.fetchall()
-                return [self._row_to_run(r) for r in rows]
-        finally:
-            conn.close()
+    async def list_task_runs(
+        self, conn: TaskConnection, task_name: str
+    ) -> list[TaskRunResponse]:
+        """List runs for a task visible to the caller."""
+        async with _dict_cursor(conn) as cur:
+            await cur.execute(
+                "SELECT * FROM information_schema.task_runs "
+                "WHERE TASK_NAME = %s "
+                "ORDER BY CREATE_TIME DESC",
+                (task_name,),
+            )
+            rows = await cur.fetchall()
+            return [self._row_to_run(r) for r in rows]
 
 
-# Singleton
+# Singleton — holds no connection; every call receives one.
 task_service = TaskService()

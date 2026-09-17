@@ -219,26 +219,29 @@ them in `CREATOR` (verified). This makes the correct design the cheap one:
   never a token. The `Credential-Invisible` invariant is untouched.
 
 **The pre-existing defect this depends on fixing.** `TaskService._connect()`
-(`backend/app/modules/tasks/service.py:32-38`) opens a **root** connection, and the
-router passes only `get_current_user` for authentication
-(`backend/app/modules/tasks/router.py:38,51`) — the caller is never threaded into
-the query. The result is that `GET /tasks` returns every task to every signed-in
+(`backend/app/modules/tasks/service.py:32-38`) opened a **root** connection, and the
+router passed only `get_current_user` for authentication
+(`backend/app/modules/tasks/router.py:38,51`) — the caller was never threaded into
+the query. The result was that `GET /tasks` returned every task to every signed-in
 user, even though the engine would have filtered them. Verified: a user with no
-grants sees an empty `information_schema.tasks`; the endpoint does not.
+grants sees an empty `information_schema.tasks`; the endpoint did not.
 
-This is not a StarRocks limitation — it is a bug, and it sits directly in the path
-Phase 9 builds on. It is fixed here (D9.8) using the pattern `users` and
-`resource_groups` already use: `get_user_connection`
-(`backend/app/core/deps.py:75`).
+**Fixed in 9a-2 (NOVA-34).** There is no `_connect()` left: every `TaskService`
+method takes an injected connection as its first argument, and the router supplies
+it with `get_user_connection` (`backend/app/core/deps.py`). `get_user_connection`
+itself was corrected — it awaited the `@asynccontextmanager` factory
+`db.user_conn` instead of entering it with `async with`. The end-to-end RBAC test
+(`backend/tests/integration/test_tasks_rbac_connection.py`) fails on the old code
+(a low-privilege user sees the privileged user's task) and passes on the new.
 
-**Effort is M, not S — worth stating plainly.** It is not a one-line swap of the
-connection helper. `TaskService` opens its **own** connection per operation via
-`_connect()`, so every method has to change shape to accept a connection injected by
-the dependency layer. That refactor is the cost, and it is the reason to do it now
-rather than later: once `create_task` runs on the caller's connection, Nova inherits
-the engine's RBAC behaviour with **no additional authorization logic to write or
-maintain**. The clean-architecture win is that a whole class of future defects
-disappears by deletion, not by adding guards.
+**Effort was M, not S — worth stating plainly.** It was not a one-line swap of the
+connection helper. `TaskService` opened its **own** connection per operation via
+`_connect()`, so every method had to change shape to accept an injected connection —
+and the injected connection had to actually work. That refactor is the cost, and it
+is the reason to do it now rather than later: once `create_task` runs on the caller's
+connection, Nova inherits the engine's RBAC behaviour with **no additional
+authorization logic to write or maintain**. The clean-architecture win is that a
+whole class of future defects disappears by deletion, not by adding guards.
 
 ---
 
