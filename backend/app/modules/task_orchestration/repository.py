@@ -31,6 +31,62 @@ _TASK_RUN_COLUMNS = (
     "error_message, started_at, finished_at"
 )
 
+# Edges store task *names* (parent_task/child_task), not ids, so graph membership
+# is resolved by name.
+_UPDATABLE_COLUMNS: dict[str, frozenset[str]] = {
+    "task": frozenset(
+        {
+            "name",
+            "database_name",
+            "definition",
+            "schedule_kind",
+            "schedule_expr",
+            "timezone",
+            "when_expr",
+            "overlap_policy",
+            "owner_role",
+        }
+    ),
+    "edge": frozenset({"parent_task", "child_task"}),
+    "graph_run": frozenset({"trigger_type", "state", "wal_marks", "finished_at"}),
+    "task_run": frozenset(
+        {
+            "attempt",
+            "state",
+            "delegated",
+            "starrocks_query_id",
+            "error_message",
+            "finished_at",
+        }
+    ),
+}
+
+
+class UnknownUpdateColumnError(ValueError):
+    """Raised when an update payload names a column outside the whitelist."""
+
+
+def _assignments(entity: str, data: dict[str, Any]) -> tuple[str, list[Any]]:
+    """Build a parameterized SET clause from whitelisted columns only.
+
+    The keys are validated against ``_UPDATABLE_COLUMNS`` before interpolation —
+    values were already parameterized, but raw keys in a SET clause are an
+    injection surface the moment an API exposes these methods.
+    """
+    if not data:
+        raise ValueError(f"no fields to update for {entity}")
+
+    allowed = _UPDATABLE_COLUMNS[entity]
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        raise UnknownUpdateColumnError(
+            f"cannot update {entity} column(s): {', '.join(unknown)}; "
+            f"allowed: {', '.join(sorted(allowed))}"
+        )
+
+    clause = ", ".join(f"{key} = %s" for key in data)
+    return clause, list(data.values())
+
 
 class TaskOrchestrationRepository:
     """CRUD over the four ``CONFIG_TASK*`` tables."""
@@ -103,19 +159,22 @@ class TaskOrchestrationRepository:
         else:
             sql = (
                 f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
-                "WHERE id IN (SELECT task_id FROM NOVA_SYSTEM.CONFIG_TASK_EDGES "
-                "WHERE graph_id = %s) ORDER BY name"
+                "WHERE name IN ("
+                f"  SELECT parent_task FROM {_EDGES} WHERE graph_id = %s "
+                "   UNION "
+                f"  SELECT child_task FROM {_EDGES} WHERE graph_id = %s"
+                ") ORDER BY name"
             )
-            params = [graph_id]
+            params = [graph_id, graph_id]
         result = await db.execute_system(sql, params)
         return [self._to_dict(_TASK_COLUMNS, row) for row in result["rows"]]
 
     async def update_task(self, task_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        assignments = ", ".join(f"{key} = %s" for key in data)
+        assignments, values = _assignments("task", data)
         await db.execute_system(
             f"UPDATE {_TASKS} SET {assignments}, version = version + 1, updated_at = NOW() "
             "WHERE id = %s",
-            [*data.values(), task_id],
+            [*values, task_id],
         )
         return await self.get_task(task_id)
 
@@ -156,10 +215,10 @@ class TaskOrchestrationRepository:
         return [self._to_dict(_EDGE_COLUMNS, row) for row in result["rows"]]
 
     async def update_edge(self, edge_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        assignments = ", ".join(f"{key} = %s" for key in data)
+        assignments, values = _assignments("edge", data)
         await db.execute_system(
             f"UPDATE {_EDGES} SET {assignments} WHERE id = %s",
-            [*data.values(), edge_id],
+            [*values, edge_id],
         )
         return await self.get_edge(edge_id)
 
@@ -216,10 +275,10 @@ class TaskOrchestrationRepository:
         payload = dict(data)
         if "wal_marks" in payload:
             payload["wal_marks"] = self._encode_wal_marks(payload["wal_marks"])
-        assignments = ", ".join(f"{key} = %s" for key in payload)
+        assignments, values = _assignments("graph_run", payload)
         await db.execute_system(
             f"UPDATE {_GRAPH_RUNS} SET {assignments} WHERE id = %s",
-            [*payload.values(), run_id],
+            [*values, run_id],
         )
         return await self.get_graph_run(run_id)
 
@@ -274,10 +333,10 @@ class TaskOrchestrationRepository:
     async def update_task_run(
         self, run_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        assignments = ", ".join(f"{key} = %s" for key in data)
+        assignments, values = _assignments("task_run", data)
         await db.execute_system(
             f"UPDATE {_TASK_RUNS} SET {assignments} WHERE id = %s",
-            [*data.values(), run_id],
+            [*values, run_id],
         )
         return await self.get_task_run(run_id)
 

@@ -177,9 +177,15 @@ All four live in `NOVA_SYSTEM` as Primary-Key (CRUD) tables, following the flat
 - **Timezones are explicit IANA.** The engine's `SCHEDULE START` literals use the
   session timezone, so Nova never assumes UTC — every task carries its own `timezone`.
 - **Edges are rows, not a CSV.** Multi-parent graphs and cycle checks become plain
-  queries instead of string surgery.
+  queries instead of string surgery. Edges store task **names**
+  (`parent_task`/`child_task`) — not ids — so graph membership is resolved by name,
+  and a task belongs to a graph when it is either endpoint of an edge.
 - **DAG limits** (validated in pure code, no I/O): acyclic, ≤ 1000 nodes, ≤ 100
   parents and ≤ 100 children per task.
+- **Writes are column-whitelisted.** `update_*` validates payload keys against a
+  per-entity whitelist before building the `SET` clause, so an unknown or
+  injection-shaped key is rejected rather than spliced into SQL. Empty payloads are
+  rejected too.
 
 ### Module layout
 

@@ -12,6 +12,8 @@ import inspect
 import json
 import re
 
+import pytest
+
 from app.common.nova_system import TASK_ORCHESTRATION_DDL
 from app.modules.task_orchestration import repository as repo
 
@@ -81,3 +83,28 @@ class TestRepositoryNeverSelectsCredentialColumns:
         assert decode("[1,2]") is None
         assert decode(None) is None
         assert decode('{"p1": 3}') == {"p1": 3}
+
+
+class TestUpdateColumnWhitelist:
+    """The SET clause interpolates keys, so keys must be validated before writing."""
+
+    def test_accepts_whitelisted_columns(self):
+        clause, values = repo._assignments("task", {"name": "x", "timezone": "UTC"})
+        assert clause == "name = %s, timezone = %s"
+        assert values == ["x", "UTC"]
+
+    def test_rejects_unknown_column(self):
+        with pytest.raises(repo.UnknownUpdateColumnError):
+            repo._assignments("task", {"name": "x", "password": "leak"})
+
+    def test_rejects_injection_shaped_key(self):
+        with pytest.raises(repo.UnknownUpdateColumnError):
+            repo._assignments("task", {"version = 0 WHERE 1=1 --": "boom"})
+
+    def test_rejects_empty_payload(self):
+        with pytest.raises(ValueError):
+            repo._assignments("edge", {})
+
+    def test_every_entity_whitelist_is_non_empty(self):
+        for entity, allowed in repo._UPDATABLE_COLUMNS.items():
+            assert allowed, entity

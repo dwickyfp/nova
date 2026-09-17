@@ -23,12 +23,18 @@ import os
 from uuid import uuid4
 
 import asyncmy
+import pytest
 import pytest_asyncio
 
 from app.common.nova_system import TASK_ORCHESTRATION_DDL
 from app.core.config import settings
 from app.core.database import db
-from app.modules.task_orchestration.repository import task_orchestration_repository as repo
+from app.modules.task_orchestration.repository import (
+    UnknownUpdateColumnError,
+)
+from app.modules.task_orchestration.repository import (
+    task_orchestration_repository as repo,
+)
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
@@ -76,12 +82,8 @@ async def orchestration_db(request):
     if _USE_SHARED_STACK and "docker_services" in request.fixturenames:
         request.getfixturevalue("docker_services")
     if not await _reachable():
-        import pytest
-
         pytest.skip("StarRocks not reachable")
     if not await _has_live_backend():
-        import pytest
-
         pytest.skip("StarRocks FE is up but has no live backend; cannot run DDL")
 
     settings.STARROCKS_HOST = SR_HOST
@@ -242,6 +244,104 @@ class TestRepositoryCrud:
         assert len(await repo.list_task_runs(graph_run_id)) == 1
         assert await repo.delete_task_run(created["id"]) is True
         assert await repo.get_task_run(created["id"]) is None
+
+
+class TestListTasksByGraph:
+    async def test_returns_only_member_tasks_by_name(self, orchestration_db):
+        """Regression: list_tasks(graph_id) previously referenced a nonexistent
+        ``task_id`` column on CONFIG_TASK_EDGES and crashed on every call.
+
+        Edges store task *names*, and a task is a member if it is either endpoint.
+        """
+        await _ensure_ddl()
+        graph_id = f"g_{uuid4().hex[:8]}"
+        suffix = uuid4().hex[:8]
+        member_a = f"a_{suffix}"
+        member_b = f"b_{suffix}"
+        member_c = f"c_{suffix}"
+        outsider = f"z_{suffix}"
+
+        for name in (member_a, member_b, member_c, outsider):
+            await repo.create_task(
+                {"name": name, "timezone": "UTC"}, created_by="alice"
+            )
+        edges = [
+            await repo.create_edge(graph_id, {"parent_task": member_a, "child_task": member_b}),
+            await repo.create_edge(graph_id, {"parent_task": member_b, "child_task": member_c}),
+        ]
+
+        members = await repo.list_tasks(graph_id)
+        assert {t["name"] for t in members} == {member_a, member_b, member_c}
+        assert all(t["id"] for t in members)
+        assert outsider not in {t["name"] for t in members}
+
+        for edge in edges:
+            await repo.delete_edge(edge["id"])
+        for name in (member_a, member_b, member_c, outsider):
+            tasks = [t for t in await repo.list_tasks() if t["name"] == name]
+            for task in tasks:
+                await repo.delete_task(task["id"])
+
+    async def test_unknown_graph_returns_empty_list_not_error(self, orchestration_db):
+        await _ensure_ddl()
+        assert await repo.list_tasks(f"missing_{uuid4().hex[:8]}") == []
+
+    async def test_list_tasks_without_graph_returns_all(self, orchestration_db):
+        await _ensure_ddl()
+        suffix = uuid4().hex[:8]
+        created = await repo.create_task(
+            {"name": f"all_{suffix}", "timezone": "UTC"}, created_by="alice"
+        )
+        names = {t["name"] for t in await repo.list_tasks()}
+        assert f"all_{suffix}" in names
+        await repo.delete_task(created["id"])
+
+
+class TestUpdateColumnWhitelist:
+    async def test_update_task_rejects_unknown_column(self, orchestration_db):
+        await _ensure_ddl()
+        created = await repo.create_task(
+            {"name": f"guard_{uuid4().hex[:8]}", "timezone": "UTC"}, created_by="alice"
+        )
+        with pytest.raises(UnknownUpdateColumnError, match="cannot update task"):
+            await repo.update_task(created["id"], {"id = 1, name": "boom"})
+        with pytest.raises(UnknownUpdateColumnError):
+            await repo.update_task(created["id"], {"version": 99})
+        await repo.delete_task(created["id"])
+
+    async def test_update_task_rejects_empty_payload(self, orchestration_db):
+        await _ensure_ddl()
+        created = await repo.create_task(
+            {"name": f"empty_{uuid4().hex[:8]}", "timezone": "UTC"}, created_by="alice"
+        )
+        with pytest.raises(ValueError, match="no fields to update"):
+            await repo.update_task(created["id"], {})
+        await repo.delete_task(created["id"])
+
+    async def test_update_edge_rejects_unknown_column(self, orchestration_db):
+        await _ensure_ddl()
+        edge = await repo.create_edge(
+            f"g_{uuid4().hex[:8]}", {"parent_task": "A", "child_task": "B"}
+        )
+        with pytest.raises(UnknownUpdateColumnError):
+            await repo.update_edge(edge["id"], {"graph_id": "other"})
+        await repo.delete_edge(edge["id"])
+
+    async def test_update_graph_run_rejects_unknown_column(self, orchestration_db):
+        await _ensure_ddl()
+        run = await repo.create_graph_run({"graph_id": f"g_{uuid4().hex[:8]}"})
+        with pytest.raises(UnknownUpdateColumnError):
+            await repo.update_graph_run(run["id"], {"graph_id": "other"})
+        await repo.delete_graph_run(run["id"])
+
+    async def test_update_task_run_rejects_unknown_column(self, orchestration_db):
+        await _ensure_ddl()
+        run = await repo.create_task_run(
+            {"graph_run_id": f"gr_{uuid4().hex[:8]}", "task_id": "t1"}
+        )
+        with pytest.raises(UnknownUpdateColumnError):
+            await repo.update_task_run(run["id"], {"graph_run_id": "other"})
+        await repo.delete_task_run(run["id"])
 
 
 class TestWalMarksRoundTrip:
