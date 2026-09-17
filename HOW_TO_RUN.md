@@ -349,11 +349,23 @@ diperluas. Setiap pass melakukan dua hal, berurutan:
    - menandai node yang **jejak native-nya hilang** sebagai `abandoned` — state
      eksplisit, **bukan** sukses. Ini kasus task yang berjalan saat FE mati:
      barisnya hilang dari `task_runs` tanpa jejak;
+   - mengabaikan baris native yang `CREATE_TIME`-nya lebih tua dari
+     `started_at` node — baris sisa attempt sebelumnya tidak boleh mem-failkan
+     node yang masih in-flight di worker lain;
    - membaca config FE lewat `ADMIN SHOW FRONTEND CONFIG LIKE '%task%'` (bukan
-     `SHOW VARIABLES`) untuk `max_task_consecutive_fail_count`;
-   - men-surface **auto-pause** (task berhenti otomatis setelah 10 kegagalan
-     beruntun) ke `NOVA_SYSTEM.AUDIT_LOG` dengan action
-     `TASK_AUTO_PAUSE_SUSPECTED`, supaya DAG tidak menggantung diam-diam.
+     `SHOW VARIABLES`) untuk `max_task_consecutive_fail_count`, dan
+     `information_schema.tasks.SCHEDULE` untuk marker pause/suspend;
+   - men-surface **auto-pause hanya pada ambang yang benar** ke
+     `NOVA_SYSTEM.AUDIT_LOG` dengan action `TASK_AUTO_PAUSE_SUSPECTED`, supaya
+     DAG tidak menggantung diam-diam. Ambang dipenuhi bila:
+     - Nova menghitung **10 kegagalan beruntun** (kolom persisten
+       `CONFIG_TASKS.consecutive_fail_count`, di-reset ke 0 tiap sukses) — atau
+       jumlah yang dilaporkan engine di `ERROR_MESSAGE`; **atau**
+     - `SCHEDULE` native menunjukkan marker `PAUSE`/`SUSPEND`.
+
+     Kegagalan tunggal **tidak** memicu alarm auto-pause; kegagalan biasa
+     hanya tercatat sebagai `NODE_FAILED`. Ini mencegah alarm fatigue yang
+     membuat sinyal auto-pause asli tak terbedakan (NOVA-42).
 2. **Re-enqueue delivery yang hilang** (Redis flush / worker mati).
 
 Bila engine tidak tersedia, pembacaan mengembalikan `UNKNOWN` dan **tidak**

@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASKS (
     overlap_policy VARCHAR(32),
     owner_role     VARCHAR(128),
     created_by     VARCHAR(128),
+    consecutive_fail_count INT DEFAULT "0",
     version        BIGINT DEFAULT "1",
     created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -105,6 +106,11 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("CONFIG_TASK_RUNS", "heartbeat_at", "DATETIME"),
     ("CONFIG_TASK_GRAPH_RUNS", "heartbeat_at", "DATETIME"),
+    # Nova's own consecutive-failure counter. The engine auto-pauses a task
+    # after ``max_task_consecutive_fail_count`` consecutive failures but does
+    # not expose the count, so Nova keeps its own to detect the threshold
+    # (NOVA-37 AC #3). Reset to 0 on a successful run.
+    ("CONFIG_TASKS", "consecutive_fail_count", "INT DEFAULT \"0\""),
 )
 
 
