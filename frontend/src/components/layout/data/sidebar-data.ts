@@ -12,6 +12,7 @@ import {
   Users,
   Zap,
   Activity,
+  FunctionSquare,
   Workflow,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
@@ -50,6 +51,11 @@ export const sidebarData: SidebarData = {
           title: 'ML Models',
           url: '/ml-models',
           icon: Brain,
+        },
+        {
+          title: 'Functions',
+          url: '/functions',
+          icon: FunctionSquare,
         },
       ],
     },

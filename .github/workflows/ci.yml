@@ -15,6 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The diff-scoped ruff step below diffs against the base SHA, which
+          # `fetch-depth: 1` does not contain. Without the full history that
+          # diff fails with "bad object <sha>" and the step used to treat the
+          # failure as "no changed files" and pass — the blocking check never
+          # ran on any PR.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -29,7 +36,7 @@ jobs:
         working-directory: backend
         run: uv run ruff check . || true
 
-      # Blocking, diff-scoped. `main` carries a 483-error ruff baseline that
+      # Blocking, diff-scoped. `main` carries a large ruff baseline that
       # predates this gate; making it blocking outright would fail on day one
       # for debt this workstream did not create. New and changed Python files
       # must be clean, and the baseline is burned down separately.
@@ -40,6 +47,13 @@ jobs:
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
             echo "no base revision; skipping diff-scoped lint"
             exit 0
+          fi
+          # A failed diff must NOT be read as "nothing changed": that is how
+          # this check silently passed before. `set -e` plus an explicit
+          # existence check keeps a broken comparison loud.
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "::error::base revision $BASE is not in the checkout; the diff-scoped lint cannot run (fetch-depth must include it)"
+            exit 1
           fi
           CHANGED=$(git diff --name-only --diff-filter=ACMR "$BASE" HEAD -- '*.py' | sed 's|^backend/||')
           if [ -z "$CHANGED" ]; then
