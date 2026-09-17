@@ -106,12 +106,42 @@ jobs:
         working-directory: backend
         run: uv sync --locked
 
+      # The proxy acceptance suite self-gates on a local `mysql:8.0` image
+      # (test_mysql_proxy_cli.py:50-62) because it runs a *real* client against
+      # the proxy. Without this the whole module skips, which is the vacuous
+      # state this job exists to catch.
+      - name: Pull the MySQL client image
+        run: docker pull mysql:8.0
+
       - name: Start the real engine stack
         working-directory: backend
         run: docker compose -f docker-compose.test.yml up -d --wait
 
+      # The suite assumes a populated environment and provisions none of it.
+      # Same script a developer runs locally; see its header.
+      - name: Seed the engine for the acceptance suite
+        working-directory: backend
+        run: bash tests/integration/seed_engine.sh
+
       - name: Run integration suite against real StarRocks/Redis/MinIO
         working-directory: backend
+        env:
+          # The engine is reached through the compose file's published ports,
+          # not the app's localhost defaults (9030/6379/9000 all differ).
+          # `engine_reachable` reads settings.STARROCKS_HOST/PORT and the proxy
+          # calls db.init_system_pool() with the same values, so these have to
+          # match docker-compose.test.yml.
+          STARROCKS_HOST: 127.0.0.1
+          STARROCKS_FE_MYSQL_PORT: "29030"
+          REDIS_URL: redis://127.0.0.1:26379/0
+          S3_ENDPOINT: http://127.0.0.1:29000
+          # The suite runs a MySQL client container per query. Host networking
+          # lets it reach the proxy bound in the pytest process at
+          # 127.0.0.1:<ephemeral>, so no compose network name and no
+          # host.docker.internal (injected by Docker Desktop, absent on the
+          # runner's Engine) has to be involved.
+          NOVA_PROXY_E2E_NETWORK: host
+          NOVA_PROXY_E2E_HOST: 127.0.0.1
         run: |
           # Three distinct states, and only one of them is a pass:
           #
