@@ -151,7 +151,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+        # No `cache: pnpm`: it requires a committed pnpm-lock.yaml, and
+        # frontend/pnpm-lock.yaml is gitignored (.gitignore:51). Until the
+        # lockfile is committed (see PR description), the dependency graph is
+        # resolved fresh on every run and there is nothing stable to key a
+        # cache on.
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
