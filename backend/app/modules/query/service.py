@@ -14,6 +14,8 @@ import json
 import re
 import time
 
+import asyncmy
+
 from app.common.audit import write_audit_log
 from app.common.sql_guard import (
     guard_sql,
@@ -62,6 +64,7 @@ class QueryService:
         session_id: str | None = None,
         confirm_destructive: bool = False,
         file_id: str | None = None,
+        connection: asyncmy.Connection | None = None,
     ) -> QueryResult:
         """Execute SQL with full @stage dialect pipeline.
 
@@ -166,7 +169,14 @@ class QueryService:
                     executed_sql = re.sub(r"FILES\(([^)]+)\)", _inject, executed_sql)
 
         # 5. Execute
-        password = decrypt_password(encrypted_password)
+        #
+        # ``connection`` is an already-authenticated engine session supplied by
+        # the MySQL proxy, which relays StarRocks' own challenge and therefore
+        # never holds a password (see ``app/proxy/auth.py``). Only the
+        # connection-opening path needs the plaintext, so the decrypt is skipped
+        # when one was injected — otherwise an empty ``encrypted_password``
+        # would raise ``InvalidToken`` before the statement ever ran.
+        password = "" if connection is not None else decrypt_password(encrypted_password)
 
         # The statement sent to the engine carries real storage credentials —
         # that is unavoidable, FILES() needs them. Everything derived from it
@@ -187,6 +197,7 @@ class QueryService:
                 database=database,
                 role=role,
                 max_rows=max_rows,
+                connected=connection,
             )
             result.original_sql = sql
             result.executed_sql = redacted_sql
@@ -244,6 +255,7 @@ class QueryService:
         session_id: str | None = None,
         confirm_destructive: bool = False,
         file_id: str | None = None,
+        connection: asyncmy.Connection | None = None,
     ) -> list[QueryResult]:
         """Split SQL into statements and execute each sequentially.
 
@@ -267,6 +279,7 @@ class QueryService:
                     session_id=session_id,
                     confirm_destructive=confirm_destructive,
                     file_id=file_id,
+                    connection=connection,
                 )
                 results.append(result)
             except Exception as exc:

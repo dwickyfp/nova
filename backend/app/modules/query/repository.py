@@ -11,6 +11,8 @@ which ``executed_sql`` can enter a ``QueryResult``, so no future code path —
 method, router or helper — can forget it.
 """
 
+from __future__ import annotations
+
 import time
 from dataclasses import dataclass, field
 
@@ -128,43 +130,85 @@ class QueryRepository:
         database: str | None = None,
         role: str | None = None,
         max_rows: int | None = None,
+        connected: asyncmy.Connection | None = None,
     ) -> QueryResult:
-        """Execute SQL as an authenticated user (RBAC-respecting)."""
+        """Execute SQL as an authenticated user (RBAC-respecting).
+
+        ``connected`` lets a caller supply a connection that is **already
+        authenticated** instead of one this method opens from ``username`` and
+        ``password``. The MySQL proxy needs this: it authenticates by relaying
+        StarRocks' own challenge (see ``app/proxy/auth.py``), so it holds a live
+        authenticated socket and never a plaintext password to hand this
+        method. Nothing else changes — the statement still runs as the user
+        whose credentials opened the connection, so RBAC is whatever StarRocks
+        granted that session.
+
+        ``database`` applies either way. When this method opens the connection
+        it is a connect parameter; on a supplied connection it is selected with
+        ``select_db`` first, so a caller that tracks the database itself (the
+        proxy does, from ``USE`` and the client handshake) still gets
+        ``DATABASE()``, unqualified table names and ``SHOW TABLES`` resolved
+        against it.
+        """
         start = time.monotonic()
+        if connected is not None:
+            if database:
+                await connected.select_db(database)
+            return await self._execute_on(
+                connected, sql, role=role, max_rows=max_rows, start=start
+            )
         try:
             async with db.user_conn(
                 username=username,
                 password=password,
                 database=database,
             ) as conn:
-                async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                    if role:
-                        await self._set_role(cur, role)
-                    await cur.execute(sql)
-                    elapsed = (time.monotonic() - start) * 1000
-
-                    if cur.description:
-                        columns = [desc[0] for desc in cur.description]
-                        raw_rows = (
-                            await cur.fetchmany(max_rows) if max_rows else await cur.fetchall()
-                        )
-                        rows = [list(r.values()) for r in raw_rows]
-                        return QueryResult(
-                            columns=columns,
-                            rows=rows,
-                            row_count=len(rows),
-                            elapsed_ms=round(elapsed, 2),
-                            executed_sql=sql,
-                        )
-                    return QueryResult(
-                        affected_rows=cur.rowcount,
-                        elapsed_ms=round(elapsed, 2),
-                        executed_sql=sql,
-                    )
+                return await self._execute_on(
+                    conn, sql, role=role, max_rows=max_rows, start=start
+                )
         except asyncmy.errors.OperationalError as e:
             raise StarRocksError(f"Connection error: {e}")
         except asyncmy.errors.ProgrammingError as e:
             raise StarRocksError(f"SQL error: {e}")
+
+    @staticmethod
+    async def _execute_on(
+        conn: asyncmy.Connection,
+        sql: str,
+        *,
+        role: str | None,
+        max_rows: int | None,
+        start: float,
+    ) -> QueryResult:
+        try:
+            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
+                if role:
+                    await cur.execute(f"SET ROLE {role.replace('`', '').replace(chr(39), '')}")
+                await cur.execute(sql)
+                elapsed = (time.monotonic() - start) * 1000
+
+                if cur.description:
+                    columns = [desc[0] for desc in cur.description]
+                    raw_rows = (
+                        await cur.fetchmany(max_rows) if max_rows else await cur.fetchall()
+                    )
+                    rows = [list(r.values()) for r in raw_rows]
+                    return QueryResult(
+                        columns=columns,
+                        rows=rows,
+                        row_count=len(rows),
+                        elapsed_ms=round(elapsed, 2),
+                        executed_sql=sql,
+                    )
+                return QueryResult(
+                    affected_rows=cur.rowcount,
+                    elapsed_ms=round(elapsed, 2),
+                    executed_sql=sql,
+                )
+        except asyncmy.errors.OperationalError as e:
+            raise StarRocksError(f"Connection error: {e}") from e
+        except asyncmy.errors.ProgrammingError as e:
+            raise StarRocksError(f"SQL error: {e}") from e
 
     @staticmethod
     async def _set_role(cur: asyncmy.cursors.DictCursor, role: str) -> None:
