@@ -28,11 +28,12 @@
   --success: #14a89a;
   --danger: var(--destructive);
 
-  /* AA-safe as text on --background in this mode. Base --warning/--info stay
-     usable as fills; these carry the readable-text role. */
-  --warning-strong: #a06b11;
-  --info-strong: #466fcd;
-  --success-strong: #108478;
+  /* AA-safe as text in this mode, on --background, on the matching /10 tint,
+     and on --accent. Base --warning/--info stay usable as fills; these carry
+     the readable-text role. */
+  --warning-strong: #986411;
+  --info-strong: #4369c4;
+  --success-strong: #107c70;
 
   /* Surfaces: one token per nesting depth. Opacity variants of --card and
      --border are not part of the vocabulary. */
