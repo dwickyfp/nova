@@ -76,9 +76,24 @@ it only rewrites references that are really references:
 * `@stage.data.csv` is a stage reference and is left to the dialect engine.
 
 A reference with no stored value is left verbatim, and the engine answers for an
-unset variable in its own way (`NULL`). Nova's stage pattern requires at least
-one dotted segment (`@stage1.data.csv`), so a bare `@name` is never mistaken for
-a stage.
+unset variable in its own way (`NULL`).
+
+### Stage or variable: context decides
+
+`@x` and `@stage1` are spelled the same way, so the dialect engine classifies
+each `@name` by **position**, not by the presence of a dot:
+
+* a stage is introduced by `FROM`, `JOIN`, `INTO` or `LIST`, or is written with
+  a dotted path or a trailing `/` — `SELECT * FROM @stage1`,
+  `LIST FILES @stage1`, `@stage1/`, `@stage1.data.csv`;
+* a variable is an expression operand — after an operator, comma or opening
+  paren — so `SELECT @x`, `1 + @n` and `SET @my_stage = 1` are all variables,
+  including when the name happens to match a stage.
+
+Getting this wrong in either direction is a silent failure: reading `@x` as a
+stage breaks `SET @x; SELECT @x`, and reading `@stage1` as a variable sends
+`SELECT * FROM @stage1` to the engine untouched. Comments are skipped when the
+classification happens, because the engine skips them too.
 
 ## Authentication
 
@@ -138,6 +153,16 @@ error, not as a wrong-password failure.
 
 ## Limitations
 
+* **`LIST` is not implemented.** Nova parses `LIST [FILES] @stage` and resolves
+  the stage reference — so the statement is not silently passed through with the
+  reference intact — but nothing executes it, and **StarRocks has no `LIST`
+  statement** (measured: every form is a syntax error at the engine). The
+  statement therefore fails with the engine's `LIST` syntax error. Browse-stage
+  is a Nova-side feature that needs its own implementation; until then the
+  documented syntax is recognised and refused rather than misinterpreted.
+* **`@stage1/folder/x.csv` (slash paths) and globs (`@stage1.data/*.csv`) are
+  not detected.** Both are listed as open defects in `README.md` (SQL dialect),
+  and both predate the proxy.
 * **Prepared statements (`COM_STMT_PREPARE`) are not supported.** Clients that
   use them get `ER_NOT_SUPPORTED_YET` (1235), which is the code drivers
   interpret as "fall back to the text protocol". The `mysql` CLI, JDBC's
