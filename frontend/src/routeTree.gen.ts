@@ -10,30 +10,36 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
-import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as AuthenticatedTasksManagerRouteImport } from './routes/_authenticated/tasks-manager'
-import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authenticated/query-history'
-import { Route as AuthenticatedQueryCostRouteImport } from './routes/_authenticated/query-cost'
-import { Route as AuthenticatedDatabaseExplorerRouteImport } from './routes/_authenticated/database-explorer'
-import { Route as AuthenticatedActiveQueryRouteImport } from './routes/_authenticated/active-query'
 import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
+import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedActiveQueryRouteImport } from './routes/_authenticated/active-query'
+import { Route as AuthenticatedDatabaseExplorerRouteImport } from './routes/_authenticated/database-explorer'
 import { Route as AuthenticatedMonitoringRouteRouteImport } from './routes/_authenticated/monitoring/route'
-import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
-import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
-import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
-import { Route as AuthenticatedRolesIndexRouteImport } from './routes/_authenticated/roles/index'
-import { Route as AuthenticatedMonitoringIndexRouteImport } from './routes/_authenticated/monitoring/index'
-import { Route as AuthenticatedMlModelsIndexRouteImport } from './routes/_authenticated/ml-models/index'
+import { Route as AuthenticatedQueryCostRouteImport } from './routes/_authenticated/query-cost'
+import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authenticated/query-history'
+import { Route as AuthenticatedTasksManagerRouteImport } from './routes/_authenticated/tasks-manager'
 import { Route as AuthenticatedAiProvidersIndexRouteImport } from './routes/_authenticated/ai-providers/index'
-import { Route as AuthenticatedUsersUsernameRouteImport } from './routes/_authenticated/users/$username'
-import { Route as AuthenticatedRolesNameRouteImport } from './routes/_authenticated/roles/$name'
-import { Route as AuthenticatedMonitoringTasksRouteImport } from './routes/_authenticated/monitoring/tasks'
-import { Route as AuthenticatedMonitoringLoadsRouteImport } from './routes/_authenticated/monitoring/loads'
-import { Route as AuthenticatedMonitoringAuditRouteImport } from './routes/_authenticated/monitoring/audit'
+import { Route as AuthenticatedFunctionsIndexRouteImport } from './routes/_authenticated/functions/index'
+import { Route as AuthenticatedMlModelsIndexRouteImport } from './routes/_authenticated/ml-models/index'
+import { Route as AuthenticatedMonitoringIndexRouteImport } from './routes/_authenticated/monitoring/index'
 import { Route as AuthenticatedMonitoringActiveRouteImport } from './routes/_authenticated/monitoring/active'
+import { Route as AuthenticatedMonitoringAuditRouteImport } from './routes/_authenticated/monitoring/audit'
+import { Route as AuthenticatedMonitoringLoadsRouteImport } from './routes/_authenticated/monitoring/loads'
+import { Route as AuthenticatedMonitoringTasksRouteImport } from './routes/_authenticated/monitoring/tasks'
+import { Route as AuthenticatedRolesIndexRouteImport } from './routes/_authenticated/roles/index'
+import { Route as AuthenticatedRolesNameRouteImport } from './routes/_authenticated/roles/$name'
+import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
+import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
+import { Route as AuthenticatedUsersUsernameRouteImport } from './routes/_authenticated/users/$username'
+import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const authSignInRoute = authSignInRouteImport.update({
+  id: '/(auth)/sign-in',
+  path: '/sign-in',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
@@ -41,16 +47,22 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedTasksManagerRoute =
-  AuthenticatedTasksManagerRouteImport.update({
-    id: '/tasks-manager',
-    path: '/tasks-manager',
+const AuthenticatedActiveQueryRoute =
+  AuthenticatedActiveQueryRouteImport.update({
+    id: '/active-query',
+    path: '/active-query',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedQueryHistoryRoute =
-  AuthenticatedQueryHistoryRouteImport.update({
-    id: '/query-history',
-    path: '/query-history',
+const AuthenticatedDatabaseExplorerRoute =
+  AuthenticatedDatabaseExplorerRouteImport.update({
+    id: '/database-explorer',
+    path: '/database-explorer',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonitoringRouteRoute =
+  AuthenticatedMonitoringRouteRouteImport.update({
+    id: '/monitoring',
+    path: '/monitoring',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedQueryCostRoute = AuthenticatedQueryCostRouteImport.update({
@@ -58,60 +70,16 @@ const AuthenticatedQueryCostRoute = AuthenticatedQueryCostRouteImport.update({
   path: '/query-cost',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedDatabaseExplorerRoute =
-  AuthenticatedDatabaseExplorerRouteImport.update({
-    id: '/database-explorer',
-    path: '/database-explorer',
+const AuthenticatedQueryHistoryRoute =
+  AuthenticatedQueryHistoryRouteImport.update({
+    id: '/query-history',
+    path: '/query-history',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedActiveQueryRoute =
-  AuthenticatedActiveQueryRouteImport.update({
-    id: '/active-query',
-    path: '/active-query',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const authSignInRoute = authSignInRouteImport.update({
-  id: '/(auth)/sign-in',
-  path: '/sign-in',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedMonitoringRouteRoute =
-  AuthenticatedMonitoringRouteRouteImport.update({
-    id: '/monitoring',
-    path: '/monitoring',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedWorkspacesIndexRoute =
-  AuthenticatedWorkspacesIndexRouteImport.update({
-    id: '/workspaces/',
-    path: '/workspaces/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
-  id: '/users/',
-  path: '/users/',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedTasksIndexRoute = AuthenticatedTasksIndexRouteImport.update({
-  id: '/tasks/',
-  path: '/tasks/',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedRolesIndexRoute = AuthenticatedRolesIndexRouteImport.update({
-  id: '/roles/',
-  path: '/roles/',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedMonitoringIndexRoute =
-  AuthenticatedMonitoringIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
-  } as any)
-const AuthenticatedMlModelsIndexRoute =
-  AuthenticatedMlModelsIndexRouteImport.update({
-    id: '/ml-models/',
-    path: '/ml-models/',
+const AuthenticatedTasksManagerRoute =
+  AuthenticatedTasksManagerRouteImport.update({
+    id: '/tasks-manager',
+    path: '/tasks-manager',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAiProvidersIndexRoute =
@@ -120,27 +88,28 @@ const AuthenticatedAiProvidersIndexRoute =
     path: '/ai-providers/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedUsersUsernameRoute =
-  AuthenticatedUsersUsernameRouteImport.update({
-    id: '/users/$username',
-    path: '/users/$username',
+const AuthenticatedFunctionsIndexRoute =
+  AuthenticatedFunctionsIndexRouteImport.update({
+    id: '/functions/',
+    path: '/functions/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedRolesNameRoute = AuthenticatedRolesNameRouteImport.update({
-  id: '/roles/$name',
-  path: '/roles/$name',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedMonitoringTasksRoute =
-  AuthenticatedMonitoringTasksRouteImport.update({
-    id: '/tasks',
-    path: '/tasks',
+const AuthenticatedMlModelsIndexRoute =
+  AuthenticatedMlModelsIndexRouteImport.update({
+    id: '/ml-models/',
+    path: '/ml-models/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMonitoringIndexRoute =
+  AuthenticatedMonitoringIndexRouteImport.update({
+    id: '/',
+    path: '/',
     getParentRoute: () => AuthenticatedMonitoringRouteRoute,
   } as any)
-const AuthenticatedMonitoringLoadsRoute =
-  AuthenticatedMonitoringLoadsRouteImport.update({
-    id: '/loads',
-    path: '/loads',
+const AuthenticatedMonitoringActiveRoute =
+  AuthenticatedMonitoringActiveRouteImport.update({
+    id: '/active',
+    path: '/active',
     getParentRoute: () => AuthenticatedMonitoringRouteRoute,
   } as any)
 const AuthenticatedMonitoringAuditRoute =
@@ -149,11 +118,49 @@ const AuthenticatedMonitoringAuditRoute =
     path: '/audit',
     getParentRoute: () => AuthenticatedMonitoringRouteRoute,
   } as any)
-const AuthenticatedMonitoringActiveRoute =
-  AuthenticatedMonitoringActiveRouteImport.update({
-    id: '/active',
-    path: '/active',
+const AuthenticatedMonitoringLoadsRoute =
+  AuthenticatedMonitoringLoadsRouteImport.update({
+    id: '/loads',
+    path: '/loads',
     getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
+const AuthenticatedMonitoringTasksRoute =
+  AuthenticatedMonitoringTasksRouteImport.update({
+    id: '/tasks',
+    path: '/tasks',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
+const AuthenticatedRolesIndexRoute = AuthenticatedRolesIndexRouteImport.update({
+  id: '/roles/',
+  path: '/roles/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedRolesNameRoute = AuthenticatedRolesNameRouteImport.update({
+  id: '/roles/$name',
+  path: '/roles/$name',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedTasksIndexRoute = AuthenticatedTasksIndexRouteImport.update({
+  id: '/tasks/',
+  path: '/tasks/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
+  id: '/users/',
+  path: '/users/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedUsersUsernameRoute =
+  AuthenticatedUsersUsernameRouteImport.update({
+    id: '/users/$username',
+    path: '/users/$username',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedWorkspacesIndexRoute =
+  AuthenticatedWorkspacesIndexRouteImport.update({
+    id: '/workspaces/',
+    path: '/workspaces/',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -172,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
+  '/functions/': typeof AuthenticatedFunctionsIndexRoute
   '/ml-models/': typeof AuthenticatedMlModelsIndexRoute
   '/monitoring/': typeof AuthenticatedMonitoringIndexRoute
   '/roles/': typeof AuthenticatedRolesIndexRoute
@@ -194,6 +202,7 @@ export interface FileRoutesByTo {
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/ai-providers': typeof AuthenticatedAiProvidersIndexRoute
+  '/functions': typeof AuthenticatedFunctionsIndexRoute
   '/ml-models': typeof AuthenticatedMlModelsIndexRoute
   '/monitoring': typeof AuthenticatedMonitoringIndexRoute
   '/roles': typeof AuthenticatedRolesIndexRoute
@@ -219,6 +228,7 @@ export interface FileRoutesById {
   '/_authenticated/roles/$name': typeof AuthenticatedRolesNameRoute
   '/_authenticated/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/_authenticated/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
+  '/_authenticated/functions/': typeof AuthenticatedFunctionsIndexRoute
   '/_authenticated/ml-models/': typeof AuthenticatedMlModelsIndexRoute
   '/_authenticated/monitoring/': typeof AuthenticatedMonitoringIndexRoute
   '/_authenticated/roles/': typeof AuthenticatedRolesIndexRoute
@@ -244,6 +254,7 @@ export interface FileRouteTypes {
     | '/roles/$name'
     | '/users/$username'
     | '/ai-providers/'
+    | '/functions/'
     | '/ml-models/'
     | '/monitoring/'
     | '/roles/'
@@ -266,6 +277,7 @@ export interface FileRouteTypes {
     | '/roles/$name'
     | '/users/$username'
     | '/ai-providers'
+    | '/functions'
     | '/ml-models'
     | '/monitoring'
     | '/roles'
@@ -290,6 +302,7 @@ export interface FileRouteTypes {
     | '/_authenticated/roles/$name'
     | '/_authenticated/users/$username'
     | '/_authenticated/ai-providers/'
+    | '/_authenticated/functions/'
     | '/_authenticated/ml-models/'
     | '/_authenticated/monitoring/'
     | '/_authenticated/roles/'
@@ -312,39 +325,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/(auth)/sign-in': {
+      id: '/(auth)/sign-in'
+      path: '/sign-in'
+      fullPath: '/sign-in'
+      preLoaderRoute: typeof authSignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/': {
       id: '/_authenticated/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/tasks-manager': {
-      id: '/_authenticated/tasks-manager'
-      path: '/tasks-manager'
-      fullPath: '/tasks-manager'
-      preLoaderRoute: typeof AuthenticatedTasksManagerRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/query-history': {
-      id: '/_authenticated/query-history'
-      path: '/query-history'
-      fullPath: '/query-history'
-      preLoaderRoute: typeof AuthenticatedQueryHistoryRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/query-cost': {
-      id: '/_authenticated/query-cost'
-      path: '/query-cost'
-      fullPath: '/query-cost'
-      preLoaderRoute: typeof AuthenticatedQueryCostRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/database-explorer': {
-      id: '/_authenticated/database-explorer'
-      path: '/database-explorer'
-      fullPath: '/database-explorer'
-      preLoaderRoute: typeof AuthenticatedDatabaseExplorerRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/active-query': {
@@ -354,12 +346,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedActiveQueryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/(auth)/sign-in': {
-      id: '/(auth)/sign-in'
-      path: '/sign-in'
-      fullPath: '/sign-in'
-      preLoaderRoute: typeof authSignInRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_authenticated/database-explorer': {
+      id: '/_authenticated/database-explorer'
+      path: '/database-explorer'
+      fullPath: '/database-explorer'
+      preLoaderRoute: typeof AuthenticatedDatabaseExplorerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/monitoring': {
       id: '/_authenticated/monitoring'
@@ -368,46 +360,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonitoringRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/workspaces/': {
-      id: '/_authenticated/workspaces/'
-      path: '/workspaces'
-      fullPath: '/workspaces/'
-      preLoaderRoute: typeof AuthenticatedWorkspacesIndexRouteImport
+    '/_authenticated/query-cost': {
+      id: '/_authenticated/query-cost'
+      path: '/query-cost'
+      fullPath: '/query-cost'
+      preLoaderRoute: typeof AuthenticatedQueryCostRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/users/': {
-      id: '/_authenticated/users/'
-      path: '/users'
-      fullPath: '/users/'
-      preLoaderRoute: typeof AuthenticatedUsersIndexRouteImport
+    '/_authenticated/query-history': {
+      id: '/_authenticated/query-history'
+      path: '/query-history'
+      fullPath: '/query-history'
+      preLoaderRoute: typeof AuthenticatedQueryHistoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/tasks/': {
-      id: '/_authenticated/tasks/'
-      path: '/tasks'
-      fullPath: '/tasks/'
-      preLoaderRoute: typeof AuthenticatedTasksIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/roles/': {
-      id: '/_authenticated/roles/'
-      path: '/roles'
-      fullPath: '/roles/'
-      preLoaderRoute: typeof AuthenticatedRolesIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/monitoring/': {
-      id: '/_authenticated/monitoring/'
-      path: '/'
-      fullPath: '/monitoring/'
-      preLoaderRoute: typeof AuthenticatedMonitoringIndexRouteImport
-      parentRoute: typeof AuthenticatedMonitoringRouteRoute
-    }
-    '/_authenticated/ml-models/': {
-      id: '/_authenticated/ml-models/'
-      path: '/ml-models'
-      fullPath: '/ml-models/'
-      preLoaderRoute: typeof AuthenticatedMlModelsIndexRouteImport
+    '/_authenticated/tasks-manager': {
+      id: '/_authenticated/tasks-manager'
+      path: '/tasks-manager'
+      fullPath: '/tasks-manager'
+      preLoaderRoute: typeof AuthenticatedTasksManagerRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/ai-providers/': {
@@ -417,32 +388,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAiProvidersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/users/$username': {
-      id: '/_authenticated/users/$username'
-      path: '/users/$username'
-      fullPath: '/users/$username'
-      preLoaderRoute: typeof AuthenticatedUsersUsernameRouteImport
+    '/_authenticated/functions/': {
+      id: '/_authenticated/functions/'
+      path: '/functions'
+      fullPath: '/functions/'
+      preLoaderRoute: typeof AuthenticatedFunctionsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/roles/$name': {
-      id: '/_authenticated/roles/$name'
-      path: '/roles/$name'
-      fullPath: '/roles/$name'
-      preLoaderRoute: typeof AuthenticatedRolesNameRouteImport
+    '/_authenticated/ml-models/': {
+      id: '/_authenticated/ml-models/'
+      path: '/ml-models'
+      fullPath: '/ml-models/'
+      preLoaderRoute: typeof AuthenticatedMlModelsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/monitoring/tasks': {
-      id: '/_authenticated/monitoring/tasks'
-      path: '/tasks'
-      fullPath: '/monitoring/tasks'
-      preLoaderRoute: typeof AuthenticatedMonitoringTasksRouteImport
+    '/_authenticated/monitoring/': {
+      id: '/_authenticated/monitoring/'
+      path: '/'
+      fullPath: '/monitoring/'
+      preLoaderRoute: typeof AuthenticatedMonitoringIndexRouteImport
       parentRoute: typeof AuthenticatedMonitoringRouteRoute
     }
-    '/_authenticated/monitoring/loads': {
-      id: '/_authenticated/monitoring/loads'
-      path: '/loads'
-      fullPath: '/monitoring/loads'
-      preLoaderRoute: typeof AuthenticatedMonitoringLoadsRouteImport
+    '/_authenticated/monitoring/active': {
+      id: '/_authenticated/monitoring/active'
+      path: '/active'
+      fullPath: '/monitoring/active'
+      preLoaderRoute: typeof AuthenticatedMonitoringActiveRouteImport
       parentRoute: typeof AuthenticatedMonitoringRouteRoute
     }
     '/_authenticated/monitoring/audit': {
@@ -452,12 +423,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonitoringAuditRouteImport
       parentRoute: typeof AuthenticatedMonitoringRouteRoute
     }
-    '/_authenticated/monitoring/active': {
-      id: '/_authenticated/monitoring/active'
-      path: '/active'
-      fullPath: '/monitoring/active'
-      preLoaderRoute: typeof AuthenticatedMonitoringActiveRouteImport
+    '/_authenticated/monitoring/loads': {
+      id: '/_authenticated/monitoring/loads'
+      path: '/loads'
+      fullPath: '/monitoring/loads'
+      preLoaderRoute: typeof AuthenticatedMonitoringLoadsRouteImport
       parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
+    '/_authenticated/monitoring/tasks': {
+      id: '/_authenticated/monitoring/tasks'
+      path: '/tasks'
+      fullPath: '/monitoring/tasks'
+      preLoaderRoute: typeof AuthenticatedMonitoringTasksRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
+    '/_authenticated/roles/': {
+      id: '/_authenticated/roles/'
+      path: '/roles'
+      fullPath: '/roles/'
+      preLoaderRoute: typeof AuthenticatedRolesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/roles/$name': {
+      id: '/_authenticated/roles/$name'
+      path: '/roles/$name'
+      fullPath: '/roles/$name'
+      preLoaderRoute: typeof AuthenticatedRolesNameRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/tasks/': {
+      id: '/_authenticated/tasks/'
+      path: '/tasks'
+      fullPath: '/tasks/'
+      preLoaderRoute: typeof AuthenticatedTasksIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/users/': {
+      id: '/_authenticated/users/'
+      path: '/users'
+      fullPath: '/users/'
+      preLoaderRoute: typeof AuthenticatedUsersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/users/$username': {
+      id: '/_authenticated/users/$username'
+      path: '/users/$username'
+      fullPath: '/users/$username'
+      preLoaderRoute: typeof AuthenticatedUsersUsernameRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/workspaces/': {
+      id: '/_authenticated/workspaces/'
+      path: '/workspaces'
+      fullPath: '/workspaces/'
+      preLoaderRoute: typeof AuthenticatedWorkspacesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
   }
 }
@@ -495,6 +515,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRolesNameRoute: typeof AuthenticatedRolesNameRoute
   AuthenticatedUsersUsernameRoute: typeof AuthenticatedUsersUsernameRoute
   AuthenticatedAiProvidersIndexRoute: typeof AuthenticatedAiProvidersIndexRoute
+  AuthenticatedFunctionsIndexRoute: typeof AuthenticatedFunctionsIndexRoute
   AuthenticatedMlModelsIndexRoute: typeof AuthenticatedMlModelsIndexRoute
   AuthenticatedRolesIndexRoute: typeof AuthenticatedRolesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
@@ -514,6 +535,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRolesNameRoute: AuthenticatedRolesNameRoute,
   AuthenticatedUsersUsernameRoute: AuthenticatedUsersUsernameRoute,
   AuthenticatedAiProvidersIndexRoute: AuthenticatedAiProvidersIndexRoute,
+  AuthenticatedFunctionsIndexRoute: AuthenticatedFunctionsIndexRoute,
   AuthenticatedMlModelsIndexRoute: AuthenticatedMlModelsIndexRoute,
   AuthenticatedRolesIndexRoute: AuthenticatedRolesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
