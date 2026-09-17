@@ -48,8 +48,17 @@ class ParsedSQL:
 # Pattern: @stage_name[.path.parts...]
 # Captures: @word.word.word...
 # Supports hyphens in stage names and filenames (e.g. @my-stage.data-2026-06-19.csv)
+#
+# The leading ``(?<!@)`` lookbehind is load-bearing. ``@@name`` is a MySQL
+# system variable — every client asks for ``@@version_comment`` on connect — and
+# without the lookbehind the pattern matched the *second* ``@`` and read
+# ``@version_comment`` as a stage called ``version_comment``. The dialect
+# pipeline then failed the statement with "Stage 'version_comment' not found",
+# which broke the login sequence of every MySQL client before it sent a single
+# user query. A single ``@`` still matches: what is excluded is the second of a
+# doubled pair.
 _STAGE_PATTERN = re.compile(
-    r'@([a-zA-Z_][a-zA-Z0-9_-]*)'   # stage name (letters, digits, underscores, hyphens)
+    r'(?<!@)@([a-zA-Z_][a-zA-Z0-9_-]*)'  # stage name (letters, digits, underscores, hyphens)
     r'((?:\.[a-zA-Z0-9_-]+)*)'        # optional .path.parts (supports hyphens)
     r'(/)?'                           # optional trailing slash (directory)
     r'(?:\s|$|;|,|\)|\()'            # boundary
