@@ -627,9 +627,101 @@ connects to port 4406, authenticates against StarRocks, and runs `SELECT`,
 - [ ] Connection pooling and session tracking — not implemented. Each client connection holds one upstream StarRocks session; there is no pool. Per-connection `SET`/`USE` tracking exists (`backend/app/proxy/session.py`), but richer session state is not carried
 - [ ] Prepared statements (`COM_STMT_PREPARE`) — refused with `ER_NOT_SUPPORTED_YET` so drivers fall back to the text protocol
 
+### Phase 9 — Task Orchestration & Scheduler (proposed, NOVA-23)
+Proposed, awaiting human approval on three product items (E1–E3). Design is
+**decided and written down**: see `docs/specs/nova-23-task-orchestration-design.md`.
+Orchestration layer **above** the existing native task manager
+(`backend/app/modules/tasks/`, Phase 5) — not an extension of it. The native
+manager covers `SUBMIT TASK` / `ALTER TASK` / `DROP TASK` and run listing; this
+phase adds cron, DAG dependencies, SQL-defined tasks, a separate scheduler/worker
+engine, and Nova-owned run metadata.
+
+Design decisions taken (D9.1–D9.8, rationale + criteria in the design doc):
+Nova owns the cron/DAG engine rather than adopting a workflow framework; two
+processes (`nova-scheduler` singleton + `nova-worker` fan-out) over Redis Streams
+with `NOVA_SYSTEM` as the only source of truth; the Snowflake-superset
+`CREATE TASK` surface — a **Nova grammar surface, not an engine statement**
+(4.1.1 has only `SUBMIT TASK`; the 9b patch adds `CREATE TASK` and lowers it);
+**delegate-first** authorization (submit `SUBMIT TASK` on
+the owner's own connection so StarRocks enforces RBAC); stream in a later stage with
+all three providers, including `partition_change` on `SHOW PARTITIONS.VisibleVersion`;
+run history snapshotted for graph state; and the `GET /tasks` root-connection RBAC
+defect fixed inside this phase.
+
+Staged delivery — 9a metadata + scheduler + worker + delegate-first execution;
+9b `CREATE TASK` grammar patch + lowering + task graph UI; 9c stream providers.
+
+- [ ] **9a** Metadata tables + DAG validation in `NOVA_SYSTEM` (no credentials)
+- [ ] **9a** `nova-scheduler` process — Nova-owned cron/interval tick (`croniter`), separate from the FastAPI backend
+- [ ] **9a** `nova-worker` process — executes graph nodes on the owner's connection (delegate-first)
+- [ ] **9a** Redis Streams transport between scheduler and worker
+- [ ] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause)
+- [ ] **9a** Fix `GET /tasks` to connect as the caller, so the engine's privilege filter is not bypassed
+- [ ] **9b** `CREATE TASK … AFTER / FINALIZE / WHEN / SCHEDULE` added to the existing ANTLR4 `submitTaskStatement` rule (NOVA-BEGIN/NOVA-END patch, `--fuzz=0`, CI drift check); it is a Nova surface, lowered to `SUBMIT TASK`
+- [ ] **9b** Task graph UI
+- [ ] **9c** `has stream` — `mv_refresh` first, then `partition_change` (`SHOW PARTITIONS` + `VisibleVersion`, one full sweep per evaluation) and `load_event`
+
 ## Decision Log
 
 Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.
+
+### Phase 9 design decisions (NOVA-23) — 2026-09-17
+
+Full rationale, staging and acceptance criteria: `docs/specs/nova-23-task-orchestration-design.md`.
+Decided against five stated criteria — useful, resource, performance, clean code,
+clean architecture.
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **D9.1 Nova owns the cron/DAG engine**; no workflow framework | Celery/RQ/Dramatiq give no DAG *and* cannot remove the mandatory `task_runs` polling, so they add a broker and a drifting second source of truth without deleting any work. Prefect/Temporal add a second DB or cluster, violating "Single Database" | Nova maintains ~600–900 LOC of orchestration, retry, skip-propagation and finalizer semantics | Throughput > ~50 runs/s, graphs > ~1000 nodes, or a managed orchestrator approved as a dependency |
+| **D9.2 `nova-scheduler` (singleton) + `nova-worker` (N); Redis Streams transport; `NOVA_SYSTEM` sole source of truth** | Splitting "decide" from "do" lets the scheduler be a singleton while workers scale. `NOVA_SYSTEM` is written **before** Redis, so a Redis flush loses no work — Redis stays ephemeral transport | Two more processes to run and monitor | Redis removed from the stack, or StarRocks ships a completion hook (which lets the polling loop be deleted) |
+| **D9.3 `CREATE TASK … AFTER/FINALIZE/WHEN/OVERLAP_POLICY`** — Snowflake superset lowering to `SUBMIT TASK` + Nova metadata; no `CREATE DAG … STEP` | Keeps the grammar a superset of StarRocks, so it stays cheap to re-sync. Three of five clauses need no new lexer token and `taskClause` is already `taskClause*` | Nova maintains a patch over the upstream grammar. `FINALIZE`/`CRON`/`OVERLAP_POLICY` **must** go in `nonReserved` or columns named `finalize`/`cron` break | If the product chooses the `CREATE DAG` surface instead (E1) |
+| **D9.4 Delegate-first authorization**: submit `SUBMIT TASK` on the **owner's own connection** | Verified: the engine checks privileges at submit time against the submitter (`CREATOR`), and filters reads by caller. Submitting as the user makes RBAC enforcement free instead of reimplemented | Phase 1 cannot run arbitrary DDL as a task — needs a service role, which is a human authorization decision (E2) | If a real need for non-delegatable task bodies appears |
+| **D9.5 Stream is a second stage; ships `mv_refresh` only** | The only native "data changed → work runs" primitive. `load_event` follows; both are deltas on a working engine rather than prerequisites | The user's "has stream" request lands after cron + DAG | If the user requires `has stream` in stage 1 (E3) |
+| **D9.6 `partition_change` is live** — watermark on `SHOW PARTITIONS.VisibleVersion`, per-partition and monotonic. **Corrected from an earlier "dropped" decision** | The earlier conclusion came from `information_schema.partitions`, an **unpopulated MySQL-compatibility view** (0 rows for every schema, also after `ANALYZE`). `SHOW PARTITIONS` is the live surface, and `VisibleVersion` advances on non-DDL loads while untouched partitions stay put — so Nova learns *which* partition changed. Verified, then measured at 5,000 partitions | One full metadata sweep per `WHEN` evaluation (~110–260 ms / ~1.3 MB at 5,000 partitions). Per-partition `WHERE` costs the same as a full scan, so the pattern must be sweep-once-then-diff, never per-partition lookups | If partition counts grow enough that a full sweep stops being cheap (~linear trend from the measured 5,000-point) |
+| **D9.7 Run history snapshot is for graph state, not TTL rescue** | The 24 h-loss premise was wrong (TTL is 7 days), but snapshotting is still required: a DAG must resume, native `task_runs` mixes MV and Nova tasks, and native rows **cannot be deleted** | Some duplication of native run data | If native `task_runs` gains a durable, deletable, N-filterable working surface |
+| **D9.8 Fix the `GET /tasks` root-connection defect inside Phase 9** | `TaskService._connect()` uses root credentials and never threads the caller in, so every signed-in user sees every task. It is a backend bug, not an engine limit, and it sits directly in the path this phase builds on | Slightly larger Phase 9 scope — **effort M, not S**: every `TaskService` method must accept an injected connection, not just swap the helper | Nothing to reopen — this closes a security defect |
+
+Engine facts that resolved the previously open §10 questions:
+
+| Question | Answer (verified) |
+|---|---|
+| §10.2 — can `SUBMIT TASK`'s body trigger another task? | **No** — `Unexpected input 'SUBMIT'`; the grammar restricts the body |
+| §10.4 — do periodic tasks survive an FE restart? | **Yes** — the task and its schedule survived a full FE container restart and resumed ticking **without `ALTER TASK RESUME`** (independently reproduced by two agents). So Nova need not re-arm schedules; it only reconciles runs whose trace it lost |
+| §10.1 — whose privilege does a TaskRun use? | Checked **at submit time against the submitter**, recorded in `CREATOR`; a revoked privilege is not re-checked at run time |
+| §10.5 — what does `SUSPEND` do to future runs? | Blocks them; `RESUME` restarts them (verified over a 25 s window) |
+| §10.3 — is there a stable partition watermark column? | **Yes** — `SHOW PARTITIONS.VisibleVersion`, per-partition and monotonic (see D9.6). The earlier "no" came from querying the unpopulated `information_schema.partitions` view |
+| New — is a task that is running when the FE dies recoverable? | **No trace**: it vanishes from `task_runs`. A second, independent reason the Nova-side snapshot is mandatory |
+
+Still open and human-owned: E1 (SQL surface confirmation), E2 (service role for
+non-delegatable bodies), E3 (stream staging), and the `SYSTEM$STREAM_HAS_DATA` name.
+
+Still unverified and **not** claimed: whether `VisibleVersion` moves when an MV
+refresh writes, where `enable_task_history_archive` stores its archive and whether it
+is queryable, and multi-FE leader failover (only single-FE restart has been observed).
+
+### Task orchestration & scheduler (NOVA-23) — 2026-09-17 (engine findings)
+
+Research and planning only — no implementation yet. All engine claims below were
+probed against the live `starrocks/fe-ubuntu:4.1.1` instance, not read from docs.
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **No cron in StarRocks 4.1**: Nova must own the cron parser and its own tick | `SCHEDULE = 'USING CRON …'` is rejected at parse time (`Unexpected input '='`); the only accepted forms are `MANUAL`, `SCHEDULE EVERY(INTERVAL …)`, `SCHEDULE START('<literal>') EVERY(…)'`. `START` also requires a quoted literal, not an expression | Nova carries a cron dependency (`croniter`, MIT) and a scheduler process. In exchange, sub-minute cadence and cron are possible at all | If StarRocks ships a `USING CRON` schedule form |
+| **DAG / dependency / trigger clauses must be Nova-native** | `AFTER`, `WHEN`, `FINALIZE`, `ALLOW_OVERLAPPING_EXECUTION` are all rejected by the 4.1.1 grammar. Progress between tasks can only be observed by polling `information_schema.task_runs` — there is no completion hook | Nova writes and maintains its own DAG engine, graph state and reconciliation loop; no push notification exists, so latency is bounded by poll interval | If StarRocks adds task dependency or callback syntax |
+| **Split engine: `nova-scheduler` + `nova-worker` as separate processes**, Redis Streams as transport, `NOVA_SYSTEM` as the authoritative state | Keeps "Single Database" and "no credential in NOVA_SYSTEM" intact — Redis is already a dependency (`SESSION_PREFIX`), so no new infrastructure. Prefect/Temporal would add a second control plane + DB; Celery/RQ/Dramatiq do not provide a DAG, so the graph engine would be written regardless | Two more processes to run and monitor; Nova owns queue semantics, at-least-once delivery and idempotency | If Redis is removed from the stack, or if a managed orchestrator becomes an approved dependency |
+| **Tasks are defined under the submitter's StarRocks identity** | Verified: the engine checks privileges **at `SUBMIT TASK` time against the submitter** and records them in `information_schema.tasks.CREATOR`. A restricted user's task needing `INSERT` is rejected at submit; granting it makes the same submit succeed | Each Nova task must carry an owner; a service identity would bypass the engine's own RBAC check | If Nova needs tasks that run without a live owning user (would require a reviewed `NOVA_TASK_EXECUTOR` role) |
+| **Task body is grammar-restricted to CTAS / INSERT / CACHE SELECT** | Confirmed at parse time: `CREATE TABLE`, `DROP TABLE`, `UPDATE`, `CREATE VIEW`, `SET`, bare `SELECT` are all rejected. A worker cannot be a thin `SUBMIT TASK` wrapper for arbitrary SQL | Nova must execute non-delegatable statements itself, which is exactly the service-identity problem above — MVP scope stays on delegatable bodies | If StarRocks widens the `submitTaskStatement` body grammar |
+| **`partition_change` stream provider is blocked** | `information_schema.partitions` returns **0 rows for every schema** on 4.1.1, even after `ANALYZE`, and has no `DATA_VERSION` column. **Superseded — see D9.6 in the Phase 9 design decisions above**: `information_schema.partitions` is an unpopulated compatibility view; the live surface is `SHOW PARTITIONS`, whose `VisibleVersion` is a working per-partition watermark | ~~The `has stream` design ships with `mv_refresh` only until a replacement watermark source exists~~ — corrected: `partition_change` is live | Resolved |
+| **Correction: `task_runs_ttl_second` is 604800 (7 days)**, not 86400 | Measured on the live engine. The earlier "native run history lost in 24 h" premise that motivated snapshotting run history was wrong | Snapshotting run history is still worth doing for DAG state and cross-task lineage, but it is no longer justified by a 24 h data-loss deadline — its priority drops | If a future release shortens the default TTL |
+| **Phase 9 — Task Orchestration & Scheduler** proposed | NOVA-23 is orchestration *above* the existing native task manager (`README.md:583`), not an extension of it. It does not fit any current phase | Adds a phase to the roadmap; needs human approval | On approval or rejection of the proposed phase |
+
+Additional constraints measured and recorded in `docs/08-task-manager.md`:
+`information_schema.tasks` has **no `STATE` column** and `SHOW TASKS` is not a
+statement, so suspend/resume state is not queryable; `task_check_interval_second`
+is 60 s, so native sub-minute cadence is not honoured; and a task **auto-pauses
+after `max_task_consecutive_fail_count` (10)** consecutive failures, which any
+Nova DAG must reconcile.
 
 ### SQL dialect parser (NOVA-17) — 2026-09-17
 
