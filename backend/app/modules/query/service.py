@@ -42,6 +42,127 @@ from app.modules.query.repository import QueryRepository, QueryResult
 
 logger = logging.getLogger(__name__)
 
+#: A table reference whose schema segment is the UI's ``default`` placeholder:
+#: ``<db>.default.<table>`` preceded by a table-introducing keyword.
+#:
+#: The positional anchor is what makes this safe. Without it,
+#: ``config.default.value`` (a catalogue path) and ``mydb.default.orders`` (a
+#: table reference) are the same token shape and cannot be told apart; with it,
+#: only a position the engine would read as a table is rewritten.
+#:
+#: Identifier quoting accepted on each segment, matching the rest of the dialect.
+_SEGMENT = r"`?[A-Za-z_][\w$]*`?"
+
+#: A position the engine reads as a table: after ``FROM``/``JOIN``/``INTO``/
+#: ``UPDATE``/``TABLE``, or after a comma separating entries in a table list.
+#:
+#: The middle segment must be exactly ``default`` (bare or backticked) — that
+#: placeholder is the whole point, and requiring it keeps the routine from
+#: touching ordinary three-part names such as ``mydb.bronze.orders``.
+#:
+#: The comma alternative is intentionally *not* anchored to a FROM clause: doing
+#: so needs real clause tracking, which is the parser's job, not this routine's.
+#: A comma-separated list inside a function call (``f(a.default.b, c.default.d)``)
+#: would therefore also be collapsed. That shape is not valid as a table position
+#: and the placeholder is a UI-only affordance, so the exposure is a rewrite that
+#: the user asked for elsewhere, not corruption of a legal name — and it is
+#: recorded here rather than hidden.
+_DEFAULT_SCHEMA_TABLE_REF = re.compile(
+    rf"""(?:\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+|,\s*)
+         (?P<db>{_SEGMENT})\s*\.\s*(?:`default`|default)\s*\.\s*(?P<table>{_SEGMENT})""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _mask_literals_and_comments(sql: str) -> str:
+    """Blank out string literals, comments and ``@stage`` paths, preserving offsets.
+
+    Masked spans are replaced character-for-character with ``\\x00`` so
+    :data:`_DEFAULT_SCHEMA_TABLE_REF` sees a string of identical length that
+    cannot match inside them, while match spans still map onto the original
+    text. ``\\x00`` cannot occur in SQL text and is not whitespace, so it can
+    never create or destroy a word boundary around live SQL.
+
+    Backtick-quoted *identifiers* are deliberately **not** masked: a backticked
+    ``db.default.table`` is exactly what this routine exists to rewrite. Single
+    quotes are always a string literal. Double quotes are ambiguous in StarRocks
+    (identifier or string depending on ``ANSI_QUOTES``), and masking them is the
+    safe direction — a genuine string must never be rewritten, and an identifier
+    whose *name* contains ``.default.`` is not the placeholder this routine
+    looks for.
+    """
+    chars = list(sql)
+    i = 0
+    length = len(sql)
+    while i < length:
+        ch = sql[i]
+
+        # ``--`` line comment: to end of line.
+        if ch == "-" and i + 1 < length and sql[i + 1] == "-":
+            while i < length and sql[i] != "\n":
+                chars[i] = "\x00"
+                i += 1
+            continue
+
+        # ``/* ... */`` block comment; first ``*/`` closes it, as the engine does.
+        if ch == "/" and i + 1 < length and sql[i + 1] == "*":
+            chars[i] = "\x00"
+            chars[i + 1] = "\x00"
+            i += 2
+            while i < length and not (sql[i] == "*" and i + 1 < length and sql[i + 1] == "/"):
+                chars[i] = "\x00"
+                i += 1
+            if i < length:
+                chars[i] = "\x00"
+                chars[i + 1] = "\x00"
+                i += 2
+            continue
+
+        # Single-quoted literal with ``''`` escaping.
+        if ch == "'":
+            chars[i] = "\x00"
+            i += 1
+            while i < length:
+                if sql[i] == "'":
+                    chars[i] = "\x00"
+                    if i + 1 < length and sql[i + 1] == "'":
+                        chars[i + 1] = "\x00"
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                chars[i] = "\x00"
+                i += 1
+            continue
+
+        # Double-quoted spans: masked as a string (see the docstring on the
+        # ANSI_QUOTES ambiguity).
+        if ch == '"':
+            chars[i] = "\x00"
+            i += 1
+            while i < length and sql[i] != '"':
+                chars[i] = "\x00"
+                i += 1
+            if i < length:
+                chars[i] = "\x00"
+                i += 1
+            continue
+
+        # ``@stage`` reference: ``@name`` plus its ``.part.part`` path, which may
+        # itself contain a ``default`` segment. Masked whole so no part of a stage
+        # path is ever treated as a table reference.
+        if ch == "@":
+            chars[i] = "\x00"
+            i += 1
+            while i < length and (sql[i].isalnum() or sql[i] in "_-."):
+                chars[i] = "\x00"
+                i += 1
+            continue
+
+        i += 1
+
+    return "".join(chars)
+
 
 class QueryService:
     """Orchestrates SQL execution with @stage dialect support."""
@@ -1121,15 +1242,58 @@ class QueryService:
 
     @staticmethod
     def _normalize_default_schema_qualification(sql: str) -> str:
-        # Nova's workspace UI can expose database.default.table as a friendly,
-        # future-proof path shape. StarRocks table references are database.table,
-        # so collapse the middle `.default.` segment before execution.
-        return re.sub(
-            r"(?<!@)\b(`?[A-Za-z_][\w$]*`?)\.(`?default`?)\.(`?[A-Za-z_][\w$]*`?)\b",
-            r"\1.\3",
-            sql,
-            flags=re.IGNORECASE,
-        )
+        """Collapse the workspace UI's ``db.default.table`` to ``db.table``.
+
+        ``default`` is a *placeholder* for the connection's default schema, so
+        ``mydb.default.orders`` means "the ``orders`` table in mydb's default
+        schema" and StarRocks, which has no such placeholder, must receive
+        ``mydb.orders``.
+
+        The previous implementation was a bare regex over the whole string and
+        corrupted valid SQL in four distinct ways (all reproduced as regression
+        fixtures in ``tests/unit/test_default_schema_normalization.py``):
+
+        1. A ``.default.`` segment *inside an ``@stage`` path* was collapsed —
+           ``@stage1.data.default.csv`` became ``@stage1.data.csv``, silently
+           pointing the stage reference at a different file. The old
+           ``(?<!@)`` only guarded the character immediately before the first
+           identifier, so a ``.default.`` later in the path was unprotected.
+        2. A three-part *object path* that is not a table reference was
+           collapsed — ``config.default.value`` became ``config.value``. That
+           is a well-formed ``catalog.schema.object`` reference, not a UI path.
+           A bare dotted triple is syntactically identical whether it is a
+           table reference or a column reference, so it cannot be resolved by
+           regex; it has to be resolved by position.
+        3. ``.default.`` inside a *string literal* was rewritten, changing
+           user data (``SELECT 'a.default.b'`` returned ``'a.b'``).
+        4. ``.default.`` inside a *comment* was rewritten, corrupting the
+           statement text that is echoed back and audited.
+
+        The fix is therefore positional, not textual: ``default`` is collapsed
+        only when it is the middle segment of a *table reference*, meaning it
+        is preceded by ``FROM``/``JOIN``/``INTO``/``UPDATE``/``TABLE`` and
+        followed by a table name. Strings, comments and ``@stage`` paths are
+        masked out first so nothing inside them is considered, and mask
+        characters preserve offsets so the rewrite is exact.
+
+        This is deliberately the narrow fix, not the parser fix. NOVA-17 has
+        accepted ANTLR4 with the official StarRocks grammar as the real
+        solution for the whole dialect; this routine keeps its exact
+        pre-parser role and the cases below become grammar-level assertions
+        once that lands.
+        """
+        masked = _mask_literals_and_comments(sql)
+        out = sql
+        # Applied right-to-left so each replacement is expressed in the
+        # original string's coordinates and earlier offsets stay valid.
+        for match in reversed(list(_DEFAULT_SCHEMA_TABLE_REF.finditer(masked))):
+            # Replace only the ``db.default.table`` span, keeping the leading
+            # keyword and any whitespace exactly as the user wrote them. The
+            # mask is offset-preserving, so spans map onto ``out`` directly.
+            start = match.start("db")
+            end = match.end("table")
+            out = out[:start] + f"{match.group('db')}.{match.group('table')}" + out[end:]
+        return out
 
 
 query_service = QueryService()
