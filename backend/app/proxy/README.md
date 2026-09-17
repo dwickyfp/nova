@@ -80,6 +80,13 @@ it only rewrites references that are really references:
 A reference with no stored value is left verbatim, and the engine answers for an
 unset variable in its own way (`NULL`).
 
+The reference name accepts the same characters `handle_set_statement` does,
+`$` included (`[A-Za-z_][\w$]*`). The two must agree: `SET @x$abc = 'V'` stores
+the key `x$abc`, so a reader that stopped at `@x` would both splice that value
+into the middle of a live token (`SELECT @x$abc` → `SELECT 'V'$abc`) and make
+the stored variable unreadable. `$` is common in client-side names such as
+`@col$sum`, so this is a real shape rather than a curiosity.
+
 The last rule is decided by the *same* classifier the dialect engine uses
 (`parser._classify_at_token`), not by the presence of a dot. A name that is both
 a session variable and a stage is ambiguous, and the stage wins: substituting

@@ -182,9 +182,12 @@ def _store_value(raw_value: str) -> str:
 
 
 #: A user-variable reference: a single ``@`` followed by a name. The lookbehind
-#: excludes ``@@name`` (a system variable, which the engine resolves).
+#: excludes ``@@name`` (a system variable, which the engine resolves), and the
+#: accept-set matches ``_ASSIGNMENT`` — including ``$``, which is legal inside a
+#: name on both sides of the session, so ``SET @x$abc = …`` is readable as
+#: ``@x$abc`` rather than being split into ``@x`` + ``$abc``.
 _USER_VARIABLE_REFERENCE = re.compile(
-    r"(?<!@)@(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+    r"(?<!@)@(?P<name>[A-Za-z_][\w$]*)"
 )
 
 
