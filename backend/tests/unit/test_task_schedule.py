@@ -195,3 +195,48 @@ class TestLatestOccurrence:
             latest_occurrence(
                 "interval", "5 minute", "UTC", datetime(2026, 1, 1), datetime(2026, 1, 2)
             )
+
+
+class TestCronExactFireInstant:
+    """NOVA-40: a cron task is due exactly on its fire instant, like interval.
+
+    ``croniter.get_prev`` is strictly-before, so without the explicit instant
+    check a cron task whose tick lands exactly on the fire time would skip that
+    occurrence and not be due until the following tick.
+    """
+
+    def test_due_exactly_on_the_fire_instant(self):
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 1, 2, 0, tzinfo=UTC)
+        assert latest_occurrence("cron", "0 2 * * *", "UTC", anchor, now) == now
+
+    def test_due_within_the_fire_minute(self):
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 1, 2, 0, 45, tzinfo=UTC)
+        assert latest_occurrence("cron", "0 2 * * *", "UTC", anchor, now) == datetime(
+            2026, 1, 1, 2, 0, tzinfo=UTC
+        )
+
+    def test_previous_occurrence_respected_between_fires(self):
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 2, 5, 0, tzinfo=UTC)
+        assert latest_occurrence("cron", "0 2 * * *", "UTC", anchor, now) == datetime(
+            2026, 1, 2, 2, 0, tzinfo=UTC
+        )
+
+    def test_not_due_one_second_before_the_fire(self):
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 1, 1, 59, 59, tzinfo=UTC)
+        assert latest_occurrence("cron", "0 2 * * *", "UTC", anchor, now) is None
+
+    def test_exact_instant_is_timezone_local(self):
+        """The fire instant is the task's wall clock, not UTC."""
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        # 02:00 Asia/Jakarta on 2026-01-02 == 19:00Z on 2026-01-01.
+        now = datetime(2026, 1, 1, 19, 0, tzinfo=UTC)
+        assert latest_occurrence("cron", "0 2 * * *", "Asia/Jakarta", anchor, now) == now
+
+    def test_is_due_true_on_the_fire_instant(self):
+        last = datetime(2026, 1, 1, 2, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 2, 2, 0, tzinfo=UTC)
+        assert is_due("cron", "0 2 * * *", "UTC", last, now) is True

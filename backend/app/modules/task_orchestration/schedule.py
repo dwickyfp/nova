@@ -203,7 +203,16 @@ def latest_occurrence(
 
     if kind == "cron":
         iterator = parse_cron(schedule_expr)
-        candidate = iterator.get_prev(datetime, start_time=local_now)
+        # A fire exactly at ``now`` is due at that instant. croniter.get_prev is
+        # strictly-before, so on the fire instant it would skip this occurrence
+        # and fall back to the previous one; interval has no such gap. Floating
+        # to the minute first makes this match the cron grid (cron has no second
+        # field), and croniter.match needs a naive local datetime.
+        on_grid = local_now.replace(second=0, microsecond=0)
+        if iterator.match(schedule_expr, on_grid.replace(tzinfo=None)):
+            candidate = on_grid
+        else:
+            candidate = iterator.get_prev(datetime, start_time=local_now)
         if candidate is None or candidate < local_anchor:
             return None
         return candidate.astimezone(ZoneInfo("UTC"))

@@ -243,17 +243,22 @@ REDIS_URL=redis://:nova_redis_2026@localhost:6379/0
 SCHEDULER_POLL_INTERVAL_SECONDS=15
 SCHEDULER_LEADER_LOCK_KEY=nova:scheduler:leader
 SCHEDULER_LEADER_LOCK_TTL_SECONDS=60
-SCHEDULER_ENGINE_TIMEZONE=Asia/Jakarta
+# Kosongkan (default) agar scheduler membaca timezone dari engine lewat
+# SELECT @@time_zone. Isi hanya untuk override.
+# SCHEDULER_ENGINE_TIMEZONE=Asia/Jakarta
 
 TASK_STREAM_KEY=nova:tasks:graph_runs
 TASK_STREAM_GROUP=nova-workers
 TASK_STREAM_MAXLEN=10000
 ```
 
-`SCHEDULER_ENGINE_TIMEZONE` harus sama dengan timezone session koneksi
-StarRocks milik scheduler. Nova menulis `created_at` lewat `NOW()` di zona itu
-dan membacanya kembali tanpa tz, jadi scheduler diberi tahu arti wall-clock-nya
-alih-alih diam-diam mengasumsikan UTC.
+Secara default `SCHEDULER_ENGINE_TIMEZONE` **kosong**, artinya scheduler
+menanyakan timezone session ke engine sendiri (`SELECT @@time_zone`). Ini penting:
+Nova menulis `created_at` lewat `NOW()` di zona session engine dan membacanya
+kembali tanpa tz, jadi nilai dari engine adalah satu-satunya jawaban yang tidak
+melenceng dari deployment. Meng-hardcode `UTC` (atau zona lain) di config bisa
+menggeser anchor dan membuat task interval tidak pernah due. Isi variabel ini
+hanya bila ingin override eksplisit.
 
 Hentikan dengan `Ctrl+C`. Hanya satu instance yang boleh jalan pada saat yang
 sama — instance lain menunggu leader-lock dan tidak akan enqueue.

@@ -30,15 +30,16 @@ Redis reachable at `REDIS_URL`.
 | `SCHEDULER_POLL_INTERVAL_SECONDS` | `15` | Seconds between ticks |
 | `SCHEDULER_LEADER_LOCK_KEY` | `nova:scheduler:leader` | Leader-lock key; one holder ticks |
 | `SCHEDULER_LEADER_LOCK_TTL_SECONDS` | `60` | Lock TTL, renewed each tick |
-| `SCHEDULER_ENGINE_TIMEZONE` | `UTC` | StarRocks session timezone for `NOW()` reads |
+| `SCHEDULER_ENGINE_TIMEZONE` | *(empty)* | Override for the StarRocks session timezone; empty reads it from the engine |
 | `TASK_STREAM_KEY` | `nova:tasks:graph_runs` | Redis Stream the scheduler `XADD`s to |
 | `TASK_STREAM_GROUP` | `nova-workers` | Consumer group the workers read with |
 | `TASK_STREAM_MAXLEN` | `10000` | Approximate stream trim length |
 
-`SCHEDULER_ENGINE_TIMEZONE` must match the session timezone of the scheduler's
-StarRocks connection: Nova writes `created_at` with `NOW()` in that zone and reads
-it back naive, so the scheduler is told what the wall-clock means rather than
-silently assuming UTC (the design records `Asia/Jakarta` on the probed FE).
+`SCHEDULER_ENGINE_TIMEZONE` is empty by default: the scheduler asks the engine
+for its session timezone (`SELECT @@time_zone`) because Nova writes `created_at`
+with `NOW()` in that zone and reads it back naive. The engine's own answer is the
+only value that cannot drift from the deployment — hardcoding `UTC` shifts the
+anchor and can stop interval tasks firing. Set the variable only to override.
 
 ## What a tick does
 
@@ -71,12 +72,14 @@ due root creates a single graph run covering every node reachable from it. A
   zone), which is why `timezone` is mandatory and never defaulted.
 * **`interval`** — `EVERY(INTERVAL n UNIT)`. Occurrences are anchored to the
   task's creation time; the first fire is one interval later, never at the
-  creation instant. The anchor is read from `created_at` and interpreted in
-  `SCHEDULER_ENGINE_TIMEZONE`.
+  creation instant. The anchor is read from `created_at` and interpreted in the
+  engine's reported session timezone (or `SCHEDULER_ENGINE_TIMEZONE` override).
 * **`manual`** — never fires on a schedule.
 
-A task created after today's cron occurrence does not fire until the next one; a
-tick that arrives late fires once per elapsed occurrence, not once per tick.
+A cron task is due exactly on its fire instant; `croniter.get_prev` is
+strictly-before, so the exact instant is matched explicitly first. A task created
+after today's cron occurrence does not fire until the next one; a tick that
+arrives late fires once per elapsed occurrence, not once per tick.
 
 ## Leader lock
 
