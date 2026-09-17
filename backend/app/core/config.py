@@ -46,10 +46,10 @@ class Settings(BaseSettings):
     SCHEDULER_LEADER_LOCK_TTL_SECONDS: int = 60
     # The StarRocks session timezone of the scheduler's system connection. Nova
     # writes ``NOW()`` values (e.g. ``created_at``) in this zone and reads them
-    # back naive, so the scheduler must be told what the wall-clock means.
-    # MUST match the engine's session timezone for this deployment. The design
-    # forbids silently assuming UTC, hence the explicit, configurable name.
-    SCHEDULER_ENGINE_TIMEZONE: str = "UTC"
+    # back naive. Empty means "ask the engine" via ``SELECT @@time_zone``, which
+    # is the only answer that cannot drift from the deployment. Set it only to
+    # override (tests, unusual setups); never hardcode UTC.
+    SCHEDULER_ENGINE_TIMEZONE: str = ""
 
     # --- Task orchestration: Redis Streams transport (nova-scheduler → workers) ---
     # Redis is ephemeral transport only; NOVA_SYSTEM is the source of truth.

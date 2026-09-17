@@ -74,12 +74,36 @@ def naive_engine_time_to_utc(value: datetime, engine_timezone: str) -> datetime:
 
     ``NOW()`` is written in the engine session timezone (the design records that
     this is ``Asia/Jakarta`` on the probed FE), so reading it back as UTC would
-    silently offset every schedule anchor. The zone is configured explicitly
-    rather than assumed.
+    silently offset every schedule anchor. The zone is resolved from the engine
+    (or an explicit override), never assumed.
     """
     if value.tzinfo is not None:
         return value.astimezone(UTC)
     return value.replace(tzinfo=resolve_timezone(engine_timezone)).astimezone(UTC)
+
+
+async def resolve_engine_timezone(repository: TaskOrchestrationRepository) -> str:
+    """The session zone to interpret naive engine timestamps in.
+
+    An explicit ``SCHEDULER_ENGINE_TIMEZONE`` wins (useful for tests and
+    unusual deployments). Otherwise the zone is read from the engine itself via
+    ``SELECT @@time_zone``, which is the only value that cannot be wrong: the
+    engine writes ``NOW()`` in that zone, and a static default drifts from it
+    the moment the deployment differs (the defect that made interval tasks
+    never fire).
+    """
+    configured = (settings.SCHEDULER_ENGINE_TIMEZONE or "").strip()
+    if configured:
+        return configured
+
+    detected = await repository.get_engine_timezone()
+    if detected:
+        return detected
+
+    logger.warning(
+        "engine reported no session timezone; falling back to UTC for schedule anchors"
+    )
+    return "UTC"
 
 
 def build_graphs(tasks: list[dict[str, Any]], edges: list[dict[str, Any]]) -> dict[str, Graph]:
@@ -129,6 +153,7 @@ def plan_tick(
     tasks: list[dict[str, Any]],
     edges: list[dict[str, Any]],
     now: datetime,
+    engine_timezone: str = "UTC",
 ) -> SchedulerPlan:
     """Compute the due graphs for this tick. Pure — no I/O, no side effects.
 
@@ -136,6 +161,10 @@ def plan_tick(
     triggered once per due root, and a single run covers every node reachable
     from it. Enqueueing per task would multiply one DAG into one run per node,
     which design §2 explicitly rejects.
+
+    ``engine_timezone`` is the StarRocks session timezone that ``created_at``
+    was written in; callers obtain it from the engine (see
+    ``resolve_engine_timezone``) rather than a config default.
     """
     tasks_by_name = {t["name"]: t for t in tasks}
     graphs = build_graphs(tasks, edges)
@@ -157,9 +186,7 @@ def plan_tick(
                 continue
             created_at = task.get("created_at")
             if isinstance(created_at, datetime):
-                anchor = naive_engine_time_to_utc(
-                    created_at, settings.SCHEDULER_ENGINE_TIMEZONE
-                )
+                anchor = naive_engine_time_to_utc(created_at, engine_timezone)
             else:
                 anchor = now
             try:
@@ -209,9 +236,10 @@ class SchedulerTick:
 
     async def tick(self, now: datetime | None = None) -> SchedulerPlan:
         moment = now or datetime.now(UTC)
+        engine_timezone = await resolve_engine_timezone(self._repository)
         tasks = await self._repository.list_tasks()
         edges = await self._repository.list_all_edges()
-        plan = plan_tick(tasks, edges, moment)
+        plan = plan_tick(tasks, edges, moment, engine_timezone)
 
         for due in plan.due:
             existing = await self._repository.get_graph_run(due.run_id)

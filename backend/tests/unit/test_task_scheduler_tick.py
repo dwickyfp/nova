@@ -17,12 +17,14 @@ from typing import Any
 
 import pytest
 
+from app.core.config import settings
 from app.modules.task_orchestration.schedule import ScheduleError
 from app.modules.task_orchestration.scheduler import (
     SchedulerTick,
     deterministic_run_id,
     naive_engine_time_to_utc,
     plan_tick,
+    resolve_engine_timezone,
 )
 
 
@@ -33,11 +35,13 @@ class FakeRepository:
         self,
         tasks: list[dict[str, Any]] | None = None,
         edges: list[dict[str, Any]] | None = None,
+        engine_timezone: str | None = "UTC",
     ) -> None:
         self.tasks = tasks or []
         self.edges = edges or []
         self.graph_runs: dict[str, dict[str, Any]] = {}
         self.calls: list[str] = []
+        self.engine_timezone = engine_timezone
 
     async def list_tasks(self) -> list[dict[str, Any]]:
         self.calls.append("list_tasks")
@@ -46,6 +50,10 @@ class FakeRepository:
     async def list_all_edges(self) -> list[dict[str, Any]]:
         self.calls.append("list_all_edges")
         return list(self.edges)
+
+    async def get_engine_timezone(self) -> str | None:
+        self.calls.append("get_engine_timezone")
+        return self.engine_timezone
 
     async def get_graph_run(self, run_id: str) -> dict[str, Any] | None:
         self.calls.append("get_graph_run")
@@ -129,6 +137,63 @@ class TestEngineTimeConversion:
     def test_unknown_engine_timezone_is_rejected(self):
         with pytest.raises(ScheduleError):
             naive_engine_time_to_utc(datetime(2026, 1, 1, 9, 0), "Not/AZone")
+
+
+class TestResolveEngineTimezone:
+    """NOVA-39: the zone comes from the engine, never a static default."""
+
+    async def test_reads_the_zone_from_the_engine_when_unconfigured(self, monkeypatch):
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
+        repo = FakeRepository(engine_timezone="Asia/Jakarta")
+        assert await resolve_engine_timezone(repo) == "Asia/Jakarta"
+        assert "get_engine_timezone" in repo.calls
+
+    async def test_explicit_override_wins_and_skips_the_engine(self, monkeypatch):
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "Europe/Berlin")
+        repo = FakeRepository(engine_timezone="Asia/Jakarta")
+        assert await resolve_engine_timezone(repo) == "Europe/Berlin"
+        assert "get_engine_timezone" not in repo.calls
+
+    async def test_blank_override_is_treated_as_unconfigured(self, monkeypatch):
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "   ")
+        repo = FakeRepository(engine_timezone="Asia/Jakarta")
+        assert await resolve_engine_timezone(repo) == "Asia/Jakarta"
+
+    async def test_falls_back_to_utc_only_when_the_engine_is_silent(self, monkeypatch):
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
+        repo = FakeRepository(engine_timezone=None)
+        assert await resolve_engine_timezone(repo) == "UTC"
+
+
+class TestEngineTimezoneAnchorRegression:
+    """NOVA-39: an Asia/Jakarta engine must not push the anchor +7h ahead."""
+
+    async def test_jakarta_created_at_still_fires(self, monkeypatch):
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
+        # A naive created_at of 09:00 means 02:00 UTC in Asia/Jakarta.
+        created = datetime(2026, 1, 1, 9, 0)
+        repo = FakeRepository(
+            [make_task("solo", created_at=created)], engine_timezone="Asia/Jakarta"
+        )
+        transport = RecordingTransport()
+        plan = await SchedulerTick(repo, transport).tick(
+            datetime(2026, 1, 1, 2, 6, tzinfo=UTC)
+        )
+        assert len(plan.due) == 1
+        assert len(transport.published) == 1
+
+    async def test_ignoring_the_engine_zone_would_miss_the_fire(self):
+        """The old behaviour, pinned as the regression it is.
+
+        Reading the same naive 09:00 as UTC puts the anchor at 09:00Z while the
+        tick is 02:06Z, so no interval has elapsed and nothing is due.
+        """
+        created = datetime(2026, 1, 1, 9, 0)
+        repo = FakeRepository([make_task("solo", created_at=created)])
+        plan = await SchedulerTick(repo, RecordingTransport()).tick(
+            datetime(2026, 1, 1, 2, 6, tzinfo=UTC)
+        )
+        assert plan.due == []
 
 
 class TestDeterministicRunId:

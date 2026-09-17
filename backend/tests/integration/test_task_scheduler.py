@@ -109,6 +109,14 @@ async def scheduler_infra(request):
     for ddl in TASK_ORCHESTRATION_DDL:
         await db.execute_system(ddl)
 
+    # Pin the scheduler's engine-timezone setting to what the engine actually
+    # reports, so a stale/incorrect default in config cannot mask a real bug.
+    # An explicit env override is honoured for deployments that need it.
+    detected = await repo.get_engine_timezone()
+    settings.SCHEDULER_ENGINE_TIMEZONE = os.getenv(
+        "SCHEDULER_ENGINE_TIMEZONE", detected or "UTC"
+    )
+
     client = aioredis.from_url(REDIS_URL, decode_responses=True)
     yield client
     await client.aclose()
@@ -286,6 +294,49 @@ class TestRealTransportEndToEnd:
             serialized = str(entries[0][1]).lower()
             for bad in ("password", "secret", "token", "credential"):
                 assert bad not in serialized
+        finally:
+            for run in await repo.list_graph_runs(task["id"]):
+                await repo.delete_graph_run(run["id"])
+            await _cleanup_task(task)
+
+
+class TestEngineTimezoneFromEngine:
+    """NOVA-39: the shipped default (auto-detect) must fire on a non-UTC engine.
+
+    QA found the integration suite passing only because it happened to run
+    against a UTC engine while the configured default was UTC. These tests force
+    the auto-detect path (``SCHEDULER_ENGINE_TIMEZONE=""``) against the engine
+    that is actually running, and assert the scheduler reads its zone from
+    ``SELECT @@time_zone`` rather than assuming UTC.
+    """
+
+    async def test_reads_a_real_iana_timezone_from_the_engine(self, scheduler_infra):
+        detected = await repo.get_engine_timezone()
+        assert detected, "engine did not report a session timezone"
+        from zoneinfo import ZoneInfo
+
+        # Must be resolvable as an IANA zone (e.g. Asia/Jakarta / Etc/UTC).
+        assert ZoneInfo(detected) is not None
+
+    async def test_interval_fires_with_autodetected_engine_zone(
+        self, scheduler_infra, clean_stream, monkeypatch
+    ):
+        client: aioredis.Redis = scheduler_infra
+        detected = await repo.get_engine_timezone()
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
+
+        name = f"autoz_{uuid4().hex[:8]}"
+        task = await _seed_interval_task(name)
+        try:
+            plan = await SchedulerTick(repo, RedisGraphRunTransport(client)).tick(
+                _after_first_interval()
+            )
+            entries = await _entries_for_graph(client, clean_stream, task["id"])
+            assert len(entries) == 1, (
+                f"interval task did not fire with engine tz {detected!r} "
+                f"(due={len(plan.due)})"
+            )
+            assert (await repo.get_graph_run(entries[0][1]["graph_run_id"])) is not None
         finally:
             for run in await repo.list_graph_runs(task["id"]):
                 await repo.delete_graph_run(run["id"])

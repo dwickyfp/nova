@@ -113,6 +113,19 @@ class TaskOrchestrationRepository:
             return None
         return parsed if isinstance(parsed, dict) else None
 
+    async def get_engine_timezone(self) -> str | None:
+        """The StarRocks session timezone of this connection, e.g. ``Asia/Jakarta``.
+
+        ``NOW()`` values are written in this zone and read back naive, so the
+        scheduler needs it to interpret schedule anchors. Reading it from the
+        engine removes the guess a config default would encode.
+        """
+        result = await db.execute_system("SELECT @@time_zone AS time_zone")
+        if not result["rows"]:
+            return None
+        value = result["rows"][0][0]
+        return str(value) if value else None
+
     # ── Tasks ──────────────────────────────────────────────────
 
     async def create_task(self, data: dict[str, Any], created_by: str | None) -> dict[str, Any]:
