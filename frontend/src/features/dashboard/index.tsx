@@ -591,7 +591,7 @@ function RecentWorkTable({
   return (
     <div className="space-y-3 overflow-x-auto">
       {hasError && (
-        <div className="flex items-center gap-2 rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+        <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-strong">
           <AlertCircle className="size-3.5 shrink-0" />
           Some recent work sources could not be loaded.
         </div>
