@@ -32,11 +32,6 @@ export default defineConfig({
   test: {
     silent: 'passed-only',
     unstubEnvs: true,
-    browser: {
-      enabled: true,
-      provider: playwright(),
-      instances: [{ browser: 'chromium' }],
-    },
     coverage: {
       // include: ['src/**/*.{js,jsx,ts,tsx}'], // Uncomment to expand the report to all src/**/* so untested modules appear as 0% coverage.
       exclude: [
@@ -48,5 +43,30 @@ export default defineConfig({
         'src/routes/**',
       ],
     },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'browser',
+          // The design-system rule test loads ESLint, which reaches for Node
+          // built-ins the browser runner cannot resolve. It lives in the node
+          // project below instead.
+          exclude: ['**/node_modules/**', '**/*.rule.test.ts'],
+          browser: {
+            enabled: true,
+            provider: playwright(),
+            instances: [{ browser: 'chromium' }],
+          },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'node',
+          environment: 'node',
+          include: ['src/**/*.rule.test.ts'],
+        },
+      },
+    ],
   },
 })
