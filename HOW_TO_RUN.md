@@ -277,7 +277,68 @@ docker exec -it nova-redis redis-cli -a nova_redis_2026 XLEN nova:tasks:graph_ru
 
 ---
 
-## 5. Login ke Nova
+## 5. Jalankan nova-worker
+
+`nova-worker` adalah proses terpisah yang mengonsumsi job graph-run dari Redis
+Streams, mengeksekusi node DAG yang siap, dan memajukan state graph di
+`NOVA_SYSTEM`. Eksekusi memakai **delegate-first**: `SUBMIT TASK` dikirim pada
+koneksi user pemilik task, sehingga RBAC StarRocks ditegakkan engine.
+
+Buka satu terminal per worker (boleh banyak — mereka berbagi stream lewat
+consumer group):
+
+```bash
+cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
+uv run python -m app.worker
+```
+
+Prasyarat:
+
+- StarRocks berjalan dengan tabel `CONFIG_TASK*` (dibuat otomatis oleh worker
+  saat start; kolom `heartbeat_at` ditambahkan lewat migrasi idempoten).
+- Redis dapat dijangkau.
+- **Pemilik task harus punya sesi login aktif.** Worker mengambil password
+  pemilik dari session store (`nova:session:*`) saat eksekusi, hanya di memori,
+  lalu membuangnya. Task yang pemiliknya tidak sedang login akan gagal dengan
+  error yang jelas — worker tidak pernah jatuh ke koneksi root.
+
+Setting yang dibutuhkan (default sudah cukup untuk development):
+
+```dotenv
+REDIS_URL=redis://:nova_redis_2026@localhost:6379/0
+
+TASK_STREAM_KEY=nova:tasks:graph_runs
+TASK_STREAM_GROUP=nova-workers
+
+WORKER_NAME=nova-worker
+WORKER_TASK_POLL_INTERVAL_SECONDS=1
+WORKER_TASK_POLL_TIMEOUT_SECONDS=14400
+WORKER_HEARTBEAT_TIMEOUT_SECONDS=120
+WORKER_RECONCILE_INTERVAL_SECONDS=30
+```
+
+Catatan operasional:
+
+- **At-least-once.** Redis hanya transport; state sebenarnya ada di
+  `NOVA_SYSTEM`. Mengirim ulang job yang sama tidak mengeksekusi node dua kali —
+  setiap transisi adalah conditional write pada state saat ini.
+- **Restart-safe.** Kalau Redis di-flush atau worker mati di tengah node, baris
+  `RUNNING` yang heartbeat-nya basi dianggap *abandoned* dan dievaluasi ulang
+  oleh reconciler, bukan dipercaya. Tidak ada pekerjaan yang hilang permanen.
+- **Tanpa credential di mana pun.** Tidak ada password di `CONFIG_TASK*`,
+  stream, atau log; hanya id, state, dan timing.
+- Eksekusi dinilai terhadap `information_schema.task_runs` milik engine:
+  `SUBMIT TASK` di-follow polling sampai run selesai. Tidak ada completion hook.
+
+Untuk memverifikasi worker mengonsumsi:
+
+```bash
+docker exec -it nova-redis redis-cli -a nova_redis_2026 XPENDING nova:tasks:graph_runs nova-workers
+```
+
+---
+
+## 6. Login ke Nova
 
 Buka:
 
@@ -329,6 +390,15 @@ pnpm dev
 cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
 uv run python -m app.scheduler
 ```
+
+### Terminal 5 — nova-worker (opsional)
+
+```bash
+cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
+uv run python -m app.worker
+```
+
+Boleh dijalankan beberapa instance sekaligus; semuanya berbagi stream yang sama.
 
 Kemudian buka:
 
@@ -386,6 +456,23 @@ Test integrasi scheduler (butuh StarRocks + Redis; skip otomatis bila tidak ada)
 ```bash
 cd backend
 uv run pytest tests/integration/test_task_scheduler.py -v
+```
+
+Test khusus `nova-worker` (unit, tanpa engine/Redis):
+
+```bash
+cd backend
+uv run pytest tests/unit/test_task_orchestration_dag.py \
+              tests/unit/test_task_orchestration_worker.py
+```
+
+Test integrasi worker (butuh StarRocks + Redis; skip otomatis bila tidak ada).
+Membuktikan delegate-first RBAC, DAG `A→B→[C,D]`, semantik gagal/skip/suspend,
+idempotensi, dan restart-safety:
+
+```bash
+cd backend
+uv run pytest tests/integration/test_task_worker.py -v
 ```
 
 ### Frontend

@@ -8,7 +8,6 @@ All persistent state lives in StarRocks NOVA_SYSTEM — no SQLite, no PostgreSQL
 
 from app.core.database import db
 
-
 WORKSPACE_ENTRIES_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_ENTRIES (
     id           VARCHAR(64) NOT NULL,
@@ -69,6 +68,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS (
     state        VARCHAR(32) NOT NULL,
     wal_marks    TEXT,
     started_at   DATETIME,
+    heartbeat_at DATETIME,
     finished_at  DATETIME
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
@@ -85,12 +85,47 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_RUNS (
     starrocks_query_id VARCHAR(128),
     error_message      TEXT,
     started_at         DATETIME,
+    heartbeat_at       DATETIME,
     finished_at        DATETIME
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """,
 )
+
+#: Additive migrations for tables that shipped without a heartbeat column.
+#: ``CREATE TABLE IF NOT EXISTS`` cannot evolve an existing table, and the
+#: heartbeat is what lets a restarted worker tell a live run from an abandoned
+#: one (acceptance criterion 7), so it is added explicitly.
+#:
+#: StarRocks rejects ``ALTER TABLE … ADD COLUMN IF NOT EXISTS`` (verified on
+#: 4.1.1: "No viable statement for input 'ADD COLUMN IF'"), so idempotency is
+#: the caller's job: each entry is ``(table, column, type)`` and the migration
+#: is applied only when ``information_schema.columns`` says it is absent.
+TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("CONFIG_TASK_RUNS", "heartbeat_at", "DATETIME"),
+    ("CONFIG_TASK_GRAPH_RUNS", "heartbeat_at", "DATETIME"),
+)
+
+
+async def _column_exists(table: str, column: str) -> bool:
+    result = await db.execute_system(
+        "SELECT COLUMN_NAME FROM information_schema.columns "
+        "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' AND TABLE_NAME = %s "
+        "AND COLUMN_NAME = %s",
+        [table, column],
+    )
+    return bool(result["rows"])
+
+
+async def migrate_task_orchestration_columns() -> None:
+    """Add late-arriving columns to an existing ``CONFIG_TASK*`` table."""
+    for table, column, column_type in TASK_ORCHESTRATION_COLUMN_MIGRATIONS:
+        if await _column_exists(table, column):
+            continue
+        await db.execute_system(
+            f"ALTER TABLE NOVA_SYSTEM.{table} ADD COLUMN {column} {column_type}"
+        )
 
 
 async def init_task_orchestration() -> None:
@@ -101,6 +136,7 @@ async def init_task_orchestration() -> None:
     """
     for ddl in TASK_ORCHESTRATION_DDL:
         await db.execute_system(ddl)
+    await migrate_task_orchestration_columns()
 
 
 async def init_nova_system() -> None:
