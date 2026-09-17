@@ -120,6 +120,13 @@ token sendiri sebelum tokennya ada. Batasnya ditegakkan di lapisan fitur lebih
 dulu, tempat 44 + 37 + 31 kemunculan pelanggaran berada. Perluasan ke `ui/**`
 adalah keputusan terpisah setelah token terbukti cukup.
 
+**Lingkup efektifnya, supaya tidak salah dibaca.** A1 (`semantic-tokens-features`)
+hanya berjalan di `src/features/**` — kelas palet mentah di `components/ui/**`
+atau `src/lib/**` **tidak** dilaporkan A1. Yang berlaku di seluruh `src/**` adalah
+A2 dan A3: aturan `nova/semantic-tokens` memasang `HEX_PATTERN` +
+`STORAGE_VENDOR_PATTERN` tanpa batas direktori, jadi hex dan nama vendor storage
+tetap dilarang di `components/ui/**` sekalipun A1 tidak menyentuhnya.
+
 ### A2. Hex literal dilarang di `frontend/src/**` kecuali `theme.css`
 
 Literal `#rrggbb` dan `#rgb` dilarang di seluruh `src/**`, kecuali
@@ -191,7 +198,7 @@ hijau dan tidak ada yang bisa merge, jadi hutang itu dicatat sekali di
 
 Aturannya:
 
-- Berkas di daftar baseline **dilewati** oleh gate. 24 berkas terdaftar.
+- Berkas di daftar baseline **dilewati** oleh gate. 22 berkas terdaftar.
 - Semua berkas lain **gagal** saat melanggar, tanpa pengecualian.
 - **Daftar ini tidak boleh ditambah.** Satu-satunya arah perubahan adalah
   menghapus entri saat grup refactor pemiliknya selesai. Menambah entri berarti
@@ -209,11 +216,38 @@ pnpm lint
 Pelanggaran baru muncul sebagai `error` dengan nama aturan `nova/semantic-tokens`
 atau `nova/semantic-tokens-features`, dan pesannya menyebut pasal di dokumen ini.
 
-Loji predikat pengecualian A2 diuji terpisah di
-`src/lib/design-system-gate.test.ts` (sembilan kasus, termasuk tiga bentuk yang
-harus gagal). Aturan lengkapnya tidak bisa dijalankan di test runner browser
-karena ESLint tidak bisa di-bundle ke sana; perilaku penuhnya diverifikasi oleh
-`pnpm lint` terhadap berkas nyata.
+#### Nilai yang dirakit dari literal
+
+Gate tidak hanya memeriksa node `Literal` dan `TemplateElement`. Nilai yang
+dipecah dan disatukan kembali tetap harus terlihat, jadi gate juga
+merekonstruksi string dari sintaksis saat bisa diketahui sepenuhnya:
+
+```ts
+'bg-' + 'emerald-600'                 // dilarang
+['bg', 'emerald', '600'].join('-')    // dilarang
+'#' + 'd04738'                        // dilarang
+`${'#'}d04738`                        // dilarang
+```
+
+Rekonstruksinya konservatif: begitu satu operand tidak diketahui dari sintaksis
+(sebuah `Identifier`, pemanggilan fungsi, akses properti), tidak ada nilai yang
+dihasilkan dan tidak ada yang dilaporkan. Karena itu `(x) => 'p-2 ' + x` dan
+`` (n) => `${n} p-2` `` tidak pernah false-positive. Binding yang tidak diketahui
+juga **tidak** diperlakukan sebagai string kosong — literal palet yang mengalir
+ke dalam template tetap tertangkap di tempat ia ditulis.
+
+#### Test
+
+Dua lapis, dan keduanya harus hijau:
+
+- `src/lib/design-system-gate.test.ts` — sembilan kasus predikat pengecualian A2
+  terhadap bentuk AST.
+- `src/lib/design-system-gate.rule.test.ts` — plugin asli dijalankan lewat
+  `Linter.verify` in-process, jadi perilaku rule-nya benar-benar diuji, bukan
+  direkonstruksi ulang oleh test. Berkas ini berjalan di project vitest `node`
+  (ESLint butuh built-in Node yang tidak bisa di-resolve runner browser).
+
+`pnpm lint` terhadap berkas nyata tetap pemeriksaan terakhir.
 
 ### Urutan merge PR design system
 

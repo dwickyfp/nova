@@ -3,6 +3,8 @@
  * This declares its exports so tests can import it without `any`.
  */
 declare module '*/eslint.design-system.js' {
+  import type { Plugin } from 'eslint'
+
   export const TOKEN_READER_NAME: RegExp
 
   export function isTokenFallbackArgument(node: {
@@ -14,5 +16,13 @@ declare module '*/eslint.design-system.js' {
     arguments?: unknown[]
   }): boolean
 
-  export const novaPlugin: { rules: Record<string, unknown> }
+  export const UNKNOWN: null
+
+  export function staticString(node: unknown): string | null
+
+  export function joinedSeparator(node: unknown): string | null
+
+  export function assembledValues(node: unknown): string[]
+
+  export const novaPlugin: Plugin
 }
