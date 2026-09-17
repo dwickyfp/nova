@@ -378,8 +378,31 @@ CREDENTIAL_PARAM_SUFFIXES: tuple[str, ...] = (
 #: two-segment providers (``aws.s3``, ``azure.blob``, ``gcs.s3``) match.
 _PROVIDER_PREFIX = r"[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*"
 
+#: A credential suffix written with either separator between its words, so
+#: ``account_key`` and ``account.key`` are the same parameter. StarRocks accepts
+#: both spellings, and the dotted one was a live gap: the suffix list matches on
+#: the *last* segment, so ``azure.account.key`` ended in ``key`` and matched
+#: nothing. Built from the same ``CREDENTIAL_PARAM_SUFFIXES`` tuple so a new
+#: suffix cannot be added to one side only.
+_CREDENTIAL_SUFFIX_PATTERN = "|".join(
+    rf"{suffix.replace('_', '[._]')}" for suffix in CREDENTIAL_PARAM_SUFFIXES
+)
+
 #: The placeholder written in place of a redacted value.
 REDACTED_VALUE = "***"
+
+#: A quoted string value: the opening quote is captured so the closing quote can
+#: be required to *match* it (backreference) instead of accepting a fixed ``'``.
+#: The body accepts a doubled opening quote (``''`` / ``""``) as an escaped
+#: quote, which is how StarRocks spells a quote inside a string literal; without
+#: that a value like ``'it''s a secret'`` stops at the first inner quote and the
+#: match ends mid-literal. A mismatched closer is never matched, so the value
+#: cannot be truncated and leave its tail looking like live SQL.
+_QUOTED_VALUE = (
+    r"(?P<val_quote>['\"`])"
+    r"(?P<val>(?:[^'\"`]|(?!(?P=val_quote))['\"`]|(?P=val_quote)(?P=val_quote))*)"
+    r"(?P=val_quote)"
+)
 
 
 class CredentialsRedactionError(RuntimeError):
@@ -390,43 +413,35 @@ class CredentialsRedactionError(RuntimeError):
     or unrecognised credential form must never turn into a credential leak.
     """
 
-# Single-quoted form: ``'aws.s3.secret_key'='AKIA…'`` — what the injector emits.
-# Group 1 = the key's opening quote, group 2 = key, group 3 = the operator.
-# ``=>`` is a separate alternative of the same pattern rather than a second
-# pattern, so the two operators cannot both match the same assignment and mint
-# a second ``***`` in the middle of the first replacement.
+# Quoted key: ``'aws.s3.secret_key'='AKIA…'`` — what the injector emits.
+# Named groups: ``key_quote``, ``key``, ``operator``, plus the value groups from
+# ``_QUOTED_VALUE``. ``=>`` is an alternative of the same operator capture rather
+# than a second pattern, so the two operators cannot both match the same
+# assignment and mint a second ``***`` in the middle of the first replacement.
 _QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
-    rf"(['\"])({_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)}))\1"
-    r"(\s*(?:=>|=)\s*)'(?:[^']|'')*'",
+    rf"(?P<key_quote>['\"`])"
+    rf"(?P<key>{_PROVIDER_PREFIX}\.(?:{_CREDENTIAL_SUFFIX_PATTERN}))(?P=key_quote)"
+    rf"(?P<operator>\s*(?:=>|=)\s*)"
+    rf"{_QUOTED_VALUE}",
     re.IGNORECASE,
 )
 
 # Bare or backquoted key: ``aws.s3.secret_key='AKIA…'`` / ``FILES(aws.s3.secret_key=…)``.
-# Group 1 = key, group 2 = the operator.
 _BARE_CREDENTIAL_ASSIGNMENT = re.compile(
-    rf"(?<![\w$.'\"`])(`?{_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)})`?)"
-    r"(\s*(?:=>|=)\s*)'(?:[^']|'')*'",
+    rf"(?<![\w$.'\"`])(?P<key>`?{_PROVIDER_PREFIX}\.(?:{_CREDENTIAL_SUFFIX_PATTERN})`?)"
+    rf"(?P<operator>\s*(?:=>|=)\s*)"
+    rf"{_QUOTED_VALUE}",
     re.IGNORECASE,
 )
 
-# Double-quoted value: ``"aws.s3.secret_key"="AKIA…"``. Same family, different
-# quoting on the value — a caller can write this shape by hand and StarRocks
-# accepts it, so it has to be redacted rather than merely detected. Runs after
-# the single-quoted patterns; see ``_redacted_assignment`` for the ordering.
-# Group 1 = the key's opening quote, group 2 = key, group 3 = the operator.
-_DOUBLE_QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
-    rf"(['\"`])({_PROVIDER_PREFIX}\.(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)}))\1"
-    r"(\s*(?:=>|=)\s*)\"(?:[^\"]|\"\")*\"",
-    re.IGNORECASE,
-)
-
-#: (pattern, uses_quoted_key) — the quoted-key patterns keep the key's own
-#: quoting, so their group 1 is the quote character and group 2 the key; the
-#: bare pattern has no quoting to preserve, so its group 1 is the key.
+#: Both key shapes share one value grammar (``_QUOTED_VALUE``), so a value is
+#: redacted whichever combination of key quoting and value quoting is written —
+#: ``'key'="value"`` and ``key="value"`` included. A pattern is needed per *key*
+#: shape only; ``uses_quoted_key`` tells ``_redacted_assignment`` whether the key
+#: carries a quote to preserve.
 _CREDENTIAL_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
     (_QUOTED_CREDENTIAL_ASSIGNMENT, True),
     (_BARE_CREDENTIAL_ASSIGNMENT, False),
-    (_DOUBLE_QUOTED_CREDENTIAL_ASSIGNMENT, True),
 )
 
 #: Verification pass: any credential assignment left with a populated value,
@@ -439,7 +454,7 @@ _CREDENTIAL_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
 #: that way.
 _POPULATED_CREDENTIAL = re.compile(
     rf"(?<![\w$.'\"`])(?:['\"`]?{_PROVIDER_PREFIX}\."
-    rf"(?:{'|'.join(CREDENTIAL_PARAM_SUFFIXES)})['\"`]?\s*(?:=>|=)\s*)"
+    rf"(?:{_CREDENTIAL_SUFFIX_PATTERN})['\"`]?\s*(?:=>|=)\s*)"
     r"(?P<value>[^\s,)]*)",
     re.IGNORECASE,
 )
@@ -511,9 +526,12 @@ def _redacted_assignment(match: re.Match[str], quoted_key: bool) -> str:
     second pass over an already-redacted statement is a no-op.
     """
     if quoted_key:
-        quote, key, operator = match.group(1), match.group(2), match.group(3)
-        return f"{quote}{key}{quote}{operator}'{REDACTED_VALUE}'"
-    key, operator = match.group(1), match.group(2)
+        key_quote = match.group("key_quote")
+        key = match.group("key")
+        operator = match.group("operator")
+        return f"{key_quote}{key}{key_quote}{operator}'{REDACTED_VALUE}'"
+    key = match.group("key")
+    operator = match.group("operator")
     return f"{key}{operator}'{REDACTED_VALUE}'"
 
 

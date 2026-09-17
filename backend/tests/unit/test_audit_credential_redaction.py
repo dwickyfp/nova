@@ -371,3 +371,158 @@ class TestRedactSqlCredentialsUnit:
     def test_case_insensitive_param_matching(self, redact):
         out = redact("SELECT * FROM FILES('AWS.S3.SECRET_KEY'='CI_TESTVAL')")
         assert "CI_TESTVAL" not in out
+
+
+class TestValueQuoteMatrix:
+    """NOVA-10: every quote style on the *value* must be redacted.
+
+    The original patterns pinned the value to ``'[^']*'``. The key already
+    accepted single/double/backtick/bare spellings, but a value written with
+    double quotes — ``'aws.s3.access_key'="AKIA…"`` — was left untouched and the
+    raw credential reached ``NOVA_SYSTEM.AUDIT_LOG`` and the API response.
+
+    The table below is the issue's acceptance matrix plus the combinations the
+    first fix missed: a bare key with a double-quoted value
+    (``aws.s3.secret_key="…"``) had no pattern at all and only survived because
+    the verification pass raised. Redaction now covers it directly.
+    """
+
+    PLACEHOLDER = "AKIA_MATRIX_PLACEHOLDER"
+
+    @pytest.mark.parametrize(
+        "key,value",
+        [
+            pytest.param("'aws.s3.access_key'", "'AKIA_MATRIX_PLACEHOLDER'", id="s/s"),
+            pytest.param("'aws.s3.access_key'", '"AKIA_MATRIX_PLACEHOLDER"', id="s/d"),
+            pytest.param('"aws.s3.access_key"', '"AKIA_MATRIX_PLACEHOLDER"', id="d/d"),
+            pytest.param("'aws.s3.access_key'", '" AKIA_MATRIX_PLACEHOLDER "', id="s/spaced/d"),
+            pytest.param("aws.s3.access_key", '"AKIA_MATRIX_PLACEHOLDER"', id="bare/d"),
+            pytest.param("`aws.s3.access_key`", '"AKIA_MATRIX_PLACEHOLDER"', id="backtick/d"),
+            pytest.param('"aws.s3.access_key"', "'AKIA_MATRIX_PLACEHOLDER'", id="d/s"),
+        ],
+    )
+    def test_key_and_value_quote_combinations(self, redact, key, value):
+        sql = f"SELECT * FROM FILES('path'='s3://b/k', {key} = {value})"
+        out = redact(sql)
+        assert self.PLACEHOLDER not in out, f"credential survived in {out!r}"
+
+    @pytest.mark.parametrize(
+        "key,value",
+        [
+            pytest.param("'aws.s3.secret_key'", "'AKIA_MATRIX_PLACEHOLDER'", id="single=>"),
+            pytest.param("'aws.s3.secret_key'", '"AKIA_MATRIX_PLACEHOLDER"', id="double=>"),
+            pytest.param('"aws.s3.secret_key"', '"AKIA_MATRIX_PLACEHOLDER"', id="dq-key=>"),
+            pytest.param("aws.s3.secret_key", '"AKIA_MATRIX_PLACEHOLDER"', id="bare=>"),
+        ],
+    )
+    def test_arrow_operator_with_every_quote_style(self, redact, key, value):
+        sql = f"SELECT * FROM FILES({key} => {value})"
+        out = redact(sql)
+        assert self.PLACEHOLDER not in out, f"credential survived in {out!r}"
+
+    def test_escaped_quote_inside_value_is_redacted(self, redact):
+        """``''`` escapes a quote inside a literal; the literal is one value."""
+        out = redact("FILES('aws.s3.secret_key'='it''s a SECRET_ESCAPED')")
+        assert "SECRET_ESCAPED" not in out
+        assert "'aws.s3.secret_key'='***'" in out
+
+    def test_non_credential_params_are_not_rewritten(self, redact):
+        sql = (
+            "SELECT * FROM FILES('path'='s3://b/k', 'format'='csv', "
+            "'aws.s3.endpoint'=\"http://minio:9000\")"
+        )
+        assert redact(sql) == sql
+
+    def test_double_quoted_non_credential_value_preserved(self, redact):
+        """A double-quoted value on a *config* param is not a secret to mask."""
+        sql = "SELECT * FROM FILES('aws.s3.enable_ssl'=\"false\")"
+        assert redact(sql) == sql
+
+    def test_idempotent_for_the_double_quoted_value_form(self, redact):
+        once = redact("FILES('aws.s3.access_key'=\"PLACEHOLDER_V\")")
+        assert redact(once) == once
+        assert "'aws.s3.access_key'='***'" in once
+
+
+class TestDottedCredentialSpelling:
+    """A credential suffix written with dots, not underscores, is the same param.
+
+    ``CREDENTIAL_PARAM_SUFFIXES`` matches on the final segment, so
+    ``azure.account_key`` matched but ``azure.account.key`` ended in ``key`` and
+    matched nothing — neither the redaction patterns nor the verification pass.
+    StarRocks accepts the dotted spelling, so a user wrote it straight into
+    ``FILES()`` and the value reached the audit row and the API response.
+    """
+
+    PLACEHOLDER = "SECRETBASE64_PLACEHOLDER=="
+
+    @pytest.mark.parametrize(
+        "param",
+        [
+            "azure.account.key",
+            "azure.blob.account.key",
+            "gcs.service.account.key",
+            "aws.s3.access.key",
+        ],
+    )
+    def test_dotted_spelling_is_redacted(self, redact, param):
+        sql = f"SELECT * FROM FILES('{param}'='{self.PLACEHOLDER}')"
+        out = redact(sql)
+        assert self.PLACEHOLDER not in out, f"dotted credential survived: {out!r}"
+
+    @pytest.mark.parametrize(
+        "param",
+        [
+            "azure.account_key",
+            "azure.account.key",
+            "gcs.service_account_key",
+            "gcs.service.account.key",
+        ],
+    )
+    def test_underscore_and_dotted_spellings_both_covered(self, redact, param):
+        """Neither spelling may fall out of coverage as suffixes are added."""
+        sql = f"FILES('{param}'=\"{self.PLACEHOLDER}\")"
+        assert self.PLACEHOLDER not in redact(sql)
+
+    def test_dotted_spelling_is_caught_by_the_verification_pass(self):
+        """The fail-closed scan must see the dotted form too, not just redaction."""
+        from app.common.sql_guard import _POPULATED_CREDENTIAL, _normalized_value
+
+        match = _POPULATED_CREDENTIAL.search(
+            f"FILES(azure.account.key=\"{self.PLACEHOLDER}\")"
+        )
+        assert match is not None, "verification pattern missed the dotted spelling"
+        assert _normalized_value(match.group("value")) == self.PLACEHOLDER
+
+    def test_dotted_non_credential_suffix_untouched(self, redact):
+        sql = "FILES('aws.s3.access.point'='not-a-secret')"
+        assert redact(sql) == sql
+
+
+class TestSanitizingResponseFailsClosedNotOpen:
+    """The response boundary must never turn an unredactable string into a 500.
+
+    ``SanitizingJSONResponse.render`` runs after the controller has committed to
+    a status code, so an exception there replaces *every* response — including
+    the error handler's own — with a 500. Failing closed means dropping the
+    string, not crashing the response that carried it.
+    """
+
+    def test_unredactable_string_is_replaced_not_raised(self):
+        from app.modules.query.router import SanitizingJSONResponse
+
+        payload = {"note": "FILES('aws.s3.secret_key'='unterminated"}
+        body = SanitizingJSONResponse(payload).render(payload).decode()
+
+        assert SanitizingJSONResponse.REDACTION_FAILED_PLACEHOLDER in body
+        assert "unterminated" not in body
+
+    def test_redactable_payload_still_redacted(self):
+        from app.modules.query.router import SanitizingJSONResponse
+
+        payload = {"sql": "FILES('aws.s3.secret_key'=\"LEAKME\")"}
+        body = SanitizingJSONResponse(payload).render(payload).decode()
+
+        assert "LEAKME" not in body
+        assert "***" in body
+
