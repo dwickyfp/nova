@@ -163,15 +163,21 @@ async def explain_query(
         role=req.role,
     )
 
+    # ``success`` is derived from ``error``, so the marker has to reach the
+    # response: omitting it here makes a refused ``@stage`` translation
+    # (``"success": false`` on the result) serialise as ``"error": null`` and
+    # leaves the client no reason for the failure.
     return QueryResponse(
         success=result.success,
         columns=result.columns,
         rows=result.rows,
         row_count=result.row_count,
+        affected_rows=result.affected_rows,
         elapsed_ms=result.elapsed_ms,
         original_sql=result.original_sql,
         executed_sql=result.executed_sql,
         warnings=result.warnings,
+        error=result.error,
     )
 
 
