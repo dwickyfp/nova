@@ -113,6 +113,19 @@ class TaskOrchestrationRepository:
             return None
         return parsed if isinstance(parsed, dict) else None
 
+    async def get_engine_timezone(self) -> str | None:
+        """The StarRocks session timezone of this connection, e.g. ``Asia/Jakarta``.
+
+        ``NOW()`` values are written in this zone and read back naive, so the
+        scheduler needs it to interpret schedule anchors. Reading it from the
+        engine removes the guess a config default would encode.
+        """
+        result = await db.execute_system("SELECT @@time_zone AS time_zone")
+        if not result["rows"]:
+            return None
+        value = result["rows"][0][0]
+        return str(value) if value else None
+
     # ── Tasks ──────────────────────────────────────────────────
 
     async def create_task(self, data: dict[str, Any], created_by: str | None) -> dict[str, Any]:
@@ -214,6 +227,13 @@ class TaskOrchestrationRepository:
         )
         return [self._to_dict(_EDGE_COLUMNS, row) for row in result["rows"]]
 
+    async def list_all_edges(self) -> list[dict[str, Any]]:
+        """Every edge, in one query — the scheduler plans all graphs per tick."""
+        result = await db.execute_system(
+            f"SELECT {_EDGE_COLUMNS} FROM {_EDGES} ORDER BY graph_id, id"
+        )
+        return [self._to_dict(_EDGE_COLUMNS, row) for row in result["rows"]]
+
     async def update_edge(self, edge_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         assignments, values = _assignments("edge", data)
         await db.execute_system(
@@ -229,7 +249,7 @@ class TaskOrchestrationRepository:
     # ── Graph runs ─────────────────────────────────────────────
 
     async def create_graph_run(self, data: dict[str, Any]) -> dict[str, Any]:
-        run_id = str(uuid4())
+        run_id = data.get("id") or str(uuid4())
         await db.execute_system(
             f"""
             INSERT INTO {_GRAPH_RUNS}
