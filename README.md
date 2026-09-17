@@ -548,9 +548,9 @@ partial implementation say so explicitly.
 - [x] NOVA_SYSTEM database initialization (CONFIG, AUDIT) — `docker/init-nova.sql:50-390`, `backend/app/common/nova_system.py`. **Note:** the SQL uses flat `NOVA_SYSTEM.CONFIG_*` / `ML_*` / `AUDIT_*` tables; `AGENTS.md` documents a nested schema layout (`CONFIG.STAGES`, `AUDIT.LOG`) that the code does not use
 - [x] Frontend: Sign-in page (split-screen), auth guard, JWT cookie — `frontend/src/features/auth/sign-in/sign-in-2.tsx` (`lg:grid-cols-2`), `frontend/src/routes/_authenticated/route.tsx`
 
-### Phase 2 — Query Engine ✅
+### Phase 2 — Query Engine 🔶
 - [x] SQL execution via asyncmy per-user connections — `backend/app/modules/query/service.py`, `backend/app/core/database.py:63-71`
-- [x] @stage SQL dialect — parser, translator, credential injector — `backend/app/modules/query/dialect/{parser,translator,injector}.py`
+- [ ] @stage SQL dialect — translator + credential injector exist, but the parse stage is regex-on-text and eight defects are confirmed open. **Downgraded from `[x]` by NOVA-17** (audit on `237a64b`, re-confirmed at `f29c449`): `_normalize_default_schema_qualification` (`service.py:1016`, called at `:80` and `:572`) corrupts valid SQL — `@stage1.data.default.csv` → `@stage1.data.csv` and `config.default.value` → `config.value`; `@@version` and a `@stage` ref inside a comment produce false-positive stage refs; `@stage1/folder/x.csv` (slash path) and the glob `@stage1.data/*.csv` are not detected; `CREATE ML_MODEL ... TYPE = FORECAST` raises although `AGENTS.md:245` and `docs/19-machine-learning.md:184` document it; `training_sql` is executed raw at `ml_engine/service.py:665,685` with no guard, no `@stage` translation, no credential injection and no redaction
 - [x] File format auto-detection (CSV, Parquet, JSON, ORC, Avro) — `backend/app/modules/query/dialect/detector.py:13-14` (magic bytes) + `parser.py:60` (extension list)
 - [x] Query history with audit logging — `backend/app/modules/query/repository.py`, `backend/app/common/audit.py` (14 call sites)
 - [x] Destructive SQL guard (DROP, TRUNCATE, DELETE confirmation) — `backend/app/common/sql_guard.py`, `backend/app/modules/query/service.py:94`
@@ -623,6 +623,22 @@ does exist under `backend/app/modules/query/dialect/`.
 - [ ] Credential injection for @stage queries
 - [ ] Audit logging for proxy queries
 - [ ] Connection pooling and session tracking
+
+## Decision Log
+
+Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.
+
+### SQL dialect parser (NOVA-17) — 2026-09-17
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **Parse stage moves to ANTLR4 with the official StarRocks 4.1 grammar** (`StarRocks.g4` + `StarRocksLex.g4`, Python3 target); `@stage` and `CREATE ML_MODEL` become Nova grammar rules | The only option with no StarRocks dialect gap. Verified running from Python 3.11 over 18 cases: `@` is already a token with existing rules (`StarRocksLex.g4:556 AT: '@';`, `StarRocks.g4:2809 userVariable : AT identifierOrString`), `AI_COMPLETE`/`AI_CLASSIFY`/`ML_PREDICT` parse with no grammar change, and `@stage`/`CREATE ML_MODEL` fail with exact positions (`line 1:14`, `line 1:7`) where today there is no position at all. sqlglot `30.18.0` fails `SUBMIT TASK` and `EXPLAIN COSTS` outright and falls back **silently** to `exp.Command` on `CREATE PIPE` — three syntaxes in the area Phase 5 is building | Build gains a Java dependency (`antlr-4.13.2`) to regenerate the parser; the runtime stays pure Python. The 3,331-line grammar must be re-synced on StarRocks upgrades, and the generated artefacts are committed with a CI regenerate + drift check | **If accepting a Java-in-build dependency is rejected**, this decision falls back to sqlglot and the `SUBMIT TASK`/`CREATE PIPE`/`EXPLAIN COSTS` gap becomes explicit debt. Also reopen if the latency spike shows p95 is unacceptable |
+| Translator + credential injector **stay owned by Nova** and stay in front of StarRocks. A sqlglot generator is **not** used to rewrite statements | Keeps Nova dialect interception ahead of StarRocks and `@stage` first-class. Regeneration normalises user SQL — `SELECT "quoted"` becomes `SELECT 'quoted'` (identifier → string literal), `SELECT 1;;` becomes `SELECT 1` — and that mutation would land in `executed_sql` and the audit row | Nova continues to maintain its own translator | If the `executed_sql` contract changes to "canonical Nova SQL" rather than "what was sent to the engine" |
+| **No-go:** sqlglot as the StarRocks parser | Measured at `30.18.0`: `SUBMIT TASK` and `EXPLAIN COSTS` raise `ParseError`; `CREATE PIPE` degrades silently to `exp.Command` (parse "succeeds", no AST). Round-trip also mutates SQL | — | If sqlglot ships StarRocks coverage for those three syntaxes **and** a round-trip test shows it does not mutate Nova's SQL |
+| **No-go:** forking Apache Calcite | The grammar must be forked (`Parser.jj`) — permanent maintenance cost — and it puts a JVM in the request path | — | If the JVM becomes acceptable **and** a full SQL planner/optimiser (not just a parser) is needed |
+| **No-go:** the `dialect` crate | **Not a SQL parser.** `dialect` 0.4.1 on crates.io is a *syntax highlighting* crate (`github.com/arzg/dialect`, created 2020, 12,675 downloads, description: "Types and traits for implementing syntax highlighting"). It appeared on the candidate list through a wrong premise in the original brief, not because a parser went unassessed | — | Nothing to reopen. If a real `dwickyfp` Rust parser exists it is a **different entity** and must not be conflated with the crates.io `dialect` |
+
+Defect list backing the Phase 2 downgrade: see the `@stage SQL dialect` item above. Full audit, gap analysis, options matrix and the eight open defects: issue NOVA-17.
 
 ## Support Nova
 
