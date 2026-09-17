@@ -308,6 +308,151 @@ class TestUserVariableSubstitution:
         assert result.sql == "SELECT * FROM @products.products_new.csv"
         assert result.substituted == []
 
+    def test_name_clash_dotted_stage_still_wins(self):
+        """The stage wins over a session variable of the same name.
+
+        ``session.py``'s contract says the ambiguity is the client's and the
+        stage wins. Reading the stored value first turned ``@stage1.data.csv``
+        into the variable's text and left the engine with a path it could not
+        resolve.
+        """
+        session = self._session(stage1="'CSV_FILE'")
+        result = substitute_user_variables("SELECT * FROM @stage1.data.csv", session)
+        assert result.sql == "SELECT * FROM @stage1.data.csv"
+        assert result.substituted == []
+
+    def test_name_clash_does_not_substitute_into_a_dotted_reference(self):
+        """The frame of the QA reproduction: a dot after the name.
+
+        ``@stage1.data.csv`` is a stage path, not ``@stage1`` followed by text,
+        so the stored value must not be spliced in even when the name matches.
+        """
+        session = self._session(stage1="'CSV_FILE'")
+        result = substitute_user_variables("SELECT * FROM @stage1.data.csv", session)
+        assert result.substituted == []
+        assert "CSV_FILE" not in result.sql
+
+    def test_bare_name_in_from_keeps_the_stage(self):
+        """``SELECT * FROM @stage1`` is a stage once the variable shares its name.
+
+        This is the case the reorder fixes. ``parser.py`` classifies ``@name``
+        by context, and after ``FROM`` a bare ``@stage1`` is a stage — so
+        substituting the variable here would send ``SELECT * FROM 'CSV_FILE'``
+        and lose the stage entirely.
+        """
+        session = self._session(stage1="'CSV_FILE'")
+        result = substitute_user_variables("SELECT * FROM @stage1", session)
+        assert result.sql == "SELECT * FROM @stage1"
+        assert result.substituted == []
+
+    def test_bare_name_in_list_files_keeps_the_stage(self):
+        """``LIST FILES @stage1`` is a stage once the variable shares its name."""
+        session = self._session(stage1="'CSV_FILE'")
+        result = substitute_user_variables("LIST FILES @stage1", session)
+        assert result.sql == "LIST FILES @stage1"
+        assert result.substituted == []
+
+    def test_set_then_select_from_stage_keeps_the_stage(self):
+        """End to end: the exact reproduction from the issue.
+
+        ``SET @stage1 = 1`` stores ``1`` under ``stage1``; the following
+        ``SELECT * FROM @stage1`` is a stage and must not pick the value up.
+        """
+        session = SessionState()
+        handle_set_statement("SET @stage1 = 1", session)
+        result = substitute_user_variables("SELECT * FROM @stage1", session)
+        assert result.sql == "SELECT * FROM @stage1"
+        assert result.substituted == []
+
+    def test_set_then_list_files_keeps_the_stage(self):
+        """``SET @stage1 = 1; LIST FILES @stage1`` is a stage browse."""
+        session = SessionState()
+        handle_set_statement("SET @stage1 = 1", session)
+        result = substitute_user_variables("LIST FILES @stage1", session)
+        assert result.sql == "LIST FILES @stage1"
+        assert result.substituted == []
+
+    def test_set_then_select_scalar_variable_is_unaffected(self):
+        """NOVA-25: an ordinary variable read is still substituted.
+
+        ``SELECT @x`` is an expression operand, so the position decides in the
+        variable's favour and the stored value is spliced in.
+        """
+        session = SessionState()
+        handle_set_statement("SET @x = 1", session)
+        result = substitute_user_variables("SELECT @x", session)
+        assert result.sql == "SELECT 1"
+        assert result.substituted == ["x"]
+
+    def test_set_then_list_files_unknown_reference_is_left_alone(self):
+        """``SET @x`` then ``LIST FILES @x``: the stage wins in that position.
+
+        ``LIST FILES @x`` is a stage browse — ``parser.py`` reads ``@x`` as a
+        stage there — so it is not substituted even though a variable named ``x``
+        exists. The issue's acceptance list called this "tetap tersubstitusi"
+        under the old dot-based rule, but that rule is exactly what made
+        ``LIST FILES @stage1`` lose its stage in the repro; the position rule is
+        what the issue's own repro table labels ``(BENAR)`` for NOVA-25.
+        """
+        session = SessionState()
+        handle_set_statement("SET @x = 1", session)
+        result = substitute_user_variables("LIST FILES @x", session)
+        assert result.sql == "LIST FILES @x"
+        assert result.substituted == []
+
+    def test_dotted_reference_without_a_variable_is_unchanged_by_the_reorder(self):
+        """The reorder does not touch the plain dotted case with no variable."""
+        session = SessionState()
+        result = substitute_user_variables("SELECT * FROM @stage1.data.csv", session)
+        assert result.sql == "SELECT * FROM @stage1.data.csv"
+        assert result.substituted == []
+        assert result.unknown == []
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            "SELECT * FROM @stage1",
+            "LIST FILES @stage1",
+            "INSERT INTO t SELECT * FROM @stage1",
+            "COPY INTO t FROM @stage1",
+        ],
+    )
+    def test_name_clash_leaves_every_stage_position_alone(self, statement):
+        """The stage wins wherever ``parser`` reads the position as a stage.
+
+        Parametrised over the stage-introducing keywords so the agreement with
+        the dialect classifier is pinned rather than assumed for the one form in
+        the report.
+        """
+        session = self._session(stage1="'CSV_FILE'")
+        result = substitute_user_variables(statement, session)
+        assert result.sql == statement
+        assert result.substituted == []
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            "SELECT @stage1",
+            "SELECT 1 + @stage1",
+            "SELECT f(@stage1)",
+            "SELECT * FROM t WHERE a = @stage1",
+            "SELECT @stage1, @stage1",
+        ],
+    )
+    def test_same_name_is_still_a_variable_in_expression_position(self, statement):
+        """Position, not the name, decides — so the clash cuts both ways."""
+        session = self._session(stage1="42")
+        result = substitute_user_variables(statement, session)
+        assert "@stage1" not in result.sql
+        assert result.substituted == ["stage1"] * statement.count("@stage1")
+
+    def test_a_stage_reference_is_reported_as_neither_substituted_nor_unknown(self):
+        """Leaving a stage is not the same as failing to resolve a variable."""
+        session = self._session(stage1="'CSV_FILE'")
+        result = substitute_user_variables("SELECT * FROM @stage1", session)
+        assert result.substituted == []
+        assert result.unknown == []
+
     def test_escaped_quote_in_a_literal_does_not_end_the_literal(self):
         """A naive scanner would treat the ``\\'`` as the closing quote."""
         session = self._session(x="1")
