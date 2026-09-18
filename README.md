@@ -628,7 +628,7 @@ connects to port 4406, authenticates against StarRocks, and runs `SELECT`,
 - [ ] Prepared statements (`COM_STMT_PREPARE`) — refused with `ER_NOT_SUPPORTED_YET` so drivers fall back to the text protocol
 
 ### Phase 9 — Task Orchestration & Scheduler (9a complete, NOVA-23)
-Stage 9a is complete and merged; 9b and 9c are not started. Product decisions
+Stage 9a is complete and merged; 9b (`CREATE TASK` grammar/lowering/runtime + task graph UI, PRs #57, #60, #61, #62, #64, #65) is complete and merged; 9c stream providers is not started. Product decisions
 E1–E3 were confirmed on 2026-09-17. Design is **decided and written down**:
 see `docs/specs/nova-23-task-orchestration-design.md`.
 Orchestration layer **above** the existing native task manager
