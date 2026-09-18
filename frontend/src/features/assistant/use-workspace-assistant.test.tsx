@@ -241,7 +241,7 @@ describe('useWorkspaceAssistant grant lifecycle across files', () => {
     await vi.waitFor(() => expect(resetGrant).toHaveBeenCalledWith('thread-a'))
     await vi.waitFor(() => expect(holder.current!.threadId).toBeNull())
     expect(holder.current!.grantActive).toBe(false)
-    expect(holder.current!.messages).toHaveLength(0)
+    expect(holder.current!.messages.map((message) => message.content)).toEqual(['Network unreachable'])
     expect(onError).toHaveBeenCalledWith('Network unreachable')
 
     echoStream()
@@ -252,6 +252,41 @@ describe('useWorkspaceAssistant grant lifecycle across files', () => {
       'sent-on-file-2',
       expect.anything()
     )
+  })
+
+  it('sends from the new file into the new thread while the old revoke is still in flight', async () => {
+    createThread.mockResolvedValueOnce({ thread_id: 'thread-a' })
+    createThread.mockResolvedValueOnce({ thread_id: 'thread-b' })
+    mockTurnThenSessionGrant()
+    let releaseRevoke: () => void = () => {}
+    resetGrant.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRevoke = resolve
+        })
+    )
+    const holder: { current: Assistant | null } = { current: null }
+    const view = await render(<PanelHarness holder={holder} fileId='file-1' />)
+
+    await holder.current!.sendMessage('hi')
+    await holder.current!.decide({ toolCallId: 'call-1', decision: 'approve', alwaysAllow: true })
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true))
+
+    await view.rerender(<PanelHarness holder={holder} fileId='file-2' />)
+    await vi.waitFor(() => expect(resetGrant).toHaveBeenCalledWith('thread-a'))
+
+    expect(holder.current!.threadId).toBeNull()
+    expect(holder.current!.grantActive).toBe(false)
+
+    echoStream()
+    await holder.current!.sendMessage('sent-on-file-2-during-flight')
+
+    expect(streamAssistantTurn).toHaveBeenLastCalledWith('thread-b', 'sent-on-file-2-during-flight', expect.anything())
+    const lastCall = streamAssistantTurn.mock.calls[streamAssistantTurn.mock.calls.length - 1]
+    expect(lastCall[0]).not.toBe('thread-a')
+
+    releaseRevoke()
+    await vi.waitFor(() => expect(holder.current!.threadId).toBe('thread-b'))
   })
 
   it('clears the stale conversation on switch when the revoke answers 404', async () => {
