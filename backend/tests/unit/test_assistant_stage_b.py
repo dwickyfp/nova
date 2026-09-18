@@ -25,7 +25,12 @@ from app.modules.assistant.consent import ConsentBroker
 from app.modules.assistant.provider import AssistantProviderClient, AssistantProviderError
 from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.service import AssistantLoop, LoopContext
-from app.modules.assistant.state import AssistantThread, ConsentPolicy, ThreadStore
+from app.modules.assistant.state import (
+    AssistantMessage,
+    AssistantThread,
+    ConsentPolicy,
+    ThreadStore,
+)
 from app.modules.assistant.tools import (
     ToolInvocation,
     ToolOutcome,
@@ -176,6 +181,99 @@ async def test_loop_emits_text_and_done_on_a_plain_answer():
     )
     assert [_frame_event(f) for f in frames] == ["text_delta", "done"]
     assert _frame_data(frames[0])["text"] == "hello"
+
+
+# ── NOVA-69: exactly one user message per turn ───────────────────────────────
+
+
+async def test_router_stored_user_message_is_not_duplicated_to_the_provider():
+    """The router stores the turn's user message before calling the loop.
+
+    The provider must still receive it exactly once (NOVA-69).
+    """
+    provider = FakeProvider([{"role": "assistant", "content": "ok"}])
+    loop = AssistantLoop(provider=provider, registry=ToolRegistry())
+    thread = _thread()
+    # What send_message does before invoking the loop.
+    thread.messages.append(
+        AssistantMessage(message_id="u1", role="user", content="SELECT 1")
+    )
+
+    await _collect(
+        loop.run(
+            thread=thread,
+            user_content="SELECT 1",
+            context=LoopContext(user_name="alice"),
+            resolve_consent=lambda inv, cls: _allow(),
+        )
+    )
+
+    sent = provider.calls[0]["messages"]
+    user_entries = [m for m in sent if m["role"] == "user"]
+    assert len(user_entries) == 1
+    assert user_entries[0]["content"] == "SELECT 1"
+
+
+async def test_two_turns_do_not_duplicate_or_lose_user_messages():
+    provider = FakeProvider(
+        [
+            {"role": "assistant", "content": "first"},
+            {"role": "assistant", "content": "second"},
+        ]
+    )
+    loop = AssistantLoop(provider=provider, registry=ToolRegistry())
+    thread = _thread()
+
+    # Turn 1
+    thread.messages.append(
+        AssistantMessage(message_id="u1", role="user", content="one")
+    )
+    await _collect(
+        loop.run(
+            thread=thread,
+            user_content="one",
+            context=LoopContext(user_name="alice"),
+            resolve_consent=lambda inv, cls: _allow(),
+        )
+    )
+    thread.messages.append(
+        AssistantMessage(message_id="a1", role="assistant", content="first")
+    )
+
+    # Turn 2
+    thread.messages.append(
+        AssistantMessage(message_id="u2", role="user", content="two")
+    )
+    await _collect(
+        loop.run(
+            thread=thread,
+            user_content="two",
+            context=LoopContext(user_name="alice"),
+            resolve_consent=lambda inv, cls: _allow(),
+        )
+    )
+
+    second = provider.calls[1]["messages"]
+    user_entries = [m["content"] for m in second if m["role"] == "user"]
+    assert user_entries == ["one", "two"]
+
+
+async def test_build_messages_keeps_a_genuine_repeat_question():
+    """Two identical questions in a row are two turns, not one duplicated."""
+    loop = AssistantLoop(provider=FakeProvider([]), registry=ToolRegistry())
+    thread = _thread()
+    thread.messages.append(
+        AssistantMessage(message_id="u1", role="user", content="same")
+    )
+    thread.messages.append(
+        AssistantMessage(message_id="a1", role="assistant", content="answer")
+    )
+    thread.messages.append(
+        AssistantMessage(message_id="u2", role="user", content="same")
+    )
+    messages = loop._build_messages(thread, "same")
+    user_entries = [m["content"] for m in messages if m["role"] == "user"]
+    assert user_entries == ["same", "same"]
 
 
 async def test_loop_stops_at_the_iteration_cap():
@@ -408,25 +506,52 @@ def test_chat_endpoint_composition_matches_ai_functions():
 
 async def test_consent_broker_resolves_a_waiting_future():
     broker = ConsentBroker()
-    future = broker.open("c1", thread_id="t1")
+    future = broker.open("c1", thread_id="t1", user_name="alice")
     assert broker.thread_for("c1") == "t1"
-    assert broker.resolve("c1", True) is True
+    assert broker.owner_of("c1") == ("t1", "alice")
+    assert broker.resolve("c1", True, user_name="alice") is True
     assert await future is True
-    assert broker.resolve("c1", True) is False
+    assert broker.resolve("c1", True, user_name="alice") is False
 
 
 async def test_consent_broker_cancels_all_on_shutdown():
     broker = ConsentBroker()
-    future = broker.open("c1", thread_id="t1")
+    future = broker.open("c1", thread_id="t1", user_name="alice")
     broker.cancel_all()
     assert await future is None
 
 
 async def test_consent_broker_forgets_the_thread_once_resolved():
     broker = ConsentBroker()
-    broker.open("c1", thread_id="t1")
-    broker.resolve("c1", True)
+    broker.open("c1", thread_id="t1", user_name="alice")
+    broker.resolve("c1", True, user_name="alice")
     assert broker.thread_for("c1") is None
+
+
+# ── NOVA-70: consent resolution is owner-scoped ──────────────────────────────
+
+
+async def test_foreign_user_cannot_resolve_someone_elses_tool_call():
+    """A non-owner must not approve or deny another user's pending call."""
+    broker = ConsentBroker()
+    victim = broker.open("victim-call", thread_id="alice-thread", user_name="alice")
+
+    # Bob, a different authenticated user, tries to approve it.
+    assert broker.resolve("victim-call", True, user_name="bob") is False
+    assert victim.done() is False  # the entry is left for the real owner
+
+    # Alice can still resolve it afterwards.
+    assert broker.resolve("victim-call", True, user_name="alice") is True
+    assert await victim is True
+
+
+async def test_foreign_deny_does_not_terminate_the_owners_call():
+    broker = ConsentBroker()
+    victim = broker.open("victim-call", thread_id="alice-thread", user_name="alice")
+    assert broker.resolve("victim-call", False, user_name="mallory") is False
+    assert victim.done() is False
+    assert broker.resolve("victim-call", True, user_name="alice") is True
+    assert await victim is True
 
 
 # ── Auth requirement ─────────────────────────────────────────────────────────

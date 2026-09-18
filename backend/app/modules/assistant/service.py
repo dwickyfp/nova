@@ -79,11 +79,28 @@ class AssistantLoop:
         Only the **text** of prior turns is replayed; tool results are folded in
         as regular text summaries. This keeps a redacted-only rule easy to hold:
         nothing added here is a raw engine statement.
+
+        **Exactly one** ``role: user`` entry carries the current turn. The router
+        stores the user's message on the thread before the stream starts (so the
+        transcript survives a disconnect), so the thread's trailing user message
+        *is* this turn's message — replaying it and then appending
+        ``user_content`` sent the prompt to the model twice (NOVA-69). The
+        history loop therefore skips a trailing user message that matches the
+        turn's content, and ``user_content`` is appended once.
         """
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._system_prompt}
         ]
-        for message in thread.messages:
+        history = thread.messages
+        if (
+            history
+            and history[-1].role == "user"
+            and history[-1].content == user_content
+        ):
+            # The trailing entry is this turn's message, already stored by the
+            # caller; it is appended below (once), not replayed here.
+            history = history[:-1]
+        for message in history:
             if message.role == "user":
                 messages.append({"role": "user", "content": message.content})
             elif message.role == "assistant" and message.content:

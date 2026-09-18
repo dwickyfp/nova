@@ -21,41 +21,66 @@ class _PendingConsent:
     future: asyncio.Future[bool | None]
     loop: asyncio.AbstractEventLoop
     thread_id: str
+    user_name: str
 
 
 class ConsentBroker:
     """Per-tool-call futures, created by the loop and resolved by the router.
 
-    The pending entry also records the owning ``thread_id`` so an
-    ``allow_session`` decision can set the grant on exactly the conversation
-    that asked — never on every thread the user owns (E2b).
+    The pending entry records the owning ``thread_id`` **and** ``user_name``:
+
+    * ``thread_id`` lets an ``allow_session`` decision set the grant on exactly
+      the conversation that asked — never on every thread the user owns (E2b).
+    * ``user_name`` makes resolution an **owner-scoped** operation. A caller who
+      is not the thread's owner must not be able to approve or deny someone
+      else's pending call (NOVA-70: the route previously resolved on
+      ``tool_call_id`` alone, which is an IDOR — the id is model-supplied and
+      not a secret).
     """
 
     def __init__(self) -> None:
         self._pending: dict[str, _PendingConsent] = {}
         self._lock = threading.Lock()
 
-    def open(self, tool_call_id: str, *, thread_id: str) -> asyncio.Future[bool | None]:
+    def open(
+        self, tool_call_id: str, *, thread_id: str, user_name: str
+    ) -> asyncio.Future[bool | None]:
         """Register a pending decision and return the future to await."""
         loop = asyncio.get_running_loop()
         future: asyncio.Future[bool | None] = loop.create_future()
         with self._lock:
             self._pending[tool_call_id] = _PendingConsent(
-                future=future, loop=loop, thread_id=thread_id
+                future=future, loop=loop, thread_id=thread_id, user_name=user_name
             )
         return future
 
-    def thread_for(self, tool_call_id: str) -> str | None:
-        """The conversation that owns a still-pending call, if any."""
+    def owner_of(self, tool_call_id: str) -> tuple[str, str] | None:
+        """``(thread_id, user_name)`` of a still-pending call, or ``None``."""
         with self._lock:
             pending = self._pending.get(tool_call_id)
-        return pending.thread_id if pending is not None else None
+        return (pending.thread_id, pending.user_name) if pending is not None else None
 
-    def resolve(self, tool_call_id: str, allowed: bool | None) -> bool:
-        """Resolve a pending decision. ``False`` when nothing was waiting."""
+    def thread_for(self, tool_call_id: str) -> str | None:
+        """The conversation that owns a still-pending call, if any."""
+        owner = self.owner_of(tool_call_id)
+        return owner[0] if owner is not None else None
+
+    def resolve(
+        self, tool_call_id: str, allowed: bool | None, *, user_name: str
+    ) -> bool:
+        """Resolve a pending decision, but only for its owner.
+
+        Returns ``False`` when nothing was waiting **or** the caller is not the
+        owner. A foreign caller does not consume the entry: it is left for the
+        real owner to resolve. The router turns ``False`` into a 404, matching
+        the module's rule that a foreign id must not leak existence.
+        """
         with self._lock:
-            pending = self._pending.pop(tool_call_id, None)
-        if pending is None or pending.future.done():
+            pending = self._pending.get(tool_call_id)
+            if pending is None or pending.user_name != user_name:
+                return False
+            self._pending.pop(tool_call_id, None)
+        if pending.future.done():
             return False
         pending.loop.call_soon_threadsafe(_set_future, pending.future, allowed)
         return True

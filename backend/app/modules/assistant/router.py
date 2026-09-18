@@ -203,12 +203,21 @@ async def send_message(
     ) -> bool | None:
         # The loop has already emitted the tool_call frame; the client answers
         # out of band. If the stream is disconnected, treat it as cancelled.
-        future = consent_broker.open(invocation.tool_call_id, thread_id=thread.thread_id)
+        future = consent_broker.open(
+            invocation.tool_call_id,
+            thread_id=thread.thread_id,
+            user_name=thread.user_name,
+        )
 
         async def _watch_disconnect() -> None:
             while not future.done():
                 if await request.is_disconnected():
-                    consent_broker.resolve(invocation.tool_call_id, None)
+                    # The owner's stream went away: cancel the pending call as
+                    # its owner, so the owner check is satisfied and the loop
+                    # is released with ``None`` (cancelled).
+                    consent_broker.resolve(
+                        invocation.tool_call_id, None, user_name=thread.user_name
+                    )
                     return
                 await asyncio.sleep(0.25)
 
@@ -274,35 +283,46 @@ async def resolve_tool_call(
 ):
     """Resolve a pending tool call.
 
+    Owner-scoped: only the user who owns the conversation that proposed the call
+    may approve or deny it. A foreign or unknown id answers 404 (never 403), so
+    existence does not leak — the same rule the rest of this router follows.
+    Without this, any authenticated user who learned a ``tool_call_id`` could
+    approve another user's call (NOVA-70).
+
     ``allow_session`` sets the conversation's read-only grant. The grant only
     ever covers read-only statements — it is not a switch the client can use to
     auto-approve a destructive call (E2b).
     """
+    owner = consent_broker.owner_of(tool_call_id)
+    if owner is None or owner[1] != user["username"]:
+        # Unknown id, already resolved, or someone else's pending call.
+        raise HTTPException(status_code=404, detail="Tool call not found")
+
+    thread_id, _owner_name = owner
+    # The broker already proved ownership; resolve only against the owner's own
+    # thread so the grant can never land on a foreign conversation.
+    thread = thread_store.get(thread_id, user_name=user["username"])
+    if thread is None:
+        raise HTTPException(status_code=404, detail="Tool call not found")
+
     if body.decision == "deny":
-        resolved = consent_broker.resolve(tool_call_id, False)
+        resolved = consent_broker.resolve(
+            tool_call_id, False, user_name=user["username"]
+        )
         return ConsentDecisionResponse(
             tool_call_id=tool_call_id,
             status="denied" if resolved else "cancelled",
             grant_active=False,
         )
 
-    # ``allow_session`` sets the read-only grant on the conversation that owns
-    # this tool call. The broker is keyed by tool_call_id; the pending call
-    # records which thread it belongs to so the grant lands on exactly that
-    # thread (E2b: per conversation, never global).
     grant_active = False
     if body.decision == "allow_session":
-        thread_id = consent_broker.thread_for(tool_call_id)
-        thread = (
-            thread_store.get(thread_id, user_name=user["username"])
-            if thread_id
-            else None
-        )
-        if thread is not None:
-            thread.consent.always_allow_read_only = True
-            grant_active = True
+        thread.consent.always_allow_read_only = True
+        grant_active = True
 
-    resolved = consent_broker.resolve(tool_call_id, True)
+    resolved = consent_broker.resolve(
+        tool_call_id, True, user_name=user["username"]
+    )
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved" if resolved else "cancelled",
