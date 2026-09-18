@@ -25,6 +25,7 @@ from app.modules.explorer.router import router as explorer_router
 from app.modules.external_catalogs.router import router as external_catalogs_router
 from app.modules.functions.router import router as functions_router
 from app.modules.llm_functions.router import router as llm_fn_router
+from app.modules.migration.router import router as migration_router
 from app.modules.ml_engine.internal_router import router as ml_internal_router
 from app.modules.ml_engine.router import router as ml_router
 from app.modules.monitoring.router import router as monitoring_router
@@ -71,6 +72,16 @@ async def lifespan(app: FastAPI):
         await external_catalog_repo.ensure_schema()
     except Exception as e:
         logger.warning("Could not ensure external catalog schema: %s", e)
+
+    # Migration Connector source registry (Phase 11 v1). Best-effort, same
+    # reasoning: a missing mirror table only degrades the source list, not the
+    # read-only assessment path.
+    try:
+        from app.modules.migration.repository import migration_repo
+
+        await migration_repo.ensure_schema()
+    except Exception as e:
+        logger.warning("Could not ensure migration source schema: %s", e)
 
     # Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)
     # so they are available as SQL functions from the start.
@@ -168,6 +179,11 @@ def create_app() -> FastAPI:
         external_catalogs_router,
         prefix=f"{prefix}/external-catalogs",
         tags=["external-catalogs"],
+    )
+    # Phase 11 v1 — Migration Connector: Assessment + Dry-run only. There is no
+    # Execute endpoint; cutover is gated on #7 (backup/restore).
+    app.include_router(
+        migration_router, prefix=f"{prefix}/migration", tags=["migration"]
     )
 
     # Static files for Java UDFs

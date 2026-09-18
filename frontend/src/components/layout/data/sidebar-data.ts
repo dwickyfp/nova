@@ -12,6 +12,7 @@ import {
   Users,
   Zap,
   Activity,
+  ArrowRightLeft,
   FunctionSquare,
   GitFork,
   Layers,
@@ -48,6 +49,11 @@ export const sidebarData: SidebarData = {
           title: 'External Catalogs',
           url: '/external-catalogs',
           icon: Layers,
+        },
+        {
+          title: 'Migration',
+          url: '/migration',
+          icon: ArrowRightLeft,
         },
         {
           title: 'Tasks',
