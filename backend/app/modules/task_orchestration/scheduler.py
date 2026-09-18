@@ -36,6 +36,28 @@ logger = logging.getLogger(__name__)
 
 SCHEDULED_KINDS = frozenset({"cron", "interval"})
 
+#: The Nova overlap policies, enforced at graph-run enqueue. ``skip`` is the
+#: default so an unset or unknown value never starts an overlapping run.
+OVERLAP_POLICIES = frozenset({"skip", "queue", "allow"})
+
+
+def should_enqueue(overlap_policy: str, active_runs: int) -> bool:
+    """Whether a new graph run may be created, given active runs for the graph.
+
+    ``skip``  — no new run while one is active (the occurrence is dropped).
+    ``queue`` — a new run is created; the worker defers it until the active one
+                settles, so occurrences are honoured in order, one at a time.
+    ``allow`` — a new run is created and may execute concurrently with the
+                active one.
+
+    Pure, so the three policies are unit-testable without a database.
+    """
+    if active_runs <= 0:
+        return True
+    # Only an explicit queue/allow may overlap. `skip` and any unknown value
+    # refuse, so a bad value never starts an overlap the caller did not ask for.
+    return overlap_policy in {"queue", "allow"}
+
 
 def deterministic_run_id(graph_id: str, due_at: datetime) -> str:
     """The idempotency key for a (graph, due-time) pair.
@@ -55,6 +77,8 @@ class DueGraph:
     due_at: datetime
     task_ids: list[str]
     task_names: list[str]
+    #: The enqueue-time overlap policy, taken from the graph's root task.
+    overlap_policy: str = "skip"
 
     @property
     def run_id(self) -> str:
@@ -66,7 +90,13 @@ class SchedulerPlan:
     """The graphs a tick found due, as pure data (no side effects)."""
 
     due: list[DueGraph]
+    #: Tasks whose schedule expression was unusable and was skipped. Distinct
+    #: from an overlap skip, which is a deliberate policy outcome, not a defect.
     skipped: int = 0
+    #: Due graphs not enqueued because their overlap policy refused to overlap
+    #: an active run (``skip``). Reported separately so the two kinds of skip
+    #: are never conflated in logs or tests.
+    overlap_skipped: int = 0
 
 
 def naive_engine_time_to_utc(value: datetime, engine_timezone: str) -> datetime:
@@ -218,10 +248,21 @@ def plan_tick(
                 due_at=graph_due_at,
                 task_ids=task_ids,
                 task_names=task_names,
+                overlap_policy=_normalise_overlap(root_task.get("overlap_policy")),
             )
         )
 
     return SchedulerPlan(due=due, skipped=skipped)
+
+
+def _normalise_overlap(value: Any) -> str:
+    """The root task's overlap policy, defaulting to ``skip``.
+
+    An unknown or missing value falls back to the strictest policy rather than
+    the most permissive: a bad value must never silently start overlapping runs.
+    """
+    candidate = str(value or "").strip().lower()
+    return candidate if candidate in OVERLAP_POLICIES else "skip"
 
 
 class SchedulerTick:
@@ -247,12 +288,29 @@ class SchedulerTick:
             if existing is not None:
                 continue
 
+            # Overlap policy is enforced here, at enqueue. `skip` refuses to
+            # create a run while one is active; `queue` creates it (the worker
+            # defers it behind the active run); `allow` creates it and lets it
+            # run concurrently. The decision reads the active runs once, so a
+            # long list cannot change mid-decision.
+            active = await self._repository.list_active_graph_runs(due.graph_id)
+            if not should_enqueue(due.overlap_policy, len(active)):
+                logger.info(
+                    "skipping due graph %s: %s overlap policy with %d active run(s)",
+                    due.graph_id,
+                    due.overlap_policy,
+                    len(active),
+                )
+                plan.overlap_skipped += 1
+                continue
+
             created = await self._repository.create_graph_run(
                 {
                     "id": due.run_id,
                     "graph_id": due.graph_id,
                     "trigger_type": "schedule",
                     "state": "pending",
+                    "overlap_policy": due.overlap_policy,
                 }
             )
             await self._transport.publish_graph_run(created, due.task_ids)

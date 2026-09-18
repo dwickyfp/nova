@@ -231,25 +231,96 @@ def _has_failed_ancestor(graph: Graph, states: dict[str, NodeState]) -> bool:
     return any(state is NodeState.FAILED for state in states.values())
 
 
+def finalizer_targets(edges: Iterable[dict[str, object]]) -> dict[str, str]:
+    """Map each finalizer node to the task it finalizes.
+
+    ``edge_kind == 'finalize'``, ``parent`` is the finalized task and ``child``
+    is the finalizer. The mapping is the child -> parent direction, which is the
+    form the worker stages on.
+    """
+    return {
+        str(edge["child_task"]): str(edge["parent_task"])
+        for edge in edges
+        if str(edge.get("edge_kind") or "after") == "finalize"
+    }
+
+
 def graph_from_task_rows(
     node_names: Iterable[str], edges: Iterable[dict[str, object]]
 ) -> Graph:
-    """Build a :class:`Graph` from ``CONFIG_TASK_EDGES`` rows.
+    """Build the **dependency** graph from ``CONFIG_TASK_EDGES`` rows.
 
     Edges store task *names* (design §5), so membership is resolved by name.
 
-    Only ``edge_kind == 'after'`` edges become dependencies. A ``finalize`` edge
-    means "run this after the target completes", not "the child waits for the
-    parent", so folding it into the adjacency would make the finalizer run as an
-    ordinary child at the wrong time. Its run semantics are wired in PR 3b; the
-    row is stored now so nothing is lost, and it is filtered here so this PR does
-    not silently mis-execute it.
+    Only ``edge_kind == 'after'`` edges become dependencies, and finalizer nodes
+    are excluded from the node set entirely. A ``finalize`` edge means "run this
+    after the target's subgraph completes", not "the child waits for the
+    parent"; if the finalizer were left in the node set with no incoming
+    dependency, :func:`evaluate` would mark it ready immediately and it would run
+    alongside — or before — the work it is supposed to follow. Finalizer staging
+    is :func:`finalizers_ready`, driven separately by the worker.
     """
-    return Graph.from_edges(
-        node_names,
-        [
-            Edge(parent=str(edge["parent_task"]), child=str(edge["child_task"]))
-            for edge in edges
-            if str(edge.get("edge_kind") or "after") == "after"
-        ],
+    edge_list = list(edges)
+    after_edges = [
+        Edge(parent=str(edge["parent_task"]), child=str(edge["child_task"]))
+        for edge in edge_list
+        if str(edge.get("edge_kind") or "after") == "after"
+    ]
+    finalizer_nodes = set(finalizer_targets(edge_list))
+    dependency_nodes = [name for name in node_names if name not in finalizer_nodes]
+    graph = Graph.from_edges(dependency_nodes, after_edges)
+    graph.finalizer_nodes = finalizer_nodes
+    return graph
+
+
+def finalizers_ready(
+    graph: Graph,
+    states: dict[str, NodeState],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split finalizers into ``(ready, skipped)`` for this transition.
+
+    **Semantics (chosen, and stated so it is not implicit): a finalizer runs
+    only after the entire dependency graph has settled successfully.** That is,
+    every dependency node must be ``SUCCESS`` or ``SUSPENDED`` (the design treats
+    a suspended node as a non-blocking terminal success) before any finalizer is
+    offered. This is the strictest reading of "runs after its subgraph completes"
+    and it makes concurrency with *any* predecessor impossible: the finalizer is
+    not returned as ready until no dependency node is pending or running.
+
+    The alternative reading — "run once the specific finalized target's
+    ancestors are done" — would let a finalizer run while a *downstream* node
+    that does not feed it is still running. That is defensible in Snowflake's
+    model but it is not obviously what a reader of the Nova surface expects, and
+    it reintroduces a concurrency window. Finishing the whole dependency graph
+    first is the safer contract, so it is the one implemented.
+
+    A finalizer whose dependency graph contains a failure or a skip is
+    **skipped**, not run: finalization reports a completed run, and running it
+    over a failed one would misreport the outcome. Pending nodes keep the
+    finalizer pending (neither returned); the worker re-evaluates later.
+
+    The finalizer names come from ``graph.finalizer_nodes``, populated by
+    ``graph_from_task_rows``.
+    """
+    ready: list[str] = []
+    skipped: list[str] = []
+
+    dependency_nodes = [name for name in graph.nodes]
+    dependency_states = [states.get(node, NodeState.PENDING) for node in dependency_nodes]
+
+    subgraph_failed = any(state in _FAILED_PARENT_STATES for state in dependency_states)
+    subgraph_blocked = any(state in _BLOCKING_PARENT_STATES for state in dependency_states)
+    subgraph_complete = all(
+        state in _SATISFIED_PARENT_STATES for state in dependency_states
     )
+
+    for finalizer in sorted(graph.finalizer_nodes):
+        if states.get(finalizer, NodeState.PENDING) in TERMINAL_NODE_STATES:
+            continue
+        if subgraph_failed or subgraph_blocked:
+            skipped.append(finalizer)
+        elif subgraph_complete:
+            ready.append(finalizer)
+        # else: dependency graph still in flight; the finalizer waits.
+
+    return tuple(ready), tuple(skipped)

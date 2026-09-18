@@ -330,6 +330,36 @@ Catatan operasional:
 - Eksekusi dinilai terhadap `information_schema.task_runs` milik engine:
   `SUBMIT TASK` di-follow polling sampai run selesai. Tidak ada completion hook.
 
+### Semantik runtime `CREATE TASK` (NOVA-54)
+
+Task yang dibuat lewat surface Nova (`CREATE TASK … AFTER / FINALIZE / WHEN /
+OVERLAP_POLICY / SCHEDULE`) dieksekusi worker dengan aturan berikut. Detail
+lengkap + alasan keputusan ada di `docs/08-task-manager.md` § Runtime semantics.
+
+- **`AFTER`** — urutan dependency biasa; join menunggu **semua** parent.
+- **`FINALIZE`** — bukan dependency. Berjalan hanya setelah **seluruh dependency
+  graph** selesai sukses, dan **di-skip bila graph gagal** (keputusan sadar: ia
+  task engine, bukan callback; menjalankannya di atas run gagal akan menulis
+  klaim palsu). Kegagalan finalizer sendiri menggagalkan graph.
+- **`WHEN`** — false melewati node **dan** turunannya; error evaluasi
+  menggagalkan node, bukan diam-diam di-skip.
+- **`OVERLAP_POLICY`** — `skip` (default) menolak run baru saat satu run graph
+  masih aktif; `queue` menundanya sampai run aktif selesai; `allow` menjalankan
+  konkuren. Nilai tak dikenal berperilaku `skip`.
+
+Cara mengamati:
+
+```bash
+# Graph run beserta policy overlap-nya (kolom overlap_policy)
+# SELECT id, graph_id, state, overlap_policy FROM NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS;
+
+# Node run: satu baris per node, termasuk finalizer (skipped bila graph gagal)
+# SELECT graph_run_id, task_id, state, error_message FROM NOVA_SYSTEM.CONFIG_TASK_RUNS;
+
+# Audit: GRAPH_RUN_* dan NODE_* (SUCCESS/SKIPPED/FAILED)
+# SELECT action, object_name, status FROM NOVA_SYSTEM.AUDIT.LOG ORDER BY event_time DESC LIMIT 20;
+```
+
 Untuk memverifikasi worker mengonsumsi:
 
 ```bash
