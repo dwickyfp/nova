@@ -1,7 +1,14 @@
-"""Object Browser repository — StarRocks metadata queries."""
+"""Object Browser repository — StarRocks metadata queries.
 
-from app.core.security import decrypt_password
+Identifiers reach these queries as URL path segments, so each is validated
+against the shared allow-list before it is interpolated into a ``SHOW``/``DESC``
+statement (NOVA-89). The queries already run on the caller's connection; the
+validation is what keeps a path segment from breaking out of the identifier.
+"""
+
+from app.common.identifiers import check_identifier
 from app.core.database import db
+from app.core.security import decrypt_password
 
 
 class ObjectRepository:
@@ -17,16 +24,18 @@ class ObjectRepository:
         role: str | None = None,
     ) -> dict:
         password = decrypt_password(encrypted_password)
-        async with db.user_conn(username, password, database=database) as conn:
-            async with conn.cursor() as cur:
-                if role:
-                    safe_role = role.replace("`", "").replace("'", "")
-                    await cur.execute(f"SET ROLE {safe_role}")
-                await cur.execute(sql)
-                if cur.description:
-                    rows = await cur.fetchall()
-                    return {"rows": rows}
-                return {"rows": []}
+        async with (
+            db.user_conn(username, password, database=database) as conn,
+            conn.cursor() as cur,
+        ):
+            if role:
+                safe_role = role.replace("`", "").replace("'", "")
+                await cur.execute(f"SET ROLE {safe_role}")
+            await cur.execute(sql)
+            if cur.description:
+                rows = await cur.fetchall()
+                return {"rows": rows}
+            return {"rows": []}
 
     # ── Databases ──────────────────────────────────────────────
 
@@ -62,6 +71,7 @@ class ObjectRepository:
         role: str | None = None,
     ) -> dict | None:
         """Get database details."""
+        name = check_identifier(name, field="database")
         result = await self._execute_user(
             f"SHOW CREATE DATABASE `{name}`",
             username=username,
@@ -83,6 +93,7 @@ class ObjectRepository:
         role: str | None = None,
     ) -> list[dict]:
         """List all tables in a database."""
+        database = check_identifier(database, field="database")
         result = await self._execute_user(
             f"SHOW TABLES FROM `{database}`",
             username=username,
@@ -106,6 +117,8 @@ class ObjectRepository:
         role: str | None = None,
     ) -> dict | None:
         """Get full table detail — columns, indexes, partition, DDL."""
+        database = check_identifier(database, field="database")
+        table = check_identifier(table, field="table name")
         # Column info via DESC
         try:
             desc_result = await self._execute_user(
@@ -177,6 +190,7 @@ class ObjectRepository:
         role: str | None = None,
     ) -> list[dict]:
         """List all views in a database."""
+        database = check_identifier(database, field="database")
         result = await self._execute_user(
             f"SHOW TABLES FROM `{database}` LIKE '%'"  # Get all, filter in Python
             ,
@@ -213,6 +227,8 @@ class ObjectRepository:
         role: str | None = None,
     ) -> dict | None:
         """Get view detail — definition, columns."""
+        database = check_identifier(database, field="database")
+        view = check_identifier(view, field="view name")
         try:
             ddl_result = await self._execute_user(
                 f"SHOW CREATE VIEW `{database}`.`{view}`",
@@ -264,6 +280,7 @@ class ObjectRepository:
         role: str | None = None,
     ) -> list[dict]:
         """List all materialized views in a database."""
+        database = check_identifier(database, field="database")
         result = await self._execute_user(
             f"SHOW ALTER MATERIALIZED VIEW FROM `{database}`",
             username=username,
@@ -291,6 +308,7 @@ class ObjectRepository:
 
         Returns: {"tables": [...], "views": [...], "materialized_views": [...]}
         """
+        database = check_identifier(database, field="database")
         result = await self._execute_user(
             f"SHOW TABLES FROM `{database}`",
             username=username,

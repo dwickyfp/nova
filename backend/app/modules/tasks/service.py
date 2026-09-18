@@ -13,6 +13,8 @@ import json
 import logging
 from typing import Any, Protocol
 
+from app.common.identifiers import check_identifier
+
 from .schemas import (
     TaskResponse,
     TaskRunResponse,
@@ -136,9 +138,11 @@ class TaskService:
         Optional PROPERTIES clause appended before AS when properties dict is
         non-empty.
         """
-        name: str = data["name"]
+        name: str = check_identifier(data["name"], field="task name")
         sql: str = data["sql"]
         database: str = data.get("database", "")
+        if database:
+            database = check_identifier(database, field="database")
         schedule_type: str = data.get("schedule_type", "once")
         interval: str | None = data.get("interval")
         start_time: str | None = data.get("start_time")
@@ -185,18 +189,21 @@ class TaskService:
 
     async def suspend_task(self, conn: TaskConnection, name: str) -> dict:
         """Suspend (pause) a running periodic task."""
+        name = check_identifier(name, field="task name")
         async with conn.cursor() as cur:
             await cur.execute(f"ALTER TASK `{name}` SUSPEND")
         return {"success": True, "task_name": name, "action": "suspended"}
 
     async def resume_task(self, conn: TaskConnection, name: str) -> dict:
         """Resume a suspended periodic task."""
+        name = check_identifier(name, field="task name")
         async with conn.cursor() as cur:
             await cur.execute(f"ALTER TASK `{name}` RESUME")
         return {"success": True, "task_name": name, "action": "resumed"}
 
     async def drop_task(self, conn: TaskConnection, name: str, force: bool = False) -> dict:
         """Drop a task.  When *force* is True, uses IF EXISTS + FORCE."""
+        name = check_identifier(name, field="task name")
         drop_sql = (
             f"DROP TASK IF EXISTS `{name}` FORCE" if force else f"DROP TASK `{name}`"
         )
