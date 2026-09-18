@@ -6,12 +6,12 @@
 > latency.
 
 - **Date:** 2026-09-18
-- **Measured at revision:** the head of this PR branch, whose only benchmark
-  commits are the two introducing `backend/tests/benchmark/` (base
-  `0ca873e` → head). The SHAs move on every rebase, so this report names no
-  fixed SHA; the durable citation once the PR lands is the merge commit on
-  `main`. **Verify the checkout actually contains the suite before running the
-  reproduce block:**
+- **Measured at revision:** the head of PR #98
+  (`agent/python-dev-expert/2a5544ff7f35`), which contains
+  `backend/tests/benchmark/`. The branch is rebased onto `main` before merge,
+  so its SHAs move; this report deliberately names no fixed SHA. The durable
+  citation once the PR lands is the merge commit on `main`. **Verify the
+  checkout actually contains the suite before running the reproduce block:**
 
   ```bash
   git rev-parse HEAD                                  # the revision you are about to measure at
@@ -20,7 +20,7 @@
 
   Run from the repository root. If the second command prints nothing, the
   checkout predates the benchmark and the reproduce command would fail with
-  `file or directory not found` — check out this PR's head instead.
+  `file or directory not found` — check out PR #98's head instead.
 - **Python:** 3.12.8
 - **Machine:** Apple M3, 8 cores, macOS 26.6.2 (arm64)
 - **Method:** `time.perf_counter_ns`, N iterations per case, reported as
@@ -65,7 +65,20 @@ Context-assembly cost is linear in transcript length: ~1.1 µs empty, ~9.1 µs a
 | Estimated tokens | 1,424 |
 | Token budget | 2,000 |
 | Primer sections | 6 |
-| Source revision hash | `6033133b2f51` |
+| Skill source-doc content hash | `6033133b2f51` |
+
+The last row is **not** a git revision: it is
+`default_skill.metadata.revision` — a SHA-256 over the bytes of the five
+`docs/sql_docs/` source documents the primer paraphrases, computed at import
+(`app/modules/assistant/skills.py:_source_revision`). Reproduce it with:
+
+```bash
+cd backend && uv run python -c \
+  "from app.modules.assistant.skills import default_skill as s; print(s.metadata.revision)"
+```
+
+It is stable as long as those source docs are unchanged; a semantic edit to any
+of them moves the hash and signals the primer should be refreshed.
 
 The prompt is assembled once at import and cached, so its per-turn cost is zero
 recomputation; the number that matters is its **token cost** against the model's
