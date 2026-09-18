@@ -6,16 +6,20 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
 # ── Training ──────────────────────────────────────────────────
 
 class TrainModelRequest(BaseModel):
     """Train a classical ML model using data from a SQL query."""
-    model_name: str = Field(..., min_length=1, max_length=256, description="Human-readable model name")
+    model_name: str = Field(
+        ..., min_length=1, max_length=256, description="Human-readable model name"
+    )
     model_type: str = Field(
         ...,
-        pattern="^(classification|regression)$",
-        description="Type of ML problem: classification or regression",
+        pattern="^(classification|regression|forecast|anomaly_detection)$",
+        description=(
+            "Type of ML problem: classification, regression, forecast, or "
+            "anomaly_detection"
+        ),
     )
     algorithm: str = Field(
         default="auto",
@@ -32,8 +36,12 @@ class TrainModelRequest(BaseModel):
         default=None,
         description="Algorithm-specific hyperparameters (e.g., {'n_estimators': 100})",
     )
-    test_size: float = Field(default=0.2, ge=0.0, lt=1.0, description="Fraction of data for testing")
-    database_name: str | None = Field(default=None, description="Database context for the training SQL")
+    test_size: float = Field(
+        default=0.2, ge=0.0, lt=1.0, description="Fraction of data for testing"
+    )
+    database_name: str | None = Field(
+        default=None, description="Database context for the training SQL"
+    )
 
 
 class TrainModelResponse(BaseModel):

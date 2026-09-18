@@ -12,8 +12,14 @@ _CREATE_ML_MODEL_PATTERN = re.compile(
     r"\s+(?P<body>.*?)\s+AS\s+(?P<training_sql>SELECT\b.+)\s*$",
     re.IGNORECASE | re.DOTALL,
 )
+#: The model types the surface documents. `FORECAST` and `ANOMALY_DETECTION` are
+#: Nova adaptations recorded in `docs/19-machine-learning.md:184,322` and
+#: `AGENTS.md:245`; the previous pattern accepted only the two supervised types,
+#: so a documented `TYPE = FORECAST` failed as a syntax error (NOVA-17 defect 7).
+#: Keeping the set here — rather than a permissive identifier capture — is what
+#: still rejects `TYPE = BANANA` with a useful message.
 _TYPE_PATTERN = re.compile(
-    r"\bTYPE\s*=\s*(?P<value>CLASSIFICATION|REGRESSION)\b",
+    r"\bTYPE\s*=\s*(?P<value>CLASSIFICATION|REGRESSION|FORECAST|ANOMALY_DETECTION)\b",
     re.IGNORECASE,
 )
 _TARGET_PATTERN = re.compile(
@@ -62,7 +68,7 @@ def parse_create_ml_model(sql: str) -> CreateMLModelStatement:
 
     Supported v1 syntax:
         CREATE ML_MODEL name
-        TYPE = CLASSIFICATION|REGRESSION
+        TYPE = CLASSIFICATION|REGRESSION|FORECAST|ANOMALY_DETECTION
         TARGET = target_column
         [ALGORITHM = random_forest]
         [TEST_SIZE = 0.2]
@@ -74,14 +80,18 @@ def parse_create_ml_model(sql: str) -> CreateMLModelStatement:
     if not match:
         raise ValueError(
             "Invalid CREATE ML_MODEL syntax. Expected: CREATE ML_MODEL name "
-            "TYPE = CLASSIFICATION|REGRESSION TARGET = target AS SELECT ..."
+            "TYPE = CLASSIFICATION|REGRESSION|FORECAST|ANOMALY_DETECTION "
+            "TARGET = target AS SELECT ..."
         )
 
     body = match.group("body")
     type_match = _TYPE_PATTERN.search(body)
     target_match = _TARGET_PATTERN.search(body)
     if not type_match:
-        raise ValueError("CREATE ML_MODEL requires TYPE = CLASSIFICATION or TYPE = REGRESSION")
+        raise ValueError(
+            "CREATE ML_MODEL requires TYPE = CLASSIFICATION, REGRESSION, "
+            "FORECAST, or ANOMALY_DETECTION"
+        )
     if not target_match:
         raise ValueError("CREATE ML_MODEL requires TARGET = target_column")
 

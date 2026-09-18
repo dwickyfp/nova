@@ -73,27 +73,60 @@ ALGORITHMS = {
         "knn": KNeighborsRegressor,
         "svm": SVR,
     },
+    # `FORECAST` and `ANOMALY_DETECTION` are Nova model types documented in
+    # `docs/19-machine-learning.md:184,322` and `AGENTS.md:245`. Forecasting a
+    # continuous target and scoring it for anomalies are, under the surface,
+    # regression and classification over an existing feature set — the same
+    # estimators below are the correct primitive, so the types reuse them rather
+    # than failing as "not supported". The declared type is stored truthfully on
+    # the model row, so a later dedicated forecaster (e.g. an ARIMA/ETS backend)
+    # can be swapped in behind the same `model_type` without a migration.
+    "forecast": {
+        "linear": LinearRegression,
+        "decision_tree": DecisionTreeRegressor,
+        "random_forest": RandomForestRegressor,
+        "gradient_boost": GradientBoostingRegressor,
+        "knn": KNeighborsRegressor,
+        "svm": SVR,
+    },
+    "anomaly_detection": {
+        "linear": LogisticRegression,
+        "logistic": LogisticRegression,
+        "decision_tree": DecisionTreeClassifier,
+        "random_forest": RandomForestClassifier,
+        "gradient_boost": GradientBoostingClassifier,
+        "knn": KNeighborsClassifier,
+        "svm": SVC,
+    },
 }
+
+#: Model types whose metrics are regression metrics. Everything else is scored
+#: as classification. `forecast` predicts a continuous value, so it is
+#: regression-shaped for evaluation even though it is a distinct Nova type.
+_REGRESSION_LIKE_TYPES = frozenset({"regression", "forecast"})
 
 
 def _pick_algorithm(model_type: str, algorithm: str, n_rows: int) -> str:
     """Auto-select algorithm based on problem type and data size."""
     if algorithm != "auto":
         return algorithm
-    if model_type == "classification":
-        if n_rows < 1000:
-            return "decision_tree"
-        elif n_rows < 10000:
-            return "random_forest"
-        else:
-            return "gradient_boost"
-    else:  # regression
+    # Branch on the estimator family the type resolves to, not on the type name:
+    # `anomaly_detection` is classification-shaped (it reuses the classifiers)
+    # and `forecast` is regression-shaped, so keying off the name alone would
+    # hand `anomaly_detection` a regressor.
+    if model_type in _REGRESSION_LIKE_TYPES:
         if n_rows < 1000:
             return "linear"
         elif n_rows < 10000:
             return "random_forest"
         else:
             return "gradient_boost"
+    if n_rows < 1000:
+        return "decision_tree"
+    elif n_rows < 10000:
+        return "random_forest"
+    else:
+        return "gradient_boost"
 
 
 class MLEngineService:
@@ -220,9 +253,14 @@ class MLEngineService:
         X = np.array(X, dtype=float)
         y = np.array(y)
 
-        # Encode string labels for classification
+        # Encode string labels for classification-shaped problems. `forecast`
+        # predicts a continuous target, so a string target is an error there;
+        # only the classification family (classification, anomaly_detection)
+        # labels-encodes. `anomaly_detection` shares the classifier estimators,
+        # so it must be included here or a string label would reach sklearn raw.
+        is_regression_like = model_type in _REGRESSION_LIKE_TYPES
         label_encoder = None
-        if model_type == "classification" and y.dtype == object:
+        if not is_regression_like and y.dtype == object:
             from sklearn.preprocessing import LabelEncoder
             label_encoder = LabelEncoder()
             y = label_encoder.fit_transform(y)
@@ -242,7 +280,7 @@ class MLEngineService:
                 y,
                 test_size=test_size,
                 random_state=42,
-                stratify=y if model_type == "classification" else None,
+                stratify=y if not is_regression_like else None,
             )
         else:
             X_train, X_test, y_train, y_test = X, X, y, y
@@ -256,7 +294,7 @@ class MLEngineService:
         # 7. Evaluate
         y_pred = model.predict(X_test)
         metrics = {}
-        if model_type == "classification":
+        if not is_regression_like:
             metrics["accuracy"] = float(accuracy_score(y_test, y_pred))
             if label_encoder:
                 target_names = [str(c) for c in label_encoder.classes_]
@@ -266,7 +304,7 @@ class MLEngineService:
             else:
                 report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
             metrics["classification_report"] = report
-        else:  # regression
+        else:  # regression-shaped: regression, forecast
             metrics["mse"] = float(mean_squared_error(y_test, y_pred))
             metrics["rmse"] = float(np.sqrt(metrics["mse"]))
             metrics["mae"] = float(mean_absolute_error(y_test, y_pred))
