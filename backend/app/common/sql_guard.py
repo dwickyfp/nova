@@ -126,8 +126,18 @@ BLOCKED_PATTERNS: list[tuple[str, str]] = [
 #: literal* may legitimately spell the clause (``SELECT 'INTO OUTFILE' AS
 #: note``), and the other patterns deliberately never look inside literals.
 #: ``_blank_string_literals`` removes literals first, so only real grammar
-#: matches. ``_GAP`` between the keywords tolerates the leftover comment markers
-#: the guard's normalization leaves behind.
+#: matches. ``_GAP`` between ``INTO`` and ``OUTFILE``/``FILES`` tolerates the
+#: leftover comment markers the guard's normalization leaves behind.
+#:
+#: The ``INTO @`` pattern uses ``_GAP_OPT`` (zero or more), not ``_GAP`` (one or
+#: more): ``@`` is its own lexer token (``StarRocksLex.g4``: ``AT: '@'``) and no
+#: token separator is required, so ``SELECT 1 INTO@stage1`` is the same clause as
+#: ``SELECT 1 INTO @stage1``. ``@`` is non-word, so the zero gap cannot fuse the
+#: keyword with an identifier and the pattern stays precise. The same relaxation
+#: is deliberately *not* applied to ``OUTFILE``/``FILES``: a zero-width match
+#: there would also hit the *unquoted* form of an identifier-shaped string
+#: literal (``SELECT 'INTOOUTFILE'`` normalizes to ``SELECT INTOOUTFILE`` under
+#: the module's quote-collapse rule), which is a value, not a clause.
 _EGRESS_PATTERNS: list[tuple[str, str]] = [
     (
         rf"\bINTO{_GAP}OUTFILE\b",
@@ -138,7 +148,7 @@ _EGRESS_PATTERNS: list[tuple[str, str]] = [
         "INTO FILES writes to a file path and is not read-only.",
     ),
     (
-        rf"\bINTO{_GAP}@",
+        rf"\bINTO{_GAP_OPT}@",
         "INTO @stage exports query results and is not read-only.",
     ),
 ]
