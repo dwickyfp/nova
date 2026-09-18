@@ -27,6 +27,7 @@ import { Route as AuthenticatedMlModelsIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedMonitoringIndexRouteImport } from './routes/_authenticated/monitoring/index'
 import { Route as AuthenticatedMonitoringActiveRouteImport } from './routes/_authenticated/monitoring/active'
 import { Route as AuthenticatedMonitoringAuditRouteImport } from './routes/_authenticated/monitoring/audit'
+import { Route as AuthenticatedMonitoringClusterRouteImport } from './routes/_authenticated/monitoring/cluster'
 import { Route as AuthenticatedMonitoringLoadsRouteImport } from './routes/_authenticated/monitoring/loads'
 import { Route as AuthenticatedMonitoringTasksRouteImport } from './routes/_authenticated/monitoring/tasks'
 import { Route as AuthenticatedRolesIndexRouteImport } from './routes/_authenticated/roles/index'
@@ -138,6 +139,12 @@ const AuthenticatedMonitoringAuditRoute =
     path: '/audit',
     getParentRoute: () => AuthenticatedMonitoringRouteRoute,
   } as any)
+const AuthenticatedMonitoringClusterRoute =
+  AuthenticatedMonitoringClusterRouteImport.update({
+    id: '/cluster',
+    path: '/cluster',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
 const AuthenticatedMonitoringLoadsRoute =
   AuthenticatedMonitoringLoadsRouteImport.update({
     id: '/loads',
@@ -202,6 +209,7 @@ export interface FileRoutesByFullPath {
   '/tasks-manager': typeof AuthenticatedTasksManagerRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
+  '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
   '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/roles/$name': typeof AuthenticatedRolesNameRoute
@@ -229,6 +237,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
+  '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
   '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/roles/$name': typeof AuthenticatedRolesNameRoute
@@ -259,6 +268,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/_authenticated/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
+  '/_authenticated/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
   '/_authenticated/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
   '/_authenticated/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/_authenticated/roles/$name': typeof AuthenticatedRolesNameRoute
@@ -289,6 +299,7 @@ export interface FileRouteTypes {
     | '/tasks-manager'
     | '/monitoring/active'
     | '/monitoring/audit'
+    | '/monitoring/cluster'
     | '/monitoring/loads'
     | '/monitoring/tasks'
     | '/roles/$name'
@@ -316,6 +327,7 @@ export interface FileRouteTypes {
     | '/'
     | '/monitoring/active'
     | '/monitoring/audit'
+    | '/monitoring/cluster'
     | '/monitoring/loads'
     | '/monitoring/tasks'
     | '/roles/$name'
@@ -345,6 +357,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/monitoring/active'
     | '/_authenticated/monitoring/audit'
+    | '/_authenticated/monitoring/cluster'
     | '/_authenticated/monitoring/loads'
     | '/_authenticated/monitoring/tasks'
     | '/_authenticated/roles/$name'
@@ -494,6 +507,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonitoringAuditRouteImport
       parentRoute: typeof AuthenticatedMonitoringRouteRoute
     }
+    '/_authenticated/monitoring/cluster': {
+      id: '/_authenticated/monitoring/cluster'
+      path: '/cluster'
+      fullPath: '/monitoring/cluster'
+      preLoaderRoute: typeof AuthenticatedMonitoringClusterRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
     '/_authenticated/monitoring/loads': {
       id: '/_authenticated/monitoring/loads'
       path: '/loads'
@@ -563,6 +583,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedMonitoringRouteRouteChildren {
   AuthenticatedMonitoringActiveRoute: typeof AuthenticatedMonitoringActiveRoute
   AuthenticatedMonitoringAuditRoute: typeof AuthenticatedMonitoringAuditRoute
+  AuthenticatedMonitoringClusterRoute: typeof AuthenticatedMonitoringClusterRoute
   AuthenticatedMonitoringLoadsRoute: typeof AuthenticatedMonitoringLoadsRoute
   AuthenticatedMonitoringTasksRoute: typeof AuthenticatedMonitoringTasksRoute
   AuthenticatedMonitoringIndexRoute: typeof AuthenticatedMonitoringIndexRoute
@@ -572,6 +593,7 @@ const AuthenticatedMonitoringRouteRouteChildren: AuthenticatedMonitoringRouteRou
   {
     AuthenticatedMonitoringActiveRoute: AuthenticatedMonitoringActiveRoute,
     AuthenticatedMonitoringAuditRoute: AuthenticatedMonitoringAuditRoute,
+    AuthenticatedMonitoringClusterRoute: AuthenticatedMonitoringClusterRoute,
     AuthenticatedMonitoringLoadsRoute: AuthenticatedMonitoringLoadsRoute,
     AuthenticatedMonitoringTasksRoute: AuthenticatedMonitoringTasksRoute,
     AuthenticatedMonitoringIndexRoute: AuthenticatedMonitoringIndexRoute,
