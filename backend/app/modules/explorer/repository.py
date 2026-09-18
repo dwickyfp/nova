@@ -1,9 +1,18 @@
-"""Explorer repository — read-only StarRocks metadata queries (system pool)."""
+"""Explorer repository — read-only StarRocks metadata queries (system pool).
+
+Identifiers that arrive from the API (catalog, database, table, view, mv,
+function, pipe) are validated against the shared allow-list before they are
+interpolated into a statement. The catalog/database names in particular reach
+the root pool through ``SHOW ... FROM``, so an unvalidated path segment would
+be a root-context breakout (NOVA-89). Value predicates already use ``%s``
+placeholders; this covers the identifiers that cannot be parameterized.
+"""
 
 import contextlib
 import json
 import logging
 
+from app.common.identifiers import check_identifier
 from app.core.database import db
 
 log = logging.getLogger(__name__)
@@ -46,6 +55,7 @@ class ExplorerRepository:
         """
         if catalog == "default_catalog":
             return await self.list_databases_for_catalog()
+        catalog = check_identifier(catalog, field="catalog")
         try:
             result = await db.execute_system(f"SHOW DATABASES FROM `{catalog}`")
         except Exception as exc:
@@ -127,6 +137,8 @@ class ExplorerRepository:
         statistics may be absent and would add a metastore round-trip per table.
         An unreachable catalog yields an empty list rather than failing the tree.
         """
+        catalog = check_identifier(catalog, field="catalog")
+        database = check_identifier(database, field="database")
         try:
             result = await db.execute_system(
                 f"SHOW TABLES FROM `{catalog}`.`{database}`"
@@ -195,9 +207,10 @@ class ExplorerRepository:
 
     async def list_functions(self, database: str) -> list[dict]:
         """UDFs via SHOW FULL FUNCTIONS."""
+        database = check_identifier(database, field="database")
         try:
             result = await db.execute_system(
-                f"SHOW FULL FUNCTIONS FROM {database}"
+                f"SHOW FULL FUNCTIONS FROM `{database}`"
             )
             return [
                 {
@@ -260,6 +273,8 @@ class ExplorerRepository:
 
     async def get_table_detail(self, database: str, table: str) -> dict | None:
         """Full table detail: columns, partitions, properties, DDL."""
+        database = check_identifier(database, field="database")
+        table = check_identifier(table, field="table name")
         # Columns from information_schema
         cols_sql = (
             "SELECT COLUMN_NAME, ORDINAL_POSITION, DATA_TYPE, COLUMN_TYPE, "
@@ -393,6 +408,8 @@ class ExplorerRepository:
 
     async def get_view_detail(self, database: str, view: str) -> dict | None:
         """View detail from information_schema.views + SHOW CREATE VIEW."""
+        database = check_identifier(database, field="database")
+        view = check_identifier(view, field="view name")
         sql = (
             "SELECT TABLE_NAME, VIEW_DEFINITION, DEFINER, "
             "SECURITY_TYPE, IS_UPDATABLE "
@@ -425,6 +442,8 @@ class ExplorerRepository:
 
     async def get_mv_detail(self, database: str, mv: str) -> dict | None:
         """MV detail from information_schema.materialized_views."""
+        database = check_identifier(database, field="database")
+        mv = check_identifier(mv, field="materialized view name")
         sql = (
             "SELECT TABLE_NAME, MATERIALIZED_VIEW_DEFINITION, REFRESH_TYPE, "
             "IS_ACTIVE, INACTIVE_REASON, TASK_NAME, "
@@ -459,9 +478,10 @@ class ExplorerRepository:
 
     async def get_function_detail(self, database: str, fn: str) -> dict | None:
         """Function detail via SHOW FULL FUNCTIONS."""
+        database = check_identifier(database, field="database")
         try:
             result = await db.execute_system(
-                f"SHOW FULL FUNCTIONS FROM {database}"
+                f"SHOW FULL FUNCTIONS FROM `{database}`"
             )
             for row in result["rows"]:
                 sig = row[0] if row[0] else ""

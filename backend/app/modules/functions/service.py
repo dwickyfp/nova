@@ -1,6 +1,12 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 
+from app.common.identifiers import (
+    check_column_type,
+    check_identifier,
+    check_property_key,
+    check_property_value,
+)
 from app.core.database import db
 from app.modules.functions.schemas import (
     BuiltInFunction,
@@ -273,58 +279,102 @@ class FunctionService:
             )
         return functions, sorted(databases)
 
-    async def create_udf(self, data: UDFCreate) -> str:
-        """Build and execute a CREATE FUNCTION statement. Returns the SQL."""
-        args_sql = ", ".join(f"{a['name']} {a['type']}" for a in data.args)
+    @staticmethod
+    def _qualified_udf_name(data: UDFCreate) -> str:
+        """Build a ``db.name`` / ``name`` reference from validated identifiers."""
+        name = check_identifier(data.name, field="function name")
+        if data.scope == "global" and data.function_type == "sql":
+            return name
+        database = data.database or ""
+        if database:
+            database = check_identifier(database, field="database")
+            return f"{database}.{name}"
+        return name
+
+    @staticmethod
+    def _build_args(args: list[dict]) -> str:
+        parts = []
+        for arg in args:
+            name = check_identifier(str(arg.get("name", "")), field="argument name")
+            arg_type = check_column_type(str(arg.get("type", "")))
+            parts.append(f"{name} {arg_type}")
+        return ", ".join(parts)
+
+    @staticmethod
+    def _build_properties(properties: dict) -> str:
+        return ", ".join(
+            f'"{check_property_key(k)}"="{check_property_value(str(v))}"'
+            for k, v in (properties or {}).items()
+        )
+
+    async def create_udf(self, data: UDFCreate, conn: Any | None = None) -> str:
+        """Build and execute a CREATE FUNCTION statement. Returns the SQL.
+
+        Runs on the caller's connection when one is supplied (the router does),
+        so StarRocks RBAC decides who may register a function. Every identifier,
+        argument type and property is allow-listed before the statement is
+        assembled (NOVA-89).
+        """
+        args_sql = self._build_args(data.args)
+        qualified = self._qualified_udf_name(data)
+        return_type = check_column_type(data.return_type)
 
         if data.function_type == "sql":
             scope_prefix = "GLOBAL " if data.scope == "global" else ""
-            if data.scope == "global":
-                qualified = data.name
-            else:
-                qualified = f"{data.database}.{data.name}" if data.database else data.name
-            sql = f"CREATE {scope_prefix}FUNCTION {qualified}({args_sql}) RETURNS {data.return_type} AS {data.body}"
-
-        elif data.function_type == "java":
-            qualified = f"{data.database}.{data.name}" if data.database else data.name
-            props = data.properties or {}
-            props_sql = ", ".join(f'"{k}"="{v}"' for k, v in props.items())
-            sql = f"CREATE FUNCTION {qualified}({args_sql}) RETURNS {data.return_type} PROPERTIES ({props_sql})"
-
-        elif data.function_type == "python":
-            qualified = f"{data.database}.{data.name}" if data.database else data.name
-            props = data.properties or {}
-            props_sql = ", ".join(f'"{k}"="{v}"' for k, v in props.items())
-            sql = f"CREATE FUNCTION {qualified}({args_sql}) RETURNS {data.return_type} PROPERTIES ({props_sql})"
+            sql = (
+                f"CREATE {scope_prefix}FUNCTION {qualified}({args_sql}) "
+                f"RETURNS {return_type} AS {data.body}"
+            )
+        elif data.function_type in ("java", "python"):
+            props_sql = self._build_properties(data.properties)
+            sql = (
+                f"CREATE FUNCTION {qualified}({args_sql}) "
+                f"RETURNS {return_type} PROPERTIES ({props_sql})"
+            )
         else:
             raise ValueError(f"Unsupported function_type: {data.function_type}")
 
-        async with db.system_conn() as conn:
+        if conn is None:
+            async with db.system_conn() as system_conn:
+                async with system_conn.cursor() as cur:
+                    await cur.execute(sql)
+        else:
             async with conn.cursor() as cur:
                 await cur.execute(sql)
 
         return sql
 
-    async def drop_udf(self, database: str, name: str) -> str:
+    async def drop_udf(self, database: str, name: str, conn: Any | None = None) -> str:
         """Drop a UDF. Returns the SQL executed.
 
         Guards against dropping Nova built-in UDFs (AI_COMPLETE, AI_SENTIMENT, etc).
+        Identifiers are allow-listed and the statement runs on the caller's
+        connection when one is supplied (NOVA-89).
         """
         # Guard: prevent dropping Nova built-in UDFs
         BUILTIN_UDFS = {
             "AI_COMPLETE", "AI_SENTIMENT", "AI_CLASSIFY", "AI_SUMMARIZE",
             "AI_EXTRACT", "AI_TRANSLATE", "AI_FILTER", "ML_PREDICT",
         }
-        if name.upper() in BUILTIN_UDFS:
+        safe_name = check_identifier(name, field="function name")
+        if safe_name.upper() in BUILTIN_UDFS:
             raise ValueError(
                 f"Cannot drop Nova built-in function '{name}'. "
                 "These are managed by the system and auto-registered on startup."
             )
 
-        qualified = f"{database}.{name}" if database else name
+        if database:
+            safe_database = check_identifier(database, field="database")
+            qualified = f"{safe_database}.{safe_name}"
+        else:
+            qualified = safe_name
         sql = f"DROP FUNCTION IF EXISTS {qualified}"
 
-        async with db.system_conn() as conn:
+        if conn is None:
+            async with db.system_conn() as system_conn:
+                async with system_conn.cursor() as cur:
+                    await cur.execute(sql)
+        else:
             async with conn.cursor() as cur:
                 await cur.execute(sql)
 
