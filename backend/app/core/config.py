@@ -118,6 +118,11 @@ class StorageConnectionConfig:
     region: str = ""
     path_style: bool = True
     ssl: bool = False
+    #: Optional external secret reference. When set, `access_key`/`secret_key`
+    #: here are placeholders only and are never used to authenticate: the
+    #: value is fetched from the provider named by the reference. Reference-only
+    #: by design — Nova persists the reference, never the value (NOVA-58).
+    secret_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -210,6 +215,7 @@ def load_nova_app_config() -> NovaAppConfig:
             region=cfg.get("region", ""),
             path_style=bool(cfg.get("path_style", True)),
             ssl=bool(cfg.get("ssl", False)),
+            secret_ref=cfg.get("secret_ref", "") or "",
         )
 
     if not storage_connections:
@@ -233,8 +239,13 @@ def load_nova_app_config() -> NovaAppConfig:
     )
 
 
-def get_storage_connection(name: str) -> StorageConnectionConfig:
+def get_storage_connection(name: str | None) -> StorageConnectionConfig:
+    """Look up a connection by name, falling back to the workspace default.
+
+    ``None`` (or an unknown name) resolves to the default connection, which is
+    what callers that have no stage context want.
+    """
     config = load_nova_app_config()
-    if name in config.storage_connections:
+    if name is not None and name in config.storage_connections:
         return config.storage_connections[name]
     return next(iter(config.storage_connections.values()))

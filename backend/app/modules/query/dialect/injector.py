@@ -7,9 +7,17 @@ Credentials come from `nova.yaml` / env via `app.core.config`; there is no
 hardcoded fallback. When the storage connection is not configured the parameter
 set is returned without credentials, so the FILES() call fails loudly instead of
 silently authenticating with a well-known default.
+
+A connection may instead name a credential in an external secret store via
+``secret_ref`` (see `app.storage.secrets`). In that case the reference is
+resolved at injection time and the inline ``nova.yaml`` values are ignored
+entirely. Resolution is fail-closed: if the provider cannot resolve the
+reference, the query fails with a redacted error rather than silently falling
+back to the inline credentials — see ``resolve_storage_credentials``.
 """
 
 from app.core.config import get_storage_connection, load_nova_app_config, settings
+from app.storage.secrets import resolve_secret_reference
 
 
 def resolve_storage_credentials(storage_connection: str | None = None) -> tuple[str, str]:
@@ -17,10 +25,24 @@ def resolve_storage_credentials(storage_connection: str | None = None) -> tuple[
 
     Falls back to the workspace's default storage connection. Values may be
     empty when nothing is configured — callers must not substitute defaults.
+
+    When the connection carries a ``secret_ref``, the value is fetched from
+    that external provider instead and the inline credentials are **not** used.
+    A provider failure raises ``SecretResolutionError``; it never falls back to
+    the inline value, because a connection that explicitly opted into a secret
+    reference must not silently authenticate as a different principal.
+
+    Raises:
+        SecretResolutionError: if a configured reference cannot be resolved.
     """
     config = load_nova_app_config()
     name = storage_connection or config.workspace.storage_connection
-    return get_storage_connection(name).access_key, get_storage_connection(name).secret_key
+    connection = get_storage_connection(name)
+    secret_ref = getattr(connection, "secret_ref", "") or ""
+    if secret_ref:
+        value = resolve_secret_reference(secret_ref)
+        return value.access_key, value.secret_key
+    return connection.access_key, connection.secret_key
 
 
 def get_credential_params(

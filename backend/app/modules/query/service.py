@@ -36,6 +36,10 @@ from app.modules.query.sql_pipeline import (
 from app.modules.task_orchestration.ddl import TaskDDLError, is_create_task, parse_create_task
 from app.modules.task_orchestration.lowering import TaskLoweringError, persist_lowered_task
 from app.modules.task_orchestration.repository import task_orchestration_repository
+from app.storage.secrets import (
+    SecretResolutionError,
+    drain_secret_resolution_facts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -167,12 +171,6 @@ class QueryService:
     def __init__(self):
         self._repo = QueryRepository()
 
-    def _storage_access_key(self) -> str:
-        return resolve_storage_credentials()[0]
-
-    def _storage_secret_key(self) -> str:
-        return resolve_storage_credentials()[1]
-
     async def execute(
         self,
         sql: str,
@@ -269,22 +267,27 @@ class QueryService:
         # 3. Translate @stage → FILES() and inject credentials, through the
         # shared pipeline so this path and ml_engine's cannot drift apart.
         if parsed.stage_refs:
-            # Load stage configs from NOVA_SYSTEM
-            stage_configs = await self._load_stage_configs(database, schema)
-
-            # 3b. CSV auto-detect: read file header to detect delimiter & columns.
-            # I/O, so it happens here and its result is passed into the pure
-            # preparation step.
-            csv_params, csv_column_names = await self._detect_csv_params(parsed, stage_configs)
-
             try:
+                # Load stage configs from NOVA_SYSTEM. This is where a
+                # connection's secret reference is resolved, so it belongs
+                # inside the same try as preparation: a broken reference must be
+                # reported as a query error, not escape as a 500.
+                stage_configs = await self._load_stage_configs(database, schema)
+
+                # 3b. CSV auto-detect: read file header to detect delimiter &
+                # columns. I/O, so it happens here and its result is passed into
+                # the pure preparation step.
+                csv_params, csv_column_names = await self._detect_csv_params(
+                    parsed, stage_configs
+                )
+
                 prepared = await prepare_stage_sql(
                     normalized_sql,
                     stage_configs=stage_configs,
                     csv_params=csv_params,
                     csv_columns=csv_column_names,
                 )
-            except ValueError as e:
+            except (ValueError, SecretResolutionError) as e:
                 # The statement never reached the engine: no result object is
                 # built by the repository, so this is the only place the failure
                 # can be recorded. ``error`` (not ``warnings``) is what the
@@ -295,6 +298,13 @@ class QueryService:
                 # catch-all around the repository below cannot see this. A
                 # rejected ``@stage`` reference is a refused attempt like any
                 # other and belongs in the log for the same reason.
+                #
+                # ``SecretResolutionError`` is caught here rather than allowed
+                # to reach the catch-all so the failure is *audited* and
+                # reported as a query error, not a 500. Its message is already
+                # value-free (provider + reference only), and any credential
+                # that did resolve is redacted below before it leaves.
+                await self._audit_secret_resolutions(username=username)
                 await self._audit_engine_result(
                     status="ERROR",
                     sql=sql,
@@ -315,6 +325,7 @@ class QueryService:
             executed_sql = prepared.engine_sql
             warnings = prepared.warnings
             csv_column_names = prepared.csv_columns
+            await self._audit_secret_resolutions(username=username)
         else:
             prepared = await prepare_stage_sql(normalized_sql)
             executed_sql = prepared.engine_sql
@@ -394,6 +405,39 @@ class QueryService:
                 schema_name=schema,
             )
             raise
+
+    async def _audit_secret_resolutions(self, *, username: str) -> None:
+        """Persist the auditable *facts* of any secret reference resolved above.
+
+        ``resolve_secret_reference`` is synchronous and runs during SQL
+        preparation, so it buffers one ``SecretResolutionRecord`` per attempt
+        (provider + reference + success) instead of awaiting the audit writer.
+        This drains that buffer and records each fact.
+
+        A row is written for the **fact**, never the value: ``object_name`` is
+        the reference and ``error_message`` (on failure) the exception type.
+        Best-effort, like the pre-engine refusal audit: an audit outage must not
+        turn a resolvable stage query into an error.
+
+        No-op when no reference was configured, so the ``nova.yaml``-only path
+        writes exactly the rows it wrote before.
+        """
+        facts = drain_secret_resolution_facts()
+        for fact in facts:
+            try:
+                await write_audit_log(
+                    event_type="secret_fetch",
+                    user_name=username,
+                    action="resolve",
+                    object_type="secret_reference",
+                    object_name=fact.reference,
+                    status="SUCCESS" if fact.succeeded else "ERROR",
+                    error_message=fact.error_type or None,
+                )
+            except Exception:
+                logger.exception(
+                    "failed to audit a secret reference resolution; continuing"
+                )
 
     async def _audit_engine_result(
         self,
@@ -908,12 +952,16 @@ class QueryService:
         executed_sql = normalized_sql
 
         if parsed.stage_refs:
-            stage_configs = await self._load_stage_configs(database, None)
             try:
+                # Loading stage configs resolves each stage's secret reference,
+                # so it belongs inside the try: an unresolvable reference must
+                # be reported as a redacted query error, not escape to the
+                # generic handler as an unredacted 500 (NOVA-66).
+                stage_configs = await self._load_stage_configs(database, None)
                 prepared = await prepare_stage_sql(
                     normalized_sql, stage_configs=stage_configs
                 )
-            except ValueError as e:
+            except (ValueError, SecretResolutionError) as e:
                 # ``normalized_sql`` is the user's own text and carries no
                 # injected credential, but it is redacted all the same so every
                 # return path out of this method is uniform.
@@ -922,6 +970,11 @@ class QueryService:
                 # the statement never reached the engine, so nothing else can
                 # record it, and ``QueryResult.success`` (``error is None``)
                 # would otherwise report a refused translation as a success.
+                #
+                # A secret-resolution failure is audited here too, exactly as
+                # ``execute()`` does, so the fact of the failed fetch reaches
+                # NOVA_SYSTEM rather than only the HTTP response.
+                await self._audit_secret_resolutions(username=username)
                 return QueryResult(
                     original_sql=sql,
                     executed_sql=normalized_sql,
@@ -1052,6 +1105,12 @@ class QueryService:
                 return configs
             # Fallback: load all stages (cross-database access)
             return await self._load_stage_configs_filtered(None, None)
+        except SecretResolutionError:
+            # A configured secret reference that cannot be resolved is a real
+            # configuration failure, not a metadata-DB hiccup. Swallowing it
+            # would surface as a misleading "Stage not found"; fail closed with
+            # the actual cause instead (NOVA-58).
+            raise
         except Exception:
             return {}
 
@@ -1090,14 +1149,21 @@ class QueryService:
             resolved_prefix = (base_prefix or "").strip("/")
             if not resolved_prefix:
                 resolved_prefix = f"{db_name}/{schema_name}/{name}"
+            # Resolve against the stage's *own* connection, not the workspace
+            # default: a connection may carry its own secret reference, and
+            # resolving the default would authenticate the stage as the wrong
+            # principal. Fail-closed — a broken reference raises rather than
+            # falling back (NOVA-58).
+            access_key, secret_key = resolve_storage_credentials(storage_conn)
             configs[name] = StorageConfig(
                 storage_type=conn.type,
                 endpoint=to_docker_endpoint(conn.endpoint),
                 bucket=conn.bucket,
                 base_prefix=resolved_prefix,
-                access_key=self._storage_access_key(),
-                secret_key=self._storage_secret_key(),
+                access_key=access_key,
+                secret_key=secret_key,
                 region=conn.region or "us-east-1",
+                storage_connection=storage_conn,
             )
         return configs
 

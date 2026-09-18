@@ -63,6 +63,19 @@ storage:
     #   path_style: false
     #   ssl: true
 
+    # ── AWS S3 with the credential in AWS Secrets Manager ──
+    # The reference is the only credential source for this connection; do not
+    # set access_key/secret_key here. Nova stores the reference, never the
+    # value, and fails closed if the provider cannot resolve it.
+    # aws_prod_secrets:
+    #   type: s3
+    #   endpoint: ""
+    #   bucket: my-s3-bucket
+    #   region: us-east-1
+    #   path_style: false
+    #   ssl: true
+    #   secret_ref: arn:aws:secretsmanager:us-east-1:123456789012:secret:nova/s3-prod
+
     # ── Uncomment for Azure Blob ──
     # azure_backup:
     #   type: azure_blob
