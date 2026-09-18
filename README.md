@@ -507,6 +507,14 @@ uv run pytest
 uv run ruff check .
 ```
 
+Assistant benchmarks (offline, deterministic; prints min/median/p95 per turn —
+see [docs/benchmarks/nova-61-assistant.md](docs/benchmarks/nova-61-assistant.md)):
+
+```bash
+cd backend
+uv run pytest tests/benchmark -q -s
+```
+
 Frontend:
 
 ```bash

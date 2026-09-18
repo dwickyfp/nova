@@ -56,6 +56,7 @@ addopts = "--strict-markers"
 markers = [
     "engine: requires the real StarRocks/Redis/MinIO stack from docker-compose.test.yml",
     "slow: excluded from the fast local loop",
+    "benchmark: deterministic offline loop measurements (NOVA-92); see docs/benchmarks/",
 ]
 
 [tool.coverage.run]
