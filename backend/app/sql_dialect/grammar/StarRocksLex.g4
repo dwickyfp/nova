@@ -497,6 +497,21 @@ TABLET: 'TABLET';
 TABLETS: 'TABLETS';
 TAG: 'TAG';
 TASK: 'TASK';
+// NOVA-BEGIN (NOVA-125 / 109-A): tokens for the Nova `CREATE ML_MODEL` surface.
+// `ML_MODEL` is one spelling, not the engine's `ML_MODEL` (there is none); it
+// could not be composed from `ML` + `MODEL` because neither exists upstream and
+// the underscore is not a token. Every one of these is added to `nonReserved`
+// (StarRocks.g4) so an identifier spelled `target`, `input`, `series`, etc. still
+// parses as a column or table name.
+ML_MODEL: 'ML_MODEL';
+INPUT: 'INPUT';
+TARGET: 'TARGET';
+SERIES: 'SERIES';
+ALGORITHM: 'ALGORITHM';
+TEST_SIZE: 'TEST_SIZE';
+FEATURES: 'FEATURES';
+HYPERPARAMETERS: 'HYPERPARAMETERS';
+// NOVA-END
 TEMPORARY: 'TEMPORARY';
 TERMINATED: 'TERMINATED';
 THAN: 'THAN';

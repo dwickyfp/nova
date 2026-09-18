@@ -334,6 +334,56 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#createMlModelStatement.
+    def visitCreateMlModelStatement(self, ctx:StarRocksParser.CreateMlModelStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#mlModelTypeClause.
+    def visitMlModelTypeClause(self, ctx:StarRocksParser.MlModelTypeClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#mlModelInputClause.
+    def visitMlModelInputClause(self, ctx:StarRocksParser.MlModelInputClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#mlModelTimestampClause.
+    def visitMlModelTimestampClause(self, ctx:StarRocksParser.MlModelTimestampClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#mlModelTargetClause.
+    def visitMlModelTargetClause(self, ctx:StarRocksParser.MlModelTargetClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#mlModelSeriesClause.
+    def visitMlModelSeriesClause(self, ctx:StarRocksParser.MlModelSeriesClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#mlModelConfigClause.
+    def visitMlModelConfigClause(self, ctx:StarRocksParser.MlModelConfigClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#mlModelCompactClause.
+    def visitMlModelCompactClause(self, ctx:StarRocksParser.MlModelCompactClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#mlModelPropertyList.
+    def visitMlModelPropertyList(self, ctx:StarRocksParser.MlModelPropertyListContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#mlModelProperty.
+    def visitMlModelProperty(self, ctx:StarRocksParser.MlModelPropertyContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#submitTaskStatement.
     def visitSubmitTaskStatement(self, ctx:StarRocksParser.SubmitTaskStatementContext):
         return self.visitChildren(ctx)
@@ -2339,6 +2389,11 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#stageAtom.
+    def visitStageAtom(self, ctx:StarRocksParser.StageAtomContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#inlineTable.
     def visitInlineTable(self, ctx:StarRocksParser.InlineTableContext):
         return self.visitChildren(ctx)
@@ -2366,6 +2421,31 @@ class StarRocksVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by StarRocksParser#parenthesizedRelation.
     def visitParenthesizedRelation(self, ctx:StarRocksParser.ParenthesizedRelationContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#stageReference.
+    def visitStageReference(self, ctx:StarRocksParser.StageReferenceContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#stageSeparator.
+    def visitStageSeparator(self, ctx:StarRocksParser.StageSeparatorContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#stageSegment.
+    def visitStageSegment(self, ctx:StarRocksParser.StageSegmentContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#stagePathAtom.
+    def visitStagePathAtom(self, ctx:StarRocksParser.StagePathAtomContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#decimalAtom.
+    def visitDecimalAtom(self, ctx:StarRocksParser.DecimalAtomContext):
         return self.visitChildren(ctx)
 
 
