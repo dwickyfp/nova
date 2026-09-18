@@ -65,7 +65,7 @@ def pipeline(monkeypatch):
     return fake
 
 
-def _client(roles: list[str]) -> TestClient:
+def _client(roles: list[str], active_role: str | None = None) -> TestClient:
     app = FastAPI()
     app.include_router(backup_router.router, prefix="/api/v1/backup")
     # The real app registers the Nova exception handlers; without them
@@ -75,7 +75,9 @@ def _client(roles: list[str]) -> TestClient:
         "username": "alice",
         "session_id": "s1",
         "roles": roles,
-        "active_role": roles[0],
+        # Default to the first granted role; pass an explicit ``active_role``
+        # to model a user who has switched away from an admin grant.
+        "active_role": roles[0] if active_role is None else active_role,
         "encrypted_password": "enc",
     }
     return TestClient(app, raise_server_exceptions=False)
@@ -89,6 +91,12 @@ def client():
 @pytest.fixture
 def low_priv_client():
     return _client(["analyst"])
+
+
+@pytest.fixture
+def inactive_admin_client():
+    """Holds ACCOUNTADMIN but has switched the active role to analyst."""
+    return _client(["ACCOUNTADMIN", "analyst"], active_role="analyst")
 
 
 # ── Snapshot statements ─────────────────────────────────────────
@@ -295,6 +303,29 @@ class TestAuthorization:
         resp = low_priv_client.post(path, json=payload)
         assert resp.status_code == 403, resp.text
         assert pipeline.calls == []
+
+    @pytest.mark.parametrize("path,payload", MUTATIONS)
+    def test_granted_but_inactive_admin_is_refused(
+        self, inactive_admin_client, pipeline, path, payload
+    ):
+        """NOVA-94 finding #3 — the gate reads the *active* role.
+
+        A principal holding ACCOUNTADMIN that has switched to ``analyst``
+        executes as ``analyst`` (the connection runs ``SET ROLE <active_role>``),
+        so it must be refused here rather than passing a granted-roles check.
+        """
+        resp = inactive_admin_client.post(path, json=payload)
+        assert resp.status_code == 403, resp.text
+        assert pipeline.calls == []
+
+    def test_active_admin_is_accepted(self, pipeline):
+        active_admin = _client(["ACCOUNTADMIN"], active_role="ACCOUNTADMIN")
+        resp = active_admin.post(
+            "/api/v1/backup/snapshots",
+            json={"database": "d", "label": "l", "repository": "r"},
+        )
+        assert resp.status_code == 201, resp.text
+        assert len(pipeline.calls) == 1
 
     def test_reads_are_open_to_authenticated_users(self, low_priv_client, pipeline):
         assert low_priv_client.get("/api/v1/backup/snapshots").status_code == 200
