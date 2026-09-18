@@ -11,7 +11,7 @@ export {
   isToolCallStatus,
   isToolClassification,
 } from './events'
-export { streamAssistantTurn, decideToolCall } from './stream-client'
+export { streamAssistantTurn, decideToolCall, toConsentPayload } from './stream-client'
 export {
   useAssistantTranscript,
   transcriptReducer,
@@ -23,6 +23,7 @@ export type {
   AssistantEvent,
   AssistantMessage,
   ConsentDecision,
+  ConsentDecisionPayload,
   ToolCallStatus,
   ToolCallView,
   ToolClassification,

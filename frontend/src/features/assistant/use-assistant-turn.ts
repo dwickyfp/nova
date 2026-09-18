@@ -74,10 +74,9 @@ export function useAssistantTurn({ threadId, onSendMessage, onError }: Assistant
 
   const decide = useCallback(
     async ({ toolCallId, decision, alwaysAllow }: ToolCallDecision) => {
-      if (!threadId) return
       setDecidingToolCallId(toolCallId)
       try {
-        await decideToolCall(threadId, toolCallId, decision, alwaysAllow)
+        await decideToolCall(toolCallId, decision, alwaysAllow)
       } catch (error) {
         const message = error instanceof Error ? error.message : 'The decision was not applied'
         transcript.applyEvent({ type: 'error', code: 'consent', message })
@@ -86,7 +85,7 @@ export function useAssistantTurn({ threadId, onSendMessage, onError }: Assistant
         setDecidingToolCallId(null)
       }
     },
-    [onError, threadId, transcript]
+    [onError, transcript]
   )
 
   return {

@@ -1,6 +1,6 @@
 import { api, apiBase, authHeaders } from '@/lib/api-client'
 import { parseAssistantEvent, readSseFrames } from './events'
-import type { AssistantEvent, ConsentDecision } from './types'
+import type { AssistantEvent, ConsentDecision, ConsentDecisionPayload } from './types'
 
 export type StreamTurnOptions = {
   signal?: AbortSignal
@@ -50,18 +50,29 @@ export async function streamAssistantTurn(
   }
 }
 
+/** Maps the card's two-part intent to the frozen wire enum (spec §6.1). */
+export function toConsentPayload(
+  decision: ConsentDecision,
+  alwaysAllow: boolean
+): ConsentDecisionPayload {
+  if (decision === 'deny') return 'deny'
+  return alwaysAllow ? 'allow_session' : 'allow_once'
+}
+
 /**
  * Consent is a separate HTTP call, not a frame on the stream (§4, §6). The
  * still-open stream then emits `tool_status` once the decision is applied.
+ *
+ * The path is `tool-calls/{id}/decision`, scoped by call id only: no thread
+ * segment, and the body carries the enum, not an `always_allow` flag (§6.1).
  */
 export async function decideToolCall(
-  threadId: string,
   toolCallId: string,
   decision: ConsentDecision,
   alwaysAllow = false
 ): Promise<void> {
   await api.post(
-    `/assistant/threads/${encodeURIComponent(threadId)}/tool-calls/${encodeURIComponent(toolCallId)}/decision`,
-    { decision, always_allow: alwaysAllow }
+    `/assistant/tool-calls/${encodeURIComponent(toolCallId)}/decision`,
+    { decision: toConsentPayload(decision, alwaysAllow) }
   )
 }
