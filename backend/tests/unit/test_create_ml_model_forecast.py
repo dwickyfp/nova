@@ -167,6 +167,7 @@ async def test_forecast_type_trains_and_scores_as_regression(monkeypatch):
         test_size=0.2,
         database_name=None,
         created_by="analyst",
+        as_system=True,
     )
 
     assert result["model_type"] == "forecast"
