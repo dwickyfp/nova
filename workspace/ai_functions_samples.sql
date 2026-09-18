@@ -14,7 +14,7 @@
 --
 -- HOW IT WORKS:
 --   - Each AI function is a SQL UDF that wraps ai_query(prompt, config_json)
---   - The config_json contains: model, api_key, endpoint_url
+--   - The config_json contains: model, api_key, endpoint
 --   - If no alias is configured, functions return a helpful error message
 --   - When configured, functions call the LLM and return the response
 --
@@ -432,7 +432,7 @@ DROP GLOBAL FUNCTION IF EXISTS AI_SENTIMENT(STRING);
 CREATE GLOBAL FUNCTION AI_SENTIMENT(txt STRING)
 RETURNS ai_query(
     CONCAT('Analyze the sentiment of the following text. Reply with JSON: {"sentiment": "positive|negative|neutral|mixed", "confidence": 0.0-1.0}\n\nText: ', txt),
-    '{"model": "claude-opus-4-8", "api_key": "YOUR_API_KEY", "endpoint_url": "http://host.docker.internal:20128/v1"}'
+    '{"model": "claude-opus-4-8", "api_key": "YOUR_API_KEY", "endpoint": "http://host.docker.internal:20128/v1"}'
 );
 */
 
@@ -443,7 +443,7 @@ DROP GLOBAL FUNCTION IF EXISTS AI_COMPLETE(STRING);
 CREATE GLOBAL FUNCTION AI_COMPLETE(prompt STRING)
 RETURNS ai_query(
     prompt,
-    '{"model": "claude-opus-4-8", "api_key": "YOUR_API_KEY", "endpoint_url": "http://host.docker.internal:20128/v1"}'
+    '{"model": "claude-opus-4-8", "api_key": "YOUR_API_KEY", "endpoint": "http://host.docker.internal:20128/v1"}'
 );
 */
 
