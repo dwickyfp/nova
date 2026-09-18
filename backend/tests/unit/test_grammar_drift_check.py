@@ -116,3 +116,16 @@ def test_marker_detection_ignores_prose_that_names_the_markers() -> None:
         "grammar StarRocks;",
     ]
     assert drift.marked_regions(lines) == []
+
+
+def test_engine_pin_is_the_4_1_4_commit() -> None:
+    # NOVA-51: the pin is a recorded commit SHA, not a moving tag. The vendored
+    # headers and the drift-check constant must agree on the 4.1.4 commit.
+    assert drift.EXPECTED_UPSTREAM_COMMIT == "4a9848edf03f5c936dac664b2d52527f48e72eb0"
+
+    grammar_dir = SCRIPT.resolve().parents[2] / "backend" / "app" / "sql_dialect" / "grammar"
+    for name in ("StarRocks.g4", "StarRocksLex.g4"):
+        header = drift.read_header((grammar_dir / name).read_text(encoding="utf-8"))
+        assert header["commit"] == drift.EXPECTED_UPSTREAM_COMMIT, name
+        assert header["tag"].startswith("4.1.4"), name
+

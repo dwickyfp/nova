@@ -1,6 +1,6 @@
 services:
   starrocks-fe:
-    image: starrocks/fe-ubuntu:4.1.1
+    image: starrocks/fe-ubuntu:4.1.4
     container_name: nova-sr-fe
     ports:
       - "9030:9030"    # MySQL protocol
@@ -19,7 +19,7 @@ services:
       - nova
 
   starrocks-be:
-    image: starrocks/be-ubuntu:4.1.1
+    image: starrocks/be-ubuntu:4.1.4
     container_name: nova-sr-be
     depends_on:
       starrocks-fe:

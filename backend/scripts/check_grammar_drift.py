@@ -55,6 +55,13 @@ NOVA_END_RE = re.compile(r"^\s*(//|#)\s*NOVA-END\b")
 
 UPSTREAM_FIELDS = ("file", "tag", "commit", "sha256 upstream")
 
+# The engine revision the pinned images are built from (NOVA-51). This is the
+# *commit* the tag `4.1.4` peels to, not the tag object -- a moving tag is not a
+# pin. The header must record exactly this SHA: re-vendoring against a different
+# revision without updating this constant is drift, even if the sha256-in-header
+# check would otherwise pass. Recorded 2026-09-18.
+EXPECTED_UPSTREAM_COMMIT = "4a9848edf03f5c936dac664b2d52527f48e72eb0"
+
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -193,6 +200,13 @@ def main(argv: list[str] | None = None) -> int:
                 failures.append(f"{vendored_path.name}: header is missing '{field}:'")
         if failures and any(vendored_path.name in f for f in failures):
             continue
+
+        if header["commit"] != EXPECTED_UPSTREAM_COMMIT:
+            failures.append(
+                f"{vendored_path.name}: header commit {header['commit']} "
+                f"!= expected engine commit {EXPECTED_UPSTREAM_COMMIT}; "
+                "update the pin deliberately, not implicitly"
+            )
 
         upstream_sha = sha256_file(upstream_path)
         if header["sha256 upstream"] != upstream_sha:
