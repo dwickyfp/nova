@@ -506,32 +506,15 @@ class TestEngineTimezoneSettingIsNotLeaked:
     _fires`` sets the setting to ``""`` (auto-detect) via ``monkeypatch``, but
     the leaked value from the already-executed integration fixture took
     precedence, so the test failed only when the two suites ran together.
-
-    ``monkeypatch`` restores on teardown, so a *leaked* write is invisible from
-    inside the mutating test. What this test pins instead is the contract the
-    integration fixture must honour: a value written through ``monkeypatch`` is
-    back to its original once the test returns. If the integration fixture
-    regresses to a bare assignment, the untouched-value assertion below goes red
-    in the same full run.
     """
-
-    async def test_monkeypatched_setting_is_restored_after_mutation(
-        self, monkeypatch
-    ):
-        original = settings.SCHEDULER_ENGINE_TIMEZONE
-        with monkeypatch.context() as patch:
-            patch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "+07:00")
-            assert settings.SCHEDULER_ENGINE_TIMEZONE == "+07:00"
-        assert original == settings.SCHEDULER_ENGINE_TIMEZONE
 
     async def test_offset_engine_zone_still_fires_after_other_suites(
         self, monkeypatch
     ):
         """The NOVA-41 case, re-asserted at its own boundary.
 
-        Runs after ``test_monkeypatched_setting_is_restored_after_mutation`` and
-        sets the setting to ``""`` itself, so it can only pass if the setting is
-        truly free of foreign writes at this point in the session.
+        Sets the setting to ``""`` itself, so it can only pass if the setting is
+        free of foreign writes at this point in the session.
         """
         monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
         created = datetime(2026, 1, 1, 9, 0)
@@ -544,3 +527,54 @@ class TestEngineTimezoneSettingIsNotLeaked:
         )
         assert len(plan.due) == 1
         assert len(transport.published) == 1
+
+
+def test_integration_scheduler_fixture_restores_scheduler_timezone() -> None:
+    """The integration fixture must write ``SCHEDULER_ENGINE_TIMEZONE`` safely.
+
+    A behavioural test cannot observe the leak: ``monkeypatch`` restores on
+    teardown, so by the time any unit test runs the setting looks untouched
+    whether the integration file used ``monkeypatch`` or a bare assignment.
+    Assert the source contract directly — the fixture may only reach the global
+    through a restoring mechanism (``monkeypatch``), never ``settings.X = ...``
+    or ``setattr(settings, ...)``.
+    """
+    import ast
+    from pathlib import Path
+
+    source_path = (
+        Path(__file__).resolve().parent.parent
+        / "integration"
+        / "test_task_scheduler.py"
+    )
+    tree = ast.parse(source_path.read_text())
+
+    offender: ast.Assign | ast.Call | None = None
+    for node in ast.walk(tree):
+        # `settings.SCHEDULER_ENGINE_TIMEZONE = ...` (bare assignment)
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Attribute)
+                    and target.attr == "SCHEDULER_ENGINE_TIMEZONE"
+                ):
+                    offender = node
+        # `setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", ...)` — also a leak
+        # unless it goes through monkeypatch, which is a method call on a
+        # `monkeypatch` object, not the builtin `setattr`.
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "setattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "SCHEDULER_ENGINE_TIMEZONE"
+        ):
+            offender = node
+
+    assert offender is None, (
+        "tests/integration/test_task_scheduler.py mutates the global "
+        "settings.SCHEDULER_ENGINE_TIMEZONE without restoration at line "
+        f"{offender.lineno}; use monkeypatch.setattr so the value is restored."
+    )
+
