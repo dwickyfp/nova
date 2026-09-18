@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import uuid
 
 import asyncmy
 import pytest
@@ -51,13 +52,22 @@ CATALOG_NAME = "nova_l3_iceberg"
 DATABASE_NAME = "db1"
 TABLE_NAME = "events"
 
+#: This suite provisions its own admin instead of using the shared
+#: ``admin_token`` fixture. ``admin_token`` logs in as ``nova_admin`` with the
+#: password conftest assumes, but CI runs ``seed_engine.sh`` first, which resets
+#: ``nova_admin`` to the proxy suite's password — so the shared account's
+#: credential is not portable, and a hard-coded login there is what made this
+#: suite 401 at setup in CI. A suite-local account (same pattern as
+#: ``test_tasks_rbac_connection.py``) is deterministic regardless of what the
+#: environment seeded.
+L3_ADMIN_USER = f"nova_l3_admin_{uuid.uuid4().hex[:8]}"
+L3_ADMIN_PASSWORD = "nova_l3_admin_pw"
+
 pytestmark = pytest.mark.engine
 
 
 def _unique(prefix: str) -> str:
     """A per-test identifier so tests never collide in the engine or MinIO."""
-    import uuid
-
     return f"{prefix}_{uuid.uuid4().hex[:10]}"
 
 
@@ -119,9 +129,47 @@ async def _ensure_catalog_schema() -> None:
     )
 
 
+@pytest_asyncio.fixture(scope="session")
+async def l3_admin_user(request):
+    """Create a suite-owned admin account with exactly the privileges the
+    feature needs, and drop it afterwards.
+
+    Session-scoped: the account is created once and reused by every test, and
+    the password is known here rather than assumed about the environment.
+    """
+    # Same stack gate as ``engine``: bring the compose stack up if this run is
+    # what provides the engine, so a session-scoped fixture that resolves before
+    # ``client``/``app`` does not skip against a stack that is about to start.
+    if "docker_services" in request.fixturenames:
+        request.getfixturevalue("docker_services")
+    if not await _reachable():
+        pytest.skip("StarRocks not reachable")
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
+    await _admin_execute(
+        f"CREATE USER '{L3_ADMIN_USER}' IDENTIFIED BY '{L3_ADMIN_PASSWORD}'"
+    )
+    await _admin_execute(f"GRANT ALL ON *.* TO '{L3_ADMIN_USER}' WITH GRANT OPTION")
+    # Creating an external catalog is a SYSTEM-level privilege, distinct from
+    # ``ALL ON *.*`` (AGENTS.md §6), and ALTER/DROP are per-catalog grants that
+    # cannot be granted ON SYSTEM. Provisioning them on the suite's own account
+    # proves the delegate-first RBAC path rather than bypassing it.
+    with contextlib.suppress(Exception):
+        await _admin_execute(
+            f"GRANT CREATE EXTERNAL CATALOG ON SYSTEM TO '{L3_ADMIN_USER}'"
+        )
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"GRANT ALTER, DROP ON CATALOG * TO '{L3_ADMIN_USER}'")
+
+    yield L3_ADMIN_USER
+
+    with contextlib.suppress(Exception):
+        await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
+
+
 @pytest_asyncio.fixture
 async def engine(request):
-    """Provision the engine once per test: schema, grants, bucket.
+    """Provision the engine once per test: schema and bucket.
 
     Setup-only (no ``yield``): every name this suite creates is unique per test
     and torn down by ``namespace``, so there is nothing to finalize here.
@@ -131,24 +179,19 @@ async def engine(request):
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
     await _ensure_catalog_schema()
-    # Creating an external catalog is a SYSTEM-level privilege, distinct from
-    # `ALL ON *.*` (AGENTS.md §6), and ALTER/DROP are *per-catalog* grants (they
-    # cannot be granted ON SYSTEM). The conftest grants nova_admin only the
-    # object-level set, so the L3 suite provisions exactly what the feature needs
-    # — proving the delegate-first RBAC path rather than bypassing it.
-    with contextlib.suppress(Exception):
-        await _admin_execute(
-            "GRANT CREATE EXTERNAL CATALOG ON SYSTEM TO 'nova_admin'"
-        )
-    with contextlib.suppress(Exception):
-        await _admin_execute("GRANT ALTER, DROP ON CATALOG * TO 'nova_admin'")
     with contextlib.suppress(Exception):
         _minio_client().create_bucket(Bucket=BUCKET)
 
 
 @pytest_asyncio.fixture
-async def admin_client(engine, client, admin_token):
-    client.headers["Authorization"] = f"Bearer {admin_token}"
+async def admin_client(engine, client, l3_admin_user):
+    """The shared ASGI client, authenticated as this suite's own admin."""
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"username": L3_ADMIN_USER, "password": L3_ADMIN_PASSWORD},
+    )
+    assert resp.status_code == 200, resp.text
+    client.headers["Authorization"] = f"Bearer {resp.json()['access_token']}"
     return client
 
 
