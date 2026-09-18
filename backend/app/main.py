@@ -3,13 +3,13 @@
 StarRocks management console backend with domain-driven modular architecture.
 """
 
-from contextlib import asynccontextmanager
 import logging
+import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-import os
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.common.nova_system import init_nova_system
 from app.core.config import settings
@@ -17,26 +17,27 @@ from app.core.database import db
 from app.core.exceptions import register_exception_handlers
 from app.core.redis import session_store
 
-logger = logging.getLogger(__name__)
-
 # --- Module routers ---
-from app.modules.auth.router import router as auth_router
-from app.modules.objects.router import router as objects_router
-from app.modules.query.router import router as query_router
-from app.modules.tables.router import router as tables_router
-from app.modules.views.router import router as views_router
-from app.modules.stages.router import router as stages_router
-from app.modules.users.router import router as users_router
 from app.modules.ai_ml.router import router as ai_router
-from app.modules.llm_functions.router import router as llm_fn_router
-from app.modules.ml_engine.router import router as ml_router
-from app.modules.ml_engine.internal_router import router as ml_internal_router
-from app.modules.workspaces.router import router as workspaces_router
-from app.modules.monitoring.router import router as monitoring_router
+from app.modules.auth.router import router as auth_router
 from app.modules.explorer.router import router as explorer_router
 from app.modules.functions.router import router as functions_router
-from app.modules.tasks.router import router as tasks_router
+from app.modules.llm_functions.router import router as llm_fn_router
+from app.modules.ml_engine.internal_router import router as ml_internal_router
+from app.modules.ml_engine.router import router as ml_router
+from app.modules.monitoring.router import router as monitoring_router
+from app.modules.objects.router import router as objects_router
 from app.modules.pipes.router import router as pipes_router
+from app.modules.query.router import router as query_router
+from app.modules.stages.router import router as stages_router
+from app.modules.tables.router import router as tables_router
+from app.modules.task_orchestration.router import router as task_orchestration_router
+from app.modules.tasks.router import router as tasks_router
+from app.modules.users.router import router as users_router
+from app.modules.views.router import router as views_router
+from app.modules.workspaces.router import router as workspaces_router
+
+logger = logging.getLogger(__name__)
 # from app.modules.query.router import router as query_router
 # from app.modules.objects.router import router as objects_router
 # from app.modules.tables.router import router as tables_router
@@ -137,6 +138,13 @@ def create_app() -> FastAPI:
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])
     app.include_router(tasks_router, prefix=f"{prefix}/tasks", tags=["tasks"])
+    # Nova orchestration metadata (CREATE TASK graphs/runs) — distinct from
+    # `/tasks`, which reads StarRocks' native task surface. Read-only.
+    app.include_router(
+        task_orchestration_router,
+        prefix=f"{prefix}/task-orchestration",
+        tags=["task-orchestration"],
+    )
     app.include_router(pipes_router, prefix=f"{prefix}/pipes", tags=["pipes"])
 
     # Static files for Java UDFs

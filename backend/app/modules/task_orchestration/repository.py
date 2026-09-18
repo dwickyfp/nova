@@ -286,6 +286,87 @@ class TaskOrchestrationRepository:
         result = await db.execute_system(f"DELETE FROM {_EDGES} WHERE id = %s", [edge_id])
         return bool(result.get("affected"))
 
+    # ── Read model for the orchestration API ───────────────────
+    #
+    # These serve the read-only `/api/v1/task-orchestration` endpoints. They are
+    # deliberately in the repository, not the router: the router must not carry
+    # SQL, and the graph-assembly rules (names as endpoints, standalone tasks as
+    # single-node graphs) belong next to the write path that produced them.
+
+    async def list_graph_ids(self) -> list[str]:
+        """Every graph id that has at least one edge, plus standalone task ids.
+
+        A graph is identified by its edges' ``graph_id``. A task with no edges is
+        a single-node graph keyed by its own id — the same convention
+        ``scheduler.build_graphs`` uses, so the API and the scheduler agree on
+        what a graph is.
+        """
+        edges = await self.list_all_edges()
+        graph_ids = sorted({str(edge["graph_id"]) for edge in edges})
+
+        referenced = {
+            str(endpoint)
+            for edge in edges
+            for endpoint in (edge["parent_task"], edge["child_task"])
+        }
+        tasks = await self.list_tasks()
+        standalone = sorted(
+            str(task["id"]) for task in tasks if str(task["name"]) not in referenced
+        )
+        # A standalone task's graph id is its task id; keep the two sets distinct
+        # in case an id and an edge graph_id ever collide.
+        return [*graph_ids, *[gid for gid in standalone if gid not in graph_ids]]
+
+    async def get_tasks_by_names(self, names: list[str]) -> list[dict[str, Any]]:
+        """Task rows for ``names``, in one query.
+
+        Name-keyed rather than id-keyed because edges store task names (design
+        §5). An empty list returns no rows without touching the database.
+        """
+        if not names:
+            return []
+        placeholders = ", ".join(["%s"] * len(names))
+        result = await db.execute_system(
+            f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
+            f"WHERE name IN ({placeholders}) ORDER BY name",
+            list(names),
+        )
+        return [self._to_dict(_TASK_COLUMNS, row) for row in result["rows"]]
+
+    async def get_latest_graph_run(self, graph_id: str) -> dict[str, Any] | None:
+        """The most recent graph run for a graph, or ``None``.
+
+        Used by the graph list so a row can show its last run without loading the
+        whole history.
+        """
+        result = await db.execute_system(
+            f"SELECT {_GRAPH_RUN_COLUMNS} FROM {_GRAPH_RUNS} "
+            "WHERE graph_id = %s ORDER BY started_at DESC LIMIT 1",
+            [graph_id],
+        )
+        if not result["rows"]:
+            return None
+        row = self._to_dict(_GRAPH_RUN_COLUMNS, result["rows"][0])
+        row["wal_marks"] = self._decode_wal_marks(row["wal_marks"])
+        return row
+
+    async def list_task_runs_for_graph(self, graph_id: str) -> list[dict[str, Any]]:
+        """Every node-run row belonging to any run of ``graph_id``.
+
+        Joined through ``CONFIG_TASK_GRAPH_RUNS`` rather than filtering in the
+        handler, so "the last state of each node in this graph" is one query plus
+        a fold in the caller.
+        """
+        columns = ", ".join(f"r.{column}" for column in _TASK_RUN_COLUMNS.split(", "))
+        result = await db.execute_system(
+            f"SELECT {columns} "
+            f"FROM {_TASK_RUNS} r "
+            f"JOIN {_GRAPH_RUNS} g ON g.id = r.graph_run_id "
+            "WHERE g.graph_id = %s ORDER BY r.started_at",
+            [graph_id],
+        )
+        return [self._to_dict(_TASK_RUN_COLUMNS, row) for row in result["rows"]]
+
     # ── Graph runs ─────────────────────────────────────────────
 
     async def create_graph_run(self, data: dict[str, Any]) -> dict[str, Any]:
