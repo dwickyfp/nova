@@ -27,8 +27,8 @@ import { cn } from '@/lib/utils'
 import {
   fetchVariables,
   isVariableChanged,
-  updateVariable,
-  type Variable,
+  setVariable,
+  type VariableItem,
   type VariableScope,
 } from './api'
 
@@ -39,7 +39,7 @@ export function VariablesTab() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
-  const [editing, setEditing] = useState<Variable | null>(null)
+  const [editing, setEditing] = useState<VariableItem | null>(null)
   const [draftValue, setDraftValue] = useState('')
 
   useEffect(() => {
@@ -71,12 +71,16 @@ export function VariablesTab() {
   }, [variablesQuery.error])
 
   const updateMutation = useMutation({
-    mutationFn: (variable: Variable) =>
-      updateVariable(variable.name, scope, draftValue),
+    mutationFn: (variable: VariableItem) => {
+      const value = draftValue.trim()
+      return setVariable(
+        value === ''
+          ? { scope, name: variable.name, reset: true }
+          : { scope, name: variable.name, value }
+      )
+    },
     onSuccess: (updated) => {
-      toast.success(`Set ${updated.name ?? editing?.name}`, {
-        description: `Scope: ${scope} · value ${draftValue || 'default'}`,
-      })
+      toast.success(updated.message)
       setEditing(null)
       queryClient.invalidateQueries({ queryKey: ['variables'] })
     },
@@ -84,7 +88,7 @@ export function VariablesTab() {
       toast.error('Could not set variable', { description: err.message }),
   })
 
-  const items = variablesQuery.data?.items ?? []
+  const items = variablesQuery.data?.variables ?? []
   const total = variablesQuery.data?.total ?? 0
   const changedCount = useMemo(
     () => items.filter(isVariableChanged).length,
@@ -173,7 +177,7 @@ export function VariablesTab() {
                     variant='error'
                     icon={AlertCircle}
                     title='Could not load variables'
-                    description='The variables module did not respond. It may not be deployed on this server yet.'
+                    description='The variables API did not respond. Check the connection and retry.'
                     action={
                       <Button
                         variant='outline'
@@ -233,11 +237,11 @@ export function VariablesTab() {
                           changed ? 'font-semibold text-warning-strong' : 'text-foreground'
                         )}
                       >
-                        {variable.value ?? '-'}
+                        {variable.value || '-'}
                       </span>
                     </td>
                     <td className='px-4 py-3 font-mono text-xs text-muted-foreground'>
-                      {variable.default_value ?? '-'}
+                      {variable.default ?? '-'}
                     </td>
                     <td className='px-4 py-3 text-right'>
                       <div className='flex items-center justify-end gap-1'>
@@ -248,8 +252,8 @@ export function VariablesTab() {
                             className='h-8 gap-1 px-2 text-xs text-muted-foreground'
                             aria-label={`Reset ${variable.name} to its default`}
                             onClick={() => {
-                              setDraftValue(variable.default_value ?? '')
-                              setEditing({ ...variable, value: variable.default_value })
+                              setDraftValue('')
+                              setEditing(variable)
                             }}
                           >
                             <RotateCcw className='size-3.5' />
@@ -262,7 +266,7 @@ export function VariablesTab() {
                           className='size-8 p-0 text-muted-foreground'
                           aria-label={`Edit ${variable.name}`}
                           onClick={() => {
-                            setDraftValue(variable.value ?? '')
+                            setDraftValue(variable.value)
                             setEditing(variable)
                           }}
                         >
@@ -312,9 +316,6 @@ export function VariablesTab() {
               autoComplete='off'
               className='font-mono'
             />
-            {editing?.description ? (
-              <p className='text-xs text-muted-foreground'>{editing.description}</p>
-            ) : null}
           </div>
           <DialogFooter>
             <Button variant='outline' onClick={() => setEditing(null)}>
