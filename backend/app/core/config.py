@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     #: FE-config surface is unavailable.
     WORKER_MAX_CONSECUTIVE_FAIL_COUNT: int = 10
 
+    # --- Migration connector (Phase 11) ---
+    # Path to the operator-provided ``starrocks-cluster-sync`` binary. Nova
+    # never bundles or redistributes it (its license is undeclared), so the
+    # operator installs it and points this at the executable. Empty means "not
+    # configured"; the connector reports a typed, non-fatal error rather than
+    # guessing a location. Execute is gated on #7 and does not run here.
+    MIGRATION_CLUSTER_SYNC_BINARY: str = ""
+
     # --- Security ---
     SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
     FERNET_KEY: str = ""  # Generated: Fernet.generate_key()
