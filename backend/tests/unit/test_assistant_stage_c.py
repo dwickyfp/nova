@@ -109,9 +109,7 @@ class FakeProvider:
 
 
 def _invocation(sql: str, call_id: str = "c1") -> ToolInvocation:
-    return ToolInvocation(
-        tool_call_id=call_id, tool_name="query_execute", arguments={"sql": sql}
-    )
+    return ToolInvocation(tool_call_id=call_id, tool_name="query_execute", arguments={"sql": sql})
 
 
 def _user(session_id: str = "sess-1") -> dict:
@@ -123,9 +121,7 @@ def _user(session_id: str = "sess-1") -> dict:
     }
 
 
-def _context(
-    *, thread_id: str = "thread-1", session_id: str | None = "sess-1"
-) -> LoopContext:
+def _context(*, thread_id: str = "thread-1", session_id: str | None = "sess-1") -> LoopContext:
     return LoopContext(
         user_name="alice",
         database="db1",
@@ -269,9 +265,7 @@ async def test_multi_statement_payload_cannot_smuggle_a_denied_statement(fakes):
 
 
 def test_mixed_payload_is_destructive_and_pure_denied_is_denied():
-    classification, decisions = classify_statements(
-        ["SELECT 1", "DROP TABLE x"]
-    )
+    classification, decisions = classify_statements(["SELECT 1", "DROP TABLE x"])
     assert classification == "destructive"
     assert [d.allowed for d in decisions] == [True, False]
 
@@ -321,6 +315,120 @@ async def test_with_cte_mutating_payload_is_refused_before_the_engine(fakes):
     outcome = await tool.run(_invocation("WITH x AS (SELECT 1) DELETE FROM t"), _context())
     assert outcome.ok is False
     assert service.calls == []
+
+
+# ── EXPLAIN body: the wrapped statement decides (NOVA-82) ────────────────────
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "EXPLAIN DROP TABLE x",
+        "EXPLAIN ANALYZE DELETE FROM t",
+        "EXPLAIN ANALYZE INSERT INTO t VALUES (1)",
+        "EXPLAIN ANALYZE UPDATE t SET a = 1",
+        "EXPLAIN TRUNCATE TABLE x",
+        "EXPLAIN COSTS DELETE FROM t",
+        "EXPLAIN VERBOSE UPDATE t SET a = 1",
+        "EXPLAIN CREATE TABLE x (a INT)",
+        "EXPLAIN ALTER TABLE x DROP COLUMN c",
+        "EXPLAIN WITH x AS (SELECT 1) DELETE FROM t",
+        "EXPLAIN ANALYZE WITH x AS (SELECT 1) DELETE FROM t",
+    ],
+)
+def test_explain_with_mutating_body_is_denied(sql):
+    assert tool_classification(sql) == "denied"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "EXPLAIN SELECT 1",
+        "EXPLAIN ANALYZE SELECT * FROM t",
+        "EXPLAIN COSTS SELECT * FROM t",
+        "EXPLAIN WITH x AS (SELECT 1) SELECT * FROM x",
+        "EXPLAIN ANALYZE WITH x AS (SELECT 1) SELECT * FROM x",
+    ],
+)
+def test_explain_with_read_only_body_is_read_only(sql):
+    assert tool_classification(sql) == "read_only"
+
+
+@pytest.mark.parametrize("sql", ["EXPLAIN", "EXPLAIN ANALYZE"])
+def test_bare_explain_fails_closed(sql):
+    assert tool_classification(sql) == "denied"
+
+
+def test_explain_body_is_extracted_for_reclassification():
+    from app.modules.assistant.tools.policy import explain_body
+
+    assert explain_body("EXPLAIN DROP TABLE x") == "DROP TABLE x"
+    assert explain_body("EXPLAIN ANALYZE DELETE FROM t") == "DELETE FROM t"
+    assert explain_body("EXPLAIN SELECT 1") == "SELECT 1"
+    assert explain_body("SELECT 1") == ""
+
+
+async def test_explain_mutation_payload_is_refused_before_the_engine(fakes):
+    service, audit = fakes
+    tool = QueryExecuteTool()
+    outcome = await tool.run(_invocation("EXPLAIN ANALYZE DELETE FROM t"), _context())
+    assert outcome.ok is False
+    assert service.calls == []  # the engine was never reached
+    assert audit.rows and audit.rows[0]["status"] == "DENIED"
+
+
+async def test_explain_mutation_is_not_covered_by_a_read_only_grant(fakes):
+    """``allow_session`` auto-approves read-only, never an ``EXPLAIN`` mutation.
+
+    The loop consults the registry tool's classification; a denied payload must
+    reach neither the consent resolver nor the engine even with the session-wide
+    read-only grant set.
+    """
+    service, audit = fakes
+    provider = FakeProvider(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "query_execute",
+                            "arguments": json.dumps({"sql": "EXPLAIN ANALYZE DELETE FROM t"}),
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "ok"},
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(QueryExecuteTool())
+    loop = AssistantLoop(provider=provider, registry=registry)
+    thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
+    thread.consent.always_allow_read_only = True
+
+    asked: list[str] = []
+
+    async def resolver(inv, cls):
+        asked.append(cls)
+        return True
+
+    await _collect(
+        loop.run(
+            thread=thread,
+            user_content="go",
+            context=_context(),
+            resolve_consent=resolver,
+        )
+    )
+    assert service.calls == []  # the engine was never reached
+    # The read-only grant did not auto-approve it: the mutation surfaced as
+    # ``denied`` and required an explicit consent decision.
+    assert asked == ["denied"]
+    assert audit.rows and audit.rows[0]["status"] == "DENIED"
 
 
 # ── 3. Destructive is never auto-approved ───────────────────────────────────
@@ -456,8 +564,7 @@ async def test_deny_decision_blocks_execution(fakes):
         )
     )
     assert any(
-        _frame_event(f) == "tool_status" and _frame_data(f)["status"] == "denied"
-        for f in frames
+        _frame_event(f) == "tool_status" and _frame_data(f)["status"] == "denied" for f in frames
     )
     assert service.calls == []
 
@@ -616,9 +723,7 @@ def test_none_stays_none_in_a_credential_column():
 
 async def test_credential_value_is_redacted_before_entering_the_model_summary(fakes):
     service, _audit = fakes
-    service._results = [
-        FakeResult(columns=["note"], rows=[["AKIAIOSFODNN7EXAMPLE"]], row_count=1)
-    ]
+    service._results = [FakeResult(columns=["note"], rows=[["AKIAIOSFODNN7EXAMPLE"]], row_count=1)]
     tool = QueryExecuteTool()
     outcome = await tool.run(_invocation("SELECT note FROM t"), _context())
 

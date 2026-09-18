@@ -34,6 +34,21 @@ _WITH_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 
+#: ``EXPLAIN [ANALYZE] <body>``. ``EXPLAIN`` is not itself read-only: the body
+#: decides, exactly as the CTE body does for ``WITH``. ``EXPLAIN ANALYZE
+#: DELETE FROM t`` is a DELETE the engine may execute, so the text after the
+#: optional ``ANALYZE`` must be re-classified by the same deny rules instead of
+#: being waved through on the leading keyword. Every other ``EXPLAIN`` modifier
+#: StarRocks accepts (``COSTS``, ``VERBOSE``, ``LOGICAL``…, comma-separated) is
+#: consumed here as well, so ``EXPLAIN COSTS DELETE FROM t`` cannot slip through
+#: by placing a modifier the pattern does not know between ``EXPLAIN`` and the
+#: body.
+_EXPLAIN_HEADER_RE = re.compile(
+    r"^EXPLAIN\b(?:\s+(?:ANALYZE|COSTS|VERBOSE|LOGICAL|COST|UUID|"
+    r"FORMAT\s*=\s*\S+)\b)?",
+    re.IGNORECASE,
+)
+
 #: A CTE body's leading keyword once the header(s) are removed.
 _CTE_LEADING = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*")
 
@@ -142,6 +157,21 @@ def cte_body(sql: str) -> str:
     return remainder
 
 
+def explain_body(sql: str) -> str:
+    """Return the statement body of an ``EXPLAIN`` statement, after its header.
+
+    ``EXPLAIN`` is a wrapper, not a read-only statement: ``EXPLAIN DROP TABLE x``
+    and ``EXPLAIN ANALYZE DELETE FROM t`` carry destructive statements inside.
+    The body decides, so the header (``EXPLAIN`` plus any modifier such as
+    ``ANALYZE``) is consumed and the remainder returned for re-classification.
+    Returns ``""`` when the input is not a recognisable ``EXPLAIN``.
+    """
+    match = _EXPLAIN_HEADER_RE.match(sql.lstrip())
+    if match is None:
+        return ""
+    return sql.lstrip()[match.end() :].lstrip()
+
+
 def is_allowed_statement(sql: str) -> bool:
     """True when one statement is on the read-only allow list.
 
@@ -159,6 +189,12 @@ def is_allowed_statement(sql: str) -> bool:
     keyword = _leading_keyword(stripped)
     if keyword == "WITH":
         return _leading_keyword(cte_body(stripped)) in ("SELECT",)
+    if keyword == "EXPLAIN":
+        body = explain_body(stripped)
+        # An ``EXPLAIN`` with no body, or a body that is itself only further
+        # ``EXPLAIN`` wrappers, is not read-only: fail closed rather than
+        # allowing a bare wrapper through on the strength of its keyword.
+        return bool(body) and is_allowed_statement(body)
     return keyword in _ALLOWED_LEADING
 
 
@@ -173,6 +209,10 @@ def is_denied_statement(sql: str) -> bool:
         return True
     keyword = _leading_keyword(stripped)
     if keyword == "WITH":
+        return not is_allowed_statement(stripped)
+    if keyword == "EXPLAIN":
+        # The body, not the wrapper, decides — mirroring the CTE rule. A body
+        # that is not read-only makes the whole ``EXPLAIN`` a denied statement.
         return not is_allowed_statement(stripped)
     return keyword in _DENIED_PREFIXES
 
@@ -239,6 +279,16 @@ def denial_reason(sql: str) -> str:
         body_keyword = _leading_keyword(cte_body(stripped))
         if body_keyword:
             return f"WITH … {body_keyword} is not a read-only statement."
+    if keyword == "EXPLAIN":
+        body = explain_body(stripped)
+        # A ``WITH`` body is itself decided by its CTE body, so peel it the same
+        # way ``is_allowed_statement`` does before naming the offender.
+        if _leading_keyword(body) == "WITH":
+            body = cte_body(body)
+        body_keyword = _leading_keyword(body)
+        if body_keyword:
+            return f"EXPLAIN … {body_keyword} is not a read-only statement."
+        return "EXPLAIN without a read-only body is not a read-only statement."
     if keyword:
         return f"{keyword} is not a read-only statement."
     return "The statement could not be classified as read-only."
@@ -264,6 +314,7 @@ __all__ = [
     "classify_statements",
     "cte_body",
     "denial_reason",
+    "explain_body",
     "is_allowed_statement",
     "is_denied_statement",
     "is_nova_ddl",
