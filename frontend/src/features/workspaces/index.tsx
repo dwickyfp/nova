@@ -237,7 +237,7 @@ const SQL_KEYWORDS = [
   'ROUTINE LOAD',
   'SHOW STREAM LOAD',
   'CANCEL STREAM LOAD',
-  // StarRocks-specific
+  // Engine-specific
   'SHOW DATABASES',
   'SHOW TABLES',
   'SHOW COLUMNS',
@@ -563,7 +563,7 @@ const SQL_KEYWORDS = [
   'UNNEST',
   'GENERATE',
   'FILES',
-  // ML / AI Functions (StarRocks 3.x)
+  // ML / AI functions
   'ML_PREDICT',
   'AI_COMPLETE',
 ]

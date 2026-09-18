@@ -621,8 +621,8 @@ export function ModelsTab() {
             <DialogTitle>Train New ML Model</DialogTitle>
             <DialogDescription className='max-w-[620px]'>
               Train a classification or regression model using data from a SQL
-              query. The model will be stored in StarRocks and can be used for
-              predictions via model aliases.
+              query. The model is stored as a managed resource and can be used
+              for predictions via model aliases.
             </DialogDescription>
           </DialogHeader>
           <Separator />
