@@ -691,3 +691,109 @@ class TestFinalizerEdgeShape:
         finally:
             for edge in edges:
                 await repo.delete_edge(edge["id"])
+
+
+class TestReadApiRepositoryAgainstEngine:
+    """NOVA-54 / PR 4a: the read-model queries work on real StarRocks.
+
+    The API's four endpoints are thin over these repository methods, so proving
+    them here proves the endpoint data. A fake cannot catch a SQL/column drift,
+    which is exactly what a read model is prone to.
+    """
+
+    async def test_create_task_then_read_graph_edges_and_runs(self, orchestration_db):
+        await _ensure_ddl()
+        from app.modules.task_orchestration.ddl import parse_create_task
+        from app.modules.task_orchestration.lowering import persist_lowered_task
+
+        suffix = uuid4().hex[:8]
+        parent = f"api_a_{suffix}"
+        child = f"api_b_{suffix}"
+        finalizer = f"api_f_{suffix}"
+
+        parent_task = parse_create_task(
+            f"CREATE TASK {parent} AS INSERT INTO t SELECT 1",
+            database="NOVA_DEMO",
+            timezone="UTC",
+        )
+        persisted_a = await persist_lowered_task(parent_task, created_by="alice")
+        child_task = parse_create_task(
+            f"CREATE TASK {child} AFTER {parent} AS INSERT INTO t SELECT 1",
+            database="NOVA_DEMO",
+            timezone="UTC",
+        )
+        persisted_b = await persist_lowered_task(child_task, created_by="alice")
+        finalizer_task = parse_create_task(
+            f"CREATE TASK {finalizer} FINALIZE {parent} AS INSERT INTO t SELECT 1",
+            database="NOVA_DEMO",
+            timezone="UTC",
+        )
+        persisted_f = await persist_lowered_task(finalizer_task, created_by="alice")
+
+        try:
+            # list_graph_ids must surface the graph.
+            graph_ids = await repo.list_graph_ids()
+            assert child in graph_ids or parent in graph_ids
+
+            # The graph's tasks, resolvable by name (the API's detail path).
+            names = [parent, child, finalizer]
+            resolved = await repo.get_tasks_by_names(names)
+            assert {str(t["name"]) for t in resolved} == set(names)
+
+            # Edges carry their kind so the UI can distinguish the finalizer.
+            edges = await repo.list_edges(child)
+            kinds = {(e["parent_task"], e["edge_kind"]) for e in edges}
+            assert (parent, "after") in kinds
+
+            fin_edges = await repo.list_edges(finalizer)
+            assert (parent, "finalize") in {
+                (e["parent_task"], e["edge_kind"]) for e in fin_edges
+            }
+
+            # The read model for runs: no run yet, so latest is None and the
+            # per-graph task-run query returns an empty list, not an error.
+            assert await repo.get_latest_graph_run(child) is None
+            assert await repo.list_task_runs_for_graph(child) == []
+        finally:
+            for row in (persisted_f, persisted_b, persisted_a):
+                for edge in await repo.list_edges(row.task["name"]):
+                    await repo.delete_edge(edge["id"])
+                await repo.delete_task(row.task["id"])
+
+    async def test_graph_run_read_model_round_trips(self, orchestration_db):
+        await _ensure_ddl()
+        graph_id = f"api_r_{uuid4().hex[:8]}"
+        run = await repo.create_graph_run(
+            {
+                "graph_id": graph_id,
+                "trigger_type": "schedule",
+                "state": "running",
+                "overlap_policy": "queue",
+            }
+        )
+        task_id = f"id_{uuid4().hex[:8]}"
+        node = await repo.create_task_run(
+            {
+                "graph_run_id": run["id"],
+                "task_id": task_id,
+                "state": "running",
+                "delegated": True,
+            }
+        )
+        try:
+            latest = await repo.get_latest_graph_run(graph_id)
+            assert latest is not None
+            assert latest["id"] == run["id"]
+            assert latest["overlap_policy"] == "queue"
+
+            runs = await repo.list_graph_runs(graph_id)
+            assert [r["id"] for r in runs] == [run["id"]]
+
+            node_runs = await repo.list_node_runs(run["id"])
+            assert [n["id"] for n in node_runs] == [node["id"]]
+
+            for_graph = await repo.list_task_runs_for_graph(graph_id)
+            assert {n["id"] for n in for_graph} == {node["id"]}
+        finally:
+            await repo.delete_task_run(node["id"])
+            await repo.delete_graph_run(run["id"])

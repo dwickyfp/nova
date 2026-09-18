@@ -360,6 +360,42 @@ Cara mengamati:
 # SELECT action, object_name, status FROM NOVA_SYSTEM.AUDIT_LOG ORDER BY event_time DESC LIMIT 20;
 ```
 
+### Read API orkestrasi (NOVA-54)
+
+Metadata orkestrasi (graph, edge, run) bisa dibaca lewat HTTP, **read-only**.
+Ini berbeda dari `/api/v1/tasks` yang membaca surface task **native StarRocks**;
+tanpa endpoint ini task hasil `CREATE TASK` tidak terlihat dari UI.
+
+```bash
+# Daftar graph + root task, jumlah node, jadwal, overlap policy, run terakhir
+curl -s -H "Authorization: Bearer $TOKEN" \
+  localhost:8000/api/v1/task-orchestration/graphs | jq
+
+# Definisi satu graph: node (termasuk finalizer) + edge dengan edge_kind
+curl -s -H "Authorization: Bearer $TOKEN" \
+  localhost:8000/api/v1/task-orchestration/graphs/<graph_id> | jq
+
+# Riwayat graph run
+curl -s -H "Authorization: Bearer $TOKEN" \
+  localhost:8000/api/v1/task-orchestration/graphs/<graph_id>/runs | jq
+
+# Satu graph run + node runs (error_message sudah di-redact)
+curl -s -H "Authorization: Bearer $TOKEN" \
+  localhost:8000/api/v1/task-orchestration/runs/<graph_run_id> | jq
+```
+
+Endpoint memakai prefix yang sama dengan API lain; ganti `localhost:8000` dengan
+host backend Anda. Otorisasi ditegakkan di backend: pemanggil hanya melihat graph
+yang **setiap** task di dalamnya ia miliki (`created_by`); role admin melihat
+semuanya. `graph_id` yang tidak dikenal **atau** bukan milik pemanggil sama-sama
+`404`. Body task tidak pernah dikembalikan, dan `error_message` di-redact.
+
+Graph yang node-nya dimiliki beberapa user berbeda **sengaja** fail-closed:
+tidak terlihat oleh non-admin mana pun. Ini disengaja karena graph bisa tersusun
+dari node yang bukan milik pembuatnya (`CREATE TASK x AFTER a` tidak memeriksa
+pemilik `a`); aturan yang lebih longgar akan membuat satu pemilik membaca
+definisi task pemilik lain — `when_expr`, jadwal, dan `created_by`-nya.
+
 Untuk memverifikasi worker mengonsumsi:
 
 ```bash
