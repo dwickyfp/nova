@@ -1761,6 +1761,9 @@ export function WorkspacesPage() {
           streaming={assistant.streaming}
           onStop={assistant.stop}
           statusMessage={assistant.statusMessage}
+          grantActive={assistant.grantActive}
+          onResetPermissions={assistant.resetPermissions}
+          resettingPermissions={assistant.resettingGrant}
         />
       </div>
     </div>

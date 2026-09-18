@@ -68,4 +68,17 @@ describe('decideToolCall', () => {
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('/api/v1/assistant/tool-calls/call%2Fwith%20space/decision')
   })
+
+  it('returns the response grant_active flag so the panel can track the grant', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ tool_call_id: 'call-1', status: 'approved', grant_active: true }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+
+    const result = await decideToolCall('call-1', 'approve', true)
+
+    expect(result.grant_active).toBe(true)
+  })
 })

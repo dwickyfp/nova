@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { AssistantPanel } from './assistant-panel'
 import { MessageList } from './message-list'
 import { useAssistantTurn } from './use-assistant-turn'
+
+const resetGrant = vi.fn()
+
+vi.mock('./thread-client', () => ({
+  resetGrant: (...args: unknown[]) => resetGrant(...args),
+}))
 
 type Turn = ReturnType<typeof useAssistantTurn>
 
@@ -21,6 +28,28 @@ function Harness({
   return <MessageList messages={turn.messages} statusMessage={turn.statusMessage} />
 }
 
+function PanelHarness({
+  holder,
+  onError,
+}: {
+  holder: { current: Turn | null }
+  onError?: (message: string) => void
+}) {
+  const turn = useAssistantTurn({ ensureThread: async () => 't-1', onError })
+  holder.current = turn
+  return (
+    <AssistantPanel
+      open
+      onOpenChange={() => {}}
+      messages={turn.messages}
+      statusMessage={turn.statusMessage}
+      grantActive={turn.grantActive}
+      onResetPermissions={turn.resetPermissions}
+      resettingPermissions={turn.resettingGrant}
+    />
+  )
+}
+
 function sseResponse(frames: string[]) {
   const encoder = new TextEncoder()
   const body = new ReadableStream<Uint8Array>({
@@ -33,6 +62,7 @@ function sseResponse(frames: string[]) {
 }
 
 afterEach(() => {
+  resetGrant.mockReset()
   vi.restoreAllMocks()
 })
 
@@ -137,5 +167,80 @@ describe('useAssistantTurn', () => {
 
     await holder.current!.sendMessage('hi')
     await expect.element(getByText('provider unavailable')).toBeInTheDocument()
+  })
+})
+
+/** Routes fetch: the SSE turn to a done frame, the decision to a grant response. */
+function mockTurnThenDecision(grantActive: boolean) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = String(input)
+    if (url.endsWith('/messages')) {
+      return sseResponse(['event: done\ndata: {"message_id":"m","finish_reason":"stop"}\n\n'])
+    }
+    if (url.endsWith('/decision')) {
+      const body = JSON.parse((init?.body as string) ?? '{}')
+      return new Response(
+        JSON.stringify({
+          tool_call_id: 'call-1',
+          status: 'approved',
+          grant_active: body.decision === 'allow_session' ? grantActive : false,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+    return new Response(null, { status: 204 })
+  })
+}
+
+describe('useAssistantTurn grant reset', () => {
+  it('tracks the grant from an allow_session decision in the panel', async () => {
+    mockTurnThenDecision(true)
+    const holder: { current: Turn | null } = { current: null }
+    const { getByRole } = await render(<PanelHarness holder={holder} />)
+    await holder.current!.sendMessage('hi')
+
+    expect(holder.current!.grantActive).toBe(false)
+    await holder.current!.decide({ toolCallId: 'call-1', decision: 'approve', alwaysAllow: true })
+
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true))
+    await expect.element(getByRole('button', { name: 'Reset permissions' })).toBeInTheDocument()
+  })
+
+  it('revokes the grant through the panel control and stops claiming it is active', async () => {
+    mockTurnThenDecision(true)
+    resetGrant.mockResolvedValue(undefined)
+    const holder: { current: Turn | null } = { current: null }
+    const { getByRole, getByText, container } = await render(<PanelHarness holder={holder} />)
+    await holder.current!.sendMessage('hi')
+    await holder.current!.decide({ toolCallId: 'call-1', decision: 'approve', alwaysAllow: true })
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true))
+
+    await getByRole('button', { name: 'Reset permissions' }).click()
+
+    expect(resetGrant).toHaveBeenCalledWith('t-1')
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(false))
+    await expect
+      .element(getByText('Read-only queries are allowed in this conversation.'))
+      .not.toBeInTheDocument()
+    expect(container.textContent).not.toContain('Reset permissions')
+  })
+
+  it('surfaces a failed reset instead of swallowing it', async () => {
+    mockTurnThenDecision(true)
+    resetGrant.mockRejectedValue(new Error('Thread not found'))
+    const onError = vi.fn()
+    const holder: { current: Turn | null } = { current: null }
+    const { getByRole, getByText } = await render(
+      <PanelHarness holder={holder} onError={onError} />
+    )
+    await holder.current!.sendMessage('hi')
+    await holder.current!.decide({ toolCallId: 'call-1', decision: 'approve', alwaysAllow: true })
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true))
+
+    await getByRole('button', { name: 'Reset permissions' }).click()
+
+    await expect.element(getByText('Thread not found')).toBeInTheDocument()
+    expect(onError).toHaveBeenCalledWith('Thread not found')
+    expect(holder.current!.grantActive).toBe(true)
   })
 })

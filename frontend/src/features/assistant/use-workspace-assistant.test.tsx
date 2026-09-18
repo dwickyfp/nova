@@ -9,6 +9,7 @@ const streamAssistantTurn = vi.fn()
 
 vi.mock('./thread-client', () => ({
   createThread: (...args: unknown[]) => createThread(...args),
+  resetGrant: vi.fn(),
 }))
 
 vi.mock('./stream-client', async () => {
