@@ -424,8 +424,47 @@ backend/app/modules/task_orchestration/
 ├── lowering.py    # persist a LoweredTask as CONFIG_TASK* rows (cycle-checked)
 ├── dag.py         # pure graph-run state machine + finalizer staging
 ├── scheduler.py   # due-graph planning + overlap_policy enforcement at enqueue
-└── worker.py      # executes ready nodes, finalizers, WHEN, delegate-first
+├── worker.py      # executes ready nodes, finalizers, WHEN, delegate-first
+└── router.py      # read-only HTTP API for the metadata (see below)
 ```
+
+---
+
+## Read API — `/api/v1/task-orchestration`
+
+Read-only endpoints over the orchestration metadata. They exist because the
+native `/api/v1/tasks` surface reads **StarRocks'** `information_schema.tasks`
+(the `SUBMIT TASK` world), not Nova's `CONFIG_TASK*` tables — so without these, a
+task created with `CREATE TASK` is invisible to the UI.
+
+| Method & path | Returns |
+|---|---|
+| `GET /graphs` | One row per graph: `graph_id`, root task, node count, root's `schedule_kind`/`schedule_expr`/`timezone`, `overlap_policy`, and the last run (`id`/`state`/`trigger_type`/`overlap_policy`/timings). |
+| `GET /graphs/{graph_id}` | The graph definition: every node (including finalizers), every edge with `edge_kind` (`after`/`finalize`), and each node's latest observed state. |
+| `GET /graphs/{graph_id}/runs` | Graph-run history, newest first, including `overlap_policy` and `trigger_type`. |
+| `GET /runs/{graph_run_id}` | One graph run plus its node runs: `attempt`, `state`, `delegated`, redacted `error_message`, and timings. |
+
+**Read-only.** Every route is `GET`; nothing in the router calls a repository
+write method. There is no mutation path.
+
+**Authorization is enforced in the backend.** The metadata lives in
+`NOVA_SYSTEM.CONFIG_TASK*` and is read through the system pool, so StarRocks'
+own grant filter does **not** apply the way it does on the caller-scoped
+`/tasks` path. Nova therefore scopes ownership itself on each request: a caller
+sees a graph only if they own one of its tasks (`created_by` — the same identity
+the worker submits as). A caller holding an admin role (`ACCOUNTADMIN` or a
+StarRocks security role) sees every graph. An unknown **or** unauthorized
+`graph_id` returns the same `404`, so the API does not reveal that someone
+else's graph exists.
+
+**Credential-invisible.** Responses carry ids, names, states, timings and
+schedule metadata only. The task **body is not exposed** (it can name a `@stage`
+whose credentials Nova injects at execution), and `error_message` is redacted
+with the same helper the worker uses
+(`common/sql_guard.redact_sql_credentials`).
+
+Empty state returns an empty list; an unknown graph or run returns `404` — never
+a `500`.
 
 ---
 

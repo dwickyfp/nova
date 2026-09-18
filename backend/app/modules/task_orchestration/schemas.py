@@ -123,3 +123,116 @@ class TaskRun(TaskRunCreate):
     id: str
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+# ── Read-only orchestration API (PR 4a) ────────────────────────────────────────
+#
+# Response models for `/api/v1/task-orchestration`. They are read-only and
+# credential-invisible by construction: every field is an id, a name, a state, a
+# timing, or schedule metadata. No model here carries a password, token, or
+# storage credential — the task *body* is not exposed either, because it can name
+# a stage whose credentials Nova injects at execution time.
+#
+# `error_message` is present because the UI needs to show why a node failed; it
+# is redacted by the router through the same helper the worker uses, so an engine
+# error that echoed a rewritten `@stage` statement cannot leak credentials.
+
+
+class GraphRunSummary(BaseModel):
+    """The last run of a graph, as shown in the graph list."""
+
+    id: str
+    state: GraphRunState
+    trigger_type: TriggerType
+    overlap_policy: OverlapPolicy
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class GraphSummary(BaseModel):
+    """One row of `GET /graphs`."""
+
+    graph_id: str
+    #: The schedule anchor: a root task with no incoming edge, when there is one.
+    root_task: str | None = None
+    node_count: int = 0
+    schedule_kind: ScheduleKind | None = None
+    schedule_expr: str | None = None
+    timezone: str | None = None
+    overlap_policy: OverlapPolicy = "skip"
+    last_run: GraphRunSummary | None = None
+
+
+class GraphListResponse(BaseModel):
+    graphs: list[GraphSummary]
+    count: int
+
+
+class GraphNode(BaseModel):
+    """A node of a graph definition, with its last observed run state."""
+
+    name: str
+    task_id: str
+    schedule_kind: ScheduleKind
+    schedule_expr: str | None = None
+    timezone: str | None = None
+    overlap_policy: OverlapPolicy = "skip"
+    when_expr: str | None = None
+    created_by: str | None = None
+    #: `finalize` marks a finalizer: it runs after the dependency graph, not as a
+    #: dependency. The UI must be able to distinguish it.
+    is_finalizer: bool = False
+    last_state: TaskRunState | None = None
+
+
+class GraphEdge(BaseModel):
+    """A directed edge, with the kind the UI needs to render it correctly."""
+
+    parent_task: str
+    child_task: str
+    edge_kind: EdgeKind = "after"
+
+
+class GraphDetailResponse(BaseModel):
+    graph_id: str
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    node_count: int
+
+
+class GraphRunResponse(BaseModel):
+    """A graph-run row, without `wal_marks` (internal watermark bookkeeping)."""
+
+    id: str
+    graph_id: str
+    trigger_type: TriggerType
+    state: GraphRunState
+    overlap_policy: OverlapPolicy
+    started_at: datetime | None = None
+    heartbeat_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class GraphRunListResponse(BaseModel):
+    runs: list[GraphRunResponse]
+    count: int
+
+
+class NodeRunResponse(BaseModel):
+    """One node-run row, with `error_message` already redacted."""
+
+    id: str
+    task_id: str | None = None
+    attempt: int = 1
+    state: TaskRunState
+    delegated: bool = True
+    starrocks_query_id: str | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    heartbeat_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class GraphRunDetailResponse(BaseModel):
+    run: GraphRunResponse
+    node_runs: list[NodeRunResponse]
