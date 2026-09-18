@@ -80,7 +80,7 @@ Matching is on the **suffix** of a dotted parameter name with a provider prefix,
 
 ```
 'aws.s3.access_key'='<value>'   →   'aws.s3.access_key'='***'
-aws.s3.secret_key="s3cr3t"    →   aws.s3.secret_key='***'
+aws.s3.secret_key="<value>"   →   aws.s3.secret_key='***'
 ```
 
 Two patterns cover quoted and bare keys; a shared value grammar handles single/double/backtick quoting and `=` or `=>`.

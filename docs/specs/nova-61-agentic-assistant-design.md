@@ -256,8 +256,9 @@ results = await query_service.execute_statements(
 ```
 
 - The tool imports `query_service` from
-  `backend/app/modules/query/service.py:453`. It must **never** import `asyncmy`
-  or `db.user_conn`, and never open a socket.
+  `backend/app/modules/query/service.py` (`QueryService.execute_statements`,
+  line 497 at `44252d4` — the line is a hint; the symbol is the contract). It
+  must **never** import `asyncmy` or `db.user_conn`, and never open a socket.
 - It runs on the **requesting user's** connection, so StarRocks RBAC is the
   authorization source of truth (delegate-first, the NOVA-23 D9.4 pattern).
   There is no service-identity fallback.
@@ -424,7 +425,7 @@ and re-checked against `main@0c55f14`.
 |---|---|
 | Module registration | `backend/app/main.py:124-148` |
 | Auth dependency | `backend/app/core/deps.py:15` |
-| Execution entrypoint | `backend/app/modules/query/service.py:453` |
+| Execution entrypoint | `QueryService.execute_statements` — `backend/app/modules/query/service.py:497` |
 | Guard invocation | `backend/app/modules/query/service.py:219`; `sql_pipeline.py:68` |
 | Guard rules | `backend/app/common/sql_guard.py:70`, `:296` |
 | Statement splitter | `backend/app/common/sql_guard.py:538` |
