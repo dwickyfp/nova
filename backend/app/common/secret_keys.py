@@ -95,3 +95,20 @@ def validate_required_secrets(
     """
     validate_secret_key(secret_key)
     validate_fernet_key(fernet_key)
+
+
+def require_configured_secrets() -> None:
+    """Validate the configured secrets before a process opens any connection.
+
+    One home for the rule every entrypoint must apply: the API lifespan and the
+    standalone worker/proxy/scheduler processes all call this **before** their
+    first ``db.init_system_pool()``. A process that skipped it would boot with
+    no usable key and fail later at first use — the failure this issue exists to
+    move to startup.
+    """
+    from app.core.config import settings
+
+    validate_required_secrets(
+        secret_key=settings.SECRET_KEY,
+        fernet_key=settings.FERNET_KEY,
+    )
