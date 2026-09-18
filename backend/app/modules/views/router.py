@@ -7,6 +7,8 @@ statement is allowed. ``guard_sql`` still runs on the assembled statement; this
 module is a layer above the unchanged guard (NOVA-89).
 """
 
+from typing import Annotated, Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -24,9 +26,10 @@ from app.modules.objects.repository import object_repo
 
 router = APIRouter()
 
-#: Module-level dependency so route signatures avoid a ``Depends()`` call in an
-#: argument default (ruff B008). DDL runs on the caller's own connection.
-user_connection = Depends(get_user_connection)
+#: ``Annotated`` dependency aliases (the tree's convention; a ``Depends()`` in
+#: an argument default trips ruff B008). DDL runs on the caller's connection.
+CurrentUser = Annotated[dict, Depends(get_current_user)]
+UserConnection = Annotated[Any, Depends(get_user_connection)]
 
 
 # ── Schemas ────────────────────────────────────────────────────
@@ -92,8 +95,8 @@ def _build_properties(properties: dict) -> str:
 @router.post("/create")
 async def create_view(
     req: CreateViewRequest,
-    user: dict = Depends(get_current_user),
-    conn=user_connection,
+    user: CurrentUser,
+    conn: UserConnection,
 ):
     """Create a standard view on the caller's connection."""
     database = check_identifier(req.database, field="database")
@@ -102,7 +105,10 @@ async def create_view(
     comment = _build_comment(req.comment)
     replace = "OR REPLACE " if req.replace else ""
 
-    sql = f"CREATE {replace}VIEW `{database}`.`{view_name}`{columns}{comment}\nAS {req.select_sql}"
+    sql = (
+        f"CREATE {replace}VIEW `{database}`.`{view_name}`{columns}{comment}\n"
+        f"AS {req.select_sql}"
+    )
     guard_sql(sql)
 
     try:
@@ -110,14 +116,14 @@ async def create_view(
             await cur.execute(sql)
         return {"success": True, "message": f"View '{database}.{view_name}' created"}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/create-materialized")
 async def create_materialized_view(
     req: CreateMaterializedViewRequest,
-    user: dict = Depends(get_current_user),
-    conn=user_connection,
+    user: CurrentUser,
+    conn: UserConnection,
 ):
     """Create a materialized view on the caller's connection."""
     database = check_identifier(req.database, field="database")
@@ -129,11 +135,19 @@ async def create_materialized_view(
     distributed_by = (
         check_distributed_by(req.distributed_by) if req.distributed_by else "HASH(*)"
     )
-    if not isinstance(req.buckets, int) or isinstance(req.buckets, bool) or req.buckets <= 0:
-        raise HTTPException(status_code=400, detail="buckets must be a positive integer")
+    if (
+        not isinstance(req.buckets, int)
+        or isinstance(req.buckets, bool)
+        or req.buckets <= 0
+    ):
+        raise HTTPException(
+            status_code=400, detail="buckets must be a positive integer"
+        )
     refresh = (req.refresh_strategy or "ASYNC").upper()
     if refresh not in ("SYNC", "ASYNC", "MANUAL"):
-        raise HTTPException(status_code=400, detail=f"Invalid refresh strategy: {req.refresh_strategy}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid refresh strategy: {req.refresh_strategy}"
+        )
 
     sql = f"CREATE MATERIALIZED VIEW `{database}`.`{mv_name}`{columns}{comment}\n"
     sql += f"DISTRIBUTED BY {distributed_by} BUCKETS {req.buckets}\n"
@@ -151,14 +165,14 @@ async def create_materialized_view(
             "message": f"Materialized view '{database}.{mv_name}' created",
         }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/drop")
 async def drop_view(
     req: DropViewRequest,
-    user: dict = Depends(get_current_user),
-    conn=user_connection,
+    user: CurrentUser,
+    conn: UserConnection,
 ):
     """Drop a view or materialized view on the caller's connection."""
     database = check_identifier(req.database, field="database")
@@ -173,14 +187,14 @@ async def drop_view(
             await cur.execute(sql)
         return {"success": True, "message": f"View '{database}.{view_name}' dropped"}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{database}/{view}/ddl")
 async def get_view_ddl(
     database: str,
     view: str,
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
 ):
     """Get the CREATE VIEW DDL."""
     check_identifier(database, field="database")
