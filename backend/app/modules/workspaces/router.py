@@ -1,3 +1,10 @@
+"""Workspace router — file/folder CRUD and persisted workspace state."""
+
+# ruff: noqa: B008 — `Depends(...)` in a default is FastAPI's dependency
+# injection idiom used throughout this codebase (this file's eight uses predate
+# the diff-scoped ruff gate). The rule's suggested rewrite would break the DI
+# graph; the file is otherwise clean.
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -85,6 +92,7 @@ async def save_workspace_state(
         open_tabs=body.open_tabs,
         active_tab=body.active_tab,
         sidebar_collapsed=body.sidebar_collapsed,
+        assistant_collapsed=body.assistant_collapsed,
         last_database=body.last_database,
         last_schema=body.last_schema,
         last_role=body.last_role,
