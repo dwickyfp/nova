@@ -89,39 +89,49 @@ export function findNodeById(nodes: ExplorerNode[], id: string): ExplorerNode | 
 // ── Build catalog root node from API data ─────────────────────
 
 export function buildCatalogTree(catalog: CatalogInfo): ExplorerNode {
+  const catalogLabel =
+    catalog.name === 'default_catalog' ? 'Nova Catalog' : catalog.name
   return {
     id: `catalog-${catalog.name}`,
-    label: catalog.name === 'default_catalog' ? 'Nova Catalog' : catalog.name,
+    label: catalogLabel,
     type: 'catalog',
-    path: [catalog.name === 'default_catalog' ? 'Nova Catalog' : catalog.name],
+    path: [catalogLabel],
     metadata: [
       { label: 'Catalog type', value: catalog.type },
       { label: 'Databases', value: String(catalog.databases.length) },
       ...(catalog.comment ? [{ label: 'Comment', value: catalog.comment }] : []),
     ],
     children: catalog.databases.map((db) => ({
-      id: `db-${db}`,
+      // The catalog is part of the id: two catalogs can expose a database with
+      // the same name, and an id collision would collapse them into one node.
+      id: `db-${catalog.name}-${db}`,
       label: db,
       type: 'database' as ExplorerNodeType,
-      path: [catalog.name === 'default_catalog' ? 'Nova Catalog' : catalog.name, db],
+      path: [catalogLabel, db],
       database: db,
+      catalog: catalog.name,
       metadata: [],
       // Placeholder child to make database nodes appear as expandable
       children: [{
-        id: `db-${db}-loading`,
+        id: `db-${catalog.name}-${db}-loading`,
         label: 'Loading...',
         type: 'group' as ExplorerNodeType,
-        path: [catalog.name === 'default_catalog' ? 'Nova Catalog' : catalog.name, db],
+        path: [catalogLabel, db],
         database: db,
+        catalog: catalog.name,
         metadata: [],
       }],
     })),
   }
 }
 
-export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNode[] {
+export function buildDatabaseChildren(
+  data: DatabaseObjectsResponse,
+  catalog = 'default_catalog'
+): ExplorerNode[] {
   const db = data.database
-  const catalogPath = 'Nova Catalog'
+  const catalogPath = catalog === 'default_catalog' ? 'Nova Catalog' : catalog
+  const idBase = `${catalog}-${db}`
   const children: ExplorerNode[] = []
 
   const emptyNode = (parentId: string, label: string): ExplorerNode => ({
@@ -130,25 +140,28 @@ export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNo
     type: 'group' as ExplorerNodeType,
     path: [catalogPath, db, label],
     database: db,
+    catalog,
     metadata: [],
     children: [],
   })
 
   // Tables group
   children.push({
-    id: `${db}-tables`,
+    id: `${idBase}-tables`,
     label: 'Tables',
     type: 'group',
     path: [catalogPath, db, 'Tables'],
     database: db,
+    catalog,
     metadata: [{ label: 'Count', value: String(data.tables.length) }],
     children: data.tables.length > 0
       ? data.tables.map((t) => ({
-          id: `${db}-table-${t.name}`,
+          id: `${idBase}-table-${t.name}`,
           label: t.name,
           type: 'table' as ExplorerNodeType,
           path: [catalogPath, db, 'Tables', t.name],
           database: db,
+          catalog,
           metadata: [
             { label: 'Model', value: formatModel(t.table_model) },
             { label: 'Engine', value: t.engine || 'Nova' },
@@ -157,20 +170,21 @@ export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNo
             ...(t.create_time ? [{ label: 'Created', value: t.create_time.split('T')[0] }] : []),
           ],
         }))
-      : [emptyNode(`${db}-tables`, 'Tables')],
+      : [emptyNode(`${idBase}-tables`, 'Tables')],
   })
 
   // Views group
   children.push({
-    id: `${db}-views`,
+    id: `${idBase}-views`,
     label: 'Views',
     type: 'group',
     path: [catalogPath, db, 'Views'],
     database: db,
+    catalog,
     metadata: [{ label: 'Count', value: String(data.views.length) }],
     children: data.views.length > 0
       ? data.views.map((v) => ({
-          id: `${db}-view-${v.name}`,
+          id: `${idBase}-view-${v.name}`,
           label: v.name,
           type: 'view' as ExplorerNodeType,
           path: [catalogPath, db, 'Views', v.name],
@@ -180,20 +194,21 @@ export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNo
             ...(v.is_updatable ? [{ label: 'Updatable', value: v.is_updatable }] : []),
           ],
         }))
-      : [emptyNode(`${db}-views`, 'Views')],
+      : [emptyNode(`${idBase}-views`, 'Views')],
   })
 
   // MVs group
   children.push({
-    id: `${db}-mvs`,
+    id: `${idBase}-mvs`,
     label: 'Materialized Views',
     type: 'group',
     path: [catalogPath, db, 'Materialized Views'],
     database: db,
+    catalog,
     metadata: [{ label: 'Count', value: String(data.materialized_views.length) }],
     children: data.materialized_views.length > 0
       ? data.materialized_views.map((m) => ({
-          id: `${db}-mv-${m.name}`,
+          id: `${idBase}-mv-${m.name}`,
           label: m.name,
           type: 'materialized_view' as ExplorerNodeType,
           path: [catalogPath, db, 'Materialized Views', m.name],
@@ -205,20 +220,21 @@ export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNo
             ...(m.table_rows != null ? [{ label: 'Rows', value: String(m.table_rows) }] : []),
           ],
         }))
-      : [emptyNode(`${db}-mvs`, 'Materialized Views')],
+      : [emptyNode(`${idBase}-mvs`, 'Materialized Views')],
   })
 
   // Functions group
   children.push({
-    id: `${db}-functions`,
+    id: `${idBase}-functions`,
     label: 'Functions',
     type: 'group',
     path: [catalogPath, db, 'Functions'],
     database: db,
+    catalog,
     metadata: [{ label: 'Count', value: String(data.functions.length) }],
     children: data.functions.length > 0
       ? data.functions.map((f) => ({
-          id: `${db}-fn-${f.name}`,
+          id: `${idBase}-fn-${f.name}`,
           label: f.name,
           type: 'function' as ExplorerNodeType,
           path: [catalogPath, db, 'Functions', f.name],
@@ -228,20 +244,21 @@ export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNo
             ...(f.definer ? [{ label: 'Definer', value: f.definer }] : []),
           ],
         }))
-      : [emptyNode(`${db}-functions`, 'Functions')],
+      : [emptyNode(`${idBase}-functions`, 'Functions')],
   })
 
   // Pipes group
   children.push({
-    id: `${db}-pipes`,
+    id: `${idBase}-pipes`,
     label: 'Pipes',
     type: 'group',
     path: [catalogPath, db, 'Pipes'],
     database: db,
+    catalog,
     metadata: [{ label: 'Count', value: String(data.pipes.length) }],
     children: data.pipes.length > 0
       ? data.pipes.map((p) => ({
-          id: `${db}-pipe-${p.name}`,
+          id: `${idBase}-pipe-${p.name}`,
           label: p.name,
           type: 'pipe' as ExplorerNodeType,
           path: [catalogPath, db, 'Pipes', p.name],
@@ -252,20 +269,21 @@ export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNo
             ...(p.load_status ? [{ label: 'Load status', value: p.load_status }] : []),
           ],
         }))
-      : [emptyNode(`${db}-pipes`, 'Pipes')],
+      : [emptyNode(`${idBase}-pipes`, 'Pipes')],
   })
 
   // Stages group
   children.push({
-    id: `${db}-stages`,
+    id: `${idBase}-stages`,
     label: 'Stages',
     type: 'group',
     path: [catalogPath, db, 'Stages'],
     database: db,
+    catalog,
     metadata: [{ label: 'Count', value: String(data.stages.length) }],
     children: data.stages.length > 0
       ? data.stages.map((s) => ({
-          id: `${db}-stage-${s.name}`,
+          id: `${idBase}-stage-${s.name}`,
           label: s.name,
           type: 'stage' as ExplorerNodeType,
           path: [catalogPath, db, 'Stages', s.name],
@@ -275,7 +293,7 @@ export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNo
             ...(s.base_prefix ? [{ label: 'Prefix', value: s.base_prefix }] : []),
           ],
         }))
-      : [emptyNode(`${db}-stages`, 'Stages')],
+      : [emptyNode(`${idBase}-stages`, 'Stages')],
   })
 
   return children

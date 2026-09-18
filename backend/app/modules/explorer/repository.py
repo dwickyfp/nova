@@ -1,5 +1,6 @@
 """Explorer repository — read-only StarRocks metadata queries (system pool)."""
 
+import contextlib
 import json
 import logging
 
@@ -36,10 +37,36 @@ class ExplorerRepository:
             if row[0] not in SYSTEM_DBS
         ]
 
+    async def list_databases_for_catalog_name(self, catalog: str) -> list[str]:
+        """SHOW DATABASES FROM <catalog> for an external catalog.
+
+        Returns an empty list when the catalog cannot answer — an unreachable
+        metastore (HMS/REST down) must not fail the whole catalog tree, it only
+        leaves that catalog's node without children.
+        """
+        if catalog == "default_catalog":
+            return await self.list_databases_for_catalog()
+        try:
+            result = await db.execute_system(f"SHOW DATABASES FROM `{catalog}`")
+        except Exception as exc:
+            log.debug("Could not list databases for catalog %s: %s", catalog, exc)
+            return []
+        return [row[0] for row in result["rows"] if row[0] not in SYSTEM_DBS]
+
     # ── Database objects ───────────────────────────────────────
 
-    async def list_tables(self, database: str) -> list[dict]:
-        """Tables via information_schema.TABLES_CONFIG (StarRocks-specific)."""
+    async def list_tables(self, database: str, catalog: str | None = None) -> list[dict]:
+        """Tables via information_schema.TABLES_CONFIG (StarRocks-specific).
+
+        For an external catalog this falls back to ``SHOW TABLES FROM
+        <catalog>.<db>``: ``information_schema.tables_config`` only describes
+        self-managed tables, so an Iceberg/Hive table would be invisible without
+        this branch. The external listing carries only the name, which is enough
+        for the catalog tree.
+        """
+        if catalog and catalog != "default_catalog":
+            return await self._list_external_tables(catalog, database)
+
         sql = (
             "SELECT TABLE_NAME, TABLE_MODEL, PRIMARY_KEY, "
             "DISTRIBUTE_KEY, DISTRIBUTE_TYPE, DISTRIBUTE_BUCKET, "
@@ -71,10 +98,8 @@ class ExplorerRepository:
             props_raw = row[7]
             props = {}
             if props_raw:
-                try:
+                with contextlib.suppress(json.JSONDecodeError, TypeError):
                     props = json.loads(props_raw) if isinstance(props_raw, str) else props_raw
-                except (json.JSONDecodeError, TypeError):
-                    pass
 
             stat = stats_map.get(name, {})
             tables.append({
@@ -93,6 +118,42 @@ class ExplorerRepository:
                 "properties": props,
             })
         return tables
+
+    async def _list_external_tables(self, catalog: str, database: str) -> list[dict]:
+        """List tables in an external catalog database via ``SHOW TABLES``.
+
+        ``SHOW TABLES FROM <catalog>.<db>`` is the only listing guaranteed for
+        every connector; row counts and sizes are not fetched because external
+        statistics may be absent and would add a metastore round-trip per table.
+        An unreachable catalog yields an empty list rather than failing the tree.
+        """
+        try:
+            result = await db.execute_system(
+                f"SHOW TABLES FROM `{catalog}`.`{database}`"
+            )
+        except Exception as exc:
+            log.debug(
+                "Could not list tables for %s.%s: %s", catalog, database, exc
+            )
+            return []
+        return [
+            {
+                "name": row[0],
+                "table_model": None,
+                "engine": None,
+                "row_count": None,
+                "data_size": None,
+                "create_time": None,
+                "primary_key": None,
+                "partition_key": None,
+                "distribute_key": None,
+                "distribute_type": None,
+                "distribute_bucket": None,
+                "sort_key": None,
+                "properties": {},
+            }
+            for row in result["rows"]
+        ]
 
     async def list_views(self, database: str) -> list[dict]:
         """Views via information_schema.VIEWS."""
@@ -245,10 +306,12 @@ class ExplorerRepository:
             props_raw = r[7]
             props_dict: dict = {}
             if props_raw:
-                try:
-                    props_dict = json.loads(props_raw) if isinstance(props_raw, str) else (props_raw or {})
-                except (json.JSONDecodeError, TypeError):
-                    pass
+                with contextlib.suppress(json.JSONDecodeError, TypeError):
+                    props_dict = (
+                        json.loads(props_raw)
+                        if isinstance(props_raw, str)
+                        else (props_raw or {})
+                    )
             properties = {
                 "table_model": r[0],
                 "primary_key": r[1],

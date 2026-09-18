@@ -22,6 +22,7 @@ from app.modules.ai_ml.router import router as ai_router
 from app.modules.assistant.router import router as assistant_router
 from app.modules.auth.router import router as auth_router
 from app.modules.explorer.router import router as explorer_router
+from app.modules.external_catalogs.router import router as external_catalogs_router
 from app.modules.functions.router import router as functions_router
 from app.modules.llm_functions.router import router as llm_fn_router
 from app.modules.ml_engine.internal_router import router as ml_internal_router
@@ -60,6 +61,16 @@ async def lifespan(app: FastAPI):
     await db.init_system_pool()
     await session_store.init()
     await init_nova_system()
+
+    # Nova-managed external catalog metadata (NOVA-62). Best-effort: the engine
+    # catalog is the source of truth, and a missing mirror table only degrades
+    # the list endpoint, not the service.
+    try:
+        from app.modules.external_catalogs.repository import external_catalog_repo
+
+        await external_catalog_repo.ensure_schema()
+    except Exception as e:
+        logger.warning("Could not ensure external catalog schema: %s", e)
 
     # Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)
     # so they are available as SQL functions from the start.
@@ -151,6 +162,12 @@ def create_app() -> FastAPI:
     # process-local (E5a); see docs/specs/nova-61-agentic-assistant-design.md.
     app.include_router(
         assistant_router, prefix=f"{prefix}/assistant", tags=["assistant"]
+    )
+    # External catalogs (Iceberg + Hive, GA-only) — NOVA-62 / Phase 0 #9.
+    app.include_router(
+        external_catalogs_router,
+        prefix=f"{prefix}/external-catalogs",
+        tags=["external-catalogs"],
     )
 
     # Static files for Java UDFs
