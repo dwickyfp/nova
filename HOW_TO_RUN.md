@@ -357,7 +357,7 @@ Cara mengamati:
 # SELECT graph_run_id, task_id, state, error_message FROM NOVA_SYSTEM.CONFIG_TASK_RUNS;
 
 # Audit: GRAPH_RUN_* dan NODE_* (SUCCESS/SKIPPED/FAILED)
-# SELECT action, object_name, status FROM NOVA_SYSTEM.AUDIT.LOG ORDER BY event_time DESC LIMIT 20;
+# SELECT action, object_name, status FROM NOVA_SYSTEM.AUDIT_LOG ORDER BY event_time DESC LIMIT 20;
 ```
 
 Untuk memverifikasi worker mengonsumsi:
