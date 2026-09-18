@@ -739,8 +739,8 @@ per conversation, in-memory, read-only · **E5a** conversations are in-memory on
 **E4a** reuse `NOVA_SYSTEM.CONFIG_AI_PROVIDERS` · **E6a** no LLM trace storage.
 Design contract: `docs/specs/nova-61-agentic-assistant-design.md`.
 
-- [ ] **10-A** Design spec pinned to E1a/E2b/E5a and the locked v1 subset — `docs/specs/nova-61-agentic-assistant-design.md`
-- [ ] **10-B** Backend assistant module `backend/app/modules/assistant/` — auth-required thread endpoints, provider wiring to `CONFIG_AI_PROVIDERS`, bounded plan→tool→reflect loop with an SSE event contract (`text_delta`, `tool_call`, `tool_status`, `done`, `error`)
+- [x] **10-A** Design spec pinned to E1a/E2b/E5a and the locked v1 subset — `docs/specs/nova-61-agentic-assistant-design.md` (PR #74)
+- [x] **10-B** Backend assistant module `backend/app/modules/assistant/` — auth-required thread endpoints, provider wiring to `CONFIG_AI_PROVIDERS`, bounded plan→tool→reflect loop with the SSE event contract (`text_delta`, `tool_call`, `tool_status`, `done`, `error`, `ping`) — `router.py`, `service.py`, `provider.py`, `events.py`, `state.py`, `consent.py`
 - [ ] **10-C** `query_execute` tool — delegate-first via `QueryService.execute_statements` (never a socket, never port 9030), read-only allowlist layered above the unchanged `sql_guard.py`, per-call/always-allow/deny consent, audit correlation
 - [ ] **10-D** Assistant panel — right-side panel in the workspace `<section>` using `Bot` for the assistant surface, transcript + streaming + stop, inline tool-call card with approval controls, session management
 - [ ] **10-E** SQL skill retrieval from `docs/sql_docs/` — advisory context only; invariant enforcement stays in `sql_guard.py`. **Blocked until NOVA-59 lands**

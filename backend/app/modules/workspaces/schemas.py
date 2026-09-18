@@ -24,6 +24,7 @@ class WorkspaceTreeResponse(BaseModel):
     open_tabs: list[str] = []
     active_tab: str | None = None
     sidebar_collapsed: bool = False
+    assistant_collapsed: bool = False
     defaults: dict[str, str | None] = {}
 
 
@@ -60,6 +61,7 @@ class WorkspaceStateRequest(BaseModel):
     open_tabs: list[str] = []
     active_tab: str | None = None
     sidebar_collapsed: bool = False
+    assistant_collapsed: bool = False
     last_database: str | None = None
     last_schema: str | None = None
     last_role: str | None = None

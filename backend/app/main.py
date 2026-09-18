@@ -19,6 +19,7 @@ from app.core.redis import session_store
 
 # --- Module routers ---
 from app.modules.ai_ml.router import router as ai_router
+from app.modules.assistant.router import router as assistant_router
 from app.modules.auth.router import router as auth_router
 from app.modules.explorer.router import router as explorer_router
 from app.modules.functions.router import router as functions_router
@@ -146,6 +147,11 @@ def create_app() -> FastAPI:
         tags=["task-orchestration"],
     )
     app.include_router(pipes_router, prefix=f"{prefix}/pipes", tags=["pipes"])
+    # Phase 10 — bounded agentic assistant (NOVA-61). Thread state is
+    # process-local (E5a); see docs/specs/nova-61-agentic-assistant-design.md.
+    app.include_router(
+        assistant_router, prefix=f"{prefix}/assistant", tags=["assistant"]
+    )
 
     # Static files for Java UDFs
     udf_dir = os.path.join(os.path.dirname(__file__), "static", "udf")

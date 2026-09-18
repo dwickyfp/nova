@@ -18,6 +18,10 @@ class WorkspaceService:
     PREF_OPEN_TABS = "workspace.open_tabs"
     PREF_ACTIVE_TAB = "workspace.active_tab"
     PREF_SIDEBAR_STATE = "workspace.sidebar_state"
+    #: Phase 10 assistant panel visibility. A non-sensitive layout preference,
+    #: stored like ``PREF_SIDEBAR_STATE`` — not conversation state, so E5a's
+    #: in-memory rule for threads/grants does not apply.
+    PREF_ASSISTANT_STATE = "workspace.assistant_state"
     PREF_LAST_DATABASE = "workspace.last_database"
     PREF_LAST_SCHEMA = "workspace.last_schema"
     PREF_LAST_ROLE = "workspace.last_role"
@@ -56,6 +60,7 @@ class WorkspaceService:
                 self.PREF_OPEN_TABS,
                 self.PREF_ACTIVE_TAB,
                 self.PREF_SIDEBAR_STATE,
+                self.PREF_ASSISTANT_STATE,
                 self.PREF_LAST_DATABASE,
                 self.PREF_LAST_SCHEMA,
                 self.PREF_LAST_ROLE,
@@ -67,6 +72,7 @@ class WorkspaceService:
             "open_tabs": json.loads(prefs.get(self.PREF_OPEN_TABS, "[]")),
             "active_tab": prefs.get(self.PREF_ACTIVE_TAB),
             "sidebar_collapsed": prefs.get(self.PREF_SIDEBAR_STATE, "false") == "true",
+            "assistant_collapsed": prefs.get(self.PREF_ASSISTANT_STATE, "false") == "true",
             "defaults": {
                 "database": prefs.get(self.PREF_LAST_DATABASE),
                 "schema": prefs.get(self.PREF_LAST_SCHEMA),
@@ -256,6 +262,7 @@ class WorkspaceService:
         open_tabs: list[str],
         active_tab: str | None,
         sidebar_collapsed: bool,
+        assistant_collapsed: bool,
         last_database: str | None,
         last_schema: str | None,
         last_role: str | None,
@@ -264,6 +271,9 @@ class WorkspaceService:
         await self._repo.set_preference(username, self.PREF_ACTIVE_TAB, active_tab or "")
         await self._repo.set_preference(
             username, self.PREF_SIDEBAR_STATE, "true" if sidebar_collapsed else "false"
+        )
+        await self._repo.set_preference(
+            username, self.PREF_ASSISTANT_STATE, "true" if assistant_collapsed else "false"
         )
         if last_database is not None:
             await self._repo.set_preference(username, self.PREF_LAST_DATABASE, last_database)
