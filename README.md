@@ -725,9 +725,49 @@ Forty-two unit + eleven engine integration tests; the runbook is
 `HOW_TO_RUN.md` §5. The checklist item above stays unchecked until this PR is
 merged.
 
+### Phase 10 — Agentic assistant (bounded) 🔶
+
+Purpose: give the SQL workspace a Coco-style assistant without committing to full
+agent-platform parity. **This phase supersedes matrix row #20** in
+`docs/roadmap-snowflake-parity.md`, which was `DEFER`/`NOT_APPLICABLE`; NOVA-61
+(E3b, 2026-09-18) re-scoped it to the bounded subset below. It is **P1 but not
+critical path** — it does not displace Phase 0 (#2/#9) or Phase 1.
+
+**Decisions (NOVA-61, 2026-09-18):** E3b bounded subset · **E1a** assistant
+executes read-only SQL itself with per-call approval · **E2b** `always allow` is
+per conversation, in-memory, read-only · **E5a** conversations are in-memory only ·
+**E4a** reuse `NOVA_SYSTEM.CONFIG_AI_PROVIDERS` · **E6a** no LLM trace storage.
+Design contract: `docs/specs/nova-61-agentic-assistant-design.md`.
+
+- [ ] **10-A** Design spec pinned to E1a/E2b/E5a and the locked v1 subset — `docs/specs/nova-61-agentic-assistant-design.md`
+- [ ] **10-B** Backend assistant module `backend/app/modules/assistant/` — auth-required thread endpoints, provider wiring to `CONFIG_AI_PROVIDERS`, bounded plan→tool→reflect loop with an SSE event contract (`text_delta`, `tool_call`, `tool_status`, `done`, `error`)
+- [ ] **10-C** `query_execute` tool — delegate-first via `QueryService.execute_statements` (never a socket, never port 9030), read-only allowlist layered above the unchanged `sql_guard.py`, per-call/always-allow/deny consent, audit correlation
+- [ ] **10-D** Assistant panel — right-side panel in the workspace `<section>` using `Bot` for the assistant surface, transcript + streaming + stop, inline tool-call card with approval controls, session management
+- [ ] **10-E** SQL skill retrieval from `docs/sql_docs/` — advisory context only; invariant enforcement stays in `sql_guard.py`. **Blocked until NOVA-59 lands**
+
+Explicitly out of v1 (with revisit triggers in the design spec §0.1): agent
+frameworks, sidecar runtime, bypass-approvals mode, persistent grants,
+browser/file tools, `CREATE TABLE`-by-prompt, dbt, notebooks,
+`mcp-server-starrocks` as the tool path, query timeout/cancel, LLM trace storage.
+
 ## Decision Log
 
 Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.
+
+### Phase 10 agentic assistant decisions (NOVA-61) — 2026-09-18
+
+Full rationale, contracts and the locked v1 subset: `docs/specs/nova-61-agentic-assistant-design.md`.
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **E3b — re-scope roadmap row #20 from `NOT_APPLICABLE` to a bounded Phase 10** | The user explicitly asked for a Coco-style assistant; the research (`docs/research/agentic-assistant-*.md`) showed a bounded SQL-assistant subset is cheap and safe, while full parity (coding/admin/dbt/notebook) is a multi-phase programme touching almost every module | Reverses a standing roadmap decision; scope must be held to the v1 subset or it creeps | A request for an out-of-v1 item (agent framework, sidecar, notebook, browser tools) — that is a new E-decision, not a Stage B–E detail |
+| **E1a — the assistant executes read-only SQL itself, per-call approval** | Matches CoCo and VS Code; Nova's pipeline already enforces guard, audit and credential redaction, so a delegate-first tool inherits them. E1b would only hand SQL to the worksheet and lose the agentic loop's value | Needs the approval card and consent state (Stage C/D) | If the approval surface cannot be made safe or the user prefers worksheet hand-off (E1b) |
+| **E2b — `always allow` is per conversation, in-memory, read-only** | Independent recommendation of the UI and query-tool workstreams. Read-only coverage keeps destructive statements behind the guard's per-call confirmation; in-memory means no durable trust record to revoke or leak | Grants die on restart; users re-approve | Persistence across restarts/devices is required (E2c) — that needs a revocation UI and a credential-free table |
+| **E5a — conversation state is in-memory only** | Smallest credential surface; nothing at rest to redact. v1 has no `CONFIG_ASSISTANT_*` tables | Conversations die on restart; v1 assumes a single web worker or sticky routing | Conversations must survive a restart (E5b) — then threads/messages land in `NOVA_SYSTEM` with a credential test |
+| **E4a — reuse `CONFIG_AI_PROVIDERS`** | No second credential to manage; reuses the existing masked-read and encrypted-key path (`ai_ml/service.py`) | The assistant shares the provider quota and rate limit with AI SQL functions | Quota contention with AI functions becomes real (E4b) |
+| **E6a — no LLM trace storage** | Lowest credential surface; no second place holding user text | No product observability of the model loop; debugging is server logs only | Observability is a stated requirement (E6b — separate table, never `AUDIT_LOG`) |
+| **`query_execute` must never open a socket to port 9030** | Any path that bypasses `QueryService.execute_statements` silently loses the guard, the `@stage` translation, credential redaction and the audit row | The assistant cannot use `mcp-server-starrocks` or any direct-engine tool as its execution path | Never as an execution path; only as a subject of study |
+| **B1 icon language resolved: `Bot` = LLM/assistant, `Sparkles` = ML, `Wand2` = AI-function authoring** | Unblocks the assistant surface without touching the 14 legacy icon sites; each surface gets one unambiguous glyph | The legacy sites are not migrated now — only the new assistant surface uses `Bot` | A broader design-system icon migration is scheduled |
 
 ### Phase 9 design decisions (NOVA-23) — 2026-09-17
 

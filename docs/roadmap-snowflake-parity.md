@@ -144,7 +144,25 @@ that require a threat-model change.
 | **#19** | `PERIOD` data type | `DEFER` | M | P3 | nothing | Low Nova value; recorded, not scheduled. |
 | **#23** | Zero-copy clone | `DEFER` | L | P3 | nothing | `CREATE TABLE LIKE` is not a clone. No engine primitive to wrap. |
 | **#24** | Data movement policies | `DEFER` | — | P3 | nothing | Out of Nova's threat model. `NOT_APPLICABLE`. |
-| **#20** | Agent platform (CoCo / Cortex) | `DEFER` | — | P3 | nothing | Out of Nova product scope. `NOT_APPLICABLE`. |
+| **#20** | Agent platform (CoCo / Cortex) | `SUPERSEDED_BY Phase 10` | M | P1 | nothing | **Re-scoped by NOVA-61 (E3b, 2026-09-18)** from `NOT_APPLICABLE` to a **bounded** Phase 10 — SQL Q&A + dialect-aware authoring + one read-only consented tool + skills. Full CoCo parity (coding/admin/dbt/notebook) remains out of scope. Design: `docs/specs/nova-61-agentic-assistant-design.md`. |
+
+### Phase 10 — Agentic assistant (bounded) 🔶
+
+Purpose: give the SQL workspace a Coco-style assistant without committing to full
+agent-platform parity. This phase **supersedes** matrix row #20, which was
+`DEFER`/`NOT_APPLICABLE`; NOVA-61 (E3b, 2026-09-18) re-scoped it to the bounded
+subset below. It is **P1 but not critical path** — it must not displace Phase 0
+(#2/#9) or Phase 1.
+
+In v1: SQL Q&A; dialect-aware SQL authoring (`@stage`, `AI_*`, `ML_PREDICT`);
+**one** read-only tool `query_execute` with per-call consent and an in-memory,
+conversation-scoped, read-only "always allow"; SQL skills from `docs/sql_docs/`.
+
+Out of v1: agent frameworks, sidecar runtime, bypass-approvals mode, persistent
+grants, browser/file tools, `CREATE TABLE`-by-prompt, dbt, notebooks,
+`mcp-server-starrocks` as the tool path, query timeout/cancel, LLM trace storage.
+
+Full decisions, contract and task breakdown: `docs/specs/nova-61-agentic-assistant-design.md`.
 
 ### Dependency summary
 
@@ -171,6 +189,9 @@ Phase 3  #17 ─ no predecessor
 
 Phase 4  #1 (NOVA-50) ─ no predecessor
          #18 ── #9   (DEFER)
+
+Phase 10 #20 (NOVA-61) ─ no predecessor (P1, not critical path)
+         └─ skills ── NOVA-59 (`docs/sql_docs/`)
 ```
 
 The only hard edges are #21→#16, #5→#3/#4, #6→#3/#4, #13→#9, and #10→#11.
@@ -327,7 +348,7 @@ These are explicitly **not** in v1. Each is a decision, not an omission.
 | #19 | `PERIOD` data type | A real Nova use case appears. |
 | #23 | Zero-copy clone | The engine ships a clone primitive. |
 | #24 | Data movement policies | Out of threat model — `NOT_APPLICABLE`. |
-| #20 | Agent platform (CoCo / Cortex) | Out of product scope — `NOT_APPLICABLE`. |
+| #20 | Agent platform (CoCo / Cortex) | **Superseded by NOVA-61 (E3b, 2026-09-18)** — re-scoped to the bounded Phase 10 subset; see `docs/specs/nova-61-agentic-assistant-design.md`. |
 | Trino federation | Federated query | A source #9 cannot reach is required. |
 
 `NOT_APPLICABLE` rows are not "later"; they are "not Nova's problem". They stay
