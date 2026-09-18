@@ -45,6 +45,10 @@ htmlcov/
 # Docker volumes
 docker/data/
 
+# ANTLR generator jar, downloaded on demand by backend/scripts/generate_grammar.sh.
+# Build-time only; never a runtime dependency.
+.antlr/
+
 # Lockfiles. The committed lockfiles are uv.lock (backend) and
 # frontend/pnpm-lock.yaml; CI installs from both with --locked/--frozen-lockfile
 # so the dependency graph a gate runs against is the one under review. Only
