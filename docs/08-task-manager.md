@@ -13,13 +13,16 @@
 | **Schedule** | One-shot or periodic (SCHEDULE EVERY) |
 
 > **Statement surface.** The only task statement StarRocks 4.1.1 has is
-> **`SUBMIT TASK`**. `CREATE TASK` is **not** a valid statement in any form
-> (`No viable statement for input 'CREATE TASK'`), and neither is `DROP TASK` or
-> `SHOW TASKS` — see `docs/GUIDE_OBJECTS.md`. Everything in this document uses
-> `SUBMIT TASK`. The proposed Nova surface `CREATE TASK … AFTER / FINALIZE / WHEN /
-> SCHEDULE`, which lowers to `SUBMIT TASK` plus Nova metadata, is **not implemented
-> yet**; its design lives in `docs/specs/nova-23-task-orchestration-design.md`
-> (Phase 9, grammar patch in 9b). Do not write `CREATE TASK` against the engine.
+> **`SUBMIT TASK`**. `CREATE TASK` is **not** an engine statement (`No viable
+> statement for input 'CREATE TASK'`), and neither is `DROP TASK` or `SHOW TASKS`
+> — see `docs/GUIDE_OBJECTS.md`. Everything sent to the engine uses `SUBMIT TASK`.
+>
+> Nova now also parses the **Nova surface** `CREATE TASK … AFTER / FINALIZE / WHEN
+> / SCHEDULE / OVERLAP_POLICY` and lowers it to `CONFIG_TASK*` metadata (Phase 9,
+> stage 1 grammar + stage 2 lowering, NOVA-54). That statement is **Nova-only**:
+> it is intercepted in the query pipeline and **never reaches the engine**. See
+> "Nova `CREATE TASK` surface" below. The design lives in
+> `docs/specs/nova-23-task-orchestration-design.md`.
 
 ### Task States
 
@@ -90,6 +93,61 @@ default `Asia/Jakarta`), not UTC — verified: a literal built from the local wa
 clock fired at the expected wall-clock second, while an equal UTC literal fired
 7 h later. Any Nova scheduler must pin the timezone explicitly rather than assume
 UTC.
+
+### Nova `CREATE TASK` surface (NOVA-54, Phase 9)
+
+Nova parses a Snowflake-shaped `CREATE TASK` and lowers it to `CONFIG_TASK*`
+metadata. The statement is intercepted in the query pipeline and **never sent to
+the engine**; each node's `SUBMIT TASK` is built by the worker from the stored
+body at execution time.
+
+```sql
+-- Cron root task (Nova cron, not an engine cron)
+CREATE TASK etl_root
+  SCHEDULE = 'USING CRON 0 2 * * * Asia/Jakarta'
+  AS INSERT OVERWRITE agg_daily SELECT * FROM staging;
+
+-- Dependency edge
+CREATE TASK etl_clean
+  AFTER etl_root
+  AS INSERT OVERWRITE agg_clean SELECT * FROM agg_daily;
+
+-- Multiple parents and a condition
+CREATE TASK etl_join
+  AFTER etl_a, etl_b
+  WHEN load_count > 0
+  OVERLAP_POLICY = 'QUEUE'
+  AS INSERT INTO etl_log SELECT 1;
+
+-- Finalizer
+CREATE TASK etl_notify
+  FINALIZE etl_root
+  AS INSERT INTO etl_log SELECT 1;
+```
+
+Clause rules enforced by the lowering (the grammar accepts more than the surface
+allows):
+
+| Rule | Detail |
+|---|---|
+| **Order** | `AFTER`, `FINALIZE`, `WHEN`, `OVERLAP_POLICY`, `SCHEDULE` — any other order is rejected. |
+| **No duplicates** | Each clause appears at most once. |
+| **`SCHEDULE`** | `SCHEDULE = '<cron>'` maps to `schedule_kind="cron"`; an optional `USING CRON` prefix and an optional trailing IANA zone are accepted (`'0 2 * * * Asia/Jakarta'`). `SCHEDULE START(…) EVERY(…)` maps to `interval`. An invalid cron is rejected before anything is stored. |
+| **`OVERLAP_POLICY`** | One of `skip` / `queue` / `allow` (case-insensitive). Anything else is rejected. Defaults to `skip`. |
+| **`FINALIZE` / `OVERLAP_POLICY` spelling** | `FINALIZE b` and `FINALIZE = b` are the same clause. |
+| **`WHEN`** | Stored verbatim, so `AND`/`OR` structure is preserved. |
+| **Body** | `CTAS | INSERT | CACHE SELECT` only; `AS SELECT` is rejected by the grammar. |
+| **Cycles** | A statement that would close a cycle in the merged graph is rejected and rolled back. |
+| **`AFTER`** | One task cannot depend on itself; a repeated parent is rejected. |
+
+`OVERLAP_POLICY` values are validated against the Nova enum
+(`backend/app/modules/task_orchestration/schemas.py`); `FINALIZE` edges are stored
+with `edge_kind='finalize'` and excluded from the dependency adjacency until the
+scheduler/worker wiring lands (PR 3b).
+
+An `@stage` reference in the body is **not** usable yet: the pinned StarRocks
+grammar has no `@stage` rule, so the statement fails at parse time. Worker-side
+stage translation is blocked on the NOVA-17 grammar work.
 
 ### Alter Task (v4.1)
 
@@ -264,7 +322,7 @@ All four live in `NOVA_SYSTEM` as Primary-Key (CRUD) tables, following the flat
 | Table | Holds | Key columns |
 |-------|-------|-------------|
 | `CONFIG_TASKS` | one row per task definition | `name`, `definition`, `schedule_kind` (`manual`/`interval`/`cron`), `schedule_expr`, `timezone` (IANA), `when_expr`, `overlap_policy`, `owner_role`, `created_by`, `version` |
-| `CONFIG_TASK_EDGES` | directed `parent_task → child_task` per `graph_id` | one row per edge (supports multi-parent, cycle detection, delete-impact queries) |
+| `CONFIG_TASK_EDGES` | directed `parent_task → child_task` per `graph_id` | one row per edge (`edge_kind` is `after` or `finalize`; supports multi-parent, cycle detection, delete-impact queries) |
 | `CONFIG_TASK_GRAPH_RUNS` | one row per graph execution | `trigger_type`, `state`, `wal_marks` (JSON metadata), `started_at`, `finished_at` |
 | `CONFIG_TASK_RUNS` | one row per node attempt | `graph_run_id`, `task_id`, `attempt`, `state`, `delegated`, `starrocks_query_id`, `error_message` |
 

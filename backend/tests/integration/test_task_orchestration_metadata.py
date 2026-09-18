@@ -473,3 +473,122 @@ class TestWalMarksRoundTrip:
         for bad in CREDENTIAL_SUBSTRINGS:
             assert f"{bad}=" not in serialized
         await repo.delete_task(created["id"])
+
+
+class TestCreateTaskLoweringAgainstEngine:
+    """NOVA-54 / PR 3a: `CREATE TASK` lowers to real CONFIG_TASK* rows.
+
+    This is the acceptance path end to end against a real engine: the surface is
+    parsed, validated and persisted, and the engine is asked for nothing. The
+    metadata assertions are the same ones the unit suite makes, but here they run
+    against StarRocks columns rather than a fake, so a schema/persistence drift
+    is caught.
+    """
+
+    async def test_create_task_writes_task_and_edges(self, orchestration_db):
+        await _ensure_ddl()
+        from app.modules.task_orchestration.ddl import parse_create_task
+        from app.modules.task_orchestration.lowering import persist_lowered_task
+
+        suffix = uuid4().hex[:8]
+        name = f"etl_{suffix}"
+        task = parse_create_task(
+            f"CREATE TASK {name} AFTER parent_a, parent_b "
+            f"FINALIZE notify_task WHEN x > 1 AND y < 2 "
+            f"OVERLAP_POLICY = 'QUEUE' SCHEDULE = '0 2 * * * UTC' "
+            f"AS INSERT INTO t SELECT 1",
+            database="NOVA_DEMO",
+            timezone="Asia/Jakarta",
+        )
+        persisted = await persist_lowered_task(task, created_by="alice")
+        try:
+            row = persisted.task
+            assert row["name"] == name
+            assert row["schedule_kind"] == "cron"
+            assert row["schedule_expr"] == "0 2 * * *"
+            assert row["timezone"] == "UTC"
+            assert row["when_expr"] == "x > 1 AND y < 2"
+            assert row["overlap_policy"] == "queue"
+            assert row["created_by"] == "alice"
+
+            edges = await repo.list_edges(name)
+            by_kind = {(e["parent_task"], e["edge_kind"]) for e in edges}
+            assert ("parent_a", "after") in by_kind
+            assert ("parent_b", "after") in by_kind
+            assert ("notify_task", "finalize") in by_kind
+        finally:
+            for edge in await repo.list_edges(name):
+                await repo.delete_edge(edge["id"])
+            await repo.delete_task(row["id"])
+
+    async def test_finalize_edge_does_not_become_a_dependency_in_the_graph(self, orchestration_db):
+        """The finalizer is stored but excluded from the dependency adjacency.
+
+        Folding it in would make the finalizer run as an ordinary child at the
+        wrong time, which is the failure mode PR 3b's wiring must not inherit.
+        """
+        await _ensure_ddl()
+        from app.modules.task_orchestration.dag import graph_from_task_rows
+
+        graph = graph_from_task_rows(
+            ["a", "b"],
+            [
+                {"parent_task": "a", "child_task": "b", "edge_kind": "after"},
+                {"parent_task": "b", "child_task": "a", "edge_kind": "finalize"},
+            ],
+        )
+        assert graph.adjacency.get("a") == ["b"]
+        assert graph.adjacency.get("b") == []
+
+    async def test_cycle_against_stored_rows_is_rejected_and_rolled_back(
+        self, orchestration_db
+    ):
+        """A statement that closes a cycle must leave no partial task behind.
+
+        `b AFTER a` is stored under graph `b`; `a AFTER b` is then attempted
+        under graph `a`. The component-spanning check must catch the loop and
+        roll the second statement back, leaving only the first task.
+        """
+        await _ensure_ddl()
+        from app.modules.task_orchestration.ddl import parse_create_task
+        from app.modules.task_orchestration.lowering import (
+            TaskLoweringError,
+            persist_lowered_task,
+        )
+
+        suffix = uuid4().hex[:8]
+        first = f"cyc_a_{suffix}"
+        second = f"cyc_b_{suffix}"
+
+        # `a` first, so `b AFTER a` is a valid statement.
+        a = parse_create_task(
+            f"CREATE TASK {first} AS INSERT INTO t SELECT 1",
+            database="NOVA_DEMO",
+            timezone="UTC",
+        )
+        persisted_a = await persist_lowered_task(a, created_by="alice")
+        b = parse_create_task(
+            f"CREATE TASK {second} AFTER {first} AS INSERT INTO t SELECT 1",
+            database="NOVA_DEMO",
+            timezone="UTC",
+        )
+        persisted_b = await persist_lowered_task(b, created_by="alice")
+
+        try:
+            # Now close the loop under a different graph key.
+            loop = parse_create_task(
+                f"CREATE TASK {first} AFTER {second} AS INSERT INTO t SELECT 1",
+                database="NOVA_DEMO",
+                timezone="UTC",
+            )
+            with pytest.raises(TaskLoweringError):
+                await persist_lowered_task(loop, created_by="alice")
+
+            assert await repo.list_edges(loop.name) == [], (
+                "a rejected cycle must not leave edges behind"
+            )
+        finally:
+            for row in (persisted_b, persisted_a):
+                for edge in await repo.list_edges(row.task["name"]):
+                    await repo.delete_edge(edge["id"])
+                await repo.delete_task(row.task["id"])

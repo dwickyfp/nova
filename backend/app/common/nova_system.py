@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_EDGES (
     graph_id    VARCHAR(64) NOT NULL,
     parent_task VARCHAR(256) NOT NULL,
     child_task  VARCHAR(256) NOT NULL,
+    edge_kind   VARCHAR(16) NOT NULL DEFAULT 'after',
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
@@ -111,6 +112,12 @@ TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # not expose the count, so Nova keeps its own to detect the threshold
     # (NOVA-37 AC #3). Reset to 0 on a successful run.
     ("CONFIG_TASKS", "consecutive_fail_count", "INT DEFAULT \"0\""),
+    # NOVA-54 / 9b: distinguishes a normal dependency edge (``after``) from a
+    # ``FINALIZE`` edge. The finalizer must be stored, not dropped: its run
+    # semantics are wired in PR 3b, and losing the flag here would make a
+    # finalizer indistinguishable from an ordinary dependency. Existing rows
+    # default to ``after``, which is the behaviour they already had.
+    ("CONFIG_TASK_EDGES", "edge_kind", "VARCHAR(16) NOT NULL DEFAULT 'after'"),
 )
 
 

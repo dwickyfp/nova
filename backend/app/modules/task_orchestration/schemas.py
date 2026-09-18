@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field
 
 ScheduleKind = Literal["manual", "interval", "cron"]
 OverlapPolicy = Literal["skip", "queue", "allow"]
+#: ``after`` is a normal dependency edge (child waits for parent); ``finalize``
+#: is a FINALIZE edge (runs after its target completes, not as a dependency).
+EdgeKind = Literal["after", "finalize"]
 TriggerType = Literal["manual", "schedule", "stream", "reconcile"]
 GraphRunState = Literal["pending", "running", "success", "failed", "cancelled"]
 TaskRunState = Literal[
@@ -68,6 +71,7 @@ class EdgeCreate(BaseModel):
 
     parent_task: str = Field(..., min_length=1, max_length=256)
     child_task: str = Field(..., min_length=1, max_length=256)
+    edge_kind: EdgeKind = "after"
 
 
 class Edge(EdgeCreate):
