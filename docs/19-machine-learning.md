@@ -196,6 +196,18 @@ SELECT * FROM ML_FORECAST('sales_forecast', FORECASTING_PERIODS => 30);
 SELECT * FROM ML_EVALUATE('sales_forecast');
 ```
 
+> **Implementation status (NOVA-124).** The shipped `CREATE ML_MODEL` grammar is the
+> compact form only — `TYPE`, `TARGET`, `AS SELECT`, plus the optional
+> `ALGORITHM`/`TEST_SIZE`/`FEATURES`/`HYPERPARAMETERS` clauses. `TYPE = FORECAST`
+> and `TYPE = ANOMALY_DETECTION` are **accepted**: the declared type is stored
+> truthfully on the model row, `forecast` trains through the regression estimator
+> family (`ALGORITHMS["forecast"]` in `backend/app/modules/ml_engine/service.py`)
+> — the documented "fast" GBM path — and `anomaly_detection` reuses the
+> classifiers. The `INPUT = (…)` / `TIMESTAMP` / `SERIES` / `CONFIG` clauses and
+> the `ML_FORECAST` / `ML_EVALUATE` SQL functions below are **design targets, not
+> implemented**; Prophet and a dedicated time-series backend are not dependencies
+> of this build.
+
 ### 2.2 Classification
 
 ```sql
