@@ -314,7 +314,7 @@ export function StageBrowser({ stage, onBack }: StageBrowserProps) {
                         </button>
                       </td>
                       <td className='px-4 py-3 text-right text-xs text-muted-foreground'>
-                        {file.is_dir ? '—' : formatBytes(file.size)}
+                        {file.is_dir ? '-' : formatBytes(file.size)}
                       </td>
                       <td className='px-4 py-3 text-right text-xs text-muted-foreground whitespace-nowrap'>
                         {file.last_modified
@@ -323,7 +323,7 @@ export function StageBrowser({ stage, onBack }: StageBrowserProps) {
                               month: 'short',
                               day: 'numeric',
                             })
-                          : '—'}
+                          : '-'}
                       </td>
                       <td className='px-4 py-3 text-right'>
                         {!file.is_dir ? (
