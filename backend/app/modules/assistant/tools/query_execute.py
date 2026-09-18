@@ -15,8 +15,10 @@ Non-negotiable properties (spec §5, §7):
   applied at fetch time, not after the rows are in memory.
 * **Redacted everywhere.** The SQL preview is redacted SQL; the model
   context receives columns + a bounded preview + a row count, with
-  credential-shaped values redacted value-level before they enter it; the audit
-  row carries the redacted statement and never result rows.
+  credential-shaped values redacted value-level before they enter it; a
+  result-channel engine error is redacted with the same shared helper before it
+  reaches either the audit row or the tool outcome; the audit row carries the
+  redacted statement and never result rows.
 """
 
 from __future__ import annotations
@@ -210,22 +212,30 @@ class QueryExecuteTool:
             total_rows += result.row_count or 0
 
         if failed is not None:
+            # One redacted value feeds both sinks. The engine message can echo
+            # the executed statement, which for an ``@stage`` query carries the
+            # injected credentials, so it is redacted at the source — the audit
+            # row and the SSE frame both read this variable and cannot drift.
+            # Classification reads the raw message: redaction is value-only and
+            # must not be able to flip ``_is_privilege_error`` (spec §5.3).
+            privileged = _is_privilege_error(failed)
+            redacted_error = _safe_redact(failed)
             await self._audit(
                 context=context,
                 username=username,
                 sql=_safe_redact(sql),
                 status="ERROR",
                 decision="approved",
-                error_message=failed,
+                error_message=redacted_error,
                 rows_affected=0,
             )
-            if _is_privilege_error(failed):
+            if privileged:
                 return ToolOutcome(
                     ok=False,
                     summary="",
                     error="The database denied this query for your user.",
                 )
-            return ToolOutcome(ok=False, summary="", error=failed)
+            return ToolOutcome(ok=False, summary="", error=redacted_error)
 
         await self._audit(
             context=context,
