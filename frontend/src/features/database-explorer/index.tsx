@@ -337,13 +337,19 @@ export function DatabaseExplorerPage() {
     setInitialExpandDone(true)
   }
 
-  // Lazy-load database objects when a database node is expanded
-  const expandedDbIds = useMemo(() => {
-    const dbs: string[] = []
+  // Lazy-load database objects when a database node is expanded. The id is
+  // `db-<catalog>-<db>`; the catalog is part of the key so an external database
+  // and a self-managed one with the same name do not collide.
+  const expandedDbs = useMemo(() => {
+    const dbs: Array<{ key: string; catalog: string; database: string }> = []
     for (const id of expandedIds) {
-      if (id.startsWith('db-')) {
-        dbs.push(id.replace('db-', ''))
-      }
+      if (!id.startsWith('db-')) continue
+      const rest = id.replace(/^db-/, '')
+      const separator = rest.indexOf('-')
+      if (separator === -1) continue
+      const catalog = rest.slice(0, separator)
+      const database = rest.slice(separator + 1)
+      dbs.push({ key: `${catalog}/${database}`, catalog, database })
     }
     return dbs
   }, [expandedIds])
@@ -352,11 +358,14 @@ export function DatabaseExplorerPage() {
   const [dbCache, setDbCache] = useState<Map<string, DatabaseObjectsResponse>>(() => new Map())
 
   // Fetch each expanded database (one query at a time via React Query)
-  const activeDb = expandedDbIds.find((db) => !dbCache.has(db)) || null
+  const activeDb = expandedDbs.find((entry) => !dbCache.has(entry.key)) || null
 
   const { data: dbObjects, isLoading: dbLoading } = useQuery<DatabaseObjectsResponse>({
-    queryKey: ['explorer-db', activeDb],
-    queryFn: () => api.get(`/explorer/databases/${activeDb}`),
+    queryKey: ['explorer-db', activeDb?.key],
+    queryFn: () =>
+      api.get(
+        `/explorer/databases/${activeDb!.database}?catalog=${activeDb!.catalog}`
+      ),
     enabled: !!activeDb,
   })
 
@@ -364,9 +373,9 @@ export function DatabaseExplorerPage() {
   useMemo(() => {
     if (activeDb && dbObjects) {
       setDbCache((prev) => {
-        if (prev.has(activeDb)) return prev
+        if (prev.has(activeDb.key)) return prev
         const next = new Map(prev)
-        next.set(activeDb, dbObjects)
+        next.set(activeDb.key, dbObjects)
         return next
       })
     }
@@ -380,9 +389,11 @@ export function DatabaseExplorerPage() {
     // For each database node, if we have cached data, replace placeholder children
     for (const cat of treeClone) {
       for (const dbNode of (cat.children ?? [])) {
-        if (dbNode.database && dbCache.has(dbNode.database)) {
-          const cached = dbCache.get(dbNode.database)!
-          dbNode.children = buildDatabaseChildren(cached)
+        if (dbNode.database && dbNode.catalog) {
+          const cached = dbCache.get(`${dbNode.catalog}/${dbNode.database}`)
+          if (cached) {
+            dbNode.children = buildDatabaseChildren(cached, dbNode.catalog)
+          }
         }
       }
     }
@@ -524,7 +535,7 @@ export function DatabaseExplorerPage() {
               toggleExpanded={toggleExpanded}
               setSelectedId={setSelectedId}
               dbLoading={dbLoading}
-              activeDb={activeDb}
+              activeDb={activeDb?.key ?? null}
               handleRefresh={handleRefresh}
               onCreateStage={handleOpenCreateStage}
             />

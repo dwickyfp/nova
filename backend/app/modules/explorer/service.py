@@ -37,16 +37,27 @@ class ExplorerService:
 
         catalogs = []
         for cat in catalogs_raw:
+            # External catalogs expose their own databases (and therefore their
+            # external tables); only default_catalog falls back to the shared
+            # list, which is where every Nova self-managed database lives.
+            if cat["name"] == "default_catalog":
+                cat_databases = databases
+            else:
+                cat_databases = await explorer_repo.list_databases_for_catalog_name(
+                    cat["name"]
+                )
             catalogs.append(CatalogInfo(
                 name=cat["name"],
                 type=cat["type"],
                 comment=cat["comment"],
-                databases=databases,  # All DBs live in default_catalog
+                databases=cat_databases,
             ))
         return CatalogsResponse(catalogs=catalogs)
 
-    async def get_database_objects(self, database: str) -> DatabaseObjectsResponse:
-        tables_raw = await explorer_repo.list_tables(database)
+    async def get_database_objects(
+        self, database: str, catalog: str | None = None
+    ) -> DatabaseObjectsResponse:
+        tables_raw = await explorer_repo.list_tables(database, catalog=catalog)
         views_raw = await explorer_repo.list_views(database)
         mvs_raw = await explorer_repo.list_materialized_views(database)
         funcs_raw = await explorer_repo.list_functions(database)
@@ -67,7 +78,11 @@ class ExplorerService:
                 for t in tables_raw
             ],
             views=[
-                ViewSummary(name=v["name"], definer=v.get("definer"), is_updatable=v.get("is_updatable"))
+                ViewSummary(
+                    name=v["name"],
+                    definer=v.get("definer"),
+                    is_updatable=v.get("is_updatable"),
+                )
                 for v in views_raw
             ],
             materialized_views=[

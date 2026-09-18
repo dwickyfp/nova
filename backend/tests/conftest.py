@@ -37,30 +37,41 @@ def docker_services():
 
 @pytest.fixture(scope="session")
 async def sr_root(docker_services):
-    """Root connection to StarRocks. Creates test user + roles."""
+    """Root connection to StarRocks. Creates test user + roles.
+
+    The connection is established by a retry loop, but ``yield`` sits *outside*
+    it. With the yield inside the ``try`` a failure while finalizing the fixture
+    (``conn.close()`` on an engine already torn down) was caught by the retry
+    handler, which slept and resumed the loop — advancing the generator to a
+    *second* yield. pytest-asyncio reports that as "Async generator fixture
+    didn't stop", turning an otherwise green suite red at session teardown.
+    """
+    conn = None
     for i in range(60):
         try:
             conn = await asyncmy.connect(
                 host="127.0.0.1", port=29030, user="root", password=""
             )
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY 'nova'"
-                )
-                await cur.execute("GRANT ALL ON *.* TO 'nova_admin' WITH GRANT OPTION")
-                await cur.execute(
-                    "CREATE USER IF NOT EXISTS 'testanalyst' IDENTIFIED BY 'testpass'"
-                )
-                await cur.execute("CREATE ROLE IF NOT EXISTS 'test_analyst'")
-                await cur.execute("GRANT 'test_analyst' TO 'testanalyst'")
-                await cur.execute("GRANT SELECT ON *.* TO ROLE 'test_analyst'")
-            yield conn
-            await conn.close()
-            return
         except Exception:
             if i == 59:
                 raise
             await asyncio.sleep(1)
+            continue
+        break
+
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY 'nova'"
+        )
+        await cur.execute("GRANT ALL ON *.* TO 'nova_admin' WITH GRANT OPTION")
+        await cur.execute(
+            "CREATE USER IF NOT EXISTS 'testanalyst' IDENTIFIED BY 'testpass'"
+        )
+        await cur.execute("CREATE ROLE IF NOT EXISTS 'test_analyst'")
+        await cur.execute("GRANT 'test_analyst' TO 'testanalyst'")
+        await cur.execute("GRANT SELECT ON *.* TO ROLE 'test_analyst'")
+    yield conn
+    conn.close()
 
 
 @pytest.fixture(scope="session")
@@ -83,7 +94,7 @@ async def redis_client(docker_services):
     """Async Redis client for session store tests."""
     client = aioredis.from_url("redis://127.0.0.1:26379/0", decode_responses=True)
     yield client
-    await client.close()
+    await client.aclose()
 
 
 @pytest.fixture(scope="function")

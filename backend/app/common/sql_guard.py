@@ -362,9 +362,16 @@ def is_unscoped_mutation(sql: str) -> bool:
 
 # ── Credential redaction ────────────────────────────────────────────────────
 
-#: FILES() parameter suffix (the part after the provider prefix) that holds a
-#: secret. Matching on the suffix covers the whole family in one rule:
+#: Parameter suffix (the part after the provider prefix) that holds a secret.
+#: Matching on the suffix covers the whole family in one rule:
 #: ``aws.s3.access_key``, ``azure.account_key``, ``gcs.service_account_key`` …
+#:
+#: The last four suffixes are the catalog surface (NOVA-62). ``SHOW CREATE
+#: CATALOG`` on StarRocks 4.1.4 masks most secret keys itself, but *not*
+#: ``aws.s3.session_token`` or ``hive.metastore.password`` — both come back in
+#: full — and it labels the rest with a ``******`` marker that still preserves
+#: two leading and two trailing characters. Redaction must not depend on the
+#: engine's own masking, so these names are covered here like any other.
 CREDENTIAL_PARAM_SUFFIXES: tuple[str, ...] = (
     "access_key",
     "secret_key",
@@ -372,11 +379,11 @@ CREDENTIAL_PARAM_SUFFIXES: tuple[str, ...] = (
     "account_key",
     "sas_token",
     "service_account_key",
+    "shared_key",
+    "private_key",
+    "password",
+    "credential",
 )
-
-#: Provider prefixes accepted before a credential suffix. Dots are allowed so
-#: two-segment providers (``aws.s3``, ``azure.blob``, ``gcs.s3``) match.
-_PROVIDER_PREFIX = r"[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*"
 
 #: A credential suffix written with either separator between its words, so
 #: ``account_key`` and ``account.key`` are the same parameter. StarRocks accepts
@@ -387,6 +394,39 @@ _PROVIDER_PREFIX = r"[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*"
 _CREDENTIAL_SUFFIX_PATTERN = "|".join(
     rf"{suffix.replace('_', '[._]')}" for suffix in CREDENTIAL_PARAM_SUFFIXES
 )
+
+#: A full credential parameter key: any number of separator-terminated segments
+#: followed by a suffix. The leading segments are consumed greedily and the
+#: suffix alternation backtracks into the tail, so both the dotted provider
+#: shape (``gcp.gcs.private_key``) and the underscore-joined catalog shape
+#: (``gcp.gcs.service_account_private_key``, ``hive.metastore.password``) match
+#: with one pattern. ``[._]`` between segments is what keeps ``..._key`` from
+#: needing a literal dot the catalog keys do not have.
+_CREDENTIAL_KEY = (
+    rf"(?:[A-Za-z_][\w$]*[._])*(?:{_CREDENTIAL_SUFFIX_PATTERN})"
+)
+
+#: One whole property name is a credential when it *is* a credential key — the
+#: full key, anchored, not just its final segment. ``is_credential_property``
+#: and the statement redactor are two callers of the same rule now: the redactor
+#: masks the value, the request validator refuses to accept the key. Splitting
+#: ``_CREDENTIAL_KEY`` into a second segmentation rule is what let a dotted
+#: spelling (``azure.account.key``) pass validation while the redactor still
+#: recognised it — the request side matched only the last segment, ``key``, so
+#: it agreed with the redactor on underscore spellings and diverged on dotted
+#: ones. There is one pattern here for both.
+_CREDENTIAL_PROPERTY = re.compile(rf"^{_CREDENTIAL_KEY}$", re.IGNORECASE)
+
+
+def is_credential_property(key: str) -> bool:
+    """True when ``key`` names a credential-bearing property.
+
+    The dotted and underscore spellings StarRocks accepts are the same parameter
+    here, so ``azure.account.key`` and ``azure.account_key`` both match. Used to
+    reject a credential at the API boundary; the same rule redacts its value in
+    statements, so the two sides cannot disagree about which names are secrets.
+    """
+    return bool(_CREDENTIAL_PROPERTY.match(key or ""))
 
 #: The placeholder written in place of a redacted value.
 REDACTED_VALUE = "***"
@@ -420,7 +460,7 @@ class CredentialsRedactionError(RuntimeError):
 # assignment and mint a second ``***`` in the middle of the first replacement.
 _QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
     rf"(?P<key_quote>['\"`])"
-    rf"(?P<key>{_PROVIDER_PREFIX}\.(?:{_CREDENTIAL_SUFFIX_PATTERN}))(?P=key_quote)"
+    rf"(?P<key>{_CREDENTIAL_KEY})(?P=key_quote)"
     rf"(?P<operator>\s*(?:=>|=)\s*)"
     rf"{_QUOTED_VALUE}",
     re.IGNORECASE,
@@ -428,7 +468,7 @@ _QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
 
 # Bare or backquoted key: ``aws.s3.secret_key='AKIA…'`` / ``FILES(aws.s3.secret_key=…)``.
 _BARE_CREDENTIAL_ASSIGNMENT = re.compile(
-    rf"(?<![\w$.'\"`])(?P<key>`?{_PROVIDER_PREFIX}\.(?:{_CREDENTIAL_SUFFIX_PATTERN})`?)"
+    rf"(?<![\w$.'\"`])(?P<key>`?{_CREDENTIAL_KEY}`?)"
     rf"(?P<operator>\s*(?:=>|=)\s*)"
     rf"{_QUOTED_VALUE}",
     re.IGNORECASE,
@@ -453,8 +493,7 @@ _CREDENTIAL_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
 #: and the quotes are stripped before the comparison, which cannot be fooled
 #: that way.
 _POPULATED_CREDENTIAL = re.compile(
-    rf"(?<![\w$.'\"`])(?:['\"`]?{_PROVIDER_PREFIX}\."
-    rf"(?:{_CREDENTIAL_SUFFIX_PATTERN})['\"`]?\s*(?:=>|=)\s*)"
+    rf"(?<![\w$.'\"`])(?:['\"`]?{_CREDENTIAL_KEY}['\"`]?\s*(?:=>|=)\s*)"
     r"(?P<value>[^\s,)]*)",
     re.IGNORECASE,
 )

@@ -11,14 +11,18 @@ Endpoints:
 """
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 
 from app.core.deps import get_current_user
+
 from .service import explorer_service
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+
+CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 
 # ── Catalogs ───────────────────────────────────────────────────
@@ -26,7 +30,7 @@ log = logging.getLogger(__name__)
 
 @router.get("/catalogs")
 async def list_catalogs(
-    _user: dict = Depends(get_current_user),
+    _user: CurrentUser,
 ):
     """List all catalogs with their databases."""
     return await explorer_service.get_catalogs()
@@ -38,10 +42,15 @@ async def list_catalogs(
 @router.get("/databases/{database}")
 async def list_database_objects(
     database: str,
-    _user: dict = Depends(get_current_user),
+    _user: CurrentUser,
+    catalog: str | None = None,
 ):
-    """List all objects in a database (tables, views, MVs, functions, pipes, stages)."""
-    result = await explorer_service.get_database_objects(database)
+    """List all objects in a database (tables, views, MVs, functions, pipes, stages).
+
+    ``catalog`` selects an external catalog so its external tables surface in the
+    tree; it defaults to ``default_catalog`` for every self-managed database.
+    """
+    result = await explorer_service.get_database_objects(database, catalog=catalog)
     return result
 
 
@@ -52,14 +61,14 @@ async def list_database_objects(
 async def get_table_detail(
     database: str,
     table: str,
-    _user: dict = Depends(get_current_user),
+    _user: CurrentUser,
 ):
     """Get table detail with columns, partitions, and properties."""
     try:
         result = await explorer_service.get_table_detail(database, table)
     except Exception as e:
         log.error("Table detail error for %s.%s: %s", database, table, e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     if not result:
         raise HTTPException(status_code=404, detail=f"Table {database}.{table} not found")
     return result
@@ -72,7 +81,7 @@ async def get_table_detail(
 async def get_view_detail(
     database: str,
     view: str,
-    _user: dict = Depends(get_current_user),
+    _user: CurrentUser,
 ):
     """Get view detail with definition."""
     result = await explorer_service.get_view_detail(database, view)
@@ -88,7 +97,7 @@ async def get_view_detail(
 async def get_mv_detail(
     database: str,
     mv: str,
-    _user: dict = Depends(get_current_user),
+    _user: CurrentUser,
 ):
     """Get materialized view detail with refresh state."""
     result = await explorer_service.get_mv_detail(database, mv)
@@ -104,7 +113,7 @@ async def get_mv_detail(
 async def get_function_detail(
     database: str,
     fn: str,
-    _user: dict = Depends(get_current_user),
+    _user: CurrentUser,
 ):
     """Get function detail with definition."""
     result = await explorer_service.get_function_detail(database, fn)
@@ -120,7 +129,7 @@ async def get_function_detail(
 async def get_pipe_detail(
     database: str,
     pipe: str,
-    _user: dict = Depends(get_current_user),
+    _user: CurrentUser,
 ):
     """Get pipe detail with state and load status."""
     result = await explorer_service.get_pipe_detail(database, pipe)
@@ -136,8 +145,8 @@ async def get_pipe_detail(
 async def get_stage_files(
     database: str,
     stage: str,
+    _user: CurrentUser,
     prefix: str = "",
-    _user: dict = Depends(get_current_user),
 ):
     """List files in a stage by name + database."""
     from app.modules.stages.service import stage_service
@@ -152,7 +161,7 @@ async def get_stage_files(
     try:
         files = await stage_service.list_files(stage_id, prefix=prefix)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     return {"files": files, "prefix": prefix, "count": len(files)}
 
 
@@ -161,8 +170,8 @@ async def upload_stage_file(
     database: str,
     stage: str,
     file: UploadFile,
+    _user: CurrentUser,
     filename: str | None = Form(None),
-    _user: dict = Depends(get_current_user),
 ):
     """Upload a file to a stage by name + database."""
     from app.modules.stages.service import stage_service
@@ -185,7 +194,7 @@ async def delete_stage_file(
     database: str,
     stage: str,
     filename: str,
-    _user: dict = Depends(get_current_user),
+    _user: CurrentUser,
 ):
     """Delete a file from a stage by name + database."""
     from app.modules.stages.service import stage_service
