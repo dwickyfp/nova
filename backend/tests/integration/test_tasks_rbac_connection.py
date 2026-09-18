@@ -162,6 +162,7 @@ async def rbac_client(rbac_users):
     settings.STARROCKS_ROOT_PASSWORD = SR_PASSWORD
     settings.REDIS_URL = os.getenv("NOVA_TEST_REDIS_URL", "redis://127.0.0.1:26379/0")
     settings.SECRET_KEY = "test-secret-key-for-testing-only-32chars!"
+    settings.FERNET_KEY = "8f3Q1sVx0m2pR7tY5uW9zB4cD6eF1gH3jK5lM7nO9pQ="
 
     await db.init_system_pool()
     application = create_app()
