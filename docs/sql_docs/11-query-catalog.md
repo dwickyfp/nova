@@ -53,8 +53,8 @@ Parameter yang mungkin disuntik (`translator.build_files_function`, `sql_pipelin
 **Batasan/error path:**
 - Stage tidak dikenal → `ValueError("Stage '<name>' not found")` (`translator.py:115`); dicatat sebagai audit ERROR, dan `QueryResult.error` diisi (`service.py:287-313`).
 - Tidak ada ekstensi file → default `csv` + warning `⚠️ No file extension for @<name>, defaulting to CSV` (`translator.py:128-129`).
-- `LIST @stage` **diparse** sebagai `STAGE_BROWSE` tetapi engine **tidak punya** `LIST`; tanpa referensi stage, parser menurunkannya ke `REGULAR` dan engine yang mengembalikan syntax error (`parser.py:694-701`, `test_dialect.py:359-371`).
-- Teks `@x` di dalam literal/komentar **bukan** stage (NOVA-29) — `parse_sql` memfilter span literal/comment lebih dulu (`parser.py:164-231`, `681-692`).
+- `LIST @stage` **diparse** sebagai `STAGE_BROWSE` tetapi engine **tidak punya** `LIST`; tanpa referensi stage, parser menurunkannya ke `REGULAR` dan engine yang mengembalikan syntax error (`parser.py`, `parse_sql`).
+- Teks `@x` di dalam literal/komentar **bukan** stage (NOVA-29) — sejak 109-B (NOVA-126) lexer ANTLR4 menganggapnya satu token, jadi tidak pernah jadi node `stageReference` (`parse_sql`).
 
 **Bukti uji:** `test_dialect.py` (kelas `TestParser`, `TestStageVersusVariable`, `TestTranslator`, `TestBareAndDirectoryStagesReachTranslation`), `test_sql_pipeline_files_params.py`.
 
