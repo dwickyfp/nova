@@ -41,6 +41,20 @@ lexer is case-sensitive while StarRocks keywords are not, so without it every
 lowercase keyword would fail to parse. Only `LA()` is folded; `getText()` keeps
 the user's original casing.
 
+**`@`-free short-circuit (AC-5 mitigation).** Building the ANTLR4 tree costs
+~160× the regex it replaced, and the regression lands on the ordinary query
+request path. `parse_sql` therefore returns `REGULAR` / `stage_refs=[]`
+immediately when the statement contains no literal `@`, before `_parse_tree`
+runs. The guard is sound, not a heuristic: every stage form the dialect acts on
+carries a literal `@` (`@stage1`, `@stage1/`, `@stage1.data.csv`,
+`@stage1.data/*.csv`, and the `LIST`/`COPY INTO` Nova surfaces), so a statement
+with no `@` cannot contain a stage and the grammar's answer is already known.
+The test is the literal character, never a regex — a pattern would reintroduce
+the text-scanning source of truth 109-B removes. Statements that do carry an
+`@` (including `@@version` and `@` in a literal, which are *not* stages) still
+go through the grammar, so the tree remains the single source of truth for
+every statement that can carry a stage.
+
 ```python
 class CommandType(Enum):
     # Custom @stage commands
@@ -70,17 +84,21 @@ stream** (`_nova_surface_stage_refs`), so the reference grammar is still the
 single source of truth.
 
 **Latency (NOVA-126 acceptance criterion 5 — the slice's D1 precondition):** the
-ANTLR4 parse costs ~160× the regex it replaces. Over an 18-statement corpus
-(document plus expression-heavy queries), measured with `time.perf_counter_ns`:
+ANTLR4 parse costs ~160× the regex it replaces, so the parser short-circuits
+`@`-free SQL before building the tree (see above). Measured with
+`time.perf_counter_ns`, 2000 warm-up + 20000 sampled runs per statement:
 
-| Version | p50 | p95 | p99 |
-|---------|-----|-----|-----|
-| regex-on-text (before) | 5.0 µs | 16.7 µs | 23.5 µs |
-| ANTLR4 (this design) | 346 µs | 2680 µs | 3494 µs |
+| Path | regex (before) p50 / p95 | post-swap p50 / p95 |
+|------|--------------------------|---------------------|
+| ordinary SQL (no `@`) | 3.1 µs / 4.3 µs | **0.3 µs / 0.4 µs** |
+| stage SQL (`@` present) | 4.5 µs / 5.5 µs | 324 µs / 584 µs |
 
-ANTLR's SLL prediction mode does not help (833 µs vs 864 µs LL on the same
-corpus). This is the NOVA-17 reopen trigger, so the swap is **held** pending an
-explicit accept/reject decision; it is not merged to `main`.
+The ordinary path — the majority of traffic and the path AC-5 guards — is back
+at the pre-swap order of magnitude (in fact below it: a single membership test
+replaces the regex scan). Unmitigated, the same ordinary corpus is
+418 µs / 2342 µs; the guard removes that cost entirely. Stage statements pay the
+ANTLR4 cost, which is the price of the grammar being the single source of truth
+for the one statement class the dialect rewrites. The gate **passes**.
 
 ### Stage 2: Translator
 

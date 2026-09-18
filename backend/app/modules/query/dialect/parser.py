@@ -551,6 +551,24 @@ def parse_sql(sql: str) -> ParsedSQL:
             errors=[],
         )
 
+    if "@" not in sql:
+        # Invariant this short-circuit relies on: every stage form the dialect
+        # acts on carries a literal ``@`` — ``@stage1``, ``@stage1/``, the dotted
+        # ``@stage1.data.csv``, the glob ``@stage1.data/*.csv``, and the ``LIST``
+        # / ``COPY INTO`` Nova surfaces. A statement with no ``@`` at all cannot
+        # contain a stage, so ``stage_refs=[]`` and ``REGULAR`` are the grammar's
+        # own answer and building the ANTLR4 tree would only re-derive it at a
+        # ~50x p95 cost on the request path (AC-5 / NOVA-17). The test is the
+        # literal character, not a regex: anything subtler reintroduces a
+        # text-pattern source of truth, which is exactly what 109-B removes.
+        return ParsedSQL(
+            command_type=CommandType.REGULAR,
+            stage_refs=[],
+            original_sql=sql,
+            base_sql=sql,
+            errors=[],
+        )
+
     stream, tree, errors = _parse_tree(sql)
     leading = _texts(_visible_tokens(stream)[:4])
 
