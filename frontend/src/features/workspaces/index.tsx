@@ -1729,7 +1729,7 @@ export function WorkspacesPage() {
           )}
         </section>
 
-        <AssistantPanel open={assistantOpen} onOpenChange={setAssistantOpen} />
+        <AssistantPanel open={assistantOpen} onOpenChange={setAssistantOpen} disabled />
       </div>
     </div>
   )

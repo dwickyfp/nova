@@ -1,20 +1,31 @@
-import { Bot, PanelRightClose, SendHorizontal } from 'lucide-react'
+import { Bot, PanelRightClose, SendHorizontal, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { MessageList } from './message-list'
+import type { ToolCallCardProps } from './tool-call-card'
+import type { TranscriptMessage } from './use-assistant-transcript'
 import { useIsNarrowForAssistant } from './use-assistant-panel'
 
 export type AssistantPanelProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Rendered transcript. T-D2 supplies the streaming message list here. */
+  /** Overrides the built-in transcript rendering when supplied. */
   children?: React.ReactNode
-  /** Placeholder shown until a conversation has any messages. */
   onSendMessage?: (message: string) => void
   disabled?: boolean
+  /** Transcript state. When omitted the panel shows the empty state. */
+  messages?: TranscriptMessage[]
+  onDecide?: ToolCallCardProps['onDecide']
+  decidingToolCallId?: string | null
+  /** True while a turn is streaming; swaps Send for Stop. */
+  streaming?: boolean
+  onStop?: () => void
+  /** Announced to assistive tech on state transitions, never per token. */
+  statusMessage?: string | null
 }
 
 const PANEL_WIDTH = 'w-[22rem]'
@@ -23,18 +34,34 @@ function AssistantBody({
   children,
   onSendMessage,
   disabled,
-}: Pick<AssistantPanelProps, 'children' | 'onSendMessage' | 'disabled'>) {
+  messages,
+  onDecide,
+  decidingToolCallId,
+  streaming,
+  onStop,
+  statusMessage,
+}: AssistantPanelProps) {
+  const hasTranscript = Boolean(children) || Boolean(messages?.length)
+
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
       <ScrollArea className='min-h-0 flex-1'>
         <div className='flex min-h-full flex-col p-3'>
-          {children ?? (
-            <EmptyState
-              icon={Bot}
-              title='Ask about this workspace'
-              description='The assistant can explain schema, draft dialect-aware SQL, and run read-only queries with your approval.'
-            />
-          )}
+          {children ??
+            (hasTranscript ? (
+              <MessageList
+                messages={messages ?? []}
+                onDecide={onDecide}
+                decidingToolCallId={decidingToolCallId}
+                statusMessage={statusMessage}
+              />
+            ) : (
+              <EmptyState
+                icon={Bot}
+                title='Ask about this workspace'
+                description='The assistant can explain schema, draft dialect-aware SQL, and run read-only queries with your approval.'
+              />
+            ))}
         </div>
       </ScrollArea>
       <form
@@ -44,17 +71,22 @@ function AssistantBody({
           const form = event.currentTarget
           const field = form.elements.namedItem('assistant-message') as HTMLTextAreaElement | null
           const value = field?.value.trim()
-          if (!value) return
-          onSendMessage?.(value)
+          if (!value || streaming || disabled || !onSendMessage) return
+          onSendMessage(value)
           if (field) field.value = ''
         }}
       >
+        {disabled ? (
+          <p className='mb-2 text-xs text-muted-foreground'>
+            The assistant backend is not connected yet. This panel is read-only until it is.
+          </p>
+        ) : null}
         <div className='flex items-end gap-2'>
           <Textarea
             name='assistant-message'
             rows={2}
             placeholder='Ask a question or describe a query'
-            disabled={disabled}
+            disabled={disabled || !onSendMessage}
             className='min-h-9 flex-1 resize-none'
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -63,9 +95,26 @@ function AssistantBody({
               }
             }}
           />
-          <Button type='submit' size='icon' disabled={disabled} aria-label='Send message'>
-            <SendHorizontal className='size-4' />
-          </Button>
+          {streaming ? (
+            <Button
+              type='button'
+              size='icon'
+              variant='outline'
+              onClick={onStop}
+              aria-label='Stop generating'
+            >
+              <Square className='size-4' />
+            </Button>
+          ) : (
+            <Button
+              type='submit'
+              size='icon'
+              disabled={disabled || !onSendMessage}
+              aria-label='Send message'
+            >
+              <SendHorizontal className='size-4' />
+            </Button>
+          )}
         </div>
       </form>
     </div>
@@ -92,13 +141,8 @@ function AssistantHeader({ onClose }: { onClose: () => void }) {
   )
 }
 
-export function AssistantPanel({
-  open,
-  onOpenChange,
-  children,
-  onSendMessage,
-  disabled,
-}: AssistantPanelProps) {
+export function AssistantPanel(props: AssistantPanelProps) {
+  const { open, onOpenChange } = props
   const isNarrow = useIsNarrowForAssistant()
 
   if (isNarrow) {
@@ -108,9 +152,7 @@ export function AssistantPanel({
           <SheetTitle className='sr-only'>Assistant</SheetTitle>
           <div className='flex h-full min-h-0 flex-col'>
             <AssistantHeader onClose={() => onOpenChange(false)} />
-            <AssistantBody onSendMessage={onSendMessage} disabled={disabled}>
-              {children}
-            </AssistantBody>
+            <AssistantBody {...props} />
           </div>
         </SheetContent>
       </Sheet>
@@ -126,9 +168,7 @@ export function AssistantPanel({
       className={cn('flex min-h-0 shrink-0 flex-col border-l bg-background', PANEL_WIDTH)}
     >
       <AssistantHeader onClose={() => onOpenChange(false)} />
-      <AssistantBody onSendMessage={onSendMessage} disabled={disabled}>
-        {children}
-      </AssistantBody>
+      <AssistantBody {...props} />
     </aside>
   )
 }

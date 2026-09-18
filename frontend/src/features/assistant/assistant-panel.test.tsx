@@ -74,4 +74,44 @@ describe('AssistantPanel', () => {
     await getByRole('button', { name: 'Close assistant' }).click()
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
+
+  it('renders transcript messages instead of the empty state', async () => {
+    const { getByText, container } = await render(
+      <AssistantPanel
+        open
+        onOpenChange={() => {}}
+        messages={[
+          {
+            message_id: 'm1',
+            role: 'assistant',
+            content: 'Revenue is grouped by region.',
+            tool_call: null,
+            created_at: '2026-09-18T00:00:00Z',
+            turn_state: 'done',
+          },
+        ]}
+      />
+    )
+    await expect.element(getByText('Revenue is grouped by region.')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('Ask about this workspace')
+  })
+
+  it('swaps Send for Stop while streaming and fires onStop', async () => {
+    const onStop = vi.fn()
+    const { getByRole } = await render(
+      <AssistantPanel open onOpenChange={() => {}} streaming onStop={onStop} />
+    )
+    await getByRole('button', { name: 'Stop generating' }).click()
+    expect(onStop).toHaveBeenCalled()
+  })
+
+  it('states that the assistant backend is not connected instead of offering a dead send', async () => {
+    const { getByText, getByRole } = await render(
+      <AssistantPanel open onOpenChange={() => {}} disabled />
+    )
+    await expect
+      .element(getByText('The assistant backend is not connected yet. This panel is read-only until it is.'))
+      .toBeInTheDocument()
+    await expect.element(getByRole('button', { name: 'Send message' })).toBeDisabled()
+  })
 })

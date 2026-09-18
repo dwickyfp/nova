@@ -1,0 +1,49 @@
+/**
+ * Client mirror of the frozen NOVA-61 T-A0 contract.
+ * Sources: docs/specs/nova-61-agentic-assistant-design.md §2.1 and §4.
+ * Keep these names in lockstep with the backend; the SSE parser and the UI
+ * both depend on them.
+ */
+
+export type ToolCallStatus =
+  | 'pending'
+  | 'approved'
+  | 'denied'
+  | 'running'
+  | 'done'
+  | 'failed'
+  | 'cancelled'
+
+export type ToolClassification = 'read_only' | 'destructive' | 'denied'
+
+export type ToolCallView = {
+  tool_name: string
+  /** Redacted SQL only. The backend guarantees this before the event is sent. */
+  sql_preview: string
+  classification: ToolClassification
+  status: ToolCallStatus
+  /** Row count / affected / error text. Never rows. */
+  result_summary?: string | null
+  error?: string | null
+}
+
+export type AssistantMessage = {
+  message_id: string
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  tool_call: ToolCallView | null
+  created_at: string
+}
+
+export type AssistantEvent =
+  | { type: 'text_delta'; text: string }
+  | { type: 'tool_call'; payload: ToolCallView & { tool_call_id: string } }
+  | { type: 'tool_status'; tool_call_id: string; status: ToolCallStatus }
+  | { type: 'done'; message_id: string; finish_reason: string }
+  | { type: 'error'; code: string; message: string }
+  | { type: 'ping' }
+
+export type ConsentDecision = 'approve' | 'deny'
+
+/** Outcome of a turn, so the transcript can mark a cancelled partial answer. */
+export type TurnState = 'streaming' | 'done' | 'cancelled' | 'error'
