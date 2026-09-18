@@ -336,16 +336,41 @@ enforced.
 been suspended, which never holds a join open). A failed parent fails the graph
 and skips its descendants.
 
-**`FINALIZE` — after the graph, never alongside it.** A finalizer is **not** a
-dependency and is excluded from the adjacency, so it can never be offered as a
-zero-dependency root (which would run it first). The rule implemented is: a
-finalizer is enqueued only once the **entire dependency graph** has settled
-successfully (every dependency node `success` or `suspended`). The stricter
-whole-graph reading is used deliberately over "after the specific target's
-ancestors" — it removes any concurrency window with a dependency node. A failed
-or skipped dependency graph **skips** the finalizer rather than running it (a
-finalizer reports a completed run). A finalizer's own failure fails the graph,
-and a finalizer's own `WHEN` is honoured.
+**`FINALIZE` — after the graph, never alongside it.**
+
+> **This is a deliberate decision, not an accident of implementation.** It is
+> written down here so a reader does not mistake the failure behaviour for a bug.
+> The alternatives considered and rejected are listed below.
+
+A finalizer is **not** a dependency. Two consequences drive the implementation:
+
+1. **It must never be offered as a zero-dependency root.** A node with no
+   incoming edge satisfies `all(parents succeeded)` vacuously, so if a finalizer
+   were left in the dependency graph it would be `ready` on the first transition
+   and run alongside — or before — the work it follows. Finalizer nodes are
+   therefore **removed from the dependency graph entirely** and staged
+   separately.
+2. **It runs only after the graph completes, never alongside it.** The rule:
+   a finalizer is enqueued only once the **entire dependency graph** has settled
+   successfully (every dependency node `success` or `suspended`). The
+   whole-graph reading is chosen over "after the specific target's ancestors"
+   because the latter leaves a concurrency window with a downstream node.
+
+**Decision: a failed or skipped dependency graph skips the finalizer.** A
+finalizer is an engine task submitted as the owner, not a callback. Running it
+over a failed run would execute a write (e.g. `INSERT INTO etl_log`) that claims
+something which did not happen — a misreport, not a cleanup. It is also
+unsafe-by-default: a finalizer would have to be failure-tolerant by
+construction, and that is the task author's call, not the engine's. So the safe
+default is not to run it.
+
+**A finalizer's own failure fails the graph** (recorded and audited; the
+dependent tasks are not silently marked successful). A finalizer's own `WHEN` is
+honoured like any other node.
+
+*Future option, not implemented:* an explicit per-task "run the finalizer even on
+failure" flag would be the way to add always-run semantics, so the decision stays
+with the author. No such flag exists today.
 
 **`WHEN` — conditional skip.** Evaluated on the owner's connection before the
 node runs. False marks the node `skipped`, and its descendants are skipped too.
