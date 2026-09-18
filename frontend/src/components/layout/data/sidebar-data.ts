@@ -12,12 +12,12 @@ import {
   Users,
   Zap,
   Activity,
+  ArrowRightLeft,
   FunctionSquare,
   GitFork,
   Layers,
   Workflow,
-} from 'lucide-react';
-import { type SidebarData } from '../types';
+} from 'lucide-react';import { type SidebarData } from '../types';
 
 export const sidebarData: SidebarData = {
   navGroups: [
@@ -48,6 +48,11 @@ export const sidebarData: SidebarData = {
           title: 'External Catalogs',
           url: '/external-catalogs',
           icon: Layers,
+        },
+        {
+          title: 'Migration',
+          url: '/migration',
+          icon: ArrowRightLeft,
         },
         {
           title: 'Tasks',

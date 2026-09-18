@@ -14,6 +14,7 @@ import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedActiveQueryRouteImport } from './routes/_authenticated/active-query'
 import { Route as AuthenticatedDatabaseExplorerRouteImport } from './routes/_authenticated/database-explorer'
+import { Route as AuthenticatedMigrationRouteImport } from './routes/_authenticated/migration'
 import { Route as AuthenticatedMonitoringRouteRouteImport } from './routes/_authenticated/monitoring/route'
 import { Route as AuthenticatedQueryCostRouteImport } from './routes/_authenticated/query-cost'
 import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authenticated/query-history'
@@ -61,6 +62,11 @@ const AuthenticatedDatabaseExplorerRoute =
     path: '/database-explorer',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMigrationRoute = AuthenticatedMigrationRouteImport.update({
+  id: '/migration',
+  path: '/migration',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedMonitoringRouteRoute =
   AuthenticatedMonitoringRouteRouteImport.update({
     id: '/monitoring',
@@ -182,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof authSignInRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
+  '/migration': typeof AuthenticatedMigrationRoute
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
   '/task-graphs': typeof AuthenticatedTaskGraphsRoute
@@ -206,6 +213,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof authSignInRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
+  '/migration': typeof AuthenticatedMigrationRoute
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
   '/task-graphs': typeof AuthenticatedTaskGraphsRoute
@@ -234,6 +242,7 @@ export interface FileRoutesById {
   '/(auth)/sign-in': typeof authSignInRoute
   '/_authenticated/active-query': typeof AuthenticatedActiveQueryRoute
   '/_authenticated/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
+  '/_authenticated/migration': typeof AuthenticatedMigrationRoute
   '/_authenticated/query-cost': typeof AuthenticatedQueryCostRoute
   '/_authenticated/query-history': typeof AuthenticatedQueryHistoryRoute
   '/_authenticated/task-graphs': typeof AuthenticatedTaskGraphsRoute
@@ -263,6 +272,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/active-query'
     | '/database-explorer'
+    | '/migration'
     | '/query-cost'
     | '/query-history'
     | '/task-graphs'
@@ -287,6 +297,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/active-query'
     | '/database-explorer'
+    | '/migration'
     | '/query-cost'
     | '/query-history'
     | '/task-graphs'
@@ -314,6 +325,7 @@ export interface FileRouteTypes {
     | '/(auth)/sign-in'
     | '/_authenticated/active-query'
     | '/_authenticated/database-explorer'
+    | '/_authenticated/migration'
     | '/_authenticated/query-cost'
     | '/_authenticated/query-history'
     | '/_authenticated/task-graphs'
@@ -376,6 +388,13 @@ declare module '@tanstack/react-router' {
       path: '/database-explorer'
       fullPath: '/database-explorer'
       preLoaderRoute: typeof AuthenticatedDatabaseExplorerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/migration': {
+      id: '/_authenticated/migration'
+      path: '/migration'
+      fullPath: '/migration'
+      preLoaderRoute: typeof AuthenticatedMigrationRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/monitoring': {
@@ -547,6 +566,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonitoringRouteRoute: typeof AuthenticatedMonitoringRouteRouteWithChildren
   AuthenticatedActiveQueryRoute: typeof AuthenticatedActiveQueryRoute
   AuthenticatedDatabaseExplorerRoute: typeof AuthenticatedDatabaseExplorerRoute
+  AuthenticatedMigrationRoute: typeof AuthenticatedMigrationRoute
   AuthenticatedQueryCostRoute: typeof AuthenticatedQueryCostRoute
   AuthenticatedQueryHistoryRoute: typeof AuthenticatedQueryHistoryRoute
   AuthenticatedTaskGraphsRoute: typeof AuthenticatedTaskGraphsRoute
@@ -569,6 +589,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedMonitoringRouteRouteWithChildren,
   AuthenticatedActiveQueryRoute: AuthenticatedActiveQueryRoute,
   AuthenticatedDatabaseExplorerRoute: AuthenticatedDatabaseExplorerRoute,
+  AuthenticatedMigrationRoute: AuthenticatedMigrationRoute,
   AuthenticatedQueryCostRoute: AuthenticatedQueryCostRoute,
   AuthenticatedQueryHistoryRoute: AuthenticatedQueryHistoryRoute,
   AuthenticatedTaskGraphsRoute: AuthenticatedTaskGraphsRoute,
