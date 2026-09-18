@@ -161,10 +161,14 @@ class TestBodyRestriction:
         with pytest.raises(TaskDDLError):
             lower("CREATE TASK t1 AS SELECT 1")
 
-    def test_stage_reference_body_is_rejected_by_the_grammar(self) -> None:
-        # The pinned grammar has no @stage rule, so this fails at parse time.
-        with pytest.raises(TaskDDLError):
-            lower("CREATE TASK t1 AS INSERT INTO t SELECT a FROM @stage1.data.csv")
+    def test_stage_reference_body_is_accepted_since_109a(self) -> None:
+        # NOVA-125 (109-A) adds the `@stage` rule to the vendored grammar, so a
+        # task body that reads from a stage now parses. Before 109-A this failed
+        # at parse time ("no viable alternative at input 'FROM @'"). The task
+        # lowering preserves the body verbatim; `@stage` translation stays in the
+        # dialect pipeline (109-B, NOVA-126).
+        task = lower("CREATE TASK t1 AS INSERT INTO t SELECT a FROM @stage1.data.csv")
+        assert task.body == "INSERT INTO t SELECT a FROM @stage1.data.csv"
 
 
 class TestValidation:
