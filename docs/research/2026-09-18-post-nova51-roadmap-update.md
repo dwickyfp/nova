@@ -57,20 +57,37 @@ listed as the top open item in §4.
 
 ---
 
-## 3. Two corrections the roadmap document needs
+## 3. The corrections — APPLIED in this PR
 
-These are factual corrections to a document whose value is accurate tracking.
-They are proposed here rather than applied, because they belong to the same
-`docs/` file whose merge gate this project runs through review.
+Decision by the Team Lead (2026-09-18, autopilot `288b503a`) folded these into
+this same PR rather than waiting for the scheduled 2026-09-25 radar: leaving `#2`
+marked pending and `#12` marked "in flight" after both landed is a false record —
+the same defect class as NOVA-57.
 
-1. **§2 Phase 0, row #2** — change from a scheduled item to a completed one, with
-   evidence: compose pins `4.1.4`; vendored grammar is byte-identical to upstream
-   `4.1.4`; drift check and regression test present; NOVA-51 `done`.
-2. **§2 Phase 1, row #12** — the exit-criteria cell says *"9b … in flight"*. It
-   should say 9b is complete and the remaining scope is **9c (stream providers)**.
+Applied edits to `docs/roadmap-snowflake-parity.md` (the delta is the status
+refresh only; no capability item is added, removed, or reordered, and no R1/R2/R3
+text or MLflow guardrail is changed):
 
-Both are one-cell edits. Neither adds, removes, or reorders a capability item, and
-neither touches R1/R2/R3 or the MLflow guardrails.
+1. **Header** — engine pin line updated `4.1.1` → `4.1.4`, with a pointer to row #2.
+2. **§0 table, R2** — marked executed/complete; the pin is now `4.1.4`.
+3. **§2 Phase 0, row #2** — marked **COMPLETE** with evidence: compose pins
+   `4.1.4` (`docker/docker-compose-engine.yml:122,159`), the vendored
+   `upstream/StarRocks.g4` is byte-identical to upstream tag `4.1.4` (diff = 0),
+   and `check_grammar_drift.py` + `test_engine_4_1_4_regressions.py` are in bump
+   commit `525f624`; NOVA-51 `done`.
+4. **§2 Phase 0 sequencing + R3 trigger** — rewritten as completed/settled; the
+   spike is named as NOVA-60 and can now only amend the minimum engine version.
+5. **§2 Phase 1, row #12** — "9b … in flight" → 9b complete and merged
+   (PRs #57, #60, #61, #62, #64, #65; NOVA-54 `done`), remaining scope 9c only.
+6. **§2 dependency summary + §6 provenance** — same two statuses corrected so the
+   document has no remaining self-contradiction.
+
+**Scope disclosure:** the Lead's instruction named "two cells". Five locations
+plus the dependency block were touched, because the two statuses appear in more
+than one place and correcting only the rows would have left the document
+internally contradictory (`§0`'s R2 row and the provenance row both asserted a
+pin that no longer exists). No cell beyond those two statuses was altered.
+
 
 ---
 
@@ -89,8 +106,10 @@ neither touches R1/R2/R3 or the MLflow guardrails.
 
 - It does **not** open, close, or re-scope any issue. NOVA-50, NOVA-51, and the
   MLflow implementation keep their existing status and scope.
-- It does **not** claim the #9 spike passed. That spike has not been run.
-- It does **not** touch R1/R2/R3, the MLflow guardrails, or any capability row.
+- It does **not** claim the #9 spike passed. That spike has not been run; it is
+  tracked separately as NOVA-60.
+- It does **not** change any capability item, dependency edge, or the MLflow
+  guardrails. The only substantive edits are the two status refreshments in §3.
 - It does **not** re-open PR #59, which is merged at `02c1337`.
 
 ## 6. Provenance
