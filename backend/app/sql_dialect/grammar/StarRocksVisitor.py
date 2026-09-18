@@ -359,6 +359,36 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#taskAfterClause.
+    def visitTaskAfterClause(self, ctx:StarRocksParser.TaskAfterClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#taskNameList.
+    def visitTaskNameList(self, ctx:StarRocksParser.TaskNameListContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#taskFinalizeClause.
+    def visitTaskFinalizeClause(self, ctx:StarRocksParser.TaskFinalizeClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#taskWhenClause.
+    def visitTaskWhenClause(self, ctx:StarRocksParser.TaskWhenClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#taskOverlapClause.
+    def visitTaskOverlapClause(self, ctx:StarRocksParser.TaskOverlapClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#taskCronScheduleDesc.
+    def visitTaskCronScheduleDesc(self, ctx:StarRocksParser.TaskCronScheduleDescContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#createMaterializedViewStatement.
     def visitCreateMaterializedViewStatement(self, ctx:StarRocksParser.CreateMaterializedViewStatementContext):
         return self.visitChildren(ctx)
