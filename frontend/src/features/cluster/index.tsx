@@ -35,12 +35,12 @@ import {
 } from './api'
 
 function formatNumber(value: number | null | undefined) {
-  if (value == null) return '—'
+  if (value == null) return '-'
   return value.toLocaleString()
 }
 
 function formatLatency(value: number | null | undefined) {
-  if (value == null) return '—'
+  if (value == null) return '-'
   if (value < 1000) return `${value.toFixed(0)} ms`
   return `${(value / 1000).toFixed(2)} s`
 }
@@ -136,16 +136,16 @@ function NodeTable({
                   key={`${node.host}-${node.port}-${index}`}
                   className='border-b border-border last:border-0'
                 >
-                  <td className='px-5 py-2.5 font-mono text-xs'>{node.host || '—'}</td>
+                  <td className='px-5 py-2.5 font-mono text-xs'>{node.host || '-'}</td>
                   <td className='px-5 py-2.5'>
                     {node.role ? (
                       <Badge variant='secondary'>{node.role}</Badge>
                     ) : (
-                      <span className='text-xs text-muted-foreground'>—</span>
+                      <span className='text-xs text-muted-foreground'>-</span>
                     )}
                   </td>
                   <td className='px-5 py-2.5 font-mono text-xs text-muted-foreground'>
-                    {node.port || '—'}
+                    {node.port || '-'}
                   </td>
                   <td className='px-5 py-2.5 text-xs text-muted-foreground'>
                     {node.lastHeartbeat
@@ -155,7 +155,7 @@ function NodeTable({
                           hour: '2-digit',
                           minute: '2-digit',
                         })
-                      : '—'}
+                      : '-'}
                   </td>
                   <td className='px-5 py-2.5 text-right'>
                     <StatusBadge tone={nodeTone(node)} dot>
@@ -254,7 +254,7 @@ export function ClusterMonitorPage() {
             <MetricCard
               weight='primary'
               label='Success rate'
-              value={rate == null ? '—' : `${(rate * 100).toFixed(1)}%`}
+              value={rate == null ? '-' : `${(rate * 100).toFixed(1)}%`}
               icon={CheckCircle2}
               tone={rate != null && rate >= 0.99 ? 'success' : 'warning'}
               hint={`${formatNumber(metricValue(metrics, 'query_success'))} of ${formatNumber(metricValue(metrics, 'query_total'))} queries`}
