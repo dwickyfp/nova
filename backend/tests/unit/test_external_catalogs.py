@@ -77,6 +77,26 @@ class TestSecretPropertyDetection:
     @pytest.mark.parametrize(
         "key",
         [
+            # The dotted spellings of a multi-word suffix. A final-segment match
+            # saw only ``key`` / ``token`` and let these through; the whole tail
+            # has to be matched so each spelling of one credential is the same
+            # name to both the validator and the redactor.
+            "aws.s3.secret.key",
+            "azure.account.key",
+            "gcp.gcs.private.key",
+            "gcp.gcs.service.account.key",
+            "aws.s3.session.token",
+            "hive.metastore.account.key",
+            "azure.account.sas.token",
+            "gcp.gcs.service.account.private.key",
+        ],
+    )
+    def test_dotted_multi_word_suffixes_are_recognised(self, key):
+        assert is_secret_property(key)
+
+    @pytest.mark.parametrize(
+        "key",
+        [
             "hive.metastore.uris",
             "iceberg.catalog.type",
             "iceberg.catalog.uri",
@@ -87,11 +107,66 @@ class TestSecretPropertyDetection:
     def test_non_secret_keys_are_not_flagged(self, key):
         assert not is_secret_property(key)
 
+    @pytest.mark.parametrize(
+        "key",
+        [
+            # A word that merely *ends* in a suffix word as a substring is not a
+            # credential: ``monkey`` is not ``key``, ``compassword`` is not
+            # ``password``. Anchoring the whole key is what keeps the validator
+            # from over-blocking ordinary non-secret properties.
+            "iceberg.catalog.warehouse",
+            "aws.s3.bucket",
+            "hive.metastore.monkey",
+            "iceberg.catalog.compassword",
+        ],
+    )
+    def test_partial_word_suffix_is_not_a_secret(self, key):
+        assert not is_secret_property(key)
+
+    def test_validator_and_redactor_agree_on_every_spelling(self):
+        """The request guard and the statement redactor share one rule.
+
+        The bug this pins was the two sides disagreeing: the redactor masked a
+        dotted credential while the validator accepted the key, so a secret
+        reached the metadata store and the API response. For every key either
+        side treats as a credential, both must.
+        """
+        from app.common.sql_guard import redact_sql_credentials
+
+        dotted_and_underscore = [
+            ("azure.account.key", "azure.account_key"),
+            ("gcp.gcs.private.key", "gcp.gcs.private_key"),
+            ("gcp.gcs.service.account.key", "gcp.gcs.service_account_key"),
+            ("aws.s3.session.token", "aws.s3.session_token"),
+        ]
+        for dotted, underscore in dotted_and_underscore:
+            assert is_secret_property(dotted), dotted
+            assert is_secret_property(underscore), underscore
+            for key in (dotted, underscore):
+                stmt = (
+                    "CREATE EXTERNAL CATALOG c PROPERTIES "
+                    f"('{key}' = 'LEAK_SENTINEL')"
+                )
+                assert "LEAK_SENTINEL" not in redact_sql_credentials(stmt), key
+
 
 class TestCreateRequestRejectsSecrets:
     @pytest.mark.parametrize(
         "key",
-        ["aws.s3.secret_key", "hive.metastore.password", "aws.s3.session_token"],
+        [
+            "aws.s3.secret_key",
+            "hive.metastore.password",
+            "aws.s3.session_token",
+            # Dotted spellings — the class of bypass this suite pins. The value
+            # must never be accepted, so it never reaches the metadata store or
+            # the response ``properties``.
+            "aws.s3.secret.key",
+            "azure.account.key",
+            "gcp.gcs.private.key",
+            "gcp.gcs.service.account.key",
+            "aws.s3.session.token",
+            "hive.metastore.account.key",
+        ],
     )
     def test_create_rejects_a_secret_property(self, key):
         with pytest.raises(ValueError):
@@ -104,7 +179,14 @@ class TestCreateRequestRejectsSecrets:
 
     @pytest.mark.parametrize(
         "key",
-        ["aws.s3.secret_key", "hive.metastore.password"],
+        [
+            "aws.s3.secret_key",
+            "hive.metastore.password",
+            "aws.s3.secret.key",
+            "azure.account.key",
+            "gcp.gcs.service.account.key",
+            "aws.s3.session.token",
+        ],
     )
     def test_alter_rejects_a_secret_property(self, key):
         with pytest.raises(ValueError):
@@ -338,6 +420,41 @@ class TestServiceReadPathRedacts:
         assert response.create_statement is not None
         assert "SESSION_SENTINEL" not in response.create_statement
         assert "PW_SENTINEL" not in response.create_statement
+
+    async def test_persisted_credential_property_is_dropped_on_read(
+        self, catalog_env, monkeypatch
+    ):
+        """A dotted credential already in the metadata row must not be echoed.
+
+        The validator closes the write path; this pins the read path as the
+        defense-in-depth sink, since a row can predate the check and a bare
+        property value is not the ``key = value`` shape the response sanitizer
+        redacts.
+        """
+        monkeypatch.setattr(
+            service_module.external_catalog_repo,
+            "get_by_name",
+            _async_return(
+                {
+                    "catalog_type": "iceberg",
+                    "properties": {
+                        "azure.account.key": "CLIENT_SECRET_LEAK_ABC",
+                        "aws.s3.session.token": "LEAK_DEF",
+                        "iceberg.catalog.warehouse": "s3://bucket/wh",
+                    },
+                }
+            ),
+        )
+        monkeypatch.setattr(
+            "app.core.database.db.execute_system",
+            _async_return({"rows": []}),
+        )
+
+        response = await ExternalCatalogService().get("lake")
+        assert "azure.account.key" not in response.properties
+        assert "aws.s3.session.token" not in response.properties
+        assert response.properties["iceberg.catalog.warehouse"] == "s3://bucket/wh"
+        assert "CLIENT_SECRET_LEAK_ABC" not in str(response.model_dump())
 
     async def test_metadata_row_never_stores_a_secret(self, catalog_env, monkeypatch):
         recorded: dict = {}

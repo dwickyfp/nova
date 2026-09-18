@@ -298,6 +298,61 @@ class TestCatalogCrudThroughApi:
         resp = await admin_client.post("/api/v1/external-catalogs", json=body)
         assert resp.status_code == 422
 
+    @pytest.mark.parametrize(
+        "key",
+        [
+            # The dotted spellings a final-segment match accepted. None may be
+            # persisted, echoed in ``properties``, or reach the engine.
+            "aws.s3.secret.key",
+            "azure.account.key",
+            "gcp.gcs.private.key",
+            "gcp.gcs.service.account.key",
+            "aws.s3.session.token",
+            "hive.metastore.account.key",
+        ],
+    )
+    async def test_dotted_secret_property_is_rejected(
+        self, admin_client, namespace, key
+    ):
+        catalog = namespace["catalog"]
+        body = _create_body(namespace)
+        body["properties"][key] = SECRET_SENTINEL
+
+        resp = await admin_client.post("/api/v1/external-catalogs", json=body)
+        assert resp.status_code == 422, resp.text
+
+        # The credential was refused, not persisted and not echoed. The GET
+        # endpoint always synthesizes a response, so assert on the value: the
+        # sentinel must not appear anywhere in the payload.
+        resp = await admin_client.get(f"/api/v1/external-catalogs/{catalog}")
+        assert SECRET_SENTINEL not in resp.text
+        assert key not in resp.text
+        rows = await _admin_execute(
+            "SELECT properties_json FROM NOVA_SYSTEM.CONFIG_EXTERNAL_CATALOGS "
+            f"WHERE name = '{catalog}'"
+        )
+        assert not rows, rows
+        assert SECRET_SENTINEL not in str(rows)
+
+    async def test_dotted_secret_alter_is_rejected(self, admin_client, namespace):
+        catalog = namespace["catalog"]
+        resp = await admin_client.post(
+            "/api/v1/external-catalogs", json=_create_body(namespace)
+        )
+        assert resp.status_code == 201, resp.text
+
+        resp = await admin_client.patch(
+            f"/api/v1/external-catalogs/{catalog}",
+            json={"properties": {"azure.account.key": SECRET_SENTINEL}},
+        )
+        assert resp.status_code == 422, resp.text
+
+        detail = (
+            await admin_client.get(f"/api/v1/external-catalogs/{catalog}")
+        ).json()
+        assert SECRET_SENTINEL not in str(detail)
+        assert "azure.account.key" not in detail.get("properties", {})
+
 
 class TestExternalTableQuery:
     async def test_create_insert_select_through_engine(self, admin_client, namespace):

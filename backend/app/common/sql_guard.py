@@ -406,6 +406,28 @@ _CREDENTIAL_KEY = (
     rf"(?:[A-Za-z_][\w$]*[._])*(?:{_CREDENTIAL_SUFFIX_PATTERN})"
 )
 
+#: One whole property name is a credential when it *is* a credential key — the
+#: full key, anchored, not just its final segment. ``is_credential_property``
+#: and the statement redactor are two callers of the same rule now: the redactor
+#: masks the value, the request validator refuses to accept the key. Splitting
+#: ``_CREDENTIAL_KEY`` into a second segmentation rule is what let a dotted
+#: spelling (``azure.account.key``) pass validation while the redactor still
+#: recognised it — the request side matched only the last segment, ``key``, so
+#: it agreed with the redactor on underscore spellings and diverged on dotted
+#: ones. There is one pattern here for both.
+_CREDENTIAL_PROPERTY = re.compile(rf"^{_CREDENTIAL_KEY}$", re.IGNORECASE)
+
+
+def is_credential_property(key: str) -> bool:
+    """True when ``key`` names a credential-bearing property.
+
+    The dotted and underscore spellings StarRocks accepts are the same parameter
+    here, so ``azure.account.key`` and ``azure.account_key`` both match. Used to
+    reject a credential at the API boundary; the same rule redacts its value in
+    statements, so the two sides cannot disagree about which names are secrets.
+    """
+    return bool(_CREDENTIAL_PROPERTY.match(key or ""))
+
 #: The placeholder written in place of a redacted value.
 REDACTED_VALUE = "***"
 
