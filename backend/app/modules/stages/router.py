@@ -24,6 +24,11 @@ from app.modules.stages.service import InvalidStagePathError, stage_service
 
 router = APIRouter()
 
+# Hoisted out of the signatures so ruff B008 ("function call in argument
+# default") stays clean, matching app/modules/monitoring/router.py (NOVA-105).
+# FastAPI treats the module-level singleton exactly like the inline call.
+require_user = Depends(get_current_user)
+
 
 def _as_client_error(exc: ValueError) -> HTTPException:
     """Map a service-layer ``ValueError`` onto the right client status.
@@ -42,7 +47,7 @@ def _as_client_error(exc: ValueError) -> HTTPException:
 
 @router.get("", response_model=StageListResponse)
 async def list_stages(
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """List all registered stages."""
     rows = await stage_service.list_stages()
@@ -53,7 +58,7 @@ async def list_stages(
 @router.get("/{stage_id}", response_model=StageResponse)
 async def get_stage(
     stage_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Get stage detail by ID."""
     stage = await stage_service.get_stage(stage_id)
@@ -65,7 +70,7 @@ async def get_stage(
 @router.post("", response_model=StageResponse, status_code=201)
 async def create_stage(
     body: StageCreate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Create a new stage."""
     stage = await stage_service.create_stage(body.model_dump(), user["username"])
@@ -77,7 +82,7 @@ async def create_stage(
 @router.delete("/{stage_id}")
 async def delete_stage(
     stage_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Delete a stage by ID."""
     deleted = await stage_service.delete_stage(stage_id)
@@ -93,7 +98,7 @@ async def delete_stage(
 async def list_files(
     stage_id: str,
     prefix: str = "",
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """List files in a stage's storage path."""
     try:
@@ -107,7 +112,7 @@ async def list_files(
 async def upload_file(
     stage_id: str,
     file: UploadFile,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Upload a file to the stage's storage path."""
     content = await file.read()
@@ -122,7 +127,7 @@ async def upload_file(
 async def download_file(
     stage_id: str,
     filename: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Download a file from the stage's storage path."""
     try:
@@ -143,7 +148,7 @@ async def download_file(
 async def delete_file(
     stage_id: str,
     filename: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Delete a file from the stage's storage path."""
     try:
