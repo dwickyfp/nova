@@ -20,7 +20,8 @@ _TASK_RUNS = "NOVA_SYSTEM.CONFIG_TASK_RUNS"
 
 _TASK_COLUMNS = (
     "id, name, database_name, definition, schedule_kind, schedule_expr, timezone, "
-    "when_expr, overlap_policy, owner_role, created_by, version, created_at, updated_at"
+    "when_expr, overlap_policy, owner_role, created_by, consecutive_fail_count, "
+    "version, created_at, updated_at"
 )
 _EDGE_COLUMNS = "id, graph_id, parent_task, child_task, created_at"
 _GRAPH_RUN_COLUMNS = (
@@ -199,6 +200,34 @@ class TaskOrchestrationRepository:
             f"DELETE FROM {_TASKS} WHERE id = %s", [task_id]
         )
         return bool(result.get("affected"))
+
+    async def increment_consecutive_failures(self, task_id: str) -> int:
+        """Increment a task's consecutive-failure counter, returning the new value.
+
+        The engine auto-pauses a task after a run of consecutive failures but
+        exposes no count of its own, so Nova keeps one. Incrementing is atomic
+        in the engine (``SET col = col + 1``), so two reconcilers cannot lose
+        an increment. ``version``/``updated_at`` are deliberately untouched: a
+        counter is bookkeeping, not a definition change.
+        """
+        await db.execute_system(
+            f"UPDATE {_TASKS} SET consecutive_fail_count = "
+            "COALESCE(consecutive_fail_count, 0) + 1 WHERE id = %s",
+            [task_id],
+        )
+        result = await db.execute_system(
+            f"SELECT consecutive_fail_count FROM {_TASKS} WHERE id = %s", [task_id]
+        )
+        if not result["rows"]:
+            return 0
+        return int(result["rows"][0][0] or 0)
+
+    async def reset_consecutive_failures(self, task_id: str) -> None:
+        """Clear a task's consecutive-failure run after a successful node."""
+        await db.execute_system(
+            f"UPDATE {_TASKS} SET consecutive_fail_count = 0 WHERE id = %s",
+            [task_id],
+        )
 
     # ── Edges ──────────────────────────────────────────────────
 
@@ -409,6 +438,23 @@ class TaskOrchestrationRepository:
             f"DELETE FROM {_TASK_RUNS} WHERE id = %s", [run_id]
         )
         return bool(result.get("affected"))
+
+    async def list_running_task_runs(
+        self, *, limit: int = 500
+    ) -> list[dict[str, Any]]:
+        """Node rows currently ``running`` across every graph run.
+
+        The reconciler's work list: a node is ``running`` only because a worker
+        submitted a native ``SUBMIT TASK`` and is waiting on it, so this is the
+        only set whose native trace can advance. It is bounded by in-flight
+        work, not by the number of tasks.
+        """
+        result = await db.execute_system(
+            f"SELECT {_TASK_RUN_COLUMNS} FROM {_TASK_RUNS} "
+            "WHERE state = 'running' ORDER BY started_at LIMIT %s",
+            [limit],
+        )
+        return [self._to_dict(_TASK_RUN_COLUMNS, row) for row in result["rows"]]
 
     async def get_node_run(
         self, graph_run_id: str, task_id: str

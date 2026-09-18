@@ -33,6 +33,8 @@ import asyncmy
 import pytest
 import pytest_asyncio
 
+from tests.integration._nova_system_ddl import ensure_audit_log
+
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
 SR_PORT = int(_EXPLICIT_PORT or "29030")
@@ -66,42 +68,10 @@ async def _admin_execute(sql: str) -> None:
 
 
 # The dev/test engine ships without init-nova.sql, so ``NOVA_SYSTEM.AUDIT_LOG``
-# is absent and login (which audits) fails. This is a minimal stand-in with the
-# columns ``write_audit_log`` inserts; the production table (partitioned,
-# DUPLICATE KEY) lives in init-nova.sql. A Primary-Key table keeps it simple and
-# satisfies the ``log_id`` key the audit writer expects to be generated.
-_AUDIT_LOG_DDL = """
-CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (
-    log_id        BIGINT NOT NULL AUTO_INCREMENT,
-    query_id      VARCHAR(36),
-    event_type    VARCHAR(64) NOT NULL,
-    event_time    DATETIME NOT NULL,
-    user_name     VARCHAR(128),
-    ip_address    VARCHAR(45),
-    object_type   VARCHAR(64),
-    object_name   VARCHAR(512),
-    action        VARCHAR(128),
-    sql_text      TEXT,
-    status        VARCHAR(32),
-    error_message TEXT,
-    duration_ms   BIGINT,
-    rows_affected BIGINT,
-    client_ip     VARCHAR(45),
-    session_id    VARCHAR(64),
-    rewritten_sql TEXT,
-    file_id       VARCHAR(64),
-    database_name VARCHAR(128),
-    schema_name   VARCHAR(128)
-) PRIMARY KEY(log_id)
-DISTRIBUTED BY HASH(log_id) BUCKETS 1
-PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
-"""
-
-
+# is absent and login (which audits) fails. The DDL and provisioning live in
+# ``_nova_system_ddl`` so every suite that audits shares one definition.
 async def _ensure_audit_log() -> None:
-    with contextlib.suppress(Exception):
-        await _admin_execute("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
-    await _admin_execute(_AUDIT_LOG_DDL)
+    await ensure_audit_log(SR_HOST, SR_PORT, SR_USER, SR_PASSWORD)
 
 
 @pytest_asyncio.fixture

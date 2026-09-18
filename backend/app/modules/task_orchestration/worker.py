@@ -7,7 +7,9 @@ One delivery of a graph run is processed to a stable point:
 2. Evaluate the DAG state machine (:mod:`dag`) against the node rows already
    persisted.
 3. Execute every **ready** node delegate-first, then persist its outcome with a
-   conditional write.
+   conditional write. A **ready** node this delivery cannot claim — because a
+   live worker already holds it ``running`` — ends the pass (``RUNNING``): the
+   loop must never spin on a node whose state it cannot advance (NOVA-52).
 4. Re-evaluate; repeat until nothing is ready. If the graph has settled, write
    the terminal graph state and the audit entry.
 
@@ -161,7 +163,15 @@ class GraphRunWorker:
                         logger.error("node %r has no task row; skipping", name)
                         await self._settle(job, GraphState.FAILED, reason=f"missing task {name}")
                         return GraphState.FAILED
-                await self._execute_ready(job, graph, decision.ready, by_name, rows)
+                claimed = await self._execute_ready(job, graph, decision.ready, by_name, rows)
+                if not claimed:
+                    # ``ready`` names a node this delivery cannot claim: it is
+                    # already ``running`` (a live worker is executing it) or
+                    # settled. Re-evaluating would see the same state forever, so
+                    # this delivery has done all it can. The node's worker, or
+                    # the reconciler after its heartbeat lapses, settles it
+                    # (NOVA-52).
+                    return GraphState.RUNNING
                 continue
 
             if decision.skipped:
@@ -243,7 +253,7 @@ class GraphRunWorker:
         ready: tuple[str, ...],
         by_name: dict[str, dict[str, Any]],
         existing: dict[str, dict[str, Any]],
-    ) -> None:
+    ) -> bool:
         """Execute ready nodes, persisting each outcome as a conditional write.
 
         Nodes are **claimed** one at a time (a fast conditional DB write, which
@@ -251,6 +261,10 @@ class GraphRunWorker:
         ``A -> B -> [C, D]`` graph must run in parallel, not one after the other
         (design: "C dan D jalan paralel"). The engine's own
         ``task_runs_concurrency`` bounds how many run natively at once.
+
+        Returns whether **any** node was claimed. ``False`` means the caller made
+        no progress this iteration and must not loop (NOVA-52): a ``ready`` node
+        that is already ``running`` (or settled) is not this delivery's to claim.
         """
         claimed: list[tuple[dict[str, Any], str]] = []
         for name in ready:
@@ -262,7 +276,8 @@ class GraphRunWorker:
                 )
             current = _to_node_state(str(row["state"] or "pending"))
             if current not in _RUNNABLE:
-                # Another delivery already handled this node.
+                # Another delivery already handled this node, or a live worker
+                # is executing it.
                 continue
             moved = await self._repository.transition_task_run(
                 row["id"], [current.value], NodeState.RUNNING.value
@@ -271,10 +286,11 @@ class GraphRunWorker:
                 claimed.append((task, row["id"]))
 
         if not claimed:
-            return
+            return False
         await asyncio.gather(
             *(self._when_then_execute(job, task, run_id) for task, run_id in claimed)
         )
+        return True
 
     async def _when_then_execute(
         self, job: GraphRunJob, task: dict[str, Any], run_id: str

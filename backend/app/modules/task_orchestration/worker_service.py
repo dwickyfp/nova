@@ -57,13 +57,27 @@ class WorkerService:
         return processed
 
     async def reconcile_once(self) -> None:
-        """Re-enqueue graph runs the stream may have lost.
+        """Reconcile native state, settle stale nodes, then re-enqueue.
 
-        Covers both failure modes: a run persisted but never published (Redis
-        flushed before the push, or the scheduler died between the two), and a
-        run a worker abandoned mid-node. Re-processing an already-settled run is
-        a no-op, so this is safe to run alongside live deliveries.
+        Three independent recoveries, run in order:
+
+        1. **Native state reconciliation** — advance nodes whose delegated
+           ``SUBMIT TASK`` has settled in ``information_schema.task_runs`` and
+           surface an auto-paused task, so a DAG never hangs silently (NOVA-37).
+        2. **Lost trace by heartbeat** — a node whose worker died stops stamping
+           ``heartbeat_at``; it is abandoned from durable ``NOVA_SYSTEM`` state,
+           never inferred from the engine's (engine-wide, uninformative) archive
+           failure (NOVA-46). Without this the row stays ``running`` and the DAG
+           cannot re-evaluate it.
+        3. **Lost-delivery re-enqueue** — covers a run persisted but never
+           published (Redis flushed before the push, or the scheduler died
+           between the two), and a run a worker abandoned mid-node.
+
+        Re-processing an already-settled run is a no-op, so this is safe to run
+        alongside live deliveries.
         """
+        await self._reconcile_native()
+        await self._abandon_stale_nodes()
         report = await self._reconciler.scan()
         for graph_run_id in [*report.pending_graph_runs, *report.abandoned_graph_runs]:
             run = await self._repository.get_graph_run(graph_run_id)
@@ -72,6 +86,42 @@ class WorkerService:
             if run.get("state") in {"success", "failed", "cancelled"}:
                 continue
             await self._requeue(run)
+
+    async def _reconcile_native(self) -> None:
+        """Advance running nodes from the engine's native task state.
+
+        A NATIVE reconciliation failure must not stop lost-delivery recovery,
+        so it is caught and logged: the two paths are independent.
+        """
+        try:
+            report = await self._reconciler.reconcile_native()
+        except Exception:
+            logger.exception("native-state reconciliation failed; continuing")
+            return
+        if report.advanced or report.lost_traces or report.auto_paused:
+            logger.info(
+                "native reconcile: %d observed, %d advanced, %d lost traces, "
+                "%d auto-pause suspects",
+                report.observed,
+                len(report.advanced),
+                len(report.lost_traces),
+                len(report.auto_paused),
+            )
+
+    async def _abandon_stale_nodes(self) -> None:
+        """Settle nodes whose worker heartbeat lapsed — the durable lost trace.
+
+        Isolated like the native pass: a failure here must not stop re-enqueue.
+        A node that could not be settled this pass stays a candidate for the
+        next one, because the write is conditional.
+        """
+        try:
+            abandoned = await self._reconciler.abandon_stale_nodes()
+        except Exception:
+            logger.exception("heartbeat reconciliation failed; continuing")
+            return
+        if abandoned:
+            logger.info("abandoned %d stale node(s)", len(abandoned))
 
     async def run_forever(self, stop_event: asyncio.Event) -> None:
         logger.info("nova-worker started; waiting for graph runs")
