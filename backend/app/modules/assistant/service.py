@@ -48,6 +48,17 @@ class LoopContext:
 
     ``database``/``schema``/``role`` are the workbook's active context; they are
     passed to the tool, not the model, so a tool call runs where the user is.
+
+    ``session_id`` is the authenticated session id and ``thread_id`` the
+    conversation id. The **conversation id** is what the tool passes to
+    ``QueryService`` as ``session_id`` (spec §7, acceptance criterion 5), so an
+    assistant execution correlates with the existing ``AUDIT_LOG`` rows for the
+    conversation; the auth session id is the fallback when a context is
+    assembled without a conversation.
+
+    ``user`` is the **request-side** ``get_current_user`` dict — it holds
+    ``encrypted_password``. It is read only by the tool at execution time and
+    must never enter a thread, an event, a provider request, or a log.
     """
 
     user_name: str
@@ -55,6 +66,20 @@ class LoopContext:
     schema_name: str | None = None
     role: str | None = None
     workspace_file_id: str | None = None
+    session_id: str | None = None
+    thread_id: str | None = None
+    user: dict[str, Any] | None = None
+
+    @property
+    def audit_session_id(self) -> str | None:
+        """The id the execution audit is correlated by.
+
+        Spec §7 and acceptance criterion 5: the **conversation id** is the
+        correlation key, because a conversation outlives a single login and is
+        what the tool call belongs to. The auth session id is a fallback for a
+        context assembled without a conversation (a direct unit-test call).
+        """
+        return self.thread_id or self.session_id
 
 
 class AssistantLoop:
