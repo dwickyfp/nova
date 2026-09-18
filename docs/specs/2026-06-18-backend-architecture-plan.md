@@ -734,6 +734,14 @@ services:
       retries: 10
 ```
 
+> **Note (2026-09-18):** the `4.1.1` StarRocks image tags above are illustrative and
+> show the design as originally reviewed (this document is dated 2026-06-18). The
+> engine pin has since moved to `4.1.4` (NOVA-51, commit `4a9848e`);
+> `docker/docker-compose-engine.yml` and `backend/docker-compose.test.yml` are the
+> deploy/test sources of truth, not this snippet. The port mappings have also moved
+> on since — the live test stack uses `29030`/`28030` for StarRocks and `29000` for
+> MinIO — so treat this block as an archive, not a copy-paste source.
+
 ### 4.3 Test Fixtures (`tests/conftest.py`)
 
 ```python

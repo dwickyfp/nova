@@ -499,6 +499,11 @@ services:
     image: starrocks/be-ubuntu:4.1.1
 ```
 
+> **Note (2026-09-18):** the `4.1.1` image tags above are illustrative and show the
+> design as originally reviewed. The engine pin has since moved to `4.1.4`
+> (NOVA-51, commit `4a9848e`); `docker/docker-compose-engine.yml` is the deploy
+> source of truth, not this snippet.
+
 ### Nginx (production)
 
 ```nginx
