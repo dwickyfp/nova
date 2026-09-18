@@ -116,8 +116,11 @@ describe('AssistantPanel', () => {
   })
 
   it('offers no reset control while no grant is active', async () => {
-    const { container } = await render(<AssistantPanel open onOpenChange={() => {}} />)
-    expect(container.textContent).not.toContain('Reset permissions')
+    const { getByRole } = await render(
+      <AssistantPanel open onOpenChange={() => {}} grantActive={false} />
+    )
+    expect(getByRole('button', { name: 'Reset permissions' }).query()).toBeNull()
+    expect(document.body.textContent).not.toContain('Reset permissions')
   })
 
   it('shows the grant state and resets it through the labelled control', async () => {

@@ -122,6 +122,34 @@ export function useAssistantTurn({ ensureThread, context, onError }: AssistantTu
     }
   }, [onError, resettingGrant, threadId, transcript])
 
+  /**
+   * Ends the current conversation and starts a fresh one. Closing a
+   * conversation must revoke its grant, not just hide it: the grant lives on
+   * the server-side thread (`ConsentPolicy.always_allow_read_only`) and would
+   * otherwise keep auto-approving read-only calls. The indicator is cleared
+   * only after a successful revoke, so it never reports "no grant" while one
+   * is still live.
+   */
+  const startConversation = useCallback(async () => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    const closingThread = threadId
+    if (closingThread && grantActive) {
+      try {
+        await resetGrant(closingThread)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'The conversation permissions were not reset'
+        transcript.applyEvent({ type: 'error', code: 'consent', message })
+        onError?.(message)
+        return
+      }
+    }
+    setGrantActive(false)
+    setThreadId(null)
+    transcript.reset()
+  }, [grantActive, onError, threadId, transcript])
+
   return {
     threadId,
     messages: transcript.messages,
@@ -131,6 +159,7 @@ export function useAssistantTurn({ ensureThread, context, onError }: AssistantTu
     grantActive,
     resetPermissions,
     resettingGrant,
+    startConversation,
     streaming,
     statusMessage,
     decidingToolCallId,
