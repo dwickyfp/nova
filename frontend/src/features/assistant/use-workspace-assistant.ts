@@ -33,12 +33,15 @@ export function useWorkspaceAssistant({ fileId, context, onError }: WorkspaceAss
   }, [fileId])
 
   const assistant = useAssistantTurn({ ensureThread, context, onError })
+  const { startConversation } = assistant
+  const startConversationRef = useRef(startConversation)
+  startConversationRef.current = startConversation
 
   useEffect(() => {
     if (fileRef.current === fileId) return
     fileRef.current = fileId
-    assistant.reset()
-  }, [assistant, fileId])
+    void startConversationRef.current()
+  }, [fileId])
 
   return assistant
 }

@@ -11,13 +11,19 @@ export {
   isToolCallStatus,
   isToolClassification,
 } from './events'
-export { streamAssistantTurn, decideToolCall, toConsentPayload } from './stream-client'
+export {
+  streamAssistantTurn,
+  decideToolCall,
+  toConsentPayload,
+  type ConsentDecisionResponse,
+} from './stream-client'
 export type { TurnContext } from './stream-client'
 export {
   createThread,
   listThreads,
   renameThread,
   deleteThread,
+  resetGrant,
   type ThreadView,
   type ThreadListResponse,
 } from './thread-client'
