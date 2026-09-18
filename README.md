@@ -740,10 +740,11 @@ per conversation, in-memory, read-only · **E5a** conversations are in-memory on
 Design contract: `docs/specs/nova-61-agentic-assistant-design.md`.
 
 - [x] **10-A** Design spec pinned to E1a/E2b/E5a and the locked v1 subset — `docs/specs/nova-61-agentic-assistant-design.md` (PR #74)
-- [x] **10-B** Backend assistant module `backend/app/modules/assistant/` — auth-required thread endpoints, provider wiring to `CONFIG_AI_PROVIDERS`, bounded plan→tool→reflect loop with the SSE event contract (`text_delta`, `tool_call`, `tool_status`, `done`, `error`, `ping`) — `router.py`, `service.py`, `provider.py`, `events.py`, `state.py`, `consent.py`
-- [ ] **10-C** `query_execute` tool — delegate-first via `QueryService.execute_statements` (never a socket, never port 9030), read-only allowlist layered above the unchanged `sql_guard.py`, per-call/always-allow/deny consent, audit correlation
-- [ ] **10-D** Assistant panel — right-side panel in the workspace `<section>` using `Bot` for the assistant surface, transcript + streaming + stop, inline tool-call card with approval controls, session management
-- [ ] **10-E** SQL skill retrieval from `docs/sql_docs/` — advisory context only; invariant enforcement stays in `sql_guard.py`. **Blocked until NOVA-59 lands**
+- [x] **10-B** Backend assistant module `backend/app/modules/assistant/` — auth-required thread endpoints, provider wiring to `CONFIG_AI_PROVIDERS`, bounded plan→tool→reflect loop with the SSE event contract (`text_delta`, `tool_call`, `tool_status`, `done`, `error`, `ping`) — `router.py`, `service.py`, `provider.py`, `events.py`, `state.py`, `consent.py` (PR #77)
+- [x] **10-C** `query_execute` tool — delegate-first via `QueryService.execute_statements` (never a socket, never port 9030), read-only allowlist layered above the unchanged `sql_guard.py`, per-call/always-allow/deny consent, audit correlation — `tools/query_execute.py`, `tools/policy.py`, `tools/redaction.py`; proven by `backend/tests/unit/test_assistant_stage_c.py` (no-socket import test, delegate-first test, deny-before-engine, consent IDOR→404, redacted audit SQL) (PR #83, NOVA-77)
+- [x] **10-D** Assistant panel — right-side panel in the workspace `<section>` using `Bot` for the assistant surface, transcript + streaming + stop, inline tool-call card with approval controls, session management — `frontend/src/features/assistant/` (`assistant-panel.tsx`, `use-assistant-turn.ts`, `stream-client.ts`, `tool-call-card.tsx`); 322 frontend tests green (PRs #78, #81)
+- [x] **10-E** SQL skill retrieval from `docs/sql_docs/` — advisory context only; invariant enforcement stays in `sql_guard.py` — `backend/app/modules/assistant/skills.py` (12 source docs, revision-hashed, token-budget enforced, credential-screened); proven by `backend/tests/unit/test_assistant_skill.py`. Blocker cleared: NOVA-59 landed, `docs/sql_docs/` is on `main`
+- [ ] **10-F** Measured benchmark for the loop, tool, consent and skill-assembly path + a committed report — dispatched as NOVA-92 (assigned `Python Dev Expert`). Phase 10 has **no** benchmark today; this is the remaining gap before the phase can be called complete
 
 Explicitly out of v1 (with revisit triggers in the design spec §0.1): agent
 frameworks, sidecar runtime, bypass-approvals mode, persistent grants,
@@ -783,6 +784,20 @@ Full rationale, contracts and the locked v1 subset: `docs/specs/nova-61-agentic-
 | **E6a — no LLM trace storage** | Lowest credential surface; no second place holding user text | No product observability of the model loop; debugging is server logs only | Observability is a stated requirement (E6b — separate table, never `AUDIT_LOG`) |
 | **`query_execute` must never open a socket to port 9030** | Any path that bypasses `QueryService.execute_statements` silently loses the guard, the `@stage` translation, credential redaction and the audit row | The assistant cannot use `mcp-server-starrocks` or any direct-engine tool as its execution path | Never as an execution path; only as a subject of study |
 | **B1 icon language resolved: `Bot` = LLM/assistant, `Sparkles` = ML, `Wand2` = AI-function authoring** | Unblocks the assistant surface without touching the 14 legacy icon sites; each surface gets one unambiguous glyph | The legacy sites are not migrated now — only the new assistant surface uses `Bot` | A broader design-system icon migration is scheduled |
+
+### Phase 10 status reconciliation + benchmark gate (NOVA-91) — 2026-09-18
+
+`NOVA-91` asked to take the Coco research through to a finished, **measurably**
+benchmarked implementation. Auditing the roadmap against the repository found
+the phase further along than its own checkboxes claimed: Stages B/C/D/E were all
+merged (PRs #77, #78, #81, #83) and green (`backend` 1892 unit tests, `frontend`
+322 tests), while the README still showed C/D/E unchecked. The remaining gap was
+that **no performance benchmark existed anywhere**.
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **Mark 10-C/10-D/10-E `[x]` on the strength of merged code + passing tests** | The README's own rule is that a box is marked only where the repository proves it; the evidence is `tools/query_execute.py` + `test_assistant_stage_c.py`, `frontend/src/features/assistant/`, and `skills.py` + `test_assistant_skill.py` | The boxes are corrected late relative to the merges; no code changed | Any of those tests regress or a stage's evidence file is removed |
+| **Add 10-F (measured benchmark) as the phase's completion gate, dispatched as NOVA-92** | "Measurable" was the one part of the request with no artifact behind it; a phase cannot be called done on untested performance claims | Phase 10 stays open until the benchmark PR lands, even though all functional stages are merged | The benchmark proves loop overhead is not the bottleneck (it is provider + engine round-trips) — recorded as the sidecar revisit trigger |
 
 ### Phase 9 design decisions (NOVA-23) — 2026-09-17
 
