@@ -94,6 +94,7 @@ import type {
   WorkspaceTreeResponse,
 } from './types'
 import { InlineSelect } from './inline-select'
+import { initialAssistantOpen } from './assistant-panel-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -625,6 +626,9 @@ export function WorkspacesPage() {
   const saveTimerRef = useRef<number | null>(null)
   const stateSaveTimerRef = useRef<number | null>(null)
   const editorContentRef = useRef('')
+  // The persisted tree arrives after first paint. Initialize the panel from it
+  // once so a later refetch cannot clobber a toggle the user just made.
+  const assistantOpenInitializedRef = useRef(false)
 
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
     queryKey: ['workspace-tree'],
@@ -656,6 +660,10 @@ export function WorkspacesPage() {
     const context = queryContextQuery.data
     if (!tree || !context) return
     setSecondaryCollapsed(tree.sidebar_collapsed)
+    if (!assistantOpenInitializedRef.current) {
+      setAssistantOpen(initialAssistantOpen(tree))
+      assistantOpenInitializedRef.current = true
+    }
     setOpenTabIds((prev) => (prev.length ? prev : tree.open_tabs))
     setActiveTabId((prev) => prev ?? tree.active_tab ?? tree.open_tabs[0] ?? null)
 
@@ -793,6 +801,7 @@ export function WorkspacesPage() {
       open_tabs: string[]
       active_tab: string | null
       sidebar_collapsed: boolean
+      assistant_collapsed: boolean
       last_database: string | null
       last_schema: string | null
       last_role: string | null
@@ -809,6 +818,7 @@ export function WorkspacesPage() {
         open_tabs: openTabIds,
         active_tab: activeTabId,
         sidebar_collapsed: secondaryCollapsed,
+        assistant_collapsed: assistantOpen,
         last_database: activeTab?.database ?? null,
         last_schema: activeTab?.schema ?? null,
         last_role: activeTab?.role ?? null,
@@ -824,6 +834,7 @@ export function WorkspacesPage() {
     activeTab?.role,
     activeTab?.schema,
     activeTabId,
+    assistantOpen,
     openTabIds,
     queryContextQuery.data,
     secondaryCollapsed,
