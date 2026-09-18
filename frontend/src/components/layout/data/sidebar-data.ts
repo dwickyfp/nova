@@ -18,6 +18,7 @@ import {
   GitFork,
   Layers,
   Workflow,
+  Server,
 } from 'lucide-react';
 import { type SidebarData } from '../types';
 
@@ -139,6 +140,11 @@ export const sidebarData: SidebarData = {
               title: 'Data Loads',
               url: '/monitoring/loads',
               icon: Upload,
+            },
+            {
+              title: 'Cluster Monitor',
+              url: '/monitoring/cluster',
+              icon: Server,
             },
           ],
         },
