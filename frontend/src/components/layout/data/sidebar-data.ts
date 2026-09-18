@@ -19,6 +19,7 @@ import {
   Layers,
   Workflow,
   Server,
+  Settings,
 } from 'lucide-react';
 import { type SidebarData } from '../types';
 
@@ -101,6 +102,11 @@ export const sidebarData: SidebarData = {
           title: 'AI Providers',
           url: '/ai-providers',
           icon: Bot,
+        },
+        {
+          title: 'Admin Settings',
+          url: '/settings',
+          icon: Settings,
         },
       ],
     },
