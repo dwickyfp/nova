@@ -12,12 +12,25 @@ export {
   isToolClassification,
 } from './events'
 export { streamAssistantTurn, decideToolCall, toConsentPayload } from './stream-client'
+export type { TurnContext } from './stream-client'
+export {
+  createThread,
+  listThreads,
+  renameThread,
+  deleteThread,
+  type ThreadView,
+  type ThreadListResponse,
+} from './thread-client'
 export {
   useAssistantTranscript,
   transcriptReducer,
   type TranscriptMessage,
 } from './use-assistant-transcript'
 export { useAssistantTurn, type AssistantTurnOptions } from './use-assistant-turn'
+export {
+  useWorkspaceAssistant,
+  type WorkspaceAssistantOptions,
+} from './use-workspace-assistant'
 export { useIsNarrowForAssistant } from './use-assistant-panel'
 export type {
   AssistantEvent,

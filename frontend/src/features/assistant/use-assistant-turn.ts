@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { streamAssistantTurn, decideToolCall } from './stream-client'
+import { streamAssistantTurn, decideToolCall, type TurnContext } from './stream-client'
 import type { ToolCallDecision } from './tool-call-card'
 import type { AssistantEvent } from './types'
 import { useAssistantTranscript } from './use-assistant-transcript'
@@ -11,36 +11,50 @@ const STATUS_TEXT: Partial<Record<AssistantEvent['type'], string>> = {
 }
 
 export type AssistantTurnOptions = {
-  threadId: string | null
-  /** Called with the user text before the stream opens, so the API can put it in the thread. */
-  onSendMessage?: (message: string) => void
+  /**
+   * Resolves the thread to send into, creating one on first use. Returning
+   * null aborts the turn (for example, no file is open).
+   */
+  ensureThread: () => Promise<string | null>
+  /** Active worksheet context for this turn. */
+  context?: TurnContext
   onError?: (message: string) => void
 }
 
 /**
  * Drives one assistant turn: user message, SSE events, stop, and consent.
- * The panel renders `messages` and passes `onDecide`; the workspace wires
- * `sendMessage` once the T-B1 endpoints exist.
+ * The panel renders `messages` and passes `onDecide`; the workspace supplies
+ * `ensureThread` so thread creation stays bound to the active file.
  */
-export function useAssistantTurn({ threadId, onSendMessage, onError }: AssistantTurnOptions) {
+export function useAssistantTurn({ ensureThread, context, onError }: AssistantTurnOptions) {
   const transcript = useAssistantTranscript()
   const [streaming, setStreaming] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [decidingToolCallId, setDecidingToolCallId] = useState<string | null>(null)
+  const [threadId, setThreadId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const sendMessage = useCallback(
     async (message: string) => {
-      if (!threadId || streaming) return
+      if (streaming) return
+      const thread = threadId ?? (await ensureThread())
+      if (!thread) {
+        onError?.('Open or create a SQL file before asking the assistant')
+        return
+      }
+      if (thread !== threadId) setThreadId(thread)
+
       transcript.addUserMessage(message)
-      onSendMessage?.(message)
       const controller = new AbortController()
       abortRef.current = controller
       setStreaming(true)
       setStatusMessage('The assistant is responding.')
       try {
-        await streamAssistantTurn(threadId, message, {
+        await streamAssistantTurn(thread, message, {
           signal: controller.signal,
+          database: context?.database,
+          schema: context?.schema,
+          role: context?.role,
           onEvent: (event) => {
             transcript.applyEvent(event)
             const status = STATUS_TEXT[event.type]
@@ -65,7 +79,7 @@ export function useAssistantTurn({ threadId, onSendMessage, onError }: Assistant
         setStreaming(false)
       }
     },
-    [onError, onSendMessage, streaming, threadId, transcript]
+    [context?.database, context?.role, context?.schema, ensureThread, onError, streaming, threadId, transcript]
   )
 
   const stop = useCallback(() => {
@@ -89,6 +103,7 @@ export function useAssistantTurn({ threadId, onSendMessage, onError }: Assistant
   )
 
   return {
+    threadId,
     messages: transcript.messages,
     sendMessage,
     stop,

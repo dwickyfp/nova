@@ -65,6 +65,7 @@ import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
 import { AssistantPanel } from '@/features/assistant'
+import { useWorkspaceAssistant } from '@/features/assistant/use-workspace-assistant'
 import { DatabaseSchemaSelector } from './database-schema-selector'
 import {
   type CompletionResponse,
@@ -629,6 +630,16 @@ export function WorkspacesPage() {
   // The persisted tree arrives after first paint. Initialize the panel from it
   // once so a later refetch cannot clobber a toggle the user just made.
   const assistantOpenInitializedRef = useRef(false)
+
+  const assistant = useWorkspaceAssistant({
+    fileId: activeTabId,
+    context: {
+      database: activeTab?.database ?? null,
+      schema: activeTab?.schema ?? null,
+      role: activeTab?.role ?? null,
+    },
+    onError: (message) => toast.error(message),
+  })
 
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
     queryKey: ['workspace-tree'],
@@ -1740,7 +1751,17 @@ export function WorkspacesPage() {
           )}
         </section>
 
-        <AssistantPanel open={assistantOpen} onOpenChange={setAssistantOpen} disabled />
+        <AssistantPanel
+          open={assistantOpen}
+          onOpenChange={setAssistantOpen}
+          messages={assistant.messages}
+          onSendMessage={assistant.sendMessage}
+          onDecide={assistant.decide}
+          decidingToolCallId={assistant.decidingToolCallId}
+          streaming={assistant.streaming}
+          onStop={assistant.stop}
+          statusMessage={assistant.statusMessage}
+        />
       </div>
     </div>
   )

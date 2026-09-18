@@ -7,6 +7,13 @@ export type StreamTurnOptions = {
   onEvent: (event: AssistantEvent) => void
 }
 
+/** Active worksheet context the assistant reasons against for one turn. */
+export type TurnContext = {
+  database?: string | null
+  schema?: string | null
+  role?: string | null
+}
+
 /**
  * Opens one assistant turn and drives the caller's reducer with typed events.
  * Contract: docs/specs/nova-61-agentic-assistant-design.md §4.
@@ -14,18 +21,21 @@ export type StreamTurnOptions = {
  * `fetch` + `ReadableStream` rather than `EventSource`, because Nova's bearer
  * token lives in Zustand and `EventSource` cannot send an Authorization header.
  * No auto-reconnect: a replayed stream could duplicate a tool call.
+ *
+ * The backend stores the user message itself when the stream starts, so the
+ * client renders it optimistically and must not send it a second time.
  */
 export async function streamAssistantTurn(
   threadId: string,
   content: string,
-  { signal, onEvent }: StreamTurnOptions
+  { signal, onEvent, database, schema, role }: StreamTurnOptions & TurnContext
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/assistant/threads/${encodeURIComponent(threadId)}/messages`,
     {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, database, schema, role }),
       signal,
     }
   )
