@@ -32,7 +32,7 @@ from fastapi.responses import StreamingResponse
 
 from app.core.deps import get_current_user
 from app.modules.assistant import events
-from app.modules.assistant.consent import consent_broker
+from app.modules.assistant.consent import ConsentConflictError, consent_broker
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.registry import tool_registry
 from app.modules.assistant.schemas import (
@@ -207,11 +207,22 @@ async def send_message(
     ) -> bool | None:
         # The loop has already emitted the tool_call frame; the client answers
         # out of band. If the stream is disconnected, treat it as cancelled.
-        future = consent_broker.open(
-            invocation.tool_call_id,
-            thread_id=thread.thread_id,
-            user_name=thread.user_name,
-        )
+        try:
+            future = consent_broker.open(
+                invocation.tool_call_id,
+                thread_id=thread.thread_id,
+                user_name=thread.user_name,
+            )
+        except ConsentConflictError:
+            # A reused tool_call_id (provider bug or a replayed call). Refusing
+            # keeps the first turn's future resolvable; the loop turns this into
+            # a clean turn failure instead of a silent wait to the budget
+            # (NOVA-121).
+            logger.warning(
+                "Assistant turn aborted: duplicate pending tool_call_id %s",
+                invocation.tool_call_id,
+            )
+            raise
 
         async def _watch_disconnect() -> None:
             while not future.done():

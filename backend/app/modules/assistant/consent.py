@@ -16,6 +16,20 @@ import threading
 from dataclasses import dataclass
 
 
+class ConsentConflictError(RuntimeError):
+    """``open`` was called with a ``tool_call_id`` that is already pending.
+
+    The broker refuses to clobber the existing entry: the first turn's future
+    must stay resolvable by its owner. Callers should surface this as a failed
+    turn (NOVA-121) rather than await a replacement future the client can no
+    longer resolve.
+    """
+
+    def __init__(self, tool_call_id: str) -> None:
+        self.tool_call_id = tool_call_id
+        super().__init__(f"Consent already pending for tool_call_id {tool_call_id!r}")
+
+
 @dataclass
 class _PendingConsent:
     future: asyncio.Future[bool | None]
@@ -45,10 +59,19 @@ class ConsentBroker:
     def open(
         self, tool_call_id: str, *, thread_id: str, user_name: str
     ) -> asyncio.Future[bool | None]:
-        """Register a pending decision and return the future to await."""
+        """Register a pending decision and return the future to await.
+
+        Raises ``ConsentConflictError`` when ``tool_call_id`` is already pending
+        (NOVA-121). Overwriting would orphan the first turn's future: the id is
+        model-supplied and a provider may reuse it, so the second ``open`` must
+        fail loudly instead of leaving the earlier stream to hang to its budget.
+        The existing entry is left untouched.
+        """
         loop = asyncio.get_running_loop()
         future: asyncio.Future[bool | None] = loop.create_future()
         with self._lock:
+            if tool_call_id in self._pending:
+                raise ConsentConflictError(tool_call_id)
             self._pending[tool_call_id] = _PendingConsent(
                 future=future, loop=loop, thread_id=thread_id, user_name=user_name
             )
