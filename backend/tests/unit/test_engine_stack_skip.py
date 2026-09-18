@@ -116,6 +116,91 @@ class TestDockerServicesIsSkipFriendly:
         assert "port is already allocated" in status.reason
         generator.close()
 
+    def test_healthy_stack_is_reported_as_available(self, monkeypatch):
+        """The success path: a bound, answering stack must NOT be misread.
+
+        Regression for the inverted post-up check (NOVA-131 QA): after a real
+        ``up --wait`` every published port is *in use*, which is what success
+        looks like. Stubbing the ports as listening and compose as a no-op must
+        therefore yield ``unavailable is False`` — the old code treated an
+        in-use port as "unreachable" and skipped the whole engine suite.
+        """
+        monkeypatch.setattr(stack_conftest.shutil, "which", lambda _: "/usr/bin/docker")
+        monkeypatch.setattr(
+            stack_conftest.subprocess,
+            "run",
+            lambda *a, **k: subprocess.CompletedProcess(a, returncode=0),
+        )
+        # Free before `up` (preflight passes)…
+        monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
+        calls: list[tuple[str, ...]] = []
+
+        def _noop_compose(*args, **kwargs):
+            calls.append(args)
+            # …and bound afterwards, because the stack we just started owns them.
+            monkeypatch.setattr(
+                stack_conftest,
+                "_port_in_use",
+                _port_busy(*stack_conftest.engine_host_ports().values()),
+            )
+            return subprocess.CompletedProcess(args, returncode=0)
+
+        monkeypatch.setattr(stack_conftest, "_compose", _noop_compose)
+        monkeypatch.setattr(stack_conftest.time, "sleep", lambda _: None)
+
+        generator = stack_conftest.docker_services.__wrapped__()
+        status = next(generator)
+        assert not status.unavailable, status.reason
+        generator.close()
+        assert ("up", "-d", "--wait") in calls
+
+    def test_stack_that_does_not_answer_is_reported_unavailable(self, monkeypatch):
+        """The genuine post-up failure: a published port that refuses a connect."""
+
+        def _compose_up_then_nothing(*args, **kwargs):
+            return subprocess.CompletedProcess(args, returncode=0)
+
+        monkeypatch.setattr(stack_conftest, "_compose", _compose_up_then_nothing)
+        monkeypatch.setattr(stack_conftest.time, "sleep", lambda _: None)
+        # Empty before `up` via the preflight check, then still refusing after.
+        monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
+
+        generator = stack_conftest.docker_services.__wrapped__()
+        status = next(generator)
+        assert status.unavailable
+        assert "do not answer" in status.reason
+        generator.close()
+
+
+class TestReachabilityProbe:
+    """`_busy_ports` and `_unreachable_ports` are opposites and must stay so."""
+
+    def test_a_listening_port_is_busy_but_not_unreachable(self, monkeypatch):
+        monkeypatch.setattr(
+            stack_conftest, "_port_in_use", _port_busy(*stack_conftest.engine_host_ports().values())
+        )
+        assert len(stack_conftest._busy_ports()) == len(stack_conftest.engine_host_ports())
+        assert stack_conftest._unreachable_ports() == []
+
+    def test_a_refused_port_is_unreachable_but_not_busy(self, monkeypatch):
+        monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
+        assert stack_conftest._busy_ports() == []
+        assert len(stack_conftest._unreachable_ports()) == len(
+            stack_conftest.engine_host_ports()
+        )
+
+    def test_probe_reflects_a_real_listening_socket(self):
+        """No stubbing: bind a socket and check both probes read it correctly."""
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            assert stack_conftest._port_in_use(port) is True
+
+        assert stack_conftest._port_in_use(port) is False
+
 
 class TestPortOverrides:
     def test_defaults_match_the_historical_ports(self, monkeypatch):

@@ -44,10 +44,6 @@ PORT_DEFAULTS = {
     "redis": 26379,
 }
 
-#: A stack that is slow or unhealthy should cost one bounded wait, not a hung
-#: suite. `--wait` needs this many host ports free and healthy containers.
-_REQUIRED_PORTS = ("starrocks-fe", "starrocks-fe-http", "minio", "redis")
-
 
 def engine_host_ports() -> dict[str, int]:
     """The host ports this run will publish, honouring the overrides.
@@ -81,7 +77,25 @@ def _port_in_use(port: int) -> bool:
 
 
 def _busy_ports() -> list[int]:
+    """Ports something already answers on — a *preflight* concern only.
+
+    Before ``up`` a listening port means another checkout's stack holds it and
+    compose would fail to bind. After ``up`` the same condition means the stack
+    started correctly, so this must never be used as a post-up health check;
+    use :func:`_unreachable_ports` there.
+    """
     return [port for port in engine_host_ports().values() if _port_in_use(port)]
+
+
+def _unreachable_ports() -> list[int]:
+    """Published ports that refuse a connection — an *post-up* health check.
+
+    A successfully started stack is exactly the case where its published ports
+    are bound and listening, i.e. ``connect_ex(...) == 0``. The failure case is
+    the opposite: a port with nothing behind it, so the connect is refused
+    ("reachability" here means a completed TCP connection, not a busy port).
+    """
+    return [port for port in engine_host_ports().values() if not _port_in_use(port)]
 
 
 def _compose(*args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -145,14 +159,16 @@ def docker_services() -> StackStatus:
         return
     time.sleep(10)
 
-    # Re-check after startup: compose cannot tell us whether the published
-    # ports answer (they can be bound by something that raced us between the
-    # preflight and the up).
-    busy = _busy_ports()
-    if busy:
-        ports = ", ".join(str(port) for port in busy)
+    # Post-up health check: a stack that came up correctly has every published
+    # port answering, so the failure case here is a port that *refuses* a
+    # connection — NOT a port that is in use. (Checking "in use" after `up`
+    # would flag a perfectly healthy stack, which is the inversion this
+    # replaced: the ports were bound by the stack we just started.)
+    unreachable = _unreachable_ports()
+    if unreachable:
+        ports = ", ".join(str(port) for port in unreachable)
         _compose("down", "-v", check=False)
-        yield StackStatus(reason=f"stack came up but test ports {ports} are unreachable")
+        yield StackStatus(reason=f"stack came up but test ports {ports} do not answer")
         return
 
     yield StackStatus()

@@ -8,6 +8,7 @@ and skip.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import pytest
@@ -16,6 +17,20 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from _pytest.fixtures import FixtureRequest
 
     from tests.conftest import StackStatus
+
+
+def shared_stack_host_port(env: str, default: int) -> int:
+    """The host port of a shared-stack service, for a module's own connection.
+
+    Several modules connect directly (a raw ``asyncmy`` connection, a MinIO
+    client) instead of going through a fixture. When the run uses the shared
+    compose stack, those connections must resolve the *same* host port the
+    stack publishes, including any ``NOVA_TEST_*`` override — otherwise a
+    checkout that shifted its ports collides with another stack again. An
+    explicit per-module env (``NOVA_ORCH_*``) still wins.
+    """
+    override = os.getenv(env)
+    return int(override) if override else default
 
 
 def require_shared_stack(request: FixtureRequest, *, enabled: bool = True) -> None:
