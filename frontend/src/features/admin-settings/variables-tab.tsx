@@ -233,11 +233,11 @@ export function VariablesTab() {
                           changed ? 'font-semibold text-warning-strong' : 'text-foreground'
                         )}
                       >
-                        {variable.value ?? '—'}
+                        {variable.value ?? '-'}
                       </span>
                     </td>
                     <td className='px-4 py-3 font-mono text-xs text-muted-foreground'>
-                      {variable.default_value ?? '—'}
+                      {variable.default_value ?? '-'}
                     </td>
                     <td className='px-4 py-3 text-right'>
                       <div className='flex items-center justify-end gap-1'>
