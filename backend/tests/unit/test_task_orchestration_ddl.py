@@ -14,7 +14,10 @@ import re
 
 import pytest
 
-from app.common.nova_system import TASK_ORCHESTRATION_DDL
+from app.common.nova_system import (
+    TASK_ORCHESTRATION_COLUMN_MIGRATIONS,
+    TASK_ORCHESTRATION_DDL,
+)
 from app.modules.task_orchestration import repository as repo
 
 CREDENTIAL_SUBSTRINGS = ("password", "secret", "token", "credential")
@@ -108,3 +111,31 @@ class TestUpdateColumnWhitelist:
     def test_every_entity_whitelist_is_non_empty(self):
         for entity, allowed in repo._UPDATABLE_COLUMNS.items():
             assert allowed, entity
+
+
+class TestEdgeKindColumn:
+    """NOVA-54 / 9b: an edge must be able to record a ``FINALIZE`` semantic.
+
+    The schema has to distinguish a normal dependency from a finalizer, or the
+    lowering would have to drop the flag and a finalizer would be
+    indistinguishable from an ordinary ``AFTER``.
+    """
+
+    def test_edges_table_declares_edge_kind(self):
+        edges_ddl = next(
+            ddl for ddl in TASK_ORCHESTRATION_DDL if "CONFIG_TASK_EDGES" in ddl
+        )
+        assert "edge_kind" in edges_ddl
+
+    def test_edge_kind_has_a_default_so_existing_rows_are_after(self):
+        edges_ddl = next(
+            ddl for ddl in TASK_ORCHESTRATION_DDL if "CONFIG_TASK_EDGES" in ddl
+        )
+        assert "DEFAULT 'after'" in edges_ddl
+
+    def test_edge_kind_is_migrated_for_existing_tables(self):
+        migrations = dict(
+            ((table, column), column_type)
+            for table, column, column_type in TASK_ORCHESTRATION_COLUMN_MIGRATIONS
+        )
+        assert ("CONFIG_TASK_EDGES", "edge_kind") in migrations

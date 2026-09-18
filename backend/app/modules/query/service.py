@@ -33,6 +33,9 @@ from app.modules.query.sql_pipeline import (
     prepare_stage_sql,
     redact_for_output,
 )
+from app.modules.task_orchestration.ddl import TaskDDLError, is_create_task, parse_create_task
+from app.modules.task_orchestration.lowering import TaskLoweringError, persist_lowered_task
+from app.modules.task_orchestration.repository import task_orchestration_repository
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +239,21 @@ class QueryService:
                 encrypted_password=encrypted_password,
                 database=database,
                 role=role,
+                session_id=session_id,
+                file_id=file_id,
+                schema=schema,
+            )
+
+        # Nova `CREATE TASK` is a Nova statement, not an engine one: it is
+        # lowered to CONFIG_TASK* metadata and **never** sent to StarRocks. The
+        # same interception shape as `CREATE ML_MODEL` above, so the pipeline has
+        # one pattern for Nova DDL rather than a second one.
+        if is_create_task(normalized_sql):
+            return await self._execute_create_task(
+                sql=sql,
+                normalized_sql=normalized_sql,
+                username=username,
+                database=database,
                 session_id=session_id,
                 file_id=file_id,
                 schema=schema,
@@ -591,6 +609,118 @@ class QueryService:
                 schema_name=schema,
             )
             raise
+
+    async def _execute_create_task(
+        self,
+        *,
+        sql: str,
+        normalized_sql: str,
+        username: str,
+        database: str | None,
+        session_id: str | None,
+        file_id: str | None,
+        schema: str | None,
+    ) -> QueryResult:
+        """Lower Nova ``CREATE TASK`` to ``CONFIG_TASK*`` metadata.
+
+        The raw statement is **never** executed: it is parsed, validated, and
+        written to Nova's own metadata tables. The engine statement for a node
+        is produced later by the worker via ``execution.build_submit_task`` on
+        the owner's connection (delegate-first, design D9.4).
+
+        No credential is accepted here — the statement cannot embed one, and the
+        body is stored opaquely.
+        """
+        start = time.monotonic()
+        try:
+            timezone = await task_orchestration_repository.get_engine_timezone()
+            if not timezone:
+                raise TaskLoweringError(
+                    "cannot determine the engine timezone; CREATE TASK stores an "
+                    "explicit IANA zone and will not assume UTC"
+                )
+            task = parse_create_task(normalized_sql, database=database, timezone=timezone)
+            persisted = await persist_lowered_task(task, created_by=username)
+            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            task_row = persisted.task
+            edge_count = len(persisted.edges)
+
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="execute",
+                object_type="task",
+                object_name=task.name,
+                status="SUCCESS",
+                sql_text=sql,
+                rewritten_sql=normalized_sql,
+                duration_ms=int(elapsed_ms),
+                rows_affected=1,
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+            return QueryResult(
+                columns=[
+                    "task_id",
+                    "name",
+                    "schedule_kind",
+                    "schedule_expr",
+                    "overlap_policy",
+                    "edges",
+                ],
+                rows=[
+                    [
+                        task_row["id"],
+                        task_row["name"],
+                        task_row["schedule_kind"],
+                        task_row["schedule_expr"],
+                        task_row["overlap_policy"],
+                        edge_count,
+                    ]
+                ],
+                row_count=1,
+                affected_rows=1,
+                elapsed_ms=elapsed_ms,
+                original_sql=sql,
+                # The raw CREATE TASK is metadata, not the executed SQL; the run
+                # statement is built per node at execution time. Surfacing the
+                # normalized statement here is honest about what Nova did with it
+                # and never implies the engine saw it.
+                executed_sql=normalized_sql,
+                warnings=[
+                    "CREATE TASK is Nova metadata; no statement was sent to StarRocks. "
+                    "The task's SUBMIT TASK is issued by the worker when the graph runs."
+                ],
+            )
+        except (TaskDDLError, TaskLoweringError) as exc:
+            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="execute",
+                object_type="task",
+                object_name=database or "workspace",
+                status="ERROR",
+                sql_text=sql,
+                rewritten_sql=normalized_sql,
+                error_message=str(exc),
+                duration_ms=int(elapsed_ms),
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+            # Return, rather than raise, so the Nova-surface validation message
+            # reaches the worksheet as an explicit failure instead of being lost
+            # behind a generic engine error.
+            return QueryResult(
+                error=str(exc),
+                elapsed_ms=elapsed_ms,
+                original_sql=sql,
+                executed_sql=normalized_sql,
+            )
 
     async def get_history(
         self,
