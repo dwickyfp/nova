@@ -15,6 +15,7 @@ Endpoints under /api/v1/ml:
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import get_current_user
+from app.core.security import decrypt_password
 from app.modules.ml_engine.schemas import (
     BatchPredictRequest,
     BatchPredictResponse,
@@ -92,9 +93,26 @@ async def batch_predict(
     user: dict = require_user,
 ):
     """Run batch predictions using features from a SQL query."""
+    # The prediction SQL runs on the caller's own connection so the engine's
+    # RBAC decides what it may read. A missing/undecryptable session credential
+    # fails closed (401) instead of silently using the root connection
+    # (NOVA-118).
+    try:
+        password = decrypt_password(user["encrypted_password"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="No user connection is available for this prediction request",
+        ) from exc
+
     try:
         result = await ml_engine_service.batch_predict(
-            req.model_alias, req.prediction_sql, req.database_name
+            req.model_alias,
+            req.prediction_sql,
+            req.database_name,
+            username=user["username"],
+            password=password,
+            role=user.get("active_role"),
         )
         return result
     except ValueError as e:
