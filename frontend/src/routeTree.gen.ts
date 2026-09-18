@@ -17,6 +17,7 @@ import { Route as AuthenticatedDatabaseExplorerRouteImport } from './routes/_aut
 import { Route as AuthenticatedMonitoringRouteRouteImport } from './routes/_authenticated/monitoring/route'
 import { Route as AuthenticatedQueryCostRouteImport } from './routes/_authenticated/query-cost'
 import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authenticated/query-history'
+import { Route as AuthenticatedTaskGraphsRouteImport } from './routes/_authenticated/task-graphs'
 import { Route as AuthenticatedTasksManagerRouteImport } from './routes/_authenticated/tasks-manager'
 import { Route as AuthenticatedAiProvidersIndexRouteImport } from './routes/_authenticated/ai-providers/index'
 import { Route as AuthenticatedFunctionsIndexRouteImport } from './routes/_authenticated/functions/index'
@@ -76,6 +77,11 @@ const AuthenticatedQueryHistoryRoute =
     path: '/query-history',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedTaskGraphsRoute = AuthenticatedTaskGraphsRouteImport.update({
+  id: '/task-graphs',
+  path: '/task-graphs',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedTasksManagerRoute =
   AuthenticatedTasksManagerRouteImport.update({
     id: '/tasks-manager',
@@ -171,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
+  '/task-graphs': typeof AuthenticatedTaskGraphsRoute
   '/tasks-manager': typeof AuthenticatedTasksManagerRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
@@ -193,6 +200,7 @@ export interface FileRoutesByTo {
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
+  '/task-graphs': typeof AuthenticatedTaskGraphsRoute
   '/tasks-manager': typeof AuthenticatedTasksManagerRoute
   '/': typeof AuthenticatedIndexRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/_authenticated/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
   '/_authenticated/query-cost': typeof AuthenticatedQueryCostRoute
   '/_authenticated/query-history': typeof AuthenticatedQueryHistoryRoute
+  '/_authenticated/task-graphs': typeof AuthenticatedTaskGraphsRoute
   '/_authenticated/tasks-manager': typeof AuthenticatedTasksManagerRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
@@ -246,6 +255,7 @@ export interface FileRouteTypes {
     | '/database-explorer'
     | '/query-cost'
     | '/query-history'
+    | '/task-graphs'
     | '/tasks-manager'
     | '/monitoring/active'
     | '/monitoring/audit'
@@ -268,6 +278,7 @@ export interface FileRouteTypes {
     | '/database-explorer'
     | '/query-cost'
     | '/query-history'
+    | '/task-graphs'
     | '/tasks-manager'
     | '/'
     | '/monitoring/active'
@@ -293,6 +304,7 @@ export interface FileRouteTypes {
     | '/_authenticated/database-explorer'
     | '/_authenticated/query-cost'
     | '/_authenticated/query-history'
+    | '/_authenticated/task-graphs'
     | '/_authenticated/tasks-manager'
     | '/_authenticated/'
     | '/_authenticated/monitoring/active'
@@ -372,6 +384,13 @@ declare module '@tanstack/react-router' {
       path: '/query-history'
       fullPath: '/query-history'
       preLoaderRoute: typeof AuthenticatedQueryHistoryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/task-graphs': {
+      id: '/_authenticated/task-graphs'
+      path: '/task-graphs'
+      fullPath: '/task-graphs'
+      preLoaderRoute: typeof AuthenticatedTaskGraphsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/tasks-manager': {
@@ -510,6 +529,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDatabaseExplorerRoute: typeof AuthenticatedDatabaseExplorerRoute
   AuthenticatedQueryCostRoute: typeof AuthenticatedQueryCostRoute
   AuthenticatedQueryHistoryRoute: typeof AuthenticatedQueryHistoryRoute
+  AuthenticatedTaskGraphsRoute: typeof AuthenticatedTaskGraphsRoute
   AuthenticatedTasksManagerRoute: typeof AuthenticatedTasksManagerRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedRolesNameRoute: typeof AuthenticatedRolesNameRoute
@@ -530,6 +550,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDatabaseExplorerRoute: AuthenticatedDatabaseExplorerRoute,
   AuthenticatedQueryCostRoute: AuthenticatedQueryCostRoute,
   AuthenticatedQueryHistoryRoute: AuthenticatedQueryHistoryRoute,
+  AuthenticatedTaskGraphsRoute: AuthenticatedTaskGraphsRoute,
   AuthenticatedTasksManagerRoute: AuthenticatedTasksManagerRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedRolesNameRoute: AuthenticatedRolesNameRoute,

@@ -476,6 +476,43 @@ a `500`.
 
 ---
 
+## Task graph UI — `/task-graphs`
+
+The graph view is the read consumer of the API above. It lives in
+`frontend/src/features/task-orchestration/` and is mounted at the `/task-graphs`
+route (sidebar: **Data Management → Task Graphs**).
+
+It is a master-detail screen, not a second task table:
+
+| Pane | Source | Shows |
+|---|---|---|
+| Graph list | `GET /graphs` | root task, node count, schedule (`schedule_kind`/`schedule_expr`), and the last run's state |
+| Graph detail | `GET /graphs/{graph_id}` | every node (with `is_finalizer` and `last_state`) and every edge |
+| Run history | `GET /graphs/{graph_id}/runs` | run state, trigger type, overlap policy, timing |
+| Node-run detail | `GET /runs/{graph_run_id}` | per-node `attempt`, `state`, `delegated`, timings, and the redacted `error_message` |
+
+**Finalizer edges are drawn differently from dependencies.** `edge_kind =
+"finalize"` renders as a `FINALIZE` badge and is not presented as a dependency;
+`after` renders as `AFTER`. This is the whole reason `edge_kind` is in the
+contract — a finalizer runs *after* the dependency graph settles, so drawing it
+as a normal edge would misstate execution order.
+
+**No credential ever enters UI state.** The API returns no credential field and
+redacts `error_message` server-side; the view stores neither raw `error_message`
+nor any credential-shaped value in a store or `localStorage`. The task body is
+not fetched at all.
+
+**Permission is UX, not the boundary.** A `404` from the graph or run endpoints
+(deliberately identical for unknown and unauthorized ids) renders as
+"not found / no access", never as an application error. The backend owns
+authorization; the UI never infers access from its own state.
+
+This surface is separate from `frontend/src/features/tasks-manager/api.ts`, which
+reads the **native StarRocks** `/api/v1/tasks` surface. The two must not be
+merged: a `CREATE TASK` graph is invisible to the native task API.
+
+---
+
 ## Limitations
 
 - **Native engine has no task dependencies/DAG** — Nova's Phase 9 layer adds them; until the scheduler/worker stages land (9a onward), Nova-shaped DAGs are metadata only and not executed
