@@ -130,6 +130,17 @@ SET GLOBAL validate_password_special_char_count = 1;
 
 ### Network Policy
 
+> **NOT IMPLEMENTED — DEFERRED.** The mockup below is retained only as a record of the original
+> design intent. The pinned engine (StarRocks 4.1.4-4a9848e) has **no `NETWORK POLICY` object** and
+> no `enable_ip_based_authentication` FE config, so nothing here can be enforced. Nova must **not**
+> build this UI or a backing policy table — see `docs/gap-analysis.md` §5 for the probe evidence and
+> the reopen trigger. The real per-user network-restriction surface on this engine is host-scoped
+> identity (`'user'@'host'`), already live in `backend/app/modules/users/service.py:87-107,522-541`.
+>
+> ```text
+> [design mockup — deferred, do not implement]
+> ```
+
 ```
 ┌─ Network Policy ────────────────────────────────────────┐
 │                                                          │
