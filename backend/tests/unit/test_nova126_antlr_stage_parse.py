@@ -501,6 +501,87 @@ def test_trailing_dot_hyphen_form_translates_to_the_whole_object_key() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Defect 2e (NOVA-136): the Nova-surface token scan dropped hyphen + fused-dot
+#
+# ``LIST`` and ``COPY INTO`` have no rule in the StarRocks grammar, so their
+# references come from the token scan in ``_nova_surface_stage_refs``. That scan
+# was built before NOVA-109 taught the grammar ``stageSegment : stagePathAtom
+# (MINUS_SYMBOL stagePathAtom)*``, so it stopped at the first hyphen: on
+# ``LIST @stage-2.data.csv`` it returned ``('stage', [], None)`` while the
+# ``FROM``-table path correctly returned ``('stage-2', [], 'data.csv')``. The
+# scan must reconstruct the same registry the grammar does, so the two entry
+# points cannot disagree.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("reference", "stage_name", "path_parts", "file_name"),
+    [
+        # hyphen-joined segment; the ``2.`` token's dot is the separator
+        ("@stage-2.data.csv", "stage-2", [], "data.csv"),
+        ("@daily-load-2.data.csv", "daily-load-2", [], "data.csv"),
+        ("@stage-2.2024.csv", "stage-2", [], "2024.csv"),
+        ("@stage-2.2024", "stage-2", ["2024"], None),
+        ("@stage-a.b.c", "stage-a", ["b", "c"], None),
+        # reserved keyword as a path segment (``DEFAULT`` lexes by keyword type)
+        ("@stage-2.data.default.csv", "stage-2", ["data"], "default.csv"),
+        ("@stage.2024_01.csv", "stage", [], "2024_01.csv"),
+        # leading fused decimal after a plain stage name
+        ("@stage1.2024.csv", "stage1", [], "2024.csv"),
+        ("@stage1.2024.01.data.csv", "stage1", ["2024", "01"], "data.csv"),
+    ],
+)
+def test_nova_surface_token_scan_matches_the_grammar(
+    reference: str,
+    stage_name: str,
+    path_parts: list[str],
+    file_name: str | None,
+) -> None:
+    """``LIST`` / ``COPY INTO`` read a reference exactly as ``FROM @...`` does.
+
+    The grammar path is the control: the Nova-surface scan has to return the
+    same ``stage_name`` / ``path_parts`` / ``file_name`` from the same text, or
+    the dialect disagrees with itself depending on which command the reference
+    sits in.
+    """
+    expected = (stage_name, path_parts, file_name)
+    from_control = parse_sql(f"SELECT * FROM {reference}")
+    assert from_control.command_type == CommandType.STAGE_QUERY
+    assert (
+        from_control.stage_refs[0].stage_name,
+        from_control.stage_refs[0].path_parts,
+        from_control.stage_refs[0].file_name,
+    ) == expected, f"grammar path drifted: {reference}"
+
+    listed = parse_sql(f"LIST {reference}")
+    assert listed.command_type == CommandType.STAGE_BROWSE
+    assert listed.errors == []
+    assert len(listed.stage_refs) == 1, f"LIST {reference} lost its reference"
+    ref = listed.stage_refs[0]
+    assert (ref.stage_name, ref.path_parts, ref.file_name) == expected
+    assert ref.full_match == reference
+
+    loaded = parse_sql(f"COPY INTO t FROM {reference}")
+    assert loaded.command_type == CommandType.STAGE_LOAD
+    assert loaded.errors == []
+    assert len(loaded.stage_refs) == 1, f"COPY INTO ... {reference} lost its reference"
+    ref = loaded.stage_refs[0]
+    assert (ref.stage_name, ref.path_parts, ref.file_name) == expected
+    assert ref.full_match == reference
+
+
+def test_nova_surface_token_scan_keeps_the_whole_reference_span() -> None:
+    """The scan does not stop short, so no ``data.csv`` fragment is left behind."""
+    for sql, full_match in [
+        ("LIST @stage-2.data.csv", "@stage-2.data.csv"),
+        ("COPY INTO t FROM @stage-2.data.csv", "@stage-2.data.csv"),
+        ("LIST @daily-load-2.data.csv", "@daily-load-2.data.csv"),
+        ("COPY INTO t FROM @stage-2.2024.csv", "@stage-2.2024.csv"),
+    ]:
+        assert [ref.full_match for ref in parse_sql(sql).stage_refs] == [full_match], sql
+
+
+# ---------------------------------------------------------------------------
 # AC-5 mitigation: @-free SQL never builds the ANTLR4 tree
 # ---------------------------------------------------------------------------
 
@@ -567,12 +648,51 @@ def test_the_guard_is_the_literal_character_not_a_stage_name(monkeypatch) -> Non
 #: `01a0b69e`). Kept whole so the coverage gap cannot silently reopen: a future
 #: grammar change that re-narrows `stagePathAtom` fails this on the first run.
 _RESERVED_PATH_KEYWORDS = [
-    "default", "order", "group", "select", "table", "limit", "primary",
-    "values", "where", "join", "union", "insert", "update", "delete",
-    "create", "drop", "alter", "from", "into", "on", "as", "by", "having",
-    "distinct", "case", "when", "then", "else", "left", "right", "inner",
-    "outer", "cross", "using", "index", "key", "check", "grant", "revoke",
-    "set", "show", "use", "describe", "explain", "analyze",
+    "default",
+    "order",
+    "group",
+    "select",
+    "table",
+    "limit",
+    "primary",
+    "values",
+    "where",
+    "join",
+    "union",
+    "insert",
+    "update",
+    "delete",
+    "create",
+    "drop",
+    "alter",
+    "from",
+    "into",
+    "on",
+    "as",
+    "by",
+    "having",
+    "distinct",
+    "case",
+    "when",
+    "then",
+    "else",
+    "left",
+    "right",
+    "inner",
+    "outer",
+    "cross",
+    "using",
+    "index",
+    "key",
+    "check",
+    "grant",
+    "revoke",
+    "set",
+    "show",
+    "use",
+    "describe",
+    "explain",
+    "analyze",
 ]
 
 
