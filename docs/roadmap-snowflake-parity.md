@@ -40,7 +40,7 @@ should be updated to match.
 | Engine line head (#2) | `4.1.3`; "no 4.2 exists" | **`4.1.4` exists.** `4.1.4` was tagged but has no GitHub release page yet (`releases/tags/4.1.4` → 404). `4.1.3` is the newest *released* page. | `api.github.com/repos/StarRocks/starrocks/tags`; `.../releases?per_page=40` |
 | Grammar drift | not recorded | `StarRocks.g4` line count moves **4.1.1 = 3,309 → 4.1.3 = 3,318 → `branch-4.1` = 3,331**. `StarRocksLex.g4` gains `SKIP_KW` at 4.1.3. **No `FINALIZE`, `CRON`, `OVERLAP_POLICY`, or `ALLOW_OVERLAPPING` token exists in any of them.** `submitTaskStatement` is byte-identical across all three. | raw `StarRocks.g4` / `StarRocksLex.g4` at tags `4.1.1`, `4.1.3`, `branch-4.1`, diffed locally |
 | Row 13 (ML registry / AI SQL) | `SHIPPED`, `NOVA_NATIVE + WRAP` | **Overclaim.** Shipped today is `ai_query` plus 8 sklearn algorithms. `model_type` accepts only `classification\|regression` (`backend/app/modules/ml_engine/schemas.py:15-19`). No distributed training, no GPU, no model serving, no model signature, no cross-run lineage. | repo read at `9bb2a87` |
-| Row 9 (external catalogs) | `MISSING`, empty stub | **Confirmed.** `backend/app/modules/external_catalogs/` contains only `__init__.py`. No Iceberg / Delta / Hive / Paimon / JDBC code path exists. The only route to open table formats today is `FILES()` over a stage. | repo read at `9bb2a87` |
+| Row 9 (external catalogs) | `MISSING`, empty stub | **Stale — superseded by NOVA-62.** At `9bb2a87` the module was empty, but `backend/app/modules/external_catalogs/` now ships Iceberg + Hive catalog CRUD (`service.py:124-177`, `router.py:40-131`, mounted `backend/app/main.py:179`), frontend `frontend/src/features/external-catalogs/`, and unit + L3 tests (`backend/tests/unit/test_external_catalogs.py`, `backend/tests/integration/test_external_catalogs_l3.py`). Still missing: Paimon, JDBC, Delta Lake — `CatalogType` accepts only `hive\|iceberg` (`.../external_catalogs/schemas.py:20-24`). | repo read at NOVA-112; correction verified 2026-09-18 |
 
 ### What the grammar-drift finding does and does not change
 
@@ -367,7 +367,8 @@ Verification date for every claim in this document: **2026-09-18**.
 | Grammar line counts and the absence of `FINALIZE` / `CRON` / `OVERLAP_POLICY` / `ALLOW_OVERLAPPING`; `submitTaskStatement` identical across tags | raw `StarRocks.g4` and `StarRocksLex.g4` at `4.1.1`, `4.1.3`, `branch-4.1`, diffed locally |
 | MLflow latest release `v3.16.1`, 2026-09-17 | `github.com/mlflow/mlflow/releases` |
 | Engine pin is `4.1.4` (NOVA-51, commit `4a9848e`) | `docker/docker-compose-engine.yml:122,159`; `README.md:543` |
-| `external_catalogs/` is an empty stub | repo read at `9bb2a87` |
+| NOVA-62 shipped Iceberg + Hive external catalogs (CRUD + external-table listing) | `backend/app/modules/external_catalogs/{service,router,schemas}.py`, `backend/app/main.py:179`; tests `backend/tests/unit/test_external_catalogs.py`, `backend/tests/integration/test_external_catalogs_l3.py`; correction verified 2026-09-18 (NOVA-112) |
+| `external_catalogs/` was an empty stub **only at `9bb2a87`**; superseded by NOVA-62 | repo read at `9bb2a87`, re-verified at NOVA-112 |
 | `model_type` is `classification\|regression` only | `backend/app/modules/ml_engine/schemas.py:15-19` |
 | ML tables and their columns | `docker/init-nova.sql:265-301` |
 | Grammar foundation merged at `4.1.1` (`095657f`); 9b in flight | `git log` at the task checkout |
