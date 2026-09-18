@@ -2771,9 +2771,52 @@ stageSegment
 
 stagePathAtom
     : identifier
+    | stagePathKeyword
     | ASTERISK_SYMBOL
     | INTEGER_VALUE
     | decimalAtom
+    ;
+
+// A stage path segment spelled as a *reserved* StarRocks keyword. `identifier`
+// (upstream, `:3506`) accepts `nonReserved` only, so `@stage1.data.default.csv`
+// (DEFAULT is reserved, `StarRocksLex.g4:171`) did not parse: the tree said "not
+// a stage", the registry came back empty, and the statement was forwarded to the
+// engine with the raw `@…` token -- no FILES() rewrite, no credential injection
+// (NOVA-109 review, 2026-09-18). The same held for every reserved spelling a
+// user can put in a file or folder name: ORDER, GROUP, PRIMARY, SELECT, ...
+// Nova's own token scan has always accepted keyword segments
+// (`_is_identifier_token`, parser.py: "StarRocks keywords are usable as
+// identifiers"), so before this rule the grammar and the scan disagreed, and the
+// tree is the source of truth.
+//
+// `stagePathKeyword` is the reserved-keyword tokens the lexer tags as keyword
+// spellings (the complement of `nonReserved`), so the two agree again. It is
+// scoped to `stagePathAtom` rather than widening the upstream `identifier` rule:
+// a path atom only ever appears right after `AT` in table position
+// (`relationPrimary`, `:2690`), so nothing else in the grammar can match these
+// tokens through it and no other parse path changes. `identifier` still governs
+// aliases, column names and user variables exactly as upstream.
+stagePathKeyword
+    : ADD | ALL | ALTER | ANALYZE | AND | ARRAY | AS | ASC
+    | ASOF | BETWEEN | BIGINT | BITMAP | BIT_SHIFT_LEFT | BIT_SHIFT_RIGHT | BIT_SHIFT_RIGHT_LOGICAL | BOTH
+    | BY | CASE | CHAR | CHARACTER | CHECK | COLLATE | COLUMN | COMPACTION
+    | CONVERT | CROSS | CUBE | CURRENT_DATE | CURRENT_GROUP | CURRENT_ROLE | CURRENT_TIME | CURRENT_TIMESTAMP
+    | CURRENT_USER | CURRENT_WAREHOUSE | DATABASE | DATABASES | DECIMAL | DECIMAL128 | DECIMAL256 | DECIMAL32
+    | DECIMAL64 | DECIMALV2 | DEFAULT | DEFERRED | DELETE | DENSE_RANK | DESC | DESCRIBE
+    | DISTINCT | DOUBLE | DROP | DUAL | ELSE | EXISTS | EXPLAIN | FALSE
+    | FILES | FIRST_VALUE | FLOAT | FOR | FORCE | FROM | FULL | FUNCTION
+    | GIN | GRANT | GROUP | GROUPING | GROUPING_ID | GROUPS | HAVING | HLL
+    | IF | IGNORE | IMMEDIATE | IN | INDEX | INFILE | INNER | INSERT
+    | INT | INTEGER | INTERSECT | INTO | INT_DIV | INVOKER | IS | JOIN
+    | JSON | KEY | KEYS | KILL | LAG | LARGEINT | LAST_VALUE | LATERAL
+    | LEAD | LEFT | LIKE | LIMIT | LOAD | LOCALTIME | LOCALTIMESTAMP | MAXVALUE
+    | MICROSECOND | MILLISECOND | MOD | NOT | NTILE | NULL | ON | OPTIMIZE
+    | OR | ORDER | OUTER | OUTFILE | OVER | PARTITION | PERCENTILE | PREPARE
+    | PRIMARY | PROCEDURE | RANGE | READ | REGEXP | RELEASE | RENAME | REPLACE
+    | REVOKE | RIGHT | RLIKE | ROWS | ROW_NUMBER | SCHEMA | SCHEMAS | SELECT
+    | SET | SET_VAR | SHOW | SMALLINT | TABLE | TERMINATED | TEXT | THEN
+    | TINYINT | TO | TRUE | UNION | UNIQUE | UNSIGNED | UPDATE | USE
+    | USING | VALUES | VARCHAR | WHEN | WHERE | WITH
     ;
 
 decimalAtom

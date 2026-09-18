@@ -38,9 +38,24 @@ stage registry from the parse tree:
   the reference, and forwarded the statement untranslated. `fusedDecimal`
   consumes the fused token only — never a following atom — so a table alias
   after a trailing numeric segment (`FROM @stage1.2024 t`) is not swallowed;
-  `decimalAtom` keeps its optional absorption only inside `stageSegment`, for the
-  hyphen trailing-dot form (`@stage-2.` followed by `data`). The Nova surfaces
-  (`LIST` / `COPY INTO`) expand the same fused tokens in their token scan;
+  `decimalAtom` appears only inside `stageSegment`, for the hyphen trailing-dot
+  form (`@stage-2.` followed by `data`). The Nova surfaces (`LIST` / `COPY INTO`)
+  expand the same fused tokens in their token scan;
+* a path segment spelled as a **reserved** keyword is accepted by the Nova
+  `stagePathKeyword` rule (`StarRocks.g4`, NOVA-BEGIN block; NOVA-109 review).
+  The upstream `identifier` rule admits `nonReserved` only, so
+  `@stage1.data.default.csv` (`DEFAULT` is a reserved lexer keyword) failed
+  `stagePathAtom`: the tree said "not a stage", the registry came back empty and
+  the raw `@…` token was forwarded with no `FILES()` rewrite and no credential
+  injection. The rule lists the reserved-keyword token classes (the complement of
+  `nonReserved`) and is scoped to `stagePathAtom`, which is reached only right
+  after `AT` in table position — so aliases, column names and user variables keep
+  the upstream `identifier` treatment and no other parse path moves;
+* a fused separator *inside* a segment token is split as the separator it is.
+  `@stage-2.data.csv` lexes `2.` as one `DECIMAL_VALUE`; `parser.py` reads every
+  `.` in that token as a `stageSeparator`, so the reference is `stage-2` then
+  `data`/`csv`, matching the pre-swap regex baseline rather than collapsing to
+  `stage-2.data` with the file lost (NOVA-109 review);
 * a `@stage` inside a string literal or a comment is a single token to the
   lexer, so it can never become a false positive;
 * `@@version` is the engine's `systemVariable` (two `AT` tokens), never a stage;

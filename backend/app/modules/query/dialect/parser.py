@@ -282,6 +282,90 @@ def _stage_path_atom_parts(atom) -> list[str]:
     return [atom.getText()]
 
 
+def _decimal_atom_glue(atom) -> tuple[list[str], list[str]]:
+    """Split one ``decimalAtom`` into the segments it closes and the ones it opens.
+
+    The lexer fuses a ``.`` separator onto a neighbouring number, so a
+    ``DECIMAL_VALUE`` token can carry separators inside it: ``.2024`` (leading,
+    ``@stage1.2024.csv``), ``2.`` (trailing, ``@stage-2.data.csv``) or ``2.2024``
+    (both, ``@stage-2.2024.csv``). Every ``.`` in that token is a
+    ``stageSeparator``, so the pieces are segments: the first piece continues the
+    current segment (``stage-`` + ``2`` → ``stage-2``), and each later piece opens
+    a new one. That is the split the pre-swap regex parser produced, so
+    ``@stage-2.2024.csv`` reads as ``stage-2`` then ``2024`` then ``csv``.
+
+    A nested ``stagePathAtom`` after a trailing dot (``2.`` then ``data``) opens
+    the next segment too, and one reached without a trailing dot is appended to
+    the segment currently open.
+
+    Returns ``(closed, opened)`` where either list may be empty.
+    """
+    pieces: list[str] = []
+    opened: list[str] = []
+
+    for child in atom.children or []:
+        name = type(child).__name__
+        if name == "TerminalNodeImpl":
+            pieces.extend(piece for piece in child.getText().split(".") if piece)
+        elif name == "StagePathAtomContext":
+            tail = _stage_path_atom_parts(child)
+            if pieces:
+                opened.extend(tail)
+            else:
+                pieces.extend(tail)
+
+    closed = pieces[:1]
+    opened = pieces[1:] + opened
+    return closed, opened
+
+
+def _stage_segment_parts(segment) -> list[str]:
+    """The path segments of one ``stageSegment`` node, splits included.
+
+    ``stageSegment`` is ``stagePathAtom (MINUS_SYMBOL stagePathAtom)*``, so the
+    default reading is one segment spelled across hyphens (``daily-load-2``). A
+    trailing-dot decimal inside it is a separator, though: ``stage-2.data`` is two
+    segments because the ``2.`` token carries the ``.`` (NOVA-109 review). This
+    walks the atoms in source order and starts a new segment wherever that dot
+    lands, so the hyphen form segments exactly as the pre-swap regex parser did.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if current:
+            segments.append("".join(current))
+            current.clear()
+
+    for child in segment.children or []:
+        name = type(child).__name__
+        if name == "StagePathAtomContext":
+            closed, opened = _stage_path_atom_glue(child)
+            current.extend(closed)
+            if opened:
+                flush()
+                current.extend(opened)
+        else:
+            # ``MINUS_SYMBOL`` -- a literal within the segment, not a break.
+            current.append(child.getText())
+
+    flush()
+    return segments
+
+
+def _stage_path_atom_glue(atom) -> tuple[list[str], list[str]]:
+    """``(closed, opened)`` segment pieces for one ``stagePathAtom``.
+
+    Delegates to :func:`_decimal_atom_glue` when the atom wraps a ``decimalAtom``
+    (the fused-token case); otherwise the atom is literal text for the current
+    segment and opens nothing.
+    """
+    for child in atom.children or []:
+        if type(child).__name__ == "DecimalAtomContext":
+            return _decimal_atom_glue(child)
+    return _stage_path_atom_parts(atom), []
+
+
 def _stage_reference_from_atom(atom, original_sql: str) -> StageReference:
     """Build a :class:`StageReference` from one ``#stageAtom`` node.
 
@@ -310,8 +394,9 @@ def _stage_reference_from_atom(atom, original_sql: str) -> StageReference:
     for child in stage_ref.children or []:
         name = type(child).__name__
         if name == "StageSegmentContext":
-            # A whole segment; a decimal inside it (hyphen form) expands too.
-            segments.append(child.getText())
+            # A hyphen-joined segment, split where a trailing-dot decimal hid a
+            # ``.`` separator inside it (``stage-2.data`` -> two segments).
+            segments.extend(_stage_segment_parts(child))
         elif name in ("FusedDecimalContext", "DecimalAtomContext"):
             segments.extend(_decimal_atom_parts(child))
 
@@ -504,6 +589,12 @@ def _nova_surface_stage_refs(sql: str) -> list[StageReference]:
 
     Comments and literals are already off the token stream, so a ``@stage`` in
     ``'FROM @x'`` or ``-- @x`` cannot appear here.
+
+    Known gap (NOVA-136): this scan reads ``@ atom (sep atom)*`` only, not the
+    grammar's ``stageSegment : stagePathAtom (MINUS_SYMBOL stagePathAtom)*``
+    alternative, so a hyphenated name such as ``@stage-2.data.csv`` stops at the
+    hyphen on a Nova surface. The FROM-table path is correct (it reads the tree);
+    only ``LIST``/``COPY INTO`` are affected.
     """
     tokens = _visible_tokens(_lex(sql))
     for index, token in enumerate(tokens):
