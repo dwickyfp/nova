@@ -627,9 +627,10 @@ connects to port 4406, authenticates against StarRocks, and runs `SELECT`,
 - [ ] Connection pooling and session tracking — not implemented. Each client connection holds one upstream StarRocks session; there is no pool. Per-connection `SET`/`USE` tracking exists (`backend/app/proxy/session.py`), but richer session state is not carried
 - [ ] Prepared statements (`COM_STMT_PREPARE`) — refused with `ER_NOT_SUPPORTED_YET` so drivers fall back to the text protocol
 
-### Phase 9 — Task Orchestration & Scheduler (proposed, NOVA-23)
-Proposed, awaiting human approval on three product items (E1–E3). Design is
-**decided and written down**: see `docs/specs/nova-23-task-orchestration-design.md`.
+### Phase 9 — Task Orchestration & Scheduler (9a complete, NOVA-23)
+Stage 9a is complete and merged; 9b and 9c are not started. Product decisions
+E1–E3 were confirmed on 2026-09-17. Design is **decided and written down**:
+see `docs/specs/nova-23-task-orchestration-design.md`.
 Orchestration layer **above** the existing native task manager
 (`backend/app/modules/tasks/`, Phase 5) — not an extension of it. The native
 manager covers `SUBMIT TASK` / `ALTER TASK` / `DROP TASK` and run listing; this
@@ -651,12 +652,12 @@ defect fixed inside this phase.
 Staged delivery — 9a metadata + scheduler + worker + delegate-first execution;
 9b `CREATE TASK` grammar patch + lowering + task graph UI; 9c stream providers.
 
-- [ ] **9a** Metadata tables + DAG validation in `NOVA_SYSTEM` (no credentials)
-- [ ] **9a** `nova-scheduler` process — Nova-owned cron/interval tick (`croniter`), separate from the FastAPI backend
-- [x] **9a** `nova-worker` process — executes graph nodes on the owner's connection (delegate-first)
-- [x] **9a** Redis Streams transport between scheduler and worker
-- [ ] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause)
-- [ ] **9a** Fix `GET /tasks` to connect as the caller, so the engine's privilege filter is not bypassed
+- [x] **9a** Metadata tables + DAG validation in `NOVA_SYSTEM` (no credentials) — `docker/init-nova.sql:184-238` (`CONFIG_TASKS`, `CONFIG_TASK_EDGES`, `CONFIG_TASK_GRAPH_RUNS`, `CONFIG_TASK_RUNS`), `backend/app/modules/task_orchestration/{schemas,repository,graph}.py` (PR #37)
+- [x] **9a** `nova-scheduler` process — Nova-owned cron/interval tick (`croniter`), separate from the FastAPI backend — `backend/app/scheduler/`, `HOW_TO_RUN.md` §4 (PR #40)
+- [x] **9a** `nova-worker` process — executes graph nodes on the owner's connection (delegate-first) — `backend/app/worker/`, `HOW_TO_RUN.md` §5 (PR #46)
+- [x] **9a** Redis Streams transport between scheduler and worker — `backend/app/modules/task_orchestration/transport.py` (PRs #40, #46)
+- [x] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause) — `backend/app/modules/task_orchestration/{reconciler,native}.py` (PR #52)
+- [x] **9a** Fix `GET /tasks` to connect as the caller, so the engine's privilege filter is not bypassed — `backend/app/modules/tasks/service.py` now takes an injected user connection (PR #39)
 - [ ] **9b** `CREATE TASK … AFTER / FINALIZE / WHEN / SCHEDULE` added to the existing ANTLR4 `submitTaskStatement` rule (NOVA-BEGIN/NOVA-END patch, `--fuzz=0`, CI drift check); it is a Nova surface, lowered to `SUBMIT TASK`
 - [ ] **9b** Task graph UI
 - [ ] **9c** `has stream` — `mv_refresh` first, then `partition_change` (`SHOW PARTITIONS` + `VisibleVersion`, one full sweep per evaluation) and `load_event`
@@ -667,7 +668,7 @@ scheduler-side Redis Streams transport are implemented and tested in
 (`schedule.py`, `scheduler.py`, `transport.py`, `service.py`): IANA-timezone cron
 and interval next-fire, leader-lock singleton, persist-before-publish ordering,
 deterministic graph-run ids for idempotency, and one run per `A → B → [C, D]`
-graph. The two checklist items above stay unchecked until that PR is merged; the
+graph. The two checklist items above are checked now that PR #40 has merged; the
 runbook is `HOW_TO_RUN.md` §4.
 
 **Progress note (NOVA-36, 2026-09-18).** The `nova-worker` process is implemented
