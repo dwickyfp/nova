@@ -94,7 +94,7 @@ import type {
   WorkspaceTreeResponse,
 } from './types'
 import { InlineSelect } from './inline-select'
-import { initialAssistantOpen } from './assistant-panel-state'
+import { initialAssistantOpen, assistantCollapsedToPersist } from './assistant-panel-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -818,7 +818,7 @@ export function WorkspacesPage() {
         open_tabs: openTabIds,
         active_tab: activeTabId,
         sidebar_collapsed: secondaryCollapsed,
-        assistant_collapsed: assistantOpen,
+        assistant_collapsed: assistantCollapsedToPersist(assistantOpen),
         last_database: activeTab?.database ?? null,
         last_schema: activeTab?.schema ?? null,
         last_role: activeTab?.role ?? null,

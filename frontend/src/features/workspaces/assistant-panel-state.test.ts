@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { initialAssistantOpen } from './assistant-panel-state'
+import { assistantCollapsedToPersist, initialAssistantOpen } from './assistant-panel-state'
 
-describe('initialAssistantOpen', () => {
-  it('restores an open panel from persisted workspace state', () => {
-    expect(initialAssistantOpen({ assistant_collapsed: false })).toBe(true)
+describe('assistant panel persistence polarity', () => {
+  it('round-trips an open panel through the persisted collapsed field', () => {
+    const persisted = assistantCollapsedToPersist(true)
+    expect(persisted).toBe(false)
+    expect(initialAssistantOpen({ assistant_collapsed: persisted })).toBe(true)
   })
 
-  it('restores a closed panel from persisted workspace state', () => {
-    expect(initialAssistantOpen({ assistant_collapsed: true })).toBe(false)
+  it('round-trips a closed panel through the persisted collapsed field', () => {
+    const persisted = assistantCollapsedToPersist(false)
+    expect(persisted).toBe(true)
+    expect(initialAssistantOpen({ assistant_collapsed: persisted })).toBe(false)
   })
 
   it('defaults to closed when the backend does not send the field yet', () => {
