@@ -4,7 +4,8 @@
 > **Owner:** Nova DW Research & Roadmap. Decisions are recorded; this document is the
 > artifact the team executes against.
 > **Matrix source:** NOVA-49 *Nova Snowflake Capability Matrix* (canonical tracker).
-> **Engine pin at the time of writing:** `starrocks/fe-ubuntu:4.1.1` — unchanged by this document.
+> **Engine pin at the time of writing:** `starrocks/fe-ubuntu:4.1.4` (commit `4a9848e`) — raised
+> from `4.1.1` by NOVA-51; unchanged by this document.
 > **Every factual claim below was verified against a primary source on 2026-09-18.** Claims that
 > could not be verified are marked `[BELUM TERVERIFIKASI]` and are never load-bearing.
 
@@ -18,7 +19,7 @@ reproduced here because every phase below depends on them.
 | # | Decision | Consequence for this roadmap |
 |---|---|---|
 | **R1** | **MLflow is adopted as the ML registry.** Nova stops building a native registry. | Row 13 is re-worded `PARTIAL → EMBED_OPEN_SOURCE (MLflow)`. Phase 3 carries the integration. Full proposal in §3. |
-| **R2** | **The engine pin stays on tag `4.1.1` through Phase 9b.** The bump is a separate, sequenced task. | Engine bump (#2 / NOVA-51) is Phase 0 but must not touch the 9b critical path. It pins to a **commit SHA**, not a tag. |
+| **R2** | ~~**The engine pin stays on tag `4.1.1` through Phase 9b.** The bump is a separate, sequenced task.~~ **Satisfied and superseded by NOVA-51** (2026-09-18): the engine pin is now `4.1.4` (commit `4a9848e`). The original intent holds — the bump did not touch the 9b critical path, and it pins to a **commit SHA**, not a tag. | Engine bump (#2 / NOVA-51) was sequenced into Phase 0 and completed without disturbing the 9b critical path. |
 | **R3** | **Phase 0 = #2 + #9. #9 leads Phase 1 as a parallel track.** #9 is not a hard predecessor of #3/#4. | The dependency table in §2 encodes this: #9 depends on nothing, and #3/#4/#7/#16/#15/#12 do not depend on #9. |
 
 **Principle that survives every decision above:** the data format stays open.
@@ -365,7 +366,7 @@ Verification date for every claim in this document: **2026-09-18**.
 | StarRocks tags `4.1.0 … 4.1.4`; `4.1.4` has no release page | `api.github.com/repos/StarRocks/starrocks/tags`, `.../releases?per_page=40`, `.../releases/tags/4.1.4` |
 | Grammar line counts and the absence of `FINALIZE` / `CRON` / `OVERLAP_POLICY` / `ALLOW_OVERLAPPING`; `submitTaskStatement` identical across tags | raw `StarRocks.g4` and `StarRocksLex.g4` at `4.1.1`, `4.1.3`, `branch-4.1`, diffed locally |
 | MLflow latest release `v3.16.1`, 2026-09-17 | `github.com/mlflow/mlflow/releases` |
-| Engine pin is `4.1.1` | `docker/docker-compose-engine.yml:3`, `:122`; `README.md:543` |
+| Engine pin is `4.1.4` (NOVA-51, commit `4a9848e`) | `docker/docker-compose-engine.yml:122,159`; `README.md:543` |
 | `external_catalogs/` is an empty stub | repo read at `9bb2a87` |
 | `model_type` is `classification\|regression` only | `backend/app/modules/ml_engine/schemas.py:15-19` |
 | ML tables and their columns | `docker/init-nova.sql:265-301` |

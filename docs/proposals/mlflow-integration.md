@@ -206,7 +206,7 @@ Stages 1 and 2 run in parallel. Stage 3 needs both. Stage 4 needs stage 2 only.
 | MLflow latest release `v3.16.1`, published 2026-09-17 | `github.com/mlflow/mlflow/releases` |
 | `model_type` accepts only `classification\|regression`; 8 sklearn algorithms | `backend/app/modules/ml_engine/schemas.py:15-19` |
 | ML table definitions | `docker/init-nova.sql:265-301` |
-| Engine pin still `4.1.1`; external catalogs still a stub | `docker/docker-compose-engine.yml:3,122`; repo read at `9bb2a87` |
+| Engine pin is `4.1.4` (NOVA-51, commit `4a9848e`); external catalogs still a stub | `docker/docker-compose-engine.yml:122,159`; repo read at `9bb2a87` |
 | Sidecar pattern already accepted (`nova-scheduler` / `nova-worker`) | `docs/specs/nova-23-task-orchestration-design.md` D9.2 |
 
 **Not verified, and therefore not asserted:** any runtime, throughput, or
