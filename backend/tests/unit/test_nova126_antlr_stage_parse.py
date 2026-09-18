@@ -450,6 +450,57 @@ def test_a_variable_and_a_stage_in_one_statement() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Defect 2d (NOVA-109 review): the trailing-dot hyphen form
+#
+# ``@stage-2.data.csv`` lexes the ``2.`` as a single ``DECIMAL_VALUE`` that
+# carries a ``.`` separator. The grammar's ``decimalAtom`` absorbed the following
+# atom into the same ``stageSegment``, so the reference read as ``stage-2.data``
+# with path ``['csv']`` — the stage name was wrong and the file was lost. The
+# regex parser on ``main`` segmented it as ``stage-2`` / ``data.csv``, so this is
+# a regression: the dot inside the fused token is a separator, not segment text.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("sql", "stage_name", "path_parts", "file_name"),
+    [
+        ("SELECT * FROM @stage-2.data.csv", "stage-2", [], "data.csv"),
+        ("SELECT * FROM @daily-load-2.data.csv", "daily-load-2", [], "data.csv"),
+        ("SELECT * FROM @a-1.b.csv", "a-1", [], "b.csv"),
+        ("SELECT * FROM @stage-2.2024.csv", "stage-2", [], "2024.csv"),
+        ("SELECT * FROM @stage-2.2024", "stage-2", ["2024"], None),
+        ("SELECT * FROM @stage-a.b.c", "stage-a", ["b", "c"], None),
+    ],
+)
+def test_trailing_dot_hyphen_form_resolves(
+    sql: str,
+    stage_name: str,
+    path_parts: list[str],
+    file_name: str | None,
+) -> None:
+    """The fused dot splits segments; the hyphenated name matches ``main``."""
+    result = parse_sql(sql)
+
+    assert result.errors == [], f"{sql!r} did not parse: {result.errors}"
+    assert result.command_type == CommandType.STAGE_QUERY
+    assert len(result.stage_refs) == 1
+    ref = result.stage_refs[0]
+    assert (ref.stage_name, ref.path_parts, ref.file_name) == (stage_name, path_parts, file_name)
+
+
+def test_trailing_dot_hyphen_form_translates_to_the_whole_object_key() -> None:
+    """The translated key is ``.../stage-2/data.csv``; no fragment is left over."""
+    translated = _translate(
+        "SELECT * FROM @stage-2.data.csv",
+        {"stage-2": _config("datalake/bronze/stage-2")},
+    )
+
+    assert "@stage-2" not in translated
+    assert "s3://nova-stages/datalake/bronze/stage-2/data.csv" in translated
+    assert translated.count("FILES(") == 1
+
+
+# ---------------------------------------------------------------------------
 # AC-5 mitigation: @-free SQL never builds the ANTLR4 tree
 # ---------------------------------------------------------------------------
 
@@ -493,3 +544,129 @@ def test_the_guard_is_the_literal_character_not_a_stage_name(monkeypatch) -> Non
     parser_module.parse_sql("SELECT @x FROM t")
 
     assert calls == ["SELECT @x FROM t"]
+
+
+# ---------------------------------------------------------------------------
+# Defect 6 (NOVA-134): a reserved keyword as an @stage path segment
+#
+# A path segment is data — a file or folder name the user already owns — so its
+# reserved-ness is irrelevant: `@stage1.data.default.csv` must resolve exactly
+# like `@stage1.data.foo.csv`. The `identifier` rule reaches only
+# `LETTER_IDENTIFIER`, `DIGIT_IDENTIFIER`, a backquoted name and `nonReserved`,
+# so spelling the segment atom as `identifier` dropped every reserved keyword
+# (`DEFAULT`, `ORDER`, `GROUP`, `SELECT`, `TABLE`, `LIMIT`, `PRIMARY`, `VALUES`,
+# …). The reference then vanished, `command_type` fell to `REGULAR` and the raw
+# `@…` token was forwarded to the engine untranslated — the silent dangling-SQL
+# class NOVA-17 exists to close. These inputs all resolved under the regex
+# parser on `main@0a8a7fc`, so their loss is a regression against the bar in
+# NOVA-109 AC #1 ("tanpa regresi").
+# ---------------------------------------------------------------------------
+
+
+#: The 45 reserved keywords QA measured as broken (NOVA-109 comment
+#: `01a0b69e`). Kept whole so the coverage gap cannot silently reopen: a future
+#: grammar change that re-narrows `stagePathAtom` fails this on the first run.
+_RESERVED_PATH_KEYWORDS = [
+    "default", "order", "group", "select", "table", "limit", "primary",
+    "values", "where", "join", "union", "insert", "update", "delete",
+    "create", "drop", "alter", "from", "into", "on", "as", "by", "having",
+    "distinct", "case", "when", "then", "else", "left", "right", "inner",
+    "outer", "cross", "using", "index", "key", "check", "grant", "revoke",
+    "set", "show", "use", "describe", "explain", "analyze",
+]
+
+
+@pytest.mark.parametrize("keyword", _RESERVED_PATH_KEYWORDS)
+def test_reserved_keyword_as_a_trailing_path_segment_resolves(keyword: str) -> None:
+    """``@stage1.data.<keyword>.csv`` is one reference split like the baseline."""
+    sql = f"SELECT * FROM @stage1.data.{keyword}.csv"
+    result = parse_sql(sql)
+
+    assert result.errors == [], f"{sql!r} did not parse: {result.errors}"
+    assert result.command_type == CommandType.STAGE_QUERY
+    assert len(result.stage_refs) == 1
+    ref = result.stage_refs[0]
+    assert (ref.stage_name, ref.path_parts, ref.file_name) == (
+        "stage1",
+        ["data"],
+        f"{keyword}.csv",
+    )
+    assert ref.full_match == f"@stage1.data.{keyword}.csv"
+
+
+@pytest.mark.parametrize(
+    ("sql", "stage_name", "path_parts", "file_name"),
+    [
+        ("SELECT * FROM @stage1.data.default.csv", "stage1", ["data"], "default.csv"),
+        ("SELECT * FROM @stage1.exports.default.parquet", "stage1", ["exports"], "default.parquet"),
+        ("SELECT * FROM @stage1.default.csv", "stage1", [], "default.csv"),
+        ("SELECT * FROM @stage1.data.order.csv", "stage1", ["data"], "order.csv"),
+        ("SELECT * FROM @stage1.data.values.csv", "stage1", ["data"], "values.csv"),
+        ("SELECT * FROM @stage1.data.primary.csv", "stage1", ["data"], "primary.csv"),
+        # A reserved word as the *stage name* itself is a segment too;
+        # `data.csv` is the two-part file, so the path is empty (baseline).
+        ("SELECT * FROM @default.data.csv", "default", [], "data.csv"),
+        # Reserved keyword on the slash path and on the mixed path.
+        ("SELECT * FROM @stage1/order/data.csv", "stage1", ["order"], "data.csv"),
+        ("SELECT * FROM @stage1.order/data.csv", "stage1", ["order"], "data.csv"),
+    ],
+)
+def test_reserved_keyword_segment_shapes_match_the_baseline(
+    sql: str, stage_name: str, path_parts: list[str], file_name: str
+) -> None:
+    """The shapes QA named, pinned to the ``main@0a8a7fc`` segmentation."""
+    result = parse_sql(sql)
+
+    assert result.errors == [], f"{sql!r} did not parse: {result.errors}"
+    assert result.command_type == CommandType.STAGE_QUERY
+    assert len(result.stage_refs) == 1
+    ref = result.stage_refs[0]
+    assert (ref.stage_name, ref.path_parts, ref.file_name) == (
+        stage_name,
+        path_parts,
+        file_name,
+    )
+
+
+@pytest.mark.parametrize(
+    "keyword",
+    ["default", "order", "group", "select", "table", "values", "primary", "limit"],
+)
+def test_reserved_keyword_segment_translates_to_one_files_call(keyword: str) -> None:
+    """End-to-end: the reference is rewritten into exactly one ``FILES()``.
+
+    This is the half the string normalizer cannot see (NOVA-124 passes while the
+    parser drops the reference), so it asserts on the *engine* SQL: no dangling
+    ``@`` survives and the keyword stays a literal path segment.
+    """
+    sql = f"SELECT * FROM @stage1.data.{keyword}.csv"
+    translated = _translate(sql)
+
+    assert "@stage1" not in translated
+    assert f"s3://nova-stages/datalake/bronze/stage1/data/{keyword}.csv" in translated
+    assert translated.count("FILES(") == 1
+    # Nothing dangles after the FILES() call.
+    assert "@" not in translated
+
+
+def test_reserved_keyword_segment_is_still_positional() -> None:
+    """The fix stays positional: a variable operand is never claimed as a stage."""
+    assert parse_sql("SELECT @stage1.data.default.csv").stage_refs == []
+
+
+def test_reserved_keyword_segment_does_not_swallow_a_table_alias() -> None:
+    """The keyword segment ends at the separator; a following alias stays outside."""
+    result = parse_sql("SELECT * FROM @stage1.data.default.csv t")
+
+    assert result.errors == []
+    assert [ref.full_match for ref in result.stage_refs] == ["@stage1.data.default.csv"]
+
+
+def test_non_keyword_segment_control_still_resolves() -> None:
+    """The control QA named: an ordinary segment behaves exactly as before."""
+    result = parse_sql("SELECT * FROM @stage1.data.foo.csv")
+
+    assert result.errors == []
+    assert result.command_type == CommandType.STAGE_QUERY
+    ref = result.stage_refs[0]
+    assert (ref.stage_name, ref.path_parts, ref.file_name) == ("stage1", ["data"], "foo.csv")
