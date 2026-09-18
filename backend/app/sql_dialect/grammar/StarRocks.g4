@@ -2771,9 +2771,53 @@ stageSegment
 
 stagePathAtom
     : identifier
+    | stageKeyword
     | ASTERISK_SYMBOL
     | INTEGER_VALUE
     | decimalAtom
+    ;
+
+// NOVA-133 / 109-D1: reserved keywords are legal file/schema names in a
+// `@stage` path. `identifier` covers `LETTER_IDENTIFIER`, `DIGIT_IDENTIFIER`,
+// `BACKQUOTED_IDENTIFIER` and `nonReserved`, but the grammar's *reserved*
+// keywords (DEFAULT, ORDER, GROUP, SELECT, FROM, TABLE, VALUES, KEY, INDEX, …)
+// are in neither, so a path segment spelled like one dropped the whole
+// reference: `@stage1.data.default.csv` parsed as no stage, `parse_sql` returned
+// `REGULAR` with `stage_refs=[]`, and the raw `@…` token was forwarded to the
+// engine untranslated (`sql_pipeline.py`). The regex parser this grammar
+// replaced accepted every `[A-Za-z_][A-Za-z0-9_$]*` segment, so this is a
+// regression, not a new surface. This rule restores that acceptance by naming
+// the reserved keyword tokens explicitly; `nonReserved` is deliberately not
+// repeated because `identifier` already reaches it. Keep this in sync when a
+// new reserved keyword token is vendored: `tests/unit/test_nova133_keyword_segment.py`
+// fails when a token is missing here.
+stageKeyword
+    : ADD | ALL | ALTER | ANALYZE | AND | ARRAY | AS | ASC | ASOF | ATTACHMENT
+    | BETWEEN | BIGINT | BITMAP | BOTH | BY | CASE | CHAR | CHARACTER | CHECK
+    | COLLATE | COLUMN | COMPACTION | CONVERT | CREATE | CROSS | CUBE
+    | CURRENT_DATE | CURRENT_GROUP | CURRENT_ROLE | CURRENT_TIME
+    | CURRENT_TIMESTAMP | CURRENT_USER | CURRENT_WAREHOUSE | DATABASE
+    | DATABASES | DECIMAL | DECIMAL128 | DECIMAL256 | DECIMAL32 | DECIMAL64
+    | DECIMALV2 | DEFAULT | DEFERRED | DELETE | DENSE_RANK | DESC | DESCRIBE
+    | DISTINCT | DOUBLE | DROP | DUAL | ELSE | EXISTS | EXPLAIN | FALSE | FILES
+    | FIRST_VALUE | FLOAT | FOR | FORCE | FROM | FULL | FUNCTION | GIN | GRANT
+    | GROUP | GROUPING | GROUPING_ID | GROUPS | HAVING | HLL | IF | IGNORE
+    | IMMEDIATE | IN | INDEX | INFILE | INNER | INSERT | INT | INTEGER
+    | INTERSECT | INTO | INVOKER | IS | JOIN | JSON | KEY | KEYS | KILL | LAG
+    | LARGEINT | LAST_VALUE | LATERAL | LEAD | LEFT | LIKE | LIMIT | LOAD
+    | LOCALTIME | LOCALTIMESTAMP | MAXVALUE | MICROSECOND | MILLISECOND | MOD
+    | NOT | NTILE | NULL | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | OVER
+    | PARAMETER | PARTITION | PERCENTILE | PREPARE | PRIMARY | PROCEDURE | RANGE
+    | READ | REGEXP | RELEASE | RENAME | REPLACE | REVOKE | RIGHT | RLIKE | ROWS
+    | ROW_NUMBER | SCHEMA | SCHEMAS | SELECT | SET | SET_VAR | SHOW | SMALLINT
+    | TABLE | TERMINATED | TEXT | THEN | TINYINT | TO | TRUE | UNION | UNIQUE
+    | UNSIGNED | UPDATE | USE | USING | VALUES | VARCHAR | WHEN | WHERE | WITH
+    // The word operators are lexer tokens too (their literal names are the
+    // UPPERCASE spellings), so a path segment spelled `DIV` / `BITSHIFTLEFT`
+    // collides with them the same way a reserved keyword does. They are
+    // included here for the same fidelity reason: the regex parser accepted
+    // every `[A-Za-z_][A-Za-z0-9_]*` segment regardless of spelling.
+    | INT_DIV | BIT_SHIFT_LEFT | BIT_SHIFT_RIGHT | BIT_SHIFT_RIGHT_LOGICAL
     ;
 
 decimalAtom
