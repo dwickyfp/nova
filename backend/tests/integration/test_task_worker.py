@@ -49,6 +49,7 @@ from app.modules.task_orchestration.repository import (
 )
 from app.modules.task_orchestration.worker import GraphRunJob, GraphRunWorker
 from app.modules.task_orchestration.worker_service import WorkerService
+from tests.integration._stack import require_shared_stack
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
@@ -115,8 +116,7 @@ async def _redis_reachable(url: str) -> bool:
 
 @pytest_asyncio.fixture
 async def worker_infra(request):
-    if _USE_SHARED_STACK and "docker_services" in request.fixturenames:
-        request.getfixturevalue("docker_services")
+    require_shared_stack(request, enabled=_USE_SHARED_STACK)
     if not await _sr_reachable() or not await _has_live_backend():
         pytest.skip("StarRocks not reachable or has no live backend")
     if not await _redis_reachable(REDIS_URL):

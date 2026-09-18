@@ -33,6 +33,7 @@ import pytest_asyncio
 
 from app.storage.secrets import SecretValue
 from tests.integration._nova_system_ddl import ensure_audit_log
+from tests.integration._stack import require_shared_stack
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
@@ -106,8 +107,7 @@ async def _ensure_schema() -> None:
 
 @pytest_asyncio.fixture(scope="session")
 async def l3_admin_user(request):
-    if "docker_services" in request.fixturenames:
-        request.getfixturevalue("docker_services")
+    require_shared_stack(request)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
     with contextlib.suppress(Exception):
@@ -121,8 +121,7 @@ async def l3_admin_user(request):
 
 @pytest_asyncio.fixture
 async def engine(request):
-    if "docker_services" in request.fixturenames:
-        request.getfixturevalue("docker_services")
+    require_shared_stack(request)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
     await _ensure_schema()

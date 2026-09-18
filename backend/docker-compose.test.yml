@@ -20,8 +20,15 @@ services:
       - -c
       - /opt/starrocks/fe/bin/start_fe.sh --host_type IP --logconsole
     ports:
-      - "29030:9030"   # MySQL protocol (test port)
-      - "28030:8030"   # HTTP
+      # Host ports are overridable so two checkouts (a local run and a
+      # concurrent QA run) can each bring up a stack without colliding on a
+      # fixed number. Only the host side moves; the container side and the
+      # MinIO address below must stay fixed because the app derives the
+      # FILES() endpoint by rewriting the hostname and *keeping the port*
+      # (see the MinIO note further down). Defaults are the original numbers,
+      # so CI and any single-stack run are unchanged.
+      - "${NOVA_TEST_FE_MYSQL_PORT:-29030}:9030"   # MySQL protocol (test port)
+      - "${NOVA_TEST_FE_HTTP_PORT:-28030}:8030"    # HTTP
     environment:
       - FE_QUERY_PORT=9030
       - AWS_EC2_METADATA_DISABLED=true
@@ -107,8 +114,8 @@ services:
     # failed with "Access storage error. Connection refused".
     command: server /data --address ":29000" --console-address ":29001"
     ports:
-      - "29000:29000"  # S3 API, same number both sides so the rewrite is a no-op
-      - "29001:29001"  # Web console
+      - "${NOVA_TEST_MINIO_PORT:-29000}:29000"  # S3 API, same number both sides so the rewrite is a no-op
+      - "${NOVA_TEST_MINIO_CONSOLE_PORT:-29001}:29001"  # Web console
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -124,7 +131,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "26379:6379"   # Redis (test port)
+      - "${NOVA_TEST_REDIS_PORT:-26379}:6379"   # Redis (test port)
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s

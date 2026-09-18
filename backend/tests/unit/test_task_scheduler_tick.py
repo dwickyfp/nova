@@ -495,3 +495,52 @@ class TestTickOrderingAndIdempotency:
         assert plan.due == []
         assert transport.published == []
         assert repo.graph_runs == {}
+
+
+class TestEngineTimezoneSettingIsNotLeaked:
+    """NOVA-131: the integration suite must not mutate global settings.
+
+    ``tests/integration/test_task_scheduler.py`` used to assign
+    ``settings.SCHEDULER_ENGINE_TIMEZONE`` directly and never restore it. In a
+    full run that leaked into this unit module: ``test_offset_engine_zone_still
+    _fires`` sets the setting to ``""`` (auto-detect) via ``monkeypatch``, but
+    the leaked value from the already-executed integration fixture took
+    precedence, so the test failed only when the two suites ran together.
+
+    ``monkeypatch`` restores on teardown, so a *leaked* write is invisible from
+    inside the mutating test. What this test pins instead is the contract the
+    integration fixture must honour: a value written through ``monkeypatch`` is
+    back to its original once the test returns. If the integration fixture
+    regresses to a bare assignment, the untouched-value assertion below goes red
+    in the same full run.
+    """
+
+    async def test_monkeypatched_setting_is_restored_after_mutation(
+        self, monkeypatch
+    ):
+        original = settings.SCHEDULER_ENGINE_TIMEZONE
+        with monkeypatch.context() as patch:
+            patch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "+07:00")
+            assert settings.SCHEDULER_ENGINE_TIMEZONE == "+07:00"
+        assert original == settings.SCHEDULER_ENGINE_TIMEZONE
+
+    async def test_offset_engine_zone_still_fires_after_other_suites(
+        self, monkeypatch
+    ):
+        """The NOVA-41 case, re-asserted at its own boundary.
+
+        Runs after ``test_monkeypatched_setting_is_restored_after_mutation`` and
+        sets the setting to ``""`` itself, so it can only pass if the setting is
+        truly free of foreign writes at this point in the session.
+        """
+        monkeypatch.setattr(settings, "SCHEDULER_ENGINE_TIMEZONE", "")
+        created = datetime(2026, 1, 1, 9, 0)
+        repo = FakeRepository(
+            [make_task("solo", created_at=created)], engine_timezone="+07:00"
+        )
+        transport = RecordingTransport()
+        plan = await SchedulerTick(repo, transport).tick(
+            datetime(2026, 1, 1, 2, 6, tzinfo=UTC)
+        )
+        assert len(plan.due) == 1
+        assert len(transport.published) == 1
