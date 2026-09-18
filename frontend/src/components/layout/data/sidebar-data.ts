@@ -14,6 +14,7 @@ import {
   Activity,
   FunctionSquare,
   GitFork,
+  Layers,
   Workflow,
 } from 'lucide-react';
 import { type SidebarData } from '../types';
@@ -42,6 +43,11 @@ export const sidebarData: SidebarData = {
           title: 'Database Explorer',
           url: '/database-explorer',
           icon: Database,
+        },
+        {
+          title: 'External Catalogs',
+          url: '/external-catalogs',
+          icon: Layers,
         },
         {
           title: 'Tasks',
