@@ -2,9 +2,9 @@
 
 Endpoints:
   GET  /migration/engine               → operator binary availability (no execution)
-  GET  /migration/sources              → registered source connections
-  POST /migration/sources              → register a source connection (name only)
-  POST /migration/enumerate            → list source objects
+  GET  /migration/sources              → registered source clusters (address only)
+  POST /migration/sources              → register a source cluster (address + secret_ref)
+  POST /migration/enumerate            → list objects on a registered source
   POST /migration/dry-run              → per-object verdict (migratable/lossy/skipped)
   GET  /migration/capabilities         → the surfaces this v1 implements
 
@@ -37,6 +37,7 @@ from .schemas import (
     SourceConnectionResponse,
 )
 from .service import migration_service
+from .source import SourceConnectionError
 
 router = APIRouter()
 
@@ -61,6 +62,7 @@ async def capabilities(user: CurrentUser):
         "execute_available": False,
         "execute_gate": {"issue": "#7", "name": "backup/restore"},
         "mv_ddl_surface": "SHOW CREATE MATERIALIZED VIEW",
+        "source_required": True,
     }
 
 
@@ -95,10 +97,10 @@ async def list_sources(user: CurrentUser):
     response_class=SanitizingJSONResponse,
 )
 async def create_source(body: SourceConnectionRequest, user: CurrentUser):
-    """Register a source connection by storage-connection name.
+    """Register a source StarRocks cluster by address.
 
-    The credential lives in ``nova.yaml``/env and is resolved server-side; no
-    secret is accepted by this request.
+    The password is never accepted here: ``secret_ref`` names a credential in
+    the configured secret store and is resolved server-side at call time.
     """
     existing = await migration_service.list_sources()
     if any(connection.name == body.name for connection in existing.connections):
@@ -107,9 +109,12 @@ async def create_source(body: SourceConnectionRequest, user: CurrentUser):
         )
     return await migration_service.create_source(
         name=body.name,
-        storage_connection=body.storage_connection,
+        host=body.host,
+        port=body.port,
+        username=body.username,
+        secret_ref=body.secret_ref,
         comment=body.comment,
-        username=user["username"],
+        username_actor=user["username"],
     )
 
 
@@ -121,9 +126,13 @@ async def create_source(body: SourceConnectionRequest, user: CurrentUser):
 async def enumerate_objects(body: EnumerateRequest, user: CurrentUser):
     """Enumerate tables/views/MVs/functions/tasks/pipes/policies of a database.
 
-    MVs are read from ``information_schema.materialized_views``.
+    Reads the **registered source** (``body.source``). MVs are read from
+    ``information_schema.materialized_views``.
     """
-    return await migration_service.enumerate(body.database)
+    try:
+        return await migration_service.enumerate(body.source, body.database)
+    except SourceConnectionError as exc:
+        raise _source_http_error(exc) from exc
 
 
 @router.post(
@@ -132,8 +141,29 @@ async def enumerate_objects(body: EnumerateRequest, user: CurrentUser):
     response_class=SanitizingJSONResponse,
 )
 async def dry_run(body: DryRunRequest, user: CurrentUser):
-    """Classify each selected object: ``migratable`` / ``lossy`` / ``skipped``.
+    """Classify each selected object on the registered source.
 
-    Read-only. This endpoint never materialises or executes a cutover.
+    Verdicts are ``migratable`` / ``lossy`` / ``skipped``. Read-only. This
+    endpoint never materialises or executes a cutover.
     """
-    return await migration_service.dry_run(body.database, body.objects)
+    try:
+        return await migration_service.dry_run(
+            body.source, body.database, body.objects, actor=user["username"]
+        )
+    except SourceConnectionError as exc:
+        raise _source_http_error(exc) from exc
+
+
+def _source_http_error(exc: SourceConnectionError) -> HTTPException:
+    """Map a source-resolution failure to the right status.
+
+    An unknown source is a client error (404); a source that could not be
+    reached or whose secret reference failed to resolve is an upstream failure
+    (502). Neither ever falls back to the local engine. The message is passed
+    through ``SanitizingJSONResponse`` like every other payload, and
+    ``SourceConnectionError`` carries no credential.
+    """
+    message = str(exc)
+    if message.startswith("Unknown migration source"):
+        return HTTPException(status_code=404, detail=message)
+    return HTTPException(status_code=502, detail=message)

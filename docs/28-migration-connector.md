@@ -1,4 +1,4 @@
-# Module 11: Migration Connector (Phase 11 v1 — Assessment + Dry-run)
+# Module 28: Migration Connector (Phase 11 v1 — Assessment + Dry-run)
 
 > Connect to a source StarRocks cluster, enumerate its objects, and preview a
 > per-object dry-run verdict — without executing any cutover.
@@ -13,9 +13,10 @@ Execute endpoint and no execution path behind any flag.
 
 | Capability | v1 |
 |---|---|
-| Register a source connection (storage-connection name only) | ✅ |
-| Enumerate databases / tables / views / MVs / functions / tasks / pipes / policies | ✅ |
+| Register a **source cluster** (host / port / username + secret reference) | ✅ |
+| Enumerate databases / tables / views / MVs / functions / tasks / pipes / policies **on that source** | ✅ |
 | Dry-run verdict per object (`migratable` / `lossy` / `skipped`) with reason | ✅ |
+| Audit rows for source registration and dry-run | ✅ |
 | Detect the operator-provided `starrocks-cluster-sync` binary | ✅ (status only) |
 | Execute / cutover | ❌ gated on #7 |
 
@@ -25,10 +26,14 @@ Execute endpoint and no execution path behind any flag.
 |---|---|---|
 | GET | `/api/v1/migration/capabilities` | Declares implemented phases; `execute_available: false` |
 | GET | `/api/v1/migration/engine` | Binary availability (no execution) |
-| GET | `/api/v1/migration/sources` | List registered source connections |
-| POST | `/api/v1/migration/sources` | Register a source connection by name |
-| POST | `/api/v1/migration/enumerate` | Enumerate a source database's objects |
-| POST | `/api/v1/migration/dry-run` | Classify objects; read-only |
+| GET | `/api/v1/migration/sources` | List registered source clusters |
+| POST | `/api/v1/migration/sources` | Register a source cluster by address |
+| POST | `/api/v1/migration/enumerate` | Enumerate a database's objects on a **registered source** |
+| POST | `/api/v1/migration/dry-run` | Classify objects on a **registered source**; read-only |
+
+`source` is required on enumerate and dry-run. If it is missing the request is
+rejected (`422`) and if it is unknown the request returns `404`; the local engine
+is never used as a silent fallback.
 
 ## Verdict rules
 
@@ -66,10 +71,12 @@ the only surface that carries `REFRESH`, `PARTITION BY` and `PROPERTIES`.
 The invariant is AGENTS.md §2: credentials never appear in an API response, log,
 `NOVA_SYSTEM`, audit row, exception message, or frontend state.
 
-- **Source connections store only the storage-connection name.** The secret lives
-  in `nova.yaml`/env and is resolved server-side with
-  `resolve_storage_credentials` (`backend/app/modules/query/dialect/injector.py`).
-  `NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES` has no credential-bearing column.
+- **A source is addressed by host/port/username plus a secret *reference*.**
+  `NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES` has no password column; the password is
+  fetched from the configured secret provider at call time
+  (`app.modules.migration.source`) and lives in memory only. A broken reference
+  fails closed and never falls back to another principal. The frontend never
+  sends a password.
 - **Every DDL string is filtered** through the existing
   `sql_guard.redact_sql_credentials` before it reaches a response. There is no
   second redactor (Ruling 3 hardening): one rule, one implementation.
@@ -111,9 +118,10 @@ backend/app/modules/migration/
 ├── __init__.py
 ├── schemas.py      # API contract (verdicts, requests/responses)
 ├── verdicts.py     # Pure classification rules (no I/O)
+├── source.py       # Resolve a registered source into a real connection
 ├── engine.py       # starrocks-cluster-sync adapter (status only)
 ├── repository.py   # Source metadata reads + NOVA_SYSTEM registry
-├── service.py      # Orchestration + credential filtering
+├── service.py      # Orchestration + credential filtering + audit
 └── router.py       # HTTP surface (no Execute)
 ```
 

@@ -17,7 +17,8 @@ import {
   GitFork,
   Layers,
   Workflow,
-} from 'lucide-react';import { type SidebarData } from '../types';
+} from 'lucide-react';
+import { type SidebarData } from '../types';
 
 export const sidebarData: SidebarData = {
   navGroups: [

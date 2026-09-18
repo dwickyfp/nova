@@ -32,9 +32,13 @@ export function MigrationPage() {
   const [engine, setEngine] = useState<EngineStatus | null>(null)
   const [sources, setSources] = useState<SourceConnection[]>([])
   const [sourceName, setSourceName] = useState('')
-  const [storageConnection, setStorageConnection] = useState('production')
+  const [sourceHost, setSourceHost] = useState('')
+  const [sourcePort, setSourcePort] = useState('9030')
+  const [sourceUser, setSourceUser] = useState('root')
+  const [sourceSecretRef, setSourceSecretRef] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  const [selectedSource, setSelectedSource] = useState('')
   const [database, setDatabase] = useState('')
   const [objects, setObjects] = useState<SourceObject[]>([])
   const [enumerating, setEnumerating] = useState(false)
@@ -51,6 +55,9 @@ export function MigrationPage() {
       setCapabilities(caps)
       setEngine(status)
       setSources(list.connections)
+      setSelectedSource((current) =>
+        current || list.connections[0]?.name || ''
+      )
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load migration status')
     }
@@ -61,18 +68,23 @@ export function MigrationPage() {
   }, [load])
 
   const handleAddSource = async () => {
-    if (!sourceName.trim()) {
-      toast.error('Source name is required')
+    if (!sourceName.trim() || !sourceHost.trim()) {
+      toast.error('Source name and host are required')
       return
     }
     setSubmitting(true)
     try {
       await createSource({
         name: sourceName.trim(),
-        storage_connection: storageConnection.trim() || 'production',
+        host: sourceHost.trim(),
+        port: Number(sourcePort) || 9030,
+        username: sourceUser.trim() || 'root',
+        secret_ref: sourceSecretRef.trim() || undefined,
       })
       toast.success(`Source "${sourceName}" registered`)
       setSourceName('')
+      setSourceHost('')
+      setSourceSecretRef('')
       await load()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to register source')
@@ -82,6 +94,10 @@ export function MigrationPage() {
   }
 
   const handleEnumerate = async () => {
+    if (!selectedSource) {
+      toast.error('Select a source first')
+      return
+    }
     if (!database.trim()) {
       toast.error('Database name is required')
       return
@@ -89,7 +105,7 @@ export function MigrationPage() {
     setEnumerating(true)
     setDryRunResult(null)
     try {
-      const res = await enumerateObjects(database.trim())
+      const res = await enumerateObjects(selectedSource, database.trim())
       setObjects(res.objects)
       toast.success(`${res.count} objects found in ${res.database}`)
     } catch (err) {
@@ -100,13 +116,17 @@ export function MigrationPage() {
   }
 
   const handleDryRun = async () => {
+    if (!selectedSource) {
+      toast.error('Select a source first')
+      return
+    }
     if (!database.trim()) {
       toast.error('Database name is required')
       return
     }
     setRunning(true)
     try {
-      const res = await dryRun(database.trim())
+      const res = await dryRun(selectedSource, database.trim())
       setDryRunResult(res)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Dry-run failed')
@@ -171,7 +191,11 @@ export function MigrationPage() {
         </section>
 
         <section className='rounded-lg border border-border bg-background p-4'>
-          <h2 className='text-sm font-semibold'>2. Source connections</h2>
+          <h2 className='text-sm font-semibold'>2. Source clusters</h2>
+          <p className='mt-1 text-xs text-muted-foreground'>
+            Register the source StarRocks cluster to assess. Only the address is
+            stored; the password lives behind a secret reference.
+          </p>
           <div className='mt-3 flex flex-wrap items-end gap-2'>
             <div className='space-y-1.5'>
               <Label htmlFor='source-name'>Name</Label>
@@ -180,17 +204,47 @@ export function MigrationPage() {
                 value={sourceName}
                 onChange={(e) => setSourceName(e.target.value)}
                 placeholder='prod-source'
-                className='h-8 w-48'
+                className='h-8 w-40'
               />
             </div>
             <div className='space-y-1.5'>
-              <Label htmlFor='source-storage'>Storage connection</Label>
+              <Label htmlFor='source-host'>Host</Label>
               <Input
-                id='source-storage'
-                value={storageConnection}
-                onChange={(e) => setStorageConnection(e.target.value)}
-                placeholder='production'
-                className='h-8 w-48'
+                id='source-host'
+                value={sourceHost}
+                onChange={(e) => setSourceHost(e.target.value)}
+                placeholder='source.internal'
+                className='h-8 w-44'
+              />
+            </div>
+            <div className='space-y-1.5'>
+              <Label htmlFor='source-port'>Port</Label>
+              <Input
+                id='source-port'
+                value={sourcePort}
+                onChange={(e) => setSourcePort(e.target.value)}
+                placeholder='9030'
+                className='h-8 w-20'
+              />
+            </div>
+            <div className='space-y-1.5'>
+              <Label htmlFor='source-user'>User</Label>
+              <Input
+                id='source-user'
+                value={sourceUser}
+                onChange={(e) => setSourceUser(e.target.value)}
+                placeholder='root'
+                className='h-8 w-28'
+              />
+            </div>
+            <div className='space-y-1.5'>
+              <Label htmlFor='source-secret'>Secret ref</Label>
+              <Input
+                id='source-secret'
+                value={sourceSecretRef}
+                onChange={(e) => setSourceSecretRef(e.target.value)}
+                placeholder='optional'
+                className='h-8 w-44'
               />
             </div>
             <Button size='sm' className='h-8' onClick={handleAddSource} disabled={submitting}>
@@ -204,7 +258,7 @@ export function MigrationPage() {
                 <li key={source.id} className='flex items-center gap-2'>
                   <span className='font-medium'>{source.name}</span>
                   <span className='text-muted-foreground'>
-                    → {source.storage_connection}
+                    → {source.host}:{source.port} ({source.username})
                   </span>
                 </li>
               ))}
@@ -214,7 +268,23 @@ export function MigrationPage() {
 
         <section className='rounded-lg border border-border bg-background p-4'>
           <h2 className='text-sm font-semibold'>3. Enumerate &amp; dry-run</h2>
-          <div className='mt-3 flex items-end gap-2'>
+          <div className='mt-3 flex flex-wrap items-end gap-2'>
+            <div className='space-y-1.5'>
+              <Label htmlFor='migration-source'>Source</Label>
+              <select
+                id='migration-source'
+                value={selectedSource}
+                onChange={(e) => setSelectedSource(e.target.value)}
+                className='h-8 w-48 rounded-md border border-input bg-background px-2 text-sm'
+              >
+                <option value=''>Select a source…</option>
+                {sources.map((source) => (
+                  <option key={source.id} value={source.name}>
+                    {source.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className='space-y-1.5'>
               <Label htmlFor='migration-db'>Database</Label>
               <Input

@@ -15,7 +15,10 @@ export type ObjectKind =
 export type SourceConnection = {
   id: string
   name: string
-  storage_connection: string
+  host: string
+  port: number
+  username: string
+  secret_ref: string
   comment: string
   created_at: string | null
   created_by: string | null
@@ -95,16 +98,23 @@ export function fetchSources() {
 
 export function createSource(input: {
   name: string
-  storage_connection: string
+  host: string
+  port: number
+  username: string
+  secret_ref?: string
   comment?: string
 }) {
   return api.post<SourceConnection>(`${BASE}/sources`, input)
 }
 
-export function enumerateObjects(database: string) {
-  return api.post<EnumerateResponse>(`${BASE}/enumerate`, { database })
+export function enumerateObjects(source: string, database: string) {
+  return api.post<EnumerateResponse>(`${BASE}/enumerate`, { source, database })
 }
 
-export function dryRun(database: string, objects: string[] = []) {
-  return api.post<DryRunResponse>(`${BASE}/dry-run`, { database, objects })
+export function dryRun(source: string, database: string, objects: string[] = []) {
+  return api.post<DryRunResponse>(`${BASE}/dry-run`, {
+    source,
+    database,
+    objects,
+  })
 }
