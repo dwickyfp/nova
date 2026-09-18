@@ -340,3 +340,96 @@ class TestPreEngineRowShape:
         assert "access_key" not in (entry["sql_text"] or "")
         assert "secret_key" not in (entry["sql_text"] or "")
         assert entry["rewritten_sql"] is None
+
+
+class TestResolvedCredentialsNeverReachTheAuditRow:
+    """NOVA-94 security finding #1: the *resolved* statement must be redacted.
+
+    Unlike the pre-engine paths above, a caller that resolves storage
+    credentials (``backup``'s ``CREATE REPOSITORY``, ``external_catalogs``)
+    hands the pipeline a statement that already contains the access/secret
+    key. ``redacted_sql`` is computed before the audit pair runs, so both
+    writes must use it — writing the raw argument puts a live storage key in
+    ``NOVA_SYSTEM.AUDIT_LOG``, which any AUDIT_LOG reader can then read.
+    """
+
+    STATEMENT = (
+        "CREATE REPOSITORY `backup_repo` WITH BROKER "
+        'ON LOCATION "s3://backup-bucket/snapshots" '
+        'PROPERTIES("aws.s3.access_key" = "ACCESSKEY_SENTINEL", '
+        '"aws.s3.secret_key" = "SECRETKEY_SENTINEL")'
+    )
+
+    async def test_success_row_carries_no_credential(self, wired):
+        service, repo, sink = wired
+
+        await service.execute(
+            sql=self.STATEMENT,
+            username="admin",
+            encrypted_password="enc",
+        )
+
+        assert repo.calls == [self.STATEMENT], "the engine still gets the real keys"
+        entry = sink.entries[0]
+        assert "ACCESSKEY_SENTINEL" not in (entry["sql_text"] or "")
+        assert "SECRETKEY_SENTINEL" not in (entry["sql_text"] or "")
+        assert "ACCESSKEY_SENTINEL" not in (entry["rewritten_sql"] or "")
+        assert "SECRETKEY_SENTINEL" not in (entry["rewritten_sql"] or "")
+
+    async def test_error_row_carries_no_credential(self, wired, monkeypatch):
+        service, repo, sink = wired
+
+        async def failing(sql, **kwargs):
+            repo.calls.append(sql)
+            raise RuntimeError(
+                f"StarRocks rejected: {sql} — REPOSITORY already exists"
+            )
+
+        monkeypatch.setattr(repo, "execute_as_user", failing)
+
+        with pytest.raises(RuntimeError):
+            await service.execute(
+                sql=self.STATEMENT,
+                username="admin",
+                encrypted_password="enc",
+            )
+
+        entry = sink.entries[0]
+        assert entry["status"] == "ERROR"
+        assert "ACCESSKEY_SENTINEL" not in (entry["sql_text"] or "")
+        assert "SECRETKEY_SENTINEL" not in (entry["sql_text"] or "")
+        assert "ACCESSKEY_SENTINEL" not in (entry["rewritten_sql"] or "")
+        assert "SECRETKEY_SENTINEL" not in (entry["rewritten_sql"] or "")
+        assert "ACCESSKEY_SENTINEL" not in (entry["error_message"] or "")
+        assert "SECRETKEY_SENTINEL" not in (entry["error_message"] or "")
+
+    async def test_unredactable_error_message_does_not_mask_the_original(
+        self, wired, monkeypatch
+    ):
+        """A redactor refusal must not replace the client's real error.
+
+        ``redact_for_output`` fails closed on a credential value it cannot
+        rewrite. This runs on the exception path, so a raise here would swap
+        the engine's message for a redaction error; the row takes a placeholder
+        instead and the original exception still propagates.
+        """
+        service, repo, sink = wired
+        malformed = "aws.s3.secret_key='unterminated"
+
+        async def failing(sql, **kwargs):
+            repo.calls.append(sql)
+            raise RuntimeError(malformed)
+
+        monkeypatch.setattr(repo, "execute_as_user", failing)
+
+        with pytest.raises(RuntimeError, match="unterminated"):
+            await service.execute(
+                sql="SELECT 1",
+                username="admin",
+                encrypted_password="enc",
+            )
+
+        entry = sink.entries[0]
+        assert entry["status"] == "ERROR"
+        assert entry["error_message"] == "[redacted: unredactable error message]"
+        assert malformed not in (entry["error_message"] or "")

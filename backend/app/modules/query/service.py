@@ -18,7 +18,7 @@ import time
 import asyncmy
 
 from app.common.audit import write_audit_log
-from app.common.sql_guard import split_sql_statements
+from app.common.sql_guard import CredentialsRedactionError, split_sql_statements
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
@@ -42,6 +42,23 @@ from app.storage.secrets import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _redact_error_message(message: str) -> str:
+    """The credential-free form of an engine error message, for the audit row.
+
+    An engine failure message can echo the rejected statement, and a statement
+    that carried resolved storage credentials would put the keys in
+    ``NOVA_SYSTEM.AUDIT_LOG``. ``redact_for_output`` fails closed on a
+    credential value it cannot rewrite; this runs on the exception path, so a
+    refusal must not replace the original error with a redaction error — the
+    row gets a fixed placeholder instead, never the raw string.
+    """
+    try:
+        return redact_for_output(message)
+    except CredentialsRedactionError:
+        return "[redacted: unredactable error message]"
+
 
 #: A table reference whose schema segment is the UI's ``default`` placeholder:
 #: ``<db>.default.<table>`` preceded by a table-introducing keyword.
@@ -378,7 +395,7 @@ class QueryService:
                 object_type="sql",
                 object_name=(database or "") if database else "workspace",
                 status="SUCCESS",
-                sql_text=sql,
+                sql_text=redacted_sql,
                 rewritten_sql=redacted_sql,
                 duration_ms=int(result.elapsed_ms),
                 rows_affected=result.affected_rows or result.row_count,
@@ -396,9 +413,9 @@ class QueryService:
                 object_type="sql",
                 object_name=(database or "") if database else "workspace",
                 status="ERROR",
-                sql_text=sql,
+                sql_text=redacted_sql,
                 rewritten_sql=redacted_sql,
-                error_message=str(exc),
+                error_message=_redact_error_message(str(exc)),
                 session_id=session_id,
                 file_id=file_id,
                 database_name=database,
