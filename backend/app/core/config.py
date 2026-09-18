@@ -85,6 +85,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     SESSION_TTL_SECONDS: int = 3600
 
+    # --- Internal machine-to-machine channel (/api/v1/internal/*) ---
+    # Pre-shared secret for callers with no Nova session (e.g. the Java UDF
+    # bridge). No default on purpose: unset means the internal endpoints fail
+    # closed (503). Configure via env/secret manager, never commit a value.
+    NOVA_INTERNAL_TOKEN: str = ""
+    #: Comma-separated peer addresses allowed to reach internal endpoints in
+    #: addition to loopback. Empty means loopback only.
+    NOVA_INTERNAL_TRUSTED_PROXY: str = ""
+
     # --- MinIO / S3 (default storage) ---
     S3_ENDPOINT: str = "http://localhost:9000"
     S3_ACCESS_KEY: str = "minioadmin"
