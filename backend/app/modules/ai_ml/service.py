@@ -7,14 +7,20 @@ Tables:
 
 import json
 import logging
+from contextlib import suppress
 from uuid import uuid4
 
 import asyncmy
 import asyncmy.cursors
 import httpx
 
+from app.common.crypto import decrypt, encrypt, mask_secret
+from app.common.ssrf_guard import (
+    BlockedEndpointError,
+    guarded_async_client,
+    resolve_and_validate_url,
+)
 from app.core.config import settings
-from app.common.crypto import encrypt, decrypt, mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -375,6 +381,10 @@ class AIService:
         For anthropic: GET {endpoint}/models (Anthropic v1 API)
 
         Returns dict with: success, message, models (list of model IDs).
+
+        The user-supplied ``endpoint`` is untrusted: it is run through the SSRF
+        guard before any network activity, and the request itself uses the
+        guard's transport so redirects are checked at every hop (NOVA-107).
         """
         # Build request based on provider type
         base_url = endpoint.rstrip("/")
@@ -396,8 +406,23 @@ class AIService:
                 "models": [],
             }
 
+        # Reject private/loopback/link-local targets before the request is
+        # built. The message is fixed and carries no resolved address.
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            resolve_and_validate_url(url)
+        except BlockedEndpointError:
+            logger.warning(
+                "Blocked test-connection to a non-public endpoint (provider=%s)",
+                provider_type,
+            )
+            return {
+                "success": False,
+                "message": "Endpoint is not allowed: it must be a public http(s) URL",
+                "models": [],
+            }
+
+        try:
+            async with guarded_async_client(timeout=15.0) as client:
                 resp = await client.get(url, headers=headers)
 
             if resp.status_code == 200:
@@ -447,17 +472,30 @@ class AIService:
                 "message": f"Cannot connect to {url} — check endpoint URL and network",
                 "models": [],
             }
+        except BlockedEndpointError:
+            # A redirect (or a rebound DNS answer) landed on a non-public
+            # address. Same public message as the pre-check; no address leaked.
+            logger.warning(
+                "Blocked test-connection redirect to a non-public endpoint "
+                "(provider=%s)",
+                provider_type,
+            )
+            return {
+                "success": False,
+                "message": "Endpoint is not allowed: it must be a public http(s) URL",
+                "models": [],
+            }
         except httpx.TimeoutException:
             return {
                 "success": False,
                 "message": f"Connection timed out after 15s — {url}",
                 "models": [],
             }
-        except Exception as e:
+        except Exception:
             logger.exception("Unexpected error testing connection to %s", url)
             return {
                 "success": False,
-                "message": f"Unexpected error: {e}",
+                "message": "Unexpected error testing connection",
                 "models": [],
             }
 
@@ -468,10 +506,8 @@ class AIService:
         """Deserialize a DB row, parsing JSON fields (default_params)."""
         result = dict(row)
         if result.get("default_params") and isinstance(result["default_params"], str):
-            try:
+            with suppress(json.JSONDecodeError, TypeError):
                 result["default_params"] = json.loads(result["default_params"])
-            except (json.JSONDecodeError, TypeError):
-                pass
         return result
 
 
