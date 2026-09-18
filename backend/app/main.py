@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.common.nova_system import init_nova_system
-from app.common.secret_keys import validate_required_secrets
+from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
 from app.core.exceptions import register_exception_handlers
@@ -62,10 +62,7 @@ async def lifespan(app: FastAPI):
     # Fail fast on missing/placeholder signing and encryption keys (NOVA-108).
     # This runs before any connection is opened so a misconfigured deployment
     # dies at boot with a clear message instead of at first login.
-    validate_required_secrets(
-        secret_key=settings.SECRET_KEY,
-        fernet_key=settings.FERNET_KEY,
-    )
+    require_configured_secrets()
 
     # Startup
     await db.init_system_pool()

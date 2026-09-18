@@ -24,6 +24,7 @@ import signal
 import redis.asyncio as aioredis
 
 from app.common.nova_system import init_task_orchestration
+from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
 from app.modules.task_orchestration.consumer import GraphRunConsumer
@@ -50,6 +51,10 @@ def build_worker_service(client: aioredis.Redis) -> WorkerService:
 
 
 async def _run() -> None:
+    # Fail closed before the first connection: the worker decrypts stored
+    # credentials (SessionCredentialProvider), so a blank/invalid FERNET_KEY
+    # must abort boot rather than fail every task at runtime (NOVA-108).
+    require_configured_secrets()
     await db.init_system_pool()
     await init_task_orchestration()
     client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)

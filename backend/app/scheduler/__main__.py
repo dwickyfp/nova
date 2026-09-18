@@ -22,6 +22,7 @@ import signal
 import redis.asyncio as aioredis
 
 from app.common.nova_system import init_task_orchestration
+from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
 from app.modules.task_orchestration.repository import task_orchestration_repository
@@ -76,6 +77,9 @@ async def _assert_engine_timezone() -> str | None:
 
 
 async def _run() -> None:
+    # Fail closed before the first connection: the scheduler signs session
+    # tokens with SECRET_KEY, so a missing key must abort boot (NOVA-108).
+    require_configured_secrets()
     await db.init_system_pool()
     try:
         await _assert_engine_timezone()
