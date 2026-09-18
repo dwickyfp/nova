@@ -540,7 +540,7 @@ partial implementation say so explicitly.
 ## Roadmap
 
 ### Phase 1 — Foundation & Auth ✅
-- [x] Docker infrastructure (StarRocks FE/BE, MinIO, Redis) — `docker/docker-compose-engine.yml` (starrocks/fe-ubuntu:4.1.1, be-ubuntu:4.1.1, minio, redis:7-alpine)
+- [x] Docker infrastructure (StarRocks FE/BE, MinIO, Redis) — `docker/docker-compose-engine.yml` (starrocks/fe-ubuntu:4.1.4, be-ubuntu:4.1.4, minio, redis:7-alpine). **Engine pin bumped 4.1.1 → 4.1.4 (NOVA-51, commit `4a9848e`)**; see the migration note in `HOW_TO_RUN.md` for the Parquet `isAdjustedToUTC=false` timestamp behaviour change
 - [x] FastAPI modular monolith with asyncmy driver — `backend/app/main.py`, `backend/app/core/database.py:6` (`import asyncmy`)
 - [x] JWT + Redis session management — `backend/app/core/redis.py`, `backend/app/modules/auth/service.py`
 - [x] StarRocks-native authentication (first-login setup wizard) — `backend/app/modules/auth/{router,service}.py`; the frontend implements this as a **setup form inside sign-in**, not a separate wizard route (`frontend/src/features/auth/sign-in/components/user-auth-form.tsx:29,88,147`)
@@ -642,7 +642,7 @@ Nova owns the cron/DAG engine rather than adopting a workflow framework; two
 processes (`nova-scheduler` singleton + `nova-worker` fan-out) over Redis Streams
 with `NOVA_SYSTEM` as the only source of truth; the Snowflake-superset
 `CREATE TASK` surface — a **Nova grammar surface, not an engine statement**
-(4.1.1 has only `SUBMIT TASK`; the 9b patch adds `CREATE TASK` and lowers it);
+(the pinned 4.1.4 engine has only `SUBMIT TASK`; the 9b patch adds `CREATE TASK` and lowers it);
 **delegate-first** authorization (submit `SUBMIT TASK` on
 the owner's own connection so StarRocks enforces RBAC); stream in a later stage with
 all three providers, including `partition_change` on `SHOW PARTITIONS.VisibleVersion`;
@@ -768,11 +768,13 @@ is queryable, and multi-FE leader failover (only single-FE restart has been obse
 
 Research and planning only — no implementation yet. All engine claims below were
 probed against the live `starrocks/fe-ubuntu:4.1.1` instance, not read from docs.
+The pin has since moved to `4.1.4` (NOVA-51); the task-clause surface these
+findings describe is unchanged between the two revisions, so the claims stand.
 
 | Decision | Reason | Trade-off accepted | Reopen trigger |
 |---|---|---|---|
 | **No cron in StarRocks 4.1**: Nova must own the cron parser and its own tick | `SCHEDULE = 'USING CRON …'` is rejected at parse time (`Unexpected input '='`); the only accepted forms are `MANUAL`, `SCHEDULE EVERY(INTERVAL …)`, `SCHEDULE START('<literal>') EVERY(…)'`. `START` also requires a quoted literal, not an expression | Nova carries a cron dependency (`croniter`, MIT) and a scheduler process. In exchange, sub-minute cadence and cron are possible at all | If StarRocks ships a `USING CRON` schedule form |
-| **DAG / dependency / trigger clauses must be Nova-native** | `AFTER`, `WHEN`, `FINALIZE`, `ALLOW_OVERLAPPING_EXECUTION` are all rejected by the 4.1.1 grammar. Progress between tasks can only be observed by polling `information_schema.task_runs` — there is no completion hook | Nova writes and maintains its own DAG engine, graph state and reconciliation loop; no push notification exists, so latency is bounded by poll interval | If StarRocks adds task dependency or callback syntax |
+| **DAG / dependency / trigger clauses must be Nova-native** | `AFTER`, `WHEN`, `FINALIZE`, `ALLOW_OVERLAPPING_EXECUTION` are all rejected by the engine grammar (probed on 4.1.1; unchanged in the pinned 4.1.4 upstream grammar). Progress between tasks can only be observed by polling `information_schema.task_runs` — there is no completion hook | Nova writes and maintains its own DAG engine, graph state and reconciliation loop; no push notification exists, so latency is bounded by poll interval | If StarRocks adds task dependency or callback syntax |
 | **Split engine: `nova-scheduler` + `nova-worker` as separate processes**, Redis Streams as transport, `NOVA_SYSTEM` as the authoritative state | Keeps "Single Database" and "no credential in NOVA_SYSTEM" intact — Redis is already a dependency (`SESSION_PREFIX`), so no new infrastructure. Prefect/Temporal would add a second control plane + DB; Celery/RQ/Dramatiq do not provide a DAG, so the graph engine would be written regardless | Two more processes to run and monitor; Nova owns queue semantics, at-least-once delivery and idempotency | If Redis is removed from the stack, or if a managed orchestrator becomes an approved dependency |
 | **Tasks are defined under the submitter's StarRocks identity** | Verified: the engine checks privileges **at `SUBMIT TASK` time against the submitter** and records them in `information_schema.tasks.CREATOR`. A restricted user's task needing `INSERT` is rejected at submit; granting it makes the same submit succeed | Each Nova task must carry an owner; a service identity would bypass the engine's own RBAC check | If Nova needs tasks that run without a live owning user (would require a reviewed `NOVA_TASK_EXECUTOR` role) |
 | **Task body is grammar-restricted to CTAS / INSERT / CACHE SELECT** | Confirmed at parse time: `CREATE TABLE`, `DROP TABLE`, `UPDATE`, `CREATE VIEW`, `SET`, bare `SELECT` are all rejected. A worker cannot be a thin `SUBMIT TASK` wrapper for arbitrary SQL | Nova must execute non-delegatable statements itself, which is exactly the service-identity problem above — MVP scope stays on delegatable bodies | If StarRocks widens the `submitTaskStatement` body grammar |

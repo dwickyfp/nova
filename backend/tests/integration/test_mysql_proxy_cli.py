@@ -153,6 +153,23 @@ def _reachable(host: str, port: int) -> bool:
         return False
 
 
+def _run_async(coro):
+    """Run ``coro`` on a fresh event loop and close it.
+
+    These tests mix a sync subprocess client with asyncmy reads. The implicit
+    loop ``asyncio.get_event_loop()`` returns is shared, module-scoped state:
+    once an async pytest module has run first, pytest-asyncio has torn that
+    loop down and the implicit getter raises ``RuntimeError: There is no
+    current event loop``. Owning the loop here removes the collection-order
+    dependency rather than depending on it.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
 async def _latest_rewritten_sql(user_name: str) -> list[str]:
     """The most recent rewritten statements recorded for ``user_name``.
 
@@ -346,9 +363,7 @@ class TestAcceptanceCriteria:
         )
         assert warm.returncode == 0, warm.output
 
-        rewritten = asyncio.get_event_loop().run_until_complete(
-            _latest_rewritten_sql(E2E_USER)
-        )
+        rewritten = _run_async(_latest_rewritten_sql(E2E_USER))
         stage_statements = [sql for sql in rewritten if "FILES(" in sql]
         assert stage_statements, f"no FILES() rewrite recorded in: {rewritten}"
 
@@ -374,9 +389,7 @@ class TestAcceptanceCriteria:
         )
         assert warm.returncode == 0, warm.output
 
-        for sql in asyncio.get_event_loop().run_until_complete(
-            _latest_rewritten_sql(E2E_USER)
-        ):
+        for sql in _run_async(_latest_rewritten_sql(E2E_USER)):
             assert "minioadmin" not in sql, "a credential value reached the audit row"
 
 

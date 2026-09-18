@@ -1,6 +1,6 @@
 services:
   starrocks-fe:
-    image: starrocks/fe-ubuntu:4.1.1
+    image: starrocks/fe-ubuntu:4.1.4
     # `start_fe.sh` directly, NOT the image's bundled fe_entrypoint.sh. That
     # entrypoint is Kubernetes-only: it derives POD_INDEX from a pod FQDN
     # (`fe_entrypoint.sh:66`) and then does arithmetic on it
@@ -44,7 +44,7 @@ services:
       start_period: 30s
 
   starrocks-be:
-    image: starrocks/be-ubuntu:4.1.1
+    image: starrocks/be-ubuntu:4.1.4
     # Same image shape, same reason: start_be.sh rather than be_entrypoint.sh.
     #
     # The BE must be registered with the FE explicitly. FE_ADDRESS only tells
