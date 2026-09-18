@@ -32,6 +32,7 @@ matched pieces.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from app.core.exceptions import ForbiddenSQLError
 
@@ -206,6 +207,60 @@ def check_property_value(value: str) -> str:
     candidate = (value or "").strip()
     if not candidate or not re.fullmatch(r"[A-Za-z0-9_.+-]+", candidate):
         raise DDLError(f"Invalid property value: {value!r}")
+    return candidate
+
+
+#: A task schedule interval: ``1 HOUR``, ``30 MINUTE``, ``2 DAY``. The unit is a
+#: fixed StarRocks-supported keyword and the count is a positive integer, so the
+#: value that reaches ``EVERY(INTERVAL …)`` is composed only of allow-listed
+#: tokens. Built from ``\d+``/the unit alternation rather than a permissive
+#: pattern, because the whole value is interpolated into the statement.
+_INTERVAL = re.compile(
+    r"^\d+\s+(?:SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)\Z",
+    re.IGNORECASE,
+)
+
+#: A schedule start time: the shapes ``datetime.fromisoformat`` accepts after
+#: the space separator is normalised to ``T`` (``2026-01-01 08:00:00``).
+
+
+def check_interval(value: str) -> str:
+    """Return ``value`` if it is an allow-listed schedule interval, else raise.
+
+    StarRocks spells a periodic task interval as ``EVERY(INTERVAL <n> <UNIT>)``.
+    The count and unit are matched whole — ``1 HOUR`` is accepted, ``1 HOUR);
+    DROP …`` is not — so the value cannot close the ``INTERVAL`` clause.
+    """
+    candidate = (value or "").strip()
+    if not candidate or not _INTERVAL.match(candidate):
+        raise DDLError(
+            f"Invalid interval: {value!r} "
+            "(expected <n> SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)"
+        )
+    return candidate
+
+
+def check_start_time(value: str) -> str:
+    """Return ``value`` if it is a parsable datetime, else raise.
+
+    ``start_time`` is interpolated into ``SCHEDULE START('…')``, so it is a
+    *literal* and must not carry a quote. The value is parsed as a datetime
+    (which admits only digit, ``-``, ``T``/space, ``:`` and ``.`` characters)
+    and returned as written, so the caller's spelling reaches the statement.
+
+    Raises:
+        DDLError: if the value is empty, carries a quote, or does not parse.
+    """
+    candidate = (value or "").strip()
+    if not candidate or "'" in candidate or "`" in candidate or ";" in candidate:
+        raise DDLError(f"Invalid start_time: {value!r}")
+    normalized = candidate.replace(" ", "T", 1)
+    try:
+        datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise DDLError(
+            f"Invalid start_time: {value!r} is not a datetime"
+        ) from exc
     return candidate
 
 
