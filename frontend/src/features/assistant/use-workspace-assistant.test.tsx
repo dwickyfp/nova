@@ -221,11 +221,11 @@ describe('useWorkspaceAssistant grant lifecycle across files', () => {
     expect(streamAssistantTurn).toHaveBeenLastCalledWith('thread-a', 'again', expect.anything())
   })
 
-  it('retains the reset bar and reports the failure when the revoke on switch fails', async () => {
+  it('clears the stale conversation on switch even when the revoke fails, and the next send opens a new thread', async () => {
     createThread.mockResolvedValueOnce({ thread_id: 'thread-a' })
     createThread.mockResolvedValueOnce({ thread_id: 'thread-b' })
     mockTurnThenSessionGrant()
-    resetGrant.mockRejectedValue(new Error('Thread not found'))
+    resetGrant.mockRejectedValue(new Error('Network unreachable'))
     const onError = vi.fn()
     const holder: { current: Assistant | null } = { current: null }
     const view = await render(
@@ -238,9 +238,50 @@ describe('useWorkspaceAssistant grant lifecycle across files', () => {
 
     await view.rerender(<PanelHarness holder={holder} fileId='file-2' onError={onError} />)
 
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('Thread not found'))
-    await expect
-      .element(view.getByText('Read-only queries are allowed in this conversation.'))
-      .toBeInTheDocument()
+    await vi.waitFor(() => expect(resetGrant).toHaveBeenCalledWith('thread-a'))
+    await vi.waitFor(() => expect(holder.current!.threadId).toBeNull())
+    expect(holder.current!.grantActive).toBe(false)
+    expect(holder.current!.messages).toHaveLength(0)
+    expect(onError).toHaveBeenCalledWith('Network unreachable')
+
+    echoStream()
+    await holder.current!.sendMessage('sent-on-file-2')
+
+    expect(streamAssistantTurn).toHaveBeenLastCalledWith(
+      'thread-b',
+      'sent-on-file-2',
+      expect.anything()
+    )
+  })
+
+  it('clears the stale conversation on switch when the revoke answers 404', async () => {
+    createThread.mockResolvedValueOnce({ thread_id: 'thread-a' })
+    createThread.mockResolvedValueOnce({ thread_id: 'thread-b' })
+    mockTurnThenSessionGrant()
+    resetGrant.mockResolvedValue(undefined)
+    const onError = vi.fn()
+    const holder: { current: Assistant | null } = { current: null }
+    const view = await render(
+      <PanelHarness holder={holder} fileId='file-1' onError={onError} />
+    )
+
+    await holder.current!.sendMessage('hi')
+    await holder.current!.decide({ toolCallId: 'call-1', decision: 'approve', alwaysAllow: true })
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true))
+
+    await view.rerender(<PanelHarness holder={holder} fileId='file-2' onError={onError} />)
+
+    await vi.waitFor(() => expect(holder.current!.threadId).toBeNull())
+    expect(holder.current!.grantActive).toBe(false)
+    expect(holder.current!.messages).toHaveLength(0)
+
+    echoStream()
+    await holder.current!.sendMessage('sent-on-file-2')
+
+    expect(streamAssistantTurn).toHaveBeenLastCalledWith(
+      'thread-b',
+      'sent-on-file-2',
+      expect.anything()
+    )
   })
 })

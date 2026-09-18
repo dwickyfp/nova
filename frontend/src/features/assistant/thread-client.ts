@@ -1,4 +1,4 @@
-import { api } from '@/lib/api-client'
+import { ApiError, api } from '@/lib/api-client'
 
 /**
  * Thread CRUD, mirroring `backend/app/modules/assistant/router.py`.
@@ -40,10 +40,16 @@ export async function deleteThread(threadId: string): Promise<void> {
 
 /**
  * Revokes the conversation's read-only always-allow grant (spec §6). The
- * backend takes no body and answers 204; a request for a thread this user does
- * not own answers 404, which the API client throws as an Error for the caller
- * to surface.
+ * backend takes no body and answers 204. A 404 means the thread is already
+ * gone (the store is process-local, so a backend restart clears it) or is not
+ * this user's; revoking a grant that no longer exists is a no-op, so 404
+ * resolves rather than throwing. Network and other failures still reject.
  */
 export async function resetGrant(threadId: string): Promise<void> {
-  await api.delete(`/assistant/threads/${encodeURIComponent(threadId)}/grant`)
+  try {
+    await api.delete(`/assistant/threads/${encodeURIComponent(threadId)}/grant`)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return
+    throw error
+  }
 }

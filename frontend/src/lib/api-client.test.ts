@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from './api-client'
+import { ApiError, api } from './api-client'
 
 const fetchMock = vi.fn()
 
@@ -73,6 +73,20 @@ describe('api.patch', () => {
     await expect(api.patch('/example')).rejects.toThrow(
       'Pipe is already suspended'
     )
+  })
+
+  it('exposes the HTTP status on the thrown error', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ detail: 'Thread not found' }),
+    })
+
+    const error = await api.delete('/example').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(404)
   })
 })
 
