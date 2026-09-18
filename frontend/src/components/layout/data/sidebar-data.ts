@@ -3,6 +3,7 @@ import {
   Brain,
   Clock,
   Database,
+  FolderOpen,
   House,
   ListTodo,
   Shield,
@@ -44,6 +45,11 @@ export const sidebarData: SidebarData = {
           title: 'Database Explorer',
           url: '/database-explorer',
           icon: Database,
+        },
+        {
+          title: 'Stages',
+          url: '/stages',
+          icon: FolderOpen,
         },
         {
           title: 'External Catalogs',
