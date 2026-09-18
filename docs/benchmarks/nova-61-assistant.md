@@ -8,9 +8,9 @@
 - **Date:** 2026-09-18
 - **Measured at revision:** the head of PR #98
   (`agent/python-dev-expert/2a5544ff7f35`), which contains
-  `backend/tests/benchmark/`. The branch is rebased onto `main` before merge,
-  so its SHAs move; this report deliberately names no fixed SHA. The durable
-  citation once the PR lands is the merge commit on `main`. **Verify the
+  `backend/tests/benchmark/`. The branch was rebased onto `main` before merge,
+  so its branch SHAs moved; the durable citation is the merge commit on `main`,
+  `66cdccdaaf1349798a420e70e6704fadcdc14344` (PR #98). **Verify the
   checkout actually contains the suite before running the reproduce block:**
 
   ```bash
@@ -20,7 +20,7 @@
 
   Run from the repository root. If the second command prints nothing, the
   checkout predates the benchmark and the reproduce command would fail with
-  `file or directory not found` — check out PR #98's head instead.
+  `file or directory not found` — check out the merge commit above instead.
 - **Python:** 3.12.8
 - **Machine:** Apple M3, 8 cores, macOS 26.6.2 (arm64)
 - **Method:** `time.perf_counter_ns`, N iterations per case, reported as
