@@ -34,6 +34,7 @@ from app.core.deps import get_current_user
 from app.modules.assistant import events
 from app.modules.assistant.consent import consent_broker
 from app.modules.assistant.provider import assistant_provider
+from app.modules.assistant.registry import tool_registry
 from app.modules.assistant.schemas import (
     ConsentDecisionRequest,
     ConsentDecisionResponse,
@@ -47,7 +48,7 @@ from app.modules.assistant.schemas import (
 )
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantMessage, AssistantThread, thread_store
-from app.modules.assistant.tools import ToolInvocation, tool_registry
+from app.modules.assistant.tools import ToolInvocation
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,9 @@ async def send_message(
         schema_name=body.schema_name,
         role=body.role,
         workspace_file_id=thread.workspace_file_id,
+        session_id=user.get("session_id"),
+        thread_id=thread.thread_id,
+        user=user,
     )
 
     async def resolve_consent(

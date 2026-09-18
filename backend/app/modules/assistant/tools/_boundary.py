@@ -41,12 +41,18 @@ class AssistantTool(Protocol):
     """A tool the loop may invoke.
 
     ``classification`` decides whether a conversation grant may auto-approve a
-    call (E2b: read-only only). ``preview`` produces the redacted SQL shown in
-    the approval card — Stage C owns making that redaction real.
+    call (E2b: read-only only). It is declared as a **read-only property**
+    because ``query_execute`` classifies per invocation (a payload with a denied
+    statement is not read-only); a stub tool may satisfy it with a plain
+    attribute, which mypy accepts as a property implementation.
+    ``preview`` produces the redacted SQL shown in the approval card — Stage C
+    owns making that redaction real.
     """
 
     name: str
-    classification: ToolClassification
+
+    @property
+    def classification(self) -> ToolClassification: ...
 
     def preview(self, invocation: ToolInvocation) -> str: ...
 
@@ -76,6 +82,8 @@ class ToolRegistry:
 
 
 tool_registry = ToolRegistry()
+"""Deprecated alias: the canonical registry is ``app.modules.assistant.registry``,
+which registers the Stage C tools. Kept so a Stage B import keeps working."""
 
 #: Signature the loop uses to request a consent decision from the transport.
 #: ``None`` means the client disconnected or the turn was cancelled.
