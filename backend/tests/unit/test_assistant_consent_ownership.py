@@ -74,6 +74,27 @@ def _open_pending_sync(broker: ConsentBroker) -> None:
     asyncio.run(_open_pending(broker))
 
 
+def _open_pending_classification_sync(
+    broker: ConsentBroker,
+    tool_call_id: str,
+    thread_id: str,
+    user_name: str,
+    classification: str,
+) -> None:
+    """Open a pending entry with an explicit classification, from a sync test."""
+    import asyncio
+
+    async def _open() -> None:
+        broker.open(
+            tool_call_id,
+            thread_id=thread_id,
+            user_name=user_name,
+            classification=classification,
+        )
+
+    asyncio.run(_open())
+
+
 @pytest.fixture(autouse=True)
 def _clean_thread_store():
     thread_store.clear()
@@ -182,6 +203,97 @@ async def test_owner_sets_the_grant_on_their_own_conversation_only(monkeypatch):
     assert response.grant_active is True
     assert alice_thread.consent.always_allow_read_only is True
     assert bob_thread.consent.always_allow_read_only is False
+
+
+# ── allow_session is gated on the call's classification (NOVA-122) ───────────
+#
+# The route used to set the grant on *any* ``allow_session`` decision, so a
+# direct API caller could record consent the UI never presented (it only offers
+# always-allow for ``classification === 'read_only'``). These pin that the
+# decision is validated against the pending call's class.
+
+
+async def test_allow_session_on_a_read_only_call_sets_the_grant(monkeypatch):
+    broker = ConsentBroker()
+    monkeypatch.setattr(
+        "app.modules.assistant.router.consent_broker", broker, raising=True
+    )
+    thread = thread_store.create(user_name="alice", title="A")
+    broker.open(
+        "call-1",
+        thread_id=thread.thread_id,
+        user_name="alice",
+        classification="read_only",
+    )
+
+    response = await resolve_tool_call(
+        "call-1",
+        ConsentDecisionRequest(decision="allow_session"),
+        user={"username": "alice"},
+    )
+
+    assert response.grant_active is True
+    assert response.status == "approved"
+    assert thread.consent.always_allow_read_only is True
+
+
+@pytest.mark.parametrize("classification", ["destructive", "denied"])
+async def test_allow_session_on_a_non_read_only_call_is_rejected(
+    monkeypatch, classification
+):
+    """The grant is not set, and the pending call is left for a valid decision."""
+    from fastapi import HTTPException
+
+    broker = ConsentBroker()
+    monkeypatch.setattr(
+        "app.modules.assistant.router.consent_broker", broker, raising=True
+    )
+    thread = thread_store.create(user_name="alice", title="A")
+    broker.open(
+        "call-1",
+        thread_id=thread.thread_id,
+        user_name="alice",
+        classification=classification,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await resolve_tool_call(
+            "call-1",
+            ConsentDecisionRequest(decision="allow_session"),
+            user={"username": "alice"},
+        )
+
+    assert exc.value.status_code == 400
+    assert thread.consent.always_allow_read_only is False
+    # Not consumed: the owner can still resolve it with allow_once.
+    assert broker.owner_of("call-1") == (thread.thread_id, "alice")
+
+    response = await resolve_tool_call(
+        "call-1",
+        ConsentDecisionRequest(decision="allow_once"),
+        user={"username": "alice"},
+    )
+    assert response.status == "approved"
+    assert response.grant_active is False
+    assert thread.consent.always_allow_read_only is False
+
+
+def test_allow_session_on_a_non_read_only_call_is_400_over_http(app_and_broker):
+    """Same gate at the HTTP boundary the defect was reported on."""
+    client, broker, current = app_and_broker
+    thread = thread_store.create(user_name="alice", title="A")
+    _open_pending_classification_sync(
+        broker, "call-1", thread.thread_id, "alice", "destructive"
+    )
+
+    current["username"] = "alice"
+    resp = client.post(
+        "/api/v1/assistant/tool-calls/call-1/decision",
+        json={"decision": "allow_session"},
+    )
+
+    assert resp.status_code == 400
+    assert thread.consent.always_allow_read_only is False
 
 
 # ── Reset grant (NOVA-100) ───────────────────────────────────────────────────
