@@ -92,6 +92,13 @@ statement
     | alterViewStatement
     | dropViewStatement
 
+    // NOVA-BEGIN (NOVA-125 / 109-A): the Nova `CREATE ML_MODEL` statement. It has
+    // no engine counterpart (StarRocks has no ML_MODEL DDL), so it is a Nova-only
+    // statement and is listed here rather than folded into an existing rule. No
+    // production caller lowers it in this slice (109-B, NOVA-126).
+    | createMlModelStatement
+
+    // NOVA-END
     // Partition Statement
     | showPartitionsStatement
     | recoverPartitionStatement
@@ -711,6 +718,81 @@ columnNameWithComment
     : columnName=identifier comment?
     ;
 
+// NOVA-BEGIN (NOVA-125 / 109-A): the Nova `CREATE ML_MODEL` statement.
+//
+// Surface (AGENTS.md:245, docs/19-machine-learning.md:184):
+//   CREATE ML_MODEL model_name
+//       TYPE = FORECAST
+//       INPUT = (SELECT ...)
+//       TIMESTAMP = 'date'
+//       TARGET = 'sales_amount'
+//       [SERIES = 'store_id']
+//       [CONFIG = ('method' = 'best', ...)]
+//       AS SELECT ...            -- compact form the current regex parser accepts
+//
+// Two bodies are accepted because the repository has two documented shapes: the
+// clause form above, and the compact form `... TARGET = c AS SELECT ...` that
+// `backend/app/modules/query/dialect/ml_model.py` already parses. Both end in a
+// training `queryStatement`, so the parser needs no lowering decision here.
+//
+// `TYPE` values are not enumerated: the regex parser is the validator and owns
+// the accept/reject decision (it rejects `TYPE = BANANA`). Keeping the grammar
+// permissive there means a new model type does not need a grammar change, which
+// matches the issue's split -- this slice is the substrate, 109-B wires it in.
+// `TYPE` itself is required by both documented shapes, so the rule demands it:
+// `CREATE ML_MODEL m` fails with a position instead of parsing as an empty body.
+//
+// `TEST_SIZE`/`ALGORITHM`/`FEATURES`/`HYPERPARAMETERS` are the compact-form
+// clauses; `mlModelProperty` accepts a string or a number so the existing regex
+// remains the only authority on what the values mean.
+createMlModelStatement
+    : CREATE ML_MODEL modelName=qualifiedName
+      mlModelTypeClause
+      (mlModelInputClause | mlModelTimestampClause | mlModelTargetClause
+       | mlModelSeriesClause | mlModelConfigClause | mlModelCompactClause)*
+      AS training=queryStatement
+    ;
+
+mlModelTypeClause
+    : TYPE EQ identifierOrString
+    ;
+
+mlModelInputClause
+    : INPUT EQ '(' queryStatement ')'
+    ;
+
+mlModelTimestampClause
+    : TIMESTAMP EQ identifierOrString
+    ;
+
+mlModelTargetClause
+    : TARGET EQ identifierOrString
+    ;
+
+mlModelSeriesClause
+    : SERIES EQ identifierOrString
+    ;
+
+mlModelConfigClause
+    : CONFIG EQ '(' mlModelPropertyList? ')'
+    ;
+
+mlModelCompactClause
+    : ALGORITHM EQ identifierOrString
+    | TEST_SIZE EQ number
+    | FEATURES EQ '(' identifierOrStringList ')'
+    | HYPERPARAMETERS EQ JSON? string
+    ;
+
+mlModelPropertyList
+    : mlModelProperty (',' mlModelProperty)*
+    ;
+
+mlModelProperty
+    : identifierOrString EQ (string | number)
+    ;
+
+// NOVA-END
 // ------------------------------------------- Task Statement ----------------------------------------------------------
 
 submitTaskStatement
@@ -2595,6 +2677,18 @@ relation
 relationPrimary
     : qualifiedName queryPeriod? partitionNames? tabletList? replicaList? sampleClause? (
         AS? alias=identifier)? bracketHint? (BEFORE ts=string)?                          #tableAtom
+    // NOVA-BEGIN (NOVA-125 / 109-A): the Nova `@stage` table reference.
+    // `@stage1`, `@stage1/`, `@stage1.data.csv`, `@stage1/folder/x.csv` and the
+    // glob `@stage1.data/*.csv` are table-position operands (docs/04-stage-manager.md,
+    // docs/02-sql-worksheet.md). `@@name` stays the engine's `systemVariable`
+    // (defined at `systemVariable` below and reachable through `primaryExpression`),
+    // never a stage: two `AT` tokens can only begin `@@`, and this alternative
+    // consumes a single `AT`. `relationPrimary` is reached from `relation`, so a
+    // stage is legal wherever a table is: FROM, JOIN, subquery, CTE, INSERT ...
+    // SELECT, CREATE ... AS SELECT. A production caller does not switch to this
+    // entry point in this slice (109-B, NOVA-126).
+    | stageReference (AS? alias=identifier)?                                         #stageAtom
+    // NOVA-END
     | '(' VALUES rowConstructor (',' rowConstructor)* ')'
         (AS? alias=identifier columnAliases?)?                                          #inlineTable
     | ASSERT_ROWS? subquery (AS? alias=identifier columnAliases?)?                      #subqueryWithAlias
@@ -2607,6 +2701,62 @@ relationPrimary
     | '(' relations ')'                                                                 #parenthesizedRelation
     ;
 
+// NOVA-BEGIN (NOVA-125 / 109-A): the Nova `@stage` reference, composed from
+// tokens the engine already has. The whole path is one parser rule rather than a
+// lexer token because a lexer token would have to decide context-free whether
+// `@foo` is a stage or a user variable, and `@foo` is both (`SELECT @foo` is a
+// variable; `FROM @foo` is a stage). Keeping it in the parser is what lets the
+// same `@name` mean the two things by position.
+//
+// Grammar:
+//   stageReference        : AT stageSegment (stageSeparator stageSegment)* '/'?
+//   stageSeparator        : '.' | '/'
+//   stageSegment          : (identifier | ASTERISK_SYMBOL) (MINUS_SYMBOL (identifier | ASTERISK_SYMBOL))*
+//
+// * the first `stageSegment` is the stage name; the rest are the dotted path
+//   (`@stage1.data.csv`) or the slash path (`@stage1/folder/x.csv`). Dots and
+//   slashes mix (`@stage1/data.csv`), matching the translator's segment model
+//   (`docs/arch-01-sql-dialect-engine.md`).
+// * `MINUS_SYMBOL` is what a hyphen lexes as, so `stage-a`, `daily-load-2` are
+//   single segments. `docs/04-stage-manager.md` allows hyphens in stage names.
+// * `ASTERISK_SYMBOL` covers the glob forms `@stage1.data/*.csv` and
+//   `@stage1.*.csv`; a glob is a segment like any other.
+// * `decimalAtom` handles the one lexer quirk in this surface: `2.` lexes as a
+//   single `DECIMAL_VALUE`, dot included, so `@stage-2.data.csv` arrives as
+//   `stage - 2. data . csv` and the `.` separator is already inside the token.
+//   The atom therefore absorbs the segment that follows it directly; without
+//   this, a hyphenated stage whose last part is a digit would not parse. The
+//   alternative is nested inside `stageSegment` (not `stageReference`) so a
+//   glued segment can never swallow a table alias: `FROM @stage1 t` still reads
+//   `t` as the alias.
+// * the trailing `'/'` is the documented bare-directory form (`@stage1/`,
+//   `docs/04-stage-manager.md:87`). It is optional and separate from the
+//   separators because it may end the reference.
+stageReference
+    : AT stageSegment (stageSeparator stageSegment)* '/'?
+    ;
+
+stageSeparator
+    : '.'
+    | '/'
+    ;
+
+stageSegment
+    : stagePathAtom (MINUS_SYMBOL stagePathAtom)*
+    ;
+
+stagePathAtom
+    : identifier
+    | ASTERISK_SYMBOL
+    | INTEGER_VALUE
+    | decimalAtom
+    ;
+
+decimalAtom
+    : DECIMAL_VALUE stagePathAtom?
+    ;
+
+// NOVA-END
 pivotClause
     : PIVOT '(' pivotAggregationExpression (',' pivotAggregationExpression)*
         FOR (identifier | identifierList) IN '(' pivotValue (',' pivotValue)* ')' ')'
@@ -3376,6 +3526,12 @@ number
 
 nonReserved
     : ACCESS | ACTIVE | ADVISOR | AFTER | AGGREGATE | APPLY | ASYNC | AUTHORS | AVG | ADMIN | ANTI | AUTHENTICATION | AUTO_INCREMENT | AUTOMATED
+    // NOVA-BEGIN (NOVA-125 / 109-A): the CREATE ML_MODEL clause keywords. Adding
+    // them here is what keeps a column or table named `target`, `input`, `series`,
+    // `algorithm`, `test_size`, `features` or `hyperparameters` parsing as an
+    // identifier -- without it these new tokens would become reserved spellings.
+    | ML_MODEL | INPUT | TARGET | SERIES | ALGORITHM | TEST_SIZE | FEATURES | HYPERPARAMETERS
+    // NOVA-END
     | ARRAY_AGG | ARRAY_AGG_DISTINCT | ASSERT_ROWS | AWARE
     | BACKEND | BACKENDS | BACKUP | BEGIN | BITMAP_UNION | BLACKLIST | BLACKHOLE | BINARY | BODY | BOOLEAN | BRANCH | BROKER | BUCKETS
     | BUILTIN | BASE | BEFORE | BASELINE
