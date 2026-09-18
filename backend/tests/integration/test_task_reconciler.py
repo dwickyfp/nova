@@ -791,6 +791,87 @@ class TestLostTraceSettlesThroughWorkerService:
         assert settled is not None
         assert settled["state"] == "success"
 
+    async def test_fresh_heartbeat_running_node_does_not_hang_reconcile(
+        self, engine_infra, cleanup_runs
+    ):
+        """NOVA-53: a running node with a *fresh* heartbeat must not hang.
+
+        The prior test drives the stale-heartbeat path: a negative timeout lets
+        ``abandon_stale_nodes`` settle the node to ``abandoned`` before
+        ``_requeue``, so the node reaching ``_drive`` is claimable. That path
+        never reaches NOVA-53's shape.
+
+        Here the heartbeat has **not** lapsed, so the reconciler cannot settle
+        the node — exactly the live-worker / fresh-engine case. The node is
+        still ``running`` when ``_drive`` re-evaluates it. ``evaluate`` names it
+        ready (standalone ⇒ no parents ⇒ ``all(...)`` true) but
+        ``_execute_ready`` cannot claim it, so with no progress guard ``_drive``
+        spins forever and ``reconcile_once`` never returns. Bounded here so a
+        regression fails instead of stalling the suite.
+
+        The production standalone graph key is the task **id**. The node is left
+        ``running``; the delivery does all it can and returns ``RUNNING``.
+        """
+        from app.modules.task_orchestration.credentials import StaticCredentialProvider
+        from app.modules.task_orchestration.execution import DelegateExecutor
+        from app.modules.task_orchestration.worker_service import WorkerService
+
+        suffix = uuid4().hex[:8]
+        name = f"fresh_{suffix}"
+        task = await repo.create_task(
+            {
+                "name": name,
+                "timezone": "UTC",
+                # A per-test table so a regression that lets the node execute
+                # cannot race the sibling test's shared probe table.
+                "definition": (
+                    f"INSERT INTO NOVA_SYSTEM.nova_fresh_probe_{suffix} SELECT 1"
+                ),
+                "database_name": "NOVA_SYSTEM",
+                "schedule_kind": "manual",
+            },
+            created_by=SR_USER,
+        )
+        cleanup_runs["task"].append(task["id"])
+        run = await repo.create_graph_run(
+            {"graph_id": task["id"], "trigger_type": "manual", "state": "running"}
+        )
+        cleanup_runs["graph"].append(run["id"])
+        node = await repo.create_task_run(
+            {
+                "graph_run_id": run["id"],
+                "task_id": task["id"],
+                "state": "running",
+                "delegated": True,
+            }
+        )
+
+        executor = DelegateExecutor(
+            StaticCredentialProvider({SR_USER: SR_PASSWORD}),
+            poll_interval=0.5,
+            poll_timeout=60.0,
+        )
+        service = WorkerService(
+            repo,
+            executor,
+            consumer=_NullConsumer(),
+            # A large positive timeout keeps the just-created heartbeat fresh, so
+            # the heartbeat path does NOT settle the node: NOVA-53's shape.
+            reconciler=Reconciler(repo, heartbeat_timeout_seconds=3600),
+        )
+
+        await asyncio.wait_for(service.reconcile_once(), timeout=60)
+
+        # The unclaimable node was not executed and did not change state; the
+        # graph is not pinned to a dead worker any longer, but it is also not
+        # falsely settled.
+        final_node = await repo.get_task_run(node["id"])
+        assert final_node is not None
+        assert final_node["state"] == "running"
+        current = await repo.get_graph_run(run["id"])
+        assert current is not None
+        assert current["state"] == "running"
+
 
 class _NullConsumer:
     """A consumer that never yields; native reconcile needs no stream."""
