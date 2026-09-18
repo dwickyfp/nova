@@ -223,9 +223,9 @@ consumes them.
 Rules:
 
 - The stream pauses at `tool_call` pending consent. Consent arrives on a
-  separate HTTP call (§6, `POST …/tool-calls/{id}/decision`); the server then
-  emits `tool_status` on the still-open stream. This avoids a half-duplex
-  approval over the SSE channel.
+  separate HTTP call (§6, `POST /api/v1/assistant/tool-calls/{tool_call_id}/decision`);
+  the server then emits `tool_status` on the still-open stream. This avoids a
+  half-duplex approval over the SSE channel.
 - On client disconnect, the server **stops the loop** and marks the partial
   message `cancelled`, not deleted (UI requirement).
 - Server-provided text is rendered as plain text by the client; the client must
@@ -330,6 +330,38 @@ The "always allow" grant:
 Consent decisions are recorded per call in memory for the UI; the durable audit
 trail is the execution audit row plus, optionally, a Stage C `assistant_tool`
 event (§7). No consent state is persisted in v1.
+
+### 6.1 Wire contract (frozen)
+
+The endpoint is scoped by `tool_call_id` alone. There is deliberately **no
+`/threads/{thread_id}` segment**: the broker already binds a call to its owning
+conversation, so a thread id in the path would be redundant or, worse, let a
+caller name a thread the call does not belong to.
+
+```
+POST /api/v1/assistant/tool-calls/{tool_call_id}/decision
+Content-Type: application/json
+
+{ "decision": "allow_once" | "allow_session" | "deny" }
+```
+
+| `decision` | UI intent | Effect |
+|---|---|---|
+| `allow_once` | **Allow**, always-allow unchecked | approve this call only |
+| `allow_session` | **Allow**, always-allow checked | approve + set the read-only conversation grant (E2b) |
+| `deny` | **Deny** | reject this call |
+
+Rules:
+
+- The body is exactly one enum field. There is **no `always_allow` boolean**;
+  "always allow" is expressed by selecting `allow_session`, which the backend
+  only honours for a read-only statement.
+- The UI keeps its own two-part intent (`approve`/`deny` plus an `alwaysAllow`
+  flag) and maps it to this enum at the HTTP boundary, so the read-only gate
+  stays a client concern and the wire stays a single frozen enum.
+- The response is `{ "tool_call_id", "status", "grant_active" }`.
+- Unknown, already-resolved, or another user's `tool_call_id` answers **404**
+  (never 403), so existence does not leak (NOVA-70).
 
 ---
 

@@ -13,6 +13,8 @@ export type WorkspaceTreeResponse = {
   open_tabs: string[]
   active_tab: string | null
   sidebar_collapsed: boolean
+  /** Added with the Stage B assistant field; absent until that lands. */
+  assistant_collapsed?: boolean
   defaults: {
     database?: string | null
     schema?: string | null

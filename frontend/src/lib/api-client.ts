@@ -2,6 +2,18 @@ import { useAuthStore } from '@/stores/auth-store'
 
 const API_BASE = '/api/v1'
 
+export function apiBase() {
+  return API_BASE
+}
+
+export function authHeaders(extra?: Record<string, string>) {
+  const token = useAuthStore.getState().auth.accessToken
+  return {
+    ...(extra ?? {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+}
+
 async function request<T>(path: string, options: RequestInit & { signal?: AbortSignal } = {}): Promise<T> {
   const token = useAuthStore.getState().auth.accessToken
   const headers: Record<string, string> = {
