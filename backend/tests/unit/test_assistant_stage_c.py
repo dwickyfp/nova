@@ -371,7 +371,81 @@ def test_read_only_grant_does_not_cover_into_outfile_classification():
     assert ConsentPolicy(always_allow_read_only=True).covers(classification) is False
 
 
+# ── EXPLAIN classifies by its inner statement (NOVA-82) ─────────────────────
 
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "EXPLAIN DROP TABLE x",
+        "EXPLAIN ANALYZE DELETE FROM t",
+        "EXPLAIN ANALYZE INSERT INTO t VALUES (1)",
+        "EXPLAIN UPDATE t SET a = 1",
+        "EXPLAIN GRANT SELECT ON t TO u",
+        "EXPLAIN CREATE TABLE x (a INT)",
+        "EXPLAIN SELECT 1 INTO OUTFILE 's3://b/x'",
+    ],
+)
+def test_explain_over_a_destructive_statement_is_denied(sql):
+    assert tool_classification(sql) == "denied"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "EXPLAIN SELECT 1",
+        "EXPLAIN ANALYZE SELECT * FROM t",
+        "EXPLAIN WITH x AS (SELECT 1) SELECT * FROM x",
+        "EXPLAIN SHOW TABLES",
+        "EXPLAIN DESCRIBE t",
+    ],
+)
+def test_explain_over_a_read_only_statement_stays_read_only(sql):
+    assert tool_classification(sql) == "read_only"
+
+
+async def test_explain_over_a_destructive_statement_is_refused_before_the_engine(fakes):
+    service, audit = fakes
+    tool = QueryExecuteTool()
+    outcome = await tool.run(_invocation("EXPLAIN ANALYZE DELETE FROM t"), _context())
+
+    assert outcome.ok is False
+    assert service.calls == []  # the engine was never reached
+    assert audit.rows and audit.rows[0]["status"] == "DENIED"
+
+
+async def test_grant_never_auto_approves_explain_over_a_mutation():
+    """NOVA-82 end-to-end: an active grant still prompts for EXPLAIN ANALYZE DELETE."""
+    provider = FakeProvider(
+        [
+            {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1")]},
+            {"role": "assistant", "content": "refused"},
+        ]
+    )
+    tool = RecordingTool("denied")
+    registry = ToolRegistry()
+    registry.register(tool)
+    loop = AssistantLoop(provider=provider, registry=registry)
+    thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
+    thread.consent.always_allow_read_only = True
+
+    asked: list[str] = []
+
+    async def resolver(inv, cls):
+        asked.append(cls)
+        return False
+
+    frames = await _collect(
+        loop.run(
+            thread=thread,
+            user_content="go",
+            context=_context(),
+            resolve_consent=resolver,
+        )
+    )
+    assert "tool_call" in [_frame_event(f) for f in frames]
+    assert asked == ["denied"]
+    assert tool.runs == 0
 
 # ── CTE body: a WITH prefix is not itself read-only ─────────────────────────
 
@@ -673,6 +747,51 @@ def test_credential_shaped_values_are_detected(value):
     assert is_credential_value(value) is True
 
 
+@pytest.mark.parametrize(
+    "column",
+    [
+        # The camelCase/PascalCase/run-together class (NOVA-81).
+        "userPassword",
+        "userpassword",
+        "UserPassword",
+        "secretKey",
+        "accessToken",
+        "privateKey",
+        "hashedPassword",
+        "dbPass",
+        "clientSecret",
+        "sessionToken",
+        "accountKey",
+        "sasToken",
+        "APIKey",
+        # Abbreviations matched as whole words.
+        "pwd",
+        "user_pwd",
+        "user-pwd",
+        "userPwd",
+    ],
+)
+def test_camel_case_credential_column_names_are_detected(column):
+    """The module's camelCase claim must be true (NOVA-81).
+
+    These all returned ``False`` before the case-boundary fix, leaking a
+    plaintext password/secret to the model context.
+    """
+    assert is_credential_column(column) is True
+
+
+@pytest.mark.parametrize(
+    "column", ["note", "status", "user_name", "file_path", "keyword", "compass"]
+)
+def test_unrelated_column_names_are_not_flagged(column):
+    """The compact match must not fire on ordinary names.
+
+    ``keyword`` contains no credential part, and ``compass`` must not match
+    ``pass`` (it is a compact substring, not a word).
+    """
+    assert is_credential_column(column) is False
+
+
 @pytest.mark.parametrize("value", ["hello world", "12345", "2026-09-18", None])
 def test_ordinary_values_are_not_flagged(value):
     assert is_credential_value(value) is False
@@ -714,6 +833,37 @@ async def test_credential_value_is_redacted_before_entering_the_model_summary(fa
     assert outcome.ok is True
     assert "AKIAIOSFODNN7EXAMPLE" not in outcome.summary
     assert "***" in outcome.summary
+
+
+
+
+async def test_camel_case_password_columns_are_redacted_before_the_model(fakes):
+    """NOVA-81 full path: camelCase credential columns never reach the model.
+
+    QA's exact reproduction: ``userPassword``/``secretKey``/``accessToken`` with
+    plaintext values. Before the fix all three values survived into
+    ``outcome.summary`` and thence into the provider request.
+    """
+    service, _audit = fakes
+    service._results = [
+        FakeResult(
+            columns=["id", "userPassword", "secretKey", "accessToken"],
+            rows=[[1, "hunter2-plaintext", "k-9f8a7b6c5d4e3f2a1b0c", "tok-abc123def456ghi789"]],
+            row_count=1,
+        )
+    ]
+    tool = QueryExecuteTool()
+    outcome = await tool.run(_invocation("SELECT * FROM users"), _context())
+
+    assert outcome.ok is True
+    for leaked in (
+        "hunter2-plaintext",
+        "k-9f8a7b6c5d4e3f2a1b0c",
+        "tok-abc123def456ghi789",
+    ):
+        assert leaked not in outcome.summary
+    payload = json.loads(outcome.summary)
+    assert payload["rows"] == [[1, "***", "***", "***"]]
 
 
 # ── 7. Row cap at fetch time ────────────────────────────────────────────────

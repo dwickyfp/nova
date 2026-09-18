@@ -21,11 +21,11 @@ from dataclasses import dataclass
 from app.common.sql_guard import strip_sql_comments
 from app.modules.assistant.schemas import ToolClassification
 
-#: Row prefix a read-only statement may start with. ``WITH`` is handled
-#: separately: only a CTE that resolves to a ``SELECT`` is read-only, because
-#: ``WITH … DELETE/INSERT/UPDATE`` is the same destructive statement with a
-#: prefix that would otherwise slip through.
-_ALLOWED_LEADING = ("SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN")
+#: Row prefix a read-only statement may start with. ``WITH`` and ``EXPLAIN``
+#: are handled separately: ``WITH`` because only a CTE resolving to ``SELECT``
+#: is read-only, ``EXPLAIN`` because it is a *wrapper* whose body decides
+#: (``EXPLAIN DROP TABLE x`` must not be read-only — NOVA-82).
+_ALLOWED_LEADING = ("SELECT", "SHOW", "DESCRIBE", "DESC")
 
 #: ``WITH [RECURSIVE] name [(cols)] AS (…) [, name AS (…)]… <body>``. The body
 #: is what decides allow/deny, so the CTE header is matched non-greedily and the
@@ -219,6 +219,32 @@ def cte_body(sql: str) -> str:
     return remainder
 
 
+#: ``EXPLAIN [ANALYZE] [VERBOSE] [FORMAT = …] [LOGICAL|PHYSICAL] <statement>``.
+#: ``EXPLAIN`` is a *wrapper*: the classification must be the body's, not the
+#: wrapper's (NOVA-82). Matched at the start of a statement only.
+_EXPLAIN_HEADER_RE = re.compile(
+    r"^EXPLAIN\b"
+    r"(?:\s+(?:ANALYZE|VERBOSE|LOGICAL|PHYSICAL|COSTS|NUM|COST))?"
+    r"(?:\s+FORMAT\s*=\s*[A-Za-z_][\w$]*)?"
+    r"(?:\s+(?:ANALYZE|VERBOSE|LOGICAL|PHYSICAL|COSTS|NUM|COST))?",
+    re.IGNORECASE,
+)
+
+
+def explain_body(sql: str) -> str:
+    """Return the statement wrapped by ``EXPLAIN``, or ``""`` when not one.
+
+    ``EXPLAIN`` does not execute in the tested StarRocks build (NOVA-82 found no
+    live exploit), but ``EXPLAIN ANALYZE`` is documented to plan-then-run and
+    the policy must not depend on the engine refusing a mutation. The body is
+    what decides, exactly as with :func:`cte_body`.
+    """
+    match = _EXPLAIN_HEADER_RE.match(sql.lstrip())
+    if match is None:
+        return ""
+    return sql.lstrip()[match.end():].strip()
+
+
 def is_allowed_statement(sql: str) -> bool:
     """True when one statement is on the read-only allow list.
 
@@ -240,7 +266,12 @@ def is_allowed_statement(sql: str) -> bool:
         return False
     keyword = _leading_keyword(stripped)
     if keyword == "WITH":
-        return _leading_keyword(cte_body(stripped)) in ("SELECT",)
+        return _leading_keyword(cte_body(stripped)) == "SELECT"
+    if keyword == "EXPLAIN":
+        # Classify the inner statement: ``EXPLAIN DROP TABLE x`` is not
+        # read-only (NOVA-82). An unparseable body is denied (fail closed).
+        body = explain_body(stripped)
+        return bool(body) and is_allowed_statement(body)
     return keyword in _ALLOWED_LEADING
 
 
@@ -256,7 +287,7 @@ def is_denied_statement(sql: str) -> bool:
     if has_write_clause(stripped):
         return True
     keyword = _leading_keyword(stripped)
-    if keyword == "WITH":
+    if keyword in ("WITH", "EXPLAIN"):
         return not is_allowed_statement(stripped)
     return keyword in _DENIED_PREFIXES
 
@@ -330,6 +361,12 @@ def denial_reason(sql: str) -> str:
         body_keyword = _leading_keyword(cte_body(stripped))
         if body_keyword:
             return f"WITH … {body_keyword} is not a read-only statement."
+    if keyword == "EXPLAIN":
+        body = explain_body(stripped)
+        inner = _leading_keyword(body)
+        if inner:
+            return f"EXPLAIN {inner} is not a read-only statement."
+        return "EXPLAIN does not wrap a recognisable read-only statement."
     if keyword:
         return f"{keyword} is not a read-only statement."
     return "The statement could not be classified as read-only."
@@ -355,6 +392,7 @@ __all__ = [
     "classify_statements",
     "cte_body",
     "denial_reason",
+    "explain_body",
     "has_write_clause",
     "is_allowed_statement",
     "is_denied_statement",
