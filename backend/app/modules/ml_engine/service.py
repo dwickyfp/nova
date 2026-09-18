@@ -415,12 +415,30 @@ class MLEngineService:
         }
 
     async def batch_predict(
-        self, model_alias: str, prediction_sql: str, database_name: str | None
+        self,
+        model_alias: str,
+        prediction_sql: str,
+        database_name: str | None,
+        username: str | None = None,
+        password: str | None = None,
+        role: str | None = None,
+        allow_system_fetch: bool = False,
     ) -> dict:
-        """Run batch predictions using features from a SQL query."""
+        """Run batch predictions using features from a SQL query.
+
+        ``prediction_sql`` is caller-supplied and runs **as the caller**. Every
+        HTTP-facing caller must supply ``username``/``password`` (plus ``role``)
+        so StarRocks RBAC stays authoritative; without them the call fails
+        closed instead of silently executing the statement on the root
+        connection, which is a full RBAC bypass (NOVA-118, same class as
+        NOVA-104). The root/system path is opt-in only, for internal flows that
+        genuinely have no user session.
+
+        Root ``_connect()`` is still used, deliberately, but only to read Nova's
+        own model/alias metadata — never to run caller SQL.
+        """
         # 0. Prepare the caller's SQL before anything touches the engine.
-        # `prediction_sql` is user-supplied and runs on the system connection,
-        # which carries storage credentials, so it takes the same four steps as
+        # `prediction_sql` is user-supplied so it takes the same four steps as
         # training: guard, @stage translation, credential injection, redaction.
         # The returned statement carries injected credentials and must not be
         # logged or returned; `engine_sql` is consumed only by `cur.execute`.
@@ -430,7 +448,8 @@ class MLEngineService:
             what="prediction",
         )
 
-        # 1. Resolve alias and load model
+        # 1. Resolve alias and load model. Root is correct here: this is Nova's
+        # own metadata, not caller data, and contains no user SQL.
         conn = await self._connect()
         try:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
@@ -453,14 +472,30 @@ class MLEngineService:
                 version_row = await cur.fetchone()
                 if not version_row:
                     raise ValueError("Model version not found")
-
-                # 2. Fetch prediction data
-                if database_name:
-                    await cur.execute(f"USE {database_name}")
-                await cur.execute(engine_sql)
-                rows = await cur.fetchall()
         finally:
             conn.close()
+
+        # 2. Fetch prediction data. The caller's statement runs on the caller's
+        # connection, exactly as training data does; only an explicit internal
+        # opt-in may reach the system connection.
+        if username is not None and password is not None:
+            rows, _columns = await self._execute_as_user(
+                username=username,
+                password=password,
+                role=role,
+                database_name=database_name,
+                sql=engine_sql,
+            )
+        elif allow_system_fetch:
+            rows, _columns = await self._fetch_prediction_data_as_system(
+                database_name=database_name,
+                prediction_sql=engine_sql,
+            )
+        else:
+            raise ValueError(
+                "Batch prediction requires the caller's StarRocks credentials; "
+                "refusing to run the prediction SQL on the system connection"
+            )
 
         if not rows:
             return {
@@ -805,14 +840,26 @@ class MLEngineService:
         return configs
 
     @staticmethod
-    async def _fetch_training_data_as_user(
+    async def _execute_as_user(
         *,
         username: str,
         password: str,
         role: str | None,
         database_name: str | None,
-        training_sql: str,
+        sql: str,
     ) -> tuple[list[dict], list[str]]:
+        """Run ``sql`` on the caller's own StarRocks connection.
+
+        The single place an ML path hands user-supplied SQL to the engine
+        "as the caller": the per-request connection carries the caller's
+        identity, and an ``active_role`` is activated with ``SET ROLE`` before
+        the statement runs. StarRocks RBAC therefore decides what the statement
+        may read or write — the same control the worksheet honors.
+
+        Both entry points that execute caller SQL — training data and batch
+        prediction — go through here, so neither can drift back onto the root
+        connection without a test failing (NOVA-104, NOVA-118).
+        """
         async with (
             db.user_conn(
                 username=username,
@@ -825,7 +872,7 @@ class MLEngineService:
                 await cur.execute(
                     f"SET ROLE {check_identifier(role, field='role')}"
                 )
-            await cur.execute(training_sql)
+            await cur.execute(sql)
             rows = await cur.fetchall()
             columns = (
                 [desc[0] for desc in cur.description]
@@ -834,18 +881,68 @@ class MLEngineService:
             )
         return list(rows), columns
 
+    @staticmethod
+    async def _fetch_training_data_as_user(
+        *,
+        username: str,
+        password: str,
+        role: str | None,
+        database_name: str | None,
+        training_sql: str,
+    ) -> tuple[list[dict], list[str]]:
+        return await MLEngineService._execute_as_user(
+            username=username,
+            password=password,
+            role=role,
+            database_name=database_name,
+            sql=training_sql,
+        )
+
     async def _fetch_training_data_as_system(
         self,
         *,
         database_name: str | None,
         training_sql: str,
     ) -> tuple[list[dict], list[str]]:
+        return await self._execute_as_system(
+            database_name=database_name, sql=training_sql
+        )
+
+    async def _fetch_prediction_data_as_system(
+        self,
+        *,
+        database_name: str | None,
+        prediction_sql: str,
+    ) -> tuple[list[dict], list[str]]:
+        """System-connection fallback for an explicit internal caller.
+
+        Reachable only via ``allow_system_fetch=True`` (see
+        :meth:`_fetch_training_data_as_system` for the same rationale on the
+        training side). No HTTP path passes the flag, so a request can never
+        land here by omitting credentials (NOVA-118).
+        """
+        return await self._execute_as_system(
+            database_name=database_name, sql=prediction_sql
+        )
+
+    async def _execute_as_system(
+        self,
+        *,
+        database_name: str | None,
+        sql: str,
+    ) -> tuple[list[dict], list[str]]:
+        """Run ``sql`` on the root/system connection. Opt-in only.
+
+        The system connection carries real storage credentials, so this path is
+        reserved for an explicit internal caller (``allow_system_fetch=True``)
+        and must never be the default for a statement that came from a request.
+        """
         conn = await self._connect()
         try:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
                 if database_name:
                     await cur.execute(f"USE {database_name}")
-                await cur.execute(training_sql)
+                await cur.execute(sql)
                 rows = await cur.fetchall()
                 columns = (
                     [desc[0] for desc in cur.description]

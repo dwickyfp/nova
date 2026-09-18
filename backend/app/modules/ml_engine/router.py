@@ -15,6 +15,7 @@ Endpoints under /api/v1/ml:
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import get_current_user
+from app.core.security import decrypt_password
 from app.modules.ml_engine.schemas import (
     BatchPredictRequest,
     BatchPredictResponse,
@@ -39,6 +40,23 @@ router = APIRouter()
 require_user = Depends(get_current_user)
 
 
+def _caller_credentials(user: dict) -> str:
+    """The decrypted StarRocks password from the caller's session.
+
+    ML routes that run caller-supplied SQL must forward this so the statement
+    executes on the caller's engine connection. A session without a readable
+    credential fails closed with 401 rather than letting the service fall back
+    to the root connection (NOVA-104, NOVA-118).
+    """
+    try:
+        return decrypt_password(user["encrypted_password"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="No user connection is available for this request",
+        ) from exc
+
+
 # ── Training ──────────────────────────────────────────────────
 
 
@@ -48,6 +66,12 @@ async def train_model(
     user: dict = require_user,
 ):
     """Train a classical ML model using data from a SQL query."""
+    # Training fetches its rows on the caller's StarRocks connection so the
+    # engine's RBAC decides what the training SQL may read. Passing no identity
+    # makes the service fall back to the root connection and silently bypass
+    # RBAC (NOVA-104).
+    password = _caller_credentials(user)
+
     try:
         result = await ml_engine_service.train_model(
             model_name=req.model_name,
@@ -60,6 +84,9 @@ async def train_model(
             test_size=req.test_size,
             database_name=req.database_name,
             created_by=user.get("username", "root"),
+            username=user["username"],
+            password=password,
+            role=user.get("active_role"),
         )
         return result
     except ValueError as e:
@@ -92,9 +119,21 @@ async def batch_predict(
     user: dict = require_user,
 ):
     """Run batch predictions using features from a SQL query."""
+    # `prediction_sql` is caller-supplied and must run on the caller's StarRocks
+    # connection; forwarding no identity let it execute as root, which exposes
+    # cross-tenant and system data and allows DDL/DML/SET ROLE as a superuser
+    # (NOVA-118). `_caller_credentials` fails closed if the session has no
+    # readable credential.
+    password = _caller_credentials(user)
+
     try:
         result = await ml_engine_service.batch_predict(
-            req.model_alias, req.prediction_sql, req.database_name
+            model_alias=req.model_alias,
+            prediction_sql=req.prediction_sql,
+            database_name=req.database_name,
+            username=user["username"],
+            password=password,
+            role=user.get("active_role"),
         )
         return result
     except ValueError as e:
