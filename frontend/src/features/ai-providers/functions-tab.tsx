@@ -376,7 +376,7 @@ export function FunctionsTab() {
       }>('/ai/aliases/register-udfs')
       if (result.success) {
         toast.success(
-          `Registered ${result.registered} UDF(s) in StarRocks`
+          `Registered ${result.registered} UDF(s)`
         )
       } else {
         toast.warning(
@@ -460,7 +460,7 @@ export function FunctionsTab() {
         <div className='rounded-lg border bg-card'>
           <div className='border-b px-4 py-2'>
             <span className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
-              StarRocks UDF Status
+              UDF Status
             </span>
           </div>
           <div className='divide-y'>
@@ -718,7 +718,7 @@ export function FunctionsTab() {
             <DialogDescription>
               {aliasEditMode === 'edit'
                 ? 'Update the alias mapping from a SQL function to a provider and model.'
-                : 'Map an LLM function type (e.g. Complete, Sentiment) to a specific provider and model. This registers a SQL UDF in StarRocks.'}
+                : 'Map an LLM function type (e.g. Complete, Sentiment) to a specific provider and model. This registers a SQL UDF.'}
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-4 py-2'>

@@ -107,7 +107,7 @@ const RECENT_WORK_LIMIT = 10;
 const quickActions = [
   {
     title: "New SQL query",
-    description: "Open a worksheet and start querying StarRocks.",
+    description: "Open a worksheet and start querying your data.",
     href: "/workspaces",
     icon: FileCode2,
   },

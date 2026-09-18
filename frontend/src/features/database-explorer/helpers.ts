@@ -151,7 +151,7 @@ export function buildDatabaseChildren(data: DatabaseObjectsResponse): ExplorerNo
           database: db,
           metadata: [
             { label: 'Model', value: formatModel(t.table_model) },
-            { label: 'Engine', value: t.engine || 'StarRocks' },
+            { label: 'Engine', value: t.engine || 'Nova' },
             ...(t.row_count != null ? [{ label: 'Rows', value: String(t.row_count) }] : []),
             ...(t.data_size != null ? [{ label: 'Size', value: formatBytes(t.data_size) }] : []),
             ...(t.create_time ? [{ label: 'Created', value: t.create_time.split('T')[0] }] : []),

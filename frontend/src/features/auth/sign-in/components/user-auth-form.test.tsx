@@ -55,7 +55,7 @@ describe('UserAuthForm', () => {
     signInButton = screen.getByRole('button', { name: /^Sign in$/i })
   })
 
-  it('renders StarRocks credential fields and submit button', async () => {
+  it('renders credential fields and submit button', async () => {
     await expect.element(usernameInput).toBeInTheDocument()
     await expect.element(passwordInput).toBeInTheDocument()
     await expect.element(signInButton).toBeInTheDocument()

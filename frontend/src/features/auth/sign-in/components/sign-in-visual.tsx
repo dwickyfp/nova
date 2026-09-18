@@ -267,7 +267,7 @@ export function SignInVisual() {
             From raw data to intelligent action.
           </p>
           <p className='mt-2 max-w-sm text-sm leading-6 text-[#9ca8b8]'>
-            Query, govern, and build AI experiences on the speed of StarRocks.
+            Query, govern, and build AI experiences on one fast columnar engine.
           </p>
         </div>
       </div>
