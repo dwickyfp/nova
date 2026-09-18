@@ -30,8 +30,11 @@ REDACTED_VALUE = "***"
 
 #: Substrings in a column *name* that mark every cell in that column as
 #: credential-shaped. Matched case-insensitively on a normalized name where
-#: separators are collapsed, so ``api_key``, ``apiKey``, ``api key`` and
-#: ``API-KEY`` all hit.
+#: separators are collapsed **and camelCase/PascalCase boundaries are split**,
+#: so ``api_key``, ``apiKey``, ``api key`` and ``API-KEY`` all hit, and
+#: ``userPassword`` / ``user_password`` normalize to the same ``user password``.
+#: Run-together names with no boundary to split (``hashedpassword``,
+#: ``dbpass``) are additionally matched on the space-stripped form.
 _CREDENTIAL_COLUMN_PARTS: tuple[str, ...] = (
     "password",
     "passwd",
@@ -49,6 +52,12 @@ _CREDENTIAL_COLUMN_PARTS: tuple[str, ...] = (
     "auth_token",
     "bearer",
     "api token",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "db_password",
+    "db_pass",
+    "pwd",
 )
 
 #: Value formats that are credential-shaped regardless of the column they are
@@ -70,18 +79,34 @@ _CREDENTIAL_VALUE_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 _SEPARATORS = re.compile(r"[\s\-_.]+")
 
+#: camelCase / PascalCase boundaries. The first splits ``userPassword`` and
+#: ``dbPass`` after a lower-case or digit; the second splits an acronym run from
+#: the following word so ``APIKey`` becomes ``API Key`` rather than ``AP IKey``.
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_ACRONYM_BOUNDARY = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
+
 
 def _normalize(text: str) -> str:
     """Lower-case and collapse ``-``/``_``/``.``/space runs to one space.
 
     Applied to both the column name and the pattern list, so ``api_key``,
-    ``apiKey`` and ``api key`` are the same string on each side.
+    ``apiKey``, ``api key`` and ``API-KEY`` are the same string on each side.
+    camelCase and PascalCase boundaries are split first, so ``userPassword``
+    normalizes to ``user password`` and ``APIKey`` to ``api key``.
     """
-    return _SEPARATORS.sub(" ", text.strip().lower())
+    spaced = _ACRONYM_BOUNDARY.sub(" ", _CAMEL_BOUNDARY.sub(" ", text))
+    return _SEPARATORS.sub(" ", spaced.strip().lower())
 
 
 _NORMALIZED_COLUMN_PARTS: tuple[str, ...] = tuple(
     _normalize(part) for part in _CREDENTIAL_COLUMN_PARTS
+)
+
+#: The same parts with all spaces removed, matched against the run-together
+#: column name. Catches names where case folding leaves no boundary to split,
+#: e.g. ``hashedpassword``, ``dbpass`` and ``pwd``.
+_RUNTOGETHER_COLUMN_PARTS: tuple[str, ...] = tuple(
+    part.replace(" ", "") for part in _NORMALIZED_COLUMN_PARTS
 )
 
 
@@ -91,8 +116,11 @@ def _normalized_column(column: str) -> str:
 
 def is_credential_column(column: str) -> bool:
     """True when a column *name* marks its cells as credential-shaped."""
-    normalized = " " + _normalized_column(column) + " "
-    return any(f" {part} " in normalized for part in _NORMALIZED_COLUMN_PARTS)
+    normalized = _normalized_column(column)
+    if any(f" {part} " in f" {normalized} " for part in _NORMALIZED_COLUMN_PARTS):
+        return True
+    run_together = normalized.replace(" ", "")
+    return any(part in run_together for part in _RUNTOGETHER_COLUMN_PARTS)
 
 
 def is_credential_value(value: object) -> bool:

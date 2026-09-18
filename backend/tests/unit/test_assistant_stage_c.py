@@ -571,6 +571,59 @@ def test_ordinary_column_names_are_not_flagged(column):
 
 
 @pytest.mark.parametrize(
+    "column",
+    [
+        "userPassword",
+        "hashedPassword",
+        "secretKey",
+        "privateKey",
+        "accessToken",
+        "refreshToken",
+        "dbPass",
+        "dbPassword",
+        "pwd",
+        "passwordHash",
+        "APIKey",
+    ],
+)
+def test_camel_case_credential_column_names_are_detected(column):
+    """Regression: camelCase/PascalCase and run-together names must redact.
+
+    ``_normalize`` splits case boundaries and the run-together form is matched
+    too, so the docstring's ``apiKey`` promise holds for the whole class.
+    """
+    assert is_credential_column(column) is True
+
+
+@pytest.mark.parametrize(
+    "column",
+    [
+        "token_count",
+        "tokens_used",
+        "passenger_count",
+        "pass_rate",
+        "bypass",
+        "compass",
+        "passport_id",
+        "primary_key",
+        "foreign_key",
+        "sort_key",
+        "keyboard",
+        "monkey",
+    ],
+)
+def test_camel_case_heuristic_does_not_flag_ordinary_names(column):
+    assert is_credential_column(column) is False
+
+
+def test_camel_case_credential_columns_are_redacted_value_level():
+    """The end-to-end value-level guarantee for the camelCase class."""
+    columns = ["id", "userPassword", "secretKey", "accessToken"]
+    rows = [[1, "hunter2-plaintext", "k-9f8a7b6c5d4e3f2a1b0c", "tok-abc123def456ghi789"]]
+    assert redact_rows(columns, rows) == [[1, "***", "***", "***"]]
+
+
+@pytest.mark.parametrize(
     "value",
     [
         "AKIAIOSFODNN7EXAMPLE",
