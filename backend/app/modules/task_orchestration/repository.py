@@ -23,7 +23,7 @@ _TASK_COLUMNS = (
     "when_expr, overlap_policy, owner_role, created_by, consecutive_fail_count, "
     "version, created_at, updated_at"
 )
-_EDGE_COLUMNS = "id, graph_id, parent_task, child_task, created_at"
+_EDGE_COLUMNS = "id, graph_id, parent_task, child_task, edge_kind, created_at"
 _GRAPH_RUN_COLUMNS = (
     "id, graph_id, trigger_type, state, wal_marks, started_at, heartbeat_at, finished_at"
 )
@@ -235,10 +235,17 @@ class TaskOrchestrationRepository:
         edge_id = str(uuid4())
         await db.execute_system(
             f"""
-            INSERT INTO {_EDGES} (id, graph_id, parent_task, child_task, created_at)
-            VALUES (%s, %s, %s, %s, NOW())
+            INSERT INTO {_EDGES}
+            (id, graph_id, parent_task, child_task, edge_kind, created_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
             """,
-            [edge_id, graph_id, data["parent_task"], data["child_task"]],
+            [
+                edge_id,
+                graph_id,
+                data["parent_task"],
+                data["child_task"],
+                data.get("edge_kind", "after"),
+            ],
         )
         created = await self.get_edge(edge_id)
         assert created is not None

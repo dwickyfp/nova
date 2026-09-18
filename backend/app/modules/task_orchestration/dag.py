@@ -237,11 +237,19 @@ def graph_from_task_rows(
     """Build a :class:`Graph` from ``CONFIG_TASK_EDGES`` rows.
 
     Edges store task *names* (design §5), so membership is resolved by name.
+
+    Only ``edge_kind == 'after'`` edges become dependencies. A ``finalize`` edge
+    means "run this after the target completes", not "the child waits for the
+    parent", so folding it into the adjacency would make the finalizer run as an
+    ordinary child at the wrong time. Its run semantics are wired in PR 3b; the
+    row is stored now so nothing is lost, and it is filtered here so this PR does
+    not silently mis-execute it.
     """
     return Graph.from_edges(
         node_names,
         [
             Edge(parent=str(edge["parent_task"]), child=str(edge["child_task"]))
             for edge in edges
+            if str(edge.get("edge_kind") or "after") == "after"
         ],
     )
