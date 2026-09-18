@@ -6,8 +6,21 @@
 > latency.
 
 - **Date:** 2026-09-18
-- **Base revision:** `2e851d9` (benchmark added on top; the report is the only
-  artefact whose numbers depend on the base being unchanged)
+- **Measured at revision:** the head of this PR branch, whose only benchmark
+  commits are the two introducing `backend/tests/benchmark/` (base
+  `0ca873e` → head). The SHAs move on every rebase, so this report names no
+  fixed SHA; the durable citation once the PR lands is the merge commit on
+  `main`. **Verify the checkout actually contains the suite before running the
+  reproduce block:**
+
+  ```bash
+  git rev-parse HEAD                                  # the revision you are about to measure at
+  git ls-tree -r --name-only HEAD | grep tests/benchmark/   # must print the harness + tests
+  ```
+
+  Run from the repository root. If the second command prints nothing, the
+  checkout predates the benchmark and the reproduce command would fail with
+  `file or directory not found` — check out this PR's head instead.
 - **Python:** 3.12.8
 - **Machine:** Apple M3, 8 cores, macOS 26.6.2 (arm64)
 - **Method:** `time.perf_counter_ns`, N iterations per case, reported as
@@ -63,17 +76,36 @@ context window, not CPU time.
 | Case | Iterations | min (µs) | median (µs) | p95 (µs) | max (µs) |
 |---|---:|---:|---:|---:|---:|
 | `engine_query_execute_round_trip` (`SELECT 1`) | 20 | 188,244 | 210,019 | 313,941 | 1,528,089 |
+| `engine_query_execute_round_trip` (re-verified 2026-09-18, session A) | 20 | 193,817 | 295,797 | 744,266 | 1,683,518 |
+| `engine_query_execute_round_trip` (re-verified 2026-09-18, session B) | 20 | 191,656 | 206,321 | 215,793 | 372,374 |
 
-Measured on the `docker-compose.test.yml` stack, statements:
-`SELECT 1 AS one`. Marked `@pytest.mark.engine`; skips cleanly when Docker or
-the compose file is absent, so `uv run pytest` stays green. The harness
-provisions `NOVA_SYSTEM.AUDIT_LOG` through the integration suite's idempotent
-helper, because `query_execute` audits every call.
+Measured on the `docker-compose.test.yml` stack, statement `SELECT 1 AS one`.
+The two re-verified rows are back-to-back runs on the same host; session B's
+median (206,321 µs) reproduces the original (210,019 µs) within ~2%, while
+session A ran ~1.4× higher. That spread is the engine number's honest variance,
+not a new constant: the case is `@pytest.mark.engine` and must be read as an
+order of magnitude.
+
+The test skips cleanly — never fails — when it cannot run: no Docker or no
+compose file (module guard), no stack from **this checkout** publishing the port
+(the container's `com.docker.compose.project.working_dir` label must match this
+`backend/` directory, so a foreign project on the same port is ignored), or the
+app system pool cannot be initialised (the audit path `db.execute_system` needs
+`init_system_pool()`, which the test calls itself). `NOVA_ORCH_SR_PORT` /
+`NOVA_ORCH_SR_HOST` override the port when another project already owns the
+default. The harness provisions `NOVA_SYSTEM.AUDIT_LOG` through the integration
+suite's idempotent helper, because `query_execute` audits every call.
 
 **Reproduction note:** StarRocks FE refuses to start when the host has **less
 than 5 GB free** for its metadata directory (`MetaHelper.checkMetaDir`). The
 engine case therefore also skips when the stack cannot come up — it does not
 fake a number. Run it on a machine with the test stack already healthy:
+
+```bash
+cd backend
+docker compose -f docker-compose.test.yml up -d --wait
+uv run pytest tests/benchmark -q -s -m engine
+```
 
 ## Variance
 
@@ -91,8 +123,10 @@ fake a number. Run it on a machine with the test stack already healthy:
 
 1. **The loop is not the bottleneck.** Its own overhead is single-digit to
    low-double-digit microseconds per turn. The real StarRocks round-trip for a
-   trivial `SELECT 1` is **~210,000 µs** — about **27,000×** the loop's median
-   text-only turn. Optimising the loop further cannot move user-visible latency.
+   trivial `SELECT 1` is **~206,000–296,000 µs** (re-verified; the original
+   session recorded ~210,000 µs) — on the order of **tens of thousands of
+   times** the loop's median text-only turn (7.2 µs). Optimising the loop
+   further cannot move user-visible latency.
 2. **What the production cost is.** A real turn spends its time on (a) the LLM
    provider round-trip and (b) the StarRocks round-trip. This harness
    deliberately excludes both: the provider is a scripted fake, and only the

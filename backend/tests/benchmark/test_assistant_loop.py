@@ -12,9 +12,12 @@ an LLM or a StarRocks cluster. The report at
 ``docs/benchmarks/nova-61-assistant.md`` explains what the numbers mean and,
 more importantly, what they do not cover.
 
-Every assertion here is a *smoke* bound (the path terminates and stays within a
-generous ceiling), not a performance gate: a shared CI runner is not a
-benchmark machine, and a flaky threshold is worse than no threshold.
+Every assertion here is a **smoke** check: the path terminates, returns a
+non-zero iteration count, and yields a well-formed measurement. It is not a
+performance gate. A shared CI runner is not a benchmark machine, and an
+absolute wall-clock threshold makes the *pass set* depend on host load — which
+is exactly the non-determinism this suite exists to avoid. The measured number
+lives in the report, never in a pass/fail wall.
 """
 
 from __future__ import annotations
@@ -79,7 +82,7 @@ async def test_benchmark_text_only_turn():
         iterations=500,
     )
     _print("text_only_turn", result)
-    assert result["p95_us"] < 50_000  # generous smoke bound, not a gate
+    _assert_measured(result)
 
 
 async def test_benchmark_text_only_turn_with_history():
@@ -90,7 +93,7 @@ async def test_benchmark_text_only_turn_with_history():
         iterations=300,
     )
     _print("text_only_turn_history_10", result)
-    assert result["p95_us"] < 100_000
+    _assert_measured(result)
 
 
 async def test_benchmark_tool_round_trip():
@@ -101,7 +104,7 @@ async def test_benchmark_tool_round_trip():
         iterations=500,
     )
     _print("tool_round_trip", result)
-    assert result["p95_us"] < 100_000
+    _assert_measured(result)
 
 
 # ── Consent gate ──────────────────────────────────────────────────────────────
@@ -116,7 +119,7 @@ async def test_benchmark_consent_auto_approve():
         iterations=500,
     )
     _print("consent_auto_approve", result)
-    assert result["p95_us"] < 100_000
+    _assert_measured(result)
 
 
 async def test_benchmark_consent_explicit_per_call():
@@ -127,7 +130,7 @@ async def test_benchmark_consent_explicit_per_call():
         iterations=500,
     )
     _print("consent_explicit_per_call", result)
-    assert result["p95_us"] < 100_000
+    _assert_measured(result)
 
 
 # ── Context assembly and skill prompt size ────────────────────────────────────
@@ -149,7 +152,7 @@ async def test_benchmark_context_assembly():
     for turns in (0, 10, 50):
         result = await measure(build(turns), iterations=1000)
         _print(f"build_messages_history_{turns}", result)
-        assert result["p95_us"] < 20_000
+        _assert_measured(result)
 
 
 def test_skill_prompt_size():
@@ -195,7 +198,7 @@ async def test_benchmark_iteration_cap_termination():
         iterations=300,
     )
     _print("iteration_cap_termination", result)
-    assert result["p95_us"] < 100_000
+    _assert_measured(result)
 
 
 async def test_benchmark_time_budget_termination():
@@ -214,7 +217,7 @@ async def test_benchmark_time_budget_termination():
         iterations=500,
     )
     _print("time_budget_termination", result)
-    assert result["p95_us"] < 50_000
+    _assert_measured(result)
 
 
 async def test_benchmark_denied_call_termination():
@@ -225,7 +228,7 @@ async def test_benchmark_denied_call_termination():
         iterations=300,
     )
     _print("denied_call_termination", result)
-    assert result["p95_us"] < 100_000
+    _assert_measured(result)
 
 
 async def _deny(_inv, _cls) -> bool:
@@ -241,3 +244,17 @@ def _print(name: str, result: dict[str, float], extra: dict | None = None) -> No
     if extra:
         payload.update(extra)
     print("BENCHMARK " + json.dumps(payload, sort_keys=True))
+
+
+def _assert_measured(result: dict[str, float]) -> None:
+    """Smoke check: the case ran and produced a well-formed measurement.
+
+    Deliberately **not** an absolute threshold. Under load a shared runner can
+    inflate any microsecond bound, so a wall-clock assertion is a flake source,
+    not a correctness signal. What must hold is that the path terminated, ran at
+    least one iteration, and reported finite non-negative samples.
+    """
+    assert result["iterations"] >= 1
+    for key in ("min_us", "median_us", "p95_us", "max_us"):
+        assert result[key] >= 0
+        assert result[key] != float("inf")
