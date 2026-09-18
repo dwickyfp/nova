@@ -801,6 +801,88 @@ def test_preview_withholds_sql_it_cannot_redact(monkeypatch):
     assert preview == "[statement withheld: it could not be redacted]"
 
 
+# ── 6a. Result-error redaction (NOVA-120) ──────────────────────────────────
+#
+# ``result.error`` is the engine's own message and can echo the executed
+# statement, which for an ``@stage`` query is the post-translation engine SQL
+# carrying the injected storage credentials. The redaction happens once, at the
+# source, and feeds both sinks: the audit ``error_message`` and
+# ``ToolOutcome.error`` — which the loop renders into the ``tool_failed`` SSE
+# frame. This is the process-wide public doc example, not a real secret.
+CREDENTIAL_VALUE = "AKIAIOSFODNN7EXAMPLE"
+CREDENTIAL_BEARING_ENGINE_ERROR = (
+    "SQL error: (1064) syntax error near "
+    f"FILES(\"aws.s3.access_key\"='{CREDENTIAL_VALUE}')"
+)
+
+
+async def test_result_error_is_redacted_for_both_sinks(fakes):
+    service, audit = fakes
+    service._results = [FakeResult(error=CREDENTIAL_BEARING_ENGINE_ERROR)]
+    tool = QueryExecuteTool()
+
+    outcome = await tool.run(_invocation("SELECT * FROM @stage1.data.csv"), _context())
+
+    assert outcome.ok is False
+    # Sink 1: the tool outcome the loop streams to the browser.
+    assert CREDENTIAL_VALUE not in (outcome.error or "")
+    # The message is not dropped — only the value is.
+    assert "***" in (outcome.error or "")
+    assert "aws.s3.access_key" in (outcome.error or "")
+    # Sink 2: the persisted audit row.
+    assert audit.rows and audit.rows[0]["status"] == "ERROR"
+    assert CREDENTIAL_VALUE not in (audit.rows[0]["error_message"] or "")
+
+
+async def test_result_error_never_reaches_the_sse_frame(monkeypatch, fakes):
+    """End-to-end through the loop: the emitted ``tool_failed`` frame is clean."""
+    service, _audit = fakes
+    service._results = [FakeResult(error=CREDENTIAL_BEARING_ENGINE_ERROR)]
+    provider = FakeProvider(
+        [
+            {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1")]},
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(QueryExecuteTool())
+    loop = AssistantLoop(provider=provider, registry=registry)
+    thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
+    thread.consent.always_allow_read_only = True
+
+    async def resolver(inv, cls):
+        raise AssertionError("the read-only grant should have covered this call")
+
+    frames = await _collect(
+        loop.run(
+            thread=thread,
+            user_content="go",
+            context=_context(),
+            resolve_consent=resolver,
+        )
+    )
+
+    assert all(CREDENTIAL_VALUE not in frame for frame in frames)
+    failed = [
+        _frame_data(f)
+        for f in frames
+        if _frame_event(f) == "error" and _frame_data(f)["code"] == "tool_failed"
+    ]
+    assert failed and CREDENTIAL_VALUE not in failed[0]["message"]
+
+
+async def test_privilege_error_classification_reads_the_unredacted_message(fakes):
+    """Redaction is value-only and must not flip the §5.3 privilege decision."""
+    service, audit = fakes
+    service._results = [FakeResult(error="SQL error: (5203) Access denied")]
+    tool = QueryExecuteTool()
+
+    outcome = await tool.run(_invocation("SELECT * FROM secret"), _context())
+
+    assert outcome.ok is False
+    assert outcome.error == "The database denied this query for your user."
+    assert audit.rows and audit.rows[0]["status"] == "ERROR"
+
+
 # ── 6. Value-level redaction ────────────────────────────────────────────────
 
 
