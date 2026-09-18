@@ -13,9 +13,10 @@ import {
   Zap,
   Activity,
   FunctionSquare,
+  GitFork,
   Workflow,
-} from 'lucide-react'
-import { type SidebarData } from '../types'
+} from 'lucide-react';
+import { type SidebarData } from '../types';
 
 export const sidebarData: SidebarData = {
   navGroups: [
@@ -46,6 +47,11 @@ export const sidebarData: SidebarData = {
           title: 'Tasks',
           url: '/tasks-manager',
           icon: Workflow,
+        },
+        {
+          title: 'Task Graphs',
+          url: '/task-graphs',
+          icon: GitFork,
         },
         {
           title: 'ML Models',
@@ -121,4 +127,4 @@ export const sidebarData: SidebarData = {
       ],
     },
   ],
-}
+};
