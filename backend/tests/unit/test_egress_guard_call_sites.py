@@ -95,28 +95,44 @@ async def test_query_explain_refuses_egress_before_the_engine(query_service):
     assert repo.calls == []
 
 
-# ── views/router.py:62,92,110 — view create / MV create / drop ──────────────
+# ── views/router.py — view create / MV create / drop ────────────────────────
 
 
-class RecordingDb:
-    """Stub for ``app.core.database.db`` recording ``execute_system`` calls."""
+class RecordingConnection:
+    """Stub for the caller's StarRocks connection.
+
+    Since NOVA-89 the DDL routers run on the caller's connection, not the root
+    pool, so this is the engine boundary the tests must pin. ``cursor()``
+    returns a context manager whose ``execute`` records the statement.
+    """
 
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    async def execute_system(self, sql: str):
-        self.calls.append(sql)
-        return {"columns": [], "rows": []}
+    def cursor(self):
+        return _RecordingCursor(self)
+
+
+class _RecordingCursor:
+    def __init__(self, conn: RecordingConnection) -> None:
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        return None
+
+    async def execute(self, sql: str, params=None) -> None:
+        self._conn.calls.append(sql)
 
 
 @pytest.fixture
-def views_db(monkeypatch):
-    stub = RecordingDb()
-    monkeypatch.setattr("app.modules.views.router.db", stub)
-    return stub
+def views_conn():
+    return RecordingConnection()
 
 
-async def test_view_create_refuses_egress_before_the_engine(views_db):
+async def test_view_create_refuses_egress_before_the_engine(views_conn):
     from app.modules.views.router import CreateViewRequest, create_view
 
     req = CreateViewRequest(
@@ -125,11 +141,11 @@ async def test_view_create_refuses_egress_before_the_engine(views_db):
         select_sql="SELECT 1 INTO OUTFILE 's3://b/x'",
     )
     with pytest.raises(ForbiddenSQLError):
-        await create_view(req, user={"username": "analyst"})
-    assert views_db.calls == []
+        await create_view(req, user={"username": "analyst"}, conn=views_conn)
+    assert views_conn.calls == []
 
 
-async def test_materialized_view_create_refuses_egress_before_the_engine(views_db):
+async def test_materialized_view_create_refuses_egress_before_the_engine(views_conn):
     from app.modules.views.router import (
         CreateMaterializedViewRequest,
         create_materialized_view,
@@ -141,46 +157,48 @@ async def test_materialized_view_create_refuses_egress_before_the_engine(views_d
         select_sql="SELECT * FROM t INTO @stage1.x.csv",
     )
     with pytest.raises(ForbiddenSQLError):
-        await create_materialized_view(req, user={"username": "analyst"})
-    assert views_db.calls == []
+        await create_materialized_view(req, user={"username": "analyst"}, conn=views_conn)
+    assert views_conn.calls == []
 
 
-async def test_view_create_still_runs_an_ordinary_select(views_db):
+async def test_view_create_still_runs_an_ordinary_select(views_conn):
     from app.modules.views.router import CreateViewRequest, create_view
 
     req = CreateViewRequest(database="db1", view_name="v1", select_sql="SELECT 1")
-    await create_view(req, user={"username": "analyst"})
-    assert len(views_db.calls) == 1
-    assert "SELECT 1" in views_db.calls[0]
+    await create_view(req, user={"username": "analyst"}, conn=views_conn)
+    assert len(views_conn.calls) == 1
+    assert "SELECT 1" in views_conn.calls[0]
 
 
-# ── tables/router.py:98 — table DDL carries the same guard ──────────────────
+# ── tables/router.py — table DDL carries the same guard ─────────────────────
 
 
 @pytest.fixture
-def tables_db(monkeypatch):
-    stub = RecordingDb()
-    monkeypatch.setattr("app.modules.tables.router.db", stub)
-    return stub
+def tables_conn():
+    return RecordingConnection()
 
 
-async def test_table_drop_refuses_egress_comment_obfuscation(tables_db):
-    # The DDL paths build the statement themselves, so an egress clause cannot
-    # normally arrive — but the guard is wired and must stay wired. This pins
-    # that ``tables/router.py`` consults it and the engine is not reached.
+async def test_table_drop_refuses_egress_comment_obfuscation(tables_conn):
+    # The DDL paths build the statement themselves. A table name that smuggles
+    # an egress clause is refused before the engine — since NOVA-89 by the
+    # identifier allow-list, which is also a ``ForbiddenSQLError``.
     from app.modules.tables.router import DropTableRequest, drop_table
 
     with pytest.raises(ForbiddenSQLError):
-        # A table name that smuggles the clause; the guard sees the built DDL.
         await drop_table(
             DropTableRequest(database="db1", table="t INTO @stage1"),
             user={"username": "analyst"},
+            conn=tables_conn,
         )
-    assert tables_db.calls == []
+    assert tables_conn.calls == []
 
 
-async def test_table_drop_still_runs_for_an_ordinary_table(tables_db):
+async def test_table_drop_still_runs_for_an_ordinary_table(tables_conn):
     from app.modules.tables.router import DropTableRequest, drop_table
 
-    await drop_table(DropTableRequest(database="db1", table="t1"), user={"username": "analyst"})
-    assert len(tables_db.calls) == 1
+    await drop_table(
+        DropTableRequest(database="db1", table="t1"),
+        user={"username": "analyst"},
+        conn=tables_conn,
+    )
+    assert len(tables_conn.calls) == 1
