@@ -7,8 +7,8 @@ validation is what keeps a path segment from breaking out of the identifier.
 """
 
 from app.common.identifiers import check_identifier
-from app.core.security import decrypt_password
 from app.core.database import db
+from app.core.security import decrypt_password
 
 
 class ObjectRepository:
@@ -24,16 +24,18 @@ class ObjectRepository:
         role: str | None = None,
     ) -> dict:
         password = decrypt_password(encrypted_password)
-        async with db.user_conn(username, password, database=database) as conn:
-            async with conn.cursor() as cur:
-                if role:
-                    safe_role = role.replace("`", "").replace("'", "")
-                    await cur.execute(f"SET ROLE {safe_role}")
-                await cur.execute(sql)
-                if cur.description:
-                    rows = await cur.fetchall()
-                    return {"rows": rows}
-                return {"rows": []}
+        async with (
+            db.user_conn(username, password, database=database) as conn,
+            conn.cursor() as cur,
+        ):
+            if role:
+                safe_role = role.replace("`", "").replace("'", "")
+                await cur.execute(f"SET ROLE {safe_role}")
+            await cur.execute(sql)
+            if cur.description:
+                rows = await cur.fetchall()
+                return {"rows": rows}
+            return {"rows": []}
 
     # ── Databases ──────────────────────────────────────────────
 

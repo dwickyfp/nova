@@ -7,6 +7,8 @@ operation is permitted. ``guard_sql`` still runs on the assembled statement;
 this module is a layer above the unchanged guard (NOVA-89).
 """
 
+from typing import Annotated, Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -26,9 +28,10 @@ from app.modules.objects.repository import object_repo
 
 router = APIRouter()
 
-#: Module-level dependency so route signatures avoid a ``Depends()`` call in an
-#: argument default (ruff B008). DDL runs on the caller's own connection.
-user_connection = Depends(get_user_connection)
+#: ``Annotated`` dependency aliases (the tree's convention; a ``Depends()`` in
+#: an argument default trips ruff B008). DDL runs on the caller's connection.
+CurrentUser = Annotated[dict, Depends(get_current_user)]
+UserConnection = Annotated[Any, Depends(get_user_connection)]
 
 
 # ── Schemas ────────────────────────────────────────────────────
@@ -38,7 +41,9 @@ class CreateTableRequest(BaseModel):
     database: str
     table: str
     columns: list[dict]  # [{"name": "id", "type": "INT", "nullable": false, "key": "primary"}]
-    engine: str = Field("olap", description="olap, mysql, elasticsearch, hive, iceberg, jdbc")
+    engine: str = Field(
+        "olap", description="olap, mysql, elasticsearch, hive, iceberg, jdbc"
+    )
     keys: list[str] = Field(default_factory=list, description="Primary key columns")
     distributed_by: str = Field("HASH(id)", description="Distribution strategy")
     buckets: int = Field(10, description="Number of buckets")
@@ -51,7 +56,13 @@ class CreateTableRequest(BaseModel):
 class AlterTableRequest(BaseModel):
     database: str
     table: str
-    action: str = Field(..., description="ADD_COLUMN, DROP_COLUMN, MODIFY_COLUMN, RENAME, ADD_PARTITION, DROP_PARTITION")
+    action: str = Field(
+        ...,
+        description=(
+            "ADD_COLUMN, DROP_COLUMN, MODIFY_COLUMN, RENAME, "
+            "ADD_PARTITION, DROP_PARTITION"
+        ),
+    )
     column_name: str | None = None
     column_type: str | None = None
     new_name: str | None = None
@@ -96,8 +107,8 @@ def _build_properties(properties: dict) -> str:
 @router.post("/create")
 async def create_table(
     req: CreateTableRequest,
-    user: dict = Depends(get_current_user),
-    conn=user_connection,
+    user: CurrentUser,
+    conn: UserConnection,
 ):
     """Create a new table on the caller's connection."""
     database = check_identifier(req.database, field="database")
@@ -114,8 +125,14 @@ async def create_table(
         f"\nCOMMENT '{check_comment(req.comment)}'" if req.comment else ""
     )
     distributed_by = check_distributed_by(req.distributed_by)
-    if not isinstance(req.buckets, int) or isinstance(req.buckets, bool) or req.buckets <= 0:
-        raise HTTPException(status_code=400, detail="buckets must be a positive integer")
+    if (
+        not isinstance(req.buckets, int)
+        or isinstance(req.buckets, bool)
+        or req.buckets <= 0
+    ):
+        raise HTTPException(
+            status_code=400, detail="buckets must be a positive integer"
+        )
 
     ddl = f"""CREATE TABLE `{database}`.`{table}` (
 {cols_sql}
@@ -136,16 +153,20 @@ PROPERTIES({props_sql})"""
     try:
         async with conn.cursor() as cur:
             await cur.execute(ddl)
-        return {"success": True, "ddl": ddl, "message": f"Table '{database}.{table}' created"}
+        return {
+            "success": True,
+            "ddl": ddl,
+            "message": f"Table '{database}.{table}' created",
+        }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/alter")
 async def alter_table(
     req: AlterTableRequest,
-    user: dict = Depends(get_current_user),
-    conn=user_connection,
+    user: CurrentUser,
+    conn: UserConnection,
 ):
     """Alter a table — add/drop/modify columns, rename, partitions."""
     action = req.action.upper()
@@ -154,7 +175,9 @@ async def alter_table(
 
     if action == "ADD_COLUMN":
         if not req.column_name or not req.column_type:
-            raise HTTPException(status_code=400, detail="column_name and column_type required")
+            raise HTTPException(
+                status_code=400, detail="column_name and column_type required"
+            )
         column_name = check_identifier(req.column_name, field="column name")
         column_type = check_column_type(req.column_type)
         sql = f"ALTER TABLE `{db_name}`.`{tbl}` ADD COLUMN `{column_name}` {column_type}"
@@ -167,7 +190,9 @@ async def alter_table(
 
     elif action == "MODIFY_COLUMN":
         if not req.column_name or not req.column_type:
-            raise HTTPException(status_code=400, detail="column_name and column_type required")
+            raise HTTPException(
+                status_code=400, detail="column_name and column_type required"
+            )
         column_name = check_identifier(req.column_name, field="column name")
         column_type = check_column_type(req.column_type)
         sql = f"ALTER TABLE `{db_name}`.`{tbl}` MODIFY COLUMN `{column_name}` {column_type}"
@@ -180,10 +205,15 @@ async def alter_table(
 
     elif action == "ADD_PARTITION":
         if not req.partition_name or not req.partition_value:
-            raise HTTPException(status_code=400, detail="partition_name and partition_value required")
+            raise HTTPException(
+                status_code=400, detail="partition_name and partition_value required"
+            )
         partition_name = check_identifier(req.partition_name, field="partition name")
         partition_value = check_partition_value(req.partition_value)
-        sql = f"ALTER TABLE `{db_name}`.`{tbl}` ADD PARTITION `{partition_name}` VALUES {partition_value}"
+        sql = (
+            f"ALTER TABLE `{db_name}`.`{tbl}` ADD PARTITION "
+            f"`{partition_name}` VALUES {partition_value}"
+        )
 
     elif action == "DROP_PARTITION":
         if not req.partition_name:
@@ -199,16 +229,20 @@ async def alter_table(
     try:
         async with conn.cursor() as cur:
             await cur.execute(sql)
-        return {"success": True, "sql": sql, "message": f"Table '{db_name}.{tbl}' altered ({action})"}
+        return {
+            "success": True,
+            "sql": sql,
+            "message": f"Table '{db_name}.{tbl}' altered ({action})",
+        }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/drop")
 async def drop_table(
     req: DropTableRequest,
-    user: dict = Depends(get_current_user),
-    conn=user_connection,
+    user: CurrentUser,
+    conn: UserConnection,
 ):
     """Drop a table on the caller's connection."""
     database = check_identifier(req.database, field="database")
@@ -222,14 +256,14 @@ async def drop_table(
             await cur.execute(sql)
         return {"success": True, "message": f"Table '{database}.{table}' dropped"}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{database}/{table}/ddl")
 async def get_table_ddl(
     database: str,
     table: str,
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
 ):
     """Get the CREATE TABLE DDL for a table."""
     check_identifier(database, field="database")
