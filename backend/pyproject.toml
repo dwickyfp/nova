@@ -22,6 +22,7 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "joblib>=1.5.3",
     "numpy>=2.4.6",
+    "antlr4-python3-runtime==4.13.2",
 ]
 
 [dependency-groups]
@@ -72,9 +73,34 @@ exclude_also = [
     "@overload",
 ]
 
+[tool.mypy]
+# The vendored ANTLR parser is machine-generated from the pinned grammar and
+# cannot satisfy mypy: `from antlr4 import *` has no stubs, so hundreds of names
+# are unresolved, and its annotations are ANTLR's, not ours. Excluding it keeps
+# the pre-existing hand-written baseline (see the mypy step in CI) readable
+# instead of burying it under generated noise. The runtime import is verified by
+# tests/unit/test_sql_dialect_grammar.py, which is the check that matters.
+exclude = [
+    "^app/sql_dialect/grammar/StarRocks(Lexer|Parser|Visitor)\\.py$",
+]
+
+[[tool.mypy.overrides]]
+module = ["antlr4", "antlr4.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+# Same reasoning as [tool.mypy]: generated ANTLR output is not held to the
+# hand-written style rules. It is verified by regeneration + diff in CI
+# (.github/workflows/ci.yml, `grammar-drift`), which is a stronger check than
+# linting it. The `__init__.py` next to it stays linted.
+exclude = [
+    "app/sql_dialect/grammar/StarRocksLexer.py",
+    "app/sql_dialect/grammar/StarRocksParser.py",
+    "app/sql_dialect/grammar/StarRocksVisitor.py",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
