@@ -130,6 +130,7 @@ class MLEngineService:
         username: str | None = None,
         password: str | None = None,
         role: str | None = None,
+        allow_system_fetch: bool = False,
     ) -> dict:
         """Train a model from SQL query data.
 
@@ -137,6 +138,12 @@ class MLEngineService:
         2. Train sklearn model on the data
         3. Evaluate on test split
         4. Serialize model to base64, store in ML_MODEL_VERSIONS
+
+        Training data is fetched on the **caller's** connection whenever
+        ``username``/``password`` are supplied, so StarRocks RBAC decides what
+        the training SQL may read. Callers that pass no identity must opt in via
+        ``allow_system_fetch``; otherwise the call fails closed rather than
+        silently running the caller's SQL as root (NOVA-104).
         """
         # 1. Fetch training data from StarRocks. Worksheet-triggered training
         # uses the logged-in user's connection so StarRocks RBAC remains authoritative.
@@ -161,10 +168,15 @@ class MLEngineService:
                 database_name=database_name,
                 training_sql=engine_sql,
             )
-        else:
+        elif allow_system_fetch:
             rows, columns = await self._fetch_training_data_as_system(
                 database_name=database_name,
                 training_sql=engine_sql,
+            )
+        else:
+            raise ValueError(
+                "Training requires the caller's StarRocks credentials; "
+                "refusing to run the training SQL on the system connection"
             )
 
         if not rows:

@@ -251,6 +251,7 @@ class TestNoCredentialMaterialEscapes:
             hyperparameters=None,
             test_size=0.0,
             database_name=None,
+            allow_system_fetch=True,
         )
 
         stored = captured["training_sql"]

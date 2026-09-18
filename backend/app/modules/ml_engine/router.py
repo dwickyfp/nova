@@ -15,6 +15,7 @@ Endpoints under /api/v1/ml:
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import get_current_user
+from app.core.security import decrypt_password
 from app.modules.ml_engine.schemas import (
     BatchPredictRequest,
     BatchPredictResponse,
@@ -48,6 +49,18 @@ async def train_model(
     user: dict = require_user,
 ):
     """Train a classical ML model using data from a SQL query."""
+    # Training fetches its rows on the caller's StarRocks connection so the
+    # engine's RBAC decides what the training SQL may read. Passing no identity
+    # makes the service fall back to the root connection and silently bypass
+    # RBAC (NOVA-104).
+    try:
+        password = decrypt_password(user["encrypted_password"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="No user connection is available for this training request",
+        ) from exc
+
     try:
         result = await ml_engine_service.train_model(
             model_name=req.model_name,
@@ -60,6 +73,9 @@ async def train_model(
             test_size=req.test_size,
             database_name=req.database_name,
             created_by=user.get("username", "root"),
+            username=user["username"],
+            password=password,
+            role=user.get("active_role"),
         )
         return result
     except ValueError as e:
