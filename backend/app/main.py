@@ -24,6 +24,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.explorer.router import router as explorer_router
 from app.modules.external_catalogs.router import router as external_catalogs_router
 from app.modules.functions.router import router as functions_router
+from app.modules.governance.router import router as governance_router
 from app.modules.llm_functions.router import router as llm_fn_router
 from app.modules.migration.router import router as migration_router
 from app.modules.ml_engine.internal_router import router as ml_internal_router
@@ -160,6 +161,11 @@ def create_app() -> FastAPI:
     app.include_router(workspaces_router, prefix=f"{prefix}/workspaces", tags=["workspaces"])
     app.include_router(monitoring_router, prefix=f"{prefix}/monitoring", tags=["monitoring"])
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])
+    # Dynamic data masking + row access policies (roadmap #3/#4). RBAC-native:
+    # every statement runs on the caller's connection.
+    app.include_router(
+        governance_router, prefix=f"{prefix}/governance", tags=["governance"]
+    )
     app.include_router(tasks_router, prefix=f"{prefix}/tasks", tags=["tasks"])
     # Nova orchestration metadata (CREATE TASK graphs/runs) — distinct from
     # `/tasks`, which reads StarRocks' native task surface. Read-only.
