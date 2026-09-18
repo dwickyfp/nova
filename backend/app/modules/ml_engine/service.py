@@ -40,6 +40,7 @@ from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
+from app.common.identifiers import check_identifier
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.core.database import db
 from app.modules.query.dialect.injector import resolve_storage_credentials
@@ -821,8 +822,9 @@ class MLEngineService:
             conn.cursor(asyncmy.cursors.DictCursor) as cur,
         ):
             if role:
-                safe_role = role.replace("`", "").replace("'", "")
-                await cur.execute(f"SET ROLE {safe_role}")
+                await cur.execute(
+                    f"SET ROLE {check_identifier(role, field='role')}"
+                )
             await cur.execute(training_sql)
             rows = await cur.fetchall()
             columns = (

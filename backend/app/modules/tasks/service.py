@@ -13,7 +13,13 @@ import json
 import logging
 from typing import Any, Protocol
 
-from app.common.identifiers import check_identifier
+from app.common.identifiers import (
+    check_identifier,
+    check_interval,
+    check_property_key,
+    check_property_value,
+    check_start_time,
+)
 
 from .schemas import (
     TaskResponse,
@@ -148,6 +154,18 @@ class TaskService:
         start_time: str | None = data.get("start_time")
         properties: dict[str, str] = data.get("properties", {})
 
+        # Every caller-supplied fragment that is interpolated into the
+        # statement is allow-listed before any SQL is built (NOVA-101): the
+        # interval and start time are scheduling clauses, and each property
+        # key/value is a token in the PROPERTIES list. The driver executes
+        # trailing `;`-separated statements when statement 1 parses, so a raw
+        # `;` in any of these would run a second statement on the caller's
+        # connection.
+        if schedule_type == "periodic" and interval:
+            interval = check_interval(interval)
+            if start_time:
+                start_time = check_start_time(start_time)
+
         # Build the SUBMIT TASK statement
         parts: list[str] = ["SUBMIT TASK"]
 
@@ -167,7 +185,8 @@ class TaskService:
         # Properties clause
         if properties:
             props_str = ", ".join(
-                f"'{k}' = '{v}'" for k, v in properties.items()
+                f'"{check_property_key(k)}" = "{check_property_value(str(v))}"'
+                for k, v in properties.items()
             )
             parts.append(f"PROPERTIES ({props_str})")
 

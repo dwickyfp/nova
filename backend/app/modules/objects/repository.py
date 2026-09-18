@@ -4,6 +4,11 @@ Identifiers reach these queries as URL path segments, so each is validated
 against the shared allow-list before it is interpolated into a ``SHOW``/``DESC``
 statement (NOVA-89). The queries already run on the caller's connection; the
 validation is what keeps a path segment from breaking out of the identifier.
+
+The caller-supplied ``role`` is an identifier too (NOVA-101): it is the role
+the caller asks to ``SET ROLE`` to, not the session's own role, so it is
+allow-listed before it is interpolated — a strip-only sanitizer let a ``;``
+open a second statement.
 """
 
 from app.common.identifiers import check_identifier
@@ -29,8 +34,7 @@ class ObjectRepository:
             conn.cursor() as cur,
         ):
             if role:
-                safe_role = role.replace("`", "").replace("'", "")
-                await cur.execute(f"SET ROLE {safe_role}")
+                await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
             await cur.execute(sql)
             if cur.description:
                 rows = await cur.fetchall()
