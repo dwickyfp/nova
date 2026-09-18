@@ -22,6 +22,7 @@ class _PendingConsent:
     loop: asyncio.AbstractEventLoop
     thread_id: str
     user_name: str
+    classification: str = "read_only"
 
 
 class ConsentConflictError(RuntimeError):
@@ -51,6 +52,9 @@ class ConsentBroker:
       else's pending call (NOVA-70: the route previously resolved on
       ``tool_call_id`` alone, which is an IDOR — the id is model-supplied and
       not a secret).
+    * ``classification`` is the class the loop computed for the pending call, so
+      the decision route can validate an ``allow_session`` against it rather
+      than trusting the client (NOVA-122, spec §6.1).
     """
 
     def __init__(self) -> None:
@@ -58,7 +62,12 @@ class ConsentBroker:
         self._lock = threading.Lock()
 
     def open(
-        self, tool_call_id: str, *, thread_id: str, user_name: str
+        self,
+        tool_call_id: str,
+        *,
+        thread_id: str,
+        user_name: str,
+        classification: str = "read_only",
     ) -> asyncio.Future[bool | None]:
         """Register a pending decision and return the future to await.
 
@@ -74,7 +83,11 @@ class ConsentBroker:
             if tool_call_id in self._pending:
                 raise ConsentConflictError(tool_call_id)
             self._pending[tool_call_id] = _PendingConsent(
-                future=future, loop=loop, thread_id=thread_id, user_name=user_name
+                future=future,
+                loop=loop,
+                thread_id=thread_id,
+                user_name=user_name,
+                classification=classification,
             )
         return future
 
@@ -83,6 +96,12 @@ class ConsentBroker:
         with self._lock:
             pending = self._pending.get(tool_call_id)
         return (pending.thread_id, pending.user_name) if pending is not None else None
+
+    def classification_of(self, tool_call_id: str) -> str | None:
+        """The classification of a still-pending call, or ``None``."""
+        with self._lock:
+            pending = self._pending.get(tool_call_id)
+        return pending.classification if pending is not None else None
 
     def thread_for(self, tool_call_id: str) -> str | None:
         """The conversation that owns a still-pending call, if any."""
