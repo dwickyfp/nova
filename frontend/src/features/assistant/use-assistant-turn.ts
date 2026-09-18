@@ -123,31 +123,30 @@ export function useAssistantTurn({ ensureThread, context, onError }: AssistantTu
   }, [onError, resettingGrant, threadId, transcript])
 
   /**
-   * Ends the current conversation and starts a fresh one. Closing a
-   * conversation must revoke its grant, not just hide it: the grant lives on
-   * the server-side thread (`ConsentPolicy.always_allow_read_only`) and would
-   * otherwise keep auto-approving read-only calls. The indicator is cleared
-   * only after a successful revoke, so it never reports "no grant" while one
-   * is still live.
+   * Ends the current conversation and starts a fresh one. Revoking the grant
+   * (`ConsentPolicy.always_allow_read_only`) is best-effort cleanup: the thread
+   * may already be gone. Clearing the local binding is not optional: the
+   * conversation is bound to the active file, so a stale `threadId` would route
+   * the next file's message into the old file's thread. The reset runs in
+   * `finally`, so it happens whether the revoke succeeds, answers 404, or fails
+   * on the network; only a real failure is surfaced.
    */
   const startConversation = useCallback(async () => {
     abortRef.current?.abort()
     abortRef.current = null
     const closingThread = threadId
-    if (closingThread && grantActive) {
-      try {
-        await resetGrant(closingThread)
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'The conversation permissions were not reset'
-        transcript.applyEvent({ type: 'error', code: 'consent', message })
-        onError?.(message)
-        return
-      }
+    try {
+      if (closingThread && grantActive) await resetGrant(closingThread)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'The conversation permissions were not reset'
+      transcript.applyEvent({ type: 'error', code: 'consent', message })
+      onError?.(message)
+    } finally {
+      setGrantActive(false)
+      setThreadId(null)
+      transcript.reset()
     }
-    setGrantActive(false)
-    setThreadId(null)
-    transcript.reset()
   }, [grantActive, onError, threadId, transcript])
 
   return {

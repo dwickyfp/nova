@@ -38,7 +38,7 @@ describe("resetGrant", () => {
     expect(url).toBe("/api/v1/assistant/threads/thread%2Fwith%20space/grant");
   });
 
-  it("rejects with the backend detail when the revoke fails", async () => {
+  it("treats a 404 as an idempotent revoke instead of a failure", async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ detail: "Thread not found" }), {
         status: 404,
@@ -46,7 +46,18 @@ describe("resetGrant", () => {
       }),
     );
 
-    await expect(resetGrant("thread-1")).rejects.toThrow("Thread not found");
+    await expect(resetGrant("thread-1")).resolves.toBeUndefined();
+  });
+
+  it("rejects with the backend detail when the revoke fails for another reason", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Thread is locked" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(resetGrant("thread-1")).rejects.toThrow("Thread is locked");
   });
 
   it("rejects on a network failure instead of swallowing it", async () => {
