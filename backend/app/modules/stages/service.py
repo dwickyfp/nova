@@ -12,7 +12,7 @@ import asyncmy.cursors
 import boto3
 from botocore.client import Config as BotoConfig
 
-from app.core.config import settings
+from app.core.config import get_storage_connection, settings
 from app.modules.query.dialect.injector import resolve_storage_credentials
 
 
@@ -109,20 +109,41 @@ class StageService:
     def _s3_client(storage_connection: str | None = None):
         """Create a boto3 S3 client pointed at the stage's storage connection.
 
-        Credentials are read from `nova.yaml` / env. If the connection has no
-        credentials configured the client is still built (boto3 supports
-        anonymous/instance-profile auth) rather than silently falling back to a
-        hardcoded default.
+        Credentials, endpoint and bucket all come from the named connection in
+        `nova.yaml`. If the connection has no credentials configured the client
+        is still built (boto3 supports anonymous/instance-profile auth) rather
+        than silently falling back to a hardcoded default.
+
+        ``storage_connection`` is required for correctness, not cosmetics: the
+        connection may carry its own ``secret_ref``, and defaulting here would
+        read and write a non-default stage's objects with the workspace-default
+        principal (NOVA-67). A resolution failure raises rather than falling
+        back.
         """
+        conn = get_storage_connection(storage_connection)
         access_key, secret_key = resolve_storage_credentials(storage_connection)
         return boto3.client(
             "s3",
-            endpoint_url=settings.S3_ENDPOINT,
+            endpoint_url=conn.endpoint or settings.S3_ENDPOINT,
             aws_access_key_id=access_key or None,
             aws_secret_access_key=secret_key or None,
             config=BotoConfig(signature_version="s3v4"),
-            region_name="us-east-1",
+            region_name=conn.region or "us-east-1",
         )
+
+    @staticmethod
+    def _s3_client_for_stage(stage: dict):
+        """Return ``(client, bucket)`` for the stage's own storage connection.
+
+        Every file operation goes through here so they all use the same
+        principal and bucket the stage is actually registered against. Reading
+        ``settings.S3_BUCKET`` / the default credentials instead made the file
+        browser disagree with ``@stage`` queries for any non-default stage
+        (NOVA-67).
+        """
+        connection = stage.get("storage_connection") or None
+        conn = get_storage_connection(connection)
+        return StageService._s3_client(connection), (conn.bucket or settings.S3_BUCKET)
 
     @staticmethod
     def _resolve_prefix(stage: dict) -> str:
@@ -144,15 +165,13 @@ class StageService:
         if not stage:
             raise ValueError(f"Stage '{stage_id}' not found")
 
+        # Trailing slash is required for the delimiter to work correctly.
         s3_prefix = self._resolve_prefix(stage)
-        if prefix:
-            s3_prefix = f"{s3_prefix}/{prefix.strip('/')}/"
-        else:
-            # Ensure trailing slash so delimiter works correctly
-            s3_prefix = f"{s3_prefix}/"
+        s3_prefix = (
+            f"{s3_prefix}/{prefix.strip('/')}/" if prefix else f"{s3_prefix}/"
+        )
 
-        s3 = self._s3_client()
-        bucket = settings.S3_BUCKET
+        s3, bucket = self._s3_client_for_stage(stage)
 
         paginator = s3.get_paginator("list_objects_v2")
         pages = paginator.paginate(
@@ -195,8 +214,8 @@ class StageService:
             raise ValueError(f"Stage '{stage_id}' not found")
 
         s3_key = f"{self._resolve_prefix(stage)}/{filename}"
-        s3 = self._s3_client()
-        s3.put_object(Bucket=settings.S3_BUCKET, Key=s3_key, Body=content)
+        s3, bucket = self._s3_client_for_stage(stage)
+        s3.put_object(Bucket=bucket, Key=s3_key, Body=content)
 
         return {"filename": filename, "size": len(content)}
 
@@ -207,8 +226,8 @@ class StageService:
             raise ValueError(f"Stage '{stage_id}' not found")
 
         s3_key = f"{self._resolve_prefix(stage)}/{filename}"
-        s3 = self._s3_client()
-        response = s3.get_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+        s3, bucket = self._s3_client_for_stage(stage)
+        response = s3.get_object(Bucket=bucket, Key=s3_key)
         return response["Body"].read()
 
     async def delete_file(self, stage_id: str, filename: str) -> bool:
@@ -218,8 +237,8 @@ class StageService:
             raise ValueError(f"Stage '{stage_id}' not found")
 
         s3_key = f"{self._resolve_prefix(stage)}/{filename}"
-        s3 = self._s3_client()
-        s3.delete_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+        s3, bucket = self._s3_client_for_stage(stage)
+        s3.delete_object(Bucket=bucket, Key=s3_key)
         return True
 
 

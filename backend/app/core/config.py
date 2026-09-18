@@ -239,8 +239,13 @@ def load_nova_app_config() -> NovaAppConfig:
     )
 
 
-def get_storage_connection(name: str) -> StorageConnectionConfig:
+def get_storage_connection(name: str | None) -> StorageConnectionConfig:
+    """Look up a connection by name, falling back to the workspace default.
+
+    ``None`` (or an unknown name) resolves to the default connection, which is
+    what callers that have no stage context want.
+    """
     config = load_nova_app_config()
-    if name in config.storage_connections:
+    if name is not None and name in config.storage_connections:
         return config.storage_connections[name]
     return next(iter(config.storage_connections.values()))

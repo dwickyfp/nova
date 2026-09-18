@@ -952,12 +952,16 @@ class QueryService:
         executed_sql = normalized_sql
 
         if parsed.stage_refs:
-            stage_configs = await self._load_stage_configs(database, None)
             try:
+                # Loading stage configs resolves each stage's secret reference,
+                # so it belongs inside the try: an unresolvable reference must
+                # be reported as a redacted query error, not escape to the
+                # generic handler as an unredacted 500 (NOVA-66).
+                stage_configs = await self._load_stage_configs(database, None)
                 prepared = await prepare_stage_sql(
                     normalized_sql, stage_configs=stage_configs
                 )
-            except ValueError as e:
+            except (ValueError, SecretResolutionError) as e:
                 # ``normalized_sql`` is the user's own text and carries no
                 # injected credential, but it is redacted all the same so every
                 # return path out of this method is uniform.
@@ -966,6 +970,11 @@ class QueryService:
                 # the statement never reached the engine, so nothing else can
                 # record it, and ``QueryResult.success`` (``error is None``)
                 # would otherwise report a refused translation as a success.
+                #
+                # A secret-resolution failure is audited here too, exactly as
+                # ``execute()`` does, so the fact of the failed fetch reaches
+                # NOVA_SYSTEM rather than only the HTTP response.
+                await self._audit_secret_resolutions(username=username)
                 return QueryResult(
                     original_sql=sql,
                     executed_sql=normalized_sql,
@@ -1154,6 +1163,7 @@ class QueryService:
                 access_key=access_key,
                 secret_key=secret_key,
                 region=conn.region or "us-east-1",
+                storage_connection=storage_conn,
             )
         return configs
 
