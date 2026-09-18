@@ -109,6 +109,9 @@ Bukti langsung dari commit pin:
 - [BELUM TERVERIFIKASI] Semantik `csv.trim_space` yang dipakai `_detect_csv_params` — tidak ditemukan padanannya di daftar parameter CSV pada halaman `FILES()` yang diakses. Perlu dikonfirmasi ke docs/engine.
 - [BELUM TERVERIFIKASI] Apakah `agent`/proxy path (port 4406) benar-benar melakukan rewrite `@stage` yang identik dengan `QueryService`; sesi proxy memang memanggil `parse_sql` (`proxy/session.py`), tetapi ekuivalensi penuh jalur translation belum diuji di sini.
 - [BELUM TERVERIFIKASI] Nomor versi StarRocks di mana `ai_query` pertama muncul. Tidak ada release note yang dibaca untuk ini.
+- [BELUM TERVERIFIKASI] Sintaks & perilaku opsi `COPY INTO` (load/export) di 4.1.4 — tidak ada halaman/source yang diperiksa untuk ini di tugas ini. Dipindahkan dari daftar terbuka `08-native-starrocks-sql.md`.
+- [BELUM TERVERIFIKASI] Semantik `PRIMARY KEY` / `DUPLICATE KEY` / partitioning / `PROPERTIES` di 4.1.4 — tidak diperiksa di tugas ini. Dipindahkan dari daftar terbuka `08-native-starrocks-sql.md`.
+- [BELUM TERVERIFIKASI] Bentuk output `EXPLAIN` (kolom/format) di 4.1.4 — tidak diperiksa di tugas ini. Dipindahkan dari daftar terbuka `08-native-starrocks-sql.md`.
 
 ---
 

@@ -1,6 +1,6 @@
 # 01 — The Dialect Pipeline
 
-> The shared four-step preparation every user-supplied statement goes through before it reaches StarRocks: guard → parse → translate → inject → redact.
+> The shared five-step preparation every user-supplied statement goes through before it reaches StarRocks: guard → parse → translate → inject → redact.
 
 Source of truth: `backend/app/modules/query/sql_pipeline.py`.
 
@@ -18,11 +18,11 @@ Nova has several entry points that accept SQL from a user:
 | `CREATE ML_MODEL … AS SELECT <training_sql>` | `MLEngineService.train_model` |
 | `POST /api/v1/ml/predict/batch` | `MLEngineService.batch_predict` |
 
-All of them execute on a connection that eventually needs storage credentials for `FILES()`. If each entry point applied its own subset of the steps, the subsets would drift — and drift on a credential-bearing pipeline is a leak. That is not hypothetical: `ml_engine` originally executed `training_sql` with **none** of the four steps — no guard, no translation, no injection, no redaction (`NOVA-28`). The shared module exists so the guarantee is stated once (`sql_pipeline.py:1`).
+All of them execute on a connection that eventually needs storage credentials for `FILES()`. If each entry point applied its own subset of the steps, the subsets would drift — and drift on a credential-bearing pipeline is a leak. That is not hypothetical: `ml_engine` originally executed `training_sql` with **none** of the five steps — no guard, no parse/translation, no injection, no redaction (`NOVA-28`). The shared module exists so the guarantee is stated once (`sql_pipeline.py:1`).
 
 ---
 
-## The four steps
+## The five steps
 
 ### Step 1 — Guard
 
