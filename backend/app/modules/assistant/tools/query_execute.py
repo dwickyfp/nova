@@ -293,14 +293,16 @@ def _render_result(result: Any) -> str:
 
     Columns + a bounded preview + a row count — never an unbounded set. Values
     are passed through the value-level redactor first, so a credential-shaped
-    cell never reaches the model.
+    cell never reaches the model. The engine **warning** carries the same egress
+    risk as the error: on a statement without a result set it can echo the
+    executed engine SQL, so it is redacted with the shared redactor too.
     """
     if not result.columns:
         # A statement with no result set (affected rows only).
         return json.dumps(
             {
                 "affected_rows": result.affected_rows,
-                "warning": (result.warnings or [None])[0],
+                "warning": _safe_redact((result.warnings or [None])[0]),
             },
             default=str,
         )
