@@ -93,6 +93,31 @@ _PARTITION = re.compile(
 #: rebuilt from the original, so a ``)`` or ``;`` cannot close the clause.
 _PARTITION_VALUE = re.compile(r"^(?:\[|VALUES?\s+\[|LESS\s+THAN)", re.IGNORECASE)
 
+#: Index kinds Nova can build with explicit ``USING <kind>`` syntax. Bitmap and
+#: Bloom Filter indexes use the plain ``ADD INDEX`` form; GIN is the inverted
+#: (full-text) index and NGRAM_BF is the n-gram bloom filter. Kept as an explicit
+#: allow-list so a caller cannot smuggle an unknown index implementation keyword
+#: into the statement (NOVA-111).
+_INDEX_KINDS = frozenset({"BITMAP", "GIN", "NGRAM_BF", "BLOOM_FILTER"})
+
+#: StarRocks 4.1 full-text inverted index tokenization methods
+#: (``docs/24-advanced-indexes.md`` §Supported Parsers). ``none`` disables
+#: tokenization; the rest map to the documented analyzers.
+_INVERTED_PARSERS = frozenset({"none", "english", "chinese", "standard", "unicode", "ngram"})
+
+#: Index implementation library for the v4.1 built-in inverted index. ``clucene``
+#: is the default on shared-nothing clusters; ``builtin`` is required on
+#: shared-data. Both are documented in the StarRocks 4.1 inverted-index docs.
+_INVERTED_IMP_LIBS = frozenset({"clucene", "builtin"})
+
+#: Index property keys the inverted/built-in index accepts (StarRocks 4.1 docs),
+#: plus the N-Gram bloom-filter keys. Deliberately closed: an unknown key is
+#: refused rather than forwarded, so the property string cannot carry an injected
+#: ``"=`` break.
+_INDEX_PROPERTY_KEYS = frozenset(
+    {"parser", "imp_lib", "dict_gram_num", "parser.ngram_len", "gram_num", "bloom_filter_fpp"}
+)
+
 
 class DDLError(InvalidIdentifierError):
     """A DDL clause the allow-list refused."""
@@ -275,3 +300,68 @@ def check_comment(value: str) -> str:
 def check_column_alias(value: str) -> str:
     """A view column alias is an identifier; no parentheses or quoting."""
     return check_identifier(value, field="column alias")
+
+
+def check_index_kind(value: str) -> str:
+    """Return the canonical ``USING`` keyword for an allow-listed index kind.
+
+    ``GIN`` (inverted/full-text), ``NGRAM_BF`` and ``BLOOM_FILTER`` are the
+    explicit kinds; ``BITMAP`` is the plain ``ADD INDEX`` default and is accepted
+    for completeness. Anything else — including a fragment such as
+    ``GIN(...); DROP ...`` — is refused before the statement is assembled.
+    """
+    candidate = (value or "").strip().upper()
+    if candidate not in _INDEX_KINDS:
+        raise DDLError(
+            f"Invalid index kind: {value!r} "
+            f"(expected one of: {', '.join(sorted(_INDEX_KINDS))})"
+        )
+    return candidate
+
+
+def check_inverted_parser(value: str) -> str:
+    """Return an allow-listed inverted-index tokenization parser, else raise."""
+    candidate = (value or "").strip().lower()
+    if candidate not in _INVERTED_PARSERS:
+        raise DDLError(
+            f"Invalid inverted-index parser: {value!r} "
+            f"(expected one of: {', '.join(sorted(_INVERTED_PARSERS))})"
+        )
+    return candidate
+
+
+def check_inverted_imp_lib(value: str) -> str:
+    """Return an allow-listed inverted-index implementation library, else raise."""
+    candidate = (value or "").strip().lower()
+    if candidate not in _INVERTED_IMP_LIBS:
+        raise DDLError(
+            f"Invalid inverted-index implementation: {value!r} "
+            f"(expected one of: {', '.join(sorted(_INVERTED_IMP_LIBS))})"
+        )
+    return candidate
+
+
+def check_index_property_key(value: str) -> str:
+    """Index properties use the closed inverted-index key allow-list."""
+    candidate = (value or "").strip().lower()
+    if candidate not in _INDEX_PROPERTY_KEYS:
+        raise DDLError(
+            f"Invalid index property key: {value!r} "
+            f"(expected one of: {', '.join(sorted(_INDEX_PROPERTY_KEYS))})"
+        )
+    return candidate
+
+
+def check_index_property_value(value: str) -> str:
+    """Index property values are scalar tokens, like other DDL properties.
+
+    ``parser``/``imp_lib`` are validated against their own allow-lists by the
+    caller; for the numeric knobs (``dict_gram_num``, ``parser.ngram_len``) a
+    positive integer string is the only accepted shape. A quote, backtick or
+    statement separator is refused either way, so the value cannot break out of
+    the ``"key"="value"`` pair.
+    """
+    candidate = (value or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.+-]+", candidate):
+        raise DDLError(f"Invalid index property value: {value!r}")
+    return candidate

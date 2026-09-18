@@ -171,27 +171,49 @@ equivalent FE config). Until then this item stays DEFER and must not be re-promo
 
 ### 6. Inverted Index (Full-Text Search)
 
-**StarRocks 4.1:** Built-in CLucene inverted index
+**StarRocks 4.1:** Built-in CLucene inverted index (native *built-in*
+implementation on shared-data clusters since 4.1).
+
+**Status: 🟡 Backend shipped (NOVA-111).** `docs/24-advanced-indexes.md` is the
+authoritative, engine-verified reference; the forms below were corrected there
+after testing against the pinned 4.1.4 engine.
 
 ```sql
--- Create inverted index
+-- Create inverted index (verified on 4.1.4)
 ALTER TABLE articles ADD INDEX idx_content (content) USING GIN (
     "parser" = "english"
 );
 
--- Query with full-text search
-SELECT * FROM articles
-WHERE articles MATCH_ANY('machine learning')
-ORDER BY score DESC;
+-- v4.1 built-in implementation + n-gram dictionary
+ALTER TABLE articles ADD INDEX idx_builtin (content) USING GIN (
+    "parser" = "english", "imp_lib" = "builtin", "dict_gram_num" = "2"
+);
 
--- Supported parsers: english, chinese, standard, unicode, ngram
+-- Query with full-text search (predicate form — space-separated keywords)
+SELECT * FROM articles
+WHERE content MATCH_ANY 'machine learning';
+
+-- Supported parsers: none, english, chinese, standard, unicode
 ```
 
-**Nova features:**
-- Inverted index management in Table Manager
-- Index configuration (parser, analyzer, ngram params)
-- MATCH_ANY / MATCH_ALL query builder
-- Search preview with relevance scoring
+**Engine preconditions (observed on 4.1.4):** the FE config
+`enable_experimental_gin` must be on; the table must have
+`replicated_storage=false`; and `ADD`/`DROP INDEX` is asynchronous (the index
+appears only after the schema change reaches `FINISHED`).
+
+**Nova surface (v1.0):**
+- ✅ Inverted / bitmap / n-gram-BF index create, drop, list — `/api/v1/indexes`
+- ✅ Parser / analyzer / `imp_lib` / `dict_gram_num` configuration
+- ✅ `MATCH` / `MATCH_ANY` / `MATCH_ALL` predicate-shape validation
+- ✅ Engine precondition reporting (`/api/v1/indexes/capabilities`)
+- 🟡 Table Manager indexes tab (UI) — deferred; API is the contract
+- ⏭ Relevance scoring (`ORDER BY score`) — **`DEFER`**, not available on the
+  4.1.4 predicate path (results are filtered, not ranked)
+
+**Corrections to the original spec:** `ngram` is **not** a parser name on 4.1.4
+(use `dict_gram_num` / `MATCH '%term%'`); the quoted `MATCH_ANY('a, b')` call
+form is not the engine's predicate syntax (use `MATCH_ANY 'a b'`); and
+`ORDER BY score` has no engine support here.
 
 **Add to:** Extend Table Manager indexes tab
 
@@ -532,6 +554,7 @@ docs/
 ### v1.0 (MVP)
 - All existing 26 docs
 - HIGH priority items (6 buildable + 1 deferred): masking, row access, password policy, inverted index, variables, backup; **network policy DEFERRED** (§5 — engine has no `NETWORK POLICY` object; per-user host scoping already covers the real surface)
+  - **#6 Inverted Index** — backend shipped in NOVA-111 (API + tests; UI deferred). See §6.
 
 ### v1.1
 - MEDIUM priority (11): colocate, compaction, storage volumes, tablet split, cache obs, time travel, tagging, lineage, worksheets, dashboards
