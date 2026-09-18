@@ -451,11 +451,19 @@ write method. There is no mutation path.
 `NOVA_SYSTEM.CONFIG_TASK*` and is read through the system pool, so StarRocks'
 own grant filter does **not** apply the way it does on the caller-scoped
 `/tasks` path. Nova therefore scopes ownership itself on each request: a caller
-sees a graph only if they own one of its tasks (`created_by` — the same identity
-the worker submits as). A caller holding an admin role (`ACCOUNTADMIN` or a
-StarRocks security role) sees every graph. An unknown **or** unauthorized
+sees a graph only if they own **every** task in it (`created_by` — the same
+identity the worker submits as). A caller holding an admin role (`ACCOUNTADMIN`
+or a StarRocks security role) sees every graph. An unknown **or** unauthorized
 `graph_id` returns the same `404`, so the API does not reveal that someone
 else's graph exists.
+
+A graph whose nodes are owned by different users is therefore **fail-closed** —
+invisible to every non-admin. That is deliberate, not a side effect: a graph can
+be assembled from nodes the creator does not own (`CREATE TASK x AFTER a` does
+not check who owns `a`), and a looser rule would let one owner read another
+owner's task definitions — its `when_expr`, schedule and `created_by`. Sharing a
+graph across owners would be an explicit feature with its own permission model,
+not a looser default.
 
 **Credential-invisible.** Responses carry ids, names, states, timings and
 schedule metadata only. The task **body is not exposed** (it can name a `@stage`

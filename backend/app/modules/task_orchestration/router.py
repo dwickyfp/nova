@@ -13,11 +13,20 @@ through the system pool, so StarRocks' own grant filter does **not** apply the
 way it does on the caller-scoped `/tasks` path. Nova therefore enforces
 ownership itself, in the backend, on every request:
 
-* a caller sees a graph only if they own one of its tasks (`created_by`);
+* a caller sees a graph only if they own **every** task in it (`created_by`);
 * a caller holding an admin role (`ACCOUNTADMIN` or a StarRocks security role)
   sees every graph, matching `/users`;
 * an unknown **or** unauthorized graph id returns the same `404`, so the API does
   not reveal that someone else's graph exists.
+
+**Why "every" and not "any".** A graph can contain nodes owned by different
+users: `CREATE TASK x AFTER a` does not check who owns `a`, so a mixed-ownership
+graph is reachable. Under an "any" rule, a user who owns one node would see the
+definitions of the others — their `when_expr`, schedule and `created_by`. A graph
+that contains a node owned by another user is therefore **fail-closed**: it is
+invisible to every non-admin. That is the safe default; sharing a graph across
+owners is a feature that would need its own permission model, not a looser
+default.
 
 This is deliberately not a second authorization system: it reuses the same
 `created_by` the worker submits as, and the same admin-role list `/users` uses.
@@ -61,7 +70,11 @@ def _is_admin(user: dict[str, Any]) -> bool:
 
 
 def _owned_by_caller(task: dict[str, Any], user: dict[str, Any]) -> bool:
-    """Whether ``user`` may see a graph containing ``task``.
+    """Whether ``user`` owns ``task`` — the per-node predicate, not a graph rule.
+
+    A graph is visible only when this is true for **every** node in it
+    (``all(...)`` in :meth:`_GraphAccess.visible_graph_ids`); one unowned node
+    makes the whole graph fail closed. See the module docstring for why.
 
     ``created_by`` is the Nova user who ran `CREATE TASK`, and is the same
     identity the worker submits the node as (delegate-first). An unset owner is
