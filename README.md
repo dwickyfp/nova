@@ -754,6 +754,14 @@ browser/file tools, `CREATE TABLE`-by-prompt, dbt, notebooks,
 
 Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.
 
+### Internal ML endpoint authentication (NOVA-90) — 2026-09-18
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **Keep `/api/v1/internal/ml/predict`; gate it by peer address + `X-Nova-Internal-Token` instead of deleting it** | The route has no Nova session-holder, so a JWT dependency cannot fit; a shared secret plus a code-enforced loopback/trusted-proxy check closes the unauthenticated hole while preserving a machine-to-machine path | The deployment must distribute one shared secret to the backend and the UDF host; the UDF reads it from the environment or `nova.backend.token` | A native authenticated bridge (mTLS, engine-side token) removes the need for a pre-shared secret |
+| **Removed the duplicate unauthenticated `/api/v1/ml/internal/predict` from `ml_engine/router.py`** | It was a second, identical unauthenticated route mounted under the public `/api/v1/ml` prefix — deleting it removes the bypass without changing the UDF contract | None; nothing referenced it (the UDF calls `/api/v1/internal/ml/predict`) | A caller is found that depended on the old path |
+| **Unset `NOVA_INTERNAL_TOKEN` fails closed (`503`)** | Default-allow would recreate the finding on every deployment that forgets the variable | The internal route is unusable until configured — acceptable because the UDF is still a placeholder returning an instructional string | The UDF becomes a real in-engine scorer and needs a zero-config path |
+
 ### Version provenance corrections (NOVA-76) — 2026-09-18
 
 | Decision | Reason | Trade-off accepted | Reopen trigger |

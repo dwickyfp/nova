@@ -43,17 +43,28 @@ SELECT ML_PREDICT('churn_model', '{"age": 34, "income": 5200}') FROM NOVA_DEMO.o
 2. `ml_predict('alias', json_string)` — features as a JSON string.
 
 The rewrite replaces the call with `NULL AS __ml_prediction__` and returns `(alias, inner_sql, feature_args)`. This module is a building block; the shipped SQL UDF does not use it.
-
 ### Internal predict endpoint
 
-StarRocks BEs can call Nova without auth over a localhost-only route:
+StarRocks BEs can call Nova over the authenticated internal channel:
 
 ```
 POST /api/v1/internal/ml/predict     (ml_engine/internal_router.py)
-POST /api/v1/ml/internal/predict     (also declared in ml_engine/router.py)
 ```
 
-Both accept a `PredictRequest` (`model_alias`, `features`) and delegate to `MLEngineService.predict`. They are intended for Java-UDF → backend calls and must not be exposed publicly.
+It accepts a `PredictRequest` (`model_alias`, `features`) and delegates to
+`MLEngineService.predict`. It is a machine-to-machine surface for callers with
+no Nova session, so it is gated by two independent checks
+(`ml_engine/internal_auth.py`):
+
+1. The TCP peer must be loopback (`127.0.0.0/8`, `::1`) or a proxy named in
+   `NOVA_INTERNAL_TRUSTED_PROXY`; anything else is rejected with `403`.
+2. The request must carry `X-Nova-Internal-Token` equal to `NOVA_INTERNAL_TOKEN`;
+   a missing or wrong token is rejected with `401`.
+
+If `NOVA_INTERNAL_TOKEN` is unset the endpoint fails closed (`503`). The
+previously-declared unauthenticated duplicate at `/api/v1/ml/internal/predict`
+was removed (NOVA-90).
+
 
 ---
 
