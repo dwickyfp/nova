@@ -70,11 +70,15 @@ Rules:
 
 - **Reference-only.** `secret_ref` is the durable artefact. No secret value is
   written to `nova.yaml`, `NOVA_SYSTEM`, an audit row, a response, or a log.
-- **Fail-closed.** If the provider errors, times out, or returns an
-  unparseable payload, resolution raises and the query fails with a redacted
-  error. Nova **never** falls back to the inline `nova.yaml` credentials — a
-  connection that opted into a reference must not silently authenticate as a
-  different principal.
+- **Fail-closed, on every path.** If the provider errors, times out, or
+  returns an unparseable payload, resolution raises and the operation fails with
+  a redacted error. Nova **never** falls back to the inline `nova.yaml`
+  credentials — a connection that opted into a reference must not silently
+  authenticate as a different principal. This holds for all reachable
+  credential-resolution paths: worksheet `@stage` execution, `EXPLAIN`, the ML
+  engine (`train_model` / `batch_predict`), and the stage file browser
+  (list/upload/download/delete), each of which resolves the stage's **own**
+  connection rather than the workspace default.
 - **No stale cache.** A short in-process TTL cache collapses repeated lookups
   within a query. A failure is not cached, so the next call retries the
   provider rather than serving a value that could not be refreshed.

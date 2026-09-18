@@ -19,6 +19,11 @@ class StorageConfig:
     access_key: str = ""
     secret_key: str = ""
     region: str = "us-east-1"
+    #: Name of the connection this stage is bound to. Carried so a credential
+    #: fallback can resolve the *stage's own* connection rather than the
+    #: workspace default (NOVA-68). Empty when unknown; the fallback then
+    #: injects nothing rather than guessing a principal.
+    storage_connection: str = ""
 
 
 def build_s3_path(config: StorageConfig, ref: StageReference) -> str:

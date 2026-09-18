@@ -42,6 +42,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.core.database import db
+from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.dialect.translator import StorageConfig
 from app.modules.query.sql_pipeline import (
     guard_user_statement,
@@ -752,9 +753,12 @@ class MLEngineService:
         reason; it takes ``database``/``schema`` as a *filter*, not as a
         privilege boundary.)
 
-        Any failure returns no configs rather than raising: an unresolvable
-        stage then surfaces as a translation error naming the stage, which is a
-        better message than a driver traceback.
+        A failure to *read* the rows returns no configs rather than raising: an
+        unresolvable stage then surfaces as a translation error naming the
+        stage, which is a better message than a driver traceback. Credential
+        resolution is different and deliberately **does** raise: a stage whose
+        ``secret_ref`` cannot be resolved must fail closed, never fall back to
+        another principal (NOVA-65).
         """
         sql = (
             "SELECT name, database_name, schema_name, storage_connection, base_prefix "
@@ -780,14 +784,22 @@ class MLEngineService:
             resolved_prefix = (base_prefix or "").strip("/")
             if not resolved_prefix:
                 resolved_prefix = f"{db_name}/{schema_name}/{name}"
+            # Resolve the stage's *own* connection, exactly as the worksheet
+            # loader does. Using conn.access_key/secret_key here ignored
+            # secret_ref entirely, so an ML @stage query authenticated with the
+            # inline placeholder values and never contacted the provider
+            # (NOVA-65). Fail-closed: a broken reference raises
+            # SecretResolutionError rather than falling back.
+            access_key, secret_key = resolve_storage_credentials(storage_conn)
             configs[name] = StorageConfig(
                 storage_type=conn.type,
                 endpoint=to_docker_endpoint(conn.endpoint),
                 bucket=conn.bucket,
                 base_prefix=resolved_prefix,
-                access_key=conn.access_key,
-                secret_key=conn.secret_key,
+                access_key=access_key,
+                secret_key=secret_key,
                 region=conn.region or "us-east-1",
+                storage_connection=storage_conn,
             )
         return configs
 

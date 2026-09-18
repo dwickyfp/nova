@@ -131,9 +131,27 @@ async def prepare_stage_sql(
     if csv_params:
         executed_sql = _inject_files_params(executed_sql, csv_params)
 
-    credentials = get_credential_params("s3")
-    if credentials:
-        executed_sql = _inject_files_params(executed_sql, credentials)
+    # Credential safety net. The translator already emits credentials from each
+    # stage's own config when it has any, so this only fires for a stage the
+    # translator left bare. It must resolve **that stage's** connection, never
+    # the workspace default: injecting the default here is how a stage whose
+    # own resolution was empty silently authenticated as a different principal
+    # (NOVA-68). A stage with no known connection gets nothing, so the FILES()
+    # call fails loudly instead of borrowing a credential.
+    #
+    # Restricted to a single distinct stage on purpose. ``_inject_files_params``
+    # is statement-global, so with two stages it would write stage A's
+    # credentials into stage B's bare ``FILES()`` as well. With more than one
+    # stage the translator is the only injector; a bare call then fails closed
+    # at the engine rather than being handed the wrong principal's credential.
+    stage_names = list(dict.fromkeys(ref.stage_name for ref in parsed.stage_refs))
+    if len(stage_names) == 1:
+        config = (stage_configs or {}).get(stage_names[0])
+        connection = getattr(config, "storage_connection", "") if config else ""
+        if connection:
+            credentials = get_credential_params("s3", connection)
+            if credentials:
+                executed_sql = _inject_files_params(executed_sql, credentials)
 
     return PreparedSQL(
         engine_sql=executed_sql,
