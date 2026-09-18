@@ -25,6 +25,8 @@ from app.modules.explorer.router import router as explorer_router
 from app.modules.external_catalogs.router import router as external_catalogs_router
 from app.modules.functions.router import router as functions_router
 from app.modules.llm_functions.router import router as llm_fn_router
+from app.modules.migration.router import router as migration_router
+from app.modules.migration.source_store import migration_source_store
 from app.modules.ml_engine.internal_router import router as ml_internal_router
 from app.modules.ml_engine.router import router as ml_router
 from app.modules.monitoring.router import router as monitoring_router
@@ -60,6 +62,9 @@ async def lifespan(app: FastAPI):
     # Startup
     await db.init_system_pool()
     await session_store.init()
+    # Migration wizard source connections (NOVA-85). Ephemeral, TTL'd, and
+    # separate from user sessions: they hold an encrypted *source* password.
+    await migration_source_store.init()
     await init_nova_system()
 
     # Nova-managed external catalog metadata (NOVA-62). Best-effort: the engine
@@ -107,6 +112,7 @@ async def lifespan(app: FastAPI):
             await proxy_server.stop()
         except Exception as e:
             logger.warning("MySQL proxy did not stop cleanly: %s", e)
+    await migration_source_store.close()
     await session_store.close()
     await db.close_system_pool()
 
@@ -168,6 +174,11 @@ def create_app() -> FastAPI:
         external_catalogs_router,
         prefix=f"{prefix}/external-catalogs",
         tags=["external-catalogs"],
+    )
+    # Phase 11 — Migration Connector v1 (NOVA-85). Assessment + dry-run only;
+    # cutover is gated on backup/restore (roadmap #7).
+    app.include_router(
+        migration_router, prefix=f"{prefix}/migration", tags=["migration"]
     )
 
     # Static files for Java UDFs

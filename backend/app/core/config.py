@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
+    # --- Migration Connector (Phase 11, NOVA-85) ---
+    # Path to the operator-provided `starrocks-cluster-sync` binary. Nova does
+    # not bundle or redistribute the tool: an empty path means the wizard
+    # reports the engine as unavailable rather than reaching for a default.
+    NOVA_MIGRATION_ENGINE_PATH: str = ""
+
     # --- App ---
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
