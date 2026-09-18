@@ -100,5 +100,5 @@ StarRocks optimizer can automatically rewrite queries to use MVs when beneficial
 ### MV Limitations
 
 - INCREMENTAL mode: Iceberg append-only tables only
-- Query rewrite disabled for INCREMENTAL/AUTO MVs (v4.1.1)
-- FORCE refresh and partition refresh rejected for INCREMENTAL/AUTO (v4.1.1)
+- Query rewrite disabled for INCREMENTAL/AUTO MVs (v4.1.4)
+- FORCE refresh and partition refresh rejected for INCREMENTAL/AUTO (v4.1.4)

@@ -754,6 +754,13 @@ browser/file tools, `CREATE TABLE`-by-prompt, dbt, notebooks,
 
 Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.
 
+### Version provenance corrections (NOVA-76) — 2026-09-18
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **Engine pin stays at 4.1.4; docs/prose relabelled from 4.1.1 to 4.1.4** | 4.1.4 is the newer tag+image (`4a9848e`, 2026-08-05) and is already pinned, drift-checked and covered by the L3 regression suite. Fulfilling NOVA-76's "4.1.3 latest" premise literally would be a downgrade, not a sync | 4.1.4 is a tag-only cut with no GitHub release page; the guides now name an engine whose release page is absent | StarRocks ships 4.1.5 artefacts (tag/image), or a product owner accepts the 4.1.4 → 4.1.3 downgrade |
+| **The CTAS `VARCHAR(N)` (#73498) and Parquet `isAdjustedToUTC=false` (#73674) changes are attributed to 4.1.3, not 4.1.4** | The 4.1.3 release notes place both changes in 4.1.3; the `4.1.1 → 4.1.4` label in `HOW_TO_RUN.md` and the regression-test docstring was a mis-attribution. Both are still absent on 4.1.1 and present on the pinned 4.1.4, so the tests are unchanged | None — factual correction only, no assertion or engine behaviour change | The upstream release notes change, or a live probe shows a different introduction version |
+
 ### Phase 10 agentic assistant decisions (NOVA-61) — 2026-09-18
 
 Full rationale, contracts and the locked v1 subset: `docs/specs/nova-61-agentic-assistant-design.md`.
