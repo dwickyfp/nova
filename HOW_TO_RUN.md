@@ -522,6 +522,18 @@ uv run pytest
 uv run ruff check .
 ```
 
+Regenerasi parser ANTLR (fondasi NOVA-54; Java hanya dipakai saat generate,
+runtime tetap Python murni):
+
+```bash
+bash backend/scripts/generate_grammar.sh   # unduh antlr-4.13.2 jika belum ada
+cd backend && uv run python scripts/check_grammar_drift.py
+```
+
+Commit hasil generate bersama perubahan `.g4`. CI `grammar-drift` menjalankan
+ulang generator dan gagal bila artefak yang di-commit tidak identik dengan
+hasil generate, atau bila ada suntingan di luar blok `NOVA-BEGIN`/`NOVA-END`.
+
 Test khusus `nova-scheduler` (unit, tanpa engine/Redis):
 
 ```bash
