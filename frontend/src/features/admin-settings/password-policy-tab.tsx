@@ -10,11 +10,13 @@ import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Switch } from '@/components/ui/switch'
 import {
-  PASSWORD_POLICY_DEFAULTS,
+  PASSWORD_POLICY_VARIABLES,
   fetchPasswordPolicy,
+  parsePolicyBoolean,
   parsePolicyNumber,
   updatePasswordPolicy,
   type PasswordPolicy,
+  type PasswordPolicyPatch,
 } from './api'
 
 type PolicyField = {
@@ -62,11 +64,34 @@ const COMPLEXITY_FIELDS: PolicyField[] = [
 
 function policyToDraft(policy: PasswordPolicy): Record<string, string> {
   const draft: Record<string, string> = {}
-  for (const [key, value] of Object.entries(policy)) {
+  for (const key of PASSWORD_POLICY_VARIABLES) {
     if (key === 'validate_password') continue
+    const value = policy[key]
     draft[key] = value == null ? '' : String(value)
   }
   return draft
+}
+
+/** Only the fields whose draft value differs from the loaded policy are sent. */
+function draftToPatch(
+  draft: Record<string, string>,
+  validatePassword: boolean,
+  original: PasswordPolicy
+): PasswordPolicyPatch {
+  const patch: PasswordPolicyPatch = {}
+  const originalValidate = parsePolicyBoolean(original.validate_password)
+  if (validatePassword !== originalValidate) {
+    patch.validate_password = validatePassword
+  }
+  for (const key of PASSWORD_POLICY_VARIABLES) {
+    if (key === 'validate_password') continue
+    const next = (draft[key] ?? '').trim()
+    const previous = (original[key] ?? '').trim()
+    if (next === previous) continue
+    const parsed = parsePolicyNumber(next)
+    if (parsed != null) patch[key] = parsed
+  }
+  return patch
 }
 
 export function PasswordPolicyTab() {
@@ -90,14 +115,18 @@ export function PasswordPolicyTab() {
   useEffect(() => {
     if (policyQuery.data) {
       setDraft(policyToDraft(policyQuery.data))
-      setValidatePassword(policyQuery.data.validate_password)
+      setValidatePassword(parsePolicyBoolean(policyQuery.data.validate_password))
     }
   }, [policyQuery.data])
 
   const saveMutation = useMutation({
-    mutationFn: (policy: PasswordPolicy) => updatePasswordPolicy(policy),
-    onSuccess: () => {
-      toast.success('Password policy saved')
+    mutationFn: (patch: PasswordPolicyPatch) => updatePasswordPolicy(patch),
+    onSuccess: (result) => {
+      toast.success(
+        result.updated === 0
+          ? 'No policy fields changed'
+          : `Password policy saved (${result.updated} field${result.updated === 1 ? '' : 's'})`
+      )
       queryClient.invalidateQueries({ queryKey: ['password-policy'] })
     },
     onError: (err: Error) =>
@@ -114,7 +143,7 @@ export function PasswordPolicyTab() {
         variant='error'
         icon={AlertCircle}
         title='Could not load the password policy'
-        description='The variables module did not respond. It may not be deployed on this server yet.'
+        description='The variables API did not respond. Check the connection and retry.'
         action={
           <Button variant='outline' size='sm' onClick={() => void policyQuery.refetch()}>
             Retry
@@ -129,24 +158,8 @@ export function PasswordPolicyTab() {
   }
 
   const handleSave = () => {
-    const policy: PasswordPolicy = {
-      validate_password: validatePassword,
-      password_lifetime: parsePolicyNumber(draft.password_lifetime ?? ''),
-      password_history: parsePolicyNumber(draft.password_history ?? ''),
-      failed_login_attempts: parsePolicyNumber(draft.failed_login_attempts ?? ''),
-      password_lock_time: parsePolicyNumber(draft.password_lock_time ?? ''),
-      validate_password_length: parsePolicyNumber(draft.validate_password_length ?? ''),
-      validate_password_mixed_case_count: parsePolicyNumber(
-        draft.validate_password_mixed_case_count ?? ''
-      ),
-      validate_password_number_count: parsePolicyNumber(
-        draft.validate_password_number_count ?? ''
-      ),
-      validate_password_special_char_count: parsePolicyNumber(
-        draft.validate_password_special_char_count ?? ''
-      ),
-    }
-    saveMutation.mutate(policy)
+    if (!policyQuery.data) return
+    saveMutation.mutate(draftToPatch(draft, validatePassword, policyQuery.data))
   }
 
   const renderFields = (fields: PolicyField[]) => (
@@ -223,14 +236,15 @@ export function PasswordPolicyTab() {
         </Button>
         <Button
           variant='outline'
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || !policyQuery.data}
           onClick={() => {
-            setDraft(policyToDraft(PASSWORD_POLICY_DEFAULTS))
-            setValidatePassword(PASSWORD_POLICY_DEFAULTS.validate_password)
+            if (!policyQuery.data) return
+            setDraft(policyToDraft(policyQuery.data))
+            setValidatePassword(parsePolicyBoolean(policyQuery.data.validate_password))
           }}
         >
           <RotateCcw className='me-1.5 size-3.5' />
-          Reset to defaults
+          Discard changes
         </Button>
       </div>
     </div>

@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  PASSWORD_POLICY_DEFAULTS,
+  PASSWORD_POLICY_VARIABLES,
   fetchPasswordPolicy,
   fetchVariables,
   isVariableChanged,
+  parsePasswordPolicy,
+  parsePolicyBoolean,
   parsePolicyNumber,
+  setVariable,
   updatePasswordPolicy,
-  updateVariable,
-  type Variable,
+  type VariableItem,
 } from './api'
 
 const fetchMock = vi.fn()
@@ -40,8 +42,8 @@ function requestedBody(index = 0) {
   return body ? JSON.parse(body as string) : undefined
 }
 
-describe('admin settings API calls', () => {
-  it('lists session variables with scope and pagination', async () => {
+describe('admin settings API calls match the merged variables router', () => {
+  it('lists variables from GET /variables with scope and pagination', async () => {
     await fetchVariables({ scope: 'session', limit: 25, offset: 25 })
 
     expect(requestedUrl()).toBe('/api/v1/variables?scope=session&limit=25&offset=25')
@@ -56,61 +58,92 @@ describe('admin settings API calls', () => {
     )
   })
 
-  it('sets a variable for the active scope', async () => {
-    await updateVariable('query_timeout', 'session', '600')
+  it('sets a variable through POST /variables/set, not PUT /variables/:name', async () => {
+    await setVariable({ scope: 'session', name: 'query_timeout', value: '600' })
 
-    expect(requestedUrl()).toBe('/api/v1/variables/query_timeout')
-    expect(requestedMethod()).toBe('PUT')
-    expect(requestedBody()).toEqual({ scope: 'session', value: '600' })
+    expect(requestedUrl()).toBe('/api/v1/variables/set')
+    expect(requestedMethod()).toBe('POST')
+    expect(requestedBody()).toEqual({
+      scope: 'session',
+      name: 'query_timeout',
+      value: '600',
+    })
   })
 
-  it('encodes variable names in the path', async () => {
-    await updateVariable('a b', 'global', '1')
+  it('sends only reset:true when resetting, with no value', async () => {
+    await setVariable({ scope: 'global', name: 'query_timeout', reset: true })
 
-    expect(requestedUrl()).toBe('/api/v1/variables/a%20b')
+    expect(requestedBody()).toEqual({
+      scope: 'global',
+      name: 'query_timeout',
+      reset: true,
+    })
+    expect(requestedBody().value).toBeUndefined()
   })
 
-  it('reads the password policy', async () => {
+  it('reads the policy from GET /variables/password-policy', async () => {
     await fetchPasswordPolicy()
 
     expect(requestedUrl()).toBe('/api/v1/variables/password-policy')
     expect(requestedMethod()).toBe('GET')
   })
 
-  it('saves the password policy', async () => {
-    await updatePasswordPolicy(PASSWORD_POLICY_DEFAULTS)
+  it('writes the policy through POST /variables/password-policy', async () => {
+    await updatePasswordPolicy({ password_lifetime: 90, validate_password: true })
 
     expect(requestedUrl()).toBe('/api/v1/variables/password-policy')
-    expect(requestedMethod()).toBe('PUT')
-    expect(requestedBody().password_lifetime).toBe(90)
+    expect(requestedMethod()).toBe('POST')
+    expect(requestedBody()).toEqual({
+      password_lifetime: 90,
+      validate_password: true,
+    })
+  })
+})
+
+describe('password policy unwrapping', () => {
+  it('unwraps the {policy: ...} envelope and fills every documented field', () => {
+    const policy = parsePasswordPolicy({
+      password_lifetime: '90',
+      validate_password: 'false',
+    })
+
+    expect(policy.password_lifetime).toBe('90')
+    expect(policy.validate_password).toBe('false')
+    expect(policy.password_history).toBe('')
+    for (const name of PASSWORD_POLICY_VARIABLES) {
+      expect(policy[name]).toBeDefined()
+    }
+  })
+
+  it('handles a missing envelope without throwing', () => {
+    const policy = parsePasswordPolicy(undefined)
+
+    expect(policy.password_lifetime).toBe('')
   })
 })
 
 describe('variable change detection', () => {
-  const base: Variable = {
+  const base: VariableItem = {
     name: 'query_timeout',
     value: '600',
-    default_value: '300',
+    default: '300',
     scope: 'session',
-    description: null,
   }
 
-  it('prefers an explicit changed flag', () => {
-    expect(isVariableChanged({ ...base, changed: false })).toBe(false)
-    expect(isVariableChanged({ ...base, changed: true })).toBe(true)
+  it('marks a value that differs from the engine default', () => {
+    expect(isVariableChanged(base)).toBe(true)
   })
 
-  it('falls back to comparing value with default', () => {
-    expect(isVariableChanged(base)).toBe(true)
+  it('does not mark a value equal to the default', () => {
     expect(isVariableChanged({ ...base, value: '300' })).toBe(false)
   })
 
   it('does not treat an unknown default as changed', () => {
-    expect(isVariableChanged({ ...base, default_value: null })).toBe(false)
+    expect(isVariableChanged({ ...base, default: null })).toBe(false)
   })
 })
 
-describe('policy number parsing', () => {
+describe('policy value parsing', () => {
   it('parses a non-negative integer', () => {
     expect(parsePolicyNumber('30')).toBe(30)
   })
@@ -122,5 +155,11 @@ describe('policy number parsing', () => {
   it('rejects negatives and non-numeric input', () => {
     expect(parsePolicyNumber('-1')).toBeNull()
     expect(parsePolicyNumber('abc')).toBeNull()
+  })
+
+  it('parses the engine boolean strings', () => {
+    expect(parsePolicyBoolean('true')).toBe(true)
+    expect(parsePolicyBoolean('ON')).toBe(true)
+    expect(parsePolicyBoolean('false')).toBe(false)
   })
 })
