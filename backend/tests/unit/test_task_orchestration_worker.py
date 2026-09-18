@@ -72,22 +72,36 @@ class FakeRepository:
         }
         return tid
 
-    def add_edge(self, graph_id: str, parent: str, child: str) -> None:
+    def add_edge(
+        self, graph_id: str, parent: str, child: str, edge_kind: str = "after"
+    ) -> None:
         self.edges.setdefault(graph_id, []).append(
             {
                 "id": f"e_{parent}_{child}",
                 "graph_id": graph_id,
                 "parent_task": parent,
                 "child_task": child,
+                "edge_kind": edge_kind,
             }
         )
 
-    def add_graph_run(self, run_id: str, graph_id: str, state: str = "pending") -> None:
+    def add_finalize(self, graph_id: str, finalized: str, finalizer: str) -> None:
+        """A ``FINALIZE`` edge: ``finalizer`` runs after ``finalized``'s graph."""
+        self.add_edge(graph_id, finalized, finalizer, edge_kind="finalize")
+
+    def add_graph_run(
+        self,
+        run_id: str,
+        graph_id: str,
+        state: str = "pending",
+        overlap_policy: str = "skip",
+    ) -> None:
         self.graph_runs[run_id] = {
             "id": run_id,
             "graph_id": graph_id,
             "trigger_type": "schedule",
             "state": state,
+            "overlap_policy": overlap_policy,
             "wal_marks": None,
             "heartbeat_at": None,
         }
@@ -95,6 +109,13 @@ class FakeRepository:
     # ── repository surface ─────────────────────────────────────
     async def get_graph_run(self, run_id: str):
         return self.graph_runs.get(run_id)
+
+    async def list_active_graph_runs(self, graph_id: str):
+        return [
+            row
+            for row in self.graph_runs.values()
+            if row["graph_id"] == graph_id and row["state"] in ("pending", "running")
+        ]
 
     async def list_tasks(self, graph_id: str | None = None):
         return list(self.tasks.values())

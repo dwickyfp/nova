@@ -323,8 +323,50 @@ All four live in `NOVA_SYSTEM` as Primary-Key (CRUD) tables, following the flat
 |-------|-------|-------------|
 | `CONFIG_TASKS` | one row per task definition | `name`, `definition`, `schedule_kind` (`manual`/`interval`/`cron`), `schedule_expr`, `timezone` (IANA), `when_expr`, `overlap_policy`, `owner_role`, `created_by`, `version` |
 | `CONFIG_TASK_EDGES` | directed `parent_task → child_task` per `graph_id` | one row per edge (`edge_kind` is `after` or `finalize`; supports multi-parent, cycle detection, delete-impact queries) |
-| `CONFIG_TASK_GRAPH_RUNS` | one row per graph execution | `trigger_type`, `state`, `wal_marks` (JSON metadata), `started_at`, `finished_at` |
+| `CONFIG_TASK_GRAPH_RUNS` | one row per graph execution | `trigger_type`, `state`, `overlap_policy` (copied from the root task at enqueue), `wal_marks` (JSON metadata), `started_at`, `finished_at` |
 | `CONFIG_TASK_RUNS` | one row per node attempt | `graph_run_id`, `task_id`, `attempt`, `state`, `delegated`, `starrocks_query_id`, `error_message` |
+
+### Runtime semantics (stage 3b)
+
+These are the behaviours the `CREATE TASK` surface promises, and where each is
+enforced.
+
+**`AFTER` — dependency order.** The graph's adjacency is built from
+`edge_kind='after'` edges; a node is ready when every parent has succeeded (or
+been suspended, which never holds a join open). A failed parent fails the graph
+and skips its descendants.
+
+**`FINALIZE` — after the graph, never alongside it.** A finalizer is **not** a
+dependency and is excluded from the adjacency, so it can never be offered as a
+zero-dependency root (which would run it first). The rule implemented is: a
+finalizer is enqueued only once the **entire dependency graph** has settled
+successfully (every dependency node `success` or `suspended`). The stricter
+whole-graph reading is used deliberately over "after the specific target's
+ancestors" — it removes any concurrency window with a dependency node. A failed
+or skipped dependency graph **skips** the finalizer rather than running it (a
+finalizer reports a completed run). A finalizer's own failure fails the graph,
+and a finalizer's own `WHEN` is honoured.
+
+**`WHEN` — conditional skip.** Evaluated on the owner's connection before the
+node runs. False marks the node `skipped`, and its descendants are skipped too.
+An evaluation **error** fails the node; an error is never treated as "no data".
+
+**`OVERLAP_POLICY` — enforced at graph-run enqueue and claim.** Stage 2 stored and
+validated the value; the scheduler and worker now act on it:
+
+| Policy | Behaviour |
+|---|---|
+| `skip` | If any run for the graph is still `pending`/`running`, the due occurrence is **not** enqueued (it is dropped). |
+| `queue` | The run **is** enqueued; the worker **defers** it while another run for the same graph is active, then runs it. |
+| `allow` | The run **is** enqueued and may execute **concurrently** with an active run. |
+
+An unknown or absent value behaves as `skip` — the strictest policy — so a bad
+value can never start an overlap by accident.
+
+**`SCHEDULE` — cron/interval firing.** Only root tasks (no incoming edge) are
+schedule anchors; one due root creates one graph run covering every reachable
+node. A cron expression is validated at create time by `schedule.parse_cron` and
+evaluated by the scheduler tick against the task's own IANA timezone.
 
 ### Design rules
 
@@ -352,7 +394,12 @@ All four live in `NOVA_SYSTEM` as Primary-Key (CRUD) tables, following the flat
 backend/app/modules/task_orchestration/
 ├── schemas.py     # Pydantic models for Task / Edge / GraphRun / TaskRun
 ├── repository.py  # CRUD via db.execute_system (no ad-hoc root connections)
-└── graph.py       # pure DAG validation (acyclic, node/parent/child limits)
+├── graph.py       # pure DAG validation (acyclic, node/parent/child limits)
+├── ddl.py         # pure CREATE TASK -> LoweredTask (parse + validate)
+├── lowering.py    # persist a LoweredTask as CONFIG_TASK* rows (cycle-checked)
+├── dag.py         # pure graph-run state machine + finalizer staging
+├── scheduler.py   # due-graph planning + overlap_policy enforcement at enqueue
+└── worker.py      # executes ready nodes, finalizers, WHEN, delegate-first
 ```
 
 ---

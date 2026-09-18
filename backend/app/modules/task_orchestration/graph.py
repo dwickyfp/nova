@@ -29,10 +29,18 @@ class Edge:
 
 @dataclass
 class Graph:
-    """An adjacency representation of a task graph."""
+    """An adjacency representation of a task graph.
+
+    ``finalizer_nodes`` names nodes that must run *after* the dependency graph
+    settles rather than as part of it. They are deliberately absent from
+    ``nodes``/``adjacency`` so :func:`~app.modules.task_orchestration.dag.evaluate`
+    cannot treat them as zero-dependency roots; finalizer staging is
+    ``dag.finalizers_ready``.
+    """
 
     nodes: list[str] = field(default_factory=list)
     adjacency: dict[str, list[str]] = field(default_factory=dict)
+    finalizer_nodes: set[str] = field(default_factory=set)
 
     @classmethod
     def from_edges(cls, node_names: Iterable[str], edges: Iterable[Edge]) -> Graph:

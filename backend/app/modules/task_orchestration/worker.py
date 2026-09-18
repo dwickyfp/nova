@@ -32,9 +32,11 @@ from typing import Any, Protocol
 
 from app.common.audit import write_audit_log
 from app.modules.task_orchestration.dag import (
+    TERMINAL_NODE_STATES,
     GraphState,
     NodeState,
     evaluate,
+    finalizers_ready,
     graph_from_task_rows,
 )
 from app.modules.task_orchestration.execution import (
@@ -114,6 +116,17 @@ class GraphRunWorker:
         }:
             return GraphState(str(graph_run["state"]))
 
+        # Overlap deferral. A `queue` run waits for any other active run of the
+        # same graph to settle before it starts, which is what makes QUEUE
+        # "one after another" rather than "at the same time". `allow` skips this
+        # check entirely; `skip` never reaches the worker with an active sibling
+        # because the scheduler did not enqueue it.
+        policy = str(graph_run.get("overlap_policy") or "skip").lower()
+        if policy == "queue" and await self._has_other_active_run(job):
+            # Leave the row pending; the scheduler/reconciler re-delivers it
+            # once the active run finishes. Nothing is executed here.
+            return GraphState.PENDING
+
         # Claim the run by moving pending -> running. If another delivery got
         # here first, the conditional write affects no rows and we stand down.
         already = graph_run.get("state") == GraphState.RUNNING.value
@@ -128,6 +141,16 @@ class GraphRunWorker:
                 return GraphState(str((latest or {}).get("state", "")))
 
         return await self._drive(job)
+
+    async def _has_other_active_run(self, job: GraphRunJob) -> bool:
+        """True when a different active run exists for this graph.
+
+        Used only for the ``queue`` policy. The run's own row is excluded: a
+        run that is already ``running`` is not its own blocker (that case is the
+        conditional-claim path). ``pending`` and ``running`` are the active set.
+        """
+        active = await self._repository.list_active_graph_runs(job.graph_id)
+        return any(str(run["id"]) != job.graph_run_id for run in active)
 
     async def _drive(self, job: GraphRunJob) -> GraphState | None:
         """Evaluate and execute until the graph settles."""
@@ -148,12 +171,16 @@ class GraphRunWorker:
                 node_names = [standalone["name"]]
 
         graph = graph_from_task_rows(node_names, edges)
-        if not graph.nodes:
+        # Finalizers are excluded from the dependency graph (they must not run as
+        # zero-dependency roots), but they are still nodes of this run and their
+        # state has to be loaded and driven.
+        all_nodes = [*graph.nodes, *sorted(graph.finalizer_nodes)]
+        if not graph.nodes and not graph.finalizer_nodes:
             await self._settle(job, GraphState.FAILED, reason="graph has no nodes")
             return GraphState.FAILED
 
         while True:
-            states, rows = await self._load_states(job.graph_run_id, graph.nodes, by_name)
+            states, rows = await self._load_states(job.graph_run_id, all_nodes, by_name)
             decision = evaluate(graph, states)
 
             if decision.ready:
@@ -181,6 +208,31 @@ class GraphRunWorker:
                 recorded = await self._persist_skips(job, decision.skipped, by_name, rows)
                 if recorded:
                     continue
+
+            # Dependency graph settled one way or another. Finalizers are staged
+            # only now, so they can never run concurrently with a dependency.
+            finalize_ready, finalize_skipped = finalizers_ready(graph, states)
+
+            if finalize_ready:
+                claimed = await self._execute_ready(
+                    job, graph, finalize_ready, by_name, rows
+                )
+                if not claimed:
+                    return GraphState.RUNNING
+                continue
+
+            if finalize_skipped:
+                recorded = await self._persist_skips(
+                    job, finalize_skipped, by_name, rows
+                )
+                if recorded:
+                    continue
+
+            if _finalizers_waiting(graph, states, finalize_ready, finalize_skipped):
+                # A finalizer is still pending: it was offered neither as ready
+                # nor as skipped, which means a dependency is still in flight.
+                # The graph must not settle yet, and this delivery has no work.
+                return GraphState.RUNNING
 
             if decision.graph_state is None:
                 # Nothing ready, nothing terminal: nodes are running natively
@@ -460,6 +512,26 @@ class GraphRunWorker:
             session_id=None,
             database_name=job.graph_id,
         )
+
+
+def _finalizers_waiting(
+    graph: Any,
+    states: dict[str, NodeState],
+    ready: tuple[str, ...],
+    skipped: tuple[str, ...],
+) -> bool:
+    """True when a finalizer has neither settled nor been decided this pass.
+
+    The worker uses this to return ``RUNNING`` instead of settling the graph
+    before a finalizer has had its turn. ``ready``/``skipped`` are the decisions
+    ``finalizers_ready`` already produced, so it is not recomputed.
+    """
+    decided = set(ready) | set(skipped)
+    return any(
+        states.get(name, NodeState.PENDING) not in TERMINAL_NODE_STATES
+        and name not in decided
+        for name in graph.finalizer_nodes
+    )
 
 
 def _to_node_state(raw: str) -> NodeState:

@@ -25,7 +25,8 @@ _TASK_COLUMNS = (
 )
 _EDGE_COLUMNS = "id, graph_id, parent_task, child_task, edge_kind, created_at"
 _GRAPH_RUN_COLUMNS = (
-    "id, graph_id, trigger_type, state, wal_marks, started_at, heartbeat_at, finished_at"
+    "id, graph_id, trigger_type, state, overlap_policy, wal_marks, started_at, "
+    "heartbeat_at, finished_at"
 )
 _TASK_RUN_COLUMNS = (
     "id, graph_run_id, task_id, attempt, state, delegated, starrocks_query_id, "
@@ -292,14 +293,16 @@ class TaskOrchestrationRepository:
         await db.execute_system(
             f"""
             INSERT INTO {_GRAPH_RUNS}
-            (id, graph_id, trigger_type, state, wal_marks, started_at, finished_at)
-            VALUES (%s, %s, %s, %s, %s, NOW(), NULL)
+            (id, graph_id, trigger_type, state, overlap_policy, wal_marks,
+             started_at, finished_at)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW(), NULL)
             """,
             [
                 run_id,
                 data["graph_id"],
                 data.get("trigger_type", "manual"),
                 data.get("state", "pending"),
+                data.get("overlap_policy", "skip"),
                 self._encode_wal_marks(data.get("wal_marks")),
             ],
         )
@@ -321,6 +324,24 @@ class TaskOrchestrationRepository:
         result = await db.execute_system(
             f"SELECT {_GRAPH_RUN_COLUMNS} FROM {_GRAPH_RUNS} "
             "WHERE graph_id = %s ORDER BY started_at DESC",
+            [graph_id],
+        )
+        runs = [self._to_dict(_GRAPH_RUN_COLUMNS, row) for row in result["rows"]]
+        for run in runs:
+            run["wal_marks"] = self._decode_wal_marks(run["wal_marks"])
+        return runs
+
+    async def list_active_graph_runs(self, graph_id: str) -> list[dict[str, Any]]:
+        """Graph runs for ``graph_id`` that have not reached a terminal state.
+
+        The overlap decision reads this before enqueueing: an active run is what
+        ``skip`` refuses to overlap and ``queue`` defers behind. ``pending`` and
+        ``running`` are the active set; every other state is terminal.
+        """
+        result = await db.execute_system(
+            f"SELECT {_GRAPH_RUN_COLUMNS} FROM {_GRAPH_RUNS} "
+            "WHERE graph_id = %s AND state IN ('pending', 'running') "
+            "ORDER BY started_at",
             [graph_id],
         )
         runs = [self._to_dict(_GRAPH_RUN_COLUMNS, row) for row in result["rows"]]

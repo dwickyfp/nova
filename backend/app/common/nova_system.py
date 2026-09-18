@@ -64,14 +64,15 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """,
     """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS (
-    id           VARCHAR(64) NOT NULL,
-    graph_id     VARCHAR(64) NOT NULL,
-    trigger_type VARCHAR(32) NOT NULL,
-    state        VARCHAR(32) NOT NULL,
-    wal_marks    TEXT,
-    started_at   DATETIME,
-    heartbeat_at DATETIME,
-    finished_at  DATETIME
+    id             VARCHAR(64) NOT NULL,
+    graph_id       VARCHAR(64) NOT NULL,
+    trigger_type   VARCHAR(32) NOT NULL,
+    state          VARCHAR(32) NOT NULL,
+    overlap_policy VARCHAR(16) NOT NULL DEFAULT 'skip',
+    wal_marks      TEXT,
+    started_at     DATETIME,
+    heartbeat_at   DATETIME,
+    finished_at    DATETIME
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -118,6 +119,12 @@ TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # finalizer indistinguishable from an ordinary dependency. Existing rows
     # default to ``after``, which is the behaviour they already had.
     ("CONFIG_TASK_EDGES", "edge_kind", "VARCHAR(16) NOT NULL DEFAULT 'after'"),
+    # NOVA-54 / 9b stage 3b: the overlap policy is copied onto the graph run at
+    # enqueue so the worker can honour QUEUE (defer while another run for the
+    # same graph is active) versus ALLOW (proceed concurrently). Existing rows
+    # default to ``skip``, the strictest policy, so nothing starts overlapping
+    # behaviour simply because the column arrived.
+    ("CONFIG_TASK_GRAPH_RUNS", "overlap_policy", "VARCHAR(16) NOT NULL DEFAULT 'skip'"),
 )
 
 
