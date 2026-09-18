@@ -30,8 +30,9 @@ REDACTED_VALUE = "***"
 
 #: Substrings in a column *name* that mark every cell in that column as
 #: credential-shaped. Matched case-insensitively on a normalized name where
-#: separators are collapsed, so ``api_key``, ``apiKey``, ``api key`` and
-#: ``API-KEY`` all hit.
+#: separators **and case boundaries** are collapsed, so ``api_key``, ``apiKey``,
+#: ``api key``, ``API-KEY`` and ``APIKey`` all hit. The camelCase claim is real
+#: as of NOVA-81; before that fix this comment was false.
 _CREDENTIAL_COLUMN_PARTS: tuple[str, ...] = (
     "password",
     "passwd",
@@ -44,12 +45,19 @@ _CREDENTIAL_COLUMN_PARTS: tuple[str, ...] = (
     "account_key",
     "sas_token",
     "session_token",
+    "access_token",
     "credential",
     "client_secret",
     "auth_token",
     "bearer",
     "api token",
 )
+
+#: Short abbreviations matched as **whole words** only. ``pwd`` is three
+#: characters, so a substring/compact match would fire on unrelated names
+#: (``pwd_count`` is fine, but ``bpwd`` should not); a word-boundary test
+#: (``db_pwd``, ``user-pwd``, ``userPwd``) is the narrow, correct rule.
+_CREDENTIAL_COLUMN_WORDS: tuple[str, ...] = ("pwd", "pass")
 
 #: Value formats that are credential-shaped regardless of the column they are
 #: in. Each is anchored tightly enough that ordinary data (a sentence, an id)
@@ -70,18 +78,44 @@ _CREDENTIAL_VALUE_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 _SEPARATORS = re.compile(r"[\s\-_.]+")
 
+#: A lower/digit → upper transition inside a run-together name: ``userPassword``
+#: → ``user Password``, ``dbPass`` → ``db Pass``.
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+#: An acronym → word transition: ``APIKey`` → ``API Key``, ``DBAuthToken`` →
+#: ``DB Auth Token``. Applied after :data:`_CAMEL_BOUNDARY`, so an all-caps
+#: prefix followed by a capitalised word splits once, not per letter.
+_ACRONYM_BOUNDARY = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _split_case(text: str) -> str:
+    """Insert a separator at camelCase/PascalCase/acronym boundaries."""
+    return _ACRONYM_BOUNDARY.sub(" ", _CAMEL_BOUNDARY.sub(" ", text))
+
 
 def _normalize(text: str) -> str:
-    """Lower-case and collapse ``-``/``_``/``.``/space runs to one space.
+    """Lower-case and collapse separators, case boundaries included.
 
-    Applied to both the column name and the pattern list, so ``api_key``,
-    ``apiKey`` and ``api key`` are the same string on each side.
+    Case transitions are split **before** the separator collapse, so a
+    run-together name reaches the same canonical form as its separated spelling:
+    ``userPassword``, ``user_password``, ``user-password`` and ``user password``
+    all become ``user password``. Without this step the module's own claim that
+    camelCase is covered was false (NOVA-81).
     """
-    return _SEPARATORS.sub(" ", text.strip().lower())
+    return _SEPARATORS.sub(" ", _split_case(text.strip()).lower())
 
 
 _NORMALIZED_COLUMN_PARTS: tuple[str, ...] = tuple(
     _normalize(part) for part in _CREDENTIAL_COLUMN_PARTS
+)
+
+#: The same parts with every separator removed, so a run-together name matches
+#: without needing a word boundary: ``userPassword`` → ``userpassword`` and
+#: ``dbPass``/``hashedPassword`` are caught even when case splitting alone is
+#: ambiguous. Matching a compact form is safe because the parts are already
+#: long, credential-specific words (``password``, ``secretkey``, ``authtoken``).
+_COMPACT_COLUMN_PARTS: tuple[str, ...] = tuple(
+    part.replace(" ", "") for part in _NORMALIZED_COLUMN_PARTS
 )
 
 
@@ -90,9 +124,20 @@ def _normalized_column(column: str) -> str:
 
 
 def is_credential_column(column: str) -> bool:
-    """True when a column *name* marks its cells as credential-shaped."""
-    normalized = " " + _normalized_column(column) + " "
-    return any(f" {part} " in normalized for part in _NORMALIZED_COLUMN_PARTS)
+    """True when a column *name* marks its cells as credential-shaped.
+
+    Handles separated (``user_password``, ``user-password``, ``user password``)
+    and run-together (``userPassword``, ``secretKey``, ``accessToken``,
+    ``hashedPassword``, ``dbPass``, ``pwd``) spellings alike (NOVA-81).
+    """
+    normalized = _normalized_column(column)
+    padded = f" {normalized} "
+    if any(f" {part} " in padded for part in _NORMALIZED_COLUMN_PARTS):
+        return True
+    if any(f" {word} " in padded for word in _CREDENTIAL_COLUMN_WORDS):
+        return True
+    compact = normalized.replace(" ", "")
+    return any(part in compact for part in _COMPACT_COLUMN_PARTS)
 
 
 def is_credential_value(value: object) -> bool:
