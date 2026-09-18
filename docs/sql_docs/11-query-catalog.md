@@ -113,7 +113,7 @@ Daftar: `AI_COMPLETE`, `AI_SENTIMENT`, `AI_CLASSIFY`, `AI_SUMMARIZE`, `AI_EXTRAC
 | `AI_TRANSLATE` | `txt, target_lang STRING` | terjemah |
 | `AI_FILTER` | `txt, criteria STRING` | `"true"`/`"false"` |
 
-**Semantik StarRocks resmi.** Semua adalah **SQL UDF** yang membungkus builtin `ai_query(VARCHAR, JSON) -> VARCHAR`. Field config yang valid (dari source engine, bukan docs): `model` (wajib), `api_key` (wajib), `endpoint` (opsional), `temperature`, `max_tokens`, `top_p`, `timeout_ms`. Nova mengisi `model`, `api_key`, `endpoint` (`service.py:461-482`) dan menambahkan `default_params` alias bila ada.
+**Semantik StarRocks resmi.** Semua adalah **SQL UDF** yang membungkus builtin `ai_query(VARCHAR, JSON) -> VARCHAR`. Registrasi engine pada commit pin: `gensrc/script/functions.py:1520` → `[200000, 'ai_query', True, False, 'VARCHAR', ['VARCHAR', 'JSON'], "AiFunctions::ai_query"]`. Field config yang valid (dari source engine, bukan docs): `model` (wajib), `api_key` (wajib), `endpoint` (opsional), `temperature`, `max_tokens`, `top_p`, `timeout_ms`. Nova mengisi `model`, `api_key`, `endpoint` (`service.py:461-482`) dan menambahkan `default_params` alias bila ada.
 
 **Registrasi & grant.** `init-nova.sql:743-781` membuat placeholder; `llm_functions/service.py:_register_single_udf` (baris 422) DROP lalu CREATE ulang; `_grant_udf_privileges` (baris 361) memberi `GRANT USAGE ON GLOBAL FUNCTION ...` ke role `root`, `db_admin`, `cluster_admin`, `user_admin`, `ACCOUNTADMIN` dengan tiga varian signature (`STRING`, `VARCHAR`, `VARCHAR(65533)`).
 
@@ -135,7 +135,7 @@ CREATE GLOBAL FUNCTION ML_PREDICT(model_alias STRING, features_json STRING)
 RETURNS CONCAT('Use POST /api/v1/ml/predict with {"model_alias":"', model_alias, '","features":', features_json, '} to get prediction');
 ```
 
-**Status nyata:** UDF hanya mengembalikan instruksi API. `common/ml_intercept.py` mendefinisikan `detect_ml_predict`/`rewrite_ml_predict_sql`, tetapi **tidak ada import** ke modul itu di seluruh `backend/app` — jalur intercept SQL **belum aktif**. Prediksi sesungguhnya via REST: `POST /api/v1/ml/predict` (single) dan `POST /api/v1/ml/predict/batch` (`ml_engine/router.py:69,84`), dijalankan `ml_engine_service.predict`/`batch_predict`.
+**Status nyata:** UDF hanya mengembalikan instruksi API. `common/ml_intercept.py` mendefinisikan `detect_ml_predict`/`rewrite_ml_predict_sql`, tetapi **tidak ada import** ke modul itu di seluruh `backend/app` (dicari dengan `rg "ml_intercept" backend/app backend/tests` — hanya definisi di file itu sendiri) — jalur intercept SQL **belum aktif**. Prediksi sesungguhnya via REST: `POST /api/v1/ml/predict` (single) dan `POST /api/v1/ml/predict/batch` (`ml_engine/router.py:69,84`), dijalankan `ml_engine_service.predict`/`batch_predict`.
 
 **Semantik StarRocks:** tidak ada `ML_PREDICT` di engine (lihat `10-...md` §4). Keyakinan: Tinggi.
 
