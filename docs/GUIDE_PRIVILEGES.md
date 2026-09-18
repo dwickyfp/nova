@@ -1,6 +1,6 @@
 # StarRocks Privileges — Complete Reference Guide
 
-> **Version**: StarRocks 4.1.1 | **Last Updated**: 2025-06-20  
+> **Version**: StarRocks 4.1.4 | **Last Updated**: 2026-09-18  
 > **Total Privileges**: 46 distinct privilege×object combinations across 13 object types
 
 ---

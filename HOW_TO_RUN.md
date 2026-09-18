@@ -53,8 +53,9 @@ manual yang diperlukan untuk skema Nova.
 
 ### Catatan migrasi: timestamp Parquet `isAdjustedToUTC=false`
 
-Sejak 4.1.4 (StarRocks #73674), `FILES()` dan broker/stream load **tidak lagi
-menerapkan pergeseran timezone sesi** ke kolom `INT64` Parquet yang bertanda
+Perubahan ini masuk di 4.1.3 (StarRocks #73674) dan karena itu aktif pada engine
+4.1.4 yang di-pin: `FILES()` dan broker/stream load **tidak lagi menerapkan
+pergeseran timezone sesi** ke kolom `INT64` Parquet yang bertanda
 `isAdjustedToUTC=false`. Nilai tersebut dimuat sebagai *wall-clock* apa adanya.
 
 Konsekuensinya untuk data stage yang sudah ada:

@@ -2,7 +2,7 @@
 
 > **Status**: Deep Research Complete · Ready for Implementation
 > **Last Updated**: 2026-06-21
-> **Authors**: Deep Research (Snowflake, BigQuery ML, Redshift ML, Databricks, DuckDB, ClickHouse, StarRocks 4.1.1)
+> **Authors**: Deep Research (Snowflake, BigQuery ML, Redshift ML, Databricks, DuckDB, ClickHouse, StarRocks 4.1.4)
 
 ---
 
@@ -348,7 +348,7 @@ SELECT evalMLMethod(state, x1, x2) FROM model CROSS JOIN test_data;
 
 ## 3. StarRocks Native Capabilities
 
-### 3.1 What StarRocks 4.1.1 Has
+### 3.1 What StarRocks 4.1.4 Has
 
 | Capability | Details | Status |
 |---|---|---|
@@ -568,7 +568,7 @@ CREATE TABLE ML_MODELS (...) PRIMARY KEY (model_id);
 │                          DATA LAYER  │                              │
 │                                      ▼                              │
 │   ┌─────────────────────────────────────────────────────────────┐   │
-│   │                   STARROCKS 4.1.1                           │   │
+│   │                   STARROCKS 4.1.4                           │   │
 │   │                                                             │   │
 │   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │   │
 │   │  │ NOVA_SYSTEM  │  │ ai_query()   │  │ Python UDFs      │  │   │
