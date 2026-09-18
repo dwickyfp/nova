@@ -2449,6 +2449,11 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#fusedDecimal.
+    def visitFusedDecimal(self, ctx:StarRocksParser.FusedDecimalContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#pivotClause.
     def visitPivotClause(self, ctx:StarRocksParser.PivotClauseContext):
         return self.visitChildren(ctx)

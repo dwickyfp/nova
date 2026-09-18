@@ -8,21 +8,53 @@ Examples:
     → SELECT * FROM FILES('path'='s3://bucket/prefix/data.csv', 'format'='csv', creds...)
 
     SELECT * FROM @silver.stage1.folder.file.parquet
-    → SELECT * FROM FILES('path'='s3://bucket/prefix/folder/file.parquet', 'format'='parquet', creds...)
+    → SELECT * FROM FILES('path'='s3://.../folder/file.parquet', 'format'='parquet', creds...)
+
+The stage registry is built from the **ANTLR4 parse tree** (NOVA-126 / 109-B),
+not from a regex over the raw text. ``StarRocks.g4`` carries a Nova
+``stageReference`` rule in ``relationPrimary`` (added by NOVA-125 / 109-A), so a
+``@stage`` is a stage exactly where the grammar says a table may stand. That is
+what closes the NOVA-17 parse defects this slice owns:
+
+* a ``@stage`` inside a string literal or a comment is one token to the lexer and
+  never a ``stageReference`` node, so it cannot become a false positive;
+* ``@@version`` is the engine's ``systemVariable`` (two ``AT`` tokens), never a
+  stage;
+* the slash path ``@stage1/folder/x.csv`` and the glob ``@stage1.data/*.csv``
+  are a single ``stageReference`` node, so the reference is detected whole
+  instead of leaving a dangling ``/folder/x.csv`` / ``*.csv`` fragment that
+  corrupts the SQL after translation.
+
+This module owns only the *parse*: the translator and the credential injector
+stay Nova's (``translator.py``, ``sql_pipeline.py``).
+
+``LIST`` and ``COPY INTO`` are the two Nova surfaces the vendored StarRocks 4.1
+grammar does not model (``LIST`` does not exist in StarRocks; ``COPY INTO`` is
+4.2+). They are recognised by a **token scan of the statement prefix** — never a
+regex over the text — and their stage references still come from the grammar's
+``stageReference`` rule wherever the grammar can see them. The recovery is
+documented on :func:`_nova_surface_stage_refs`.
 """
 
-import re
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
+
+from antlr4 import CommonTokenStream, InputStream, Token
+from antlr4.error.ErrorListener import ErrorListener
+
+from app.sql_dialect.grammar import StarRocksLexer, StarRocksParser
 
 
 class CommandType(Enum):
     """Types of SQL commands that can contain @stage references."""
-    STAGE_QUERY = "stage_query"      # SELECT FROM @stage
-    STAGE_BROWSE = "stage_browse"    # LIST FILES @stage
-    STAGE_LOAD = "stage_load"        # COPY INTO table FROM @stage
-    STAGE_EXPORT = "stage_export"    # COPY INTO @stage FROM table
-    REGULAR = "regular"              # No @stage references
+
+    STAGE_QUERY = "stage_query"  # SELECT FROM @stage
+    STAGE_BROWSE = "stage_browse"  # LIST FILES @stage
+    STAGE_LOAD = "stage_load"  # COPY INTO table FROM @stage
+    STAGE_EXPORT = "stage_export"  # COPY INTO @stage FROM table
+    REGULAR = "regular"  # No @stage references
 
 
 class UnsupportedStageCommandError(ValueError):
@@ -38,579 +70,299 @@ class UnsupportedStageCommandError(ValueError):
     """
 
 
+class StageParseError(ValueError):
+    """A syntax error carrying the engine's exact ``line:col`` position.
+
+    ``str(error)`` is ``"<line>:<col> <message>"`` — the position prefix is what
+    lets a caller point at *where* the statement is malformed instead of a bare
+    "parse failed". The message never contains a credential: it is produced
+    before any translation or injection runs.
+    """
+
+    def __init__(self, line: int, column: int, message: str) -> None:
+        self.line = line
+        self.column = column
+        self.message = message
+        super().__init__(f"{line}:{column} {message}")
+
+
 @dataclass
 class StageReference:
     """Parsed @stage reference from SQL."""
-    full_match: str          # Original text: @stage1.data.csv
-    stage_name: str          # Stage name: stage1
-    path_parts: list[str]    # Remaining path: ['data', 'csv']
-    file_name: str | None    # Last part if it looks like a file: 'data.csv'
-    is_directory: bool       # True if no file extension
-    original_text: str       # The full SQL text for context
+
+    full_match: str  # Original text: @stage1.data.csv
+    stage_name: str  # Stage name: stage1
+    path_parts: list[str]  # Remaining path: ['data', 'csv']
+    file_name: str | None  # Last part if it looks like a file: 'data.csv'
+    is_directory: bool  # True if no file extension
+    original_text: str  # The full SQL text for context
 
 
 @dataclass
 class ParsedSQL:
     """Result of parsing a SQL statement."""
+
     command_type: CommandType
     stage_refs: list[StageReference]
     original_sql: str
     base_sql: str  # SQL without @stage references (for translation)
+    errors: list[StageParseError]
 
 
-# A stage reference is ``@name`` plus an optional dotted path and directory
-# slash: ``@stage1``, ``@stage1/``, ``@stage1.data.csv``,
-# ``@silver.stage1.folder.file.parquet``.
-#
-# The leading ``(?<!@)`` excludes ``@@name``, a *system* variable. Every client
-# asks for ``@@version_comment`` on connect, and without the lookbehind the
-# pattern matched the second ``@`` and read a stage called ``version_comment``,
-# so every MySQL client's login sequence failed before it sent a user query.
-#
-# The dotted path is optional again (``*``, not ``+``): a bare ``@stage1`` and a
-# directory ``@stage1/`` are documented stage forms
-# (``docs/04-stage-manager.md:87``, ``docs/GUIDE_OBJECTS.md:128``), and requiring
-# a dot silently disabled stage browsing. What separates a stage from a *user
-# variable* is **context**, not the presence of a dot — see
-# :func:`_classify_at_token`.
-_STAGE_PATTERN = re.compile(
-    r'(?<!@)@([a-zA-Z_][a-zA-Z0-9_-]*)'  # stage name (letters, digits, underscores, hyphens)
-    r'((?:\.[a-zA-Z0-9_-]+)*)'        # optional .path.parts (supports hyphens)
-    r'(/)?'                           # optional trailing slash (directory)
-    r'(?:\s|$|;|,|\)|\()'            # boundary
-)
+#: File extensions that name a file rather than a directory segment.
+_FILE_EXTENSIONS = {
+    "csv",
+    "tsv",
+    "json",
+    "parquet",
+    "orc",
+    "avro",
+    "txt",
+    "gz",
+    "bz2",
+    "snappy",
+    "zstd",
+    "lzo",
+    "xlsx",
+    "xls",
+    "xml",
+    "log",
+    "sql",
+    "ndjson",
+    "jsonl",
+}
 
-#: Keywords after which a bare ``@name`` denotes a stage rather than a variable.
-#:
-#: ``FROM``/``JOIN``/``INTO`` introduce a table-position operand and ``LIST``
-#: takes a stage as its whole argument. ``COPY INTO @stage FROM table`` puts the
-#: stage after ``INTO``, and a load puts it after ``FROM``; both are covered by
-#: this set.
-_STAGE_CONTEXT_KEYWORDS = frozenset(
-    {"FROM", "JOIN", "INTO", "LIST", "FILES", "USING"}
-)
-
-#: Characters after which ``@name`` is unambiguously a variable operand: an
-#: operator, an opening paren of a function call, or a comma in an expression
-#: list. ``SELECT @x``, ``WHERE a > @x`` and ``1 + @n`` all land here.
-_EXPRESSION_PRECEDERS = frozenset("+-*/%<>=!|&^,(~")
-
-#: Tokens that may sit between a stage keyword and the ``@name`` it introduces,
-#: e.g. ``LIST FILES @stage1`` or ``COPY INTO table FROM @stage``.
-_QUALIFIERS = frozenset({"FILES", "ALL", "DISTINCT"})
-
-#: Keywords that *open* a table-reference position. A comma while one of these
-#: is still the governing clause introduces another table reference, so
-#: ``FROM @stage1, @stage2`` has two stages.
-_TABLE_CLAUSE_OPENERS = frozenset({"FROM", "JOIN", "INTO", "USING"})
-
-#: Keywords that *close* a table-reference position and begin something else:
-#: ``FROM t WHERE @x`` — ``@x`` is a filter operand, not a second table. Also
-#: covers the clause keywords that turn a comma into an expression separator
-#: again, e.g. ``SELECT @x, @y FROM t`` where the ``SELECT`` list ends at
-#: ``FROM``.
-#:
-#: ``ON`` is deliberately **not** here even though it also introduces an
-#: operand position. A join condition may itself be followed by a comma that
-#: returns to the table list — ``FROM a JOIN b ON 1=1, c`` is valid StarRocks —
-#: so ``ON`` is handled separately by :func:`_join_condition_governs`, which
-#: looks for the comma that closes it.
-_CLAUSE_BOUNDARIES = frozenset(
-    {
-        "WHERE",
-        "GROUP",
-        "HAVING",
-        "ORDER",
-        "LIMIT",
-        "SELECT",
-        "SET",
-        "VALUES",
-        "UNION",
-        "EXCEPT",
-        "INTERSECT",
-        "WINDOW",
-        "QUALIFY",
-        "PARTITION",
-        "AND",
-        "OR",
-        "NOT",
-        "IS",
-        "IN",
-        "BETWEEN",
-        "LIKE",
-        "CASE",
-        "WHEN",
-        "THEN",
-        "ELSE",
-        "END",
-        "RETURNING",
-    }
-)
-
-#: Tokens that may appear between a table reference and the comma that follows
-#: it, so the clause scan can step over them instead of stopping: a table alias,
-#: an alias keyword, an index hint, or a join verb. ``FROM @stage1 AS a, ...``
-#: must still see ``FROM`` as the governing clause.
-_TABLE_REFERENCE_NOISE = frozenset({"AS", "BY", "INDEX", "KEY", "USE", "FORCE"})
-
-#: Matches one ``@name`` plus its optional dotted path and slash, without the
-#: trailing boundary requirement — used by the tokenizer, which needs to see the
-#: token in its surrounding context rather than requiring a delimiter.
-_AT_TOKEN = re.compile(
-    r'(?<!@)@(?P<name>[a-zA-Z_][a-zA-Z0-9_-]*)(?P<path>(?:\.[a-zA-Z0-9_-]+)*)(?P<slash>/?)'
-)
+#: The grammar's ``stageReference`` path separators, by token type. The token
+#: text is compared, not the generated constant, so this survives a grammar
+#: regeneration that renumbers the tokens.
+_STAGE_SEPARATORS = frozenset({".", "/"})
 
 
-def _literal_and_comment_ranges(sql: str) -> list[tuple[int, int, str]]:
-    """``(start, end, kind)`` for every literal and comment span in ``sql``.
+class CaseInsensitiveInputStream(InputStream):
+    """An ANTLR input stream whose keyword matching ignores case.
 
-    ``end`` is exclusive. ``kind`` is one of ``"single"``, ``"double"``,
-    ``"backtick"``, ``"line_comment"`` or ``"block_comment"``.
+    Upstream StarRocks wraps its input in a Java ``CaseInsensitiveStream`` before
+    lexing: the ``.g4`` keyword rules are uppercase literals (``SELECT:
+    'SELECT';``), yet the engine accepts ``select``. The vendored Python target
+    has no such wrapper, so without this the lexer rejects every lowercase
+    keyword and a ``SELECT * FROM @stage1`` written in lower case fails to parse
+    — a regression against the regex parser this slice replaces (109-A gaps this
+    out; NOVA-126 carries it because it is the swap that would break).
 
-    The scanner walks the statement once, left to right, and only ever opens a
-    new span when it is outside every other one — so a quote inside a comment,
-    a ``/*`` inside a literal and a ``--`` inside a literal are all data, not
-    structure. Escapes are honoured the way the engine reads them:
-
-    * ``''`` and ``\\\\`` inside a single-quoted literal, and ``""``/``\\"``
-      inside a double-quoted one, are literal characters, not terminators;
-    * an unterminated literal or comment runs to the end of the statement, which
-      is what MySQL does for an unclosed string and what keeps the tail of a
-      malformed statement from being read as live SQL.
-
-    This is the layer ``_classify_at_token`` was missing: it scanned the raw
-    text backwards and read an ``@name`` inside ``'FROM @x'`` as if the ``FROM``
-    were the SQL keyword. Classifying by context is only sound once the
-    classifier can tell code from data.
+    Only :meth:`LA` is folded, which is what the lexer matches on. ``getText``
+    is inherited and reads ``strdata`` unchanged, so token text keeps the user's
+    own casing: ``@Stage1`` and ``@stage1`` remain distinct identifiers, and the
+    statement Nova forwards is byte-for-byte the user's.
     """
-    ranges: list[tuple[int, int, str]] = []
-    length = len(sql)
-    index = 0
 
-    while index < length:
-        char = sql[index]
-
-        if char == "'":
-            kind = "single"
-        elif char == '"':
-            kind = "double"
-        elif char == "`":
-            kind = "backtick"
-        elif char == "-" and sql.startswith("--", index):
-            newline = sql.find("\n", index)
-            end = length if newline < 0 else newline
-            ranges.append((index, end, "line_comment"))
-            index = end
-            continue
-        elif char == "/" and sql.startswith("/*", index):
-            close = sql.find("*/", index + 2)
-            end = length if close < 0 else close + 2
-            ranges.append((index, end, "block_comment"))
-            index = end
-            continue
-        else:
-            index += 1
-            continue
-
-        quote = char
-        end = index + 1
-        while end < length:
-            if sql[end] == "\\" and end + 1 < length:
-                end += 2
-                continue
-            if sql[end] == quote:
-                if end + 1 < length and sql[end + 1] == quote:
-                    end += 2
-                    continue
-                end += 1
-                break
-            end += 1
-        ranges.append((index, end, kind))
-        index = end
-
-    return ranges
+    def LA(self, offset: int):  # noqa: N802
+        char = super().LA(offset)
+        if 97 <= char <= 122:  # 'a'..'z'
+            return char - 32
+        return char
 
 
-def _position_is_code(ranges: list[tuple[int, int, str]], position: int) -> bool:
-    """Whether ``position`` falls between spans rather than inside one.
+class _RecordingErrorListener(ErrorListener):
+    """Collect syntax errors with their position instead of writing to stderr.
 
-    Spans never overlap, so a single containment test is exact.
+    ANTLR's default listener prints the offending text to stderr, which would
+    leak statement content into a log; the caller decides what reaches the audit
+    row instead.
     """
-    return all(
-        not start <= position < end for start, end, _kind in ranges
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.errors: list[StageParseError] = []
+
+    def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):  # noqa: N802
+        self.errors.append(StageParseError(line, column, msg))
+
+
+def _lex(sql: str) -> CommonTokenStream:
+    """Lex ``sql`` into a token stream, dropping whitespace and comments.
+
+    Channel choice is the lexer's: ``StarRocksLexer`` sends comments to the
+    hidden channel, so ``token.text`` below is always live SQL. That is what
+    makes a ``@stage`` in a comment invisible to the token scan, exactly as it
+    is to the parser.
+    """
+    stream = CommonTokenStream(StarRocksLexer(CaseInsensitiveInputStream(sql)))
+    stream.fill()
+    return stream
+
+
+def _visible_tokens(stream: CommonTokenStream) -> list:
+    """The default-channel tokens of ``stream`` in source order.
+
+    Whitespace and comments sit on the hidden channel (``StarRocksLexer`` sends
+    them there), so filtering on the channel is what makes the token list read
+    like live SQL: ``COPY INTO`` is two adjacent tokens, and a ``@stage`` in a
+    comment never appears at all.
+    """
+    return [
+        token
+        for token in stream.tokens
+        if token.channel == Token.DEFAULT_CHANNEL
+        and token.type not in (Token.EOF, Token.INVALID_TYPE)
+    ]
+
+
+def _parse_tree(sql: str):
+    """Lex and parse ``sql``; return ``(stream, tree, errors)``.
+
+    One token stream is shared by lexer and parser, so a node's start token and
+    ``stream.get(index)`` are the same object (``CommonTokenStream.get`` maps an
+    index into that stream's own token list).
+    """
+    stream = _lex(sql)
+    parser = StarRocksParser(stream)
+    listener = _RecordingErrorListener()
+    parser.removeErrorListeners()
+    parser.addErrorListener(listener)
+    tree = parser.sqlStatements()
+    return stream, tree, listener.errors
+
+
+def _walk_nodes(tree):
+    """Every node in ``tree``, root first, in pre-order."""
+
+    def walk(node):
+        yield node
+        for child in getattr(node, "children", None) or []:
+            yield from walk(child)
+
+    yield from walk(tree)
+
+
+def _find_stage_atoms(tree) -> list:
+    """Every ``StageAtomContext`` in ``tree``, in source order.
+
+    A plain recursive walk rather than a visitor: the registry only needs the
+    nodes, and this keeps the dependency surface to the generated node types.
+    """
+    return [node for node in _walk_nodes(tree) if type(node).__name__ == "StageAtomContext"]
+
+
+def _decimal_atom_parts(atom) -> list[str]:
+    """The path segments carried by one ``decimalAtom``, dot prefixes stripped.
+
+    A ``decimalAtom`` is the grammar's stand-in for a ``stageSeparator
+    stageSegment`` pair the lexer fused into a single ``DECIMAL_VALUE`` (NOVA-132):
+    ``.2024`` is one token that already contains the ``.`` separator, so the
+    atom stands where a separator would. It is also reachable as a plain
+    ``stagePathAtom`` for the hyphen case (``@stage-2.`` arrives as ``2.``).
+
+    ``DECIMAL_VALUE`` text is split on ``.`` so the *segments* come out (not the
+    glued token): ``.2024`` → ``['2024']``, ``2.`` → ``['2']``. A nested
+    ``stagePathAtom`` from the hyphen form (``2.`` then ``data``) is appended as
+    the segment that follows, since the token itself already ended in a dot.
+    Empty pieces are dropped, so a leading dot is a separator and nothing more.
+    """
+    parts: list[str] = []
+    for child in atom.children or []:
+        name = type(child).__name__
+        if name == "TerminalNodeImpl":
+            parts.extend(piece for piece in child.getText().split(".") if piece)
+        elif name == "StagePathAtomContext":
+            parts.extend(piece for piece in _stage_path_atom_parts(child) if piece)
+    return parts
+
+
+def _stage_path_atom_parts(atom) -> list[str]:
+    """The path segments of one ``stagePathAtom``, decimals expanded recursively.
+
+    ``stagePathAtom`` is ``identifier | * | INTEGER_VALUE | decimalAtom``, so a
+    decimal nested here (``decimalAtom`` → ``DECIMAL_VALUE`` → ``stagePathAtom``)
+    keeps expanding until the leaves are real segment text.
+    """
+    for child in atom.children or []:
+        name = type(child).__name__
+        if name == "DecimalAtomContext":
+            return _decimal_atom_parts(child)
+    return [atom.getText()]
+
+
+def _stage_reference_from_atom(atom, original_sql: str) -> StageReference:
+    """Build a :class:`StageReference` from one ``#stageAtom`` node.
+
+    The grammar composes the reference as ``AT stageSegment (stageSeparator
+    stageSegment | fusedDecimal)* '/'?`` (``StarRocks.g4``, NOVA-BEGIN block). The
+    first segment is the stage name; the rest are path segments in the order
+    written, whether joined by ``.`` or ``/``. Reassembling from the *ordered*
+    children — not from a regex, and not from ``getText()`` alone — is what makes
+    the slash path and the glob arrive intact: ``*`` and ``csv`` are two segments
+    of ``@stage1.data/*.csv``, so the file is ``*.csv`` and the translated path
+    keeps the glob rather than dropping it.
+
+    The fused decimals matter for the NOVA-132 regression: the dotted numeric
+    form (``@stage1.2024.csv``) puts the fused ``.2024`` next to the
+    ``stageSegment``s rather than wrapping it in one, so reading only
+    ``stageSegment()`` would lose every numeric path segment and mis-split the
+    file name (``['csv']`` instead of ``['2024', 'csv']``). Walking the children
+    in source order and expanding each fused decimal restores the segment list
+    the regex parser produced on ``main``. ``fusedDecimal`` is the separator
+    position (one segment, never absorbs a following atom); ``decimalAtom`` is
+    reachable inside a ``stageSegment`` for the trailing-dot hyphen form.
+    """
+    stage_ref = atom.stageReference()
+
+    segments: list[str] = []
+    for child in stage_ref.children or []:
+        name = type(child).__name__
+        if name == "StageSegmentContext":
+            # A whole segment; a decimal inside it (hyphen form) expands too.
+            segments.append(child.getText())
+        elif name in ("FusedDecimalContext", "DecimalAtomContext"):
+            segments.extend(_decimal_atom_parts(child))
+
+    if not segments:
+        # No path atoms beyond a malformed reference; fall back to the token
+        # text so the caller still gets a name rather than an IndexError.
+        text = stage_ref.getText()
+        segments = [text.lstrip("@")]
+
+    stage_name = segments[0]
+    raw_parts = segments[1:]
+
+    return _build_reference(
+        full_match=stage_ref.getText(),
+        stage_name=stage_name,
+        raw_parts=raw_parts,
+        original_sql=original_sql,
     )
 
 
-def _classify_at_token(sql: str, match: re.Match) -> bool:
-    """Whether the ``@name`` at ``match`` is a stage reference.
-
-    A stage and a user variable are spelled identically — ``@x`` in
-    ``SELECT @x`` and ``@stage1`` in ``SELECT * FROM @stage1`` — so the
-    *position* decides, not the name:
-
-    * a dotted path or a trailing ``/`` is always a stage
-      (``@stage1.data.csv``, ``@stage1/``);
-    * after a stage-introducing keyword — ``FROM``/``JOIN``/``INTO``/``LIST``/
-      ``USING``, optionally through a qualifier such as ``FILES`` — it is a
-      stage;
-    * after a comma it depends on which clause the comma sits in: ``FROM a, b``
-      lists table references, so a stage; ``SELECT a, @x`` lists expressions, so
-      a variable. See :func:`_comma_is_in_table_clause`;
-    * everywhere else — after an operator or an opening paren — it is a
-      variable operand.
-
-    This is what keeps ``SELECT @x``, ``1 + @n`` and ``SET @my_stage = 1`` out
-    of the stage path while ``SELECT * FROM @stage1`` stays in it. The previous
-    revision distinguished them by requiring a dot, which also rejected the
-    documented bare and directory forms and silently disabled ``LIST``.
-
-    The caller is responsible for not calling this on a token that sits inside a
-    literal or comment (:func:`parse_sql` filters those out first): the text of
-    ``'FROM @x'`` is data, and reading its ``FROM`` as a keyword rewrites the
-    user's own string into a credential-bearing ``FILES()`` call.
-    """
-    if match.group("path") or match.group("slash"):
-        return True
-
-    preceding = _preceding_significant_token(sql, match.start())
-    if preceding is None:
-        # Nothing before the token: ``@stage1/`` is handled above, so a bare
-        # leading ``@name`` has no stage context to justify it.
-        return False
-
-    word, kind = preceding
-
-    if kind == "punct" and word == ",":
-        return _comma_is_in_table_clause(sql, match.start())
-
-    if kind == "ident" and word.upper() in _QUALIFIERS:
-        # ``LIST FILES @stage1`` — step back past the qualifier.
-        return _nearest_keyword_is_stage_context(sql, match.start())
-    if kind == "ident":
-        return word.upper() in _STAGE_CONTEXT_KEYWORDS
-    return False
-
-
-def _comma_is_in_table_clause(sql: str, position: int) -> bool:
-    """Whether the comma before ``position`` sits in a table-reference list.
-
-    ``SELECT * FROM @stage1, @stage2`` and ``SELECT @x, @y`` differ only in
-    which clause precedes the comma, so the deciding token is the nearest
-    keyword at the same nesting depth that is not part of the reference list
-    itself:
-
-    * a table-clause opener (``FROM``/``JOIN``/``INTO``/``USING``) still governs
-      → the comma introduces another table reference;
-    * a clause boundary (``WHERE``, ``SELECT``, ``GROUP``, …) governs → the
-      comma separates expressions.
-
-    ``ON`` is a join condition rather than either: a reference *inside* it is an
-    operand (``ON a.id = @x``), but the comma that follows it returns to the
-    table list (``FROM a JOIN b ON 1=1, @stage3``, which StarRocks accepts).
-    The scan therefore remembers the last ``ON`` it passed and treats a
-    ``JOIN``/``INTO``/``FROM`` *before* that ``ON`` as still governing, unless a
-    real clause boundary appeared after it.
-
-    Tokens inside parentheses are skipped because a nested subquery has its own
-    clause context: ``FROM (SELECT @x, @y FROM t), @stage2`` must classify
-    ``@stage2`` against the outer ``FROM``, not against the inner ``SELECT``.
-    """
-    tokens = _tokens_before(sql, position)
-    depth = 0
-    saw_on = False
-    for text, kind in reversed(tokens):
-        if kind == "punct":
-            if text == ")":
-                depth += 1
-            elif text == "(":
-                if depth == 0:
-                    # The comma itself is inside these parens — an expression
-                    # list such as ``f(@x, @y)`` — so it is not a table list.
-                    return False
-                depth -= 1
-            continue
-        if depth > 0:
-            continue
-        upper = text.upper()
-        if upper == "ON":
-            saw_on = True
-            continue
-        if upper in _CLAUSE_BOUNDARIES:
-            return False
-        if upper in _TABLE_CLAUSE_OPENERS:
-            # A governing clause found. If an ``ON`` was passed, this opener is
-            # the join's own ``JOIN``/``FROM`` and the reference list continues
-            # past the comma, so it still governs.
-            return True
-        if upper in _TABLE_REFERENCE_NOISE:
-            continue
-        if saw_on:
-            # A name inside the join condition (a table alias, a column, a
-            # function). Keep scanning back; it does not decide anything.
-            continue
-    # No governing clause found (e.g. a bare expression): not a table list.
-    return False
-
-
-def _tokens_before(sql: str, position: int) -> list[tuple[str, str]]:
-    """Tokenise ``sql[:position]`` into ``(text, kind)`` pairs, oldest first.
-
-    Comments are removed first so a keyword hidden inside one cannot govern the
-    clause, matching what the engine parses. ``kind`` is ``"ident"`` for a word
-    (or quoted identifier) and ``"punct"`` for a single punctuation character.
-    """
-    tokens: list[tuple[str, str]] = []
-    text = _strip_line_comments(sql[:position])
-    index = 0
-    length = len(text)
-    while index < length:
-        char = text[index]
-        if char.isspace():
-            index += 1
-            continue
-        if char == "/" and text.startswith("/*", index):
-            end = text.find("*/", index + 2)
-            index = length if end < 0 else end + 2
-            continue
-        if char == "'":
-            end = _skip_quoted(text, index, "'")
-            tokens.append((text[index:end], "punct"))
-            index = end
-            continue
-        if char == "`":
-            end = _skip_quoted(text, index, "`")
-            tokens.append((text[index:end], "ident"))
-            index = end
-            continue
-        if char == '"':
-            end = _skip_quoted(text, index, '"')
-            tokens.append((text[index:end], "ident"))
-            index = end
-            continue
-        if char.isalnum() or char in "_$":
-            end = index
-            while end < length and (text[end].isalnum() or text[end] in "_$"):
-                end += 1
-            tokens.append((text[index:end], "ident"))
-            index = end
-            continue
-        tokens.append((char, "punct"))
-        index += 1
-    return tokens
-
-
-def _strip_line_comments(text: str) -> str:
-    """Replace each ``--`` comment with a space, preserving ``\\n``.
-
-    Only the newline is replaced by itself; the rest becomes a space so a
-    keyword split across a comment cannot fuse with its neighbour.
-    """
-    out: list[str] = []
-    index = 0
-    length = len(text)
-    while index < length:
-        char = text[index]
-        if char == "'":
-            end = _skip_quoted(text, index, "'")
-            out.append(text[index:end])
-            index = end
-            continue
-        if char == "-" and text.startswith("--", index):
-            newline = text.find("\n", index)
-            if newline < 0:
-                out.append(" ")
-                break
-            out.append(" ")
-            out.append("\n")
-            index = newline + 1
-            continue
-        out.append(char)
-        index += 1
-    return "".join(out)
-
-
-def _skip_quoted(text: str, start: int, quote: str) -> int:
-    """Index just past a quoted run beginning at ``start``."""
-    index = start + 1
-    length = len(text)
-    while index < length:
-        char = text[index]
-        if char == "\\" and index + 1 < length:
-            index += 2
-            continue
-        if char == quote:
-            if index + 1 < length and text[index + 1] == quote:
-                index += 2
-                continue
-            return index + 1
-        index += 1
-    return length
-
-
-def _preceding_significant_token(sql: str, position: int) -> tuple[str, str] | None:
-    """The token immediately before ``position``, skipping whitespace/comments.
-
-    Returns ``(text, kind)`` where ``kind`` is ``"ident"`` for a word and
-    ``"punct"`` for anything else, or ``None`` at the start of the input.
-
-    Comments are skipped rather than treated as the preceding token: the engine
-    reads ``SELECT * FROM /* note */ @stage1`` as ``FROM @stage1``, so the
-    classifier has to as well or a comment between the keyword and the reference
-    flips it to a variable.
-
-    ``_strip_comment_tail`` is applied to the text before the cursor first, so a
-    ``--`` anywhere in the current line removes the rest of that line in one
-    step. Detecting the marker lazily — only once the scan reached a newline —
-    did not work: the scan returns on the first word it finds, which is comment
-    text, before it ever looks at the newline.
-    """
-    trimmed = _strip_comment_tail(sql, position)
-    index = len(trimmed) - 1
-    while index >= 0:
-        char = trimmed[index]
-        if char.isspace():
-            index -= 1
-            continue
-        # ``*/`` closes a block comment when scanning backwards.
-        if char == "/" and index >= 1 and trimmed[index - 1] == "*":
-            start = trimmed.rfind("/*", 0, index - 1)
-            index = start - 1 if start >= 0 else -1
-            continue
-        if char in "`\"'":
-            # A quoted identifier or string literal: consume the quoted run.
-            quote = char
-            end = index
-            index -= 1
-            while index >= 0 and trimmed[index] != quote:
-                index -= 1
-            kind = "punct" if quote == "'" else "ident"
-            return trimmed[index + 1 : end + 1], kind
-        if char.isalnum() or char in "_$":
-            end = index
-            while index >= 0 and (trimmed[index].isalnum() or trimmed[index] in "_$"):
-                index -= 1
-            return trimmed[index + 1 : end + 1], "ident"
-        return char, "punct"
-    return None
-
-
-def _strip_comment_tail(sql: str, position: int) -> str:
-    """``sql[:position]`` with every comment span blanked out.
-
-    Removes both the comment that is still open at ``position`` and any earlier
-    one, so the backward scan never stops on comment text. Simply cutting at the
-    last ``--`` is not enough: ``FROM -- c\\n @stage1`` has the comment closed by
-    its newline, and the text after it is live SQL whose preceding token is
-    still ``FROM`` — cutting would either keep ``c`` or drop ``FROM``. A block
-    comment is blanked the same way, so ``FROM /* c */ @stage1`` still sees
-    ``FROM``; when it is left open by an unclosed ``/*`` it swallows the rest of
-    the prefix, which is what the engine does with it too.
-    """
-    out: list[str] = []
-    index = 0
-    length = min(position, len(sql))
-    while index < length:
-        char = sql[index]
-
-        if char == "/" and sql.startswith("/*", index):
-            close = sql.find("*/", index + 2)
-            if close < 0 or close >= length:
-                break  # the block comment swallows the rest of the prefix
-            out.append(" ")
-            index = close + 2
-            continue
-
-        if char == "'":
-            # Copy the whole literal verbatim, honouring '' and \\' escapes, so
-            # a ``--`` inside it is not mistaken for a comment.
-            out.append(char)
-            index += 1
-            while index < length:
-                literal = sql[index]
-                out.append(literal)
-                if literal == "\\" and index + 1 < length:
-                    out.append(sql[index + 1])
-                    index += 2
-                    continue
-                if literal == "'":
-                    if index + 1 < length and sql[index + 1] == "'":
-                        out.append("'")
-                        index += 2
-                        continue
-                    index += 1
-                    break
-                index += 1
-            continue
-
-        if char == "-" and sql.startswith("--", index):
-            newline = sql.find("\n", index)
-            if newline < 0 or newline >= length:
-                break  # the comment swallows the rest of the prefix
-            out.append(" ")
-            index = newline
-            continue
-
-        out.append(char)
-        index += 1
-
-    return "".join(out)
-
-
-def _nearest_keyword_is_stage_context(sql: str, position: int) -> bool:
-    """Walk back from ``position`` to the nearest word and test it.
-
-    Used for the qualifier case: ``LIST FILES @stage1`` steps back over
-    ``FILES`` to ``LIST``.
-    """
-    cursor = position
-    for _ in range(3):
-        token = _preceding_significant_token(sql, cursor)
-        if token is None:
-            return False
-        text, kind = token
-        if kind == "ident":
-            return text.upper() in _STAGE_CONTEXT_KEYWORDS
-        cursor -= len(text)
-    return False
-
-# File extension pattern
-_FILE_EXTENSIONS = {
-    'csv', 'tsv', 'json', 'parquet', 'orc', 'avro',
-    'txt', 'gz', 'bz2', 'snappy', 'zstd', 'lzo',
-    'xlsx', 'xls', 'xml', 'log', 'sql', 'ndjson', 'jsonl',
-}
-
-
-def parse_stage_reference(
-    match: re.Match,
-    original_sql: str,
+def _build_reference(
     *,
-    name: str | None = None,
-    path: str | None = None,
+    full_match: str,
+    stage_name: str,
+    raw_parts: list[str],
+    original_sql: str,
 ) -> StageReference:
-    """Build a :class:`StageReference` from a matched ``@name[.path][/]`` token.
+    """Assemble a :class:`StageReference` from a name plus path segments.
 
-    ``name`` and ``path`` are passed in by :func:`parse_sql`, which matches with
-    :data:`_AT_TOKEN`; they default to the positional groups of
-    :data:`_STAGE_PATTERN` so the function stays usable with either pattern.
+    The file/directory split is the translator's contract (``path_parts`` +
+    ``file_name`` feed ``build_s3_path``), so it is computed here once for both
+    the ANTLR4 path and the Nova-surface token path.
+
+    A trailing ``*`` (a glob segment) is a *directory* marker, not a file: the
+    reference names every file under a prefix. Treating ``*`` as the last part
+    would make ``file_name`` depend on the segment after the separator, which is
+    what produced the dangling ``FILES(...)/*.csv``.
     """
-    stage_name = name if name is not None else match.group(1)
-    path_str = path if path is not None else match.group(2)  # e.g. ".data.folder.file.csv"
-
-    full_match = match.group(0).rstrip().rstrip(';').rstrip(',')
-    raw_parts = [p for p in path_str.split('.') if p] if path_str else []
-
-    # Determine if last part is a file (has known extension)
     file_name = None
-    is_directory = True
-    path_parts = raw_parts  # Default: all parts are path
+    path_parts = list(raw_parts)
 
     if raw_parts:
-        # Check if last part is a known file extension
-        last = raw_parts[-1].lower()
-        if last in _FILE_EXTENSIONS:
-            # File detected: e.g. ['data', 'csv'] → file_name='data.csv', path_parts=['data']
-            # Or ['folder', 'file', 'parquet'] → file_name='file.parquet', path_parts=['folder', 'file']
+        last = raw_parts[-1]
+        if last == "*":
+            # Glob: the directory is everything before the star, and there is no
+            # single file to name — the extension after the star is the filter.
+            file_name = None
+            path_parts = raw_parts[:-1]
+        elif last.lower() in _FILE_EXTENSIONS:
+            # File detected: e.g. ['data', 'csv'] → file_name='data.csv',
+            # path_parts=['data'].
             if len(raw_parts) >= 2:
                 file_name = f"{raw_parts[-2]}.{raw_parts[-1]}"
                 path_parts = raw_parts[:-2]  # Everything except the file
@@ -618,13 +370,10 @@ def parse_stage_reference(
                 # Just an extension like '.csv' — treat as directory
                 file_name = None
                 path_parts = raw_parts
-        else:
-            # Last part is not a known extension — it's a directory name
-            file_name = None
-            path_parts = raw_parts
+        # Otherwise the last part is a directory name, and the defaults stand.
 
     return StageReference(
-        full_match=f"@{stage_name}{path_str}",
+        full_match=full_match,
         stage_name=stage_name,
         path_parts=path_parts,
         file_name=file_name,
@@ -633,70 +382,322 @@ def parse_stage_reference(
     )
 
 
-def detect_command_type(sql: str) -> CommandType:
-    """Detect the type of SQL command from the statement."""
-    upper = sql.strip().upper()
+# ---------------------------------------------------------------------------
+# Command classification
+# ---------------------------------------------------------------------------
 
-    if re.match(r'^\s*(SELECT|WITH|SHOW|DESCRIBE|DESC|EXPLAIN)\b', upper):
-        return CommandType.STAGE_QUERY
-    if re.match(r'^\s*LIST\b', upper):
+#: Statement node kinds whose first token is the whole discriminator. The
+#: grammar already proved the shape, so membership is a classification, never a
+#: validation. ``SingleStatementContext`` is the outermost wrapper every
+#: statement carries; the *inner* concrete node names the command, so the
+#: classifier reads the deepest one.
+_QUERY_STATEMENTS = frozenset(
+    {
+        "QueryStatementContext",
+        "ExplainStatementContext",
+        "DescStatementContext",
+        "ShowStmtContext",
+        "ShowFunctionsStatementContext",
+    }
+)
+
+_BROWSE_STATEMENTS = frozenset({"ShowStagesStatementContext"})
+
+#: Tokens that may sit between ``COPY INTO`` and the operand it introduces.
+_COPY_INTO_NOISE = frozenset({"TABLE", "FILES", "IF"})
+
+
+#: Wrapper nodes that only carry the statement; the concrete command node is
+#: their child. Classification must skip past them or every statement reads as
+#: ``SingleStatementContext``.
+_STATEMENT_WRAPPERS = frozenset({"SingleStatementContext", "StatementContext"})
+
+
+def _first_statement(tree) -> object:
+    """The first concrete statement node of ``tree``, or ``tree`` itself.
+
+    ``sqlStatements`` wraps each statement in a ``SingleStatementContext`` and a
+    ``StatementContext``; both are generic, so the classifier walks past them to
+    the node that names the command (``QueryStatementContext``,
+    ``ExplainStatementContext``, …).
+    """
+    fallback = tree
+    for node in _walk_nodes(tree):
+        name = type(node).__name__
+        if name.endswith("StatementContext") and name not in _STATEMENT_WRAPPERS:
+            return node
+        if name.endswith("StatementContext"):
+            fallback = node
+    return fallback
+
+
+def _texts(tokens: list) -> list[str]:
+    return [token.text.upper() for token in tokens]
+
+
+def detect_command_type(tree, token_texts: list[str]) -> CommandType:
+    """Detect the type of SQL command from ``tree`` and its leading token texts.
+
+    The tree has been validated by the grammar, so the statement *kind* decides
+    the engine surfaces. The two Nova-only surfaces (``LIST``, ``COPY INTO``) do
+    not exist in the StarRocks grammar, so their statements parse as
+    ``ErrorStatementContext`` and are classified from the leading tokens.
+    ``token_texts`` is the visible-token prefix of the statement, supplied by
+    :func:`parse_sql`; comparing text (not generated token constants) keeps the
+    check stable across a grammar regeneration.
+    """
+    kind = type(_first_statement(tree)).__name__
+
+    if token_texts[:1] == ["COPY"] and token_texts[1:2] == ["INTO"]:
+        # Direction decides load vs export. ``COPY INTO @stage`` is an export;
+        # the reference itself comes from the registry, so the ``@`` operand is
+        # never guessed here.
+        return CommandType.STAGE_LOAD
+
+    if token_texts[:1] == ["LIST"]:
         return CommandType.STAGE_BROWSE
-    if re.match(r'^\s*COPY\s+INTO\b', upper):
-        # Check direction: COPY INTO table FROM @stage (load) or COPY INTO @stage FROM table (export)
-        if re.search(r'FROM\s+@', upper):
-            return CommandType.STAGE_LOAD
-        if re.search(r'INTO\s+@', upper):
-            return CommandType.STAGE_EXPORT
+
+    if kind in _QUERY_STATEMENTS:
+        return CommandType.STAGE_QUERY
+
+    if kind in _BROWSE_STATEMENTS:
+        return CommandType.STAGE_BROWSE
 
     return CommandType.REGULAR
+
+
+def _direction_from_tokens(token_texts: list[str]) -> CommandType:
+    """Load vs export for ``COPY INTO``, read from the token order.
+
+    The stage's side of the statement is the operand position itself: ``FROM
+    @stage`` is a load, ``INTO @stage`` an export. Both spellings appear in the
+    token list, so the operator nearest ``@`` wins.
+    """
+    for index, text in enumerate(token_texts):
+        if text == "@":
+            before = token_texts[max(0, index - 4) : index]
+            if "INTO" in before and "FROM" not in before:
+                return CommandType.STAGE_EXPORT
+            return CommandType.STAGE_LOAD
+    return CommandType.STAGE_LOAD
+
+
+# ---------------------------------------------------------------------------
+# Nova-surface recovery (LIST / COPY INTO)
+# ---------------------------------------------------------------------------
+
+
+def _nova_surface_stage_refs(sql: str) -> list[StageReference]:
+    """Stage references in a Nova surface the StarRocks grammar cannot parse.
+
+    ``LIST`` and ``COPY INTO`` are Nova commands with no rule in StarRocks 4.1.
+    They are recognised by scanning the **token stream** of the statement for
+    the grammar's own ``stageReference`` shape, so the reference grammar is
+    still the single source of truth:
+
+    * an ``@`` token begins a reference only when it is not the second ``@`` of
+      a ``@@...`` system variable (``@@version`` stays a variable);
+    * a reference runs over ``stageSegment`` atoms — an identifier, ``*``, an
+      integer, or a decimal — joined by ``.`` / ``/``;
+    * the scan only starts after the surface keyword, so a variable operand such
+      as ``COPY INTO t (a) VALUES (@x)`` is never claimed.
+
+    Comments and literals are already off the token stream, so a ``@stage`` in
+    ``'FROM @x'`` or ``-- @x`` cannot appear here.
+    """
+    tokens = _visible_tokens(_lex(sql))
+    for index, token in enumerate(tokens):
+        if token.text.upper() in ("LIST", "COPY"):
+            tokens = tokens[index:]
+            break
+
+    refs: list[StageReference] = []
+    index = 0
+    while index < len(tokens):
+        if tokens[index].text != "@":
+            index += 1
+            continue
+
+        # ``@stage1.data/*`` is a glob: the ``*`` is a path segment and the
+        # scan continues so a following ``.csv``/``.parquet`` joins it rather
+        # than being left dangling.
+        ref = _reference_from_tokens(tokens, index, sql)
+        if ref is None:
+            index += 1
+            continue
+        refs.append(ref)
+
+        # Advance past this reference's span so an inner ``@@`` cannot be
+        # re-read, and so a bare ``@`` that started a system variable is not
+        # revisited.
+        stop = tokens[index].start + len(ref.full_match)
+        index += 1
+        while index < len(tokens) and tokens[index].start < stop:
+            index += 1
+    return refs
+
+
+#: Token types whose text is a numeric path segment the lexer fused the leading
+#: ``.`` separator into: ``.2024`` → ``DECIMAL_VALUE``, ``.2024_01`` →
+#: ``DOT_IDENTIFIER``, ``.2e3`` → ``DOUBLE_VALUE`` (NOVA-132). The grammar's
+#: ``fusedDecimal``/``decimalAtom`` accept all three; the token scan has to as
+#: well, or the Nova surfaces (``LIST``/``COPY INTO``) would stop the reference at
+#: the stage name and leave ``.2024.csv`` dangling.
+_FUSED_DECIMAL_TOKENS = frozenset(
+    {
+        StarRocksLexer.DECIMAL_VALUE,
+        StarRocksLexer.DOT_IDENTIFIER,
+        StarRocksLexer.DOUBLE_VALUE,
+    }
+)
+
+
+def _fused_decimal_parts(token) -> list[str] | None:
+    """Split a fused leading-dot numeric token into its path segments, or ``None``.
+
+    ``DECIMAL_VALUE`` text comes in two shapes on this surface: leading (``.2024``
+    — separator first, ``['2024']``) and trailing (``2.`` — separator last, after
+    a hyphen, ``['2']``). ``DOT_IDENTIFIER`` is always leading (``.2024_01``), and
+    ``DOUBLE_VALUE`` is the exponent form (``.2e3`` → ``['2e3']``). The split
+    drops empty pieces, so the ``.`` is a separator and never a segment. Returns
+    ``None`` when the token is not one of the fused numeric types.
+    """
+    if token.type not in _FUSED_DECIMAL_TOKENS:
+        return None
+    return [piece for piece in token.text.split(".") if piece]
+
+
+def _is_segment_atom(token) -> bool:
+    """Whether ``token`` can be one ``stageSegment`` atom.
+
+    Mirrors the grammar's ``stagePathAtom``: an identifier (including a
+    backquoted one), ``*``, an integer, or a decimal (``DECIMAL_VALUE`` /
+    ``DOT_IDENTIFIER`` / ``DOUBLE_VALUE``). A keyword such as ``FROM`` parses as
+    an identifier in the grammar, and the token type for the literal ``*`` is the
+    same wherever it appears, so the test is on token text.
+    """
+    if token.text == "*":
+        return True
+    if token.type in (
+        StarRocksLexer.INTEGER_VALUE,
+        StarRocksLexer.DECIMAL_VALUE,
+        StarRocksLexer.DOT_IDENTIFIER,
+        StarRocksLexer.DOUBLE_VALUE,
+    ):
+        return True
+    return _is_identifier_token(token)
+
+
+def _is_identifier_token(token) -> bool:
+    """Whether ``token`` is an identifier (bare, backquoted, or a keyword).
+
+    StarRocks keywords are usable as identifiers, so the grammar's
+    ``identifier`` rule accepts the reserved words too; the lexer tags them by
+    keyword type. A token is an identifier when it is not a punctuation /
+    operator / literal — checked structurally on the accepted character set,
+    which is exactly what ``identifier`` allows (``[A-Za-z_][A-Za-z0-9_$]*``).
+    """
+    text = token.text
+    if not text:
+        return False
+    if text.startswith("`") and text.endswith("`") and len(text) >= 2:
+        return True
+    head = text[0]
+    if not (head.isalpha() or head == "_"):
+        return False
+    return all(char.isalnum() or char in "_$" for char in text)
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
 
 
 def parse_sql(sql: str) -> ParsedSQL:
     """Parse SQL and extract all @stage references.
 
-    References are found by :data:`_AT_TOKEN` and then classified by context
-    (:func:`_classify_at_token`), because a stage and a user variable share a
-    spelling and only their position tells them apart.
+    References come from the ANTLR4 parse tree: every ``StageAtomContext`` the
+    vendored grammar produced is one ``StageReference``. There is no
+    ``_STAGE_PATTERN`` / ``_AT_TOKEN`` candidate scan over the raw text and
+    therefore nothing that can drift from the grammar.
 
-    Matches inside a string literal or a comment are dropped before
-    classification: that text is data the engine never parses as SQL, so an
-    ``@name`` there is neither a stage nor a variable. Skipping them is not just
-    cosmetic — a context classifier that reads ``'FROM @x'`` as a keyword and a
-    reference rewrites the user's literal into ``FILES(...)`` and injects
-    storage credentials into it (NOVA-29).
+    The two Nova surfaces the grammar does not model (``LIST``, ``COPY INTO``)
+    fall back to :func:`_nova_surface_stage_refs`, which scans the *token
+    stream* for the same reference shape.
+
+    A syntax error is recorded in ``ParsedSQL.errors`` with its exact
+    ``line:col`` and the stage registry is left empty, so a statement Nova could
+    not parse travels the ordinary path and the engine answers with its own
+    error rather than Nova guessing at a rewrite from a partial tree.
 
     ``LIST`` is a special case. Nova parses it as
-    :attr:`CommandType.STAGE_BROWSE`, but nothing implements it and the engine
-    has no ``LIST`` statement, so a ``LIST`` that reaches execution always
-    fails. A ``LIST`` carrying a stage is reported as ``STAGE_BROWSE`` with its
-    reference attached — the caller can then refuse it knowingly — and a bare
-    ``LIST`` is reported as ``REGULAR`` with no references, exactly as before.
+    :attr:`CommandType.STAGE_BROWSE` (the documented surface), but nothing
+    implements it and the engine has no ``LIST`` statement, so a ``LIST`` that
+    reaches execution always fails; it is never translated.
 
     Raises:
         UnsupportedStageCommandError: never today; reserved for the caller that
             decides to refuse ``LIST`` outright rather than pass it on.
     """
-    command_type = detect_command_type(sql)
-
-    spans = _literal_and_comment_ranges(sql)
-    stage_refs = []
-    for match in _AT_TOKEN.finditer(sql):
-        if not _position_is_code(spans, match.start()):
-            continue
-        if not _classify_at_token(sql, match):
-            continue
-        stage_refs.append(
-            parse_stage_reference(
-                match, sql, name=match.group("name"), path=match.group("path")
-            )
+    if not sql.strip():
+        return ParsedSQL(
+            command_type=CommandType.REGULAR,
+            stage_refs=[],
+            original_sql=sql,
+            base_sql=sql,
+            errors=[],
         )
 
-    # A ``LIST`` with no stage reference is not a stage command at all — it has
-    # nothing to browse. Falling back to REGULAR (rather than keeping
-    # STAGE_BROWSE) routes it down the ordinary path, where the engine answers
-    # its own syntax error naming ``LIST``. That is not silent: the statement is
-    # passed through untouched and fails visibly, which is the honest outcome for
-    # a documented command Nova has no implementation for.
+    if "@" not in sql:
+        # Invariant this short-circuit relies on: every stage form the dialect
+        # acts on carries a literal ``@`` — ``@stage1``, ``@stage1/``, the dotted
+        # ``@stage1.data.csv``, the glob ``@stage1.data/*.csv``, and the ``LIST``
+        # / ``COPY INTO`` Nova surfaces. A statement with no ``@`` at all cannot
+        # contain a stage, so ``stage_refs=[]`` and ``REGULAR`` are the grammar's
+        # own answer and building the ANTLR4 tree would only re-derive it at a
+        # ~50x p95 cost on the request path (AC-5 / NOVA-17). The test is the
+        # literal character, not a regex: anything subtler reintroduces a
+        # text-pattern source of truth, which is exactly what 109-B removes.
+        return ParsedSQL(
+            command_type=CommandType.REGULAR,
+            stage_refs=[],
+            original_sql=sql,
+            base_sql=sql,
+            errors=[],
+        )
+
+    stream, tree, errors = _parse_tree(sql)
+    leading = _texts(_visible_tokens(stream)[:4])
+
+    nova_surface = leading[:1] in (["LIST"], ["COPY"])
+    if errors and not nova_surface:
+        # A partial tree must not drive a rewrite: a missing token can make a
+        # later ``@stage`` parse as something else, and the translator would then
+        # rewrite the user's statement into a credential-bearing ``FILES()`` call
+        # that is not the statement they wrote.
+        return ParsedSQL(
+            command_type=CommandType.REGULAR,
+            stage_refs=[],
+            original_sql=sql,
+            base_sql=sql,
+            errors=errors,
+        )
+
+    command_type = detect_command_type(tree, leading)
+
+    if nova_surface:
+        stage_refs = _nova_surface_stage_refs(sql)
+        if leading[1:2] == ["INTO"]:
+            command_type = _direction_from_tokens(_all_token_texts(stream))
+    else:
+        stage_refs = [_stage_reference_from_atom(atom, sql) for atom in _find_stage_atoms(tree)]
+
+    # A ``LIST``/``COPY`` with no stage reference is not a stage command at all.
+    # Falling back to REGULAR (rather than keeping STAGE_BROWSE) routes it down
+    # the ordinary path, where the engine answers its own syntax error naming the
+    # keyword. That is not silent: the statement is passed through untouched and
+    # fails visibly, which is the honest outcome for a documented command Nova
+    # has no implementation for.
     if not stage_refs:
         command_type = CommandType.REGULAR
 
@@ -705,4 +706,134 @@ def parse_sql(sql: str) -> ParsedSQL:
         stage_refs=stage_refs,
         original_sql=sql,
         base_sql=sql,
+        errors=[],
     )
+
+
+def _all_token_texts(stream: CommonTokenStream) -> list[str]:
+    """Every visible token text of ``stream``, upper-cased."""
+    return _texts(_visible_tokens(stream))
+
+
+# ---------------------------------------------------------------------------
+# Helpers for the MySQL proxy's session-variable substitution
+# ---------------------------------------------------------------------------
+
+
+def _token_index_at(tokens: list, position: int) -> int | None:
+    """The index in ``tokens`` of the ``@`` token starting at ``position``."""
+    for index, token in enumerate(tokens):
+        if token.start == position:
+            return index if token.text == "@" else None
+        if token.start > position:
+            return None
+    return None
+
+
+def _reference_from_tokens(tokens: list, start_index: int, sql: str) -> StageReference | None:
+    """The reference shape beginning at ``tokens[start_index]``, or ``None``.
+
+    Shared by the Nova-surface scan and :func:`stage_reference_at`, so the
+    proxy's decision to leave a reference alone is made by the same token logic
+    that builds the engine's registry.
+
+    A numeric path segment whose leading ``.`` the lexer fused into the token
+    (``@stage1.2024.csv`` → ``stage1`` ``.2024`` ``.`` ``csv``, or the
+    ``.2024_01`` ``DOT_IDENTIFIER``) carries its separator *inside* the token, so
+    it continues the reference directly — exactly as the grammar's ``decimalAtom``
+    glue does (NOVA-132). A bare ``.`` / ``/`` separator token continues it as
+    before.
+    """
+    if start_index >= len(tokens) or tokens[start_index].text != "@":
+        return None
+    if start_index + 1 < len(tokens) and tokens[start_index + 1].text == "@":
+        return None
+
+    index = start_index + 1
+    if index >= len(tokens) or not _is_segment_atom(tokens[index]):
+        return None
+
+    segments = [tokens[index].text]
+    index += 1
+    while index < len(tokens):
+        fused = _fused_decimal_parts(tokens[index])
+        if fused is not None:
+            # The separator is the fused token's own leading dot: the pieces are
+            # path segments and the reference continues.
+            segments.extend(fused)
+            index += 1
+            continue
+        separator = tokens[index]
+        if separator.text not in _STAGE_SEPARATORS or index + 1 >= len(tokens):
+            break
+        following = tokens[index + 1]
+        if following.text == "@" or not _is_segment_atom(following):
+            break
+        segments.append(following.text)
+        index += 2
+
+    if index < len(tokens) and tokens[index].text == "/":
+        index += 1
+
+    full_match = sql[tokens[start_index].start : tokens[index - 1].stop + 1]
+    return _build_reference(
+        full_match=full_match,
+        stage_name=segments[0],
+        raw_parts=segments[1:],
+        original_sql=sql,
+    )
+
+
+def stage_reference_at(sql: str, position: int) -> StageReference | None:
+    """The stage reference beginning at ``position`` in ``sql``, or ``None``.
+
+    The MySQL proxy substitutes session variables into a statement before it
+    reaches the dialect engine, and it must not substitute inside a stage
+    reference (the two are spelled identically and only position separates them).
+    Rather than a second classifier that could disagree with the engine, the
+    proxy asks this module, which answers from the same token logic the registry
+    is built from — and then confirms against the parse tree, so a variable
+    operand such as ``SELECT @x`` is never claimed as a stage:
+
+    1. the token at ``position`` must be an ``@`` (not the second ``@`` of a
+       ``@@`` system variable);
+    2. the token stream must form the grammar's reference shape at that point;
+    3. for a statement the grammar parses, the tree must contain a
+       ``stageReference`` node whose span starts exactly at ``position`` — which
+       is what rules out ``SELECT @x``, where the ``@`` is a ``systemVariable``
+       operand and no reference node exists.
+
+    A Nova surface (``LIST``/``COPY INTO``), which the grammar cannot parse,
+    skips step 3: its reference is recognised from the token shape alone.
+    """
+    if position < 0 or position >= len(sql) or sql[position] != "@":
+        return None
+    if position + 1 < len(sql) and sql[position + 1] == "@":
+        return None
+
+    tokens = _visible_tokens(_lex(sql))
+    start_index = _token_index_at(tokens, position)
+    if start_index is None:
+        return None
+
+    ref = _reference_from_tokens(tokens, start_index, sql)
+    if ref is None:
+        return None
+
+    stream, tree, errors = _parse_tree(sql)
+    leading = _texts(_visible_tokens(stream)[:1])
+    if errors and leading not in (["LIST"], ["COPY"]):
+        return None
+    if leading in (["LIST"], ["COPY"]):
+        return ref
+
+    for atom in _find_stage_atoms(tree):
+        parsed = _stage_reference_from_atom(atom, sql)
+        if token_span_start(atom) == position:
+            return parsed
+    return None
+
+
+def token_span_start(atom) -> int:
+    """Character offset of a ``#stageAtom``'s stage reference."""
+    return atom.stageReference().start.start
