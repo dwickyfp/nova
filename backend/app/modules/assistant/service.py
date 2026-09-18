@@ -71,7 +71,13 @@ class AssistantLoop:
         self._registry = registry
         self._max_iterations = max_iterations
         self._time_budget = time_budget_seconds
-        self._system_prompt = system_prompt or _DEFAULT_SYSTEM_PROMPT
+        # The default is the assembled Nova SQL skill (T-E1); the seed prompt is
+        # its verbatim first block. Resolved lazily: ``skills`` builds the
+        # default from ``docs/sql_docs/`` and imports this module for the seed,
+        # so a top-level import would be circular.
+        if system_prompt is None:
+            system_prompt = _default_skill_prompt()
+        self._system_prompt = system_prompt
 
     def _build_messages(self, thread: AssistantThread, user_content: str) -> list[dict]:
         """Turn the thread into provider messages.
@@ -293,6 +299,18 @@ class AssistantLoop:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _default_skill_prompt() -> str:
+    """The assembled default system prompt (T-E1).
+
+    Resolved lazily so importing this module does not require ``docs/sql_docs/``
+    to be present (tests import the loop package directly), and so the
+    ``service`` ↔ ``skills`` seed dependency stays one-directional at import.
+    """
+    from app.modules.assistant.skills import DEFAULT_SKILL_PROMPT
+
+    return DEFAULT_SKILL_PROMPT
 
 
 #: The assistant's behaviour contract. Kept short and explicit: it must never
