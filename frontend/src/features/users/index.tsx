@@ -894,8 +894,8 @@ export function Users() {
             </div>
             <h1 className='text-2xl font-bold tracking-tight'>Users & Roles</h1>
             <p className='max-w-3xl text-sm text-muted-foreground'>
-              Manage StarRocks identities, role memberships, default roles, and
-              scoped privileges from one admin surface.
+              Manage identities, role memberships, default roles, and scoped
+              privileges from one admin surface.
             </p>
           </div>
           <Button
@@ -919,8 +919,8 @@ export function Users() {
               <div>
                 <h3 className='text-lg font-medium'>Users</h3>
                 <p className='text-sm text-muted-foreground'>
-                  Review StarRocks identities, authentication mode, role
-                  ownership, and default access.
+                  Review identities, authentication mode, role ownership, and
+                  default access.
                 </p>
               </div>
 
@@ -1012,7 +1012,7 @@ export function Users() {
                             description={
                               filteredUsers.length === 0 && (searchUsers || userAccessFilter)
                                 ? 'Clear the search or the Protected/Standard filter to see every user.'
-                                : 'Users appear here once they are created, or are provisioned in StarRocks.'
+                                : 'Users appear here once they are created or provisioned.'
                             }
                             action={
                               filteredUsers.length === 0 && (searchUsers || userAccessFilter) ? (
@@ -1733,8 +1733,8 @@ export function Users() {
           <DialogHeader>
             <DialogTitle>Create Role</DialogTitle>
             <DialogDescription>
-              StarRocks roles are created with a single role name, then
-              configured through privileges and memberships.
+              Roles are created with a single role name, then configured
+              through privileges and memberships.
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-2'>
@@ -1768,8 +1768,8 @@ export function Users() {
             <SheetTitle>Manage Role</SheetTitle>
             <SheetDescription>
               Update memberships and privileges. Role rename is intentionally
-              not supported because StarRocks does not expose a true role rename
-              workflow.
+              not supported because the engine does not expose a true role
+              rename workflow.
             </SheetDescription>
           </SheetHeader>
           <ScrollArea className='flex-1 px-4'>
@@ -2182,7 +2182,7 @@ export function Users() {
                         <div>
                           <div className='text-sm font-medium'>Privileges</div>
                           <div className='text-sm text-muted-foreground'>
-                            Structured StarRocks grants for supported scopes.
+                            Structured grants for supported scopes.
                           </div>
                         </div>
                         <Badge variant='outline'>

@@ -29,10 +29,8 @@ export function AppTitle() {
               <span className='truncate font-manrope text-lg font-semibold leading-none text-primary'>
                 nova
               </span>
-              <span className='inline-flex h-5 max-w-fit items-center gap-1.5 rounded-md border border-primary/15 bg-primary/5 px-1.5 text-[10px] font-semibold leading-none text-muted-foreground dark:border-primary/25 dark:bg-primary/10'>
-                <span className='truncate'>
-                  Powered by <span className='text-primary'>StarRocks</span>
-                </span>
+              <span className='truncate text-[11px] font-medium leading-none text-muted-foreground'>
+                Data warehouse + AI
               </span>
             </span>
           </Link>
