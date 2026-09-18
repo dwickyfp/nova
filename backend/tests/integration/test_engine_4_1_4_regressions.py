@@ -18,7 +18,9 @@ here rather than in the unit suite:
 
 StarRocks is optional: when unreachable the module skips rather than fails.
 Point at an already-running engine via ``NOVA_ORCH_SR_PORT`` (default 29030,
-the test compose port).
+the test compose port). The Parquet suite uploads its own committed fixture to
+the stage object store, so no out-of-band seed step is required beyond the
+engine reachability the fixture checks.
 """
 
 from __future__ import annotations
@@ -100,6 +102,29 @@ async def _fetch_all(sql: str):
         conn.close()
 
 
+def _upload_fixture(connection) -> None:
+    """Put the committed Parquet fixture at the stage key the test reads.
+
+    The fixture lives in the repo, not in the test object store, so the suite
+    provisions it itself rather than depending on an out-of-band upload step
+    that CI does not run. The key mirrors the stage layout
+    (``<bucket>/NOVA_ANALYTICS/public/fixtures/<file>``) so the ``s3://`` path
+    handed to StarRocks matches what ``build_s3_path`` would produce.
+    """
+    import boto3
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=connection.endpoint,
+        aws_access_key_id=connection.access_key,
+        aws_secret_access_key=connection.secret_key,
+        region_name=connection.region or "us-east-1",
+    )
+    key = f"NOVA_ANALYTICS/public/fixtures/{PARQUET_FIXTURE.name}"
+    with PARQUET_FIXTURE.open("rb") as handle:
+        client.put_object(Bucket=connection.bucket, Key=key, Body=handle)
+
+
 class TestCtasPreservesVarcharLength:
     """StarRocks #73498: an explicit ``VARCHAR(N)`` in CTAS survives 4.1.4."""
 
@@ -107,8 +132,11 @@ class TestCtasPreservesVarcharLength:
         table = "nova_ctas_varchar_len_probe"
         await _execute(f"DROP TABLE IF EXISTS NOVA_SYSTEM.{table}")
         try:
+            # ``replication_num=1``: the test stack has a single BE and CTAS
+            # defaults to replication 3, which fails before the assertion runs.
             await _execute(
-                f"CREATE TABLE NOVA_SYSTEM.{table} AS "
+                f"CREATE TABLE NOVA_SYSTEM.{table} "
+                "PROPERTIES('replication_num'='1') AS "
                 "SELECT CAST('abcd' AS VARCHAR(4)) AS label"
             )
 
@@ -125,7 +153,7 @@ class TestCtasPreservesVarcharLength:
 
             # The behaviour Nova must absorb: a longer write is now rejected,
             # where the widened 4.1.1 column accepted it.
-            with pytest.raises(Exception):
+            with pytest.raises(asyncmy.errors.ProgrammingError):
                 await _execute(
                     f"INSERT INTO NOVA_SYSTEM.{table} VALUES ('too long')"
                 )
@@ -142,17 +170,28 @@ class TestParquetUtcFlagFalseIsWallClock:
         from app.core.config import get_storage_connection, to_docker_endpoint
 
         connection = get_storage_connection("production")
-        endpoint = to_docker_endpoint(connection.endpoint)
-        path = f"{connection.bucket}/NOVA_ANALYTICS/public/fixtures/{PARQUET_FIXTURE.name}"
+        _upload_fixture(connection)
+        key = f"NOVA_ANALYTICS/public/fixtures/{PARQUET_FIXTURE.name}"
+        # boto3 (on the host) uses the host-side endpoint; the FILES() call
+        # (executed by StarRocks inside the compose network) needs the
+        # docker-internal one, hence the rewrite.
+        docker_endpoint = to_docker_endpoint(connection.endpoint)
 
+        # Same parameter set the dialect translator emits for an @stage query
+        # (app/modules/query/dialect/translator.py:61-84): an `s3://` path plus
+        # `aws.s3.endpoint`, not a bare URL. MinIO rejects the latter with a 403
+        # and StarRocks reports the file as size -1.
         files = (
             "FILES("
-            f"'path'='{endpoint}/{path}', "
+            f"'path'='s3://{connection.bucket}/{key}', "
             "'format'='parquet', "
             f"'aws.s3.access_key'='{connection.access_key}', "
             f"'aws.s3.secret_key'='{connection.secret_key}', "
-            "'aws.s3.region'='', "
-            "'aws.s3.enable_path_style_access'='true')"
+            f"'aws.s3.endpoint'='{docker_endpoint}', "
+            "'aws.s3.enable_ssl'='false', "
+            "'aws.s3.enable_path_style_access'='true', "
+            "'aws.s3.use_aws_sdk_default_behavior'='false', "
+            "'aws.s3.use_instance_profile'='false')"
         )
 
         table = "nova_parquet_ts_probe"
@@ -161,8 +200,10 @@ class TestParquetUtcFlagFalseIsWallClock:
             # A non-UTC session is the point: before #73674 the loader shifted
             # these values into the session zone.
             await _execute("SET time_zone = 'Asia/Jakarta'")
+            # ``replication_num=1`` for the single-BE test stack.
             await _execute(
-                f"CREATE TABLE NOVA_SYSTEM.{table} AS "
+                f"CREATE TABLE NOVA_SYSTEM.{table} "
+                "PROPERTIES('replication_num'='1') AS "
                 f"SELECT * FROM {files}"
             )
 

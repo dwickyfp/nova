@@ -1,4 +1,4 @@
-"""Foundation tests for the vendored StarRocks 4.1.1 ANTLR4 grammar (NOVA-54).
+"""Foundation tests for the vendored StarRocks 4.1.4 ANTLR4 grammar (NOVA-54).
 
 These pin the three properties PR 1 promises and nothing else:
 
