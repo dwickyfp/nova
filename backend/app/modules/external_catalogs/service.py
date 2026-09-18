@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import re
 
-from app.common.sql_guard import redact_sql_credentials
+from app.common.sql_guard import is_credential_property, redact_sql_credentials
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.service import query_service
@@ -56,6 +56,22 @@ def _safe_catalog_name(name: str) -> str:
     if not _CATALOG_NAME.match(name or ""):
         raise ExternalCatalogError(f"Invalid catalog name: {name!r}")
     return name
+
+
+def _credential_free_properties(properties: dict[str, str]) -> dict[str, str]:
+    """Drop credential-named entries from a metadata row before it is returned.
+
+    The request validator refuses a credential key, but a row can predate that
+    check or arrive from another writer, and ``SanitizingJSONResponse`` does not
+    inspect dict keys — a bare property value is not the ``key = value`` shape it
+    redacts. This is the last sink on the read path, so the drop is unconditional
+    and silent: nothing that would have exposed a secret survives here.
+    """
+    return {
+        key: value
+        for key, value in (properties or {}).items()
+        if not is_credential_property(key)
+    }
 
 
 def build_storage_credential_params(
@@ -292,7 +308,7 @@ class ExternalCatalogService:
             metastore_uri=meta.get("metastore_uri"),
             storage_connection=meta.get("storage_connection"),
             comment=meta.get("comment"),
-            properties=meta.get("properties", {}),
+            properties=_credential_free_properties(meta.get("properties", {})),
             create_statement=create_statement,
             created_at=meta.get("created_at"),
             created_by=meta.get("created_by"),

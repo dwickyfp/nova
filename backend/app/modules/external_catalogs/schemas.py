@@ -14,6 +14,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.common.sql_guard import is_credential_property
+
 
 class CatalogType(StrEnum):
     """GA catalog types Nova exposes (NOVA-62 constraint 5: GA-only)."""
@@ -33,27 +35,21 @@ class MetastoreType(StrEnum):
 #: service fills these from the storage connection; a request that names one is
 #: rejected so a caller cannot smuggle a secret into the metadata store or fight
 #: the configured connection.
-SECRET_PROPERTY_SUFFIXES: tuple[str, ...] = (
-    "access_key",
-    "secret_key",
-    "session_token",
-    "account_key",
-    "sas_token",
-    "service_account_key",
-    "shared_key",
-    "private_key",
-    "password",
-    "credential",
-)
-
-
+#:
+#: The name-matching rule lives in ``sql_guard`` — see
+#: ``is_credential_property`` — so the request-side check and the statement
+#: redactor share one segmentation rule. Each spelling StarRocks accepts for a
+#: credential (``azure.account.key`` / ``azure.account_key``,
+#: ``gcp.gcs.service_account_private_key`` / ``...service.account.private.key``)
+#: is one name to both sides; matching only the final segment left the dotted
+#: spelling accepted here while the redactor already knew it was a credential.
 def is_secret_property(key: str) -> bool:
     """True when ``key`` names a credential-bearing catalog property.
 
-    Matches on the final ``_``/``.``-separated segment so the dotted and
-    underscore spellings StarRocks accepts are treated the same.
+    Thin alias for :func:`app.common.sql_guard.is_credential_property`, kept so
+    callers import the name the catalog module talks about.
     """
-    return key.lower().rsplit(".", 1)[-1].endswith(SECRET_PROPERTY_SUFFIXES)
+    return is_credential_property(key)
 
 
 class ExternalCatalogCreate(BaseModel):
