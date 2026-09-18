@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 if TYPE_CHECKING:
@@ -95,6 +95,31 @@ def register_exception_handlers(app: FastAPI) -> None:
         return SanitizingJSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.message, "type": type(exc).__name__},
+        )
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(
+        request: Request, exc: HTTPException
+    ) -> "SanitizingJSONResponse":
+        # NOVA-94 security finding #2. FastAPI's built-in ``HTTPException``
+        # handler renders with a plain ``JSONResponse``, so a module that
+        # surfaces a service error as ``raise HTTPException(400, detail=str(exc))``
+        # bypasses ``SanitizingJSONResponse`` entirely. ``detail`` is routinely
+        # the engine's own error text, and StarRocks echoes the rejected
+        # statement in it — for a repository/catalog statement that text carries
+        # the storage keys. Registering this handler applies the same
+        # fail-closed value-only redaction to every ``HTTPException`` in the
+        # app, including routes added later, which is why it is done here rather
+        # than by re-plumbing each router to a ``NovaException``.
+        #
+        # ``detail`` is preserved (not stringified) because FastAPI allows any
+        # JSON-able detail; the sanitizer walks dicts/lists recursively.
+        from app.common.responses import SanitizingJSONResponse
+
+        return SanitizingJSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None),
         )
 
     @app.exception_handler(Exception)
