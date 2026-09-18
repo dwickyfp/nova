@@ -187,9 +187,19 @@ def build_create_index_sql(req: CreateIndexRequest) -> str:
     props = ""
     if req.properties:
         props = " (" + _build_index_properties(req) + ")"
-    return (
-        f"ALTER TABLE `{database}`.`{table}` ADD INDEX `{index_name}` "
-        f"(`{column}`) USING NGRAM_BF{props}"
+    if kind == "NGRAM_BF":
+        return (
+            f"ALTER TABLE `{database}`.`{table}` ADD INDEX `{index_name}` "
+            f"(`{column}`) USING NGRAM_BF{props}"
+        )
+
+    # Unreachable while every allow-listed kind has a branch above, but kept as a
+    # hard stop: a kind added to ``_INDEX_KINDS`` without a builder must fail
+    # rather than fall through to the last branch and silently build a different
+    # index type (NOVA-130).
+    raise HTTPException(
+        status_code=403,
+        detail=f"Index kind {kind!r} is not implemented",
     )
 
 
