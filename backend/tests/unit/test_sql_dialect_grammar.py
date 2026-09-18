@@ -150,6 +150,51 @@ def test_nova_task_clauses_parse(sql: str) -> None:
     assert errors == []
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # 9b's actual user-facing surface: `CREATE TASK`, not `SUBMIT TASK`.
+        # This is the acceptance sentence from the issue, which failed with
+        # `1:7 no viable alternative at input 'CREATE TASK'` before PR 2.
+        "CREATE TASK t1 AFTER a FINALIZE b AS INSERT INTO t SELECT 1",
+        "CREATE TASK t1 AFTER a AS INSERT INTO t SELECT 1",
+        "CREATE TASK t1 AFTER a, b AS INSERT INTO t SELECT 1",
+        "CREATE TASK t1 FINALIZE b AS INSERT INTO t SELECT 1",
+        "CREATE TASK t1 FINALIZE = b AS INSERT INTO t SELECT 1",
+        "CREATE TASK t1 WHEN c > 0 AS INSERT INTO t SELECT 1",
+        "CREATE TASK t1 WHEN a > 1 AND b < 2 AS INSERT INTO t SELECT 1",
+        "CREATE TASK t1 OVERLAP_POLICY = 'SKIP' AS INSERT INTO t SELECT 1",
+        "CREATE TASK t1 SCHEDULE = 'USING CRON 0 2 * * * Asia/Jakarta' AS INSERT INTO t SELECT 1",
+        (
+            "CREATE TASK t1 AFTER a FINALIZE b WHEN c > 0 "
+            "OVERLAP_POLICY = 'SKIP' SCHEDULE = 'USING CRON 0 2 * * * UTC' "
+            "AS INSERT INTO t SELECT 1"
+        ),
+    ],
+)
+def test_create_task_clauses_parse(sql: str) -> None:
+    _, errors = _parse(sql)
+    assert errors == []
+
+
+def test_create_task_body_restriction_reports_a_precise_position() -> None:
+    # The body stays `CTAS | INSERT | CACHE SELECT`; `AS SELECT` is rejected by
+    # design, and the failure must carry an exact position, not a vague one.
+    _, errors = _parse("CREATE TASK t1 AS SELECT 1")
+    assert len(errors) == 1
+    assert errors[0].startswith("1:18 "), errors[0]
+
+
+def test_submit_task_still_parses_after_adding_create() -> None:
+    # The engine statement must not regress when `CREATE` joins the rule.
+    for sql in (
+        "SUBMIT TASK x AS INSERT INTO t SELECT 1",
+        "SUBMIT TASK x AS CREATE TABLE t AS SELECT 1",
+        "SUBMIT TASK x AS CACHE SELECT a FROM t",
+    ):
+        assert _parse(sql)[1] == [], sql
+
+
 def test_engine_schedule_form_is_not_shadowed() -> None:
     # `SCHEDULE START(...) EVERY(...)` is the engine's own form; the Nova
     # `SCHEDULE = '<cron>'` alternative must not break it.
