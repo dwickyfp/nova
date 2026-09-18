@@ -18,6 +18,7 @@ import Editor, { type Monaco } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart3,
+  Bot,
   Braces,
   ChevronDown,
   ChevronLeft,
@@ -63,6 +64,7 @@ import {
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
+import { AssistantPanel } from '@/features/assistant'
 import { DatabaseSchemaSelector } from './database-schema-selector'
 import {
   type CompletionResponse,
@@ -92,6 +94,7 @@ import type {
   WorkspaceTreeResponse,
 } from './types'
 import { InlineSelect } from './inline-select'
+import { initialAssistantOpen, assistantCollapsedToPersist } from './assistant-panel-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -572,6 +575,7 @@ export function WorkspacesPage() {
   const queryClient = useQueryClient()
   const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases'>('workspaces')
   const [secondaryCollapsed, setSecondaryCollapsed] = useState(false)
+  const [assistantOpen, setAssistantOpen] = useState(false)
   const [workspaceSearch, setWorkspaceSearch] = useState('')
   const [databaseSearch, setDatabaseSearch] = useState('')
   const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({})
@@ -622,6 +626,9 @@ export function WorkspacesPage() {
   const saveTimerRef = useRef<number | null>(null)
   const stateSaveTimerRef = useRef<number | null>(null)
   const editorContentRef = useRef('')
+  // The persisted tree arrives after first paint. Initialize the panel from it
+  // once so a later refetch cannot clobber a toggle the user just made.
+  const assistantOpenInitializedRef = useRef(false)
 
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
     queryKey: ['workspace-tree'],
@@ -653,6 +660,10 @@ export function WorkspacesPage() {
     const context = queryContextQuery.data
     if (!tree || !context) return
     setSecondaryCollapsed(tree.sidebar_collapsed)
+    if (!assistantOpenInitializedRef.current) {
+      setAssistantOpen(initialAssistantOpen(tree))
+      assistantOpenInitializedRef.current = true
+    }
     setOpenTabIds((prev) => (prev.length ? prev : tree.open_tabs))
     setActiveTabId((prev) => prev ?? tree.active_tab ?? tree.open_tabs[0] ?? null)
 
@@ -790,6 +801,7 @@ export function WorkspacesPage() {
       open_tabs: string[]
       active_tab: string | null
       sidebar_collapsed: boolean
+      assistant_collapsed: boolean
       last_database: string | null
       last_schema: string | null
       last_role: string | null
@@ -806,6 +818,7 @@ export function WorkspacesPage() {
         open_tabs: openTabIds,
         active_tab: activeTabId,
         sidebar_collapsed: secondaryCollapsed,
+        assistant_collapsed: assistantCollapsedToPersist(assistantOpen),
         last_database: activeTab?.database ?? null,
         last_schema: activeTab?.schema ?? null,
         last_role: activeTab?.role ?? null,
@@ -821,6 +834,7 @@ export function WorkspacesPage() {
     activeTab?.role,
     activeTab?.schema,
     activeTabId,
+    assistantOpen,
     openTabIds,
     queryContextQuery.data,
     secondaryCollapsed,
@@ -1383,6 +1397,18 @@ export function WorkspacesPage() {
               >
                 <Plus className='size-3.5' />
               </button>
+              <Button
+                type='button'
+                variant={assistantOpen ? 'secondary' : 'ghost'}
+                size='sm'
+                className='mb-0.5 ml-auto shrink-0 gap-1.5'
+                aria-pressed={assistantOpen}
+                aria-controls='assistant-panel'
+                onClick={() => setAssistantOpen((prev) => !prev)}
+              >
+                <Bot className='size-4' />
+                Assistant
+              </Button>
             </div>
           </div>
 
@@ -1713,6 +1739,8 @@ export function WorkspacesPage() {
             </div>
           )}
         </section>
+
+        <AssistantPanel open={assistantOpen} onOpenChange={setAssistantOpen} disabled />
       </div>
     </div>
   )
