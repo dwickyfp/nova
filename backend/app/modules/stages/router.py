@@ -20,9 +20,21 @@ from app.modules.stages.schemas import (
     StageListResponse,
     StageResponse,
 )
-from app.modules.stages.service import stage_service
+from app.modules.stages.service import InvalidStagePathError, stage_service
 
 router = APIRouter()
+
+
+def _as_client_error(exc: ValueError) -> HTTPException:
+    """Map a service-layer ``ValueError`` onto the right client status.
+
+    A rejected path (``InvalidStagePathError``) is a bad request — 400 — while
+    a missing stage stays 404. Keeping the two apart matters: the fix must not
+    turn "you asked for a path outside the stage" into "no such stage".
+    """
+    if isinstance(exc, InvalidStagePathError):
+        return HTTPException(status_code=400, detail=str(exc))
+    return HTTPException(status_code=404, detail=str(exc))
 
 
 # ── Stage CRUD ──────────────────────────────────────────────────
@@ -87,7 +99,7 @@ async def list_files(
     try:
         files = await stage_service.list_files(stage_id, prefix=prefix)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise _as_client_error(e) from e
     return {"files": files, "prefix": prefix, "count": len(files)}
 
 
@@ -102,7 +114,7 @@ async def upload_file(
     try:
         result = await stage_service.upload_file(stage_id, file.filename or "unknown", content)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise _as_client_error(e) from e
     return {"success": True, "file": result}
 
 
@@ -116,9 +128,9 @@ async def download_file(
     try:
         content = await stage_service.download_file(stage_id, filename)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise _as_client_error(e) from e
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"File '{filename}' not found: {e}")
+        raise HTTPException(status_code=404, detail=f"File '{filename}' not found: {e}") from e
 
     return StreamingResponse(
         iter([content]),
@@ -137,5 +149,5 @@ async def delete_file(
     try:
         await stage_service.delete_file(stage_id, filename)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise _as_client_error(e) from e
     return {"success": True, "message": f"File '{filename}' deleted"}

@@ -5,6 +5,7 @@ object store (MinIO by default). Files are listed/uploaded/downloaded/deleted
 through the boto3 S3 client.
 """
 
+import posixpath
 from uuid import uuid4
 
 import asyncmy
@@ -14,6 +15,85 @@ from botocore.client import Config as BotoConfig
 
 from app.core.config import get_storage_connection, settings
 from app.modules.query.dialect.injector import resolve_storage_credentials
+
+
+class InvalidStagePathError(ValueError):
+    """A caller-supplied stage path is empty or escapes the stage prefix.
+
+    A ``ValueError`` subclass so the pre-existing ``except ValueError`` call
+    sites (notably ``router.py``) keep mapping a not-found *or* a rejected
+    path onto the same client error, while callers that care can distinguish
+    the two. Raised only *after* validation — no partial S3 key is ever built.
+    """
+
+
+def _validate_stage_path(filename: str) -> str:
+    """Normalize a caller-supplied stage-relative path and bound it to the prefix.
+
+    The stage file operations concatenate ``filename`` straight onto the
+    stage's S3 prefix. Without this, ``../`` segments climb out of the prefix
+    and let a caller read or delete any object the stage's principal can reach
+    in the bucket (the ``filename:path`` route parameter reads ``a/b/../../x``
+    verbatim, and ``ftypename`` of an upload is equally attacker-controlled).
+
+    Accepts a slash-separated relative path — including nested sub-folders
+    inside the stage — and rejects everything that is not one:
+
+    * empty, ``.``, ``/`` (no object is addressed)
+    * absolute paths (``/etc/passwd``)
+    * traversal segments (``..``)
+    * Windows-style backslashes and NUL bytes
+
+    Returns the normalized relative key (``folder/../report.csv`` →
+    ``report.csv``) so the caller builds exactly the key it validated. Raises
+    :class:`InvalidStagePathError` before any key is formed.
+    """
+    if not isinstance(filename, str) or not filename:
+        raise InvalidStagePathError("Stage path must be a non-empty string")
+
+    if "\x00" in filename:
+        raise InvalidStagePathError("Stage path contains a NUL byte")
+
+    if "\\" in filename:
+        raise InvalidStagePathError(f"Stage path '{filename}' uses a backslash separator")
+
+    if filename.startswith("/"):
+        raise InvalidStagePathError(
+            f"Stage path '{filename}' is absolute; it must be relative to the stage"
+        )
+
+    # ``normpath`` collapses ``.`` and ``..``; ``root`` is discarded because an
+    # absolute path was already rejected, so it only ever reads ".". A result
+    # that is still ``..``-prefixed (or exactly ``.``/``..``) climbed above the
+    # stage root and is refused.
+    normalized = posixpath.normpath(filename)
+    if normalized == "." or normalized == ".." or normalized.startswith("../"):
+        raise InvalidStagePathError(f"Stage path '{filename}' escapes the stage prefix")
+
+    return normalized
+
+
+def _resolve_stage_key(stage: dict, filename: str) -> str:
+    """Resolve a validated ``filename`` into a key that stays inside the stage.
+
+    Both sides are normalized before the prefix check: ``base_prefix`` is
+    registered data but could itself carry a traversal segment (NOVA-106 AC4),
+    and ``filename`` is untrusted. The final prefix check is the invariant the
+    whole fix rests on — the resolved key is the stage prefix or sits below it.
+
+    Validating the *resolved* key rather than only the caller's ``filename``
+    matters: ``normpath`` collapses ``.`` and ``..`` against the prefix, so a
+    filename that looks benign on its own can still shift the boundary once
+    joined. Checking the joined result is what makes the guarantee hold
+    regardless of how either side was shaped.
+    """
+    prefix = posixpath.normpath(StageService._resolve_prefix(stage))
+    normalized = _validate_stage_path(filename)
+    key = f"{prefix}/{normalized}"
+
+    if key != prefix and not key.startswith(f"{prefix}/"):
+        raise InvalidStagePathError(f"Stage path '{filename}' escapes the stage prefix")
+    return key
 
 
 class StageService:
@@ -165,10 +245,11 @@ class StageService:
         if not stage:
             raise ValueError(f"Stage '{stage_id}' not found")
 
-        # Trailing slash is required for the delimiter to work correctly.
-        s3_prefix = self._resolve_prefix(stage)
+        # Trailing slash is required for the delimiter to work correctly. The
+        # prefix is validated and normalized like every other caller-supplied
+        # path, so browsing cannot walk out of the stage either (NOVA-106 AC4).
         s3_prefix = (
-            f"{s3_prefix}/{prefix.strip('/')}/" if prefix else f"{s3_prefix}/"
+            f"{_resolve_stage_key(stage, prefix)}/" if prefix else f"{self._resolve_prefix(stage)}/"
         )
 
         s3, bucket = self._s3_client_for_stage(stage)
@@ -213,7 +294,7 @@ class StageService:
         if not stage:
             raise ValueError(f"Stage '{stage_id}' not found")
 
-        s3_key = f"{self._resolve_prefix(stage)}/{filename}"
+        s3_key = _resolve_stage_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         s3.put_object(Bucket=bucket, Key=s3_key, Body=content)
 
@@ -225,7 +306,7 @@ class StageService:
         if not stage:
             raise ValueError(f"Stage '{stage_id}' not found")
 
-        s3_key = f"{self._resolve_prefix(stage)}/{filename}"
+        s3_key = _resolve_stage_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         response = s3.get_object(Bucket=bucket, Key=s3_key)
         return response["Body"].read()
@@ -236,7 +317,7 @@ class StageService:
         if not stage:
             raise ValueError(f"Stage '{stage_id}' not found")
 
-        s3_key = f"{self._resolve_prefix(stage)}/{filename}"
+        s3_key = _resolve_stage_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         s3.delete_object(Bucket=bucket, Key=s3_key)
         return True
