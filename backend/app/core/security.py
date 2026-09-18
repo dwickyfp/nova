@@ -1,10 +1,17 @@
-"""JWT token management and credential encryption."""
+"""JWT token management and credential encryption.
 
-from datetime import datetime, timedelta, timezone
+The signing key and the Fernet key are both required (NOVA-108). Neither is
+generated on the fly or defaulted to a published constant: an unset key is a
+misconfiguration that must fail loudly at startup, not a surprise that
+invalidates every session on the next restart.
+"""
+
+from datetime import UTC, datetime, timedelta
 
 from cryptography.fernet import Fernet
-from jose import JWTError, jwt
+from jose import jwt
 
+from app.common.secret_keys import MissingSecretError, validate_fernet_key
 from app.core.config import settings
 
 # --- JWT ---
@@ -14,7 +21,7 @@ ALGORITHM = "HS256"
 
 def create_access_token(username: str, session_id: str) -> str:
     """Create a JWT token with username and session ID."""
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": username, "sid": session_id, "exp": expire}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
@@ -33,15 +40,10 @@ _fernet: Fernet | None = None
 
 
 def _get_fernet() -> Fernet:
-    """Lazy-init Fernet instance. Generates key if not configured."""
+    """Lazy-init Fernet instance from the required ``FERNET_KEY``."""
     global _fernet
     if _fernet is None:
-        key = settings.FERNET_KEY
-        if not key:
-            key = Fernet.generate_key().decode()
-            # In production, this should be set in .env
-            # For dev, we generate a new one each startup
-        _fernet = Fernet(key if isinstance(key, bytes) else key.encode())
+        _fernet = Fernet(validate_fernet_key(settings.FERNET_KEY).encode())
     return _fernet
 
 
@@ -53,3 +55,13 @@ def encrypt_password(password: str) -> str:
 def decrypt_password(encrypted: str) -> str:
     """Decrypt a password from Redis session."""
     return _get_fernet().decrypt(encrypted.encode()).decode()
+
+
+__all__ = [
+    "ALGORITHM",
+    "MissingSecretError",
+    "create_access_token",
+    "decode_token",
+    "decrypt_password",
+    "encrypt_password",
+]
