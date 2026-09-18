@@ -592,3 +592,102 @@ class TestCreateTaskLoweringAgainstEngine:
                 for edge in await repo.list_edges(row.task["name"]):
                     await repo.delete_edge(edge["id"])
                 await repo.delete_task(row.task["id"])
+
+
+class TestOverlapPolicyColumnRoundTrip:
+    """NOVA-54 / stage 3b: the graph-run overlap policy survives a real engine.
+
+    The overlap decision is enforced in the scheduler and the worker from this
+    column, so a schema drift here silently disables the policy. This pins the
+    real round-trip: write the three policies, read them back, and confirm a
+    legacy row (written without the column) defaults to the strict `skip`.
+    """
+
+    async def test_policy_round_trips(self, orchestration_db):
+        await _ensure_ddl()
+        graph_id = f"ov_{uuid4().hex[:8]}"
+        created_ids = []
+        try:
+            for policy in ("skip", "queue", "allow"):
+                run = await repo.create_graph_run(
+                    {
+                        "graph_id": graph_id,
+                        "trigger_type": "schedule",
+                        "state": "pending",
+                        "overlap_policy": policy,
+                    }
+                )
+                created_ids.append(run["id"])
+                fetched = await repo.get_graph_run(run["id"])
+                assert fetched is not None
+                assert fetched["overlap_policy"] == policy
+        finally:
+            for run_id in created_ids:
+                await repo.delete_graph_run(run_id)
+
+    async def test_default_policy_is_skip(self, orchestration_db):
+        await _ensure_ddl()
+        graph_id = f"ovd_{uuid4().hex[:8]}"
+        run = await repo.create_graph_run(
+            {"graph_id": graph_id, "trigger_type": "schedule", "state": "pending"}
+        )
+        try:
+            fetched = await repo.get_graph_run(run["id"])
+            assert fetched is not None
+            assert fetched["overlap_policy"] == "skip"
+        finally:
+            await repo.delete_graph_run(run["id"])
+
+    async def test_active_graph_runs_excludes_terminal_states(self, orchestration_db):
+        await _ensure_ddl()
+        graph_id = f"ova_{uuid4().hex[:8]}"
+        pending = await repo.create_graph_run(
+            {"graph_id": graph_id, "trigger_type": "schedule", "state": "pending"}
+        )
+        finished = await repo.create_graph_run(
+            {"graph_id": graph_id, "trigger_type": "schedule", "state": "pending"}
+        )
+        await repo.transition_graph_run(
+            finished["id"], ["pending"], "success"
+        )
+        try:
+            active = await repo.list_active_graph_runs(graph_id)
+            active_ids = {r["id"] for r in active}
+            assert pending["id"] in active_ids
+            assert finished["id"] not in active_ids
+        finally:
+            await repo.delete_graph_run(pending["id"])
+            await repo.delete_graph_run(finished["id"])
+
+
+class TestFinalizerEdgeShape:
+    """`edge_kind='finalize'` is excluded from dependency adjacency on real rows."""
+
+    async def test_finalize_edge_is_stored_but_not_a_dependency(self, orchestration_db):
+        await _ensure_ddl()
+        from app.modules.task_orchestration.dag import (
+            finalizer_targets,
+            graph_from_task_rows,
+        )
+
+        graph_id = f"fin_{uuid4().hex[:8]}"
+        edges = [
+            await repo.create_edge(
+                graph_id,
+                {"parent_task": "a", "child_task": "b", "edge_kind": "after"},
+            ),
+            await repo.create_edge(
+                graph_id,
+                {"parent_task": "a", "child_task": "f", "edge_kind": "finalize"},
+            ),
+        ]
+        try:
+            rows = await repo.list_edges(graph_id)
+            assert finalizer_targets(rows) == {"f": "a"}
+            graph = graph_from_task_rows(["a", "b", "f"], rows)
+            assert "f" not in graph.nodes
+            assert graph.finalizer_nodes == {"f"}
+            assert graph.adjacency.get("a") == ["b"]
+        finally:
+            for edge in edges:
+                await repo.delete_edge(edge["id"])

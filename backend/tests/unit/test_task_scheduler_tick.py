@@ -66,9 +66,18 @@ class FakeRepository:
             "graph_id": data["graph_id"],
             "trigger_type": data.get("trigger_type", "manual"),
             "state": data.get("state", "pending"),
+            "overlap_policy": data.get("overlap_policy", "skip"),
         }
         self.graph_runs[row["id"]] = row
         return row
+
+    async def list_active_graph_runs(self, graph_id: str) -> list[dict[str, Any]]:
+        self.calls.append("list_active_graph_runs")
+        return [
+            row
+            for row in self.graph_runs.values()
+            if row["graph_id"] == graph_id and row["state"] in ("pending", "running")
+        ]
 
 
 class RecordingTransport:
@@ -93,6 +102,7 @@ def make_task(
     expr: str = "EVERY(INTERVAL 5 MINUTE)",
     tz: str = "UTC",
     created_at: datetime | None = None,
+    overlap_policy: str = "skip",
 ) -> dict[str, Any]:
     return {
         "id": task_id or f"id_{name}",
@@ -101,6 +111,7 @@ def make_task(
         "schedule_expr": expr,
         "timezone": tz,
         "created_at": created_at or datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        "overlap_policy": overlap_policy,
     }
 
 
@@ -443,7 +454,10 @@ class TestTickOrderingAndIdempotency:
         assert len(transport.published) == 1
 
     async def test_a_later_due_time_creates_a_second_run(self):
-        repo = FakeRepository([make_task("solo")])
+        # `queue` is required for a second run to be enqueued while the first is
+        # still active; with the default `skip` the occurrence is deliberately
+        # dropped (see the overlap tests).
+        repo = FakeRepository([make_task("solo", overlap_policy="queue")])
         transport = RecordingTransport()
         tick = SchedulerTick(repo, transport)
 
@@ -460,7 +474,16 @@ class TestTickOrderingAndIdempotency:
         await SchedulerTick(repo, transport).tick(NOW)
 
         payload = transport.published[0][0]
-        assert set(payload) <= {"id", "graph_id", "trigger_type", "state"}
+        # `overlap_policy` is a policy string (`skip`/`queue`/`allow`), not a
+        # credential; it is carried so the worker can honour QUEUE. The
+        # credential check below is what this test exists for.
+        assert set(payload) <= {
+            "id",
+            "graph_id",
+            "trigger_type",
+            "state",
+            "overlap_policy",
+        }
         serialized = str(payload).lower()
         for bad in ("password", "secret", "token", "credential"):
             assert bad not in serialized

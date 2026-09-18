@@ -88,6 +88,9 @@ class GraphRunCreate(BaseModel):
     graph_id: str = Field(..., min_length=1, max_length=64)
     trigger_type: TriggerType = "manual"
     state: GraphRunState = "pending"
+    #: Copied from the graph's root task at enqueue so the worker can enforce
+    #: QUEUE versus ALLOW without re-reading the task definition.
+    overlap_policy: OverlapPolicy = "skip"
 
 
 class GraphRun(GraphRunCreate):

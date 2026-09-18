@@ -212,14 +212,15 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS (
-  id           VARCHAR(64) NOT NULL,
-  graph_id     VARCHAR(64) NOT NULL,
-  trigger_type VARCHAR(32) NOT NULL,
-  state        VARCHAR(32) NOT NULL,
-  wal_marks    TEXT,
-  started_at   DATETIME,
-  heartbeat_at DATETIME,
-  finished_at  DATETIME
+  id             VARCHAR(64) NOT NULL,
+  graph_id       VARCHAR(64) NOT NULL,
+  trigger_type   VARCHAR(32) NOT NULL,
+  state          VARCHAR(32) NOT NULL,
+  overlap_policy VARCHAR(16) NOT NULL DEFAULT 'skip',
+  wal_marks      TEXT,
+  started_at     DATETIME,
+  heartbeat_at   DATETIME,
+  finished_at    DATETIME
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
