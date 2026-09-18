@@ -112,6 +112,33 @@ Bukti langsung dari commit pin:
 
 ---
 
+## Bukti verifikasi yang dijalankan
+
+Semua klaim source-level di atas dan di `11-query-catalog.md` diverifikasi pada commit `0c55f14` dengan perintah berikut (venv terisolasi, Python 3.12, `antlr4-python3-runtime==4.13.2`):
+
+```
+$ python backend/scripts/check_grammar_drift.py
+OK  StarRocks.g4: pin 4a9848edf03f5c936dac664b2d52527f48e72eb0 (6 marked region(s): 717-724, 736-746, 757-803, 3385-3389, 3393-3395, 3406-3408)
+OK  StarRocksLex.g4: pin 4a9848edf03f5c936dac664b2d52527f48e72eb0 (5 marked region(s): 32-47, 138-142, 216-219, 281-284, 581-588)
+Grammar drift check passed (2 file(s)).
+
+$ python -m pytest tests/unit/test_dialect.py tests/unit/test_grammar_drift_check.py \
+    tests/unit/test_sql_pipeline_files_params.py tests/unit/test_ml_model_ddl.py \
+    tests/unit/test_sql_dialect_grammar.py -q
+192 passed
+
+$ python -m pytest tests/unit/test_sql_guard.py tests/unit/test_sql_guard_bypass.py \
+    tests/unit/test_sql_guard_revoke_hardening.py tests/unit/test_ml_engine_training_sql.py \
+    tests/unit/test_ml_engine_batch_predict.py tests/unit/test_credential_leaks.py -q
+201 passed
+```
+
+sha256 upstream diverifikasi ulang dari repo GitHub pada commit pin:
+`StarRocks.g4 = 48c33cc741e82f838ebbad09b83ffa8011e690368cbfa2112ecf5d0c810abe3b`,
+`StarRocksLex.g4 = 9823ca3a363cab28f2feb4d41cd2aa64dd711a75693e6bef43405fc434666456`.
+
+---
+
 ## Keputusan yang dibutuhkan dari team lead
 
 1. **Status docs `ai_query`:** karena docs publik tidak punya halaman `ai_query`, apakah catatan sumber-kode di `11-query-catalog.md` cukup sebagai rujukan, atau perlu probe live ke engine 4.1.4 untuk mengangkat keyakinan ke Tinggi?
