@@ -9,7 +9,7 @@
 
 | Priority | Count | Description |
 |----------|-------|-------------|
-| 🔴 HIGH | 7 | Core operational/security gaps — should ship |
+| 🔴 HIGH | 7 (1 deferred) | Core operational/security gaps — should ship. **§5 Network Policies is DEFERRED** — engine 4.1.4 has no `NETWORK POLICY` object |
 | 🟡 MEDIUM | 11 | Operational efficiency + Snowflake parity — v1.1 |
 | 🟢 LOW | 14 | Nice-to-have developer experience — backlog |
 
@@ -120,7 +120,10 @@ SET GLOBAL validate_password = ON;
 
 ---
 
-### 5. Network Policies
+### 5. Network Policies — ⛔ DEFER (engine does not support the object)
+
+> **Status: DEFER (as of 2026-09-18, engine 4.1.4-4a9848e).** Not shipped, and deliberately
+> **not** emulated in Nova. See "Why deferred" below.
 
 **StarRocks:** FE config / system variables
 **Snowflake:** Network Policy objects
@@ -136,6 +139,33 @@ SET GLOBAL validate_password = ON;
 - Connection source tracking
 
 **Add to:** Extend Authentication doc
+
+**Why deferred (verified against the pinned engine, not inferred):**
+
+| Probe on engine 4.1.4-4a9848e | Result |
+|---|---|
+| `CREATE NETWORK POLICY <name> ALLOWED_IP_LIST=('10.0.0.0/8')` | `ERROR 1064 … No viable statement for input 'CREATE NETWORK'` |
+| `SET PROPERTY … 'allowed_ip'` | `Unknown user property(allowed_ip)` |
+| `ADMIN SHOW FRONTEND CONFIG` grep for IP-auth keys | no `enable_ip_based_authentication` / whitelist / blacklist config in this build |
+
+The engine has **no NETWORK POLICY object**, and the FE config this gap originally assumed
+(`enable_ip_based_authentication = true`) is **not present in this build**. A Nova-side policy
+table that StarRocks never enforces would be **false security** — worse than no feature, because
+the UI would advertise enforcement that does not happen. So Nova does **not** create a
+`CONFIG_NETWORK_POLICIES` table or any policy module for this gap.
+
+**What IS supported today (real surface, already live):** host-scoped user identities —
+`'user'@'host'`. StarRocks restricts a MySQL account by the client host it connects from, and Nova
+already exposes it end-to-end: `backend/app/modules/users/service.py:87-107`
+(`_user_identity` / `_parse_identity`) and `create_user(..., host=...)` at
+`backend/app/modules/users/service.py:522-541` (router: `backend/app/modules/users/router.py:76-89`).
+`ALTER USER`, `DROP USER`, grant/revoke, `SHOW GRANTS`, and user detail all take `host` too. This is
+**not a new feature** — it is documented here as the honest equivalent of per-user network
+restriction on this engine. Broad IP allow/block policy has no Nova UI; operators use the engine's
+account host scoping directly.
+
+**Reopen trigger:** re-evaluate if the pinned engine gains a `NETWORK POLICY` object (or the
+equivalent FE config). Until then this item stays DEFER and must not be re-promoted to a build task.
 
 ---
 
@@ -489,9 +519,9 @@ docs/
 └── 27-data-sharing.md           ← share data with external consumers
 │
 │  ── DOCS TO EXTEND ──
-├── 11-user-access-control.md    ← add row access policies, network policies
+├── 11-user-access-control.md    ← add row access policies (network policies DEFERRED — see §5)
 ├── 13-cluster-monitor.md        ← add cache obs, compaction, tablet repair, cost
-├── 18-authentication.md         ← add password policies, network policies
+├── 18-authentication.md         ← add password policies (network policies DEFERRED — see §5)
 └── 02-sql-worksheet.md          ← add snippets, sharing, variables panel
 ```
 
@@ -501,7 +531,7 @@ docs/
 
 ### v1.0 (MVP)
 - All existing 26 docs
-- HIGH priority items (7): masking, row access, password policy, network policy, inverted index, variables, backup
+- HIGH priority items (6 buildable + 1 deferred): masking, row access, password policy, inverted index, variables, backup; **network policy DEFERRED** (§5 — engine has no `NETWORK POLICY` object; per-user host scoping already covers the real surface)
 
 ### v1.1
 - MEDIUM priority (11): colocate, compaction, storage volumes, tablet split, cache obs, time travel, tagging, lineage, worksheets, dashboards
