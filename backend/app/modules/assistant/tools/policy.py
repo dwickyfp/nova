@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.common.sql_guard import strip_sql_comments
 from app.modules.assistant.schemas import ToolClassification
 
 #: Row prefix a read-only statement may start with. ``WITH`` is handled
@@ -82,15 +83,91 @@ _SET_RE = re.compile(r"^SET\b", re.IGNORECASE)
 
 _LEADING_KEYWORD_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)")
 
+#: Write/export clauses that can appear *after* a read-only leading keyword and
+#: turn the statement into a data-egress primitive (NOVA-83). ``SELECT … INTO
+#: OUTFILE 's3://…'`` is the canonical one: StarRocks writes the query result to
+#: object storage, so a statement classified ``read_only`` can copy any table
+#: the user can read to a bucket the attacker controls. The clause grammar is
+#: ``outfile : INTO OUTFILE file=string …``; the ``FILES``/``@stage`` forms
+#: below are the same class of write and are denied for the same reason.
+#:
+#: Detection is a whole-statement scan, not a leading-keyword test: the clause
+#: sits *inside* a ``SELECT``/``EXPLAIN`` body, so a prefix rule can never see
+#: it. Comments are stripped first (below), because ``SELECT /*x*/ INTO OUTFILE``
+#: must be denied exactly like the plain form.
+_OUTFILE_RE = re.compile(r"\bINTO\s+OUTFILE\b", re.IGNORECASE)
+_INSERT_INTO_FILES_RE = re.compile(r"\bINTO\s+FILES\s*\(", re.IGNORECASE)
+_INTO_STAGE_RE = re.compile(r"\bINTO\s+@", re.IGNORECASE)
+
 
 def _leading_keyword(sql: str) -> str:
     match = _LEADING_KEYWORD_RE.match(sql.lstrip())
     return match.group(1).upper() if match else ""
 
 
+def _blank_string_literals(sql: str) -> str:
+    """Replace every single-quoted literal's body with spaces.
+
+    Clause detection must not fire on a *value* that merely spells a clause:
+    ``SELECT 'INTO OUTFILE' AS note`` is a read-only string. The engine's own
+    parsing never treats a keyword inside a literal as grammar, so neither may
+    this scan. Literal *length* is preserved (the body becomes spaces) so any
+    later offset-based logic would still line up; ``''`` escapes are honoured
+    the same way :func:`app.common.sql_guard.strip_sql_comments` honours them.
+    """
+    out: list[str] = []
+    i = 0
+    length = len(sql)
+    while i < length:
+        ch = sql[i]
+        if ch == "'":
+            out.append(" ")
+            i += 1
+            while i < length:
+                if sql[i] == "'":
+                    if i + 1 < length and sql[i + 1] == "'":
+                        out.append("  ")
+                        i += 2
+                        continue
+                    out.append(" ")
+                    i += 1
+                    break
+                out.append(" ")
+                i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def is_nova_ddl(sql: str) -> bool:
     """True for Nova's own DDL surface (``CREATE ML_MODEL`` / ``CREATE TASK``)."""
     return bool(_NOVA_DDL_RE.match(sql.lstrip()))
+
+
+def has_write_clause(sql: str) -> bool:
+    """True when a statement carries a write/export clause (NOVA-83).
+
+    The allow list is a *leading-keyword* test, so a statement can start with a
+    perfectly read-only keyword and still write data: StarRocks'
+    ``queryStatement`` grammar is ``(explainDesc | optimizerTrace)? queryRelation
+    outfile?``, and ``SELECT … INTO OUTFILE 's3://…'`` is a valid ``SELECT``
+    whose ``outfile`` clause egresses the result to object storage. The same
+    class covers ``INSERT INTO FILES('path'=…)`` (an engine-side write to a file
+    path) and the Nova ``INTO @stage`` spelling.
+
+    Comments are stripped before matching, so a clause cannot be hidden behind
+    one — the guard module's own normalisation applies the same rule — and
+    string literals are blanked, so a value that merely spells the clause is not
+    mistaken for it. Denying is deliberate: the policy's contract is
+    "read-only", and none of these clauses read anything.
+    """
+    stripped = _blank_string_literals(strip_sql_comments(sql))
+    return bool(
+        _OUTFILE_RE.search(stripped)
+        or _INTO_STAGE_RE.search(stripped)
+        or _INSERT_INTO_FILES_RE.search(stripped)
+    )
 
 
 def cte_body(sql: str) -> str:
@@ -156,6 +233,11 @@ def is_allowed_statement(sql: str) -> bool:
         return False
     if _ALTER_DROP_RE.match(stripped):
         return False
+    # A leading keyword is not enough: ``SELECT … INTO OUTFILE`` starts with
+    # SELECT and still writes (NOVA-83). Deny any write/export clause anywhere
+    # in the statement before the leading-keyword test runs.
+    if has_write_clause(stripped):
+        return False
     keyword = _leading_keyword(stripped)
     if keyword == "WITH":
         return _leading_keyword(cte_body(stripped)) in ("SELECT",)
@@ -170,6 +252,8 @@ def is_denied_statement(sql: str) -> bool:
     if is_nova_ddl(stripped) or _COPY_INTO_RE.match(stripped) or _SET_RE.match(stripped):
         return True
     if _ALTER_DROP_RE.match(stripped):
+        return True
+    if has_write_clause(stripped):
         return True
     keyword = _leading_keyword(stripped)
     if keyword == "WITH":
@@ -234,6 +318,13 @@ def denial_reason(sql: str) -> str:
         return "SET is not a read-only statement."
     if _ALTER_DROP_RE.match(stripped):
         return "ALTER … DROP is not a read-only statement."
+    scan = _blank_string_literals(strip_sql_comments(stripped))
+    if _OUTFILE_RE.search(scan):
+        return "INTO OUTFILE exports query results and is not a read-only statement."
+    if _INTO_STAGE_RE.search(scan):
+        return "INTO @stage exports query results and is not a read-only statement."
+    if _INSERT_INTO_FILES_RE.search(scan):
+        return "INSERT INTO FILES writes to a file path and is not a read-only statement."
     keyword = _leading_keyword(stripped)
     if keyword == "WITH":
         body_keyword = _leading_keyword(cte_body(stripped))
@@ -264,6 +355,7 @@ __all__ = [
     "classify_statements",
     "cte_body",
     "denial_reason",
+    "has_write_clause",
     "is_allowed_statement",
     "is_denied_statement",
     "is_nova_ddl",
