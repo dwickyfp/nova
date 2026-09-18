@@ -14,6 +14,21 @@ export function authHeaders(extra?: Record<string, string>) {
   }
 }
 
+/**
+ * A non-2xx API response. Callers that need to treat a specific status
+ * differently (for example, an idempotent delete whose 404 means "already
+ * gone") branch on `status`; everything else reads `message`.
+ */
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 async function request<T>(path: string, options: RequestInit & { signal?: AbortSignal } = {}): Promise<T> {
   const token = useAuthStore.getState().auth.accessToken
   const headers: Record<string, string> = {
@@ -35,7 +50,7 @@ async function request<T>(path: string, options: RequestInit & { signal?: AbortS
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || 'Request failed')
+    throw new ApiError(res.status, err.detail || 'Request failed')
   }
 
   if (res.status === 204) {
