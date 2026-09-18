@@ -33,6 +33,7 @@ from app.modules.monitoring.router import router as monitoring_router
 from app.modules.objects.router import router as objects_router
 from app.modules.pipes.router import router as pipes_router
 from app.modules.query.router import router as query_router
+from app.modules.resource_groups.router import router as resource_groups_router
 from app.modules.stages.router import router as stages_router
 from app.modules.tables.router import router as tables_router
 from app.modules.task_orchestration.router import router as task_orchestration_router
@@ -48,7 +49,6 @@ logger = logging.getLogger(__name__)
 # from app.modules.views.router import router as views_router
 # from app.modules.external_catalogs.router import router as ext_router
 # from app.modules.cluster.router import router as cluster_router
-# from app.modules.resource_groups.router import router as rg_router
 # from app.modules.dashboards.router import router as dash_router
 # from app.modules.backup.router import router as backup_router
 # from app.modules.governance.router import router as gov_router
@@ -165,6 +165,13 @@ def create_app() -> FastAPI:
     # every statement runs on the caller's connection.
     app.include_router(
         governance_router, prefix=f"{prefix}/governance", tags=["governance"]
+    )
+    # Resource groups / warehouses (roadmap #16). Quota enforcement is the
+    # engine's; Nova only configures and reads back its usage.
+    app.include_router(
+        resource_groups_router,
+        prefix=f"{prefix}/resource-groups",
+        tags=["resource-groups"],
     )
     app.include_router(tasks_router, prefix=f"{prefix}/tasks", tags=["tasks"])
     # Nova orchestration metadata (CREATE TASK graphs/runs) — distinct from
