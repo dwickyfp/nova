@@ -88,8 +88,11 @@ class Settings(BaseSettings):
     MIGRATION_CLUSTER_SYNC_BINARY: str = ""
 
     # --- Security ---
-    SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
-    FERNET_KEY: str = ""  # Generated: Fernet.generate_key()
+    # No default on purpose (NOVA-108): the environment must supply real keys,
+    # and startup fails loudly if it does not. A shipped default would be a
+    # published signing key; a generated one would change per process.
+    SECRET_KEY: str = ""
+    FERNET_KEY: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     SESSION_TTL_SECONDS: int = 3600
 

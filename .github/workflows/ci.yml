@@ -205,6 +205,10 @@ jobs:
           STARROCKS_FE_MYSQL_PORT: "29030"
           REDIS_URL: redis://127.0.0.1:26379/0
           S3_ENDPOINT: http://127.0.0.1:29000
+          # NOVA-108: the app refuses to start without real signing/encryption
+          # keys. These are throwaway CI values, never used outside this run.
+          SECRET_KEY: ci-signing-key-not-for-deployment-0123456789abcdef
+          FERNET_KEY: 8f3Q1sVx0m2pR7tY5uW9zB4cD6eF1gH3jK5lM7nO9pQ=
           # The suite runs a MySQL client container per query. Host networking
           # lets it reach the proxy bound in the pytest process at
           # 127.0.0.1:<ephemeral>, so no compose network name and no
