@@ -507,6 +507,16 @@ uv run pytest
 uv run ruff check .
 ```
 
+Assistant benchmarks (offline, deterministic; the `-s` shows the numbers):
+
+```bash
+cd backend
+uv run pytest tests/benchmark -q -s -m "not engine"
+uv run pytest tests/benchmark -q -s -m engine   # needs the Docker test stack
+```
+
+See [docs/benchmarks/nova-61-assistant.md](docs/benchmarks/nova-61-assistant.md).
+
 Frontend:
 
 ```bash
