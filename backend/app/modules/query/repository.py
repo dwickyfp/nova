@@ -19,8 +19,8 @@ from dataclasses import dataclass, field
 import asyncmy
 import asyncmy.cursors
 
+from app.common.identifiers import check_identifier
 from app.common.sql_guard import redact_sql_credentials
-from app.core.config import settings
 from app.core.database import db
 from app.core.exceptions import StarRocksError
 
@@ -118,9 +118,9 @@ class QueryRepository:
                         executed_sql=sql,
                     )
         except asyncmy.errors.OperationalError as e:
-            raise StarRocksError(f"Connection error: {e}")
+            raise StarRocksError(f"Connection error: {e}") from e
         except asyncmy.errors.ProgrammingError as e:
-            raise StarRocksError(f"SQL error: {e}")
+            raise StarRocksError(f"SQL error: {e}") from e
 
     async def execute_as_user(
         self,
@@ -167,9 +167,9 @@ class QueryRepository:
                     conn, sql, role=role, max_rows=max_rows, start=start
                 )
         except asyncmy.errors.OperationalError as e:
-            raise StarRocksError(f"Connection error: {e}")
+            raise StarRocksError(f"Connection error: {e}") from e
         except asyncmy.errors.ProgrammingError as e:
-            raise StarRocksError(f"SQL error: {e}")
+            raise StarRocksError(f"SQL error: {e}") from e
 
     @staticmethod
     async def _execute_on(
@@ -183,7 +183,9 @@ class QueryRepository:
         try:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
                 if role:
-                    await cur.execute(f"SET ROLE {role.replace('`', '').replace(chr(39), '')}")
+                    await cur.execute(
+                        f"SET ROLE {check_identifier(role, field='role')}"
+                    )
                 await cur.execute(sql)
                 elapsed = (time.monotonic() - start) * 1000
 
@@ -212,8 +214,7 @@ class QueryRepository:
 
     @staticmethod
     async def _set_role(cur: asyncmy.cursors.DictCursor, role: str) -> None:
-        safe_role = role.replace("`", "").replace("'", "")
-        await cur.execute(f"SET ROLE {safe_role}")
+        await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
 
 
 query_repo = QueryRepository()
