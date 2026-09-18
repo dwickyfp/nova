@@ -114,6 +114,45 @@ BLOCKED_PATTERNS: list[tuple[str, str]] = [
     ),
 ]
 
+#: Data-egress clauses (NOVA-83). StarRocks' grammar is
+#: ``(explainDesc | optimizerTrace)? queryRelation outfile?`` and
+#: ``outfile : INTO OUTFILE file=string …``, so a ``SELECT`` can carry a clause
+#: that writes the result set to object storage. The lead keyword is read-only,
+#: the statement is not; the guard is the last line before a statement reaches
+#: the engine. ``INTO FILES(...)`` and the Nova ``INTO @stage`` spelling are the
+#: same class of engine-side write.
+#:
+#: These are matched separately from ``BLOCKED_PATTERNS`` because a *string
+#: literal* may legitimately spell the clause (``SELECT 'INTO OUTFILE' AS
+#: note``), and the other patterns deliberately never look inside literals.
+#: ``_blank_string_literals`` removes literals first, so only real grammar
+#: matches. ``_GAP`` between ``INTO`` and ``OUTFILE``/``FILES`` tolerates the
+#: leftover comment markers the guard's normalization leaves behind.
+#:
+#: The ``INTO @`` pattern uses ``_GAP_OPT`` (zero or more), not ``_GAP`` (one or
+#: more): ``@`` is its own lexer token (``StarRocksLex.g4``: ``AT: '@'``) and no
+#: token separator is required, so ``SELECT 1 INTO@stage1`` is the same clause as
+#: ``SELECT 1 INTO @stage1``. ``@`` is non-word, so the zero gap cannot fuse the
+#: keyword with an identifier and the pattern stays precise. The same relaxation
+#: is deliberately *not* applied to ``OUTFILE``/``FILES``: a zero-width match
+#: there would also hit the *unquoted* form of an identifier-shaped string
+#: literal (``SELECT 'INTOOUTFILE'`` normalizes to ``SELECT INTOOUTFILE`` under
+#: the module's quote-collapse rule), which is a value, not a clause.
+_EGRESS_PATTERNS: list[tuple[str, str]] = [
+    (
+        rf"\bINTO{_GAP}OUTFILE\b",
+        "INTO OUTFILE exports query results to a file and is not read-only.",
+    ),
+    (
+        rf"\bINTO{_GAP}FILES{_GAP_OPT}\(",
+        "INTO FILES writes to a file path and is not read-only.",
+    ),
+    (
+        rf"\bINTO{_GAP_OPT}@",
+        "INTO @stage exports query results and is not read-only.",
+    ),
+]
+
 #: Flags every ``BLOCKED_PATTERNS`` entry is matched with. ``re.DOTALL`` is
 #: required (not optional): the ``.*``-style spans above must be able to cross a
 #: newline, and it keeps this module consistent with
@@ -328,6 +367,42 @@ def _guard_single_statement(sql: str) -> None:
     for pattern, message in BLOCKED_PATTERNS:
         if re.search(pattern, normalized, BLOCKED_PATTERN_FLAGS):
             raise ForbiddenSQLError(message)
+    for pattern, message in _EGRESS_PATTERNS:
+        if re.search(pattern, _blank_string_literals(normalized), BLOCKED_PATTERN_FLAGS):
+            raise ForbiddenSQLError(message)
+
+
+def _blank_string_literals(sql: str) -> str:
+    """Replace every single-quoted literal's body with spaces.
+
+    Data-egress clause detection must not fire on a *value* that merely spells
+    a clause: ``SELECT 'INTO OUTFILE' AS note`` is read-only. The engine never
+    reads a keyword inside a literal as grammar, so this scan does not either.
+    Literal length is preserved so offsets stay aligned, and ``''`` escapes are
+    honoured as everywhere else in this module.
+    """
+    out: list[str] = []
+    i = 0
+    length = len(sql)
+    while i < length:
+        if sql[i] == "'":
+            out.append(" ")
+            i += 1
+            while i < length:
+                if sql[i] == "'":
+                    if i + 1 < length and sql[i + 1] == "'":
+                        out.append("  ")
+                        i += 2
+                        continue
+                    out.append(" ")
+                    i += 1
+                    break
+                out.append(" ")
+                i += 1
+            continue
+        out.append(sql[i])
+        i += 1
+    return "".join(out)
 
 
 DESTRUCTIVE_SQL_PATTERN = re.compile(

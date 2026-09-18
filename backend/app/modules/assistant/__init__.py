@@ -3,7 +3,10 @@
 Scope and contracts are frozen in ``docs/specs/nova-61-agentic-assistant-design.md``
 (NOVA-61 T-A0). This package implements Stage B: the module skeleton, the
 provider wiring (E4a), the in-memory thread state (E5a), and the bounded
-plan → tool → reflect loop with the SSE event contract.
+plan → tool → reflect loop with the SSE event contract. Stage C adds the
+read-only ``query_execute`` tool (``tools/query_execute.py``), its per-statement
+allow/deny policy, value-level result redaction, consent wiring, and audit
+correlation.
 
 Design rules enforced here, not merely documented:
 
