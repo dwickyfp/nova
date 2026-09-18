@@ -16,6 +16,15 @@ from app.core.config import get_storage_connection, settings
 from app.modules.query.dialect.injector import resolve_storage_credentials
 
 
+class StagePathError(ValueError):
+    """A user-supplied stage path is malformed or escapes the stage prefix.
+
+    Subclasses ``ValueError`` so existing ``except ValueError`` callers keep
+    working, while giving the router a distinct type to map to 400 rather than
+    the 404 used for a missing stage/file (NOVA-106).
+    """
+
+
 class StageService:
     """Business logic for stage management and file operations."""
 
@@ -157,6 +166,61 @@ class StageService:
             base = f"{stage['database_name']}/{stage['schema_name']}/{stage['name']}"
         return base
 
+    @staticmethod
+    def _safe_relative_path(relative: str, *, field: str = "filename") -> str:
+        """Validate and normalize a user-supplied path inside a stage.
+
+        ``filename:path`` / ``prefix`` arrive straight from the URL and are
+        concatenated into the S3 key. Without normalization ``../`` escapes the
+        stage prefix and reaches every other stage in the same bucket
+        (NOVA-106), and a backslash or absolute segment would do the same on an
+        S3 client that treats it as a separator. Reject before the key is built,
+        rather than after, so there is never a partially-formed key to leak via
+        an error path.
+
+        Returns the normalized relative path (no leading/trailing slash).
+        Raises ``ValueError`` naming the offending *field* (never leaking more
+        of the input than necessary) when the path is unsafe.
+        """
+        if relative is None:
+            raise StagePathError(f"Invalid {field}: path is required")
+        if "\x00" in relative:
+            raise StagePathError(f"Invalid {field}: NUL byte is not allowed")
+        # S3 keys are '/'-separated. A backslash would be a literal key byte, but
+        # some clients/OSes treat it as a separator; refuse it so the boundary
+        # does not depend on which one is interpreting the value.
+        if "\\" in relative:
+            raise StagePathError(f"Invalid {field}: backslash is not allowed")
+        if relative.startswith("/"):
+            raise StagePathError(f"Invalid {field}: absolute paths are not allowed")
+
+        parts: list[str] = []
+        for raw_segment in relative.split("/"):
+            if raw_segment in ("", "."):
+                continue
+            if raw_segment == "..":
+                raise StagePathError(f"Invalid {field}: '..' segments are not allowed")
+            parts.append(raw_segment)
+
+        if not parts:
+            raise StagePathError(f"Invalid {field}: path resolves to the stage root")
+        return "/".join(parts)
+
+    @classmethod
+    def _build_key(cls, stage: dict, filename: str, *, field: str = "filename") -> str:
+        """Build the full S3 key for a file inside a stage, safely.
+
+        The relative path is validated/normalized first and then the resolved
+        key is prefix-checked as defence in depth, so an escape that slipped
+        past normalization still cannot leave the stage.
+        """
+        prefix = cls._resolve_prefix(stage)
+        relative = cls._safe_relative_path(filename, field=field)
+        key = f"{prefix}/{relative}"
+        if key != prefix and not key.startswith(f"{prefix}/"):
+            raise StagePathError(f"Invalid {field}: path escapes the stage prefix")
+        return key
+
     # ── File operations ─────────────────────────────────────────
 
     async def list_files(self, stage_id: str, prefix: str = "") -> list[dict]:
@@ -166,10 +230,12 @@ class StageService:
             raise ValueError(f"Stage '{stage_id}' not found")
 
         # Trailing slash is required for the delimiter to work correctly.
-        s3_prefix = self._resolve_prefix(stage)
-        s3_prefix = (
-            f"{s3_prefix}/{prefix.strip('/')}/" if prefix else f"{s3_prefix}/"
-        )
+        base_prefix = self._resolve_prefix(stage)
+        if prefix:
+            safe_prefix = self._safe_relative_path(prefix, field="prefix")
+            s3_prefix = f"{base_prefix}/{safe_prefix}/"
+        else:
+            s3_prefix = f"{base_prefix}/"
 
         s3, bucket = self._s3_client_for_stage(stage)
 
@@ -213,7 +279,7 @@ class StageService:
         if not stage:
             raise ValueError(f"Stage '{stage_id}' not found")
 
-        s3_key = f"{self._resolve_prefix(stage)}/{filename}"
+        s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         s3.put_object(Bucket=bucket, Key=s3_key, Body=content)
 
@@ -225,7 +291,7 @@ class StageService:
         if not stage:
             raise ValueError(f"Stage '{stage_id}' not found")
 
-        s3_key = f"{self._resolve_prefix(stage)}/{filename}"
+        s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         response = s3.get_object(Bucket=bucket, Key=s3_key)
         return response["Body"].read()
@@ -236,7 +302,7 @@ class StageService:
         if not stage:
             raise ValueError(f"Stage '{stage_id}' not found")
 
-        s3_key = f"{self._resolve_prefix(stage)}/{filename}"
+        s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
         s3.delete_object(Bucket=bucket, Key=s3_key)
         return True
