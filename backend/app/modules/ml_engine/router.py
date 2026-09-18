@@ -33,6 +33,11 @@ from app.modules.ml_engine.service import ml_engine_service
 
 router = APIRouter()
 
+# Built once so routes can use a module-level dependency instead of calling
+# `Depends(...)` in argument defaults (ruff B008). Same pattern as
+# `users/router.py`.
+require_user = Depends(get_current_user)
+
 
 # ── Training ──────────────────────────────────────────────────
 
@@ -40,7 +45,7 @@ router = APIRouter()
 @router.post("/train", response_model=TrainModelResponse)
 async def train_model(
     req: TrainModelRequest,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Train a classical ML model using data from a SQL query."""
     try:
@@ -58,9 +63,9 @@ async def train_model(
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Training failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Training failed: {e}") from e
 
 
 # ── Prediction ────────────────────────────────────────────────
@@ -69,22 +74,22 @@ async def train_model(
 @router.post("/predict", response_model=PredictResponse)
 async def predict(
     req: PredictRequest,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Run a single prediction using a trained model."""
     try:
         result = await ml_engine_service.predict(req.model_alias, req.features)
         return result
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}") from e
 
 
 @router.post("/predict/batch", response_model=BatchPredictResponse)
 async def batch_predict(
     req: BatchPredictRequest,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Run batch predictions using features from a SQL query."""
     try:
@@ -93,9 +98,9 @@ async def batch_predict(
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch prediction failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Batch prediction failed: {e}") from e
 
 
 # ── Model Management ──────────────────────────────────────────
@@ -103,7 +108,7 @@ async def batch_predict(
 
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """List all trained models."""
     models = await ml_engine_service.list_models()
@@ -113,7 +118,7 @@ async def list_models(
 @router.get("/models/{model_id}", response_model=ModelDetailResponse)
 async def get_model(
     model_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Get model detail with all versions."""
     result = await ml_engine_service.get_model(model_id)
@@ -125,7 +130,7 @@ async def get_model(
 @router.delete("/models/{model_id}", response_model=DeleteModelResponse)
 async def delete_model(
     model_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Delete a model and all its versions."""
     return await ml_engine_service.delete_model(model_id)
@@ -136,7 +141,7 @@ async def delete_model(
 
 @router.get("/aliases", response_model=ModelAliasListResponse)
 async def list_aliases(
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """List all model aliases."""
     aliases = await ml_engine_service.list_aliases()
@@ -146,40 +151,19 @@ async def list_aliases(
 @router.post("/aliases", response_model=ModelAliasResponse)
 async def create_alias(
     req: ModelAliasCreate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Create or update a model alias."""
     try:
         return await ml_engine_service.create_alias(req.alias_name, req.model_id, req.version)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/aliases/{alias_name}")
 async def delete_alias(
     alias_name: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Delete a model alias."""
     return await ml_engine_service.delete_alias(alias_name)
-
-
-# ── Internal endpoints (no auth, localhost only) ──────────────
-# Used by StarRocks Java UDF to call ML prediction from SQL
-
-from app.modules.ml_engine.schemas import PredictRequest, PredictResponse
-
-@router.post("/internal/predict", response_model=PredictResponse)
-async def internal_predict(req: PredictRequest):
-    """Internal prediction endpoint — no auth required.
-    
-    Used by StarRocks Java UDF (ML_PREDICT) to call ML prediction from SQL.
-    Should only be exposed on localhost.
-    """
-    try:
-        result = await ml_engine_service.predict(req.model_alias, req.features)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
