@@ -2709,9 +2709,10 @@ relationPrimary
 // same `@name` mean the two things by position.
 //
 // Grammar:
-//   stageReference        : AT stageSegment (stageSeparator stageSegment)* '/'?
+//   stageReference        : AT stageSegment (stageSeparator stageSegment | decimalAtom)* '/'?
 //   stageSeparator        : '.' | '/'
-//   stageSegment          : (identifier | ASTERISK_SYMBOL) (MINUS_SYMBOL (identifier | ASTERISK_SYMBOL))*
+//   stageSegment          : stagePathAtom (MINUS_SYMBOL stagePathAtom)*
+//   stagePathAtom         : identifier | ASTERISK_SYMBOL | INTEGER_VALUE | decimalAtom
 //
 // * the first `stageSegment` is the stage name; the rest are the dotted path
 //   (`@stage1.data.csv`) or the slash path (`@stage1/folder/x.csv`). Dots and
@@ -2721,19 +2722,32 @@ relationPrimary
 //   single segments. `docs/04-stage-manager.md` allows hyphens in stage names.
 // * `ASTERISK_SYMBOL` covers the glob forms `@stage1.data/*.csv` and
 //   `@stage1.*.csv`; a glob is a segment like any other.
-// * `decimalAtom` handles the one lexer quirk in this surface: `2.` lexes as a
-//   single `DECIMAL_VALUE`, dot included, so `@stage-2.data.csv` arrives as
-//   `stage - 2. data . csv` and the `.` separator is already inside the token.
-//   The atom therefore absorbs the segment that follows it directly; without
-//   this, a hyphenated stage whose last part is a digit would not parse. The
-//   alternative is nested inside `stageSegment` (not `stageReference`) so a
-//   glued segment can never swallow a table alias: `FROM @stage1 t` still reads
-//   `t` as the alias.
+// * `decimalAtom` handles the lexer quirk in this surface, where the leading
+//   dot of a numeric path segment is fused into a single token:
+//
+//     `.2024` (`@stage1.2024.csv`) lexes as one `DECIMAL_VALUE` that *already
+//     contains* the `.` separator, so after `stage1` the parser sees a
+//     `DECIMAL_VALUE` with no preceding `stageSeparator` and
+//     `(stageSeparator stageSegment)*` cannot continue — the reference is
+//     dropped and the statement is forwarded untranslated (NOVA-132). A
+//     digit-leading segment with a letter/underscore after the digits fuses
+//     too, as `DOT_IDENTIFIER`: `.2024_01` in `@stage1.2024_01.csv`. The
+//     separator can instead *trail* the token after a hyphen, as in
+//     `@stage-2.data.csv`, where `2.` is the `DECIMAL_VALUE`.
+//
+//   The separator is recoverable from the token text, so `decimalAtom` accepts
+//   the fused token as a whole segment plus an optional `stagePathAtom` for the
+//   trailing-dot case (`2.` then `data`). It appears in two positions: as a
+//   `stagePathAtom` (inside a hyphenated `stageSegment`) *and* as a glue in
+//   `stageReference`, where it stands in for a `stageSeparator stageSegment`
+//   pair the lexer fused into one token (the dotted numeric `stage1.2024`). It
+//   is never a table alias: `FROM @stage1 t` still reads `t` as the alias
+//   because `t` is not a `DECIMAL_VALUE`/`DOT_IDENTIFIER`.
 // * the trailing `'/'` is the documented bare-directory form (`@stage1/`,
 //   `docs/04-stage-manager.md:87`). It is optional and separate from the
 //   separators because it may end the reference.
 stageReference
-    : AT stageSegment (stageSeparator stageSegment)* '/'?
+    : AT stageSegment (stageSeparator stageSegment | decimalAtom)* '/'?
     ;
 
 stageSeparator
@@ -2753,7 +2767,7 @@ stagePathAtom
     ;
 
 decimalAtom
-    : DECIMAL_VALUE stagePathAtom?
+    : (DECIMAL_VALUE | DOT_IDENTIFIER) stagePathAtom?
     ;
 
 // NOVA-END

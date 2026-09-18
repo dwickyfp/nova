@@ -243,22 +243,84 @@ def _find_stage_atoms(tree) -> list:
     return [node for node in _walk_nodes(tree) if type(node).__name__ == "StageAtomContext"]
 
 
+def _decimal_atom_parts(atom) -> list[str]:
+    """The path segments carried by one ``decimalAtom``, dot prefixes stripped.
+
+    A ``decimalAtom`` is the grammar's stand-in for a ``stageSeparator
+    stageSegment`` pair the lexer fused into a single ``DECIMAL_VALUE`` (NOVA-132):
+    ``.2024`` is one token that already contains the ``.`` separator, so the
+    atom stands where a separator would. It is also reachable as a plain
+    ``stagePathAtom`` for the hyphen case (``@stage-2.`` arrives as ``2.``).
+
+    ``DECIMAL_VALUE`` text is split on ``.`` so the *segments* come out (not the
+    glued token): ``.2024`` → ``['2024']``, ``2.`` → ``['2']``. A nested
+    ``stagePathAtom`` from the hyphen form (``2.`` then ``data``) is appended as
+    the segment that follows, since the token itself already ended in a dot.
+    Empty pieces are dropped, so a leading dot is a separator and nothing more.
+    """
+    parts: list[str] = []
+    for child in atom.children or []:
+        name = type(child).__name__
+        if name == "TerminalNodeImpl":
+            parts.extend(piece for piece in child.getText().split(".") if piece)
+        elif name == "StagePathAtomContext":
+            parts.extend(piece for piece in _stage_path_atom_parts(child) if piece)
+    return parts
+
+
+def _stage_path_atom_parts(atom) -> list[str]:
+    """The path segments of one ``stagePathAtom``, decimals expanded recursively.
+
+    ``stagePathAtom`` is ``identifier | * | INTEGER_VALUE | decimalAtom``, so a
+    decimal nested here (``decimalAtom`` → ``DECIMAL_VALUE`` → ``stagePathAtom``)
+    keeps expanding until the leaves are real segment text.
+    """
+    for child in atom.children or []:
+        name = type(child).__name__
+        if name == "DecimalAtomContext":
+            return _decimal_atom_parts(child)
+    return [atom.getText()]
+
+
 def _stage_reference_from_atom(atom, original_sql: str) -> StageReference:
     """Build a :class:`StageReference` from one ``#stageAtom`` node.
 
-    The grammar composes the reference as
-    ``AT stageSegment (stageSeparator stageSegment)* '/'?`` (``StarRocks.g4``,
-    NOVA-BEGIN block). The first segment is the stage name; the rest are path
-    segments in the order written, whether joined by ``.`` or ``/``. Reassembling
-    from ``stageSegment()`` — not from a regex, and not from ``getText()`` alone —
-    is what makes the slash path and the glob arrive intact: ``*`` and ``csv``
-    are two segments of ``@stage1.data/*.csv``, so the file is ``*.csv`` and the
-    translated path keeps the glob rather than dropping it.
+    The grammar composes the reference as ``AT stageSegment (stageSeparator
+    stageSegment | decimalAtom)* '/'?`` (``StarRocks.g4``, NOVA-BEGIN block). The
+    first segment is the stage name; the rest are path segments in the order
+    written, whether joined by ``.`` or ``/``. Reassembling from the *ordered*
+    children — not from a regex, and not from ``getText()`` alone — is what makes
+    the slash path and the glob arrive intact: ``*`` and ``csv`` are two segments
+    of ``@stage1.data/*.csv``, so the file is ``*.csv`` and the translated path
+    keeps the glob rather than dropping it.
+
+    ``decimalAtom`` siblings matter for the NOVA-132 regression: the dotted
+    numeric form (``@stage1.2024.csv``) puts the fused ``.2024`` next to the
+    ``stageSegment``s rather than wrapping it in one, so reading only
+    ``stageSegment()`` would lose every numeric path segment and mis-split the
+    file name (``['csv']`` instead of ``['2024', 'csv']``). Walking the children
+    in source order and expanding each decimal restores the segment list the
+    regex parser produced on ``main``.
     """
     stage_ref = atom.stageReference()
-    segments = stage_ref.stageSegment()
-    stage_name = segments[0].getText()
-    raw_parts = [segment.getText() for segment in segments[1:]]
+
+    segments: list[str] = []
+    for child in stage_ref.children or []:
+        name = type(child).__name__
+        if name == "StageSegmentContext":
+            # A whole segment; a decimal inside it (hyphen form) expands too.
+            segments.append(child.getText())
+        elif name == "DecimalAtomContext":
+            segments.extend(_decimal_atom_parts(child))
+
+    if not segments:
+        # No path atoms beyond a malformed reference; fall back to the token
+        # text so the caller still gets a name rather than an IndexError.
+        text = stage_ref.getText()
+        segments = [text.lstrip("@")]
+
+    stage_name = segments[0]
+    raw_parts = segments[1:]
 
     return _build_reference(
         full_match=stage_ref.getText(),
@@ -473,6 +535,33 @@ def _nova_surface_stage_refs(sql: str) -> list[StageReference]:
     return refs
 
 
+#: Token types whose text is a numeric path segment the lexer fused the leading
+#: ``.`` separator into: ``.2024`` → ``DECIMAL_VALUE``, ``.2024_01`` →
+#: ``DOT_IDENTIFIER`` (NOVA-132). The grammar's ``decimalAtom`` accepts both; the
+#: token scan has to as well, or the Nova surfaces (``LIST``/``COPY INTO``) would
+#: stop the reference at the stage name and leave ``.2024.csv`` dangling.
+_FUSED_DECIMAL_TOKENS = frozenset(
+    {
+        StarRocksLexer.DECIMAL_VALUE,
+        StarRocksLexer.DOT_IDENTIFIER,
+    }
+)
+
+
+def _fused_decimal_parts(token) -> list[str] | None:
+    """Split a fused leading-dot numeric token into its path segments, or ``None``.
+
+    ``DECIMAL_VALUE`` text comes in two shapes on this surface: leading (``.2024``
+    — separator first, ``['2024']``) and trailing (``2.`` — separator last, after
+    a hyphen, ``['2']``). ``DOT_IDENTIFIER`` is always leading (``.2024_01``).
+    The split drops empty pieces, so the ``.`` is a separator and never a segment.
+    Returns ``None`` when the token is not one of the fused numeric types.
+    """
+    if token.type not in _FUSED_DECIMAL_TOKENS:
+        return None
+    return [piece for piece in token.text.split(".") if piece]
+
+
 def _is_segment_atom(token) -> bool:
     """Whether ``token`` can be one ``stageSegment`` atom.
 
@@ -486,6 +575,7 @@ def _is_segment_atom(token) -> bool:
     if token.type in (
         StarRocksLexer.INTEGER_VALUE,
         StarRocksLexer.DECIMAL_VALUE,
+        StarRocksLexer.DOT_IDENTIFIER,
     ):
         return True
     return _is_identifier_token(token)
@@ -639,6 +729,13 @@ def _reference_from_tokens(tokens: list, start_index: int, sql: str) -> StageRef
     Shared by the Nova-surface scan and :func:`stage_reference_at`, so the
     proxy's decision to leave a reference alone is made by the same token logic
     that builds the engine's registry.
+
+    A numeric path segment whose leading ``.`` the lexer fused into the token
+    (``@stage1.2024.csv`` → ``stage1`` ``.2024`` ``.`` ``csv``, or the
+    ``.2024_01`` ``DOT_IDENTIFIER``) carries its separator *inside* the token, so
+    it continues the reference directly — exactly as the grammar's ``decimalAtom``
+    glue does (NOVA-132). A bare ``.`` / ``/`` separator token continues it as
+    before.
     """
     if start_index >= len(tokens) or tokens[start_index].text != "@":
         return None
@@ -652,6 +749,13 @@ def _reference_from_tokens(tokens: list, start_index: int, sql: str) -> StageRef
     segments = [tokens[index].text]
     index += 1
     while index < len(tokens):
+        fused = _fused_decimal_parts(tokens[index])
+        if fused is not None:
+            # The separator is the fused token's own leading dot: the pieces are
+            # path segments and the reference continues.
+            segments.extend(fused)
+            index += 1
+            continue
         separator = tokens[index]
         if separator.text not in _STAGE_SEPARATORS or index + 1 >= len(tokens):
             break
