@@ -25,11 +25,13 @@
 // (`backend/scripts/check_grammar_drift.py`) strips the markers and the header
 // above, then compares the remainder against the pinned upstream revision.
 //
-// 9b (NOVA-54) adds the `CREATE TASK … AFTER / FINALIZE / WHEN / SCHEDULE`
-// surface to `submitTaskStatement`/`taskClause` in a follow-up patch. That patch
-// must NOT define `SCHEDULE`: it is already a token (`StarRocksLex.g4:412` on
-// 4.1.1) and already `nonReserved`, and a second definition of the same literal
-// fails generation. Only `FINALIZE`, `CRON` and `OVERLAP_POLICY` are new.
+// 9b (NOVA-54) adds the `AFTER / FINALIZE / WHEN / SCHEDULE / OVERLAP_POLICY`
+// clause surface inside `submitTaskStatement`'s existing `taskClause*` (the
+// marked blocks below). `SCHEDULE` is deliberately NOT redefined: it is already
+// a token (`StarRocksLex.g4`, upstream `:412` on 4.1.1) and already
+// `nonReserved`, and a second definition of the same literal fails generation.
+// Only `FINALIZE`, `CRON` and `OVERLAP_POLICY` are new; all three are added to
+// `nonReserved` so identifiers spelled like them still parse.
 // ---------------------------------------------------------------------------
 
 grammar StarRocks;
@@ -721,6 +723,17 @@ alterTaskStatement
 taskClause
     : properties
     | taskScheduleDesc
+    // NOVA-BEGIN (NOVA-54 / 9b): the Nova CREATE TASK clause surface. These are
+    // Nova grammar, not engine statements; 9b lowering turns them into
+    // `SUBMIT TASK` + CONFIG_TASK* metadata and the engine never sees them.
+    // `taskClause*` was already variadic upstream, so this adds alternatives
+    // without restructuring the rule.
+    | taskAfterClause
+    | taskFinalizeClause
+    | taskWhenClause
+    | taskOverlapClause
+    | taskCronScheduleDesc
+    // NOVA-END
     ;
 
 dropTaskStatement
@@ -731,6 +744,47 @@ taskScheduleDesc
     : SCHEDULE (START '(' string ')')? EVERY '(' taskInterval ')'
     ;
 
+// NOVA-BEGIN (NOVA-54 / 9b): Nova CREATE TASK clauses.
+//
+// Surface (design doc SS3):
+//   AFTER task_a, task_b          -- DAG parents
+//   FINALIZE = task_a             -- finalizer edge
+//   WHEN <boolean expression>     -- conditional subtree skip
+//   OVERLAP_POLICY = <value>      -- ALLOW_CHILD_OVERLAP / SKIP / ...
+//   SCHEDULE = '<cron string>'    -- Nova cron (engine has no cron)
+//
+// `taskAfterClause` keeps the engine's `AFTER` (already a `nonReserved` token)
+// and only adds the comma-separated parent list, so `AFTER` still parses as an
+// identifier everywhere else. `WHEN` takes the full `expression` (not a bare
+// column reference) so `AND`/`OR` structure survives to the executor, which
+// must not flatten it. `taskCronScheduleDesc` is deliberately distinct from
+// `taskScheduleDesc` (which stays the engine's `SCHEDULE ... EVERY` form):
+// `SCHEDULE =` and `SCHEDULE START|EVERY` are separated at the second token.
+taskAfterClause
+    : AFTER taskNameList
+    ;
+
+taskNameList
+    : qualifiedName (',' qualifiedName)*
+    ;
+
+taskFinalizeClause
+    : FINALIZE EQ? qualifiedName
+    ;
+
+taskWhenClause
+    : WHEN expression
+    ;
+
+taskOverlapClause
+    : OVERLAP_POLICY EQ? identifierOrString
+    ;
+
+taskCronScheduleDesc
+    : SCHEDULE EQ string
+    ;
+
+// NOVA-END
 // ------------------------------------------- Materialized View Statement ---------------------------------------------
 
 createMaterializedViewStatement
@@ -3292,9 +3346,17 @@ nonReserved
     | CACHE | CALL | CAST | CANCEL | CATALOG | CATALOGS | CEIL | CHAIN | CHARSET | CLEAN | CLEAR | CLUSTER | CLUSTERS | CNGROUP | CNGROUPS | CURRENT | COLLATION | COLUMNS
     | CUME_DIST | CUMULATIVE | COMMENT | COMMIT | COMMITTED | COMPUTE | CONNECTION | CONNECTIONS | CONSISTENT | COSTS | COUNT
     | CONFIG | COMPACT
+    // NOVA-BEGIN (NOVA-54 / 9b): new task-clause tokens. `nonReserved` is what
+    // keeps them usable as ordinary identifiers, so a column or table named
+    // `cron`, `finalize` or `overlap_policy` still parses.
+    | CRON
+    // NOVA-END
     | DATA | DATE | DATACACHE | DATETIME | DAY | DAYS | DECOMMISSION | DIALECT | DIGEST | DISABLE | DISK | DISTRIBUTION | DUPLICATE | DYNAMIC | DISTRIBUTED | DICTIONARY | DICTIONARY_GET | DEALLOCATE
     | ENABLE | END | ENGINE | ENGINES | ERRORS | EVENTS | EXECUTE | EXTERNAL | EXTRACT | EVERY | ENCLOSE | ESCAPE | EXPORT
     | FAILPOINT | FAILPOINTS | FIELDS | FILE | FILTER | FIRST | FLOOR | FOLLOWING | FORMAT | FN | FRONTEND | FRONTENDS | FOLLOWER | FREE
+    // NOVA-BEGIN (NOVA-54 / 9b): see the CRON note above.
+    | FINALIZE
+    // NOVA-END
     | FUNCTIONS
     | GLOBAL | GRANTS | GROUP_CONCAT
     | HASH | HISTOGRAM | HELP | HLL_UNION | HOST | HOUR | HOURS | HUB
@@ -3305,6 +3367,9 @@ nonReserved
     | MANUAL | MAP | MAPPING | MAPPINGS | MASKING | MATCH | MATCH_ANY | MATCH_ALL | MAPPINGS | MATERIALIZED | MAX | META | MIN | MINUTE | MINUTES | MODE | MODIFY | MONTH | MERGE | MINUS | MULTIPLE
     | NAME | NAMES | NEGATIVE | NO | NODE | NODES | NONE | NULLS | NUMBER | NUMERIC
     | OBSERVER | OF | OFFSET | ONLY | OPTIMIZER | OPEN | OPERATE | OPTION | OVERWRITE | OFF
+    // NOVA-BEGIN (NOVA-54 / 9b): see the CRON note above.
+    | OVERLAP_POLICY
+    // NOVA-END
     | PARTITIONS | PASSWORD | PATH | PAUSE | PENDING | PERCENTILE_UNION | PIVOT | PLAN | PLUGIN | PLUGINS | POLICY | POLICIES
     | PERCENT_RANK | PREDICATE | PRECEDING | PRIORITY | PROC | PROCESSLIST | PROFILE | PROFILELIST | PROVIDER | PROVIDERS | PRIVILEGES | PROBABILITY | PROPERTIES | PROPERTY | PIPE | PIPES
     | QUARTER | QUERY | QUERIES | QUEUE | QUOTA | QUALIFY
