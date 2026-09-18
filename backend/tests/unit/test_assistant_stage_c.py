@@ -883,6 +883,86 @@ async def test_privilege_error_classification_reads_the_unredacted_message(fakes
     assert audit.rows and audit.rows[0]["status"] == "ERROR"
 
 
+# ── 6b. Result-warning redaction (NOVA-123, folded into NOVA-120) ──────────
+#
+# ``result.warnings`` is engine text and carries the same egress risk as
+# ``result.error``: on a statement without a result set it can echo the
+# executed engine SQL, which for an ``@stage`` query holds the injected storage
+# credentials. The value is redacted at the source in ``_render_result`` before
+# it enters the bounded summary handed to the model.
+
+
+async def test_result_warning_is_redacted_in_the_model_summary(fakes):
+    service, _audit = fakes
+    service._results = [
+        FakeResult(affected_rows=1, warnings=[CREDENTIAL_BEARING_ENGINE_ERROR])
+    ]
+    tool = QueryExecuteTool()
+
+    outcome = await tool.run(_invocation("SELECT * FROM @stage1.data.csv"), _context())
+
+    assert outcome.ok is True
+    assert CREDENTIAL_VALUE not in outcome.summary
+    # The warning is not dropped — only the value is.
+    assert "***" in outcome.summary
+    assert "aws.s3.access_key" in outcome.summary
+
+
+async def test_result_warning_uses_the_shared_redactor(monkeypatch, fakes):
+    """No second redactor (spec §8): the warning goes through the shared one."""
+    from app.modules.assistant.tools import query_execute as qe
+
+    service, _audit = fakes
+    service._results = [FakeResult(affected_rows=1, warnings=[CREDENTIAL_BEARING_ENGINE_ERROR])]
+    calls: list[str] = []
+
+    def spy(text: str) -> str:
+        calls.append(text)
+        return "***"
+
+    monkeypatch.setattr(qe, "redact_sql_credentials", spy)
+    tool = QueryExecuteTool()
+    outcome = await tool.run(_invocation("SELECT 1"), _context())
+
+    assert CREDENTIAL_BEARING_ENGINE_ERROR in calls
+    assert outcome.summary == json.dumps(
+        {"affected_rows": 1, "warning": "***"}
+    )
+
+
+async def test_result_without_a_warning_is_unchanged(fakes):
+    """A missing warning still renders as ``null``; the fix is not a schema change."""
+    service, _audit = fakes
+    service._results = [FakeResult(affected_rows=2)]
+    tool = QueryExecuteTool()
+
+    outcome = await tool.run(_invocation("SELECT 1"), _context())
+
+    assert outcome.ok is True
+    assert json.loads(outcome.summary) == {"affected_rows": 2, "warning": None}
+
+
+async def test_unredactable_warning_is_withheld_not_leaked(monkeypatch, fakes):
+    from app.modules.assistant.tools import query_execute as qe
+
+    service, _audit = fakes
+    service._results = [FakeResult(affected_rows=1, warnings=[CREDENTIAL_BEARING_ENGINE_ERROR])]
+
+    def boom(text: str) -> str:
+        raise RuntimeError("cannot redact")
+
+    monkeypatch.setattr(qe, "redact_sql_credentials", boom)
+    tool = QueryExecuteTool()
+    outcome = await tool.run(_invocation("SELECT 1"), _context())
+
+    assert outcome.ok is True
+    assert CREDENTIAL_VALUE not in outcome.summary
+    assert (
+        json.loads(outcome.summary)["warning"]
+        == "[statement withheld: it could not be redacted]"
+    )
+
+
 # ── 6. Value-level redaction ────────────────────────────────────────────────
 
 
