@@ -95,9 +95,20 @@ _LEADING_KEYWORD_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)")
 #: sits *inside* a ``SELECT``/``EXPLAIN`` body, so a prefix rule can never see
 #: it. Comments are stripped first (below), because ``SELECT /*x*/ INTO OUTFILE``
 #: must be denied exactly like the plain form.
+#:
+#: ``INTO @`` uses ``\s*`` (zero or more), unlike ``OUTFILE``/``FILES`` which
+#: require ``\s+``. ``@`` is its own lexer token (``StarRocksLex.g4``:
+#: ``AT: '@'``), so no separator is required and ``SELECT 1 INTO@stage1`` is the
+#: same clause as the spaced form — requiring whitespace let the zero-gap
+#: spelling through as ``read_only``. ``@`` is non-word, so the zero gap cannot
+#: fuse ``INTO`` with an identifier and the pattern stays precise. The relaxation
+#: is deliberately *not* applied to ``OUTFILE``/``FILES``: a zero-width match
+#: there would also hit an unquoted identifier-shaped literal (``'INTOOUTFILE'``
+#: normalizes to ``INTOOUTFILE`` under the quote-collapse rule), which is a
+#: value, not a clause.
 _OUTFILE_RE = re.compile(r"\bINTO\s+OUTFILE\b", re.IGNORECASE)
 _INSERT_INTO_FILES_RE = re.compile(r"\bINTO\s+FILES\s*\(", re.IGNORECASE)
-_INTO_STAGE_RE = re.compile(r"\bINTO\s+@", re.IGNORECASE)
+_INTO_STAGE_RE = re.compile(r"\bINTO\s*@", re.IGNORECASE)
 
 
 def _leading_keyword(sql: str) -> str:
