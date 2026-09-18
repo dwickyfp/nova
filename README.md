@@ -655,7 +655,7 @@ Staged delivery — 9a metadata + scheduler + worker + delegate-first execution;
 - [ ] **9a** `nova-scheduler` process — Nova-owned cron/interval tick (`croniter`), separate from the FastAPI backend
 - [x] **9a** `nova-worker` process — executes graph nodes on the owner's connection (delegate-first)
 - [x] **9a** Redis Streams transport between scheduler and worker
-- [x] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause)
+- [ ] **9a** Reconciliation of native task state ↔ `NOVA_SYSTEM` (poll `information_schema.task_runs`; handle the 10-consecutive-failure auto-pause)
 - [ ] **9a** Fix `GET /tasks` to connect as the caller, so the engine's privilege filter is not bypassed
 - [ ] **9b** `CREATE TASK … AFTER / FINALIZE / WHEN / SCHEDULE` added to the existing ANTLR4 `submitTaskStatement` rule (NOVA-BEGIN/NOVA-END patch, `--fuzz=0`, CI drift check); it is a Nova surface, lowered to `SUBMIT TASK`
 - [ ] **9b** Task graph UI
@@ -684,6 +684,45 @@ Credentials are resolved per execution from the live session store and discarded
 with the connection; nothing credential-shaped is written to `CONFIG_TASK*`,
 the stream, or a log. Sixteen new unit tests and eighteen engine integration
 tests cover the acceptance criteria; the runbook is `HOW_TO_RUN.md` §5.
+
+**Progress note (NOVA-37, 2026-09-18).** Native-state reconciliation is
+implemented as an **extension of the existing `Reconciler`** — there is no
+second reconciler. `backend/app/modules/task_orchestration/native.py` reads
+`information_schema.task_runs` for the nodes of running graph runs,
+`information_schema.tasks.SCHEDULE` for the native pause marker, and
+`ADMIN SHOW FRONTEND CONFIG LIKE '%task%'` for the FE config (not
+`SHOW VARIABLES`); `Reconciler.reconcile_native` advances a settled node
+(SUCCESS/FAILED), leaves a node with no native row or a failed read untouched,
+and surfaces an **auto-pause** only at the real threshold — the
+engine's `max_task_consecutive_fail_count` (read live as 10) crossed by Nova's
+own persistent `CONFIG_TASKS.consecutive_fail_count` (reset on success), or a
+native `SCHEDULE` pause/suspend marker — to `NOVA_SYSTEM.AUDIT_LOG`. A single
+failure is quiet, so the alarm stays meaningful (NOVA-42). A native row older
+than the node's `started_at` is ignored, so a stale attempt cannot fail a live
+node. An **empty** read is `MISSING` only when a `SELECT 1` probe on the same
+connection proves the engine is live, so a stale pooled connection after an FE
+death cannot mark healthy work `abandoned` (NOVA-43). A **failed** read is
+always `UNKNOWN` and writes nothing (NOVA-46): the archive failure behind it is
+engine-wide — on a fresh FE the fresh-FE 1064 on `_statistics_.task_run_history`
+fires for every `task_runs` read while ordinary statements still succeed — so it
+carries no per-task information and no trace verdict may be drawn from it. The
+same reasoning applies to a no-row read: `MISSING` maps to no state either
+(NOVA-52), because a node that was just submitted (`SUBMIT TASK` sent, its
+`task_runs` row not yet visible) would otherwise be settled `abandoned` while its
+worker is alive. The lost trace is settled instead by the **durable heartbeat
+path**: `Reconciler.abandon_stale_nodes` (driven by
+`WorkerService.reconcile_once`) abandons a `running` node whose worker heartbeat
+lapsed — a conditional write with a `NODE_ABANDONED` audit — from durable
+`NOVA_SYSTEM` state, independent of the archive (design §3). It is the only
+writer of `NODE_ABANDONED`. That is the "task was running when the FE/worker
+died" scenario AC #2 targets, and it cannot fire on a healthy in-flight node.
+`scan` stays a pure read that only reports candidates. Connection acquisition is inside
+the observer's guard, so an unreachable engine degrades to `UNKNOWN` instead of
+raising (NOVA-44). Criterion 7 is verified against the live engine, which
+reports `task_runs_ttl_second = 604800` (7 days) — not the wrong 86400 premise.
+Forty-two unit + eleven engine integration tests; the runbook is
+`HOW_TO_RUN.md` §5. The checklist item above stays unchecked until this PR is
+merged.
 
 ## Decision Log
 

@@ -336,6 +336,86 @@ Untuk memverifikasi worker mengonsumsi:
 docker exec -it nova-redis redis-cli -a nova_redis_2026 XPENDING nova:tasks:graph_runs nova-workers
 ```
 
+### Rekonsiliasi native (NOVA-37)
+
+Reconciler berjalan **di dalam proses `nova-worker`**, pada cadence yang sama
+dengan reconcile cycle (`WORKER_RECONCILE_INTERVAL_SECONDS`, default 30 detik).
+Tidak ada proses atau kelas reconciler kedua — `Reconciler` yang sudah ada
+diperluas. Setiap pass melakukan tiga hal, berurutan:
+
+1. **Rekonsiliasi state native.** Membaca `information_schema.task_runs` hanya
+   untuk node yang berstatus `running` (bukan setiap task), lalu:
+   - memajukan node yang native-nya sudah selesai → `success`/`failed`;
+   - mengabaikan baris native yang `CREATE_TIME`-nya lebih tua dari
+     `started_at` node — baris sisa attempt sebelumnya tidak boleh mem-failkan
+     node yang masih in-flight di worker lain;
+   - membaca config FE lewat `ADMIN SHOW FRONTEND CONFIG LIKE '%task%'` (bukan
+     `SHOW VARIABLES`) untuk `max_task_consecutive_fail_count`, dan
+     `information_schema.tasks.SCHEDULE` untuk marker pause/suspend;
+   - men-surface **auto-pause hanya pada ambang yang benar** ke
+     `NOVA_SYSTEM.AUDIT_LOG` dengan action `TASK_AUTO_PAUSE_SUSPECTED`, supaya
+     DAG tidak menggantung diam-diam. Ambang dipenuhi bila:
+     - Nova menghitung **10 kegagalan beruntun** (kolom persisten
+       `CONFIG_TASKS.consecutive_fail_count`, di-reset ke 0 tiap sukses) — atau
+       jumlah yang dilaporkan engine di `ERROR_MESSAGE`; **atau**
+     - `SCHEDULE` native menunjukkan marker `PAUSE`/`SUSPEND`.
+
+     Kegagalan tunggal **tidak** memicu alarm auto-pause; kegagalan biasa
+     hanya tercatat sebagai `NODE_FAILED`. Ini mencegah alarm fatigue yang
+     membuat sinyal auto-pause asli tak terbedakan (NOVA-42).
+2. **Run hilang lewat heartbeat.** `Reconciler.abandon_stale_nodes`—dipanggil
+   `WorkerService.reconcile_once`—meng-abandon setiap baris `running` yang
+   `heartbeat_at`-nya sudah lewat timeout worker
+   (`WORKER_HEARTBEAT_TIMEOUT_SECONDS`), di-transisi kondisional ke `abandoned`
+   dengan audit `NODE_ABANDONED`. Inilah sinyal run hilang yang durable: worker
+   mati berhenti menstempel heartbeat, jadi barisnya ditinggalkan dan graph
+   dievaluasi ulang dengan node itu runnable lagi.
+3. **Re-enqueue delivery yang hilang** (Redis flush / worker mati).
+
+Bila engine tidak tersedia, pembacaan mengembalikan `UNKNOWN` dan **tidak**
+menulis apa pun — kegagalan baca transien tidak boleh disalahartikan sebagai
+pekerjaan yang hilang. Dua hal ini khusus dijaga:
+
+- **Hasil kosong belum tentu "run hilang".** Pool koneksi dapat masih membalas
+  dari sesi TCP lama sesaat setelah FE mati, sehingga query "sukses" dengan 0
+  baris. Karena itu hasil kosong dipercaya sebagai `MISSING` **hanya bila probe
+  `SELECT 1` pada koneksi yang sama membuktikan engine hidup**; jika tidak,
+  hasilnya `UNKNOWN` dan tidak ada write. Tanpa ini, run yang masih sehat akan
+  ditandai `abandoned` saat FE mati (NOVA-43).
+- **Kegagalan baca selalu `UNKNOWN`, jangan menebak.** Di FE yang baru,
+  `information_schema.task_runs` gagal dengan 1064 pada
+  `_statistics_.task_run_history` walau engine tetap melayani statement lain.
+  Kegagalan itu **engine-wide dan tidak informatif per task**: ia muncul untuk
+  setiap pembacaan `task_runs`, jadi tidak bisa menentukan apakah trace sebuah
+  task tertentu hilang. Vonis apa pun darinya akan membuang baris sehat
+  (NOVA-43/NOVA-46) — karena itu setiap kegagalan baca dikembalikan sebagai
+  `UNKNOWN` dan tidak ada write. Klasifikasi per-surface (`task_run_history` /
+  `getTaskRuns`) sengaja **tidak** dipakai.
+- **Lost trace diselesaikan lewat jalur heartbeat yang durable.** Karena arsip
+  tidak bisa dipercaya, trace yang hilang disettle bukan dari `task_runs`
+  melainkan dari state `NOVA_SYSTEM`: `list_stale_task_runs` menemukan node
+  `running` yang heartbeat-nya berhenti, `abandon_stale_nodes` men-transisi
+  kondisional ke `abandoned` (dengan audit `NODE_ABANDONED`), lalu graph
+  di-re-enqueue dari state durable (design §3). `scan` sendiri tetap **pure
+  read** — ia hanya melaporkan kandidat, bukan menulis.
+  Ini justru skenario "task berjalan saat FE/worker mati" yang dituju AC #2, dan
+  tidak bisa menyala pada node sehat karena worker terus menstamp heartbeat.
+- **Akuisisi koneksi ikut dijaga.** Kegagalan `db.system_conn()` saat FE tidak
+  dapat dijangkau dikembalikan sebagai `UNKNOWN`/map kosong, bukan exception
+  yang keluar dari `reconcile_native` (NOVA-44).
+
+Idempoten: dua kali reconcile pada state yang sama tidak mengubah apa pun,
+karena setiap transisi adalah conditional write.
+
+Nilai config yang dibaca diverifikasi di engine 4.1.1: `task_runs_ttl_second =
+604800` (7 hari) dan `max_task_consecutive_fail_count = 10`. Task periodik
+**tidak** perlu di-re-arm setelah restart FE — yang direkonsiliasi hanya run
+yang jejaknya hilang.
+
+Operasional: tidak ada setting tambahan yang wajib. Override default 10 dengan
+`WORKER_MAX_CONSECUTIVE_FAIL_COUNT` bila deployment memakai nilai FE yang
+berbeda dan `ADMIN SHOW FRONTEND CONFIG` tidak dapat dibaca.
+
 ---
 
 ## 6. Login ke Nova
@@ -474,6 +554,42 @@ idempotensi, dan restart-safety:
 cd backend
 uv run pytest tests/integration/test_task_worker.py -v
 ```
+
+Test rekonsiliasi native (unit, tanpa engine/Redis):
+
+```bash
+cd backend
+uv run pytest tests/unit/test_task_reconciler.py
+```
+
+Test integrasi rekonsiliasi (butuh StarRocks; skip otomatis bila tidak ada).
+Membuktikan run-hilang ditandai `abandoned` (bukan sukses), pembacaan config
+lewat `ADMIN SHOW FRONTEND CONFIG` (dan toleran bila engine mati), serta
+idempotensi dua pass.
+
+Suite ini **self-contained**: fixture-nya membuat `NOVA_SYSTEM.AUDIT_LOG`
+sendiri, jadi tidak perlu `seed_engine.sh` lebih dulu. Menunjuk engine test
+yang sudah jalan lewat env var:
+
+```bash
+cd backend
+NOVA_ORCH_SR_PORT=29030 NOVA_ORCH_SR_HOST=127.0.0.1 \
+  uv run pytest tests/integration/test_task_reconciler.py -v
+```
+
+Bila engine belum jalan, naikkan stack test lebih dulu (lalu jalankan perintah
+di atas tanpa env var, atau dengan env var yang sesuai):
+
+```bash
+cd backend
+docker compose -f docker-compose.test.yml up -d --wait
+uv run pytest tests/integration/test_task_reconciler.py -v
+```
+
+Catatan: suite test integrasi lain yang menulis `NOVA_SYSTEM.AUDIT_LOG`
+(mis. `test_tasks_rbac_connection.py`) juga membuat tabel itu sendiri. Untuk
+suite warisan yang masih mengandalkan environment pra-seed, jalankan
+`bash tests/integration/seed_engine.sh` setelah stack naik.
 
 ### Frontend
 

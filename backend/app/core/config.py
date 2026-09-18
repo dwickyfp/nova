@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     WORKER_RECONCILE_INTERVAL_SECONDS: float = 30.0
     #: How many graph runs a worker reads from the stream per drain.
     WORKER_STREAM_BATCH_SIZE: int = 10
+    #: Nova's default for the engine's ``max_task_consecutive_fail_count`` (10).
+    #: The reconciler prefers the engine's live value from
+    #: ``ADMIN SHOW FRONTEND CONFIG`` and falls back to this when the engine's
+    #: FE-config surface is unavailable.
+    WORKER_MAX_CONSECUTIVE_FAIL_COUNT: int = 10
 
     # --- Security ---
     SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
