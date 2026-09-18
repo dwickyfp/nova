@@ -69,19 +69,28 @@ export function toConsentPayload(
   return alwaysAllow ? 'allow_session' : 'allow_once'
 }
 
+export type ConsentDecisionResponse = {
+  tool_call_id: string
+  status: string
+  /** True only when this decision set the conversation's read-only grant. */
+  grant_active: boolean
+}
+
 /**
  * Consent is a separate HTTP call, not a frame on the stream (§4, §6). The
  * still-open stream then emits `tool_status` once the decision is applied.
  *
  * The path is `tool-calls/{id}/decision`, scoped by call id only: no thread
  * segment, and the body carries the enum, not an `always_allow` flag (§6.1).
+ * The response's `grant_active` is the only signal that a grant is now live,
+ * so it is returned rather than discarded; the panel needs it to offer reset.
  */
 export async function decideToolCall(
   toolCallId: string,
   decision: ConsentDecision,
   alwaysAllow = false
-): Promise<void> {
-  await api.post(
+): Promise<ConsentDecisionResponse> {
+  return api.post<ConsentDecisionResponse>(
     `/assistant/tool-calls/${encodeURIComponent(toolCallId)}/decision`,
     { decision: toConsentPayload(decision, alwaysAllow) }
   )

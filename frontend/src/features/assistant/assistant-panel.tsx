@@ -1,4 +1,4 @@
-import { Bot, PanelRightClose, SendHorizontal, Square } from 'lucide-react'
+import { Bot, PanelRightClose, SendHorizontal, ShieldCheck, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -26,9 +26,45 @@ export type AssistantPanelProps = {
   onStop?: () => void
   /** Announced to assistive tech on state transitions, never per token. */
   statusMessage?: string | null
+  /** True while a read-only always-allow grant covers this conversation. */
+  grantActive?: boolean
+  onResetPermissions?: () => void
+  /** Disables the reset control while the revoke request is in flight. */
+  resettingPermissions?: boolean
 }
 
 const PANEL_WIDTH = 'w-[22rem]'
+
+function ResetPermissionsBar({
+  active,
+  onReset,
+  resetting,
+}: {
+  active: boolean
+  onReset: () => void
+  resetting: boolean
+}) {
+  if (!active) return null
+
+  return (
+    <div className='flex items-center justify-between gap-2 border-b bg-surface-2 px-3 py-2'>
+      <p className='flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground'>
+        <ShieldCheck aria-hidden='true' className='size-3.5 shrink-0 text-success-strong' />
+        <span className='truncate'>Read-only queries are allowed in this conversation.</span>
+      </p>
+      <Button
+        type='button'
+        size='sm'
+        variant='outline'
+        className='min-h-11 shrink-0'
+        disabled={resetting}
+        onClick={onReset}
+      >
+        {resetting ? 'Resetting' : 'Reset permissions'}
+      </Button>
+    </div>
+  )
+}
 
 function AssistantBody({
   children,
@@ -40,11 +76,19 @@ function AssistantBody({
   streaming,
   onStop,
   statusMessage,
+  grantActive,
+  onResetPermissions,
+  resettingPermissions,
 }: AssistantPanelProps) {
   const hasTranscript = Boolean(children) || Boolean(messages?.length)
 
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
+      <ResetPermissionsBar
+        active={Boolean(grantActive)}
+        onReset={() => onResetPermissions?.()}
+        resetting={Boolean(resettingPermissions)}
+      />
       <ScrollArea className='min-h-0 flex-1'>
         <div className='flex min-h-full flex-col p-3'>
           {children ??
