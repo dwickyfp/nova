@@ -38,6 +38,7 @@ from app.modules.task_orchestration.repository import (
 from app.modules.task_orchestration.repository import (
     task_orchestration_repository as repo,
 )
+from tests.integration._stack import require_shared_stack
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
@@ -88,8 +89,7 @@ async def _has_live_backend() -> bool:
 
 @pytest_asyncio.fixture
 async def orchestration_db(request):
-    if _USE_SHARED_STACK and "docker_services" in request.fixturenames:
-        request.getfixturevalue("docker_services")
+    require_shared_stack(request, enabled=_USE_SHARED_STACK)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
     if not await _has_live_backend():

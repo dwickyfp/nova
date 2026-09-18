@@ -29,6 +29,8 @@ import asyncmy
 import pytest
 import pytest_asyncio
 
+from tests.integration._stack import require_shared_stack
+
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
 SR_PORT = int(_EXPLICIT_PORT or "29030")
@@ -55,8 +57,7 @@ async def _sr_reachable() -> bool:
 
 @pytest_asyncio.fixture
 async def engine(request):
-    if "docker_services" in request.fixturenames:
-        request.getfixturevalue("docker_services")
+    require_shared_stack(request)
     if not await _sr_reachable():
         pytest.skip("StarRocks not reachable")
     conn = await asyncmy.connect(host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD)
