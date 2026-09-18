@@ -21,7 +21,7 @@ Router mounting (`main.py:124`):
 /api/v1/query/*      → query_router
 /api/v1/ml/*         → ml_router
 /api/v1/ai/*         → ai_router + llm_fn_router
-/api/v1/internal/ml/*→ ml_internal_router   (localhost only)
+/api/v1/internal/ml/*→ ml_internal_router   (loopback/trusted-proxy + shared secret)
 ```
 
 ---
@@ -206,7 +206,7 @@ No `@stage` here, so the statement reaches the engine unchanged.
 - A statement is split on `;` before execution; `execute_statements` does not continue past the first failure.
 - `max_rows` is capped at 5000.
 - `success` requires the explicit `error` marker; a client cannot treat "empty result + warning" as failure.
-- The internal ML endpoints (`/api/v1/internal/ml/*`) are unauthenticated and must not be publicly routed.
+- The internal ML endpoints (`/api/v1/internal/ml/*`) require a loopback (or trusted-proxy) peer and the `X-Nova-Internal-Token` shared secret, and fail closed when `NOVA_INTERNAL_TOKEN` is unset (NOVA-90).
 
 ---
 

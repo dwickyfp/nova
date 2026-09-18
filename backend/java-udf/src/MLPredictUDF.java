@@ -22,11 +22,22 @@ public class MLPredictUDF {
         System.getProperty("nova.backend.url",
             "http://host.docker.internal:8000/api/v1/internal/ml/predict");
 
+    // Pre-shared secret for Nova's authenticated internal channel. Supplied by
+    // the deployment (NOVA_INTERNAL_TOKEN on the backend); never committed.
+    private static final String INTERNAL_TOKEN =
+        System.getProperty("nova.backend.token",
+            System.getenv("NOVA_INTERNAL_TOKEN"));
+
+    private static final String INTERNAL_TOKEN_HEADER = "X-Nova-Internal-Token";
+
     private static final int TIMEOUT_MS = 30000;
 
     public String evaluate(String modelAlias, String featuresJson) {
         if (modelAlias == null || featuresJson == null) {
             return null;
+        }
+        if (INTERNAL_TOKEN == null || INTERNAL_TOKEN.isEmpty()) {
+            return "ERROR: NOVA_INTERNAL_TOKEN is not configured for the ML_PREDICT UDF";
         }
         try {
             // Build request body
@@ -38,6 +49,7 @@ public class MLPredictUDF {
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty(INTERNAL_TOKEN_HEADER, INTERNAL_TOKEN);
             conn.setConnectTimeout(TIMEOUT_MS);
             conn.setReadTimeout(TIMEOUT_MS);
             conn.setDoOutput(true);

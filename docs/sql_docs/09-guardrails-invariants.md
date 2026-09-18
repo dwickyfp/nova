@@ -188,7 +188,7 @@ Honest boundaries:
 - The guard is pattern-based, not a parser. It blocks the specific protected-object operations it knows; it is not a general SQL sandbox.
 - `NOVA_SYSTEM` is not made read-only. A privileged user with a direct StarRocks connection can write to it.
 - A destructive statement with `confirm_destructive=true` **is executed** — confirmation is not a safety check on the effect, only an acknowledgement.
-- The internal ML prediction endpoints are unauthenticated and rely on being bound to localhost.
+- The internal ML prediction endpoints require a loopback (or trusted-proxy) peer plus the `X-Nova-Internal-Token` shared secret; they fail closed when `NOVA_INTERNAL_TOKEN` is unset. Enforcement is in code (`ml_engine/internal_auth.py`), not deployment documentation (NOVA-90).
 
 ---
 
