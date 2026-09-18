@@ -21,7 +21,7 @@ import json
 import pytest
 
 from app.modules.assistant import events
-from app.modules.assistant.consent import ConsentBroker
+from app.modules.assistant.consent import ConsentBroker, ConsentConflictError
 from app.modules.assistant.provider import AssistantProviderClient, AssistantProviderError
 from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.service import AssistantLoop, LoopContext
@@ -526,6 +526,47 @@ async def test_consent_broker_forgets_the_thread_once_resolved():
     broker.open("c1", thread_id="t1", user_name="alice")
     broker.resolve("c1", True, user_name="alice")
     assert broker.thread_for("c1") is None
+
+
+# ── NOVA-121: a duplicate tool_call_id must not clobber a pending entry ──────
+
+
+async def test_consent_broker_rejects_a_duplicate_tool_call_id():
+    """The second ``open`` for a pending id raises and touches nothing."""
+    broker = ConsentBroker()
+    first = broker.open("dup", thread_id="t1", user_name="alice")
+
+    with pytest.raises(ConsentConflictError):
+        broker.open("dup", thread_id="t2", user_name="bob")
+
+    # The first entry is intact — same owner, same future.
+    assert broker.owner_of("dup") == ("t1", "alice")
+    assert broker.resolve("dup", True, user_name="alice") is True
+    assert await first is True
+
+
+async def test_duplicate_open_does_not_orphan_the_first_future():
+    """The original future must still resolve — not hang to the loop budget."""
+    broker = ConsentBroker()
+    first = broker.open("dup", thread_id="t1", user_name="alice")
+    with pytest.raises(ConsentConflictError):
+        broker.open("dup", thread_id="t1", user_name="alice")
+
+    assert first.done() is False
+    broker.resolve("dup", False, user_name="alice")
+    assert await first is False
+
+
+async def test_clashing_id_is_reusable_once_the_first_entry_is_gone():
+    """The conflict is only while pending; a resolved id can be opened again."""
+    broker = ConsentBroker()
+    broker.open("reuse", thread_id="t1", user_name="alice")
+    broker.resolve("reuse", True, user_name="alice")
+
+    second = broker.open("reuse", thread_id="t2", user_name="bob")
+    assert broker.owner_of("reuse") == ("t2", "bob")
+    assert broker.resolve("reuse", True, user_name="bob") is True
+    assert await second is True
 
 
 # ── NOVA-70: consent resolution is owner-scoped ──────────────────────────────
