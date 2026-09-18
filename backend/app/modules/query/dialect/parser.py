@@ -815,19 +815,97 @@ def _token_index_at(tokens: list, position: int) -> int | None:
     return None
 
 
+def _stage_path_atom_glue_from_tokens(tokens: list, index: int) -> tuple[list[str], list[str], int]:
+    """``(closed, opened, consumed)`` for one ``stagePathAtom`` at ``index``.
+
+    The token-level mirror of :func:`_stage_path_atom_glue` /
+    :func:`_decimal_atom_glue`. A plain atom (identifier, ``*``, integer) is
+    literal text for the current segment and opens nothing. A fused decimal
+    (``DECIMAL_VALUE`` / ``DOT_IDENTIFIER``) is a ``decimalAtom``: its pieces
+    ``.`` split into segments, and a *trailing-dot* token (``2.``) also absorbs
+    the following atom — the grammar's ``decimalAtom : (DECIMAL_VALUE |
+    DOT_IDENTIFIER) stagePathAtom?`` — which opens the next segment
+    (``@stage-2.data`` reads ``stage-2`` then ``data``).
+    """
+    token = tokens[index]
+    fused = _fused_decimal_parts(token)
+    if fused is None:
+        return [token.text], [], 1
+
+    closed = fused[:1]
+    opened = fused[1:]
+    consumed = 1
+    # A trailing dot is the separator the lexer fused onto the *end* of the
+    # token, so the atom that follows it is the ``stagePathAtom?`` of this
+    # ``decimalAtom`` and belongs to the next segment.
+    if token.text.endswith(".") and index + 1 < len(tokens) and _is_segment_atom(tokens[index + 1]):
+        tail_closed, tail_opened, tail_used = _stage_path_atom_glue_from_tokens(tokens, index + 1)
+        opened = opened + tail_closed + tail_opened
+        consumed += tail_used
+    return closed, opened, consumed
+
+
+def _stage_segment_from_tokens(tokens: list, index: int) -> tuple[list[str], int]:
+    """The path segments of one ``stageSegment`` token run, and where it ends.
+
+    The token-level mirror of :func:`_stage_segment_parts`:
+    ``stageSegment : stagePathAtom (MINUS_SYMBOL stagePathAtom)*``. A hyphen is
+    a literal within the segment (``daily-load-2`` is one segment), while a
+    trailing-dot fused decimal inside it closes the segment and opens the next
+    (``stage-2.data`` is two segments). The run starts at an atom and continues
+    only while a ``-`` and another atom follow, so the returned index is the
+    first token the reference level should look at again.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if current:
+            segments.append("".join(current))
+            current.clear()
+
+    def take_atom(at: int) -> int:
+        closed, opened, consumed = _stage_path_atom_glue_from_tokens(tokens, at)
+        current.extend(closed)
+        if opened:
+            flush()
+            current.extend(opened)
+        return at + consumed
+
+    if index >= len(tokens) or not _is_segment_atom(tokens[index]):
+        return [], index
+
+    index = take_atom(index)
+    while (
+        index + 1 < len(tokens)
+        and tokens[index].text == "-"
+        and _is_segment_atom(tokens[index + 1])
+    ):
+        current.append("-")
+        index = take_atom(index + 1)
+    flush()
+    return segments, index
+
+
 def _reference_from_tokens(tokens: list, start_index: int, sql: str) -> StageReference | None:
     """The reference shape beginning at ``tokens[start_index]``, or ``None``.
 
     Shared by the Nova-surface scan and :func:`stage_reference_at`, so the
     proxy's decision to leave a reference alone is made by the same token logic
-    that builds the engine's registry.
+    that builds the engine's registry. The grammar is the source of truth —
+    ``stageReference : AT stageSegment (stageSeparator stageSegment |
+    fusedDecimal)* '/'?`` — so the scan walks that rule token by token rather
+    than inventing a second one:
 
-    A numeric path segment whose leading ``.`` the lexer fused into the token
-    (``@stage1.2024.csv`` → ``stage1`` ``.2024`` ``.`` ``csv``, or the
-    ``.2024_01`` ``DOT_IDENTIFIER``) carries its separator *inside* the token, so
-    it continues the reference directly — exactly as the grammar's ``decimalAtom``
-    glue does (NOVA-132). A bare ``.`` / ``/`` separator token continues it as
-    before.
+    * a ``stageSegment`` is one or more atoms joined by ``MINUS_SYMBOL``
+      (``@daily-load-2`` is a single name), split where a trailing-dot decimal
+      hid a ``.`` separator inside it (``@stage-2.data`` → ``stage-2`` / ``data``);
+    * a ``stageSeparator`` (``.`` / ``/``) starts the next segment;
+    * a fused decimal (``.2024``, ``.2024_01``, ``@stage1.2024.01``) is a
+      separator+segment pair the lexer glued into one token, so it continues the
+      reference directly and does **not** absorb a following atom (``fusedDecimal``,
+      not ``decimalAtom``) — that is what keeps ``FROM @stage1.2024 t``'s ``t``
+      a table alias.
     """
     if start_index >= len(tokens) or tokens[start_index].text != "@":
         return None
@@ -838,24 +916,32 @@ def _reference_from_tokens(tokens: list, start_index: int, sql: str) -> StageRef
     if index >= len(tokens) or not _is_segment_atom(tokens[index]):
         return None
 
-    segments = [tokens[index].text]
-    index += 1
+    segments, index = _stage_segment_from_tokens(tokens, index)
+    if not segments:
+        return None
+
     while index < len(tokens):
-        fused = _fused_decimal_parts(tokens[index])
-        if fused is not None:
-            # The separator is the fused token's own leading dot: the pieces are
-            # path segments and the reference continues.
-            segments.extend(fused)
-            index += 1
+        token = tokens[index]
+        if token.text in _STAGE_SEPARATORS:
+            if index + 1 >= len(tokens):
+                break
+            following = tokens[index + 1]
+            if following.text == "@" or not _is_segment_atom(following):
+                break
+            more, next_index = _stage_segment_from_tokens(tokens, index + 1)
+            if not more:
+                break
+            segments.extend(more)
+            index = next_index
             continue
-        separator = tokens[index]
-        if separator.text not in _STAGE_SEPARATORS or index + 1 >= len(tokens):
+        # A fused decimal stands in for one ``stageSeparator stageSegment`` pair
+        # (its own leading ``.`` is the separator), so its pieces are path
+        # segments; it never absorbs the atom after it.
+        fused = _fused_decimal_parts(token)
+        if fused is None:
             break
-        following = tokens[index + 1]
-        if following.text == "@" or not _is_segment_atom(following):
-            break
-        segments.append(following.text)
-        index += 2
+        segments.extend(fused)
+        index += 1
 
     if index < len(tokens) and tokens[index].text == "/":
         index += 1
