@@ -124,7 +124,7 @@ must keep Nova's data in an open format.
 | Item | Capability | Strategy | Effort | Prio | Depends on | Exit criteria (measurable) |
 |---|---|---|---|---|---|---|
 | **#13** | ML registry / AI SQL functions | `EMBED_OPEN_SOURCE` (MLflow) | L | P1 | #9 (for artifact-format parity), Phase 2 audit | Full proposal in §3. `CREATE ML_MODEL` resolves a version through an **MLflow model URI**; `CONFIG_*` holds only the pointer; MLflow runs as a sidecar; artifacts land in the stage S3/MinIO; zero credential in any Nova store or log. |
-| **#10** | Inverted index / full-text search | `COMPOSE_STARROCKS` | M | P3 | #11 (shared-data) | On a shared-data cluster: index create/alter/drop; `MATCH_ANY`/`MATCH_ALL` with relevance scoring; the feature is **absent with an explicit reason** on shared-nothing rather than silently failing. |
+| **#10** | Inverted index / full-text search | `COMPOSE_STARROCKS` | M | P3 | nothing (corrected by NOVA-111) | ✅ Shipped NOVA-111. Index create/list/drop; `MATCH`/`MATCH_ANY`/`MATCH_ALL` with the engine's filter semantics; engine preconditions reported via `/capabilities`. The "shared-data only" claim was wrong — verified on the pinned shared-nothing `4.1.4-4a9848e` build (§4 correction). Relevance scoring is `DEFER` (not on the 4.1.4 predicate path). |
 | **#17** | Cluster monitor | `WRAP_STARROCKS` | M | P2 | nothing | FE/BE/CN node inventory, health, and per-node metrics; alert threshold configuration; the existing metrics-only endpoint becomes a real monitor page. |
 | **#11** | Storage volumes (shared-data) | `WRAP_STARROCKS` | M | P3 | nothing | `CREATE STORAGE VOLUME` CRUD; volume-to-database binding; default volume management; volume credentials never appear in an API response or log. |
 
@@ -338,7 +338,7 @@ These are explicitly **not** in v1. Each is a decision, not an omission.
 | **Unifying MLflow RBAC with StarRocks RBAC** | A cross-system identity model is a security project, not an integration project. | An approved identity/federation design exists. |
 | **MLflow UI exposed to end users** | v1 routes all access through the Nova backend. | The RBAC unification above lands. |
 | **Distributed / GPU training inside Nova** | MLflow covers tracking and serving; training compute is a separate concern with no current requirement. | A training-scale requirement is stated. |
-| **Inverted index on shared-nothing** | The engine feature is shared-data only. | Nova moves to shared-data as a deployment mode. |
+| ~~**Inverted index on shared-nothing**~~  | **Corrected by NOVA-111 (probe against `4.1.4-4a9848e`):** this was wrong. The engine's full-text inverted index **is** available on shared-nothing — `ALTER TABLE ... ADD INDEX ... USING GIN` succeeds and `MATCH`/`MATCH_ANY`/`MATCH_ALL` filter correctly. CLucene is the default implementation there; the v4.1 *built-in* implementation is what shared-data requires (and is also available on shared-nothing via `"imp_lib"="builtin"`). Nova ships the surface. | Shipped in NOVA-111. |
 | **A Nova-native ML registry** | Replaced by R1. | Not planned — this is the decision that R1 closed. |
 
 ## 5. Items marked `DEFER`

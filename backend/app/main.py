@@ -27,6 +27,7 @@ from app.modules.explorer.router import router as explorer_router
 from app.modules.external_catalogs.router import router as external_catalogs_router
 from app.modules.functions.router import router as functions_router
 from app.modules.governance.router import router as governance_router
+from app.modules.indexes.router import router as indexes_router
 from app.modules.llm_functions.router import router as llm_fn_router
 from app.modules.migration.router import router as migration_router
 from app.modules.ml_engine.internal_router import router as ml_internal_router
@@ -155,6 +156,7 @@ def create_app() -> FastAPI:
     app.include_router(query_router, prefix=f"{prefix}/query", tags=["query"])
     app.include_router(objects_router, prefix=f"{prefix}/objects", tags=["objects"])
     app.include_router(tables_router, prefix=f"{prefix}/tables", tags=["tables"])
+    app.include_router(indexes_router, prefix=f"{prefix}/indexes", tags=["indexes"])
     app.include_router(views_router, prefix=f"{prefix}/views", tags=["views"])
     app.include_router(stages_router, prefix=f"{prefix}/stages", tags=["stages"])
     app.include_router(explorer_router, prefix=f"{prefix}/explorer", tags=["explorer"])
