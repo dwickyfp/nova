@@ -15,6 +15,7 @@ Endpoints under /api/v1/ml:
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import get_current_user
+from app.core.security import decrypt_password
 from app.modules.ml_engine.schemas import (
     BatchPredictRequest,
     BatchPredictResponse,
@@ -59,7 +60,10 @@ async def train_model(
             hyperparameters=req.hyperparameters,
             test_size=req.test_size,
             database_name=req.database_name,
-            created_by=user.get("username", "root"),
+            created_by=user["username"],
+            username=user["username"],
+            password=decrypt_password(user["encrypted_password"]),
+            role=user.get("active_role"),
         )
         return result
     except ValueError as e:

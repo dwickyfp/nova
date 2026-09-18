@@ -130,6 +130,7 @@ class MLEngineService:
         username: str | None = None,
         password: str | None = None,
         role: str | None = None,
+        as_system: bool = False,
     ) -> dict:
         """Train a model from SQL query data.
 
@@ -137,6 +138,14 @@ class MLEngineService:
         2. Train sklearn model on the data
         3. Evaluate on test split
         4. Serialize model to base64, store in ML_MODEL_VERSIONS
+
+        The caller's ``training_sql`` runs as the caller by default. Every
+        HTTP-facing caller must supply ``username``/``password`` (plus ``role``)
+        so StarRocks RBAC stays authoritative; a missing identity fails closed
+        rather than silently falling back to the root connection (NOVA-104).
+        The root/system path is reachable only when a caller passes
+        ``as_system=True`` explicitly, which is reserved for internal flows
+        that genuinely have no user session.
         """
         # 1. Fetch training data from StarRocks. Worksheet-triggered training
         # uses the logged-in user's connection so StarRocks RBAC remains authoritative.
@@ -153,16 +162,21 @@ class MLEngineService:
         )
         stored_training_sql = self._redacted_user_sql(engine_sql)
 
-        if username is not None and password is not None:
-            rows, columns = await self._fetch_training_data_as_user(
-                username=username,
-                password=password,
-                role=role,
+        if as_system:
+            rows, columns = await self._fetch_training_data_as_system(
                 database_name=database_name,
                 training_sql=engine_sql,
             )
         else:
-            rows, columns = await self._fetch_training_data_as_system(
+            if username is None or password is None:
+                raise ValueError(
+                    "Training requires caller credentials; the root connection is "
+                    "only reachable from an explicit internal caller (as_system=True)"
+                )
+            rows, columns = await self._fetch_training_data_as_user(
+                username=username,
+                password=password,
+                role=role,
                 database_name=database_name,
                 training_sql=engine_sql,
             )
