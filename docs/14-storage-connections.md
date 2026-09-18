@@ -24,8 +24,9 @@ UI                       → read-only view of connections (no edit)
 | Storage type | `nova.yaml` | ❌ |
 | Endpoint | `nova.yaml` | ❌ |
 | Bucket | `nova.yaml` | ❌ |
-| Access key | `nova.yaml` + `.env` | ❌ |
-| Secret key | `nova.yaml` + `.env` | ❌ |
+| Access key | `nova.yaml` + `.env`, or external secret store | ❌ |
+| Secret key | `nova.yaml` + `.env`, or external secret store | ❌ |
+| Secret reference | `nova.yaml` (`secret_ref`) — the reference only | ❌ |
 | Stage name | `NOVA_SYSTEM.CONFIG_STAGES` | ✅ |
 | Stage prefix | `NOVA_SYSTEM.CONFIG_STAGES` | ✅ |
 
@@ -41,6 +42,64 @@ UI                       → read-only view of connections (no edit)
 | **gcs** | Google Cloud | GCS API |
 | **oss** | Alibaba OSS | S3-compatible |
 | **ceph** | Ceph | S3-compatible |
+
+---
+
+## Secret References (external secret stores)
+
+A connection can name its credential in an external secret store instead of
+carrying the value in `nova.yaml`. Nova persists the **reference**, never the
+value. AWS Secrets Manager is the first supported provider.
+
+```yaml
+storage:
+  connections:
+    aws_prod:
+      type: s3
+      endpoint: ""
+      bucket: my-s3-bucket
+      region: us-east-1
+      path_style: false
+      ssl: true
+      secret_ref: arn:aws:secretsmanager:us-east-1:123456789012:secret:nova/s3-prod
+      # access_key / secret_key are intentionally omitted — the reference is
+      # the only credential source for this connection.
+```
+
+Rules:
+
+- **Reference-only.** `secret_ref` is the durable artefact. No secret value is
+  written to `nova.yaml`, `NOVA_SYSTEM`, an audit row, a response, or a log.
+- **Fail-closed.** If the provider errors, times out, or returns an
+  unparseable payload, resolution raises and the query fails with a redacted
+  error. Nova **never** falls back to the inline `nova.yaml` credentials — a
+  connection that opted into a reference must not silently authenticate as a
+  different principal.
+- **No stale cache.** A short in-process TTL cache collapses repeated lookups
+  within a query. A failure is not cached, so the next call retries the
+  provider rather than serving a value that could not be refreshed.
+- **Audited fact.** Each resolution writes an audit row
+  (`event_type = 'secret_fetch'`) carrying the provider and reference — never a
+  value.
+- **Default path unchanged.** A connection without `secret_ref` reads
+  `access_key`/`secret_key` from `nova.yaml` exactly as before; no provider is
+  contacted.
+
+### Accepted payload shapes (AWS Secrets Manager)
+
+| Shape | Example |
+|-------|---------|
+| JSON object | `{"access_key": "…", "secret_key": "…", "session_token": "…"}` |
+| JSON with id aliases | `{"access_key_id": "…", "secret_key_id": "…"}` |
+| Plain pair | `<access_key>:<secret_key>` |
+
+Credentials come from the standard boto3 chain (env vars, instance profile,
+`AWS_PROFILE`); the adapter constructs no client until a reference is resolved,
+so importing Nova never requires AWS credentials.
+
+References may be prefixed with a scheme (`aws://my-secret`) or passed as a bare
+ARN/name, which defaults to AWS Secrets Manager. Azure Key Vault and GCP Secret
+Manager are **not** implemented yet.
 
 ---
 
