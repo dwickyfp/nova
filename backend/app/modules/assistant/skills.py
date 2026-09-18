@@ -60,7 +60,8 @@ _SQL_DOCS_DIR = _REPO_ROOT / "docs" / "sql_docs"
 #: common rule of thumb.
 _CHARS_PER_TOKEN = 4
 
-#: Default budget for the assembled primer, in estimated tokens (guide §4.2).
+#: Default budget for the assembled skill (seed + primer), in estimated tokens
+#: (guide §4.2). The seed counts because it ships with every request.
 DEFAULT_SKILL_TOKEN_BUDGET = 2000
 
 #: Explicit delimiters marking retrieved text as data, not instructions.
@@ -77,7 +78,13 @@ _ASSIGNMENT_RE = re.compile(
     r"(['\"`]?)([^'\"`\s,)]+)\1",
     re.IGNORECASE,
 )
-_PLACEHOLDER_VALUES = {"***", "<value>", "<cred>", "K", "S", "k", "s", "...", "…"}
+_PLACEHOLDER_VALUES = {"***", "K", "S", "k", "s", "...", "…"}
+
+#: ``docs/sql_docs/`` marks every non-secret value with angle brackets
+#: (``<value>``, ``<placeholder>``, ``<name>``, …). Treating any ``<…>`` value as
+#: a placeholder matches the corpus's own convention instead of enumerating
+#: spellings, so a new doc cannot trip the screen with a legitimate placeholder.
+_ANGLE_PLACEHOLDER_RE = re.compile(r"^<[^<>]+>$")
 
 
 class SkillError(RuntimeError):
@@ -89,13 +96,18 @@ def _estimate_tokens(text: str) -> int:
     return len(text) // _CHARS_PER_TOKEN
 
 
+def _is_placeholder(value: str) -> bool:
+    """True when ``value`` is a documentation placeholder, not a secret."""
+    return value in _PLACEHOLDER_VALUES or bool(_ANGLE_PLACEHOLDER_RE.match(value))
+
+
 def contains_credential_shape(text: str) -> bool:
     """True when ``text`` carries a populated credential assignment.
 
     Placeholders (``'***'``, ``'K'``, ``'S'``, ``<value>``) are documentation,
     not secrets, and do not count. A real-looking value does.
     """
-    return any(match.group(2) not in _PLACEHOLDER_VALUES for match in _ASSIGNMENT_RE.finditer(text))
+    return any(not _is_placeholder(match.group(2)) for match in _ASSIGNMENT_RE.finditer(text))
 
 
 @dataclass(frozen=True)
@@ -113,7 +125,11 @@ class SkillSection:
 
 @dataclass(frozen=True)
 class SkillMetadata:
-    """What the assembled skill was built from, and what it cost."""
+    """What the assembled skill was built from, and what it cost.
+
+    ``tokens`` is the whole default skill — seed plus primer — and is what the
+    budget check enforces, so the reported number is the number sent.
+    """
 
     revision: str
     token_budget: int
@@ -290,11 +306,14 @@ class NovaSqlSkill:
         self.metadata = SkillMetadata(
             revision=_source_revision(),
             token_budget=token_budget,
-            tokens=self._primer_tokens(),
+            tokens=self._seed_tokens() + self._primer_tokens(),
             document_count=len(_SOURCE_DOCS),
             sections=tuple(section.name for section in self._sections),
         )
         self._enforce_budget()
+
+    def _seed_tokens(self) -> int:
+        return _estimate_tokens(self._seed_prompt.strip())
 
     def _assemble(self) -> tuple[SkillSection, ...]:
         sections: list[SkillSection] = []
@@ -308,20 +327,25 @@ class NovaSqlSkill:
         return sum(section.tokens for section in self._sections)
 
     def _enforce_budget(self) -> None:
-        """Fail closed when the primer exceeds its budget, naming the section.
+        """Fail closed when the assembled skill exceeds its budget.
 
-        The message lists the offending section so a docs change that grows the
-        primer cannot land without a deliberate T-E1 refresh.
+        ``metadata.tokens`` is the whole default skill — seed plus primer — so
+        the number reported is the number sent. The message lists the primer
+        sections (and the seed) so a growth cannot land without a deliberate
+        T-E1 refresh.
         """
         if self.metadata.tokens > self._token_budget:
             offenders = ", ".join(
-                f"{section.name} ({section.tokens} tokens)"
-                for section in self._sections
-                if section.tokens > 0
+                [f"seed ({self._seed_tokens()} tokens)"]
+                + [
+                    f"{section.name} ({section.tokens} tokens)"
+                    for section in self._sections
+                    if section.tokens > 0
+                ]
             )
             raise SkillError(
-                f"skill primer exceeds its {self._token_budget}-token budget: "
-                f"{self.metadata.tokens} tokens from sections [{offenders}]"
+                f"skill exceeds its {self._token_budget}-token budget: "
+                f"{self.metadata.tokens} tokens from [{offenders}]"
             )
 
     @property
@@ -399,7 +423,7 @@ def _source_revision() -> str:
 
 
 #: Process-wide default skill. Assembled once at import; a missing doc set or an
-#: oversized primer raises at startup rather than degrading silently at request
+#: over-budget skill raises at startup rather than degrading silently at request
 #: time.
 default_skill = NovaSqlSkill()
 

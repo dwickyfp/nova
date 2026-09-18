@@ -9,9 +9,13 @@ C's tool execution (issue NOVA-78):
 
 * AC #4 — no provider request built with the skill carries a credential shape;
 * AC #5 — assembly is deterministic (same inputs → byte-identical prompt);
-* AC #6 — the token budget is enforced and the failure names the section;
+* AC #6 — the token budget is enforced (seed included) and the failure names
+  the section;
 * AC #7 (assembly portion) — the existing loop keeps the seed verbatim and the
   default injection does not change loop control flow.
+
+Plus regressions from QA on PR #83: every `_SOURCE_DOCS` doc must be retrievable
+(Finding 1) and the enforced budget must count the seed prompt (Finding 2).
 """
 
 from __future__ import annotations
@@ -22,11 +26,13 @@ from app.modules.assistant.service import (
     _default_skill_prompt,
 )
 from app.modules.assistant.skills import (
+    _SOURCE_DOCS,
     DEFAULT_SKILL_PROMPT,
     EXCERPT_CLOSE,
     EXCERPT_OPEN,
     NovaSqlSkill,
     SkillError,
+    _estimate_tokens,
     contains_credential_shape,
     default_skill,
 )
@@ -101,11 +107,25 @@ def test_default_primer_is_within_budget():
     assert default_skill.metadata.token_budget == 2000
 
 
-def test_budget_violation_names_the_offending_section():
+def test_budget_counts_the_seed_prompt():
+    """The enforced/reported number is the whole skill, seed included.
+
+    Regression for QA Finding 2: the budget previously covered only the primer,
+    so a future seed expansion could blow the budget while the metadata and the
+    `tokens <= token_budget` assertion stayed green.
+    """
+    seed_tokens = _estimate_tokens(_DEFAULT_SYSTEM_PROMPT.strip())
+    primer_tokens = sum(section.tokens for section in default_skill.sections)
+    assert default_skill.metadata.tokens == seed_tokens + primer_tokens
+    assert default_skill.metadata.tokens > primer_tokens
+
+
+def test_budget_violation_names_the_seed_and_a_section():
     with __import__("pytest").raises(SkillError) as excinfo:
         NovaSqlSkill(token_budget=10)
     message = str(excinfo.value)
     assert "exceeds" in message
+    assert "seed" in message
     assert "identity" in message
     assert "tokens" in message
 
@@ -169,6 +189,35 @@ def test_retrieve_document_reads_on_demand():
     assert len(excerpt) > len(default_skill.retrieve("statement-catalog"))
 
 
+def test_retrieve_document_succeeds_for_every_source_doc():
+    """Every doc the skill lists as a source must be retrievable.
+
+    Regression for QA Finding 1: `09-guardrails-invariants.md` was in
+    `_SOURCE_DOCS` but its redaction worked-example matched the credential-shape
+    screen, so `retrieve_document` raised `SkillError` for it permanently. The
+    previous test only exercised `11`, which is why it escaped.
+    """
+    for name in _SOURCE_DOCS:
+        excerpt = default_skill.retrieve_document(name)
+        assert excerpt.startswith(EXCERPT_OPEN), name
+        assert excerpt.endswith(EXCERPT_CLOSE), name
+
+
+def test_guardrails_doc_is_credential_free_by_construction():
+    """The guide §4.3 invariant: no source doc carries a populated credential."""
+    for name in _SOURCE_DOCS:
+        assert not contains_credential_shape(_read_sql_doc(name)), name
+
+
+def test_angle_bracket_placeholders_are_not_credentials():
+    """The corpus marks every non-secret value with ``<…>``."""
+    from app.modules.assistant.skills import contains_credential_shape
+
+    assert not contains_credential_shape('"aws.s3.access_key" = "<placeholder>"')
+    assert not contains_credential_shape("aws.s3.secret_key=<value>")
+    assert contains_credential_shape('"aws.s3.access_key" = "AKIAIOSFODNN7EXAMPLE"')
+
+
 def test_retrieve_document_rejects_an_unlisted_file():
     import pytest
 
@@ -177,6 +226,12 @@ def test_retrieve_document_rejects_an_unlisted_file():
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _read_sql_doc(filename: str) -> str:
+    from app.modules.assistant import skills as skills_module
+
+    return (skills_module._SQL_DOCS_DIR / filename).read_text(encoding="utf-8")
 
 
 class _NullProvider:

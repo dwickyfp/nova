@@ -200,9 +200,10 @@ denied call). T-E1 turns that static seed into a **composed** skill:
 ```
 
 **Size discipline.** The skill is a *primer*, not a corpus dump. The budget is
-`DEFAULT_SKILL_TOKEN_BUDGET = 2000` estimated tokens, enforced at assembly (see
-§4.5). Full documents are **retrieved on demand**, not pasted wholesale —
-retrieval is the mechanism, the excerpt is the payload.
+`DEFAULT_SKILL_TOKEN_BUDGET = 2000` estimated tokens for the **whole default
+skill — seed plus primer**, enforced at assembly (see §4.5). Full documents are
+**retrieved on demand**, not pasted wholesale — retrieval is the mechanism, the
+excerpt is the payload.
 
 The assembler lives in `backend/app/modules/assistant/skills.py`:
 
@@ -226,8 +227,10 @@ advisory primer from its own instructions.
 - Retrieved excerpts enter the provider request **as data**, clearly delimited —
   never as instructions the model must follow beyond the skill's own rules.
 - A skill excerpt must never contain a credential. `docs/sql_docs/` is
-  credential-free by construction (placeholders `'K'`, `'S'`, `'***'`), and
-  any new excerpt is checked before it is admitted.
+  credential-free by construction (placeholders `'K'`, `'S'`, `'***'`, and the
+  angle-bracket form `<value>`/`<placeholder>`), and any excerpt — primer
+  section or full retrieved document — is screened before it is admitted. A
+  populated credential assignment raises `SkillError` instead of shipping.
 
 ### 4.4 What the skill must never do
 
@@ -255,13 +258,16 @@ discipline in `backend/app/modules/assistant/skills.py`:
   skill's dialect primer and requires a T-E1 refresh: update the matching
   `_PRIMER_SPECS` section, then re-run
   `uv run pytest tests/unit/test_assistant_skill.py`.
-- The budget is enforced at assembly: `NovaSqlSkill` raises `SkillError` naming
-  every section and its token cost when the primer exceeds
-  `DEFAULT_SKILL_TOKEN_BUDGET`. A doc change that grows the primer therefore
-  fails a test rather than silently expanding every request.
+- The budget is enforced at assembly over the **whole skill** (seed + primer):
+  `NovaSqlSkill` raises `SkillError` naming the seed and every primer section
+  with its token cost when the total exceeds `DEFAULT_SKILL_TOKEN_BUDGET`. A doc
+  change that grows the primer, or a seed expansion, therefore fails a test
+  rather than silently expanding every request.
 - Full documents are not pasted into the default prompt. `retrieve_document`
   reads one on demand, screened for credential shapes and wrapped as a
-  delimited data excerpt, so the primer stays a primer.
+  delimited data excerpt, so the primer stays a primer. Every name in
+  `_SOURCE_DOCS` is retrievable — a test asserts it, so a source doc cannot
+  silently become unreachable.
 - This is a review gate, not a runtime check in v1. The staleness strategy is
   explicitly listed as not-yet-exercised in the design spec §12.
 
