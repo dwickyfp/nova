@@ -93,12 +93,14 @@ _PARTITION = re.compile(
 #: rebuilt from the original, so a ``)`` or ``;`` cannot close the clause.
 _PARTITION_VALUE = re.compile(r"^(?:\[|VALUES?\s+\[|LESS\s+THAN)", re.IGNORECASE)
 
-#: Index kinds Nova can build with explicit ``USING <kind>`` syntax. Bitmap and
-#: Bloom Filter indexes use the plain ``ADD INDEX`` form; GIN is the inverted
-#: (full-text) index and NGRAM_BF is the n-gram bloom filter. Kept as an explicit
-#: allow-list so a caller cannot smuggle an unknown index implementation keyword
-#: into the statement (NOVA-111).
-_INDEX_KINDS = frozenset({"BITMAP", "GIN", "NGRAM_BF", "BLOOM_FILTER"})
+#: Index kinds Nova can build with explicit ``USING <kind>`` syntax. Bitmap uses
+#: the plain ``ADD INDEX`` form; GIN is the inverted (full-text) index and
+#: NGRAM_BF is the n-gram bloom filter. Kept as an explicit allow-list so a caller
+#: cannot smuggle an unknown index implementation keyword into the statement
+#: (NOVA-111). Every entry here must have a branch in
+#: ``indexes.router.build_create_index_sql``; ``BLOOM_FILTER`` is deliberately
+#: absent — no builder exists for it and no engine syntax was verified (NOVA-130).
+_INDEX_KINDS = frozenset({"BITMAP", "GIN", "NGRAM_BF"})
 
 #: StarRocks 4.1 full-text inverted index tokenization methods
 #: (``docs/24-advanced-indexes.md`` §Supported Parsers). ``none`` disables
@@ -305,9 +307,9 @@ def check_column_alias(value: str) -> str:
 def check_index_kind(value: str) -> str:
     """Return the canonical ``USING`` keyword for an allow-listed index kind.
 
-    ``GIN`` (inverted/full-text), ``NGRAM_BF`` and ``BLOOM_FILTER`` are the
-    explicit kinds; ``BITMAP`` is the plain ``ADD INDEX`` default and is accepted
-    for completeness. Anything else — including a fragment such as
+    ``GIN`` (inverted/full-text) and ``NGRAM_BF`` are the explicit kinds;
+    ``BITMAP`` is the plain ``ADD INDEX`` default and is accepted for
+    completeness. Anything else — including a fragment such as
     ``GIN(...); DROP ...`` — is refused before the statement is assembled.
     """
     candidate = (value or "").strip().upper()
