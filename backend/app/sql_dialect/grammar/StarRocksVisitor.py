@@ -519,6 +519,11 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#adminSkipCommittedTransactionStatement.
+    def visitAdminSkipCommittedTransactionStatement(self, ctx:StarRocksParser.AdminSkipCommittedTransactionStatementContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#alterSystemStatement.
     def visitAlterSystemStatement(self, ctx:StarRocksParser.AlterSystemStatementContext):
         return self.visitChildren(ctx)
@@ -1056,6 +1061,21 @@ class StarRocksVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by StarRocksParser#columnProperties.
     def visitColumnProperties(self, ctx:StarRocksParser.ColumnPropertiesContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#includeMetadata.
+    def visitIncludeMetadata(self, ctx:StarRocksParser.IncludeMetadataContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#metadataItem.
+    def visitMetadataItem(self, ctx:StarRocksParser.MetadataItemContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#metaKey.
+    def visitMetaKey(self, ctx:StarRocksParser.MetaKeyContext):
         return self.visitChildren(ctx)
 
 
@@ -2734,11 +2754,6 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by StarRocksParser#unitBoundaryLiteral.
-    def visitUnitBoundaryLiteral(self, ctx:StarRocksParser.UnitBoundaryLiteralContext):
-        return self.visitChildren(ctx)
-
-
     # Visit a parse tree produced by StarRocksParser#binaryLiteral.
     def visitBinaryLiteral(self, ctx:StarRocksParser.BinaryLiteralContext):
         return self.visitChildren(ctx)
@@ -3134,8 +3149,13 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by StarRocksParser#unitBoundary.
-    def visitUnitBoundary(self, ctx:StarRocksParser.UnitBoundaryContext):
+    # Visit a parse tree produced by StarRocksParser#filesSchema.
+    def visitFilesSchema(self, ctx:StarRocksParser.FilesSchemaContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#filesSchemaColumn.
+    def visitFilesSchemaColumn(self, ctx:StarRocksParser.FilesSchemaColumnContext):
         return self.visitChildren(ctx)
 
 

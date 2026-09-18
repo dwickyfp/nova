@@ -16,9 +16,9 @@
 //
 // Source:  https://github.com/StarRocks/starrocks
 //   file:  fe/fe-grammar/src/main/antlr/com/starrocks/grammar/StarRocksLex.g4
-//   tag:   4.1.1 (no `v` prefix)
-//   commit: 14b7e3fa6626a9959179d1b4442d021ce1dd895f
-//   sha256 upstream: 212b36fff9d2adc2e57512d32de8f4782e26139787d7c506fcc1ff27e936501a
+//   tag:   4.1.4 (no `v` prefix)
+//   commit: 4a9848edf03f5c936dac664b2d52527f48e72eb0
+//   sha256 upstream: 9823ca3a363cab28f2feb4d41cd2aa64dd711a75693e6bef43405fc434666456
 //
 // Nova changes are wrapped in `NOVA-BEGIN`/`NOVA-END` markers. Keep this file
 // byte-identical to upstream outside those markers: the CI drift check
@@ -260,6 +260,7 @@ IGNORE: 'IGNORE';
 IMAGE: 'IMAGE';
 IN: 'IN';
 INACTIVE: 'INACTIVE';
+INCLUDE: 'INCLUDE';
 INCREMENTAL: 'INCREMENTAL';
 INDEX: 'INDEX';
 INDEXES: 'INDEXES';
@@ -330,6 +331,7 @@ MINUTE: 'MINUTE';
 MINUTES: 'MINUTES';
 MINUS: 'MINUS';
 META: 'META';
+METADATA: 'METADATA';
 MOD: 'MOD';
 MODE: 'MODE';
 MODIFY: 'MODIFY';
@@ -463,6 +465,7 @@ SET: 'SET';
 SETS: 'SETS';
 SET_VAR: 'SET_VAR';
 SIGNED: 'SIGNED';
+SKIP_KW: 'SKIP';
 SKIP_HEADER: 'SKIP_HEADER';
 SHOW: 'SHOW';
 SMALLINT: 'SMALLINT';
