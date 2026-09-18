@@ -5,8 +5,18 @@ import { useAssistantTurn } from './use-assistant-turn'
 
 type Turn = ReturnType<typeof useAssistantTurn>
 
-function Harness({ holder }: { holder: { current: Turn | null } }) {
-  const turn = useAssistantTurn({ threadId: 't-1' })
+function Harness({
+  holder,
+  ensureThread = async () => 't-1',
+  context,
+  onError,
+}: {
+  holder: { current: Turn | null }
+  ensureThread?: () => Promise<string | null>
+  context?: { database?: string | null; schema?: string | null; role?: string | null }
+  onError?: (message: string) => void
+}) {
+  const turn = useAssistantTurn({ ensureThread, context, onError })
   holder.current = turn
   return <MessageList messages={turn.messages} statusMessage={turn.statusMessage} />
 }
@@ -27,19 +37,61 @@ afterEach(() => {
 })
 
 describe('useAssistantTurn', () => {
-  it('streams deltas into the transcript and ends the turn', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      sseResponse([
-        'event: text_delta\ndata: {"text":"Hello "}\n\n',
-        'event: text_delta\ndata: {"text":"world"}\n\n',
-        'event: done\ndata: {"message_id":"m1","finish_reason":"stop"}\n\n',
-      ])
-    )
+  it('creates a thread lazily and streams deltas into the transcript', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        sseResponse([
+          'event: text_delta\ndata: {"text":"Hello "}\n\n',
+          'event: text_delta\ndata: {"text":"world"}\n\n',
+          'event: done\ndata: {"message_id":"m1","finish_reason":"stop"}\n\n',
+        ])
+      )
+    const ensureThread = vi.fn(async () => 't-created')
     const holder: { current: Turn | null } = { current: null }
-    const { getByText } = await render(<Harness holder={holder} />)
+    const { getByText } = await render(<Harness holder={holder} ensureThread={ensureThread} />)
 
     await holder.current!.sendMessage('hi')
+
+    expect(ensureThread).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/assistant/threads/t-created/messages',
+      expect.anything()
+    )
     await expect.element(getByText('Hello world')).toBeInTheDocument()
+  })
+
+  it('sends the active worksheet context with the turn', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(sseResponse(['event: done\ndata: {"message_id":"m","finish_reason":"stop"}\n\n']))
+    const holder: { current: Turn | null } = { current: null }
+    await render(
+      <Harness
+        holder={holder}
+        context={{ database: 'analytics', schema: 'public', role: 'analyst' }}
+      />
+    )
+
+    await holder.current!.sendMessage('hi')
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body).toEqual({
+      content: 'hi',
+      database: 'analytics',
+      schema: 'public',
+      role: 'analyst',
+    })
+  })
+
+  it('does not open a stream when no thread can be resolved', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    const onError = vi.fn()
+    const holder: { current: Turn | null } = { current: null }
+    await render(<Harness holder={holder} ensureThread={async () => null} onError={onError} />)
+
+    await holder.current!.sendMessage('hi')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalled()
   })
 
   it('stops a running turn, keeps the partial answer and marks it cancelled', async () => {
