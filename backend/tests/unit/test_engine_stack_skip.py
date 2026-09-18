@@ -26,7 +26,12 @@ def _port_busy(*busy_ports: int):
 
 
 class TestPreflightFailure:
-    """``_preflight_failure`` names the reason before compose is ever invoked."""
+    """``_preflight_failure`` names only environment prerequisites.
+
+    A busy port is deliberately NOT a failure here: the fixture distinguishes a
+    reusable stack from a foreign holder afterward (see the reuse/collision
+    tests below).
+    """
 
     def test_no_docker_binary_is_reported(self, monkeypatch):
         monkeypatch.setattr(stack_conftest.shutil, "which", lambda _: None)
@@ -41,7 +46,8 @@ class TestPreflightFailure:
         monkeypatch.setattr(stack_conftest.subprocess, "run", _fail)
         assert stack_conftest._preflight_failure() == "docker daemon is not running"
 
-    def test_busy_port_is_reported_with_the_port(self, monkeypatch):
+    def test_a_busy_port_is_not_a_preflight_failure(self, monkeypatch):
+        """The CI case: every port bound, all answering — reusable, not a reason."""
         monkeypatch.setattr(stack_conftest.shutil, "which", lambda _: "/usr/bin/docker")
         monkeypatch.setattr(
             stack_conftest.subprocess,
@@ -49,12 +55,11 @@ class TestPreflightFailure:
             lambda *a, **k: subprocess.CompletedProcess(a, returncode=0),
         )
         monkeypatch.setattr(
-            stack_conftest, "_port_in_use", _port_busy(29030, 26379)
+            stack_conftest,
+            "_port_in_use",
+            _port_busy(*stack_conftest.engine_host_ports().values()),
         )
-        reason = stack_conftest._preflight_failure()
-        assert reason is not None
-        assert "29030" in reason
-        assert "26379" in reason
+        assert stack_conftest._preflight_failure() is None
 
     def test_a_free_environment_has_no_reason(self, monkeypatch):
         monkeypatch.setattr(stack_conftest.shutil, "which", lambda _: "/usr/bin/docker")
@@ -65,6 +70,31 @@ class TestPreflightFailure:
         )
         monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
         assert stack_conftest._preflight_failure() is None
+
+
+class TestStackReuseAndCollision:
+    """Busy ports split into "reuse the running stack" and "foreign holder"."""
+
+    def test_all_ports_busy_and_answering_means_reuse(self, monkeypatch):
+        ports = stack_conftest.engine_host_ports().values()
+        monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy(*ports))
+        assert stack_conftest._stack_already_reachable() is True
+        assert stack_conftest._partial_collision_failure() is None
+
+    def test_partial_busy_is_a_collision_with_the_stuck_port(self, monkeypatch):
+        # Only the FE port is held -> compose cannot bind it.
+        monkeypatch.setattr(
+            stack_conftest, "_port_in_use", _port_busy(29030)
+        )
+        assert stack_conftest._stack_already_reachable() is False
+        reason = stack_conftest._partial_collision_failure()
+        assert reason is not None
+        assert "29030" in reason
+
+    def test_free_ports_are_neither_reuse_nor_collision(self, monkeypatch):
+        monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
+        assert stack_conftest._stack_already_reachable() is False
+        assert stack_conftest._partial_collision_failure() is None
 
 
 class TestStackStatus:
@@ -100,6 +130,7 @@ class TestDockerServicesIsSkipFriendly:
             "run",
             lambda *a, **k: subprocess.CompletedProcess(a, returncode=0),
         )
+        # Ports free, so the fixture genuinely owns the `up` it is about to run.
         monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())
 
         def _boom(*args, **kwargs):
@@ -153,6 +184,41 @@ class TestDockerServicesIsSkipFriendly:
         assert not status.unavailable, status.reason
         generator.close()
         assert ("up", "-d", "--wait") in calls
+
+    def test_reachable_prestarted_stack_is_reused_not_skipped(self, monkeypatch):
+        """The CI path: CI starts the stack before pytest, so every port is
+        already bound when the fixture runs.
+
+        That must yield an *available* status with no compose call at all — no
+        ``up`` (the ports are taken) and, crucially, no ``down`` (the fixture
+        does not own the stack). Treating the busy ports as a collision made 25
+        L3 tests skip silently in CI while the job stayed green.
+        """
+        monkeypatch.setattr(stack_conftest.shutil, "which", lambda _: "/usr/bin/docker")
+        monkeypatch.setattr(
+            stack_conftest.subprocess,
+            "run",
+            lambda *a, **k: subprocess.CompletedProcess(a, returncode=0),
+        )
+        # Bound and answering from the very start — CI's already-running stack.
+        monkeypatch.setattr(
+            stack_conftest,
+            "_port_in_use",
+            _port_busy(*stack_conftest.engine_host_ports().values()),
+        )
+        calls: list[tuple[str, ...]] = []
+        monkeypatch.setattr(
+            stack_conftest,
+            "_compose",
+            lambda *args, **kwargs: calls.append(args) or subprocess.CompletedProcess(args, 0),
+        )
+        monkeypatch.setattr(stack_conftest.time, "sleep", lambda _: None)
+
+        generator = stack_conftest.docker_services.__wrapped__()
+        status = next(generator)
+        assert not status.unavailable, status.reason
+        generator.close()
+        assert calls == [], f"must not touch compose when reusing a stack: {calls}"
 
     def test_stack_that_does_not_answer_is_reported_unavailable(self, monkeypatch):
         """The genuine post-up failure: a published port that refuses a connect."""

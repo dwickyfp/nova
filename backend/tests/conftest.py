@@ -109,12 +109,11 @@ def _compose(*args: str, check: bool = True) -> subprocess.CompletedProcess:
 
 
 def _preflight_failure() -> str | None:
-    """The reason no stack can be brought up, or ``None`` if it can.
+    """The reason no stack can be provided, or ``None`` if one can.
 
-    Checked *before* running compose so the common cases produce a precise skip
-    reason: no Docker binary, a daemon that is not running, or the published
-    ports already held by another checkout's stack (compose would otherwise
-    fail with "Bind for 0.0.0.0:29030 failed: port is already allocated").
+    Covers only the environment prerequisites. A busy published port is NOT by
+    itself a failure — see :func:`_stack_already_reachable` (reuse) and
+    :func:`_partial_collision_failure` (foreign holder).
     """
     if shutil.which("docker") is None:
         return "docker is not installed"
@@ -127,28 +126,70 @@ def _preflight_failure() -> str | None:
         return f"docker daemon is not reachable ({exc.__class__.__name__})"
     if daemon.returncode != 0:
         return "docker daemon is not running"
-
-    busy = _busy_ports()
-    if busy:
-        ports = ", ".join(str(port) for port in busy)
-        return (
-            f"test ports {ports} already in use (another Nova stack?) — "
-            f"set {PORT_ENV['starrocks-fe']} / {PORT_ENV['minio']} / "
-            f"{PORT_ENV['redis']} (and the matching *_PORT env) to free ports"
-        )
     return None
+
+
+def _stack_already_reachable() -> bool:
+    """A usable stack already listens on every published port.
+
+    When true the fixture must *reuse* it: it must not run ``up`` (the ports
+    are taken) and must not run ``down`` (it did not start it). CI starts the
+    stack in a separate workflow step precisely so this path is the normal one
+    there; treating it as a collision made 25 L3 tests skip silently.
+    """
+    ports = list(engine_host_ports().values())
+    return bool(ports) and all(_port_in_use(port) for port in ports)
+
+
+def _partial_collision_failure() -> str | None:
+    """Some — but not all — published ports are held, so compose cannot bind.
+
+    A fully-reachable set is the reuse case above. A partial or non-answering
+    set is a foreign/leftover holder: starting compose fails with
+    "Bind for 0.0.0.0:<port> failed: port is already allocated". Report the
+    collision before invoking compose, with the ports that are stuck.
+    """
+    busy = _busy_ports()
+    if not busy or _stack_already_reachable():
+        return None
+    ports = ", ".join(str(port) for port in busy)
+    return (
+        f"test ports {ports} already in use and not all reachable "
+        f"(another Nova stack?) — set {PORT_ENV['starrocks-fe']} / "
+        f"{PORT_ENV['minio']} / {PORT_ENV['redis']} (and the matching *_PORT "
+        f"env) to free ports"
+    )
 
 
 @pytest.fixture(scope="session")
 def docker_services() -> StackStatus:
     """Provide the test stack once per session, or record why it is absent.
 
-    Never raises: a missing stack is a skip, not a failure. On success the
-    compose project is torn down at session end.
+    Never raises: a missing stack is a skip, not a failure. Three outcomes:
+
+    * a reachable stack already listens on the published ports — reuse it and
+      leave it running (CI starts the stack in its own step, so this is the
+      normal path there);
+    * the ports are free — start compose, and tear it down at session end
+      because this fixture owns it;
+    * the ports are held but do not answer, or Docker is unavailable — yield a
+      reason so the dependents skip.
     """
     reason = _preflight_failure()
     if reason is not None:
         yield StackStatus(reason=reason)
+        return
+
+    if _stack_already_reachable():
+        # Somebody else's stack (CI's, or a developer's) is already serving the
+        # published ports. Reuse it: `up` cannot bind, and tearing down a stack
+        # this fixture did not start would yank it out from under the caller.
+        yield StackStatus()
+        return
+
+    foreign = _partial_collision_failure()
+    if foreign is not None:
+        yield StackStatus(reason=foreign)
         return
 
     try:
@@ -172,6 +213,7 @@ def docker_services() -> StackStatus:
         return
 
     yield StackStatus()
+    # Only reached when this fixture ran `up`, so the teardown is symmetric.
     _compose("down", "-v", check=False)
 
 
