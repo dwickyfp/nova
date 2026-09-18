@@ -31,15 +31,22 @@ import pytest
 import pytest_asyncio
 
 from tests.integration._nova_system_ddl import ensure_audit_log
+from tests.integration._stack import (
+    require_shared_stack,
+    shared_stack_host_port,
+)
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
-SR_PORT = int(_EXPLICIT_PORT or "29030")
+SR_PORT = _EXPLICIT_PORT or shared_stack_host_port("NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
 SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
 
 MINIO_HOST = os.getenv("NOVA_ORCH_S3_HOST", "127.0.0.1")
-MINIO_PORT = int(os.getenv("NOVA_ORCH_S3_PORT", "29000"))
+MINIO_PORT = int(
+    os.getenv("NOVA_ORCH_S3_PORT")
+    or shared_stack_host_port("NOVA_TEST_MINIO_PORT", 29000)
+)
 MINIO_ACCESS = "minioadmin"
 MINIO_SECRET = "minioadmin"
 BUCKET = "test-stage"
@@ -140,8 +147,7 @@ async def l3_admin_user(request):
     # Same stack gate as ``engine``: bring the compose stack up if this run is
     # what provides the engine, so a session-scoped fixture that resolves before
     # ``client``/``app`` does not skip against a stack that is about to start.
-    if "docker_services" in request.fixturenames:
-        request.getfixturevalue("docker_services")
+    require_shared_stack(request)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
     with contextlib.suppress(Exception):
@@ -174,8 +180,7 @@ async def engine(request):
     Setup-only (no ``yield``): every name this suite creates is unique per test
     and torn down by ``namespace``, so there is nothing to finalize here.
     """
-    if "docker_services" in request.fixturenames:
-        request.getfixturevalue("docker_services")
+    require_shared_stack(request)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
     await _ensure_catalog_schema()
