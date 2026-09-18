@@ -32,6 +32,7 @@ import { Route as AuthenticatedMonitoringLoadsRouteImport } from './routes/_auth
 import { Route as AuthenticatedMonitoringTasksRouteImport } from './routes/_authenticated/monitoring/tasks'
 import { Route as AuthenticatedRolesIndexRouteImport } from './routes/_authenticated/roles/index'
 import { Route as AuthenticatedRolesNameRouteImport } from './routes/_authenticated/roles/$name'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedStagesIndexRouteImport } from './routes/_authenticated/stages/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
@@ -167,6 +168,12 @@ const AuthenticatedRolesNameRoute = AuthenticatedRolesNameRouteImport.update({
   path: '/roles/$name',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
+    id: '/settings/',
+    path: '/settings/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedStagesIndexRoute =
   AuthenticatedStagesIndexRouteImport.update({
     id: '/stages/',
@@ -220,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/ml-models/': typeof AuthenticatedMlModelsIndexRoute
   '/monitoring/': typeof AuthenticatedMonitoringIndexRoute
   '/roles/': typeof AuthenticatedRolesIndexRoute
+  '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/stages/': typeof AuthenticatedStagesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
@@ -248,6 +256,7 @@ export interface FileRoutesByTo {
   '/ml-models': typeof AuthenticatedMlModelsIndexRoute
   '/monitoring': typeof AuthenticatedMonitoringIndexRoute
   '/roles': typeof AuthenticatedRolesIndexRoute
+  '/settings': typeof AuthenticatedSettingsIndexRoute
   '/stages': typeof AuthenticatedStagesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
@@ -279,6 +288,7 @@ export interface FileRoutesById {
   '/_authenticated/ml-models/': typeof AuthenticatedMlModelsIndexRoute
   '/_authenticated/monitoring/': typeof AuthenticatedMonitoringIndexRoute
   '/_authenticated/roles/': typeof AuthenticatedRolesIndexRoute
+  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/stages/': typeof AuthenticatedStagesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
@@ -310,6 +320,7 @@ export interface FileRouteTypes {
     | '/ml-models/'
     | '/monitoring/'
     | '/roles/'
+    | '/settings/'
     | '/stages/'
     | '/tasks/'
     | '/users/'
@@ -338,6 +349,7 @@ export interface FileRouteTypes {
     | '/ml-models'
     | '/monitoring'
     | '/roles'
+    | '/settings'
     | '/stages'
     | '/tasks'
     | '/users'
@@ -368,6 +380,7 @@ export interface FileRouteTypes {
     | '/_authenticated/ml-models/'
     | '/_authenticated/monitoring/'
     | '/_authenticated/roles/'
+    | '/_authenticated/settings/'
     | '/_authenticated/stages/'
     | '/_authenticated/tasks/'
     | '/_authenticated/users/'
@@ -542,6 +555,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRolesNameRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/settings/': {
+      id: '/_authenticated/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/stages/': {
       id: '/_authenticated/stages/'
       path: '/stages'
@@ -621,6 +641,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedFunctionsIndexRoute: typeof AuthenticatedFunctionsIndexRoute
   AuthenticatedMlModelsIndexRoute: typeof AuthenticatedMlModelsIndexRoute
   AuthenticatedRolesIndexRoute: typeof AuthenticatedRolesIndexRoute
+  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedStagesIndexRoute: typeof AuthenticatedStagesIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
@@ -646,6 +667,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedFunctionsIndexRoute: AuthenticatedFunctionsIndexRoute,
   AuthenticatedMlModelsIndexRoute: AuthenticatedMlModelsIndexRoute,
   AuthenticatedRolesIndexRoute: AuthenticatedRolesIndexRoute,
+  AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedStagesIndexRoute: AuthenticatedStagesIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
