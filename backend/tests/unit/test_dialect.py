@@ -94,7 +94,6 @@ class TestStageVersusVariable:
             ("SELECT * FROM @stage1", "stage1"),
             ("SELECT * FROM @stage1/", "stage1"),
             ("SELECT * FROM @stage1.data.csv", "stage1"),
-            ("SELECT @stage1.data.csv", "stage1"),
             ("LIST @stage1", "stage1"),
             ("LIST FILES @stage1", "stage1"),
             ("SELECT * FROM t JOIN @stage1 ON t.id = 1", "stage1"),
@@ -378,6 +377,22 @@ class TestStageVersusVariable:
 
     def test_stage_name_does_not_match_a_longer_one(self):
         assert parse_sql("SELECT * FROM @stage1x").stage_refs[0].stage_name == "stage1x"
+
+    def test_a_dotted_reference_in_expression_position_is_not_a_stage(self):
+        """A stage is a *table-position* operand, and the grammar now enforces it.
+
+        The regex parser read any dotted ``@name`` as a stage, wherever it stood.
+        That is the same class of false positive as ``@@version`` and a ``@stage``
+        in a comment: ``SELECT @stage1.data.csv`` is an expression list, not a
+        ``FROM`` list, so ``@stage1.data.csv`` there is a user variable reference
+        (dotted variable names are legal) and must not be rewritten into a
+        credential-bearing ``FILES()`` call. The grammar's ``stageReference``
+        lives under ``relationPrimary``, so it cannot appear in a select list —
+        which is exactly the guarantee NOVA-126 is about.
+        """
+        result = parse_sql("SELECT @stage1.data.csv")
+        assert result.stage_refs == []
+        assert result.command_type == CommandType.REGULAR
 
 
 # --- Translator Tests ---
