@@ -19,6 +19,13 @@ Two independent checks run here, both offline (no network, no JVM):
    NOVA block replaces the upstream lines it supersedes). An unmarked edit
    shows up as ``replace``/``insert`` and fails the check.
 
+Check 2 is the design's ``--fuzz=0`` requirement in a different form. Nova does
+not carry a separate patch file to apply fuzzily: the vendored copy IS the
+patched copy, and the guard proves that every difference from upstream lands
+inside a marker. A fuzzy or misplaced edit cannot slip through, because there is
+no tolerant application step to absorb it -- it is either marked (and therefore
+intentional) or an ``insert``/``replace`` that fails the build.
+
 Usage::
 
     python backend/scripts/check_grammar_drift.py [--root <repo root>]

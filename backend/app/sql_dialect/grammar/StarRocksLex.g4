@@ -135,6 +135,11 @@ CONVERT: 'CONVERT';
 COSTS: 'COSTS';
 COUNT: 'COUNT';
 CREATE: 'CREATE';
+// NOVA-BEGIN (NOVA-54 / 9b): new token for the Nova CREATE TASK cron surface.
+// It must also appear in `nonReserved` (StarRocks.g4) or a column named `cron`
+// would stop parsing.
+CRON: 'CRON';
+// NOVA-END
 CROSS: 'CROSS';
 CUBE: 'CUBE';
 CUME_DIST: 'CUME_DIST';
@@ -208,6 +213,10 @@ FIELDS: 'FIELDS';
 FILE: 'FILE';
 FILES: 'FILES';
 FILTER: 'FILTER';
+// NOVA-BEGIN (NOVA-54 / 9b): new token for `FINALIZE = <task>`. Must also be in
+// `nonReserved` or a column named `finalize` would stop parsing.
+FINALIZE: 'FINALIZE';
+// NOVA-END
 FIRST: 'FIRST';
 FIRST_VALUE: 'FIRST_VALUE';
 FLOAT: 'FLOAT';
@@ -268,6 +277,10 @@ INTERVAL: 'INTERVAL';
 INTO: 'INTO';
 INVOKER: 'INVOKER';
 GIN: 'GIN';
+// NOVA-BEGIN (NOVA-54 / 9b): new token for `OVERLAP_POLICY = <value>`. Must also
+// be in `nonReserved` or a column named `overlap_policy` would stop parsing.
+OVERLAP_POLICY: 'OVERLAP_POLICY';
+// NOVA-END
 OVERWRITE: 'OVERWRITE';
 IS: 'IS';
 ISOLATION: 'ISOLATION';
