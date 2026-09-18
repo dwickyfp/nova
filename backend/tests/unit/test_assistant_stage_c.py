@@ -303,6 +303,86 @@ def test_write_clause_under_read_only_keyword_is_denied(sql):
     assert tool_classification(sql) == "denied"
 
 
+# ── Zero-gap `INTO@stage` (NOVA-83 follow-up; the no-whitespace spelling) ───
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 1 INTO@stage1.x.csv",
+        "SELECT 1 INTO  @stage1.x.csv",
+        "SELECT 1 INTO\n@stage1.x.csv",
+        "WITH x AS (SELECT 1) SELECT * FROM x INTO@stage1.x.csv",
+        "EXPLAIN SELECT 1 INTO@stage1.x.csv",
+    ],
+)
+def test_zero_gap_into_stage_is_denied(sql):
+    """``@`` is its own lexer token, so ``INTO@stage`` is the same clause.
+
+    Requiring whitespace classified the zero-gap spelling ``read_only`` and let
+    an ``allow_session`` grant auto-approve a data-egress write.
+    """
+    assert tool_classification(sql) == "denied"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 'INTO@stage' AS note",
+        "SELECT 'INTO @stage' AS note",
+        "SELECT 'INTOOUTFILE' AS note",
+        "SELECT into_at FROM t",
+    ],
+)
+def test_zero_gap_literal_and_identifier_spellings_stay_allowed(sql):
+    """The relaxation must not over-block a value or an ordinary identifier."""
+    assert tool_classification(sql) == "read_only"
+
+
+async def test_zero_gap_into_stage_is_refused_before_the_engine(fakes):
+    service, audit = fakes
+    tool = QueryExecuteTool()
+    outcome = await tool.run(_invocation("SELECT 1 INTO@stage1.x.csv"), _context())
+
+    assert outcome.ok is False
+    assert service.calls == []  # the engine was never reached
+    assert audit.rows and audit.rows[0]["status"] == "DENIED"
+
+
+async def test_grant_never_auto_approves_zero_gap_into_stage():
+    """E2b: an active read-only grant still prompts for ``INTO@stage``."""
+    provider = FakeProvider(
+        [
+            {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1")]},
+            {"role": "assistant", "content": "refused"},
+        ]
+    )
+    tool = RecordingTool("denied")
+    registry = ToolRegistry()
+    registry.register(tool)
+    loop = AssistantLoop(provider=provider, registry=registry)
+    thread = AssistantThread(thread_id="t1", user_name="alice", title="T")
+    thread.consent.always_allow_read_only = True
+
+    asked: list[str] = []
+
+    async def resolver(inv, cls):
+        asked.append(cls)
+        return False
+
+    frames = await _collect(
+        loop.run(
+            thread=thread,
+            user_content="go",
+            context=_context(),
+            resolve_consent=resolver,
+        )
+    )
+    assert "tool_call" in [_frame_event(f) for f in frames]  # NOT auto-approved
+    assert asked == ["denied"]
+    assert tool.runs == 0
+
+
 @pytest.mark.parametrize(
     "sql",
     [
@@ -354,6 +434,10 @@ def test_outfile_guard_is_enforced_at_the_shared_pipeline():
         )
     with pytest.raises(ForbiddenSQLError):
         guard_user_statement("SELECT 1 INTO @stage1.x.csv", confirm_destructive=False)
+    with pytest.raises(ForbiddenSQLError):
+        guard_user_statement("SELECT 1 INTO@stage1.x.csv", confirm_destructive=False)
+    # A literal that spells the clause is still allowed (no over-block).
+    guard_user_statement("SELECT 'INTO OUTFILE' AS note", confirm_destructive=False)
 
 
 def test_read_only_grant_does_not_cover_into_outfile_classification():
