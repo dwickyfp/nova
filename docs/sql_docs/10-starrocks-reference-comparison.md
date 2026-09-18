@@ -98,7 +98,7 @@ Bukti langsung dari commit pin:
 - Diverifikasi mandiri: sha256 upstream `StarRocks.g4` = `48c33cc741e82f838ebbad09b83ffa8011e690368cbfa2112ecf5d0c810abe3b` (cocok dengan header), `StarRocksLex.g4` = `9823ca3a363cab28f2feb4d41cd2aa64dd711a75693e6bef43405fc434666456` (cocok).
 - Guard: `backend/scripts/check_grammar_drift.py` — (1) pin commit + sha256 header vs upstream, (2) "marked-changes-only": di luar `NOVA-BEGIN/END`, file harus byte-identik upstream (hanya boleh *deletion*, tidak boleh insert/replace). Test semantik di `test_grammar_drift_check.py`.
 - **Modifikasi Nova pada grammar upstream** (dari `check_grammar_drift.py`, 2026-09-18): `StarRocks.g4` 6 region (717-724, 736-746, 757-803, 3385-3389, 3393-3395, 3406-3408) — semuanya permukaan `CREATE TASK` (NOVA-54 / 9b). `StarRocksLex.g4` 5 region (32-47, 138-142, 216-219, 281-284, 581-588) — token `FINALIZE`/`CRON`/`OVERLAP_POLICY` (NOVA-54) plus blok `@members`/action Java→Python (NOVA-17). Tidak ada perubahan terkait `@stage`, `ML_MODEL`, atau AI.
-- `@stage` diparse **di luar** grammar ANTLR (regex `_AT_TOKEN` di `parser.py`), sehingga `@` tetap token upstream biasa (`userVariable: AT identifierOrString`) dan Nova tidak perlu memodifikasi grammar untuknya.
+- 109-A (NOVA-125) menambahkan rule `@stage` **di dalam** grammar (blok `NOVA-BEGIN` di `StarRocks.g4`); 109-B (NOVA-126) memindahkan registry stage `parser.py` dari regex `_AT_TOKEN` ke pohon parse ANTLR4 itu. Sisa permukaan `@` (user variable) tetap token upstream biasa (`userVariable: AT identifierOrString`).
 
 ---
 

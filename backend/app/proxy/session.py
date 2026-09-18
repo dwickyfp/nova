@@ -192,13 +192,15 @@ _USER_VARIABLE_REFERENCE = re.compile(
 
 
 def _parser_classifies_as_stage(statement: str, position: int) -> bool:
-    """Whether ``parser.classify_at_token`` reads ``@name`` at ``position`` as a stage.
+    """Whether ``parser`` reads ``@name`` at ``position`` as a stage.
 
     The proxy and the engine must agree on this or one of them rewrites the
     other's work. ``@x`` in ``SELECT @x`` is a value and must be substituted;
     ``@stage1`` in ``SELECT * FROM @stage1`` is a stage and must be left alone —
     the two are spelled identically, so position is the only thing that can
-    separate them, which is exactly what ``parser._classify_at_token`` decides.
+    separate them. Since NOVA-126 that decision is made from the ANTLR4 parse
+    tree (``parser.stage_reference_at``), which is the same source the engine
+    builds its registry from, so the two cannot drift.
 
     The import is local because ``parser`` pulls in the dialect layer, which the
     proxy otherwise never touches; keeping it inside the function means a proxy
@@ -211,10 +213,7 @@ def _parser_classifies_as_stage(statement: str, position: int) -> bool:
         # If the dialect layer is unavailable the proxy cannot resolve the
         # ambiguity; treat it as a variable, which is the pre-existing behaviour.
         return False
-    stage_match = parser._AT_TOKEN.match(statement, position)
-    if stage_match is None:
-        return False
-    return parser._classify_at_token(statement, stage_match)
+    return parser.stage_reference_at(statement, position) is not None
 
 
 class SubstitutionResult:
@@ -335,19 +334,21 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
 def _stage_reference_end(statement: str, start: int) -> int:
     """Index just past a stage reference beginning at ``start``.
 
-    Consumes the dotted path (and any trailing slash) so the whole
-    ``@stage1.data.csv`` is emitted as one span rather than only ``@stage1``
-    followed by the remaining characters, which would be appended verbatim
-    anyway but would misreport the boundary to anything reading spans.
+    Consumes the whole reference — dotted or slash path, glob segments and any
+    trailing slash — so ``@stage1/folder/x.csv`` is emitted as one span rather
+    than only ``@stage1`` followed by the remaining characters, which would be
+    appended verbatim anyway but would misreport the boundary to anything
+    reading spans. The length comes from the parser's own reference, so the
+    span boundary and the registry agree (NOVA-126).
     """
     try:
         from app.modules.query.dialect import parser
     except Exception:
         return start
-    match = parser._AT_TOKEN.match(statement, start)
-    if match is None:
+    reference = parser.stage_reference_at(statement, start)
+    if reference is None:
         return start
-    return match.end()
+    return start + len(reference.full_match)
 
 
 def _skip_single_quoted(statement: str, start: int) -> int:
