@@ -61,13 +61,69 @@ jobs:
             exit 0
           fi
           echo "$CHANGED"
-          uv run ruff check $CHANGED
+          # `--force-exclude` so the pyproject exclusions (the generated ANTLR
+          # parser under app/sql_dialect/grammar/) still apply to files named
+          # explicitly on the command line. Without it, a generated file in the
+          # diff would be linted and fail on machine-emitted formatting.
+          uv run ruff check --force-exclude $CHANGED
 
       # mypy carries a pre-existing 63-error baseline (see the job summary);
       # it is wired in and visible but not yet blocking.
       - name: mypy (report-only)
         working-directory: backend
         run: uv run mypy app --no-error-summary || true
+
+  grammar-drift:
+    # NOVA-54 PR 1. Two independent guarantees, both offline apart from the
+    # ANTLR jar download:
+    #
+    #   1. the vendored .g4 files are still pinned to upstream and carry no
+    #      edit outside a NOVA-BEGIN/END block (`check_grammar_drift.py`),
+    #   2. the committed Python artifacts are byte-for-byte what the pinned
+    #      grammar generates (`generate_grammar.sh` + `git diff --exit-code`).
+    #
+    # Java is build-time only; the runtime stays pure Python. This job is a
+    # hard gate: a fuzzy grammar edit or a stale artifact must fail the build.
+    name: Grammar drift (ANTLR regenerate-and-diff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java (ANTLR generator, build time only)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Grammar pin + marked-changes-only drift check
+        working-directory: backend
+        run: uv run python scripts/check_grammar_drift.py
+
+      - name: Regenerate the parser and require a byte-identical tree
+        run: |
+          # The generated artifacts are committed; regenerating them must be a
+          # no-op. A diff means someone edited a generated file or forgot to
+          # regenerate after changing a .g4 -- either way, fail loudly.
+          bash backend/scripts/generate_grammar.sh
+          if ! git diff --exit-code -- backend/app/sql_dialect/grammar; then
+            echo "::error::committed ANTLR artifacts do not match the vendored grammar; run backend/scripts/generate_grammar.sh and commit the result"
+            exit 1
+          fi
+          UNTRACKED=$(git ls-files --others --exclude-standard -- backend/app/sql_dialect/grammar)
+          if [ -n "$UNTRACKED" ]; then
+            echo "::error::generator produced untracked files that are not committed:"
+            echo "$UNTRACKED"
+            exit 1
+          fi
 
   backend-unit:
     name: Backend unit (L1)
