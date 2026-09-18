@@ -735,7 +735,7 @@ Forty-two unit + eleven engine integration tests; the runbook is
 `HOW_TO_RUN.md` §5. The checklist item above stays unchecked until this PR is
 merged.
 
-### Phase 10 — Agentic assistant (bounded) 🔶
+### Phase 10 — Agentic assistant (bounded) ✅
 
 Purpose: give the SQL workspace a Coco-style assistant without committing to full
 agent-platform parity. **This phase supersedes matrix row #20** in
@@ -754,7 +754,7 @@ Design contract: `docs/specs/nova-61-agentic-assistant-design.md`.
 - [x] **10-C** `query_execute` tool — delegate-first via `QueryService.execute_statements` (never a socket, never port 9030), read-only allowlist layered above the unchanged `sql_guard.py`, per-call/always-allow/deny consent, audit correlation — `tools/query_execute.py`, `tools/policy.py`, `tools/redaction.py`; proven by `backend/tests/unit/test_assistant_stage_c.py` (no-socket import test, delegate-first test, deny-before-engine, consent IDOR→404, redacted audit SQL) (PR #83, NOVA-77)
 - [x] **10-D** Assistant panel — right-side panel in the workspace `<section>` using `Bot` for the assistant surface, transcript + streaming + stop, inline tool-call card with approval controls, session management — `frontend/src/features/assistant/` (`assistant-panel.tsx`, `use-assistant-turn.ts`, `stream-client.ts`, `tool-call-card.tsx`); 322 frontend tests green (PRs #78, #81)
 - [x] **10-E** SQL skill retrieval from `docs/sql_docs/` — advisory context only; invariant enforcement stays in `sql_guard.py` — `backend/app/modules/assistant/skills.py` (12 source docs, revision-hashed, token-budget enforced, credential-screened); proven by `backend/tests/unit/test_assistant_skill.py`. Blocker cleared: NOVA-59 landed, `docs/sql_docs/` is on `main`
-- [ ] **10-F** Measured benchmark for the loop, tool, consent and skill-assembly path + a committed report — dispatched as NOVA-92 (assigned `Python Dev Expert`). Phase 10 has **no** benchmark today; this is the remaining gap before the phase can be called complete
+- [x] **10-F** Measured benchmark for the loop, tool, consent and skill-assembly path + a committed report — `docs/benchmarks/nova-61-assistant.md` + `backend/tests/benchmark/` (`harness.py`, `test_assistant_loop.py`, `test_assistant_engine.py`) (NOVA-92, PR #98)
 
 Explicitly out of v1 (with revisit triggers in the design spec §0.1): agent
 frameworks, sidecar runtime, bypass-approvals mode, persistent grants,
