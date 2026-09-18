@@ -29,13 +29,21 @@
    `[ ] empty stub` (README:590, `roadmap-snowflake-parity.md:43`) but is fully
    implemented and registered (NOVA-62). Conversely `Phase 4 CTAS/export` is
    `[x]` while "no dedicated UI or end-to-end test yet" (README:570).
-3. **The single largest production-grade gap is the SQL parse stage.** ANTLR4
-   (60k-line generated parser) is vendored but on `main` wired only into
-   `CREATE TASK` (`task_orchestration/ddl.py:47,136`). Every user query still
-   parses via regex-on-text (`query/dialect/parser.py`), so the remaining NOVA-17
-   defects stay live — the swap (NOVA-126/132) is on an **unmerged branch**, not
-   on `main` at `1a1c875`. This blocks Phase 1 item #15 and every
-   dialect-quality claim.
+3. **The SQL parse stage is now ANTLR4 end-to-end — CLOSED (NOVA-126/132).** The
+   `@stage` parse swap **merged to `main` in PR #142, merge commit `1a1c875`** —
+   the very revision this document is pinned to. `query/dialect/parser.py` imports
+   `antlr4` (`:44`) and builds the stage registry from the grammar's
+   `stageReference` nodes (module docstring `:13`, `:619`), with
+   `_STAGE_PATTERN`/`_AT_TOKEN` surviving only as a docstring mention of the
+   *prior* regex implementation (`:621`). Regression coverage is
+   `backend/tests/unit/test_nova126_antlr_stage_parse.py`. ANTLR is therefore no
+   longer limited to `CREATE TASK` (`task_orchestration/ddl.py:47,136`); the
+   five NOVA-17 parse defects this slice owned (slash path, glob, `@@version`,
+   `@stage` in a comment/literal, exact error positions) are closed. **One
+   related variant is *not* closed at this pin** — a keyword path segment
+   (`@stage1.data.default.csv`) is still dropped, fixed only after the pin by PR
+   #145 / `66cfed9` (NOVA-133); see §5.2. This is no longer the largest
+   production-grade gap.
 4. **`tables/` and `views/` DDL now run on the caller's connection — CLOSED
    (NOVA-89).** Both routers use `get_user_connection` and `check_identifier`
    (`tables/router.py:26,34,86,114`; `views/router.py:24,32,102,129,178`), so
@@ -63,7 +71,7 @@ exit/completeness unmet; `STALE-UP` = marked `[ ]` but implemented;
 | Phase | Claim | Verified state | Evidence |
 |---|---|---|---|
 | 1 Foundation & Auth | ✅ | **PROVEN** | `main.py`, `core/database.py:6`, `core/redis.py`, `common/sql_guard.py`, `common/secret_keys.py` (`require_configured_secrets`), `docker/init-nova.sql:50-390` |
-| 2 Query Engine | 🔶 | **PARTIAL** | `@stage` parse state is contested in the README itself (`README:563`: ANTLR4 landed on an unmerged branch, with the regex parser still on `main`); NOVA-126/132 are **not** on `main` at `1a1c875`. `_normalize_default_schema_qualification` remains live (`query/service.py:1443,202,948`). `training_sql` claim at README:553 is **stale**: it routes through `_prepare_user_sql` → `guard_user_statement` (`ml_engine/service.py:148-153,717,725`) |
+| 2 Query Engine | 🔶 | **PARTIAL** | `@stage` parse is **ANTLR4 on `main` — CLOSED (NOVA-126/132)** at `1a1c875` (PR #142, the merge commit for this pin): `query/dialect/parser.py:44` imports `antlr4` and the registry is built from the parse tree (`:13,619`); regex candidates remain only as a docstring note of the prior implementation (`:621`). The README:563 label `branch unmerged` is **STALE-DOWN** and self-contradicts its own "now PASSES" latency gate in the same paragraph (see §6.6). `_normalize_default_schema_qualification` remains live (`query/service.py:1460` def, called `:219,965`). `training_sql` claim at README:553 is **stale**: it routes through `_prepare_user_sql` → `guard_user_statement` (`ml_engine/service.py:148-153,717,725`) |
 | 3 Object Browser | ✅ | **PROVEN** | `explorer/router.py`, `objects/router.py`, `frontend/src/features/database-explorer/index.tsx` |
 | 4 Stage & Storage | 🔶 | **PARTIAL** | Stage CRUD + files proven (`stages/router.py:31-130`); `frontend/src/features/stages/` + `routes/_authenticated/stages/index.tsx` now exist. CTAS/export still `[ ]` in README with "no dedicated UI or e2e test". **Open:** stage-file RBAC still unenforced (`stages/service.py` — carries `database_name`/`schema_name` but no privilege check) |
 | 5 Administration | 🔶 | **PARTIAL** | users/roles/functions/tasks/pipes proven. **resource_groups now IMPLEMENTED** (`resource_groups/{router,service,schemas}.py`, registered `main.py:39`) — README `[ ]` is **STALE-UP**. cluster monitor `[ ]` → still no backend module (`cluster/` is `__init__.py` only) |
@@ -107,9 +115,15 @@ the audit's own sense.
 Legend: **SPEC-ONLY** = doc exists, no code, no PR. **IN-FLIGHT** = code on an
 open PR branch, not on `main`. **IMPLEMENTED** = merged on `main`.
 
-**Note on NOVA-126/132 (`@stage` ANTLR swap):** the branch is *not* on `main` at
-`1a1c875` — README:563 says so explicitly. It is the one substantial item still
-in flight; it is recorded as in-flight, not implemented.
+**Note on NOVA-126/132 (`@stage` ANTLR swap):** the swap **is on `main` at
+`1a1c875` — merged via PR #142, whose merge commit is `1a1c875` itself.** Verified
+directly against code (`query/dialect/parser.py:44` imports `antlr4`; the registry
+is built from the ANTLR parse tree at `:13,619`) and against the regression test
+`backend/tests/unit/test_nova126_antlr_stage_parse.py`. `README:563` still labels
+it "branch unmerged" and, in the same paragraph, says the latency gate "now
+PASSES" — a README self-contradiction introduced by `1a1c875`; the audit records
+that as a README defect (§6.6), not as an in-flight code item. Nothing in this
+audit's parse-path scope remains in flight.
 
 ---
 
@@ -139,7 +153,7 @@ unowned gap. No HIGH item is missing an owner.
 | Area | Production-grade | Not production-grade | Evidence |
 |---|---|---|---|
 | Auth / sessions | StarRocks-native auth, JWT+Redis, ACCOUNTADMIN guard; **fail-closed required secrets** | ephemeral Fernet kills sessions on restart | `core/security.py`; `common/secret_keys.py:100-115` (`require_configured_secrets`); `common/sql_guard.py:70-115` |
-| Query pipeline | guard + audit + redaction + `@stage` translate | `@stage` still regex on `main` (ANTLR swap NOVA-126/132 unmerged); position-regex normalizer | `query/sql_pipeline.py`; `query/dialect/parser.py`; `query/service.py:1443` |
+| Query pipeline | guard + audit + redaction + **ANTLR4 `@stage` parse (NOVA-126/132 merged)** | position-regex `_normalize_default_schema_qualification` still live | `query/sql_pipeline.py`; `query/dialect/parser.py:44,619`; `query/service.py:1460` |
 | Objects/explorer | full tree, metadata, DDL | — | `objects/router.py`, `explorer/router.py` |
 | Tables / Views | endpoints exist; **DDL runs on the caller's connection** | — (NOVA-89 closed the root-execution gap) | `tables/router.py:26,34,86,114`; `views/router.py:24,32,102,129,178`; `common/identifiers.py` |
 | Stages | CRUD + files + secret_ref; **Stage Manager UI exists** | **no stage-file RBAC** | `stages/service.py`; `frontend/src/features/stages/` |
@@ -160,10 +174,10 @@ unowned gap. No HIGH item is missing an owner.
 | Item | State | Evidence |
 |---|---|---|
 | ANTLR4 grammar vendored (4.1.4) | yes, generated Python committed | `sql_dialect/grammar/StarRocksParser.py` (60,620 lines), `pyproject.toml:25` |
-| ANTLR wired into runtime | **only `CREATE TASK`** on `main`; the `@stage` parse swap (NOVA-126/132) is unmerged | `task_orchestration/ddl.py:47,136` |
-| `@stage` parse | **regex-on-text** on `main` (ANTLR on the unmerged branch) | `query/dialect/parser.py` |
+| ANTLR wired into runtime | **`CREATE TASK` and the `@stage` parse — the swap (NOVA-126/132) merged in PR #142, merge `1a1c875`** | `task_orchestration/ddl.py:47,136`; `query/dialect/parser.py:44,619` |
+| `@stage` parse | **ANTLR4 parse tree on `main`** (regex candidates remain only as a docstring note of the prior implementation) | `query/dialect/parser.py:13,44,619,621`; `tests/unit/test_nova126_antlr_stage_parse.py` |
 | Grammar drift CI check | script exists | `backend/scripts/check_grammar_drift.py` |
-| Remaining NOVA-17 defects | **open as tracked, narrower than at first audit** — the `external_catalogs` stub, `default-schema` normalizer and `CREATE ML_MODEL ... FORECAST` sub-claims are closed; the parse swap itself is not on `main` | `README:563` |
+| Remaining NOVA-17 defects | **partly closed at the pin `1a1c875`; one variant still open** — closed here: the `@stage` parse swap, the `external_catalogs` stub, the normalizer's own `NOVA-124` masking and `CREATE ML_MODEL ... FORECAST`. **Still open at `1a1c875`:** the keyword-segment variant — `@stage1.data.default.csv` (and `order`/`group`/`select`/`from`/`table`/`values`/`key`/`index`) is dropped by the ANTLR grammar (`command_type=regular`, `stage_refs=[]`, `mismatched input 'default'`), so the `FILES()` translation never runs. Fixed only **after the pin**, by PR #145 / `66cfed9` — **NOVA-133**. At `1a1c875` the pin's own regression test asserts only the normalizer string, never the parse, so the gap stays green there | `README:563` (**stale-down**); `parser.py:44,619`; `service.py:1460`; `66cfed9` (NOVA-133, post-pin) |
 
 ### 5.3 MySQL proxy — `backend/app/proxy/`
 
@@ -198,10 +212,17 @@ unowned gap. No HIGH item is missing an owner.
    (`features/cluster/` + `routes/_authenticated/monitoring/cluster.tsx`), but no
    backend module does (`cluster/` is `__init__.py` only) — a page with nothing
    to read. Decide: build one Phase 5 backend + keep one Phase 7 page, or drop.
-2. **Phase 2 `@stage` still downgraded on `main`.** NOVA-17 accepted ANTLR as the
-   fix; the swap (NOVA-126/132) is on an unmerged branch, so the runtime still
-   uses regex at `1a1c875`. README:563's `training_sql` sub-claim is now stale
-   and should be re-scoped to the remaining defects only.
+2. **Phase 2 `@stage` parse swap is closed by NOVA-126/132; one NOVA-17 variant is not.** The
+   swap **merged** as PR #142 (merge commit `1a1c875`); the runtime parses
+   `@stage` from the ANTLR tree at this pin, not from regex. `README:563` still
+   carries the pre-merge label and is therefore **STALE-DOWN**. The
+   `_normalize_default_schema_qualification` normalizer (`query/service.py:1460`)
+   no longer corrupts stage refs (NOVA-124), but a **keyword-segment
+   `@stage` path is still dropped by the grammar at `1a1c875`**
+   (`@stage1.data.default.csv` → `command_type=regular`, `stage_refs=[]`) — the
+   `FILES()` translation never runs. That variant is **NOVA-133**, fixed only
+   **after the pin** by PR #145 / `66cfed9`. So Phase 2 is not fully closed at
+   `1a1c875`; the parse-path decision outstanding is only the README label.
 3. **Phase 4 CTAS/export `[x]`.** The README itself downgraded this to `[ ]`
    ("no dedicated UI or e2e test") — the audit agrees; add the missing artifact
    or leave lowered.
@@ -211,6 +232,14 @@ unowned gap. No HIGH item is missing an owner.
    `backup`, `governance`, `variables`, `indexes` are implemented and registered
    (`main.py:25,29,30,39,45`) but the README still marks them `[ ] empty stub`.
    This is a README reconciliation task, not an open engineering gap.
+6. **BACKLOG — `README:563` self-contradiction (NOVA-126/132).** The Phase 2
+   `@stage` bullet says the parse swap is on a "**branch unmerged**" while, in the
+   same paragraph, states the ANTLR latency gate "**now PASSES**" — and the code
+   at `1a1c875` is the merged implementation (PR #142, merge commit `1a1c875`).
+   The contradiction was introduced by the merge commit itself. A README edit is
+   needed to drop the "unmerged" label and re-derive the bullet from the code.
+   Recorded here so the audit does not silently inherit the README defect; it is a
+   docs-reconciliation item, not an open engineering gap.
 
 ---
 
@@ -233,9 +262,10 @@ unowned gap. No HIGH item is missing an owner.
    are closed, but the README still marks them "empty stub". Approve a README
    pass to mark them done (this document records the discrepancy; the README is a
    separate deliverable)?
-2. **Commit to the ANTLR parse migration (#15) now** — i.e. merge the NOVA-126/132
-   branch — or keep patching the regex defects first? This is the largest single
-   remaining production-grade gap on `main`.
+2. **ANTLR parse migration (#15) is DONE — confirm and close out.** NOVA-126/132
+   merged as PR #142 (merge commit `1a1c875`); `@stage` now parses from the ANTLR
+   tree. The remaining decision is only to reconcile `README:563`, which still
+   reads "branch unmerged" (§6.6).
 3. **Gap HIGH #5 (network policies) and #6 (inverted index)** — #6 has shipped its
    backend under NOVA-111; #5 is DEFERRED in `gap-analysis.md §5` for lack of an
    engine object. Confirm the deferral stands, or re-scope.
