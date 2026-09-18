@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, get_user_connection
 from app.modules.functions.schemas import (
     BuiltInFunctionListResponse,
     UDFCreate,
@@ -11,6 +11,10 @@ from app.modules.functions.schemas import (
 from app.modules.functions.service import function_service
 
 router = APIRouter()
+
+#: Module-level dependency so route signatures avoid a ``Depends()`` call in an
+#: argument default (ruff B008). UDF DDL runs on the caller's own connection.
+user_connection = Depends(get_user_connection)
 
 
 @router.get("", response_model=BuiltInFunctionListResponse)
@@ -48,11 +52,11 @@ async def list_udfs(
 @router.post("/udf", response_model=dict, status_code=201)
 async def create_udf(
     data: UDFCreate,
-    _user=Depends(get_current_user),
+    conn=user_connection,
 ):
-    """Create a new user-defined function."""
+    """Create a new user-defined function as the caller."""
     try:
-        sql = await function_service.create_udf(data)
+        sql = await function_service.create_udf(data, conn)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create UDF: {e}")
     return {"message": "Function created", "sql": sql}
@@ -62,11 +66,11 @@ async def create_udf(
 async def drop_udf(
     database: str,
     name: str,
-    _user=Depends(get_current_user),
+    conn=user_connection,
 ):
-    """Drop a user-defined function."""
+    """Drop a user-defined function as the caller."""
     try:
-        sql = await function_service.drop_udf(database, name)
+        sql = await function_service.drop_udf(database, name, conn)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to drop UDF: {e}")
     return {"message": f"Function {database}.{name} dropped", "sql": sql}

@@ -1,14 +1,32 @@
-"""Views module — View + Materialized View management."""
+"""Views module — View + Materialized View management.
+
+Every DDL statement is built only from allow-listed identifiers and clauses
+(``app.common.identifiers``) and executed on the **caller's** StarRocks
+connection, so StarRocks RBAC — not the root pool — decides whether the
+statement is allowed. ``guard_sql`` still runs on the assembled statement; this
+module is a layer above the unchanged guard (NOVA-89).
+"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.common.identifiers import (
+    check_column_alias,
+    check_comment,
+    check_distributed_by,
+    check_identifier,
+    check_property_key,
+    check_property_value,
+)
 from app.common.sql_guard import guard_sql
-from app.core.database import db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, get_user_connection
 from app.modules.objects.repository import object_repo
 
 router = APIRouter()
+
+#: Module-level dependency so route signatures avoid a ``Depends()`` call in an
+#: argument default (ruff B008). DDL runs on the caller's own connection.
+user_connection = Depends(get_user_connection)
 
 
 # ── Schemas ────────────────────────────────────────────────────
@@ -43,6 +61,31 @@ class DropViewRequest(BaseModel):
     force: bool = False
 
 
+def _build_columns(columns: list[str] | None) -> str:
+    """Render the optional ``(col, ...)`` alias list from validated aliases."""
+    if not columns:
+        return ""
+    return "(" + ", ".join(check_column_alias(c) for c in columns) + ")"
+
+
+def _build_comment(comment: str | None) -> str:
+    return f" COMMENT '{check_comment(comment)}'" if comment else ""
+
+
+def _build_properties(properties: dict) -> str:
+    """Render ``PROPERTIES(...)`` from allow-listed keys and scalar values.
+
+    Credential-named keys are already refused at other boundaries; here every
+    key and value is validated as a token, which is what prevents a value from
+    closing the quotes it sits between.
+    """
+    parts = [
+        f'"{check_property_key(k)}"="{check_property_value(str(v))}"'
+        for k, v in properties.items()
+    ]
+    return ", ".join(parts)
+
+
 # ── View Endpoints ─────────────────────────────────────────────
 
 
@@ -50,20 +93,22 @@ class DropViewRequest(BaseModel):
 async def create_view(
     req: CreateViewRequest,
     user: dict = Depends(get_current_user),
+    conn=user_connection,
 ):
-    """Create a standard view."""
+    """Create a standard view on the caller's connection."""
+    database = check_identifier(req.database, field="database")
+    view_name = check_identifier(req.view_name, field="view name")
+    columns = _build_columns(req.columns)
+    comment = _build_comment(req.comment)
     replace = "OR REPLACE " if req.replace else ""
-    cols = ""
-    if req.columns:
-        cols = f"({', '.join(req.columns)})"
-    comment = f" COMMENT '{req.comment}'" if req.comment else ""
 
-    sql = f"CREATE {replace}VIEW `{req.database}`.`{req.view_name}`{cols}{comment}\nAS {req.select_sql}"
+    sql = f"CREATE {replace}VIEW `{database}`.`{view_name}`{columns}{comment}\nAS {req.select_sql}"
     guard_sql(sql)
 
     try:
-        await db.execute_system(sql)
-        return {"success": True, "message": f"View '{req.database}.{req.view_name}' created"}
+        async with conn.cursor() as cur:
+            await cur.execute(sql)
+        return {"success": True, "message": f"View '{database}.{view_name}' created"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -72,28 +117,39 @@ async def create_view(
 async def create_materialized_view(
     req: CreateMaterializedViewRequest,
     user: dict = Depends(get_current_user),
+    conn=user_connection,
 ):
-    """Create a materialized view."""
-    cols = ""
-    if req.columns:
-        cols = f"({', '.join(req.columns)})"
+    """Create a materialized view on the caller's connection."""
+    database = check_identifier(req.database, field="database")
+    mv_name = check_identifier(req.mv_name, field="materialized view name")
+    columns = _build_columns(req.columns)
+    comment = _build_comment(req.comment)
+    props_sql = _build_properties(req.properties)
 
-    comment = f" COMMENT '{req.comment}'" if req.comment else ""
+    distributed_by = (
+        check_distributed_by(req.distributed_by) if req.distributed_by else "HASH(*)"
+    )
+    if not isinstance(req.buckets, int) or isinstance(req.buckets, bool) or req.buckets <= 0:
+        raise HTTPException(status_code=400, detail="buckets must be a positive integer")
+    refresh = (req.refresh_strategy or "ASYNC").upper()
+    if refresh not in ("SYNC", "ASYNC", "MANUAL"):
+        raise HTTPException(status_code=400, detail=f"Invalid refresh strategy: {req.refresh_strategy}")
 
-    props = {**req.properties}
-    props_sql = ", ".join(f'"{k}"="{v}"' for k, v in props.items())
-
-    sql = f"CREATE MATERIALIZED VIEW `{req.database}`.`{req.mv_name}`{cols}{comment}\n"
-    sql += f"DISTRIBUTED BY {req.distributed_by or 'HASH(*)'} BUCKETS {req.buckets}\n"
-    sql += f"REFRESH {req.refresh_strategy}\n"
+    sql = f"CREATE MATERIALIZED VIEW `{database}`.`{mv_name}`{columns}{comment}\n"
+    sql += f"DISTRIBUTED BY {distributed_by} BUCKETS {req.buckets}\n"
+    sql += f"REFRESH {refresh}\n"
     sql += f"PROPERTIES({props_sql})\n"
     sql += f"AS {req.select_sql}"
 
     guard_sql(sql)
 
     try:
-        await db.execute_system(sql)
-        return {"success": True, "message": f"Materialized view '{req.database}.{req.mv_name}' created"}
+        async with conn.cursor() as cur:
+            await cur.execute(sql)
+        return {
+            "success": True,
+            "message": f"Materialized view '{database}.{mv_name}' created",
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -102,16 +158,20 @@ async def create_materialized_view(
 async def drop_view(
     req: DropViewRequest,
     user: dict = Depends(get_current_user),
+    conn=user_connection,
 ):
-    """Drop a view or materialized view."""
+    """Drop a view or materialized view on the caller's connection."""
+    database = check_identifier(req.database, field="database")
+    view_name = check_identifier(req.view_name, field="view name")
     mv = "MATERIALIZED " if req.is_materialized else ""
     force = " FORCE" if req.force else ""
-    sql = f"DROP {mv}VIEW{force} `{req.database}`.`{req.view_name}`"
+    sql = f"DROP {mv}VIEW{force} `{database}`.`{view_name}`"
     guard_sql(sql)
 
     try:
-        await db.execute_system(sql)
-        return {"success": True, "message": f"View '{req.database}.{req.view_name}' dropped"}
+        async with conn.cursor() as cur:
+            await cur.execute(sql)
+        return {"success": True, "message": f"View '{database}.{view_name}' dropped"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -123,6 +183,8 @@ async def get_view_ddl(
     user: dict = Depends(get_current_user),
 ):
     """Get the CREATE VIEW DDL."""
+    check_identifier(database, field="database")
+    check_identifier(view, field="view name")
     detail = await object_repo.get_view_detail(database, view)
     if not detail:
         raise HTTPException(status_code=404, detail=f"View '{database}.{view}' not found")
