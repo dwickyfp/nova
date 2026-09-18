@@ -18,6 +18,8 @@ export type ExplorerNode = {
   children?: ExplorerNode[]
   /** Database name for lazy-load nodes */
   database?: string
+  /** Catalog a database node belongs to; external databases need this to list tables */
+  catalog?: string
 }
 
 // API response types

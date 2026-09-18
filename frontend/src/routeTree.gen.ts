@@ -20,6 +20,7 @@ import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authent
 import { Route as AuthenticatedTaskGraphsRouteImport } from './routes/_authenticated/task-graphs'
 import { Route as AuthenticatedTasksManagerRouteImport } from './routes/_authenticated/tasks-manager'
 import { Route as AuthenticatedAiProvidersIndexRouteImport } from './routes/_authenticated/ai-providers/index'
+import { Route as AuthenticatedExternalCatalogsIndexRouteImport } from './routes/_authenticated/external-catalogs/index'
 import { Route as AuthenticatedFunctionsIndexRouteImport } from './routes/_authenticated/functions/index'
 import { Route as AuthenticatedMlModelsIndexRouteImport } from './routes/_authenticated/ml-models/index'
 import { Route as AuthenticatedMonitoringIndexRouteImport } from './routes/_authenticated/monitoring/index'
@@ -92,6 +93,12 @@ const AuthenticatedAiProvidersIndexRoute =
   AuthenticatedAiProvidersIndexRouteImport.update({
     id: '/ai-providers/',
     path: '/ai-providers/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedExternalCatalogsIndexRoute =
+  AuthenticatedExternalCatalogsIndexRouteImport.update({
+    id: '/external-catalogs/',
+    path: '/external-catalogs/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedFunctionsIndexRoute =
@@ -186,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
+  '/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
   '/functions/': typeof AuthenticatedFunctionsIndexRoute
   '/ml-models/': typeof AuthenticatedMlModelsIndexRoute
   '/monitoring/': typeof AuthenticatedMonitoringIndexRoute
@@ -210,6 +218,7 @@ export interface FileRoutesByTo {
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/ai-providers': typeof AuthenticatedAiProvidersIndexRoute
+  '/external-catalogs': typeof AuthenticatedExternalCatalogsIndexRoute
   '/functions': typeof AuthenticatedFunctionsIndexRoute
   '/ml-models': typeof AuthenticatedMlModelsIndexRoute
   '/monitoring': typeof AuthenticatedMonitoringIndexRoute
@@ -237,6 +246,7 @@ export interface FileRoutesById {
   '/_authenticated/roles/$name': typeof AuthenticatedRolesNameRoute
   '/_authenticated/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/_authenticated/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
+  '/_authenticated/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
   '/_authenticated/functions/': typeof AuthenticatedFunctionsIndexRoute
   '/_authenticated/ml-models/': typeof AuthenticatedMlModelsIndexRoute
   '/_authenticated/monitoring/': typeof AuthenticatedMonitoringIndexRoute
@@ -264,6 +274,7 @@ export interface FileRouteTypes {
     | '/roles/$name'
     | '/users/$username'
     | '/ai-providers/'
+    | '/external-catalogs/'
     | '/functions/'
     | '/ml-models/'
     | '/monitoring/'
@@ -288,6 +299,7 @@ export interface FileRouteTypes {
     | '/roles/$name'
     | '/users/$username'
     | '/ai-providers'
+    | '/external-catalogs'
     | '/functions'
     | '/ml-models'
     | '/monitoring'
@@ -314,6 +326,7 @@ export interface FileRouteTypes {
     | '/_authenticated/roles/$name'
     | '/_authenticated/users/$username'
     | '/_authenticated/ai-providers/'
+    | '/_authenticated/external-catalogs/'
     | '/_authenticated/functions/'
     | '/_authenticated/ml-models/'
     | '/_authenticated/monitoring/'
@@ -405,6 +418,13 @@ declare module '@tanstack/react-router' {
       path: '/ai-providers'
       fullPath: '/ai-providers/'
       preLoaderRoute: typeof AuthenticatedAiProvidersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/external-catalogs/': {
+      id: '/_authenticated/external-catalogs/'
+      path: '/external-catalogs'
+      fullPath: '/external-catalogs/'
+      preLoaderRoute: typeof AuthenticatedExternalCatalogsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/functions/': {
@@ -535,6 +555,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRolesNameRoute: typeof AuthenticatedRolesNameRoute
   AuthenticatedUsersUsernameRoute: typeof AuthenticatedUsersUsernameRoute
   AuthenticatedAiProvidersIndexRoute: typeof AuthenticatedAiProvidersIndexRoute
+  AuthenticatedExternalCatalogsIndexRoute: typeof AuthenticatedExternalCatalogsIndexRoute
   AuthenticatedFunctionsIndexRoute: typeof AuthenticatedFunctionsIndexRoute
   AuthenticatedMlModelsIndexRoute: typeof AuthenticatedMlModelsIndexRoute
   AuthenticatedRolesIndexRoute: typeof AuthenticatedRolesIndexRoute
@@ -556,6 +577,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRolesNameRoute: AuthenticatedRolesNameRoute,
   AuthenticatedUsersUsernameRoute: AuthenticatedUsersUsernameRoute,
   AuthenticatedAiProvidersIndexRoute: AuthenticatedAiProvidersIndexRoute,
+  AuthenticatedExternalCatalogsIndexRoute:
+    AuthenticatedExternalCatalogsIndexRoute,
   AuthenticatedFunctionsIndexRoute: AuthenticatedFunctionsIndexRoute,
   AuthenticatedMlModelsIndexRoute: AuthenticatedMlModelsIndexRoute,
   AuthenticatedRolesIndexRoute: AuthenticatedRolesIndexRoute,
