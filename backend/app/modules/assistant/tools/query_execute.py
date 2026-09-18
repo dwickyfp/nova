@@ -204,7 +204,11 @@ class QueryExecuteTool:
         total_rows = 0
         for result in results:
             if result.error:
-                failed = result.error
+                # Redact at the source so the single variable feeds every sink
+                # (audit row + ToolOutcome.error). The engine message can echo
+                # the executed @stage SQL, which carries the injected FILES()
+                # credentials, so the raw string never leaves the tool.
+                failed = _safe_redact(result.error)
                 break
             rendered.append(_render_result(result))
             total_rows += result.row_count or 0
@@ -290,7 +294,7 @@ def _render_result(result: Any) -> str:
         return json.dumps(
             {
                 "affected_rows": result.affected_rows,
-                "warning": (result.warnings or [None])[0],
+                "warning": _safe_redact((result.warnings or [None])[0] or ""),
             },
             default=str,
         )

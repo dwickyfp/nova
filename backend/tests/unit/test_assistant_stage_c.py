@@ -801,6 +801,90 @@ def test_preview_withholds_sql_it_cannot_redact(monkeypatch):
     assert preview == "[statement withheld: it could not be redacted]"
 
 
+# ── 5b. NOVA-120: a credential-bearing engine error/warning never leaves ────
+#
+# The engine message can echo the executed @stage SQL, which carries the
+# injected FILES() credentials. The tool must redact at the source so the one
+# value feeds every sink: ToolOutcome.error, the audit error_message, the SSE
+# error frame, and the summary folded into the provider request.
+
+
+#: AWS's own public documentation example, not a live secret.
+_LEAKY_CREDENTIAL = "AKIAIOSFODNN7EXAMPLE"
+
+
+def _leaky_engine_error() -> str:
+    return (
+        "SQL error: (1064) syntax near "
+        'FILES("path"="s3://b/x", "aws.s3.access_key"="'
+        f'{_LEAKY_CREDENTIAL}")'
+    )
+
+
+def _leaky_warning() -> str:
+    return (
+        "warning: retrying statement FILES(\"aws.s3.access_key\"=\""
+        f'{_LEAKY_CREDENTIAL}")'
+    )
+
+
+async def test_credential_bearing_result_error_is_redacted_in_outcome_and_audit(fakes):
+    service, audit = fakes
+    service._results = [FakeResult(error=_leaky_engine_error())]
+    tool = QueryExecuteTool()
+
+    outcome = await tool.run(_invocation("SELECT * FROM @stage1.data.csv"), _context())
+
+    assert outcome.ok is False
+    assert _LEAKY_CREDENTIAL not in (outcome.error or "")
+    assert "***" in (outcome.error or "")
+    assert audit.rows and audit.rows[0]["status"] == "ERROR"
+    assert _LEAKY_CREDENTIAL not in (audit.rows[0]["error_message"] or "")
+    assert "***" in (audit.rows[0]["error_message"] or "")
+
+
+async def test_credential_bearing_result_error_never_reaches_the_sse_frame(fakes):
+    service, _audit = fakes
+    service._results = [FakeResult(error=_leaky_engine_error())]
+    provider = FakeProvider(
+        [
+            {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1")]},
+            {"role": "assistant", "content": "failed"},
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(QueryExecuteTool())
+    loop = AssistantLoop(provider=provider, registry=registry)
+
+    frames = await _collect(
+        loop.run(
+            thread=AssistantThread(thread_id="t1", user_name="alice", title="T"),
+            user_content="go",
+            context=_context(),
+            resolve_consent=lambda inv, cls: _allow(),
+        )
+    )
+
+    errors = [_frame_data(f) for f in frames if _frame_event(f) == "error"]
+    assert errors, "the failed tool must emit an error frame"
+    for frame in frames:
+        assert _LEAKY_CREDENTIAL not in frame
+
+
+async def test_credential_bearing_warning_is_redacted_before_the_model_summary(fakes):
+    service, _audit = fakes
+    service._results = [
+        FakeResult(columns=[], rows=[], affected_rows=0, warnings=[_leaky_warning()])
+    ]
+    tool = QueryExecuteTool()
+
+    outcome = await tool.run(_invocation("SELECT * FROM @stage1.data.csv"), _context())
+
+    assert outcome.ok is True
+    assert _LEAKY_CREDENTIAL not in outcome.summary
+    assert "***" in outcome.summary
+
+
 # ── 6. Value-level redaction ────────────────────────────────────────────────
 
 
@@ -1011,3 +1095,7 @@ def test_tool_call_view_carries_the_classification():
 
 async def _deny() -> bool:
     return False
+
+
+async def _allow() -> bool:
+    return True
