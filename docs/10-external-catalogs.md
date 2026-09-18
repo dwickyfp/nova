@@ -100,7 +100,7 @@ All external catalogs that access object storage need `StorageCredentialParams`:
 | Custom schema resolver | Custom type mappings |
 | Oracle mapping | Improved NUMBER, DATE, TIMESTAMP mapping |
 | PostgreSQL mapping | Improved type mapping |
-| SQL Server | MV refresh support (v4.1.1 fix) |
+| SQL Server | MV refresh support (v4.1.4 fix) |
 
 ---
 

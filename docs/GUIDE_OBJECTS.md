@@ -1,6 +1,6 @@
 # StarRocks Objects — Complete Reference Guide
 
-> **Version**: StarRocks 4.1.1 | **Last Updated**: 2026-06-20
+> **Version**: StarRocks 4.1.4 | **Last Updated**: 2026-09-18
 > **Mode**: Shared-nothing (single FE + single BE)
 
 ---
@@ -273,7 +273,8 @@ Instance-Level Objects:
 
 ### Cross-Check: StarRocks Native Objects vs Nova Usage
 
-> Verified against running StarRocks 4.1.1 cluster on 2026-06-20.
+> Reference target: the pinned StarRocks 4.1.4 engine.
+> Cross-checked against a running StarRocks cluster on 2026-06-20.
 > All commands tested via `docker exec nova-starrocks-fe mysql`.
 
 #### Database-Level Objects (inside a database)
@@ -307,7 +308,7 @@ Instance-Level Objects:
 | **SQL Rewriter** | ❌ Nova Custom | N/A | 🔲 Planned | @stage → FILES() rewrite engine |
 | **Access Checker** | ❌ Nova Custom | N/A | 🔲 Planned | Schema-bound RBAC for stages/workspace |
 
-#### Built-in AI Functions (verified in StarRocks 4.1.1)
+#### Built-in AI Functions (StarRocks 4.1.4)
 
 ```
 SHOW BUILTIN FUNCTIONS LIKE 'ai%';
@@ -714,7 +715,7 @@ Functions are **reusable computation units** that can be called in SQL queries. 
 
 ### What Is It?
 
-A task is a **scheduled background job** in StarRocks. Tasks are primarily created automatically by the system for materialized view refreshes. In StarRocks 4.1.1, there is no standalone `CREATE TASK` DDL — tasks are managed internally.
+A task is a **scheduled background job** in StarRocks. Tasks are primarily created automatically by the system for materialized view refreshes. In StarRocks 4.1.4, there is no standalone `CREATE TASK` DDL — tasks are managed internally.
 
 ### Data Sources
 
@@ -835,7 +836,7 @@ A resource defines an **external compute endpoint** (Spark cluster, Broker servi
 
 ### ⚠️ Notes
 
-- `information_schema.resources` does NOT exist in 4.1.1
+- `information_schema.resources` does NOT exist in 4.1.4
 - Resources are primarily used by **Spark ETL** and **Broker Load** features
 - Modern usage prefers **External Catalogs** over Resources for data access
 
