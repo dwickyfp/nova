@@ -17,6 +17,7 @@ import contextlib
 import logging
 import signal
 
+from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
 from app.proxy.server import MySQLProxyServer
@@ -25,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 async def _run() -> None:
+    # Fail closed before the first connection: the proxy serves sessions signed
+    # with SECRET_KEY, so a missing key must abort boot (NOVA-108).
+    require_configured_secrets()
     await db.init_system_pool()
     server = MySQLProxyServer()
 
