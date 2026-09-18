@@ -91,7 +91,7 @@ async def _redis_reachable(url: str) -> bool:
 
 
 @pytest_asyncio.fixture
-async def scheduler_infra(request):
+async def scheduler_infra(request, monkeypatch):
     if _USE_SHARED_STACK and "docker_services" in request.fixturenames:
         request.getfixturevalue("docker_services")
     if not await _sr_reachable() or not await _has_live_backend():
@@ -99,11 +99,17 @@ async def scheduler_infra(request):
     if not await _redis_reachable(REDIS_URL):
         pytest.skip("Redis not reachable")
 
-    settings.STARROCKS_HOST = SR_HOST
-    settings.STARROCKS_FE_MYSQL_PORT = SR_PORT
-    settings.STARROCKS_ROOT_USER = SR_USER
-    settings.STARROCKS_ROOT_PASSWORD = SR_PASSWORD
-    settings.REDIS_URL = REDIS_URL
+    # `monkeypatch` (not bare assignment) so every setting this fixture pins is
+    # restored at teardown. Before NOVA-131 the `SCHEDULER_ENGINE_TIMEZONE`
+    # assignment leaked into the rest of the session: it runs before the
+    # `tests/unit` selection in a full `pytest` invocation, and
+    # `test_task_scheduler_tick.py::test_offset_engine_zone_still_fires` then
+    # read the wrong zone and failed — a cross-suite phantom, not a real bug.
+    monkeypatch.setattr(settings, "STARROCKS_HOST", SR_HOST)
+    monkeypatch.setattr(settings, "STARROCKS_FE_MYSQL_PORT", SR_PORT)
+    monkeypatch.setattr(settings, "STARROCKS_ROOT_USER", SR_USER)
+    monkeypatch.setattr(settings, "STARROCKS_ROOT_PASSWORD", SR_PASSWORD)
+    monkeypatch.setattr(settings, "REDIS_URL", REDIS_URL)
 
     await db.init_system_pool()
     await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
@@ -114,8 +120,10 @@ async def scheduler_infra(request):
     # reports, so a stale/incorrect default in config cannot mask a real bug.
     # An explicit env override is honoured for deployments that need it.
     detected = await repo.get_engine_timezone()
-    settings.SCHEDULER_ENGINE_TIMEZONE = os.getenv(
-        "SCHEDULER_ENGINE_TIMEZONE", detected or "UTC"
+    monkeypatch.setattr(
+        settings,
+        "SCHEDULER_ENGINE_TIMEZONE",
+        os.getenv("SCHEDULER_ENGINE_TIMEZONE", detected or "UTC"),
     )
 
     client = aioredis.from_url(REDIS_URL, decode_responses=True)
