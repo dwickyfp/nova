@@ -46,6 +46,37 @@ cp .env.example .env
 docker compose -f docker-compose-engine.yml up -d
 ```
 
+Versi engine yang di-pin adalah **StarRocks 4.1.4** (commit `4a9848e`), naik dari
+4.1.1 pada NOVA-51. Bila volume data dari stack 4.1.1 masih ada, StarRocks
+melakukan upgrade metadata otomatis saat FE pertama kali start; tidak ada langkah
+manual yang diperlukan untuk skema Nova.
+
+### Catatan migrasi: timestamp Parquet `isAdjustedToUTC=false`
+
+Sejak 4.1.4 (StarRocks #73674), `FILES()` dan broker/stream load **tidak lagi
+menerapkan pergeseran timezone sesi** ke kolom `INT64` Parquet yang bertanda
+`isAdjustedToUTC=false`. Nilai tersebut dimuat sebagai *wall-clock* apa adanya.
+
+Konsekuensinya untuk data stage yang sudah ada:
+
+- Baris yang dimuat **sebelum** upgrade dapat berbeda dari baris yang dimuat
+  **sesudahnya** untuk kolom waktu jenis ini. Jika sesi saat load bukan UTC,
+  nilai lama tergeser sebesar offset zona sesi; nilai baru tidak.
+- Bila tabel hasil load tersebut di-join atau dibandingkan dengan data yang
+  dimuat ulang, selisihnya akan tampak sebagai pergeseran jam, bukan error.
+- Untuk rekonsiliasi, muat ulang file stage yang terdampak setelah upgrade
+  dengan sesi `SET time_zone = 'UTC'`, atau bandingkan memakai offset yang
+  didokumentasikan; jangan menganggap nilai lama dan baru setara.
+- Regresi ini dikunci oleh `backend/tests/integration/test_engine_4_1_4_regressions.py`.
+
+Fixture Parquet `backend/tests/integration/fixtures/utc_flag_false_int64_ts.parquet`
+berisi kolom `id` (INT) dan `ts` (INT64 microseconds, `isAdjustedToUTC=false`)
+dengan nilai wall-clock `2024-01-02 03:04:05` dan `2024-01-02 04:05:06`. Suite
+meng-upload fixture ini sendiri ke `stages/NOVA_ANALYTICS/public/fixtures/`, jadi
+tidak ada langkah unggah manual. Bila fixture di-regenerate, ubah juga konstanta
+`FIXTURE_TS_ROWS` di file test agar assertion tetap cocok (lihat komentar di
+`test_engine_4_1_4_regressions.py:43-46`).
+
 Tunggu hingga seluruh container sehat:
 
 ```bash
@@ -473,7 +504,7 @@ pekerjaan yang hilang. Dua hal ini khusus dijaga:
 Idempoten: dua kali reconcile pada state yang sama tidak mengubah apa pun,
 karena setiap transisi adalah conditional write.
 
-Nilai config yang dibaca diverifikasi di engine 4.1.1: `task_runs_ttl_second =
+Nilai config yang dibaca diverifikasi di engine 4.1.4 (nilai sama pada 4.1.1): `task_runs_ttl_second =
 604800` (7 hari) dan `max_task_consecutive_fail_count = 10`. Task periodik
 **tidak** perlu di-re-arm setelah restart FE — yang direkonsiliasi hanya run
 yang jejaknya hilang.

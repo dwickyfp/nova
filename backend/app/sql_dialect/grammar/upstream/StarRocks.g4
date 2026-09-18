@@ -134,6 +134,7 @@ statement
     | adminSetAutomatedSnapshotOnStatement
     | adminSetAutomatedSnapshotOffStatement
     | adminAlterAutomatedSnapshotIntervalStatement
+    | adminSkipCommittedTransactionStatement
 
     // Cluster Management Statement
     | alterSystemStatement
@@ -555,6 +556,7 @@ ifNotExists:
 createTableAsSelectStatement
     : CREATE TEMPORARY? TABLE (IF NOT EXISTS)? qualifiedName
         ('(' (identifier (',' identifier)*  (',' indexDesc)* | indexDesc (',' indexDesc)*) ')')?
+        engineDesc?
         keyDesc?
         comment?
         partitionDesc?
@@ -831,6 +833,10 @@ adminSetAutomatedSnapshotOffStatement
 
 adminAlterAutomatedSnapshotIntervalStatement
     : ADMIN ALTER AUTOMATED CLUSTER SNAPSHOT SET interval
+    ;
+
+adminSkipCommittedTransactionStatement
+    : ADMIN SKIP_KW COMMITTED TRANSACTION txnId=INTEGER_VALUE (REASON reason=string)?
     ;
 
 // ------------------------------------------- Cluster Management Statement ---------------------------------------------
@@ -1369,6 +1375,7 @@ loadProperties
     : colSeparatorProperty
     | rowDelimiterProperty
     | importColumns
+    | includeMetadata
     | WHERE expression
     | partitionNames
     ;
@@ -1389,6 +1396,18 @@ columnProperties
     : '('
         (qualifiedName | assignment) (',' (qualifiedName | assignment))*
       ')'
+    ;
+
+includeMetadata
+    : INCLUDE METADATA '(' metadataItem (',' metadataItem)* ')'
+    ;
+
+metadataItem
+    : metaKey (AS alias=identifier)?
+    ;
+
+metaKey
+    : KEY | PARTITION | identifier
     ;
 
 jobProperties
@@ -2751,7 +2770,6 @@ literalExpression
     | (DATE | DATETIME) string                                                            #dateLiteral
     | string                                                                              #stringLiteral
     | interval                                                                            #intervalLiteral
-    | unitBoundary                                                                        #unitBoundaryLiteral
     | binary                                                                              #binaryLiteral
     | PARAMETER                                                                           #Parameter
     ;
@@ -3127,8 +3145,12 @@ unitIdentifier
     : YEAR | MONTH | WEEK | DAY | HOUR | MINUTE | SECOND | QUARTER | MILLISECOND | MICROSECOND
     ;
 
-unitBoundary
-    : FLOOR | CEIL
+filesSchema
+    : filesSchemaColumn (',' filesSchemaColumn)* EOF
+    ;
+
+filesSchemaColumn
+    : identifier type
     ;
 
 type
@@ -3278,11 +3300,11 @@ nonReserved
     | FUNCTIONS
     | GLOBAL | GRANTS | GROUP_CONCAT
     | HASH | HISTOGRAM | HELP | HLL_UNION | HOST | HOUR | HOURS | HUB
-    | IDENTIFIED | IMAGE | IMPERSONATE | INACTIVE | INCREMENTAL | INDEXES | INSTALL | INTEGRATION | INTEGRATIONS | INTERMEDIATE
+    | IDENTIFIED | IMAGE | IMPERSONATE | INACTIVE | INCLUDE | INCREMENTAL | INDEXES | INSTALL | INTEGRATION | INTEGRATIONS | INTERMEDIATE
     | INTERVAL | ISOLATION
     | JOB
     | LABEL | LAST | LESS | LEVEL | LIST | LOCAL | LOCATION | LOGS | LOGICAL | LOW_PRIORITY | LOCK | LOCATIONS
-    | MANUAL | MAP | MAPPING | MAPPINGS | MASKING | MATCH | MATCH_ANY | MATCH_ALL | MAPPINGS | MATERIALIZED | MAX | META | MIN | MINUTE | MINUTES | MODE | MODIFY | MONTH | MERGE | MINUS | MULTIPLE
+    | MANUAL | MAP | MAPPING | MAPPINGS | MASKING | MATCH | MATCH_ANY | MATCH_ALL | MAPPINGS | MATERIALIZED | MAX | META | METADATA | MIN | MINUTE | MINUTES | MODE | MODIFY | MONTH | MERGE | MINUS | MULTIPLE
     | NAME | NAMES | NEGATIVE | NO | NODE | NODES | NONE | NULLS | NUMBER | NUMERIC
     | OBSERVER | OF | OFFSET | ONLY | OPTIMIZER | OPEN | OPERATE | OPTION | OVERWRITE | OFF
     | PARTITIONS | PASSWORD | PATH | PAUSE | PENDING | PERCENTILE_UNION | PIVOT | PLAN | PLUGIN | PLUGINS | POLICY | POLICIES
@@ -3292,7 +3314,7 @@ nonReserved
     | REPOSITORIES | RECURSIVE
     | RESOURCE | RESOURCES | RESTORE | RESUME | RETAIN | RETENTION | RETURNS | RETRY | REVERT | ROLE | ROLES | ROLLUP | ROLLBACK | ROUTINE | ROW | RUNNING | RULE | RULES
     | SAMPLE | SCHEDULE | SCHEDULER | SECOND | SECURITY | SEPARATOR | SERIALIZABLE |SEMI | SESSION | SETS | SIGNED | SNAPSHOT | SNAPSHOTS | SPLIT | SQL | SQLBLACKLIST | START | STARROCKS
-    | STREAM | SUM | STATUS | STOP | SKIP_HEADER | SWAP
+    | STREAM | SUM | STATUS | STOP | SKIP_KW | SKIP_HEADER | SWAP
     | STORAGE| STRING | STRUCT | STATS | SUBMIT | SUSPEND | SYNC | SYSTEM | SYSTEM_TIME
     | TABLES | TABLET | TABLETS | TAG | TASK | TEMPORARY | TIMESTAMP | TIMESTAMPADD | TIMESTAMPDIFF | THAN | TIME | TIMES | TRANSACTION | TRACE | TRANSLATE
     | TRIM_SPACE
