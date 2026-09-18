@@ -38,6 +38,43 @@
 grammar StarRocks;
 import StarRocksLex;
 
+// NOVA-BEGIN (NOVA-134 / 109-B): the semantic predicate behind the
+// `stagePathAtom` catch-all. It is Python because the generated target is
+// Python3 (the same carve-out as the lexer's `@members` block), and it lives in
+// `@parser::header` — module scope — rather than in `@parser::members`: ANTLR
+// only emits a grammar's `@members` into its own target, and an import plus a
+// parser-members block changes how the imported lexer is emitted, which would
+// churn the unrelated `StarRocksLexer.py` on every regeneration. A header
+// function is called as `_nova_is_stage_path_atom(self)` and leaves the lexer
+// artifact byte-identical.
+//
+// The predicate is *lookahead-only*: no token is consumed, so it selects an
+// alternative without changing the token stream. It decides whether a
+// **reserved** keyword may stand as a path segment by asking the lookahead
+// token's **text** rather than comparing token constants, so it survives a
+// grammar regeneration that renumbers tokens. The accepted shape is a plain
+// identifier spelling (`[A-Za-z_$…][A-Za-z0-9_$…]*`, which covers keywords,
+// `foo`, and `_x`). A leading digit, a quote, the `.`/`/` separators and the
+// `-` the segment rule separates on all fail that test, so the predicate never
+// reinterprets a separator or an operator as path text.
+@parser::header {
+_STAGE_PATH_SEPARATOR_TOKENS = frozenset({".", "/", "-"})
+
+def _nova_stage_path_token_ok(text):
+    if not text or text in _STAGE_PATH_SEPARATOR_TOKENS:
+        return False
+    head = text[0]
+    if not (head.isalpha() or head in "_$"):
+        return False
+    return all(ch.isalnum() or ch in "_$" for ch in text)
+
+def _nova_is_stage_path_atom(parser):
+    lookahead = parser._input.LA(1)
+    if lookahead == Token.EOF:
+        return False
+    return _nova_stage_path_token_ok(parser._input.LT(1).text)
+}
+// NOVA-END
 sqlStatements
     : singleStatement+ EOF
     ;
@@ -2756,6 +2793,27 @@ relationPrimary
 // * the trailing `'/'` is the documented bare-directory form (`@stage1/`,
 //   `docs/04-stage-manager.md:87`). It is optional and separate from the
 //   separators because it may end the reference.
+//
+// * every segment atom is matched by **token text**, not by spelling it as an
+//   `identifier`. A path segment is data — a file or folder name the user
+//   already owns — so its reserved-ness is irrelevant: `@stage1.data.default.csv`
+//   must resolve exactly like `@stage1.data.foo.csv`. Saying `identifier` here
+//   was the NOVA-134 regression: `identifier` reaches only `LETTER_IDENTIFIER`,
+//   `DIGIT_IDENTIFIER`, a backquoted name and `nonReserved`, so a reserved word
+//   (`DEFAULT`, `ORDER`, `GROUP`, `SELECT`, `TABLE`, `LIMIT`, `PRIMARY`,
+//   `VALUES`, …) could not stand where a path segment goes. The lexer already
+//   emits those words as *their own* keyword tokens rather than as
+//   `LETTER_IDENTIFIER`, so the fix is to accept the whole unreserved-token
+//   class instead of the `identifier` rule. The predicate below admits every
+//   default-channel token, minus the characters that are the grammar's
+//   *structure* in this rule (the path separators and the hyphen the segment
+//   rule separates on), so it can only differ from upstream `identifier` by
+//   admitting more literal text inside an `@stage` path — never by reinterpreting
+//   a separator or operator.
+//
+//   The `identifier` alternative is kept first so the common path keeps the same
+//   parse-tree shape it had before this fix (`_stage_path_atom_parts` reads its
+//   text); the predicate alternative is the catch-all for a reserved spelling.
 stageReference
     : AT stageSegment (stageSeparator stageSegment | fusedDecimal)* '/'?
     ;
@@ -2774,6 +2832,24 @@ stagePathAtom
     | ASTERISK_SYMBOL
     | INTEGER_VALUE
     | decimalAtom
+    // Catch-all for a *reserved* keyword used as a path segment. It must stay
+    // last so the structured alternatives keep priority (ANTLR orders
+    // alternatives top-down); what it adds is exactly the token types those
+    // four leave out, i.e. the engine's reserved words. It must invoke a rule
+    // that actually *consumes* the token: a bare predicate alternative would
+    // pass without matching anything and leave the atom empty.
+    | stagePathToken
+    ;
+
+// A single path-segment token. A predicate alone matches nothing in ANTLR —
+// predicates gate a following match rather than replacing it — so the wildcard
+// `.` is what actually consumes the token and `_nova_is_stage_path_atom()` is
+// what keeps it from consuming a separator. The `.` and `/` tokens are the
+// reference's own separators and `-` is what `stageSegment` splits on; all three
+// are rejected by the predicate, so the wildcard can only take a literal segment
+// token (including a reserved keyword).
+stagePathToken
+    : {_nova_is_stage_path_atom(self)}? .
     ;
 
 decimalAtom

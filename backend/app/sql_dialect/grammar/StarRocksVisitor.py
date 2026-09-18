@@ -2444,6 +2444,11 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#stagePathToken.
+    def visitStagePathToken(self, ctx:StarRocksParser.StagePathTokenContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#decimalAtom.
     def visitDecimalAtom(self, ctx:StarRocksParser.DecimalAtomContext):
         return self.visitChildren(ctx)
