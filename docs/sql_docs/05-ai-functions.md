@@ -131,6 +131,8 @@ Prompt: `Does the following text match this criteria? Reply with ONLY "true" or 
 - The API key is encrypted at rest (`app.common.crypto.encrypt`) and never returned in plaintext. Listing shows `has_api_key` and `api_key_masked`.
 - `test_connection` hits `{endpoint}/models` with the provider-appropriate auth header and returns the available model IDs.
 
+> **The valid config field is `endpoint`, not `endpoint_url`.** `ai_query()`'s JSON config uses `endpoint` (source-verified in `10:71`), and Nova's code reads `provider["endpoint"]` and writes `config["endpoint"]` (`llm_functions/service.py:456-490`). The comment block in `workspace/ai_functions_samples.sql` still says `endpoint_url` — that sample file is **out of sync** and is not authoritative; the fix is tracked separately as NOVA-64.
+
 The endpoint is rewritten for the engine: `localhost`/`127.0.0.1` become `host.docker.internal`, and the path is normalised to end in `/chat/completions` (`llm_functions/service.py:468`). So the UI can store `https://api.openai.com/v1` and the engine still receives a valid chat-completions URL.
 
 ### Model
@@ -195,7 +197,7 @@ The backend re-registers them on every startup, so a manual drop is both blocked
 ## Limitations
 
 - Only `openai`, `openai_compatible`, and `anthropic` provider types are implemented in `test_connection`; other types return `Unsupported provider type`.
-- The engine's `ai_query()` is an upstream StarRocks feature. Its exact supported config keys beyond `model`, `api_key`, and `endpoint` are **unverified** here; see `10-starrocks-reference-comparison.md` when available.
+- The engine's `ai_query()` is an upstream StarRocks feature. `10:71` lists the full config key set (`model`, `api_key`, `endpoint`, `temperature`, `max_tokens`, `top_p`, `timeout_ms`), sourced from the engine commit pin — **not** from public docs, which have no `ai_query` page; runtime presence in the Nova image remains `[BELUM TERVERIFIKASI]` (`10:107-108`).
 - `AI_FILTER` compares its string result to `'true'`; a model that returns `True` or extra text will not match cleanly.
 - `AI_CLASSIFY` returns free text; Nova does not validate it against the supplied category list.
 - Placeholder functions return a string, not an error, so a query against an unconfigured function returns rows.

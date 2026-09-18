@@ -165,18 +165,19 @@ SELECT 1; DROP ROLE ACCOUNTADMIN
 
 ---
 
-## Unverified items (pending `10-starrocks-reference-comparison.md`)
+## Engine-semantics cross-reference (`10`)
 
-The following are StarRocks engine semantics that Nova forwards but does not define. Treat them as points to confirm against the official 4.1.4 docs:
+The research comparison `10-starrocks-reference-comparison.md` answers several of the upstream questions this document deliberately did not guess. The answered points are now cross-references rather than open items:
 
-1. Exact `FILES()` property set and accepted keys beyond those Nova injects (`path`, `format`, `aws.s3.*`, `csv.*`).
-2. `COPY INTO` load/export option syntax and behaviour.
-3. `PRIMARY KEY` / `DUPLICATE KEY` / partitioning / `PROPERTIES` semantics in 4.1.4.
-4. `EXPLAIN` output shape.
-5. The full set of `ai_query()` config keys beyond `model`, `api_key`, `endpoint`.
-6. Whether upstream grammar covers `CREATE ML_MODEL` (Nova expects it does **not**; the research workstream is to confirm).
+1. **`FILES()` property set.** `10:44` gives the official signature (`data_location`, `data_format`, `schema_detect`, `StorageCredentialParams`, `columns_from_path`, `list_files_only`, `list_recursively`) and the S3-compatible credential keys Nova injects. `csv.trim_space` is **not** in the official parameter list and remains `[BELUM TERVERIFIKASI]` (`10:109`).
+2. **`ai_query()` config keys.** Answered by `10:71`: `model` (required), `api_key` (required), `endpoint`, `temperature`, `max_tokens`, `top_p`, `timeout_ms`.
+3. **Grammar `CREATE ML_MODEL`.** Answered by `10:61-65`: the vendored/upstream grammar contains no `ML_MODEL`/`ML_PREDICT` token or rule; `CREATE ML_MODEL` is Nova-only and never reaches the engine. Matrix rows `10:29`, `10:31`, `10:33` cover `CREATE ML_MODEL`, `ML_PREDICT`, and the grammar provenance.
 
-When `10` and `11` are present, replace this list with links to the corresponding rows.
+The remaining three items are **not** covered by `10` and stay open — they were moved into `10:105-114` as `[BELUM TERVERIFIKASI]` so they are not lost:
+
+1. `COPY INTO` load/export option syntax and behaviour.
+2. `PRIMARY KEY` / `DUPLICATE KEY` / partitioning / `PROPERTIES` semantics in 4.1.4.
+3. `EXPLAIN` output shape.
 
 ---
 

@@ -107,7 +107,7 @@ Request:
 
 `MLEngineService.batch_predict` (`ml_engine/service.py:415`):
 
-1. Prepare `prediction_sql` through the shared pipeline — guard, `@stage` translation, credential injection, redaction. This SQL runs on a credential-bearing connection, so it takes the same four steps as training (`NOVA-28`).
+1. Prepare `prediction_sql` through the shared pipeline — guard, parse, `@stage` translation, credential injection, redaction. This SQL runs on a credential-bearing connection, so it takes the same five steps as training (`NOVA-28`).
 2. Resolve the alias and load the model.
 3. Execute the query (setting `USE <database>` first when a database is given) and fetch rows.
 4. Build `X`, skipping rows with NULL features; predict.

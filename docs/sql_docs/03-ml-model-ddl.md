@@ -175,7 +175,7 @@ training_rows, feature_columns, metrics
 
 ## Credential handling
 
-Training SQL is a `@stage`-capable statement executed on a credential-bearing connection, so it takes all four pipeline steps (`NOVA-28`). Critical points:
+Training SQL is a `@stage`-capable statement executed on a credential-bearing connection, so it takes all five pipeline steps (`NOVA-28`). Critical points:
 
 - The engine receives the credential-bearing form (`engine_sql`).
 - `NOVA_SYSTEM.ML_MODELS.training_sql` stores the **redacted** form — no credential value ever reaches the row. Asserted by `test_ml_engine_training_sql.py::test_persistence_stores_the_redacted_form`.

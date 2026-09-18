@@ -22,7 +22,7 @@ No example contains a real storage or user credential. Placeholders (`'K'`, `'S'
 
 | # | Document | What it covers |
 |---|----------|----------------|
-| 00 | `00-index.md` | This file — scope, reading order, the four-step pipeline at a glance. |
+| 00 | `00-index.md` | This file — scope, reading order, the five-step pipeline at a glance. |
 | 01 | `01-dialect-pipeline.md` | The shared pipeline: guard → parse → translate → inject → redact. Ordering, `PreparedSQL`, and why every entry point uses it. |
 | 02 | `02-stage-queries.md` | The `@stage` abstraction: syntax, context classification, `FILES()` translation, CSV auto-detection, `@stage` vs user variables. |
 | 03 | `03-ml-model-ddl.md` | `CREATE ML_MODEL ... AS SELECT ...` — grammar, defaults, validation, the metadata rows it writes. |
@@ -41,7 +41,7 @@ Documents `10` and `11` are produced by the StarRocks research workstream and re
 
 ## The pipeline in one picture
 
-Every statement a user hands Nova — through the SQL Workspace, the MySQL proxy, an ML training call, or a batch prediction — passes through the same four steps in the same order. This is the single most important fact about Nova SQL.
+Every statement a user hands Nova — through the SQL Workspace, the MySQL proxy, an ML training call, or a batch prediction — passes through the same five steps in the same order. This is the single most important fact about Nova SQL.
 
 ```
 user SQL
@@ -82,11 +82,13 @@ Only one object ever holds both forms, and its field names state which is which:
 |---------|----------------------|-------|
 | Stage file access | `@stage[.path][/][.file.ext]` → `FILES()` | `02-stage-queries.md` |
 | ML model training | `CREATE ML_MODEL name TYPE=… TARGET=… AS SELECT …` | `03-ml-model-ddl.md` |
-| Classical ML inference | `ML_PREDICT(alias, features_json)` | `04-ml-predict-evaluate.md` |
+| Classical ML inference | `ML_PREDICT(alias, features_json)` — **placeholder UDF; SQL intercept not wired** | `04-ml-predict-evaluate.md` |
 | LLM functions | `AI_COMPLETE`, `AI_SENTIMENT`, `AI_CLASSIFY`, `AI_SUMMARIZE`, `AI_EXTRACT`, `AI_TRANSLATE`, `AI_FILTER` | `05-ai-functions.md` |
 | Nova DDL (also intercepted) | `CREATE TASK …` lowered to `CONFIG_TASK*` metadata | `06-nova-system-tables.md` |
 
-`CREATE ML_MODEL` and `CREATE TASK` are **Nova statements**: they are parsed by Nova and never sent to StarRocks in their written form. `ML_PREDICT` and the `AI_*` functions are **StarRocks global UDFs** registered by Nova at startup, so they execute inside the engine.
+`CREATE ML_MODEL` and `CREATE TASK` are **Nova statements**: they are parsed by Nova and never sent to StarRocks in their written form. The `AI_*` functions are **StarRocks global UDFs** registered by Nova at startup, so they execute inside the engine.
+
+> **`ML_PREDICT` gap.** `ML_PREDICT` is registered as a global UDF and executes in the engine, but it is a **placeholder**: it returns an instruction string, not a prediction. The SQL-level `ml_predict()` intercept in `backend/app/common/ml_intercept.py` is **not wired** — the module has zero imports outside its own definition (`grep -rn 'ml_intercept' backend/app/` → no import). Real inference is via `POST /api/v1/ml/predict` and `POST /api/v1/ml/predict/batch`. See `04-ml-predict-evaluate.md`; the parity finding is `10:81`.
 
 ### Execution surfaces
 
@@ -123,19 +125,28 @@ These are hard rules from `AGENTS.md`; the tests in `backend/tests/unit/` enforc
 
 ## Verification status
 
-Behavioural claims in `00`–`07` and `09` are backed by the unit suite:
+Behavioural claims in `00`–`07` and `09` are backed by the unit suite. The numbers below are for **two distinct test sets** — the set membership matters, so each is labelled and its exact command given.
+
+**Set A — dialect pipeline (3 files):**
 
 ```
 cd backend
 uv run pytest tests/unit/test_dialect.py tests/unit/test_sql_pipeline_files_params.py \
               tests/unit/test_ml_model_ddl.py -q
-# 139 passed
+# Set A: 139 passed
+```
 
+**Set B — guards + ML training + credential leaks (5 files):**
+
+```
+cd backend
 uv run pytest tests/unit/test_sql_guard.py tests/unit/test_sql_guard_bypass.py \
               tests/unit/test_sql_guard_revoke_hardening.py \
               tests/unit/test_ml_engine_training_sql.py \
               tests/unit/test_credential_leaks.py -q
-# 192 passed
+# Set B: 192 passed
 ```
 
-`08-native-starrocks-sql.md` describes StarRocks-native behaviour that Nova does not re-implement; sections that depend on upstream documentation are marked **unverified** until the research comparison (`10`) lands.
+Set A ⊎ Set B = 8 files, 331 tests. `09-guardrails-invariants.md` also reports "192 passed", but over **a different set** (it adds `test_audit_credential_redaction.py` and `test_defense_in_depth_hardening.py` while dropping some of Set B's files) — that is the other 192 and should not be added to these. Each document states the files it ran.
+
+`08-native-starrocks-sql.md` describes StarRocks-native behaviour that Nova does not re-implement; upstream questions are now cross-referenced to `10-starrocks-reference-comparison.md`, and anything still unanswered is marked `[BELUM TERVERIFIKASI]` there.

@@ -25,7 +25,7 @@
 
 ## 1. `@stage` — referensi file
 
-**Bentuk yang user tulis** (semua lolos parser, `test_dialect.py:91-125`):
+**Bentuk yang user tulis** (semua lolos parser, `test_dialect.py:40,94-96`):
 ```
 @stage1
 @stage1/
@@ -113,7 +113,7 @@ Daftar: `AI_COMPLETE`, `AI_SENTIMENT`, `AI_CLASSIFY`, `AI_SUMMARIZE`, `AI_EXTRAC
 | `AI_TRANSLATE` | `txt, target_lang STRING` | terjemah |
 | `AI_FILTER` | `txt, criteria STRING` | `"true"`/`"false"` |
 
-**Semantik StarRocks resmi.** Semua adalah **SQL UDF** yang membungkus builtin `ai_query(VARCHAR, JSON) -> VARCHAR`. Registrasi engine pada commit pin: `gensrc/script/functions.py:1520` → `[200000, 'ai_query', True, False, 'VARCHAR', ['VARCHAR', 'JSON'], "AiFunctions::ai_query"]`. Field config yang valid (dari source engine, bukan docs): `model` (wajib), `api_key` (wajib), `endpoint` (opsional), `temperature`, `max_tokens`, `top_p`, `timeout_ms`. Nova mengisi `model`, `api_key`, `endpoint` (`service.py:461-482`) dan menambahkan `default_params` alias bila ada.
+**Semantik StarRocks resmi.** Semua adalah **SQL UDF** yang membungkus builtin `ai_query(VARCHAR, JSON) -> VARCHAR`. Registrasi engine pada commit pin: `gensrc/script/functions.py:1520` → `[200000, 'ai_query', True, False, 'VARCHAR', ['VARCHAR', 'JSON'], "AiFunctions::ai_query"]`. Field config yang valid (dari source engine, bukan docs): `model` (wajib), `api_key` (wajib), `endpoint` (opsional), `temperature`, `max_tokens`, `top_p`, `timeout_ms`. Nova mengisi `model`, `api_key`, `endpoint` (`service.py:456-490`) dan menambahkan `default_params` alias bila ada.
 
 **Registrasi & grant.** `init-nova.sql:743-781` membuat placeholder; `llm_functions/service.py:_register_single_udf` (baris 422) DROP lalu CREATE ulang; `_grant_udf_privileges` (baris 361) memberi `GRANT USAGE ON GLOBAL FUNCTION ...` ke role `root`, `db_admin`, `cluster_admin`, `user_admin`, `ACCOUNTADMIN` dengan tiga varian signature (`STRING`, `VARCHAR`, `VARCHAR(65533)`).
 
