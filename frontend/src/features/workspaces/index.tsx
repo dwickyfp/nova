@@ -18,6 +18,7 @@ import Editor, { type Monaco } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart3,
+  Bot,
   Braces,
   ChevronDown,
   ChevronLeft,
@@ -63,6 +64,7 @@ import {
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
+import { AssistantPanel } from '@/features/assistant'
 import { DatabaseSchemaSelector } from './database-schema-selector'
 import {
   type CompletionResponse,
@@ -572,6 +574,7 @@ export function WorkspacesPage() {
   const queryClient = useQueryClient()
   const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases'>('workspaces')
   const [secondaryCollapsed, setSecondaryCollapsed] = useState(false)
+  const [assistantOpen, setAssistantOpen] = useState(false)
   const [workspaceSearch, setWorkspaceSearch] = useState('')
   const [databaseSearch, setDatabaseSearch] = useState('')
   const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({})
@@ -1383,6 +1386,18 @@ export function WorkspacesPage() {
               >
                 <Plus className='size-3.5' />
               </button>
+              <Button
+                type='button'
+                variant={assistantOpen ? 'secondary' : 'ghost'}
+                size='sm'
+                className='mb-0.5 ml-auto shrink-0 gap-1.5'
+                aria-pressed={assistantOpen}
+                aria-controls='assistant-panel'
+                onClick={() => setAssistantOpen((prev) => !prev)}
+              >
+                <Bot className='size-4' />
+                Assistant
+              </Button>
             </div>
           </div>
 
@@ -1713,6 +1728,8 @@ export function WorkspacesPage() {
             </div>
           )}
         </section>
+
+        <AssistantPanel open={assistantOpen} onOpenChange={setAssistantOpen} />
       </div>
     </div>
   )
