@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from cryptography.fernet import Fernet
 
+from app.core.config import settings
+
 #: Values shipped in the repo as examples. A deployment that still has one of
 #: these has no secret at all — the value is public.
 KNOWN_PLACEHOLDER_SECRET_KEYS = frozenset(
@@ -95,3 +97,18 @@ def validate_required_secrets(
     """
     validate_secret_key(secret_key)
     validate_fernet_key(fernet_key)
+
+
+def guard_process_startup() -> None:
+    """Validate the configured secrets for any Nova process entrypoint.
+
+    Every standalone process (the FastAPI lifespan, ``app.worker``,
+    ``app.proxy``, ``app.scheduler``) must call this before it opens any
+    connection. Centralising the settings read here keeps the four entrypoints
+    on one rule: a deployment with a blank or placeholder key refuses to run,
+    whichever process starts first, instead of failing later at first use.
+    """
+    validate_required_secrets(
+        secret_key=settings.SECRET_KEY,
+        fernet_key=settings.FERNET_KEY,
+    )

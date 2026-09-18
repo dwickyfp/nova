@@ -22,6 +22,7 @@ import signal
 import redis.asyncio as aioredis
 
 from app.common.nova_system import init_task_orchestration
+from app.common.secret_keys import guard_process_startup
 from app.core.config import settings
 from app.core.database import db
 from app.modules.task_orchestration.repository import task_orchestration_repository
@@ -76,6 +77,9 @@ async def _assert_engine_timezone() -> str | None:
 
 
 async def _run() -> None:
+    # Fail fast on missing/placeholder signing and encryption keys (NOVA-108),
+    # before the pool opens a connection.
+    guard_process_startup()
     await db.init_system_pool()
     try:
         await _assert_engine_timezone()

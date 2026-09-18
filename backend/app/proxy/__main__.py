@@ -17,6 +17,7 @@ import contextlib
 import logging
 import signal
 
+from app.common.secret_keys import guard_process_startup
 from app.core.config import settings
 from app.core.database import db
 from app.proxy.server import MySQLProxyServer
@@ -25,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 async def _run() -> None:
+    # Fail fast on missing/placeholder signing and encryption keys (NOVA-108),
+    # before the pool opens a connection.
+    guard_process_startup()
     await db.init_system_pool()
     server = MySQLProxyServer()
 
