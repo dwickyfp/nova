@@ -176,19 +176,21 @@ def _first_error(sql: str) -> StageParseError:
 def test_syntax_error_carries_line_and_column() -> None:
     """The failure itself is not swallowed; it is *positioned*.
 
-    ``SELECT FROM t`` is malformed at the ``FROM`` (line 1, column 7), which is
-    the exact position the NOVA-17 audit recorded for this case.
+    ``SELECT * FROM @stage1 FROM`` is malformed at the second ``FROM`` (line 1,
+    column 22) — the position the grammar reports for the trailing token. (The
+    statement carries an ``@`` deliberately: ``@``-free SQL now short-circuits
+    before the grammar, and a token-position assertion needs the grammar path.)
     """
-    error = _first_error("SELECT FROM t")
+    error = _first_error("SELECT * FROM @stage1 FROM")
 
-    assert (error.line, error.column) == (1, 7)
-    assert str(error).startswith("1:7 ")
+    assert (error.line, error.column) == (1, 22)
+    assert str(error).startswith("1:22 ")
     assert error.message
 
 
 def test_error_position_is_not_always_the_first_line() -> None:
     """The position is the real one, not a hard-coded ``1:0``."""
-    error = _first_error("SELECT 1\nFROM (t")
+    error = _first_error("SELECT 1\nFROM (@stage1.data.csv")
 
     assert error.line == 2
     assert error.column > 0
@@ -253,3 +255,49 @@ def test_a_variable_and_a_stage_in_one_statement() -> None:
     assert [ref.stage_name for ref in result.stage_refs] == ["stage1"]
     translated = _translate("SELECT @x, * FROM @stage1.data.csv")
     assert translated.startswith("SELECT @x, * FROM FILES(")
+
+
+# ---------------------------------------------------------------------------
+# AC-5 mitigation: @-free SQL never builds the ANTLR4 tree
+# ---------------------------------------------------------------------------
+
+
+def test_an_at_free_statement_does_not_invoke_the_antlr_parse(monkeypatch) -> None:
+    """The ordinary path is short-circuited before ``_parse_tree`` runs.
+
+    The guard is sound because a stage always contains a literal ``@``; this
+    pins the other half — that the guard actually fires, so the request path
+    does not pay ANTLR for SQL the dialect can never rewrite.
+    """
+    from app.modules.query.dialect import parser as parser_module
+
+    def _fail(*_args, **_kwargs):
+        raise AssertionError("_parse_tree must not run for @-free SQL")
+
+    monkeypatch.setattr(parser_module, "_parse_tree", _fail)
+
+    result = parser_module.parse_sql("SELECT id, name FROM users WHERE amount > 100")
+
+    assert result.command_type == CommandType.REGULAR
+    assert result.stage_refs == []
+    assert result.errors == []
+    assert result.original_sql == "SELECT id, name FROM users WHERE amount > 100"
+    assert result.base_sql == result.original_sql
+
+
+def test_the_guard_is_the_literal_character_not_a_stage_name(monkeypatch) -> None:
+    """A lone ``@`` still routes through the grammar — the guard is not a name test."""
+    from app.modules.query.dialect import parser as parser_module
+
+    calls: list[str] = []
+    real_parse_tree = parser_module._parse_tree
+
+    def _spy(sql: str):
+        calls.append(sql)
+        return real_parse_tree(sql)
+
+    monkeypatch.setattr(parser_module, "_parse_tree", _spy)
+
+    parser_module.parse_sql("SELECT @x FROM t")
+
+    assert calls == ["SELECT @x FROM t"]
