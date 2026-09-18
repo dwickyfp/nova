@@ -10,9 +10,12 @@ Endpoints under ``/api/v1/backup``:
   POST   /recover                → RECOVER TABLE|DATABASE … (privileged)
 
 Authorization is enforced **here**, not in the UI (AGENTS.md §6): every mutating
-endpoint requires one of the StarRocks system roles that can carry
-``REPOSITORY``/``OPERATE`` on SYSTEM. The engine's own grant is the second gate,
-because each statement also runs on the caller's connection.
+endpoint requires the caller's *active* role to be one of the StarRocks system
+roles that can carry ``REPOSITORY``/``OPERATE`` on SYSTEM. The gate reads the
+active role because the connection runs ``SET ROLE <active_role>`` — a granted
+but inactive admin must be refused on a destructive surface (NOVA-94 finding
+#3). The engine's own grant is the second gate, because each statement also runs
+on the caller's connection.
 """
 
 from __future__ import annotations
@@ -22,7 +25,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.common.responses import SanitizingJSONResponse
-from app.core.deps import get_current_user, require_role
+from app.core.deps import get_current_user
+from app.core.role_gates import require_active_role
 
 from .schemas import (
     RecoverRequest,
@@ -46,7 +50,12 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 #: ACCOUNTADMIN is the Nova super user that carries them explicitly (AGENTS.md
 #: §6). A role not in this set is refused before any SQL is built.
 BACKUP_ADMIN_ROLES = ("ACCOUNTADMIN", "cluster_admin", "db_admin")
-_backup_admin = require_role(*BACKUP_ADMIN_ROLES)
+#: Gate on the role the engine will *activate*, not the roles the user was
+#: granted. Every statement runs as ``SET ROLE <active_role>`` (see
+#: ``role_gates`` / NOVA-94 finding #3): a principal who holds ACCOUNTADMIN but
+#: has switched to ``analyst`` must be refused on this destructive surface, and
+#: a granted-roles check would have let it through.
+_backup_admin = require_active_role(*BACKUP_ADMIN_ROLES)
 BackupAdmin = Annotated[dict, Depends(_backup_admin)]
 
 
