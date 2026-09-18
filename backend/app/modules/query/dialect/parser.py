@@ -286,7 +286,7 @@ def _stage_reference_from_atom(atom, original_sql: str) -> StageReference:
     """Build a :class:`StageReference` from one ``#stageAtom`` node.
 
     The grammar composes the reference as ``AT stageSegment (stageSeparator
-    stageSegment | decimalAtom)* '/'?`` (``StarRocks.g4``, NOVA-BEGIN block). The
+    stageSegment | fusedDecimal)* '/'?`` (``StarRocks.g4``, NOVA-BEGIN block). The
     first segment is the stage name; the rest are path segments in the order
     written, whether joined by ``.`` or ``/``. Reassembling from the *ordered*
     children — not from a regex, and not from ``getText()`` alone — is what makes
@@ -294,13 +294,15 @@ def _stage_reference_from_atom(atom, original_sql: str) -> StageReference:
     of ``@stage1.data/*.csv``, so the file is ``*.csv`` and the translated path
     keeps the glob rather than dropping it.
 
-    ``decimalAtom`` siblings matter for the NOVA-132 regression: the dotted
-    numeric form (``@stage1.2024.csv``) puts the fused ``.2024`` next to the
+    The fused decimals matter for the NOVA-132 regression: the dotted numeric
+    form (``@stage1.2024.csv``) puts the fused ``.2024`` next to the
     ``stageSegment``s rather than wrapping it in one, so reading only
     ``stageSegment()`` would lose every numeric path segment and mis-split the
     file name (``['csv']`` instead of ``['2024', 'csv']``). Walking the children
-    in source order and expanding each decimal restores the segment list the
-    regex parser produced on ``main``.
+    in source order and expanding each fused decimal restores the segment list
+    the regex parser produced on ``main``. ``fusedDecimal`` is the separator
+    position (one segment, never absorbs a following atom); ``decimalAtom`` is
+    reachable inside a ``stageSegment`` for the trailing-dot hyphen form.
     """
     stage_ref = atom.stageReference()
 
@@ -310,7 +312,7 @@ def _stage_reference_from_atom(atom, original_sql: str) -> StageReference:
         if name == "StageSegmentContext":
             # A whole segment; a decimal inside it (hyphen form) expands too.
             segments.append(child.getText())
-        elif name == "DecimalAtomContext":
+        elif name in ("FusedDecimalContext", "DecimalAtomContext"):
             segments.extend(_decimal_atom_parts(child))
 
     if not segments:
@@ -537,13 +539,15 @@ def _nova_surface_stage_refs(sql: str) -> list[StageReference]:
 
 #: Token types whose text is a numeric path segment the lexer fused the leading
 #: ``.`` separator into: ``.2024`` → ``DECIMAL_VALUE``, ``.2024_01`` →
-#: ``DOT_IDENTIFIER`` (NOVA-132). The grammar's ``decimalAtom`` accepts both; the
-#: token scan has to as well, or the Nova surfaces (``LIST``/``COPY INTO``) would
-#: stop the reference at the stage name and leave ``.2024.csv`` dangling.
+#: ``DOT_IDENTIFIER``, ``.2e3`` → ``DOUBLE_VALUE`` (NOVA-132). The grammar's
+#: ``fusedDecimal``/``decimalAtom`` accept all three; the token scan has to as
+#: well, or the Nova surfaces (``LIST``/``COPY INTO``) would stop the reference at
+#: the stage name and leave ``.2024.csv`` dangling.
 _FUSED_DECIMAL_TOKENS = frozenset(
     {
         StarRocksLexer.DECIMAL_VALUE,
         StarRocksLexer.DOT_IDENTIFIER,
+        StarRocksLexer.DOUBLE_VALUE,
     }
 )
 
@@ -553,9 +557,10 @@ def _fused_decimal_parts(token) -> list[str] | None:
 
     ``DECIMAL_VALUE`` text comes in two shapes on this surface: leading (``.2024``
     — separator first, ``['2024']``) and trailing (``2.`` — separator last, after
-    a hyphen, ``['2']``). ``DOT_IDENTIFIER`` is always leading (``.2024_01``).
-    The split drops empty pieces, so the ``.`` is a separator and never a segment.
-    Returns ``None`` when the token is not one of the fused numeric types.
+    a hyphen, ``['2']``). ``DOT_IDENTIFIER`` is always leading (``.2024_01``), and
+    ``DOUBLE_VALUE`` is the exponent form (``.2e3`` → ``['2e3']``). The split
+    drops empty pieces, so the ``.`` is a separator and never a segment. Returns
+    ``None`` when the token is not one of the fused numeric types.
     """
     if token.type not in _FUSED_DECIMAL_TOKENS:
         return None
@@ -566,9 +571,10 @@ def _is_segment_atom(token) -> bool:
     """Whether ``token`` can be one ``stageSegment`` atom.
 
     Mirrors the grammar's ``stagePathAtom``: an identifier (including a
-    backquoted one), ``*``, an integer, or a decimal. A keyword such as ``FROM``
-    parses as an identifier in the grammar, and the token type for the literal
-    ``*`` is the same wherever it appears, so the test is on token text.
+    backquoted one), ``*``, an integer, or a decimal (``DECIMAL_VALUE`` /
+    ``DOT_IDENTIFIER`` / ``DOUBLE_VALUE``). A keyword such as ``FROM`` parses as
+    an identifier in the grammar, and the token type for the literal ``*`` is the
+    same wherever it appears, so the test is on token text.
     """
     if token.text == "*":
         return True
@@ -576,6 +582,7 @@ def _is_segment_atom(token) -> bool:
         StarRocksLexer.INTEGER_VALUE,
         StarRocksLexer.DECIMAL_VALUE,
         StarRocksLexer.DOT_IDENTIFIER,
+        StarRocksLexer.DOUBLE_VALUE,
     ):
         return True
     return _is_identifier_token(token)

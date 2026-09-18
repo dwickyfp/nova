@@ -233,6 +233,76 @@ def test_numeric_dotted_path_is_not_a_stage_outside_table_position() -> None:
     assert parse_sql("SELECT @stage1.2024.csv").stage_refs == []
 
 
+@pytest.mark.parametrize(
+    ("sql", "stage_name", "path_parts", "file_name"),
+    [
+        ("SELECT * FROM @stage1.2e3.csv", "stage1", [], "2e3.csv"),
+        ("SELECT * FROM @stage1.a.2e3.csv", "stage1", ["a"], "2e3.csv"),
+    ],
+)
+def test_numeric_dotted_path_exponent_form_resolves(
+    sql: str, stage_name: str, path_parts: list[str], file_name: str
+) -> None:
+    """The exponent form (``.2e3``, a ``DOUBLE_VALUE``) is a fused separator too.
+
+    Without it the token scan sees a bare ``DOUBLE_VALUE`` where a separator is
+    expected and drops the whole reference, forwarding ``@stage1.2e3.csv``
+    untranslated — the same class as the DECIMAL_VALUE regression.
+    """
+    result = parse_sql(sql)
+
+    assert result.errors == []
+    assert len(result.stage_refs) == 1
+    ref = result.stage_refs[0]
+    assert (ref.stage_name, ref.path_parts, ref.file_name) == (
+        stage_name,
+        path_parts,
+        file_name,
+    )
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM @stage1.2024 t",
+        "SELECT * FROM @stage1.2024.01 t",
+        "SELECT * FROM @stage1.2024 AS t",
+    ],
+)
+def test_a_trailing_numeric_segment_does_not_swallow_the_alias(sql: str) -> None:
+    """A separator-fused decimal is one segment; it must not absorb the alias.
+
+    ``@stage1.2024 t`` used to parse the alias ``t`` as a path segment
+    (``@stage1.2024t``), drop the reference and forward the statement
+    untranslated. The glued separator carries exactly one segment, so the alias
+    stays outside the reference and the statement is translated.
+    """
+    result = parse_sql(sql)
+    reference = sql.split("FROM ", 1)[1].split(" ", 1)[0]
+
+    assert result.errors == []
+    assert [ref.full_match for ref in result.stage_refs] == [reference]
+    assert result.stage_refs[0].path_parts == reference.lstrip("@stage1.").split(".")
+
+
+def test_a_trailing_numeric_segment_alias_form_translates() -> None:
+    """The alias case is rewritten into ``FILES()`` rather than passed through."""
+    translated = _translate("SELECT * FROM @stage1.2024 t")
+
+    assert "@stage1" not in translated
+    assert "s3://nova-stages/datalake/bronze/stage1/2024" in translated
+    assert translated.endswith(" t")
+
+
+def test_numeric_dotted_exponent_form_on_the_nova_surfaces() -> None:
+    """``LIST``/``COPY INTO`` also expand the exponent-form fused token."""
+    load = parse_sql("COPY INTO t FROM @stage1.2e3.csv")
+    browse = parse_sql("LIST FILES @stage1.2e3.csv")
+
+    assert [ref.full_match for ref in load.stage_refs] == ["@stage1.2e3.csv"]
+    assert [ref.full_match for ref in browse.stage_refs] == ["@stage1.2e3.csv"]
+
+
 # ---------------------------------------------------------------------------
 # Defect 3: @@version is not a stage
 # ---------------------------------------------------------------------------
