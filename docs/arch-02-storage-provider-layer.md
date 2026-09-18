@@ -228,6 +228,64 @@ class GCSProvider(StorageProvider):
 
 ---
 
+## Secret Provider Layer
+
+An optional layer above the storage providers: a storage connection may carry a
+`secret_ref` instead of inline credentials, and the value is fetched from an
+external secret store at the moment a `FILES()` call or S3 client is built.
+
+```
+nova.yaml connection                app/storage/secrets.py
+├── type: s3                        SecretProvider (Protocol)
+├── bucket: my-bucket              ├── AwsSecretsManagerProvider  ← first adapter
+└── secret_ref: arn:aws:…          └── (azure/gcp: future)
+        │                                    │
+        │ lookup                             │ fetch(reference) → SecretValue
+        ▼                                    ▼
+resolve_storage_credentials()  ──►  resolve_secret_reference(ref)
+        │                                    │
+        └────────────► FILES() / boto3 ◄─────┘
+```
+
+`SecretProvider` is a `Protocol` with one method, `fetch(reference) ->
+SecretValue` (`access_key`, `secret_key`, optional `session_token`). Adapters
+are registered by name and selected from the reference scheme (`aws://…`, or a
+bare ARN/name which defaults to AWS). A process-local TTL cache shortens
+repeated fetches; failures are never cached.
+
+**Fail-closed contract.** When a reference is configured, the inline
+`access_key`/`secret_key` are ignored entirely. A provider failure raises
+`SecretResolutionError` — it never falls back to the inline value. Error
+messages name the provider and reference, never a value. Each attempt records an
+auditable fact (provider + reference + success/failure) that the query service
+persists as an audit row; the fact carries no secret.
+
+### SecretProvider Interface
+
+```python
+from typing import Protocol
+
+class SecretProvider(Protocol):
+    name: str
+
+    def fetch(self, reference: str) -> SecretValue:
+        """Resolve a reference to (access_key, secret_key[, session_token])."""
+        ...
+```
+
+### Wiring into credential resolution
+
+```python
+def resolve_storage_credentials(storage_connection: str | None = None) -> tuple[str, str]:
+    connection = get_storage_connection(storage_connection or default_name)
+    if connection.secret_ref:
+        value = resolve_secret_reference(connection.secret_ref)  # raises, never falls back
+        return value.access_key, value.secret_key
+    return connection.access_key, connection.secret_key
+```
+
+---
+
 ## Factory + Config Loading
 
 ```python

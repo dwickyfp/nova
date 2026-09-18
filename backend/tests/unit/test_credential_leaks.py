@@ -20,6 +20,8 @@ CREDENTIAL_MODULES = [
     "app.modules.query.service",
     "app.modules.stages.service",
     "app.modules.workspaces.service",
+    # NOVA-58: the secret-reference layer must not carry a literal either.
+    "app.storage.secrets",
 ]
 
 
@@ -104,6 +106,47 @@ class TestResolveStorageCredentials:
             "from-config",
             "from-config-secret",
         )
+
+
+class TestReferencedSecretGoesThroughTheSameRedaction:
+    """NOVA-58: a provider-resolved value is redacted like any other.
+
+    The reference layer changes *where* a credential comes from, not what may
+    leave the process. These assertions hold the new source to the existing
+    invariant.
+    """
+
+    SENTINEL_ACCESS = "AKIA_SECRET_REF_SENTINEL"
+    SENTINEL_SECRET = "SECRET_REF_SENTINEL_VALUE"
+
+    def test_resolved_credentials_reach_get_credential_params_unchanged(self, monkeypatch):
+        monkeypatch.setattr(
+            injector,
+            "resolve_storage_credentials",
+            lambda storage_connection=None: (self.SENTINEL_ACCESS, self.SENTINEL_SECRET),
+        )
+        params = injector.get_credential_params("s3")
+        assert params["aws.s3.access_key"] == self.SENTINEL_ACCESS
+        assert params["aws.s3.secret_key"] == self.SENTINEL_SECRET
+
+    def test_injected_sql_carrying_a_referenced_secret_is_redactable(self):
+        from app.common.sql_guard import redact_sql_credentials
+
+        sql = (
+            "SELECT * FROM FILES('path'='s3://b/k', 'format'='csv', "
+            f"'aws.s3.access_key'='{self.SENTINEL_ACCESS}', "
+            f"'aws.s3.secret_key'='{self.SENTINEL_SECRET}')"
+        )
+        out = redact_sql_credentials(sql)
+        assert self.SENTINEL_ACCESS not in out
+        assert self.SENTINEL_SECRET not in out
+
+    def test_secret_provider_module_has_no_credential_literal(self):
+        import app.storage.secrets as secrets_module
+
+        source = inspect.getsource(secrets_module)
+        assert "minioadmin" not in source
+        assert "miniopassword" not in source
 
 
 class TestSecretMasking:

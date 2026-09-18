@@ -118,6 +118,11 @@ class StorageConnectionConfig:
     region: str = ""
     path_style: bool = True
     ssl: bool = False
+    #: Optional external secret reference. When set, `access_key`/`secret_key`
+    #: here are placeholders only and are never used to authenticate: the
+    #: value is fetched from the provider named by the reference. Reference-only
+    #: by design — Nova persists the reference, never the value (NOVA-58).
+    secret_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -210,6 +215,7 @@ def load_nova_app_config() -> NovaAppConfig:
             region=cfg.get("region", ""),
             path_style=bool(cfg.get("path_style", True)),
             ssl=bool(cfg.get("ssl", False)),
+            secret_ref=cfg.get("secret_ref", "") or "",
         )
 
     if not storage_connections:
