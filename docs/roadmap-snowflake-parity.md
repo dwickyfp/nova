@@ -53,10 +53,11 @@ should be updated to match.
 
 ---
 
-## 2. Phased roadmap — the 23 remaining items
+## 2. Phased roadmap — the 22 remaining items
 
-Item numbers are the matrix rows in NOVA-49. **Row 22 (Snowpipe elastic
-channels / Routine Load) is `SHIPPED` and is excluded**, leaving 23 items.
+Item numbers are the matrix rows in NOVA-49. **Two `SHIPPED` rows are excluded:**
+row 22 (Snowpipe elastic channels / Routine Load) and row 14 (MySQL wire
+protocol). That is 24 matrix rows minus 2, leaving 22 items scheduled below.
 
 Legend — **Strategy:** `WRAP_STARROCKS` (engine already has it; Nova exposes it)
 · `COMPOSE_STARROCKS` (engine plus an adjacent component) · `NOVA_NATIVE`
