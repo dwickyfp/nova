@@ -332,6 +332,50 @@ class TestCreateIndexRejections:
         assert response.status_code == 403
         assert cursor.executed == []
 
+    def test_bloom_filter_kind_is_refused(self, monkeypatch) -> None:
+        """NOVA-130: the kind was allow-listed with no builder and fell through
+        to NGRAM_BF. It must be refused before any SQL is assembled."""
+        client, cursor, audit = make_client(monkeypatch=monkeypatch)
+
+        response = client.post(
+            "/api/v1/indexes/create",
+            json={
+                "database": "example_db",
+                "table": "articles",
+                "index_name": "idx",
+                "column": "content",
+                "kind": "BLOOM_FILTER",
+            },
+        )
+
+        assert response.status_code == 403
+        assert cursor.executed == [], "no statement may reach the engine"
+        assert audit.calls == [], "no SUCCESS row may be written"
+
+    def test_an_allow_listed_kind_without_a_builder_is_a_hard_stop(self, monkeypatch) -> None:
+        """The default reject is the seam NOVA-130 asked for: an allow-listed
+        kind with no branch must fail, not fall through to the last builder."""
+        import app.common.identifiers as identifiers
+
+        monkeypatch.setattr(identifiers, "_INDEX_KINDS", identifiers._INDEX_KINDS | {"FUTURE_KIND"})
+        client, cursor, audit = make_client(monkeypatch=monkeypatch)
+
+        response = client.post(
+            "/api/v1/indexes/create",
+            json={
+                "database": "example_db",
+                "table": "articles",
+                "index_name": "idx",
+                "column": "content",
+                "kind": "FUTURE_KIND",
+            },
+        )
+
+        assert response.status_code == 403
+        assert "not implemented" in response.json()["detail"]
+        assert cursor.executed == []
+        assert audit.calls == []
+
     def test_a_negative_dict_gram_num_is_refused(self, monkeypatch) -> None:
         client, cursor, _ = make_client(monkeypatch=monkeypatch)
 
