@@ -211,6 +211,7 @@ async def send_message(
             invocation.tool_call_id,
             thread_id=thread.thread_id,
             user_name=thread.user_name,
+            classification=classification,
         )
 
         async def _watch_disconnect() -> None:
@@ -293,8 +294,11 @@ async def resolve_tool_call(
     Without this, any authenticated user who learned a ``tool_call_id`` could
     approve another user's call (NOVA-70).
 
-    ``allow_session`` sets the conversation's read-only grant. The grant only
-    ever covers read-only statements — it is not a switch the client can use to
+    ``allow_session`` sets the conversation's read-only grant, and is accepted
+    only when the pending call was classified ``read_only`` (spec §6.1). On any
+    other class it answers 400 and sets nothing, so a direct API caller cannot
+    record a grant the UI never presented (NOVA-122). The grant itself still
+    only covers read-only statements — it is not a switch the client can use to
     auto-approve a destructive call (E2b).
     """
     owner = consent_broker.owner_of(tool_call_id)
@@ -321,6 +325,16 @@ async def resolve_tool_call(
 
     grant_active = False
     if body.decision == "allow_session":
+        # The grant only covers read-only statements (spec §6.1), and the UI
+        # only offers always-allow for a read-only call. Refuse a session grant
+        # on any other class rather than record consent the user's UI never
+        # presented (NOVA-122). The call itself is left pending: the client can
+        # still resolve it with allow_once or deny.
+        if consent_broker.classification_of(tool_call_id) != "read_only":
+            raise HTTPException(
+                status_code=400,
+                detail="allow_session is only valid for a read-only tool call",
+            )
         thread.consent.always_allow_read_only = True
         grant_active = True
 
