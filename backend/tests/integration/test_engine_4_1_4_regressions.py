@@ -2,19 +2,20 @@
 
 The engine bump pins the images to the ``4.1.4`` commit
 ``4a9848edf03f5c936dac664b2d52527f48e72eb0``. Two documented behaviour changes
-in that jump can only be observed against a real engine, so they are asserted
-here rather than in the unit suite:
+in the ``4.1.1`` → ``4.1.4`` jump can only be observed against a real engine, so
+they are asserted here rather than in the unit suite. Both landed upstream in
+``4.1.3`` (still absent on ``4.1.1``, still present on the pinned ``4.1.4``):
 
-1. **CTAS preserves an explicit ``VARCHAR(N)`` length** (StarRocks #73498). On
-   4.1.1 a ``CREATE TABLE ... AS SELECT CAST(x AS VARCHAR(n))`` widened the
-   column to ``VARCHAR(MAX)``; on 4.1.4 the declared length survives, so the
-   column is created as ``varchar(n)``. A Nova CTAS path that relied on the
-   widening now enforces the length on later writes.
+1. **CTAS preserves an explicit ``VARCHAR(N)`` length** (StarRocks #73498,
+   released in 4.1.3). On 4.1.1 a ``CREATE TABLE ... AS SELECT CAST(x AS VARCHAR(n))``
+   widened the column to ``VARCHAR(MAX)``; from 4.1.3 the declared length
+   survives, so the column is created as ``varchar(n)``. A Nova CTAS path that
+   relied on the widening now enforces the length on later writes.
 
 2. **``isAdjustedToUTC=false`` INT64 Parquet timestamps are wall-clock**
-   (StarRocks #73674). ``FILES()`` no longer applies a session timezone shift
-   to such columns, so the loaded value equals the stored wall-clock value even
-   when the session ``time_zone`` is not UTC.
+   (StarRocks #73674, released in 4.1.3). ``FILES()`` no longer applies a session
+   timezone shift to such columns, so the loaded value equals the stored
+   wall-clock value even when the session ``time_zone`` is not UTC.
 
 StarRocks is optional: when unreachable the module skips rather than fails.
 Point at an already-running engine via ``NOVA_ORCH_SR_PORT`` (default 29030,
