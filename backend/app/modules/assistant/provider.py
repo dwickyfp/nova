@@ -13,6 +13,10 @@ Credential handling, stated because it is the whole risk surface:
   not bypass that for anything a client can see.
 * A failure from the provider is surfaced as a redacted, generic message. The
   raw request body (which carries the user's schema context) is never echoed.
+* The stored ``endpoint`` is run through ``app.common.ssrf_guard`` before every
+  call (and at write time in ``ai_ml.router``), and the request itself uses the
+  guard's transport so each redirect hop is re-checked (NOVA-119). The guard is
+  the single home for URL validation — this module does not fork it.
 """
 
 from __future__ import annotations
@@ -23,6 +27,11 @@ from typing import Any
 
 import httpx
 
+from app.common.ssrf_guard import (
+    BlockedEndpointError,
+    guarded_async_client,
+    resolve_and_validate_url,
+)
 from app.core.exceptions import NovaException
 from app.modules.ai_ml.service import ai_service
 
@@ -136,8 +145,24 @@ class AssistantProviderClient:
         if tools:
             body["tools"] = tools
 
+        # The endpoint is a stored config value, not a literal the caller
+        # controls, so it is validated here before the request as well as at
+        # write time. The guard's transport re-checks every redirect hop, so a
+        # provider that redirects to a private address is refused too. Same seam
+        # as ``ai_ml.service.test_connection`` (NOVA-107/NOVA-119).
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resolve_and_validate_url(config.endpoint)
+        except BlockedEndpointError:
+            logger.warning(
+                "Blocked assistant call to a non-public provider endpoint (provider=%s)",
+                config.provider_id,
+            )
+            raise AssistantProviderError(
+                "AI provider endpoint is not allowed: it must be a public http(s) URL"
+            ) from None
+
+        try:
+            async with guarded_async_client(timeout=self._timeout) as client:
                 response = await client.post(
                     config.endpoint,
                     headers={
@@ -146,6 +171,15 @@ class AssistantProviderClient:
                     },
                     json=body,
                 )
+        except BlockedEndpointError:
+            # A redirect hop was refused by the guarded transport.
+            logger.warning(
+                "Blocked assistant call redirect to a non-public address (provider=%s)",
+                config.provider_id,
+            )
+            raise AssistantProviderError(
+                "AI provider endpoint is not allowed: it must be a public http(s) URL"
+            ) from None
         except httpx.HTTPError as exc:
             # ``str(exc)`` can carry the URL, never the key or the body.
             raise AssistantProviderError(

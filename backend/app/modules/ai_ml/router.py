@@ -2,17 +2,27 @@
 
 Endpoints under /api/v1/ai:
   GET    /providers                  → list all providers
-  POST   /providers                 → create provider
-  DELETE /providers/{id}            → delete provider (cascades models)
+  POST   /providers                 → create provider (admin)
+  DELETE /providers/{id}            → delete provider (admin, cascades models)
+  PUT    /providers/{id}            → update provider (admin)
   GET    /providers/{id}/models     → list models for provider
   POST   /providers/{id}/models     → create model
   DELETE /models/{id}               → delete model
+  PUT    /providers/{id}/api-key    → update provider API key (admin)
+
+Provider records are **system configuration**: the stored ``endpoint`` is later
+called server-side by ``test_connection`` and by the assistant. The write routes
+are therefore gated to the repo's existing admin role set, and the endpoint is
+validated through ``app.common.ssrf_guard`` at store time so a private/loopback/
+link-local target cannot be persisted in the first place (NOVA-119). The
+per-request guard remains the authoritative check.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.deps import get_current_user
+from app.common.ssrf_guard import BlockedEndpointError, resolve_and_validate_url
+from app.core.deps import get_current_user, require_role
 from app.modules.ai_ml.schemas import (
     AIModelCreate,
     AIModelListResponse,
@@ -26,8 +36,33 @@ from app.modules.ai_ml.schemas import (
     TestConnectionResponse,
 )
 from app.modules.ai_ml.service import ai_service
+from app.modules.users.router import ADMIN_ROLES
 
 router = APIRouter()
+
+# Provider config is system config. Reused, not re-declared, from the repo's
+# admin role set (same list ``/users``, monitoring and task orchestration use).
+require_admin = Depends(require_role(*ADMIN_ROLES))
+
+# Read routes still require only authentication. Built once so routes use a
+# module-level dependency instead of calling ``Depends(...)`` in argument
+# defaults (ruff B008), matching the admin surface.
+require_user = Depends(get_current_user)
+
+
+def _validate_provider_endpoint(endpoint: str) -> None:
+    """Reject a private/loopback/link-local endpoint before it is stored.
+
+    The message is fixed and carries no resolved address, matching the wording
+    in ``ai_ml.service.test_connection`` (NOVA-107).
+    """
+    try:
+        resolve_and_validate_url(endpoint)
+    except BlockedEndpointError:
+        raise HTTPException(
+            status_code=400,
+            detail="Endpoint is not allowed: it must be a public http(s) URL",
+        ) from None
 
 
 # ── Providers ──────────────────────────────────────────────────
@@ -35,7 +70,7 @@ router = APIRouter()
 
 @router.get("/providers", response_model=AIProviderListResponse)
 async def list_providers(
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """List all registered AI providers."""
     providers = await ai_service.list_providers()
@@ -46,22 +81,23 @@ async def list_providers(
 @router.post("/providers", response_model=AIProviderResponse, status_code=201)
 async def create_provider(
     body: AIProviderCreate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
-    """Create a new AI provider."""
+    """Create a new AI provider. Admin-only: provider config is system config."""
+    _validate_provider_endpoint(body.endpoint)
     try:
         result = await ai_service.create_provider(body.model_dump(), user["username"])
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return AIProviderResponse(**result)
 
 
 @router.delete("/providers/{provider_id}", status_code=204)
 async def delete_provider(
     provider_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
-    """Delete an AI provider and cascade-delete all its models."""
+    """Delete an AI provider and cascade-delete all its models. Admin-only."""
     deleted = await ai_service.delete_provider(provider_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
@@ -71,16 +107,18 @@ async def delete_provider(
 async def update_provider(
     provider_id: str,
     body: AIProviderUpdate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
-    """Update an existing AI provider."""
+    """Update an existing AI provider. Admin-only: provider config is system config."""
     data = body.model_dump(exclude_none=True)
     if not data:
         raise HTTPException(status_code=400, detail="No fields to update")
+    if data.get("endpoint") is not None:
+        _validate_provider_endpoint(data["endpoint"])
     try:
         result = await ai_service.update_provider(provider_id, data)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if not result:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
     return AIProviderResponse(**result)
@@ -92,7 +130,7 @@ async def update_provider(
 @router.post("/test-connection", response_model=TestConnectionResponse)
 async def test_connection(
     body: TestConnectionRequest,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Test connectivity to an LLM provider endpoint.
 
@@ -115,7 +153,7 @@ async def test_connection(
 @router.get("/providers/{provider_id}/models", response_model=AIModelListResponse)
 async def list_models(
     provider_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """List all AI models for a specific provider."""
     models = await ai_service.list_models(provider_id)
@@ -127,7 +165,7 @@ async def list_models(
 async def create_model(
     provider_id: str,
     body: AIModelCreate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Create a new AI model under a provider."""
     # Ensure provider_id in path matches body (use path value)
@@ -136,14 +174,14 @@ async def create_model(
     try:
         result = await ai_service.create_model(data, user["username"])
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return AIModelResponse(**result)
 
 
 @router.delete("/models/{model_id}", status_code=204)
 async def delete_model(
     model_id: str,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Delete an AI model by ID."""
     deleted = await ai_service.delete_model(model_id)
@@ -155,7 +193,7 @@ async def delete_model(
 async def update_model(
     model_id: str,
     body: AIModelUpdate,
-    user: dict = Depends(get_current_user),
+    user: dict = require_user,
 ):
     """Update an existing AI model."""
     data = body.model_dump(exclude_none=True)
@@ -164,7 +202,7 @@ async def update_model(
     try:
         result = await ai_service.update_model(model_id, data)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if not result:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
     return AIModelResponse(**result)
@@ -182,9 +220,12 @@ class UpdateAPIKeyRequest(BaseModel):
 async def update_api_key(
     provider_id: str,
     req: UpdateAPIKeyRequest,
-    user: dict = Depends(get_current_user),
+    user: dict = require_admin,
 ):
-    """Update only the API key for a provider. Key is encrypted before storage."""
+    """Update only the API key for a provider. Key is encrypted before storage.
+
+    Admin-only: it rotates a system credential.
+    """
     from app.common.crypto import encrypt
     encrypted_key = encrypt(req.api_key)
     
