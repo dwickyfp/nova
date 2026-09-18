@@ -240,7 +240,7 @@ export function RolesPage() {
             </div>
             <h1 className='text-2xl font-bold tracking-tight'>Roles</h1>
             <p className='max-w-3xl text-sm text-muted-foreground'>
-              Manage StarRocks roles, memberships, and scoped privileges.
+              Manage roles, memberships, and scoped privileges.
             </p>
           </div>
           <div className='flex items-center gap-2'>
@@ -501,8 +501,8 @@ export function RolesPage() {
           <DialogHeader>
             <DialogTitle>Create Role</DialogTitle>
             <DialogDescription>
-              Create a new custom role in StarRocks. You can assign privileges
-              and members after creation.
+              Create a new custom role. You can assign privileges and members
+              after creation.
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-4 py-2'>
