@@ -22,6 +22,7 @@ from app.core.redis import session_store
 from app.modules.ai_ml.router import router as ai_router
 from app.modules.assistant.router import router as assistant_router
 from app.modules.auth.router import router as auth_router
+from app.modules.backup.router import router as backup_router
 from app.modules.explorer.router import router as explorer_router
 from app.modules.external_catalogs.router import router as external_catalogs_router
 from app.modules.functions.router import router as functions_router
@@ -52,7 +53,6 @@ logger = logging.getLogger(__name__)
 # from app.modules.external_catalogs.router import router as ext_router
 # from app.modules.cluster.router import router as cluster_router
 # from app.modules.dashboards.router import router as dash_router
-# from app.modules.backup.router import router as backup_router
 # from app.modules.system.router import router as sys_router
 
 
@@ -185,6 +185,10 @@ def create_app() -> FastAPI:
     app.include_router(
         variables_router, prefix=f"{prefix}/variables", tags=["variables"]
     )
+    # Backup / restore / recycle bin (roadmap #7). Mutations are gated to
+    # backup-admin roles in the router; the engine's REPOSITORY privilege is the
+    # second gate because every statement runs on the caller's connection.
+    app.include_router(backup_router, prefix=f"{prefix}/backup", tags=["backup"])
     app.include_router(tasks_router, prefix=f"{prefix}/tasks", tags=["tasks"])
     # Nova orchestration metadata (CREATE TASK graphs/runs) — distinct from
     # `/tasks`, which reads StarRocks' native task surface. Read-only.
