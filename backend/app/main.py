@@ -39,6 +39,7 @@ from app.modules.tables.router import router as tables_router
 from app.modules.task_orchestration.router import router as task_orchestration_router
 from app.modules.tasks.router import router as tasks_router
 from app.modules.users.router import router as users_router
+from app.modules.variables.router import router as variables_router
 from app.modules.views.router import router as views_router
 from app.modules.workspaces.router import router as workspaces_router
 
@@ -51,8 +52,6 @@ logger = logging.getLogger(__name__)
 # from app.modules.cluster.router import router as cluster_router
 # from app.modules.dashboards.router import router as dash_router
 # from app.modules.backup.router import router as backup_router
-# from app.modules.governance.router import router as gov_router
-# from app.modules.variables.router import router as var_router
 # from app.modules.system.router import router as sys_router
 
 
@@ -172,6 +171,10 @@ def create_app() -> FastAPI:
         resource_groups_router,
         prefix=f"{prefix}/resource-groups",
         tags=["resource-groups"],
+    )
+    # Session/global variables browser + SET (roadmap #8).
+    app.include_router(
+        variables_router, prefix=f"{prefix}/variables", tags=["variables"]
     )
     app.include_router(tasks_router, prefix=f"{prefix}/tasks", tags=["tasks"])
     # Nova orchestration metadata (CREATE TASK graphs/runs) — distinct from
