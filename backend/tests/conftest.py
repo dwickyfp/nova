@@ -109,6 +109,7 @@ async def app(sr_root, minio_client, redis_client):
     cfg.settings.REDIS_URL = "redis://127.0.0.1:26379/0"
     cfg.settings.S3_ENDPOINT = "http://127.0.0.1:29000"
     cfg.settings.SECRET_KEY = "test-secret-key-for-testing-only-32chars!"
+    cfg.settings.FERNET_KEY = "8f3Q1sVx0m2pR7tY5uW9zB4cD6eF1gH3jK5lM7nO9pQ="
     cfg.settings.SESSION_TTL_SECONDS = 300
 
     from app.main import create_app

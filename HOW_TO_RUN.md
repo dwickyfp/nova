@@ -150,9 +150,11 @@ STARROCKS_ROOT_PASSWORD=
 
 REDIS_URL=redis://:nova_redis_2026@localhost:6379/0
 
-SECRET_KEY=change-me-in-local-development
-# Boleh kosong untuk development; backend membuat key sementara saat startup.
-FERNET_KEY=
+SECRET_KEY=<hasil openssl rand -hex 32>
+# Wajib diisi. Backend menolak start bila kosong atau masih memakai nilai
+# contoh dari repo: key yang di-generate per proses membuat secret tersimpan
+# tidak bisa didekripsi setelah restart / antar-worker.
+FERNET_KEY=<hasil generate di bawah>
 
 S3_ENDPOINT=http://localhost:9000
 S3_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE
@@ -172,13 +174,19 @@ Nilai Redis dan object storage harus sama dengan:
 
 yang terdapat di `docker/.env`.
 
-Untuk menggunakan Fernet key yang persisten:
+Untuk meng-generate kedua key yang wajib:
 
 ```bash
+# SECRET_KEY (JWT signing)
+openssl rand -hex 32
+
+# FERNET_KEY (enkripsi secret tersimpan)
 uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Salin hasilnya ke `FERNET_KEY` pada `backend/.env`.
+Salin masing-masing hasilnya ke `SECRET_KEY` dan `FERNET_KEY` pada
+`backend/.env`. Backend menolak start bila salah satunya kosong atau masih
+memakai nilai contoh.
 
 > Konfigurasi di atas hanya contoh untuk development lokal. Jangan gunakan
 > secret development di production.
