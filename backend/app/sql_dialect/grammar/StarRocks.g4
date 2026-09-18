@@ -2743,11 +2743,21 @@ relationPrimary
 //   pair the lexer fused into one token (the dotted numeric `stage1.2024`). It
 //   is never a table alias: `FROM @stage1 t` still reads `t` as the alias
 //   because `t` is not a `DECIMAL_VALUE`/`DOT_IDENTIFIER`.
+//
+//   The glue position uses `fusedDecimal`, not `decimalAtom`: a separator-fused
+//   token carries exactly one segment (`.2024` is the separator *and* `2024`),
+//   so it must not absorb a following atom. With `decimalAtom` there,
+//   `FROM @stage1.2024 t` parsed the alias `t` as a path segment
+//   (`@stage1.2024t`), dropped the reference and forwarded the statement
+//   untranslated — the same dangling-SQL class. `decimalAtom`'s optional
+//   absorption stays only inside `stageSegment`, where the trailing-dot hyphen
+//   form (`@stage-2.data.csv`: `2.` then `data`) needs it. `DOUBLE_VALUE` is
+//   accepted so the exponent form (`.2e3` in `@stage1.2e3.csv`) fuses too.
 // * the trailing `'/'` is the documented bare-directory form (`@stage1/`,
 //   `docs/04-stage-manager.md:87`). It is optional and separate from the
 //   separators because it may end the reference.
 stageReference
-    : AT stageSegment (stageSeparator stageSegment | decimalAtom)* '/'?
+    : AT stageSegment (stageSeparator stageSegment | fusedDecimal)* '/'?
     ;
 
 stageSeparator
@@ -2768,6 +2778,15 @@ stagePathAtom
 
 decimalAtom
     : (DECIMAL_VALUE | DOT_IDENTIFIER) stagePathAtom?
+    ;
+
+// A separator glued to the front of a numeric segment by the lexer, standing in
+// for one `stageSeparator stageSegment` pair. It consumes the fused token only —
+// never a following atom — so a table alias after the reference is not swallowed.
+fusedDecimal
+    : DECIMAL_VALUE
+    | DOT_IDENTIFIER
+    | DOUBLE_VALUE
     ;
 
 // NOVA-END

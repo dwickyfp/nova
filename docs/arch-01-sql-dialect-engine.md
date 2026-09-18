@@ -30,6 +30,17 @@ stage registry from the parse tree:
 * every `#stageAtom` node (`StarRocks.g4`, NOVA-BEGIN block) becomes one
   `StageReference`; the first `stageSegment` is the stage name and the rest are
   the path segments, in the order written, whether joined by `.` or `/`;
+* a numeric path segment whose leading separator the lexer fused into one token
+  (`.2024` → `DECIMAL_VALUE`, `.2024_01` → `DOT_IDENTIFIER`, `.2e3` →
+  `DOUBLE_VALUE`) is accepted by the Nova `fusedDecimal` rule in the separator
+  position and expanded back to its segment in `parser.py` (NOVA-132). Without
+  it `@stage1.2024.csv` saw a bare number where a separator was expected, dropped
+  the reference, and forwarded the statement untranslated. `fusedDecimal`
+  consumes the fused token only — never a following atom — so a table alias
+  after a trailing numeric segment (`FROM @stage1.2024 t`) is not swallowed;
+  `decimalAtom` keeps its optional absorption only inside `stageSegment`, for the
+  hyphen trailing-dot form (`@stage-2.` followed by `data`). The Nova surfaces
+  (`LIST` / `COPY INTO`) expand the same fused tokens in their token scan;
 * a `@stage` inside a string literal or a comment is a single token to the
   lexer, so it can never become a false positive;
 * `@@version` is the engine's `systemVariable` (two `AT` tokens), never a stage;
