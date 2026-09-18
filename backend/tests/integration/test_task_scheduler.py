@@ -38,15 +38,22 @@ from app.modules.task_orchestration.transport import (
     LeaderLock,
     RedisGraphRunTransport,
 )
+from tests.integration._stack import (
+    require_shared_stack,
+    shared_stack_host_port,
+)
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
-SR_PORT = int(_EXPLICIT_PORT or "29030")
+SR_PORT = _EXPLICIT_PORT or shared_stack_host_port("NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
 SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
 _USE_SHARED_STACK = _EXPLICIT_PORT is None
 
-REDIS_URL = os.getenv("NOVA_ORCH_REDIS_URL", "redis://127.0.0.1:26379/0")
+REDIS_URL = os.getenv(
+    "NOVA_ORCH_REDIS_URL",
+    f"redis://127.0.0.1:{shared_stack_host_port('NOVA_TEST_REDIS_PORT', 26379)}/0",
+)
 
 
 async def _sr_reachable() -> bool:
@@ -91,19 +98,18 @@ async def _redis_reachable(url: str) -> bool:
 
 
 @pytest_asyncio.fixture
-async def scheduler_infra(request):
-    if _USE_SHARED_STACK and "docker_services" in request.fixturenames:
-        request.getfixturevalue("docker_services")
+async def scheduler_infra(request, monkeypatch: pytest.MonkeyPatch):
+    require_shared_stack(request, enabled=_USE_SHARED_STACK)
     if not await _sr_reachable() or not await _has_live_backend():
         pytest.skip("StarRocks not reachable or has no live backend")
     if not await _redis_reachable(REDIS_URL):
         pytest.skip("Redis not reachable")
 
-    settings.STARROCKS_HOST = SR_HOST
-    settings.STARROCKS_FE_MYSQL_PORT = SR_PORT
-    settings.STARROCKS_ROOT_USER = SR_USER
-    settings.STARROCKS_ROOT_PASSWORD = SR_PASSWORD
-    settings.REDIS_URL = REDIS_URL
+    monkeypatch.setattr(settings, "STARROCKS_HOST", SR_HOST)
+    monkeypatch.setattr(settings, "STARROCKS_FE_MYSQL_PORT", SR_PORT)
+    monkeypatch.setattr(settings, "STARROCKS_ROOT_USER", SR_USER)
+    monkeypatch.setattr(settings, "STARROCKS_ROOT_PASSWORD", SR_PASSWORD)
+    monkeypatch.setattr(settings, "REDIS_URL", REDIS_URL)
 
     await db.init_system_pool()
     await db.execute_system("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
@@ -113,9 +119,18 @@ async def scheduler_infra(request):
     # Pin the scheduler's engine-timezone setting to what the engine actually
     # reports, so a stale/incorrect default in config cannot mask a real bug.
     # An explicit env override is honoured for deployments that need it.
+    #
+    # ``monkeypatch`` (not a bare assignment): this used to write the detected
+    # zone straight onto the module-level settings object and never restore it,
+    # so a full-suite run left ``SCHEDULER_ENGINE_TIMEZONE`` set for every test
+    # that ran afterwards. ``tests/unit/test_task_scheduler_tick.py::``
+    # ``test_offset_engine_zone_still_fires`` sets it to ``""`` to force the
+    # auto-detect path, and the leaked value made it fail only in a full run.
     detected = await repo.get_engine_timezone()
-    settings.SCHEDULER_ENGINE_TIMEZONE = os.getenv(
-        "SCHEDULER_ENGINE_TIMEZONE", detected or "UTC"
+    monkeypatch.setattr(
+        settings,
+        "SCHEDULER_ENGINE_TIMEZONE",
+        os.getenv("SCHEDULER_ENGINE_TIMEZONE", detected or "UTC"),
     )
 
     client = aioredis.from_url(REDIS_URL, decode_responses=True)

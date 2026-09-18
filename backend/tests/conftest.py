@@ -1,9 +1,21 @@
-"""Test fixtures for integration tests — real engines via Docker Compose."""
+"""Test fixtures for integration tests — real engines via Docker Compose.
+
+Bringing the stack up is best-effort: a developer without Docker (or with a
+port already taken by another checkout's stack) must see the engine-marked
+tests **skip**, not error. ``docker_services`` therefore records why a stack is
+unavailable instead of raising, and every fixture that needs it skips on that
+reason. CI is unaffected — it starts the stack itself and the L3 job refuses an
+all-skipped run, so a skip here can never pass for green there.
+"""
 
 import asyncio
+import os
+import shutil
+import socket
 import subprocess
 import time
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 
 import asyncmy
@@ -17,22 +29,198 @@ import redis.asyncio as aioredis
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 COMPOSE_FILE = "docker-compose.test.yml"
 
+#: Compose file keys, NOT service keys: the values published on the host. They
+#: keep the stock numbers unless a run overrides them (see :func:`engine_host_ports`).
+PORT_ENV = {
+    "starrocks-fe": "NOVA_TEST_FE_MYSQL_PORT",
+    "starrocks-fe-http": "NOVA_TEST_FE_HTTP_PORT",
+    "minio": "NOVA_TEST_MINIO_PORT",
+    "redis": "NOVA_TEST_REDIS_PORT",
+}
+PORT_DEFAULTS = {
+    "starrocks-fe": 29030,
+    "starrocks-fe-http": 28030,
+    "minio": 29000,
+    "redis": 26379,
+}
 
-def _compose(*args: str) -> None:
-    subprocess.run(
+
+def engine_host_ports() -> dict[str, int]:
+    """The host ports this run will publish, honouring the overrides.
+
+    The app fixtures below must resolve the *same* ports the compose file
+    publishes, or the suite would skip against a stack it just started.
+    """
+    return {
+        key: int(os.getenv(env, str(default)))
+        for key, (env, default) in (
+            (key, (PORT_ENV[key], PORT_DEFAULTS[key])) for key in PORT_DEFAULTS
+        )
+    }
+
+
+@dataclass(frozen=True)
+class StackStatus:
+    """Why ``docker_services`` could or could not provide the test stack."""
+
+    reason: str | None = None
+
+    @property
+    def unavailable(self) -> bool:
+        return self.reason is not None
+
+
+def _port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.5)
+        return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _busy_ports() -> list[int]:
+    """Ports something already answers on — a *preflight* concern only.
+
+    Before ``up`` a listening port means another checkout's stack holds it and
+    compose would fail to bind. After ``up`` the same condition means the stack
+    started correctly, so this must never be used as a post-up health check;
+    use :func:`_unreachable_ports` there.
+    """
+    return [port for port in engine_host_ports().values() if _port_in_use(port)]
+
+
+def _unreachable_ports() -> list[int]:
+    """Published ports that refuse a connection — an *post-up* health check.
+
+    A successfully started stack is exactly the case where its published ports
+    are bound and listening, i.e. ``connect_ex(...) == 0``. The failure case is
+    the opposite: a port with nothing behind it, so the connect is refused
+    ("reachability" here means a completed TCP connection, not a busy port).
+    """
+    return [port for port in engine_host_ports().values() if not _port_in_use(port)]
+
+
+def _compose(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(
         ["docker", "compose", "-f", COMPOSE_FILE, *args],
-        check=True,
+        check=check,
         cwd=BACKEND_DIR,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _preflight_failure() -> str | None:
+    """The reason no stack can be provided, or ``None`` if one can.
+
+    Covers only the environment prerequisites. A busy published port is NOT by
+    itself a failure — see :func:`_stack_already_reachable` (reuse) and
+    :func:`_partial_collision_failure` (foreign holder).
+    """
+    if shutil.which("docker") is None:
+        return "docker is not installed"
+
+    try:
+        daemon = subprocess.run(
+            ["docker", "info"], capture_output=True, text=True, timeout=15
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"docker daemon is not reachable ({exc.__class__.__name__})"
+    if daemon.returncode != 0:
+        return "docker daemon is not running"
+    return None
+
+
+def _stack_already_reachable() -> bool:
+    """A usable stack already listens on every published port.
+
+    When true the fixture must *reuse* it: it must not run ``up`` (the ports
+    are taken) and must not run ``down`` (it did not start it). CI starts the
+    stack in a separate workflow step precisely so this path is the normal one
+    there; treating it as a collision made 25 L3 tests skip silently.
+    """
+    ports = list(engine_host_ports().values())
+    return bool(ports) and all(_port_in_use(port) for port in ports)
+
+
+def _partial_collision_failure() -> str | None:
+    """Some — but not all — published ports are held, so compose cannot bind.
+
+    A fully-reachable set is the reuse case above. A partial or non-answering
+    set is a foreign/leftover holder: starting compose fails with
+    "Bind for 0.0.0.0:<port> failed: port is already allocated". Report the
+    collision before invoking compose, with the ports that are stuck.
+    """
+    busy = _busy_ports()
+    if not busy or _stack_already_reachable():
+        return None
+    ports = ", ".join(str(port) for port in busy)
+    return (
+        f"test ports {ports} already in use and not all reachable "
+        f"(another Nova stack?) — set {PORT_ENV['starrocks-fe']} / "
+        f"{PORT_ENV['minio']} / {PORT_ENV['redis']} (and the matching *_PORT "
+        f"env) to free ports"
     )
 
 
 @pytest.fixture(scope="session")
-def docker_services():
-    """Spin up all test infrastructure once per test session."""
-    _compose("up", "-d", "--wait")
+def docker_services() -> StackStatus:
+    """Provide the test stack once per session, or record why it is absent.
+
+    Never raises: a missing stack is a skip, not a failure. Three outcomes:
+
+    * a reachable stack already listens on the published ports — reuse it and
+      leave it running (CI starts the stack in its own step, so this is the
+      normal path there);
+    * the ports are free — start compose, and tear it down at session end
+      because this fixture owns it;
+    * the ports are held but do not answer, or Docker is unavailable — yield a
+      reason so the dependents skip.
+    """
+    reason = _preflight_failure()
+    if reason is not None:
+        yield StackStatus(reason=reason)
+        return
+
+    if _stack_already_reachable():
+        # Somebody else's stack (CI's, or a developer's) is already serving the
+        # published ports. Reuse it: `up` cannot bind, and tearing down a stack
+        # this fixture did not start would yank it out from under the caller.
+        yield StackStatus()
+        return
+
+    foreign = _partial_collision_failure()
+    if foreign is not None:
+        yield StackStatus(reason=foreign)
+        return
+
+    try:
+        _compose("up", "-d", "--wait")
+    except (OSError, subprocess.SubprocessError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", None) or str(exc)
+        yield StackStatus(reason=f"docker compose up failed: {detail.strip()[:300]}")
+        return
     time.sleep(10)
-    yield
-    _compose("down", "-v")
+
+    # Post-up health check: a stack that came up correctly has every published
+    # port answering, so the failure case here is a port that *refuses* a
+    # connection — NOT a port that is in use. (Checking "in use" after `up`
+    # would flag a perfectly healthy stack, which is the inversion this
+    # replaced: the ports were bound by the stack we just started.)
+    unreachable = _unreachable_ports()
+    if unreachable:
+        ports = ", ".join(str(port) for port in unreachable)
+        _compose("down", "-v", check=False)
+        yield StackStatus(reason=f"stack came up but test ports {ports} do not answer")
+        return
+
+    yield StackStatus()
+    # Only reached when this fixture ran `up`, so the teardown is symmetric.
+    _compose("down", "-v", check=False)
+
+
+def require_stack(docker_services: StackStatus) -> None:
+    """Skip the calling test (or fixture) when the stack is unavailable."""
+    if docker_services.unavailable:
+        pytest.skip(f"real engine stack unavailable: {docker_services.reason}")
 
 
 @pytest.fixture(scope="session")
@@ -46,11 +234,14 @@ async def sr_root(docker_services):
     *second* yield. pytest-asyncio reports that as "Async generator fixture
     didn't stop", turning an otherwise green suite red at session teardown.
     """
+    require_stack(docker_services)
+    port = engine_host_ports()["starrocks-fe"]
+
     conn = None
     for i in range(60):
         try:
             conn = await asyncmy.connect(
-                host="127.0.0.1", port=29030, user="root", password=""
+                host="127.0.0.1", port=port, user="root", password=""
             )
         except Exception:
             if i == 59:
@@ -77,10 +268,11 @@ async def sr_root(docker_services):
 @pytest.fixture(scope="session")
 def minio_client(docker_services):
     """MinIO S3 client with test bucket pre-created."""
+    require_stack(docker_services)
     time.sleep(5)
     client = boto3.client(
         "s3",
-        endpoint_url="http://127.0.0.1:29000",
+        endpoint_url=f"http://127.0.0.1:{engine_host_ports()['minio']}",
         aws_access_key_id="minioadmin",
         aws_secret_access_key="minioadmin",
     )
@@ -92,7 +284,10 @@ def minio_client(docker_services):
 @pytest.fixture(scope="session")
 async def redis_client(docker_services):
     """Async Redis client for session store tests."""
-    client = aioredis.from_url("redis://127.0.0.1:26379/0", decode_responses=True)
+    require_stack(docker_services)
+    client = aioredis.from_url(
+        f"redis://127.0.0.1:{engine_host_ports()['redis']}/0", decode_responses=True
+    )
     yield client
     await client.aclose()
 
@@ -102,12 +297,14 @@ async def app(sr_root, minio_client, redis_client):
     """FastAPI app with test config overrides."""
     import app.core.config as cfg
 
+    ports = engine_host_ports()
+
     cfg.settings.STARROCKS_HOST = "127.0.0.1"
-    cfg.settings.STARROCKS_FE_MYSQL_PORT = 29030
+    cfg.settings.STARROCKS_FE_MYSQL_PORT = ports["starrocks-fe"]
     cfg.settings.STARROCKS_ROOT_USER = "root"
     cfg.settings.STARROCKS_ROOT_PASSWORD = ""
-    cfg.settings.REDIS_URL = "redis://127.0.0.1:26379/0"
-    cfg.settings.S3_ENDPOINT = "http://127.0.0.1:29000"
+    cfg.settings.REDIS_URL = f"redis://127.0.0.1:{ports['redis']}/0"
+    cfg.settings.S3_ENDPOINT = f"http://127.0.0.1:{ports['minio']}"
     cfg.settings.SECRET_KEY = "test-secret-key-for-testing-only-32chars!"
     cfg.settings.FERNET_KEY = "8f3Q1sVx0m2pR7tY5uW9zB4cD6eF1gH3jK5lM7nO9pQ="
     cfg.settings.SESSION_TTL_SECONDS = 300

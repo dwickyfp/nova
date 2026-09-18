@@ -709,6 +709,33 @@ Catatan: suite test integrasi lain yang menulis `NOVA_SYSTEM.AUDIT_LOG`
 suite warisan yang masih mengandalkan environment pra-seed, jalankan
 `bash tests/integration/seed_engine.sh` setelah stack naik.
 
+### Port stack test & beberapa checkout bersamaan (NOVA-131)
+
+Tes bertanda `@pytest.mark.engine` **skip — bukan gagal/error —** ketika stack
+Docker tidak tersedia (Docker tidak ada, daemon mati, atau port sudah dipakai
+stack lain). Ini berlaku juga untuk koneksi `sr_root`/`minio_client`/
+`redis_client` di `tests/conftest.py`, sehingga `pytest -q` penuh jujur tanpa
+mesin bersih. CI tidak terpengaruh: L3 job tetap gagal bila semua engine test
+skip.
+
+Port host default sama seperti sebelumnya, tetapi bisa digeser per checkout agar
+dua run bersamaan (mis. QA dan local) tidak tabrakan. Hanya sisi host yang
+berpindah; port kontainer dan alamat MinIO tetap karena rewrite `FILES()` di app
+mempertahankan nomor port. Fixture membaca env var yang sama, jadi cukup ekspor
+sebelum menjalankan compose atau pytest:
+
+```bash
+cd backend
+export NOVA_TEST_FE_MYSQL_PORT=39030 NOVA_TEST_FE_HTTP_PORT=38030
+export NOVA_TEST_MINIO_PORT=39000 NOVA_TEST_MINIO_CONSOLE_PORT=39001
+export NOVA_TEST_REDIS_PORT=36379
+docker compose -f docker-compose.test.yml up -d --wait
+uv run pytest tests/integration -m engine -q
+```
+
+Bila port default sedang dipakai stack lain, pytest akan melaporkan port yang
+bertabrakan di alasan skip sehingga pilihan di atas jelas.
+
 ### Frontend
 
 ```bash
