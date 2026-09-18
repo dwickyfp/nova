@@ -156,6 +156,11 @@ async def test_forecast_type_trains_and_scores_as_regression(monkeypatch):
     monkeypatch.setattr(service, "_fetch_training_data_as_system", fake_fetch_system)
     monkeypatch.setattr(service, "_connect", fake_connect)
 
+    # `as_system=True` is required by the NOVA-104 fail-closed guard: without it
+    # (or caller credentials) `train_model` refuses to fall back to the root
+    # connection. This test drives the system path on purpose — it mocks
+    # `_fetch_training_data_as_system` above — so the flag is the internal flow it
+    # means to exercise, not a bypass of the guard.
     result = await service.train_model(
         model_name="sales_forecast",
         model_type="forecast",
@@ -167,6 +172,7 @@ async def test_forecast_type_trains_and_scores_as_regression(monkeypatch):
         test_size=0.2,
         database_name=None,
         created_by="analyst",
+        as_system=True,
     )
 
     assert result["model_type"] == "forecast"
