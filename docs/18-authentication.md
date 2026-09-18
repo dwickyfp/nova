@@ -331,3 +331,59 @@ SET GLOBAL ldap_user_basedn = "ou=users,dc=example,dc=com";
 ```
 
 Nova doesn't need changes — StarRocks handles LDAP transparently.
+
+---
+
+## Network Policies (NOVA-110)
+
+Restrict **which source addresses a user may connect from**. StarRocks 4.1.4 has
+no `CREATE NETWORK POLICY` object and no IP allowlist system variables; the only
+host-based control the engine enforces is the host part of the user identity,
+matched at connect time. Nova therefore models a named per-user policy and
+projects it onto identity hosts (`user@'10.0.0.0/8'`); **StarRocks remains the
+enforcement point** — a client whose source does not match any identity host is
+rejected by the engine before Nova sees it.
+
+### API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/v1/network-policies` | List Nova-managed policies |
+| GET | `/api/v1/network-policies/{name}` | Policy detail |
+| POST | `/api/v1/network-policies` | Create policy + project allowed identities |
+| PATCH | `/api/v1/network-policies/{name}` | Replace rules, sync identities |
+| DELETE | `/api/v1/network-policies/{name}` | Drop policy and its projected identities |
+| GET | `/api/v1/network-policies/connection-sources` | Recent successful logins (audit read) |
+
+All endpoints are gated to `ACCOUNTADMIN`, `user_admin`, or `security_admin`;
+a non-admin receives 403 before any SQL is built. Every mutation writes a
+`security` audit row.
+
+### Example
+
+```json
+POST /api/v1/network-policies
+{
+  "name": "office_only",
+  "username": "analyst",
+  "allowed_hosts": [{"host_pattern": "10.0.0.0/8"}],
+  "denied_hosts": [{"host_pattern": "203.0.113.7", "comment": "known scanner"}]
+}
+```
+
+Projection issues `CREATE USER 'analyst'@'10.0.0.0/8' IDENTIFIED BY ''`; removing
+a host from `allowed_hosts` drops the identity Nova projected. An identity that
+existed before the policy (created out of band) is never dropped.
+
+### Deferred (spec §5 remainder)
+
+- **Name-addressed policy objects with role attach/detach** — no engine object to
+  attach to; a role has no source address and StarRocks has no
+  `ATTACH NETWORK POLICY` statement.
+- **Global IP allowlist/blocklist** — no engine surface. A Nova-side list would
+  gate only the MySQL proxy, not direct FE connections, so it is left to the
+  network layer (firewall / security group) rather than claimed here.
+- **Client source address** — StarRocks does not expose the connecting client IP
+  to SQL, so "connection source tracking" is read-only from the audit log
+  (successful logins) and does not invent a source field.
+

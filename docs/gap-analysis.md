@@ -137,6 +137,31 @@ SET GLOBAL validate_password = ON;
 
 **Add to:** Extend Authentication doc
 
+> **Status: SHIPPED (subset) — NOVA-110.** Engine finding: the `fe.conf` flag
+> this section sketches (`enable_ip_based_authentication`) **does not exist in
+> StarRocks 4.1.4**, and the pinned 4.1.4 grammar
+> (commit `4a9848edf03f5c936dac664b2d52527f48e72eb0`) has **no
+> `CREATE NETWORK POLICY` / `ALTER` / `DROP` statement and no IP allowlist
+> system variables**. The only host-based control the engine enforces is the
+> host part of the user identity (`user@'10.0.0.0/8'`), applied at connect time.
+>
+> Shipped: per-user network policies in `backend/app/modules/network_policies/`
+> (CRUD + audit, admin-gated), projected onto StarRocks identity hosts; the
+> engine remains the enforcement point. Connection-source tracking reads the
+> existing audit log (read-only).
+>
+> **DEFER, with reason:**
+> - *Name-adressed policy objects with role attach/detach* — no engine object to
+>   attach to; a role has no source address and StarRocks has no
+>   `ATTACH NETWORK POLICY`. Role-level restriction cannot be enforced.
+> - *Global IP allowlist/blocklist* — no engine surface. A Nova-side list would
+>   gate only the MySQL proxy, not direct FE connections, so claiming it would
+>   be a false guarantee. Left to the network layer.
+>
+> See `backend/app/modules/network_policies/service.py` module docstring for the
+> full scope note.
+
+
 ---
 
 ### 6. Inverted Index (Full-Text Search)

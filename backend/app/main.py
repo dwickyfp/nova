@@ -29,6 +29,7 @@ from app.modules.migration.router import router as migration_router
 from app.modules.ml_engine.internal_router import router as ml_internal_router
 from app.modules.ml_engine.router import router as ml_router
 from app.modules.monitoring.router import router as monitoring_router
+from app.modules.network_policies.router import router as network_policies_router
 from app.modules.objects.router import router as objects_router
 from app.modules.pipes.router import router as pipes_router
 from app.modules.query.router import router as query_router
@@ -82,6 +83,16 @@ async def lifespan(app: FastAPI):
         await migration_repo.ensure_schema()
     except Exception as e:
         logger.warning("Could not ensure migration source schema: %s", e)
+
+    # Network policy metadata (NOVA-110). Best-effort, same reasoning: a missing
+    # mirror table degrades the policy list, not the engine identities already
+    # projected (the engine remains the enforcement point).
+    try:
+        from app.modules.network_policies.repository import network_policy_repo
+
+        await network_policy_repo.ensure_schema()
+    except Exception as e:
+        logger.warning("Could not ensure network policy schema: %s", e)
 
     # Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)
     # so they are available as SQL functions from the start.
@@ -184,6 +195,14 @@ def create_app() -> FastAPI:
     # Execute endpoint; cutover is gated on #7 (backup/restore).
     app.include_router(
         migration_router, prefix=f"{prefix}/migration", tags=["migration"]
+    )
+    # Gap-analysis §5 Network Policies (NOVA-110). Per-user connection-source
+    # restrictions projected onto StarRocks identity hosts; the engine remains
+    # the enforcement point. See the module docstring for what is DEFER-ed.
+    app.include_router(
+        network_policies_router,
+        prefix=f"{prefix}/network-policies",
+        tags=["network-policies"],
     )
 
     # Static files for Java UDFs
