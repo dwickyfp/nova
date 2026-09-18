@@ -9,6 +9,8 @@ defect was found on — not just at the broker.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -18,7 +20,9 @@ from app.modules.assistant.consent import ConsentBroker
 from app.modules.assistant.router import resolve_tool_call
 from app.modules.assistant.router import router as assistant_router
 from app.modules.assistant.schemas import ConsentDecisionRequest
+from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import thread_store
+from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry
 
 
 @pytest.fixture
@@ -178,3 +182,118 @@ async def test_owner_sets_the_grant_on_their_own_conversation_only(monkeypatch):
     assert response.grant_active is True
     assert alice_thread.consent.always_allow_read_only is True
     assert bob_thread.consent.always_allow_read_only is False
+
+
+# ── Reset grant (NOVA-100) ───────────────────────────────────────────────────
+#
+# ``DELETE /threads/{thread_id}/grant`` had no committed test at all, so a
+# regression in ``_require_thread`` or ``ConsentPolicy`` could silently stop
+# revocation — leaving ``query_execute`` auto-approving read-only calls without
+# a prompt (spec §6). These tests pin the owner/foreign boundary and the
+# auto-approve reversal that NOVA-96 item 4 requires.
+
+
+def test_owner_revoke_clears_the_grant(app_and_broker):
+    client, _broker, current = app_and_broker
+    thread = thread_store.create(user_name="alice", title="A")
+    thread.consent.always_allow_read_only = True
+
+    current["username"] = "alice"
+    resp = client.delete(f"/api/v1/assistant/threads/{thread.thread_id}/grant")
+
+    assert resp.status_code == 204
+    assert thread.consent.always_allow_read_only is False
+
+
+def test_foreign_revoke_is_404_and_leaves_the_owner_grant_intact(app_and_broker):
+    client, _broker, current = app_and_broker
+    thread = thread_store.create(user_name="alice", title="A")
+    thread.consent.always_allow_read_only = True
+
+    current["username"] = "bob"
+    resp = client.delete(f"/api/v1/assistant/threads/{thread.thread_id}/grant")
+
+    # 404, never 403: a foreign id must not leak existence.
+    assert resp.status_code == 404
+    assert thread.consent.always_allow_read_only is True
+
+
+class _FakeProvider:
+    """Returns queued assistant messages instead of calling a real LLM."""
+
+    def __init__(self, script: list[dict]) -> None:
+        self._script = list(script)
+
+    async def resolve(self):
+        return object()
+
+    async def complete(self, *, messages, tools=None, provider=None):
+        return self._script.pop(0)
+
+
+class _StubTool:
+    name = "query_execute"
+    classification = "read_only"
+    description = "run sql"
+    parameters = {"type": "object", "properties": {"sql": {"type": "string"}}}
+
+    def preview(self, invocation: ToolInvocation) -> str:
+        return invocation.arguments.get("sql", "")
+
+    async def run(self, invocation, context):
+        return ToolOutcome(ok=True, summary="1 row")
+
+
+def _tool_call(call_id: str) -> dict:
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {
+            "name": "query_execute",
+            "arguments": json.dumps({"sql": "SELECT 1"}),
+        },
+    }
+
+
+async def test_revoked_grant_prompts_again_on_the_next_read_only_call(
+    app_and_broker,
+):
+    """The reset is real: after it, a read-only call asks instead of auto-approving."""
+    client, _broker, current = app_and_broker
+    thread = thread_store.create(user_name="alice", title="A")
+    thread.consent.always_allow_read_only = True
+
+    current["username"] = "alice"
+    resp = client.delete(f"/api/v1/assistant/threads/{thread.thread_id}/grant")
+    assert resp.status_code == 204
+
+    provider = _FakeProvider(
+        [
+            {"role": "assistant", "content": "", "tool_calls": [_tool_call("c1")]},
+            {"role": "assistant", "content": "answer"},
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(_StubTool())
+    loop = AssistantLoop(provider=provider, registry=registry)
+
+    asked: list[str] = []
+
+    async def resolver(inv, cls):
+        asked.append(cls)
+        return True
+
+    frames = [
+        frame
+        async for frame in loop.run(
+            thread=thread,
+            user_content="go",
+            context=LoopContext(user_name="alice"),
+            resolve_consent=resolver,
+        )
+    ]
+
+    # With the grant revoked, the loop surfaces the prompt and consults the
+    # resolver — the opposite of the auto-approve that a live grant pins.
+    assert any(frame.startswith("event: tool_call") for frame in frames)
+    assert asked == ["read_only"]
