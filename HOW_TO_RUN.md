@@ -386,9 +386,15 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 Endpoint memakai prefix yang sama dengan API lain; ganti `localhost:8000` dengan
 host backend Anda. Otorisasi ditegakkan di backend: pemanggil hanya melihat graph
-yang salah satu task-nya ia miliki (`created_by`); role admin melihat semuanya.
-`graph_id` yang tidak dikenal **atau** bukan milik pemanggil sama-sama `404`.
-Body task tidak pernah dikembalikan, dan `error_message` di-redact.
+yang **setiap** task di dalamnya ia miliki (`created_by`); role admin melihat
+semuanya. `graph_id` yang tidak dikenal **atau** bukan milik pemanggil sama-sama
+`404`. Body task tidak pernah dikembalikan, dan `error_message` di-redact.
+
+Graph yang node-nya dimiliki beberapa user berbeda **sengaja** fail-closed:
+tidak terlihat oleh non-admin mana pun. Ini disengaja karena graph bisa tersusun
+dari node yang bukan milik pembuatnya (`CREATE TASK x AFTER a` tidak memeriksa
+pemilik `a`); aturan yang lebih longgar akan membuat satu pemilik membaca
+definisi task pemilik lain — `when_expr`, jadwal, dan `created_by`-nya.
 
 Untuk memverifikasi worker mengonsumsi:
 

@@ -226,6 +226,18 @@ def graph_with_finalizer(repo: FakeRepository) -> None:
     repo.add_task_run("tr_f", "run1", "id_f", state="skipped")
 
 
+def mixed_ownership_graph(repo: FakeRepository) -> None:
+    """A reachable graph whose nodes belong to two different users.
+
+    `CREATE TASK x AFTER a` does not check who owns `a`
+    (`lowering.persist_lowered_task`), so this shape is producible in
+    production: alice owns `m_a`, bob owns `m_b`, and one edge joins them.
+    """
+    repo.add_task("m_a", owner="alice")
+    repo.add_task("m_b", owner="bob")
+    repo.add_edge("g_mixed", "m_a", "m_b")
+
+
 class TestGraphList:
     def test_lists_a_graph_with_its_root_schedule_and_last_run(self) -> None:
         repo = FakeRepository()
@@ -327,6 +339,52 @@ class TestOwnershipScoping:
         client = make_client(repo, bob())
         # bob knows the run id but does not own the graph.
         assert client.get("/api/v1/task-orchestration/runs/run1").status_code == 404
+
+
+class TestMixedOwnershipIsFailClosed:
+    """`all(...)`, not `any(...)`: one unowned node hides the whole graph.
+
+    This pins the rule that the module docstring and the user docs describe. It
+    is the test whose absence let the docs drift from the code: with `any`, both
+    owners below would read the graph (and each other's task definitions).
+    """
+
+    def test_neither_non_admin_owner_sees_the_mixed_graph(self) -> None:
+        repo = FakeRepository()
+        mixed_ownership_graph(repo)
+
+        alice_client = make_client(repo, alice())  # owns m_a only
+        bob_client = make_client(repo, bob())  # owns m_b only
+
+        for who, client in (("alice", alice_client), ("bob", bob_client)):
+            listed = client.get("/api/v1/task-orchestration/graphs").json()
+            assert listed["count"] == 0, f"{who} must not list a mixed-ownership graph"
+            detail = client.get("/api/v1/task-orchestration/graphs/g_mixed")
+            assert detail.status_code == 404, f"{who} must get 404, not the graph"
+
+    def test_an_admin_sees_the_mixed_graph(self) -> None:
+        repo = FakeRepository()
+        mixed_ownership_graph(repo)
+        client = make_client(repo, admin())
+
+        assert client.get("/api/v1/task-orchestration/graphs").json()["count"] == 1
+        body = client.get("/api/v1/task-orchestration/graphs/g_mixed").json()
+        assert {n["name"] for n in body["nodes"]} == {"m_a", "m_b"}
+
+    def test_each_node_is_owned_by_exactly_one_single_owner(self) -> None:
+        """The precondition that makes the two `any`-based leaks possible.
+
+        alice owns one node and bob owns the other, and neither holds an admin
+        role — so under an `any` rule each of them would see the graph. That is
+        what this class exists to prevent.
+        """
+        repo = FakeRepository()
+        mixed_ownership_graph(repo)
+
+        owners = {name: row["created_by"] for name, row in repo.tasks.items()}
+        assert owners == {"m_a": "alice", "m_b": "bob"}
+        assert not orch_router._is_admin(alice())
+        assert not orch_router._is_admin(bob())
 
 
 class TestRunEndpoints:
