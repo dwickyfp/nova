@@ -25,12 +25,13 @@
 // (`backend/scripts/check_grammar_drift.py`) strips the markers and the header
 // above, then compares the remainder against the pinned upstream revision.
 //
-// 9b (NOVA-54) adds the `AFTER / FINALIZE / WHEN / SCHEDULE / OVERLAP_POLICY`
-// clause surface inside `submitTaskStatement`'s existing `taskClause*` (the
-// marked blocks below). `SCHEDULE` is deliberately NOT redefined: it is already
-// a token (`StarRocksLex.g4`, upstream `:412` on 4.1.1) and already
-// `nonReserved`, and a second definition of the same literal fails generation.
-// Only `FINALIZE`, `CRON` and `OVERLAP_POLICY` are new; all three are added to
+// 9b (NOVA-54) adds the `CREATE TASK` surface: `submitTaskStatement` accepts
+// `CREATE` alongside the engine's `SUBMIT`, and its existing `taskClause*` gains
+// `AFTER / FINALIZE / WHEN / SCHEDULE / OVERLAP_POLICY` (the marked blocks
+// below). `SCHEDULE` is deliberately NOT redefined: it is already a token
+// (`StarRocksLex.g4`, upstream `:412` on 4.1.1) and already `nonReserved`, and a
+// second definition of the same literal fails generation. Only `FINALIZE`,
+// `CRON` and `OVERLAP_POLICY` are new tokens; all three are added to
 // `nonReserved` so identifiers spelled like them still parse.
 // ---------------------------------------------------------------------------
 
@@ -711,7 +712,14 @@ columnNameWithComment
 // ------------------------------------------- Task Statement ----------------------------------------------------------
 
 submitTaskStatement
-    : SUBMIT TASK qualifiedName?
+    // NOVA-BEGIN (NOVA-54 / 9b): the Nova surface is `CREATE TASK`; the engine's
+    // is `SUBMIT TASK`. Both are accepted so the existing task-clause machinery
+    // is shared -- the parser only builds a tree, and 9b lowering decides which
+    // statement reaches the engine. `CREATE` is already a token and is not
+    // redefined; `CREATE TASK` is viable under no other `statement` alternative,
+    // so there is no ambiguity.
+    : (SUBMIT | CREATE) TASK qualifiedName?
+    // NOVA-END
         taskClause*
         AS (createTableAsSelectStatement | insertStatement | dataCacheSelectStatement)
     ;
@@ -749,9 +757,15 @@ taskScheduleDesc
 // Surface (design doc SS3):
 //   AFTER task_a, task_b          -- DAG parents
 //   FINALIZE = task_a             -- finalizer edge
-//   WHEN <boolean expression>     -- conditional subtree skip
-//   OVERLAP_POLICY = <value>      -- ALLOW_CHILD_OVERLAP / SKIP / ...
+//   WHEN <expression>             -- conditional subtree skip
+//   OVERLAP_POLICY = <value>      -- value is one of ALLOW_CHILD_OVERLAP / SKIP
 //   SCHEDULE = '<cron string>'    -- Nova cron (engine has no cron)
+//
+// Spelling decision: the clause keyword is `OVERLAP_POLICY`, matching the design
+// doc (D9.3, SS3, and the "new tokens" list all use it). `ALLOW_CHILD_OVERLAP`
+// is a *value* of the clause, not an alternative keyword, and is accepted via
+// `identifierOrString`. Both `[=]` and bare forms parse for FINALIZE/
+// OVERLAP_POLICY because the design doc writes `= ` while some callers omit it.
 //
 // `taskAfterClause` keeps the engine's `AFTER` (already a `nonReserved` token)
 // and only adds the comma-separated parent list, so `AFTER` still parses as an
