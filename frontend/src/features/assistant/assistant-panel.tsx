@@ -203,16 +203,27 @@ export function AssistantPanel(props: AssistantPanelProps) {
     )
   }
 
-  if (!open) return null
-
   return (
-    <aside
-      id='assistant-panel'
-      aria-label='Assistant'
-      className={cn('flex min-h-0 shrink-0 flex-col border-l bg-background', PANEL_WIDTH)}
+    // The wrapper animates its width so the panel slides rather than blinking
+    // in and out. The aside stays mounted while closed, so `inert` (not
+    // unmounting) is what keeps its transcript and controls out of the tab
+    // order and off the accessibility tree.
+    <div
+      data-state={open ? 'open' : 'closed'}
+      className={cn(
+        'shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
+        open ? PANEL_WIDTH : 'w-0'
+      )}
     >
-      <AssistantHeader onClose={() => onOpenChange(false)} />
-      <AssistantBody {...props} />
-    </aside>
+      <aside
+        id='assistant-panel'
+        aria-label='Assistant'
+        inert={!open}
+        className={cn('flex h-full min-h-0 flex-col border-l bg-background', PANEL_WIDTH)}
+      >
+        <AssistantHeader onClose={() => onOpenChange(false)} />
+        <AssistantBody {...props} />
+      </aside>
+    </div>
   )
 }

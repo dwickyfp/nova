@@ -1,4 +1,19 @@
 export { AssistantPanel, type AssistantPanelProps } from './assistant-panel'
+export { AssistantToggle, type AssistantToggleProps } from './assistant-toggle'
+export { AssistantDock } from './assistant-dock'
+export {
+  AssistantProvider,
+  useAssistant,
+  useAssistantPanelProps,
+} from './assistant-provider'
+export {
+  initialAssistantOpen,
+  assistantCollapsedToPersist,
+} from './assistant-panel-state'
+export {
+  useAssistantConversation,
+  type AssistantConversationOptions,
+} from './use-assistant-conversation'
 export { MessageList, type MessageListProps } from './message-list'
 export {
   ToolCallCard,
