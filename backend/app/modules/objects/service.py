@@ -4,6 +4,7 @@ Orchestrates metadata queries for the Snowsight-style sidebar:
   Catalog → Database → Schema → Tables/Views/MVs
 """
 
+from app.core.database import db
 from app.modules.objects.repository import ObjectRepository
 
 
@@ -31,8 +32,8 @@ class ObjectService:
         )
         result = []
 
-        for db in databases:
-            name = db["name"]
+        for database in databases:
+            name = database["name"]
             types = await self._repo.list_table_types(
                 name,
                 username=username,
@@ -44,7 +45,11 @@ class ObjectService:
                 "table_count": len(types["tables"]),
                 "view_count": len(types["views"]),
                 "mv_count": len(types["materialized_views"]),
-                "total_objects": len(types["tables"]) + len(types["views"]) + len(types["materialized_views"]),
+                "total_objects": (
+                    len(types["tables"])
+                    + len(types["views"])
+                    + len(types["materialized_views"])
+                ),
             })
 
         return result
@@ -280,7 +285,10 @@ class ObjectService:
             "tables": objects["tables"],
             "views": objects["views"],
             "materialized_views": objects["materialized_views"],
-            "stages": [{"id": row[0], "name": row[1], "type": "STAGE"} for row in stage_rows["rows"]],
+            "stages": [
+                {"id": row[0], "name": row[1], "type": "STAGE"}
+                for row in stage_rows["rows"]
+            ],
             "tasks": tasks,
         }
 
@@ -331,8 +339,5 @@ class ObjectService:
             for row in result["rows"]
         ]
 
-
-# Need to import db for get_columns
-from app.core.database import db
 
 object_service = ObjectService()

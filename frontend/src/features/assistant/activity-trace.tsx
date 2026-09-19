@@ -69,6 +69,7 @@ export function ActivityTrace({ message }: ActivityTraceProps) {
               ))}
             </ol>
           ) : null}
+
         </div>
       ) : null}
     </div>
