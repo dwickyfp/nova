@@ -343,7 +343,7 @@ describe('AssistantProvider binding identity', () => {
     expect(api.threadCount()).toBe(1)
   })
 
-  it('resets when a workspace file binding replaces the global one, and back', async () => {
+  it('keeps the global transcript across a file binding and back', async () => {
     const api = mockFullApi()
     const { getByTestId, getByRole } = await render(
       <QueryClientProvider client={makeClient()}>
@@ -356,16 +356,16 @@ describe('AssistantProvider binding identity', () => {
     await getByRole('button', { name: 'send' }).click()
     await vi.waitFor(() => expect(getByTestId('messages').element().textContent).toBe('2'))
 
+    // A file binding has its own, empty conversation.
     await getByRole('button', { name: 'open-file' }).click()
     await expect.element(getByTestId('messages')).toHaveTextContent('0')
 
+    // Returning to the global binding restores its transcript, not an empty one.
     await getByRole('button', { name: 'no-file' }).click()
-    await expect.element(getByTestId('messages')).toHaveTextContent('0')
-    await expect.element(getByTestId('thread')).toHaveTextContent('none')
+    await expect.element(getByTestId('messages')).toHaveTextContent('2')
+    await expect.element(getByTestId('thread')).toHaveTextContent('thread-1')
 
-    // The next send starts a fresh global conversation, not the file's.
-    await getByRole('button', { name: 'send' }).click()
-    await vi.waitFor(() => expect(getByTestId('messages').element().textContent).toBe('2'))
-    expect(api.threadCount()).toBe(2)
+    // No extra thread was created by the round trip.
+    expect(api.threadCount()).toBe(1)
   })
 })
