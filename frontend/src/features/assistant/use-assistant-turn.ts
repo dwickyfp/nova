@@ -20,6 +20,18 @@ export type AssistantTurnOptions = {
   /** Active worksheet context for this turn. */
   context?: TurnContext
   onError?: (message: string) => void
+  /**
+   * Transcript store to drive. The provider injects one per conversation
+   * binding so switching bindings can restore a previous conversation's
+   * messages; standalone callers get their own.
+   */
+  transcript?: ReturnType<typeof useAssistantTranscript>
+}
+
+/** The parts of a conversation that must survive a binding switch. */
+export type AssistantTurnSnapshot = {
+  threadId: string | null
+  grantActive: boolean
 }
 
 /**
@@ -27,8 +39,14 @@ export type AssistantTurnOptions = {
  * The panel renders `messages` and passes `onDecide`; the workspace supplies
  * `ensureThread` so thread creation stays bound to the active file.
  */
-export function useAssistantTurn({ ensureThread, context, onError }: AssistantTurnOptions) {
-  const transcript = useAssistantTranscript()
+export function useAssistantTurn({
+  ensureThread,
+  context,
+  onError,
+  transcript: injectedTranscript,
+}: AssistantTurnOptions) {
+  const ownTranscript = useAssistantTranscript()
+  const transcript = injectedTranscript ?? ownTranscript
   const [streaming, setStreaming] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [decidingToolCallId, setDecidingToolCallId] = useState<string | null>(null)
@@ -123,32 +141,26 @@ export function useAssistantTurn({ ensureThread, context, onError }: AssistantTu
   }, [onError, resettingGrant, threadId, transcript])
 
   /**
-   * Ends the current conversation and starts a fresh one. Revoking the grant
-   * (`ConsentPolicy.always_allow_read_only`) is best-effort cleanup: the thread
-   * may already be gone. Clearing the local binding is not optional and runs
-   * synchronously before the revoke starts: the conversation is bound to the
-   * active file, and this runs fire-and-forget, so a stale `threadId` left in
-   * place across the network round-trip would route the next file's message into
-   * the old file's thread. A real revoke failure is still surfaced.
+   * Reads the conversation's thread/grant binding so a caller that keeps one
+   * turn per binding identity can restore it after switching away and back.
+   * Aborts any in-flight stream first: a snapshot must describe a settled
+   * conversation, never one mid-turn.
    */
-  const startConversation = useCallback(async () => {
+  const snapshot = useCallback((): AssistantTurnSnapshot => {
     abortRef.current?.abort()
     abortRef.current = null
-    const closingThread = threadId
-    const shouldRevoke = Boolean(closingThread && grantActive)
-    setGrantActive(false)
-    setThreadId(null)
-    transcript.reset()
-    if (!shouldRevoke) return
-    try {
-      await resetGrant(closingThread!)
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'The conversation permissions were not reset'
-      transcript.applyEvent({ type: 'error', code: 'consent', message })
-      onError?.(message)
-    }
-  }, [grantActive, onError, threadId, transcript])
+    return { threadId, grantActive }
+  }, [grantActive, threadId])
+
+  const restore = useCallback((snapshot: AssistantTurnSnapshot) => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setThreadId(snapshot.threadId)
+    setGrantActive(snapshot.grantActive)
+    setStreaming(false)
+    setStatusMessage(null)
+    setDecidingToolCallId(null)
+  }, [])
 
   return {
     threadId,
@@ -159,10 +171,10 @@ export function useAssistantTurn({ ensureThread, context, onError }: AssistantTu
     grantActive,
     resetPermissions,
     resettingGrant,
-    startConversation,
     streaming,
     statusMessage,
     decidingToolCallId,
-    reset: transcript.reset,
+    snapshot,
+    restore,
   }
 }
