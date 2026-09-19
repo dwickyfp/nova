@@ -763,6 +763,40 @@ frameworks, sidecar runtime, bypass-approvals mode, persistent grants,
 browser/file tools, `CREATE TABLE`-by-prompt, dbt, notebooks,
 `mcp-server-starrocks` as the tool path, query timeout/cancel, LLM trace storage.
 
+### Phase 11 — Migration Connector 🔶
+
+Purpose: let an operator connect Nova to a **source** StarRocks cluster, enumerate
+that cluster's objects, and preview a per-object dry-run verdict
+(`migratable` / `lossy` / `skipped`) before any cutover. Added as a roadmap phase
+by NOVA-84 (Ruling 1, 2026-09-18); the implementation task is NOVA-85.
+
+**Scope decision (NOVA-84 Ruling 2):** v1 is deliberately **not lossless**. The
+dry-run must enumerate every object that will not migrate or will migrate
+partially, and the operator must acknowledge it before cutover. A declared
+omission is the product; a silent one is a defect.
+
+- [x] **11-A** Assessment + Dry-run v1 — `backend/app/modules/migration/`
+  (`verdicts.py`, `source.py`, `engine.py`, `repository.py`, `service.py`,
+  `router.py`, `schemas.py`), thin wizard at `frontend/src/features/migration/`,
+  `docs/28-migration-connector.md` (PR #88, squash merge `806bb20`, head
+  `c3d07b7`). Source is a cluster
+  address (`host`/`port`/`username` + secret reference); enumerate/dry-run fail
+  closed with no local-engine fallback; register + dry-run write
+  `NOVA_SYSTEM.AUDIT_LOG`; every DDL passes the single
+  `sql_guard.redact_sql_credentials` redactor; MV DDL via
+  `SHOW CREATE MATERIALIZED VIEW`; `ACCOUNTADMIN` never replicated.
+- [ ] **11-B** Execute / cutover — **hard-gated on #7 (backup/restore)**; not
+  behind any flag in v1. The engine adapter only reports whether the
+  operator-provided `starrocks-cluster-sync` exists (Nova adopts and invokes,
+  never bundles — license undeclared).
+- [ ] **11-C** Data movement and storage-volume mapping — designed for a later
+  phase; v1 does not move data.
+
+Explicitly out of this connector at any v1 scope: RBAC users/roles/grants, resource
+groups, storage volumes, external-catalog metastore credentials, session
+variables. Masking and row-access policies have no DDL export and are always
+reported `skipped` with an explicit reason.
+
 ## Decision Log
 
 Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.
@@ -778,6 +812,15 @@ Durable decisions with their reason, trade-off, and the trigger that reopens the
 | **Give the provider a file-less default binding so the composer works on every route** | Threads do not require a workspace file (`createThread` accepts null), so a global conversation with the tree's default database/schema/role keeps the composer live instead of silently aborting the send. A registered workspace binding still overrides it | A conversation started outside a workspace is not attached to a file; entering a file-bound workspace starts a file conversation instead | Threads must be file-scoped for audit or retention reasons |
 | **Identify the global conversation with a stable `'__global__'` key, and give each binding its own transcript** | The transcript used to reset on any binding change, so the conversation was lost whenever the user moved between the workspace and another page. The global key is now a sentinel distinct from the workspace's `null` ("no file open"), and `useAssistantConversation` keeps one transcript and thread per retained key, so returning to a binding restores its conversation. `WorkspacesPage` registers a binding only when a file is open | A conversation outside a workspace is file-less and in-memory, so a full page reload still clears it (E5a). A workspace file conversation is not retained: leaving it revokes its grant and starts the next file fresh, preserving the consent lifecycle | A file conversation must survive a file switch, or conversations must survive a reload |
 | **Move the toggle to the panel's top-right while open, and drop the wide header close button** | At the bottom-right the layout-level FAB sat exactly on the composer's send button and intercepted its clicks (caught in the live click-through). Moving it to the top-right keeps one hide control per state, in the panel's header row | The hide affordance is at the top-right when open, not bottom-right; the `Sheet` keeps its own header close | The panel header grows controls that collide with the toggle |
+
+### Phase 11 migration connector decisions (NOVA-84 / NOVA-85) — 2026-09-18
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **Phase 11 accepted as a new roadmap phase; v1 = Assessment + Dry-run** | Lossless cross-cluster migration is not possible today (TASK, PIPE body, masking/row-access policies, password hashes, external-catalog credentials have no faithful export), so the request cannot be a checkbox on an existing phase | A new phase and an explicit "not lossless" contract; sequencing and effort tracked here and in `docs/roadmap-snowflake-parity.md` | A request for lossless migration, or an upstream surface that makes a lost category exportable |
+| **The source is a cluster address, not a storage-connection name** (NOVA-85 rework, `c3d07b7`) | QA found (High) that enumerate/dry-run read the **local** engine while a source was registerable — the operator would be shown the wrong cluster's objects with no signal. `storage_connection` is object-storage identity, not a StarRocks endpoint; no remote-StarRocks connection concept existed | New module `source.py` plus a secret-reference credential model; the registry stores host/port/username/`secret_ref` with **no password column** | A source that needs a non-password auth method, or a remote connection that cannot be reached over the MySQL protocol |
+| **The password is a secret reference resolved at call time, never persisted** | AGENTS.md §2: credentials never appear in `NOVA_SYSTEM`, responses, logs or audit rows. Fail closed on a broken reference — never fall back to another principal | An extra indirection (`secret_ref`) and a runtime dependency on the secret provider | A secret backend that cannot resolve per-call, or the secret-provider phase superseding `app/storage/secrets.py` |
+| **Execute stays gated on #7 (backup/restore); the engine binary is invoked, never bundled** | The `starrocks-cluster-sync` license is undeclared (no LICENSE/NOTICE, no public source) → default all-rights-reserved, so redistribution is not permitted. Cutover without a backup path is irreversible | An operator must install the binary and point `MIGRATION_CLUSTER_SYNC_BINARY` at it | Written redistribution permission from the vendor; or #7 landing and an Execute decision |
 
 ### Internal ML endpoint authentication (NOVA-90) — 2026-09-18
 
