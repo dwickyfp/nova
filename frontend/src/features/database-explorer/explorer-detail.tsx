@@ -9,10 +9,13 @@ import {
   KeyRound,
   Layers3,
   Loader2,
+  Plus,
   Sigma,
   Table2,
+  Trash2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   formatBytes,
   formatModel,
@@ -53,6 +56,9 @@ export function ExplorerDetail({
   fnError,
   catalogsData,
   dbCache,
+  managedCatalogNames,
+  onCreateCatalog,
+  onDropCatalog,
 }: {
   node: ExplorerNode | null
   tableDetail?: TableDetailResponse | null
@@ -72,6 +78,9 @@ export function ExplorerDetail({
   fnError?: string | null
   catalogsData?: CatalogsResponse | null
   dbCache?: Map<string, DatabaseObjectsResponse>
+  managedCatalogNames?: Set<string>
+  onCreateCatalog?: () => void
+  onDropCatalog?: (name: string) => void
 }) {
   if (!node) {
     return (
@@ -248,6 +257,8 @@ export function ExplorerDetail({
       (c) => c.name === 'default_catalog' || c.name === node.label,
     )
     const databases = catalog?.databases ?? []
+    const catalogName = catalog?.name ?? node.label
+    const isManaged = managedCatalogNames?.has(catalogName) ?? false
 
     return (
       <div className='space-y-5'>
@@ -263,6 +274,25 @@ export function ExplorerDetail({
             </div>
             {catalog?.comment && (
               <p className='max-w-2xl text-sm text-muted-foreground'>{catalog.comment}</p>
+            )}
+          </div>
+          <div className='ms-auto flex items-center gap-2'>
+            {onCreateCatalog && (
+              <Button variant='outline' size='sm' onClick={onCreateCatalog}>
+                <Plus className='me-1.5 h-3.5 w-3.5' />
+                Add catalog
+              </Button>
+            )}
+            {isManaged && onDropCatalog && (
+              <Button
+                variant='outline'
+                size='sm'
+                className='text-destructive hover:text-destructive'
+                onClick={() => onDropCatalog(catalogName)}
+              >
+                <Trash2 className='me-1.5 h-3.5 w-3.5' />
+                Drop catalog
+              </Button>
             )}
           </div>
         </div>
