@@ -94,6 +94,9 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     ensureThread: activeBinding.ensureThread,
     context: activeBinding.context,
     bindingKey: activeBinding.key,
+    // The global conversation survives navigation; a workspace file does not,
+    // so leaving it still revokes its grant and starts the next file fresh.
+    retainOnLeave: (key) => key === GLOBAL_ASSISTANT_BINDING_KEY,
     onError: activeBinding.onError,
   })
 
