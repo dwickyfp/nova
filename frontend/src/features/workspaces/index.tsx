@@ -632,7 +632,6 @@ export function WorkspacesPage() {
     open: assistantOpen,
     toggle: toggleAssistant,
     setBinding,
-    initialiseOpen,
     collapsedToPersist,
   } = useAssistant()
   const threadsRef = useRef<Record<string, string>>({})
@@ -698,7 +697,6 @@ export function WorkspacesPage() {
     const context = queryContextQuery.data
     if (!tree || !context) return
     setSecondaryCollapsed(tree.sidebar_collapsed)
-    initialiseOpen(tree)
     setOpenTabIds((prev) => (prev.length ? prev : tree.open_tabs))
     setActiveTabId((prev) => prev ?? tree.active_tab ?? tree.open_tabs[0] ?? null)
 
@@ -722,7 +720,7 @@ export function WorkspacesPage() {
       }
       return next
     })
-  }, [initialiseOpen, queryContextQuery.data, workspaceTreeQuery.data])
+  }, [queryContextQuery.data, workspaceTreeQuery.data])
 
   useEffect(() => {
     if (!activeTabId) return

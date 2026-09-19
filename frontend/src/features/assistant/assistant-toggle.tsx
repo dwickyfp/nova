@@ -8,11 +8,11 @@ export type AssistantToggleProps = {
 }
 
 /**
- * The always-available way to show or hide the assistant. It sits at the
- * bottom-right of the viewport in both states, and the icon swaps between
- * `PanelRightClose` (open, "hide") and `Bot` (closed, "show") so the same
- * position never jumps when the panel animates. It doubles as the trigger for
- * the narrow `Sheet`, so a small viewport never loses the affordance.
+ * The always-available way to show or hide the assistant. Closed, it floats at
+ * the bottom-right of the viewport; open, it moves to the top-right, level with
+ * the panel header, so it never covers the composer at the panel's foot. The
+ * icon swaps between `PanelRightClose` (open) and `Bot` (closed). It doubles as
+ * the trigger for the narrow `Sheet`, so a small viewport never loses it.
  */
 export function AssistantToggle({ open, onToggle }: AssistantToggleProps) {
   return (
@@ -21,7 +21,8 @@ export function AssistantToggle({ open, onToggle }: AssistantToggleProps) {
       size='icon'
       variant={open ? 'secondary' : 'default'}
       className={cn(
-        'fixed bottom-4 right-4 z-50 min-h-11 min-w-11 rounded-full shadow-lg',
+        'fixed right-4 z-50 min-h-11 min-w-11 rounded-full shadow-lg',
+        open ? 'top-4' : 'bottom-4',
         'transition-transform duration-200 motion-reduce:transition-none'
       )}
       aria-label={open ? 'Hide assistant' : 'Show assistant'}

@@ -2,10 +2,15 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api-client'
+import type { WorkspaceTreeResponse } from '@/features/workspaces/types'
+import { createThread } from './thread-client'
 import type { TurnContext } from './stream-client'
 import { useAssistantConversation } from './use-assistant-conversation'
 import type { AssistantPanelProps } from './assistant-panel'
@@ -24,8 +29,6 @@ type AssistantContextType = {
   open: boolean
   setOpen: (open: boolean) => void
   toggle: () => void
-  /** Applies the persisted `assistant_collapsed` once, on first tree load. */
-  initialiseOpen: (tree: { assistant_collapsed?: boolean }) => void
   /** Reads the value to persist, translating the panel polarity once. */
   collapsedToPersist: () => boolean
   /** Registers the active surface binding; call with null to clear it. */
@@ -35,35 +38,56 @@ type AssistantContextType = {
 
 const AssistantContext = createContext<AssistantContextType | null>(null)
 
-const DEFAULT_CONTEXT: TurnContext = { database: null, schema: null, role: null }
+const EMPTY_CONTEXT: TurnContext = { database: null, schema: null, role: null }
 
 export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpenState] = useState(false)
   const [binding, setBindingState] = useState<AssistantBinding | null>(null)
+  // The persisted value arrives with the tree after first paint. Apply it once
+  // so a later refetch cannot clobber a toggle the user just made.
   const initialisedRef = useRef(false)
 
-  const noopEnsureThread = useCallback(async () => null, [])
+  // Same key and fetcher as WorkspacesPage, so the two consumers share one
+  // cache entry instead of issuing a second GET when both are mounted.
+  const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
+    queryKey: ['workspace-tree'],
+    queryFn: () => api.get<WorkspaceTreeResponse>('/workspaces/tree'),
+  })
 
-  const ensureThread = binding?.ensureThread ?? noopEnsureThread
-  const context = binding?.context ?? DEFAULT_CONTEXT
-  const bindingKey = binding?.key ?? null
-  const onError = binding?.onError
+  const tree = workspaceTreeQuery.data
+  useEffect(() => {
+    if (!tree || initialisedRef.current) return
+    initialisedRef.current = true
+    setOpenState(initialAssistantOpen(tree))
+  }, [tree])
+
+  const treeContext = tree?.defaults
+
+  /**
+   * The binding used outside the workspace. Threads do not require a file, so a
+   * file-less thread with the tree's default database/schema/role keeps the
+   * composer live on every route instead of aborting the send.
+   */
+  const defaultBinding = useMemo<AssistantBinding>(
+    () => ({
+      key: null,
+      context: treeContext ?? EMPTY_CONTEXT,
+      ensureThread: () => createThread(null).then((thread) => thread.thread_id),
+    }),
+    [treeContext]
+  )
+
+  const activeBinding = binding ?? defaultBinding
 
   const conversation = useAssistantConversation({
-    ensureThread,
-    context,
-    bindingKey,
-    onError,
+    ensureThread: activeBinding.ensureThread,
+    context: activeBinding.context,
+    bindingKey: activeBinding.key,
+    onError: activeBinding.onError,
   })
 
   const setOpen = useCallback((next: boolean) => setOpenState(next), [])
   const toggle = useCallback(() => setOpenState((prev) => !prev), [])
-
-  const initialiseOpen = useCallback((tree: { assistant_collapsed?: boolean }) => {
-    if (initialisedRef.current) return
-    initialisedRef.current = true
-    setOpenState(initialAssistantOpen(tree))
-  }, [])
 
   const collapsedToPersist = useCallback(() => assistantCollapsedToPersist(open), [open])
 
@@ -80,12 +104,11 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       open,
       setOpen,
       toggle,
-      initialiseOpen,
       collapsedToPersist,
       setBinding,
       conversation,
     }),
-    [open, setOpen, toggle, initialiseOpen, collapsedToPersist, setBinding, conversation]
+    [open, setOpen, toggle, collapsedToPersist, setBinding, conversation]
   )
 
   return <AssistantContext value={value}>{children}</AssistantContext>

@@ -165,22 +165,30 @@ function AssistantBody({
   )
 }
 
-function AssistantHeader({ onClose }: { onClose: () => void }) {
+function AssistantHeader({
+  onClose,
+  showClose = true,
+}: {
+  onClose: () => void
+  showClose?: boolean
+}) {
   return (
     <div className='flex items-center justify-between gap-2 border-b px-3 py-2'>
       <div className='flex items-center gap-2'>
         <Bot aria-hidden='true' className='size-4 text-muted-foreground' />
         <h2 className='text-sm font-medium'>Assistant</h2>
       </div>
-      <Button
-        type='button'
-        variant='ghost'
-        size='icon'
-        onClick={onClose}
-        aria-label='Close assistant'
-      >
-        <PanelRightClose className='size-4' />
-      </Button>
+      {showClose ? (
+        <Button
+          type='button'
+          variant='ghost'
+          size='icon'
+          onClick={onClose}
+          aria-label='Close assistant'
+        >
+          <PanelRightClose className='size-4' />
+        </Button>
+      ) : null}
     </div>
   )
 }
@@ -221,7 +229,9 @@ export function AssistantPanel(props: AssistantPanelProps) {
         inert={!open}
         className={cn('flex h-full min-h-0 flex-col border-l bg-background', PANEL_WIDTH)}
       >
-        <AssistantHeader onClose={() => onOpenChange(false)} />
+        {/* The layout-level FAB is the hide control in wide mode, so the header
+            does not add a second one next to it. The Sheet keeps its own. */}
+        <AssistantHeader onClose={() => onOpenChange(false)} showClose={false} />
         <AssistantBody {...props} />
       </aside>
     </div>

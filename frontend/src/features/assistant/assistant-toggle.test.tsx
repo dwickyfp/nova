@@ -34,6 +34,26 @@ describe('AssistantToggle', () => {
     expect(classes).toContain('min-h-11')
     expect(classes).toContain('min-w-11')
   })
+
+  it('guards its own transition against reduced motion', async () => {
+    const { getByRole } = await render(<AssistantToggle open={false} onToggle={() => {}} />)
+    const classes = getByRole('button', { name: 'Show assistant' }).element().className
+    expect(classes).toContain('motion-reduce:transition-none')
+  })
+})
+
+describe('AssistantPanel motion guard', () => {
+  it('keeps the reduced-motion variant on the animated wrapper', async () => {
+    await page.viewport(1440, 900)
+    try {
+      const { container } = await render(<AssistantPanel open onOpenChange={() => {}} />)
+      const wrapper = container.querySelector('#assistant-panel')?.parentElement
+      expect(wrapper?.className).toContain('transition-[width]')
+      expect(wrapper?.className).toContain('motion-reduce:transition-none')
+    } finally {
+      await page.viewport(375, 800)
+    }
+  })
 })
 
 describe('AssistantPanel narrow ladder', () => {
@@ -42,6 +62,17 @@ describe('AssistantPanel narrow ladder', () => {
     try {
       const { getByRole } = await render(<AssistantPanel open onOpenChange={() => {}} />)
       await expect.element(getByRole('complementary', { name: 'Assistant' })).toBeInTheDocument()
+    } finally {
+      await page.viewport(375, 800)
+    }
+  })
+
+  it('renders the Sheet just below md (767px)', async () => {
+    await page.viewport(767, 900)
+    try {
+      const { getByRole, container } = await render(<AssistantPanel open onOpenChange={() => {}} />)
+      await expect.element(getByRole('dialog')).toBeInTheDocument()
+      expect(container.querySelector('#assistant-panel')).toBeNull()
     } finally {
       await page.viewport(375, 800)
     }
