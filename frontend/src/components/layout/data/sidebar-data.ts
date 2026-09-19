@@ -59,11 +59,6 @@ export const sidebarData: SidebarData = {
           icon: Layers,
         },
         {
-          title: 'Migration',
-          url: '/migration',
-          icon: ArrowRightLeft,
-        },
-        {
           title: 'Tasks',
           url: '/tasks-manager',
           icon: Workflow,
@@ -113,6 +108,11 @@ export const sidebarData: SidebarData = {
     {
       title: 'Operations',
       items: [
+        {
+          title: 'Migration',
+          url: '/migration',
+          icon: ArrowRightLeft,
+        },
         {
           title: 'Monitoring',
           icon: Activity,
