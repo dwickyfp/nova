@@ -25,15 +25,18 @@ function Harness({
   holder,
   bindingKey,
   ensureThread,
+  retainOnLeave,
 }: {
   holder: { current: Conversation | null }
   bindingKey: string | null
   ensureThread: () => Promise<string | null>
+  retainOnLeave?: (key: string | null) => boolean
 }) {
   const conversation = useAssistantConversation({
     ensureThread,
     context: { database: null, schema: null, role: null },
     bindingKey,
+    retainOnLeave,
   })
   holder.current = conversation
   return <span data-testid='count'>{conversation.messages.length}</span>
@@ -75,7 +78,7 @@ describe('useAssistantConversation', () => {
     expect(streamAssistantTurn).not.toHaveBeenCalled()
   })
 
-  it('resets the transcript when the binding key changes', async () => {
+  it('gives each binding key its own transcript', async () => {
     echoStream()
     const holder: { current: Conversation | null } = { current: null }
     const view = await render(<Harness holder={holder} bindingKey='file-1' ensureThread={async () => 'thread-a'} />)
@@ -84,6 +87,53 @@ describe('useAssistantConversation', () => {
     await expect.element(view.getByTestId('count')).toHaveTextContent('2')
 
     await view.rerender(<Harness holder={holder} bindingKey='file-2' ensureThread={async () => 'thread-b'} />)
+    await expect.element(view.getByTestId('count')).toHaveTextContent('0')
+  })
+
+  it('restores a retained binding\'s transcript when the key changes back', async () => {
+    echoStream()
+    const retainGlobal = (key: string | null) => key === '__global__'
+    const holder: { current: Conversation | null } = { current: null }
+    const view = await render(
+      <Harness
+        holder={holder}
+        bindingKey='__global__'
+        ensureThread={async () => 'global-thread'}
+        retainOnLeave={retainGlobal}
+      />
+    )
+
+    await holder.current!.sendMessage('hi')
+    await expect.element(view.getByTestId('count')).toHaveTextContent('2')
+
+    await view.rerender(
+      <Harness holder={holder} bindingKey='file-1' ensureThread={async () => 'thread-a'} retainOnLeave={retainGlobal} />
+    )
+    await expect.element(view.getByTestId('count')).toHaveTextContent('0')
+
+    await view.rerender(
+      <Harness
+        holder={holder}
+        bindingKey='__global__'
+        ensureThread={async () => 'global-thread'}
+        retainOnLeave={retainGlobal}
+      />
+    )
+    await expect.element(view.getByTestId('count')).toHaveTextContent('2')
+  })
+
+  it('discards a non-retained binding\'s transcript when the key changes', async () => {
+    echoStream()
+    const holder: { current: Conversation | null } = { current: null }
+    const view = await render(<Harness holder={holder} bindingKey='file-1' ensureThread={async () => 'thread-a'} />)
+
+    await holder.current!.sendMessage('hi')
+    await expect.element(view.getByTestId('count')).toHaveTextContent('2')
+
+    await view.rerender(<Harness holder={holder} bindingKey='file-2' ensureThread={async () => 'thread-b'} />)
+    await expect.element(view.getByTestId('count')).toHaveTextContent('0')
+
+    await view.rerender(<Harness holder={holder} bindingKey='file-1' ensureThread={async () => 'thread-a'} />)
     await expect.element(view.getByTestId('count')).toHaveTextContent('0')
   })
 
