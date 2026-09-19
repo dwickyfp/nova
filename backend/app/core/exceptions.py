@@ -64,10 +64,40 @@ class StarRocksError(NovaException):
 
 
 class StorageError(NovaException):
-    """S3/MinIO storage operation error."""
+    """S3/MinIO storage operation error.
+
+    Defaults to 500 only for genuinely unexpected shapes. Callers that can
+    classify the underlying failure should pass the specific status (503 for
+    an unreachable/misconfigured endpoint, 404 for a missing object, 502 for
+    an upstream rejection) so the client never sees a bare 500.
+    """
 
     def __init__(self, message: str, status_code: int = 500):
         super().__init__(message, status_code=status_code)
+
+
+class StorageUnavailableError(StorageError):
+    """Storage backend unreachable or misconfigured (endpoint down, bad creds).
+
+    503 rather than 500: the failure is on the storage dependency, not in
+    Nova's own logic, and the client can retry once an operator restores it.
+    The message is always a Nova-authored summary — never the raw client
+    error, which echoes the endpoint and access key.
+    """
+
+    def __init__(self, message: str):
+        super().__init__(message, status_code=503)
+
+
+class WorkspaceNotReadyError(StorageError):
+    """NOVA_SYSTEM (or the workspace table) is not initialised yet.
+
+    503 with an actionable message, so a user who hits the console before
+    bootstrap finishes sees "not ready yet" instead of a bare 500.
+    """
+
+    def __init__(self, message: str):
+        super().__init__(message, status_code=503)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
