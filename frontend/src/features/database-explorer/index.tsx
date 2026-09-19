@@ -6,6 +6,7 @@ import {
   Loader2,
   MoreHorizontal,
   PanelLeftOpen,
+  Plus,
   RefreshCw,
   Search,
 } from 'lucide-react'
@@ -30,6 +31,14 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { SidebarMenu } from '@/components/ui/sidebar'
 import { api } from '@/lib/api-client'
+import {
+  fetchExternalCatalogs,
+  type ExternalCatalog,
+} from '@/features/external-catalogs/api'
+import {
+  CreateCatalogDialog,
+  DropCatalogDialog,
+} from '@/features/external-catalogs/catalog-dialogs'
 import {
   buildCatalogTree,
   buildDatabaseChildren,
@@ -321,6 +330,25 @@ export function DatabaseExplorerPage() {
     queryFn: () => api.get('/explorer/catalogs'),
   })
 
+  // Nova-managed external catalogs. Only these carry a metadata row and can be
+  // dropped from the UI; engine-only catalogs stay read-only.
+  const { data: managedCatalogs, refetch: refetchManagedCatalogs } = useQuery({
+    queryKey: ['external-catalogs'],
+    queryFn: fetchExternalCatalogs,
+  })
+  const managedCatalogNames = useMemo(
+    () => new Set((managedCatalogs?.catalogs ?? []).map((c) => c.name)),
+    [managedCatalogs],
+  )
+
+  const [createCatalogOpen, setCreateCatalogOpen] = useState(false)
+  const [dropCatalogTarget, setDropCatalogTarget] = useState<ExternalCatalog | { name: string } | null>(null)
+
+  const handleCatalogChanged = useCallback(() => {
+    void refetchManagedCatalogs()
+    void refetchCatalogs()
+  }, [refetchManagedCatalogs, refetchCatalogs])
+
   // Build tree from catalog data
   const catalogTree = useMemo(() => {
     if (!catalogsData) return []
@@ -495,9 +523,18 @@ export function DatabaseExplorerPage() {
           </div>
         </div>
         <div className='ml-auto flex items-center gap-2'>
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-8'
+            onClick={() => setCreateCatalogOpen(true)}
+          >
+            <Plus className='mr-1.5 h-3.5 w-3.5' />
+            Add catalog
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant='outline' size='icon' className='h-8 w-8'>
+              <Button variant='outline' size='icon' className='h-8 w-8' aria-label='Explorer actions'>
                 <MoreHorizontal className='h-3.5 w-3.5' />
               </Button>
             </DropdownMenuTrigger>
@@ -580,9 +617,26 @@ export function DatabaseExplorerPage() {
             fnError={fnError ? String(fnError) : null}
             catalogsData={catalogsData}
             dbCache={dbCache}
+            managedCatalogNames={managedCatalogNames}
+            onCreateCatalog={() => setCreateCatalogOpen(true)}
+            onDropCatalog={(name) => setDropCatalogTarget({ name })}
           />
         </section>
       </div>
+
+      <CreateCatalogDialog
+        open={createCatalogOpen}
+        onOpenChange={setCreateCatalogOpen}
+        onCreated={handleCatalogChanged}
+      />
+
+      <DropCatalogDialog
+        catalog={dropCatalogTarget}
+        onOpenChange={(open) => {
+          if (!open) setDropCatalogTarget(null)
+        }}
+        onDropped={handleCatalogChanged}
+      />
 
       {/* Create Stage Dialog */}
       <Dialog open={createStageOpen} onOpenChange={setCreateStageOpen}>
