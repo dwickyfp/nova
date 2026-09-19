@@ -253,9 +253,13 @@ export function ExplorerDetail({
 
   // ── Catalog detail view ──────────────────────────────────
   if (node.type === 'catalog') {
-    const catalog = catalogsData?.catalogs.find(
-      (c) => c.name === 'default_catalog' || c.name === node.label,
-    )
+    // Match the node's own catalog first: `default_catalog` always sits at
+    // index 0, so an OR clause would make every catalog node resolve to it.
+    // `buildCatalogTree` renames that label to "Nova Catalog", hence the fallback.
+    const catalog =
+      catalogsData?.catalogs.find((c) => c.name === node.label) ??
+      catalogsData?.catalogs.find((c) => c.name === 'default_catalog') ??
+      null
     const databases = catalog?.databases ?? []
     const catalogName = catalog?.name ?? node.label
     const isManaged = managedCatalogNames?.has(catalogName) ?? false
