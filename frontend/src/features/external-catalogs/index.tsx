@@ -1,76 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  ExternalLink,
-  Loader2,
-  MoreHorizontal,
-  Plus,
-  RefreshCw,
-  Trash2,
-} from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { ExternalLink, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Header } from '@/components/layout/header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  createExternalCatalog,
-  deleteExternalCatalog,
-  fetchExternalCatalogs,
-  type CatalogType,
-  type ExternalCatalog,
-  type MetastoreType,
-} from './api'
-
-const CATALOG_TYPES: { value: CatalogType; label: string }[] = [
-  { value: 'iceberg', label: 'Iceberg' },
-  { value: 'hive', label: 'Hive' },
-]
-
-const METASTORE_TYPES: { value: MetastoreType; label: string }[] = [
-  { value: 'hms', label: 'Hive Metastore' },
-  { value: 'rest', label: 'Iceberg REST Catalog' },
-]
-
-const emptyForm = {
-  name: '',
-  type: 'iceberg' as CatalogType,
-  metastore_type: 'hms' as MetastoreType,
-  metastore_uri: '',
-  storage_connection: 'production',
-  comment: '',
-}
+import { fetchExternalCatalogs, type ExternalCatalog } from './api'
+import { CreateCatalogDialog, DropCatalogDialog } from './catalog-dialogs'
 
 export function ExternalCatalogsPage() {
   const [catalogs, setCatalogs] = useState<ExternalCatalog[]>([])
   const [loading, setLoading] = useState(true)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [form, setForm] = useState({ ...emptyForm })
-  const [submitting, setSubmitting] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
   const [dropTarget, setDropTarget] = useState<ExternalCatalog | null>(null)
-  const [dropping, setDropping] = useState(false)
   const [selected, setSelected] = useState<ExternalCatalog | null>(null)
 
   const load = useCallback(async () => {
@@ -90,55 +37,6 @@ export function ExternalCatalogsPage() {
   useEffect(() => {
     load()
   }, [load])
-
-  const createDisabled = useMemo(
-    () => !form.name.trim() || !form.metastore_uri.trim(),
-    [form.name, form.metastore_uri]
-  )
-
-  const handleCreate = async () => {
-    if (createDisabled) {
-      toast.error('Name and metastore URI are required')
-      return
-    }
-    setSubmitting(true)
-    try {
-      await createExternalCatalog({
-        name: form.name.trim(),
-        type: form.type,
-        metastore_type: form.metastore_type,
-        metastore_uri: form.metastore_uri.trim(),
-        storage_connection: form.storage_connection.trim() || 'production',
-        comment: form.comment.trim() || undefined,
-      })
-      toast.success(`Catalog "${form.name}" created`)
-      setDialogOpen(false)
-      setForm({ ...emptyForm })
-      await load()
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to create catalog'
-      )
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const handleDrop = async () => {
-    if (!dropTarget) return
-    setDropping(true)
-    try {
-      await deleteExternalCatalog(dropTarget.name)
-      toast.success(`Catalog "${dropTarget.name}" dropped`)
-      setDropTarget(null)
-      if (selected?.name === dropTarget.name) setSelected(null)
-      await load()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to drop catalog')
-    } finally {
-      setDropping(false)
-    }
-  }
 
   return (
     <div className='flex h-full min-h-0 flex-col'>
@@ -162,14 +60,7 @@ export function ExternalCatalogsPage() {
           >
             <RefreshCw className={loading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
           </Button>
-          <Button
-            size='sm'
-            className='h-8'
-            onClick={() => {
-              setForm({ ...emptyForm })
-              setDialogOpen(true)
-            }}
-          >
+          <Button size='sm' className='h-8' onClick={() => setCreateOpen(true)}>
             <Plus className='mr-1.5 h-3.5 w-3.5' />
             Add Catalog
           </Button>
@@ -231,6 +122,7 @@ export function ExternalCatalogsPage() {
                             size='icon'
                             className='h-7 w-7'
                             onClick={(e) => e.stopPropagation()}
+                            aria-label={`Actions for ${catalog.name}`}
                           >
                             <MoreHorizontal className='h-3.5 w-3.5' />
                           </Button>
@@ -272,146 +164,21 @@ export function ExternalCatalogsPage() {
         )}
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className='sm:max-w-lg'>
-          <DialogHeader>
-            <DialogTitle>Create External Catalog</DialogTitle>
-            <DialogDescription>
-              Storage credentials are resolved from the named connection and are
-              never sent from this form.
-            </DialogDescription>
-          </DialogHeader>
-          <div className='space-y-3 py-2'>
-            <div className='space-y-1.5'>
-              <Label htmlFor='catalog-name'>Name</Label>
-              <Input
-                id='catalog-name'
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder='iceberg_lake'
-              />
-            </div>
-            <div className='grid grid-cols-2 gap-3'>
-              <div className='space-y-1.5'>
-                <Label>Type</Label>
-                <Select
-                  value={form.type}
-                  onValueChange={(value) =>
-                    setForm({ ...form, type: value as CatalogType })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATALOG_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className='space-y-1.5'>
-                <Label>Metastore</Label>
-                <Select
-                  value={form.metastore_type}
-                  onValueChange={(value) =>
-                    setForm({
-                      ...form,
-                      metastore_type: value as MetastoreType,
-                    })
-                  }
-                  disabled={form.type === 'hive'}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {METASTORE_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className='space-y-1.5'>
-              <Label htmlFor='catalog-uri'>
-                {form.type === 'hive' || form.metastore_type === 'hms'
-                  ? 'Hive Metastore URI'
-                  : 'Iceberg REST URI'}
-              </Label>
-              <Input
-                id='catalog-uri'
-                value={form.metastore_uri}
-                onChange={(e) =>
-                  setForm({ ...form, metastore_uri: e.target.value })
-                }
-                placeholder='thrift://hms:9083'
-              />
-            </div>
-            <div className='space-y-1.5'>
-              <Label htmlFor='catalog-storage'>Storage connection</Label>
-              <Input
-                id='catalog-storage'
-                value={form.storage_connection}
-                onChange={(e) =>
-                  setForm({ ...form, storage_connection: e.target.value })
-                }
-                placeholder='production'
-              />
-              <p className='text-xs text-muted-foreground'>
-                A name from the Nova storage configuration. The secret stays on
-                the server.
-              </p>
-            </div>
-            <div className='space-y-1.5'>
-              <Label htmlFor='catalog-comment'>Comment</Label>
-              <Input
-                id='catalog-comment'
-                value={form.comment}
-                onChange={(e) => setForm({ ...form, comment: e.target.value })}
-                placeholder='Optional'
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant='outline' onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreate} disabled={submitting || createDisabled}>
-              {submitting ? (
-                <>
-                  <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                  Creating...
-                </>
-              ) : (
-                'Create'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateCatalogDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={() => void load()}
+      />
 
-      <ConfirmDialog
-        open={dropTarget !== null}
+      <DropCatalogDialog
+        catalog={dropTarget}
         onOpenChange={(open) => {
           if (!open) setDropTarget(null)
         }}
-        title='Drop external catalog'
-        desc={
-          <span>
-            Drop <span className='font-semibold'>{dropTarget?.name}</span>? Tables
-            in this catalog become unreachable through Nova. The underlying data
-            is not deleted.
-          </span>
-        }
-        destructive
-        isLoading={dropping}
-        confirmText='Drop'
-        handleConfirm={handleDrop}
+        onDropped={(name) => {
+          if (selected?.name === name) setSelected(null)
+          void load()
+        }}
       />
     </div>
   )
