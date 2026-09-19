@@ -145,6 +145,43 @@ async def test_query_service_routes_create_ml_model_to_ml_engine(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_query_service_records_password_change_requirement(monkeypatch):
+    """The statement is Nova metadata: flagged and never sent to the engine."""
+    service = QueryService()
+
+    written: dict = {}
+
+    async def fake_set_flag(username, *, required=True):
+        written["username"] = username
+        written["required"] = required
+
+    async def fake_audit_log(**kwargs):
+        assert kwargs["status"] == "SUCCESS"
+        assert kwargs["object_type"] == "user"
+        assert kwargs["object_name"] == "dwicky.f.putra"
+
+    async def fail_execute_as_user(*args, **kwargs):
+        raise AssertionError("the engine must not receive this statement")
+
+    monkeypatch.setattr(
+        "app.modules.query.service.set_must_change_password", fake_set_flag
+    )
+    monkeypatch.setattr("app.modules.query.service.write_audit_log", fake_audit_log)
+    monkeypatch.setattr(service._repo, "execute_as_user", fail_execute_as_user)
+
+    result = await service.execute(
+        sql="ALTER USER 'dwicky.f.putra' REQUIRE PASSWORD CHANGE;",
+        username="admin",
+        encrypted_password="encrypted",
+    )
+
+    assert isinstance(result, QueryResult)
+    assert written == {"username": "dwicky.f.putra", "required": True}
+    assert result.rows == [["dwicky.f.putra", True]]
+    assert any("Nova metadata" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
 async def test_query_service_regular_sql_still_uses_repository(monkeypatch):
     service = QueryService()
 

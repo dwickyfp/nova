@@ -21,6 +21,7 @@ from .schemas import (
     TableDetailResponse,
     TableProperties,
     TableSummary,
+    TaskSummary,
     ViewDetailResponse,
     ViewSummary,
 )
@@ -63,6 +64,7 @@ class ExplorerService:
         funcs_raw = await explorer_repo.list_functions(database)
         pipes_raw = await explorer_repo.list_pipes(database)
         stages_raw = await explorer_repo.list_stages(database)
+        tasks_raw = await explorer_repo.list_tasks(database)
 
         return DatabaseObjectsResponse(
             database=database,
@@ -125,6 +127,16 @@ class ExplorerService:
                 )
                 for s in stages_raw
             ],
+            tasks=[
+                TaskSummary(
+                    name=t["name"],
+                    schedule_kind=t.get("schedule_kind"),
+                    schedule_expr=t.get("schedule_expr"),
+                    timezone=t.get("timezone"),
+                    overlap_policy=t.get("overlap_policy"),
+                )
+                for t in tasks_raw
+            ],
             summary={
                 "tables": len(tables_raw),
                 "views": len(views_raw),
@@ -132,6 +144,7 @@ class ExplorerService:
                 "functions": len(funcs_raw),
                 "pipes": len(pipes_raw),
                 "stages": len(stages_raw),
+                "tasks": len(tasks_raw),
             },
         )
 

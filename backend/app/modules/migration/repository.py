@@ -165,6 +165,43 @@ class MigrationRepository:
         assert created is not None
         return created
 
+    async def target_replication_num(self) -> int | None:
+        """The local engine's safe replication factor, or ``None`` if unknown.
+
+        A table copied from a source may carry a replication factor the target
+        cannot satisfy (a multi-BE source into a single-BE target). This reads the
+        number of alive backends on the **local** engine — the migration target in
+        v1 — so the planner can clamp ``replication_num`` instead of dropping it
+        and letting an unsatisfiable default apply. Returns ``None`` when the
+        engine cannot be read, in which case the property is dropped as before.
+        """
+        try:
+            conn = await self._connect()
+        except Exception:
+            return None
+        try:
+            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
+                await cur.execute("SHOW BACKENDS")
+                rows = await cur.fetchall()
+                alive = 0
+                for row in rows:
+                    record = dict(row)
+                    value = record.get("Alive")
+                    # Modern builds return a bool; older ones return 1/0 or
+                    # 'true'/'false'. A row with no Alive column is counted only
+                    # if the listing is known to include only healthy backends —
+                    # absent that signal, treat it as alive.
+                    if value is None or str(value).strip().lower() in (
+                        "1",
+                        "true",
+                    ):
+                        alive += 1
+                return max(alive, 1) if rows else 1
+        except Exception:
+            return None
+        finally:
+            conn.close()
+
     # ── Enumeration (read-only, over the source connection) ─────
 
     @staticmethod
@@ -222,15 +259,54 @@ class MigrationRepository:
         ]
 
     async def list_functions(self, conn: asyncmy.Connection, database: str) -> list[dict]:
-        """UDFs via ``SHOW FULL FUNCTIONS`` (best-effort; absent on some setups)."""
+        """UDFs via ``SHOW FULL FUNCTIONS`` (best-effort; absent on some setups).
+
+        StarRocks 4.1.4 has **no** ``SHOW CREATE FUNCTION``. For an SQL UDF the
+        body is nonetheless recoverable: ``SHOW FULL FUNCTIONS`` returns it in the
+        ``Properties`` column (e.g. ``"`x` + `y`"``), so the original definition is
+        reconstructed faithfully. Java/Python UDFs carry a jar/payload in the same
+        column that the column set alone cannot reproduce and stay ``lossy``.
+        """
+        return await self._functions(conn, database, global_scope=False)
+
+    async def list_global_functions(self, conn: asyncmy.Connection) -> list[dict]:
+        """Global SQL UDFs via ``SHOW GLOBAL FUNCTIONS``.
+
+        Global functions are not scoped to a database, so they are enumerated once
+        per source rather than per database. The verdict is the same as for a
+        database-scoped function: reconstructable only when the body is native SQL.
+        """
+        return await self._functions(conn, None, global_scope=True)
+
+    async def _functions(
+        self, conn: asyncmy.Connection, database: str | None, *, global_scope: bool
+    ) -> list[dict]:
+        # ``SHOW GLOBAL FUNCTIONS`` lists only names; the full definition — needed
+        # to reconstruct the body — is read with ``SHOW FULL GLOBAL FUNCTIONS``.
+        # If that surface is absent on a build, the name-only listing is the
+        # fallback. Nova never invents a body it did not read.
+        statement = (
+            "SHOW FULL GLOBAL FUNCTIONS"
+            if global_scope
+            else f"SHOW FULL FUNCTIONS FROM `{database}`"
+        )
         try:
-            rows = await self._query(conn, f"SHOW FULL FUNCTIONS FROM `{database}`")
+            rows = await self._query(conn, statement)
         except Exception:
-            return []
+            if global_scope:
+                # Fall back to the name-only surface; the function is then listed
+                # but its definition cannot be reconstructed, which the verdict
+                # reports as lossy through the missing body.
+                try:
+                    rows = await self._query(conn, "SHOW GLOBAL FUNCTIONS")
+                except Exception:
+                    return []
+            else:
+                return []
         functions = []
         for row in rows:
             signature = row[0] or ""
-            name = signature.split("(")[0] if signature else ""
+            name = signature.split("(")[0] if signature else str(signature)
             functions.append(
                 {
                     "name": name,
@@ -239,22 +315,41 @@ class MigrationRepository:
                     "return_type": row[1] if len(row) > 1 else None,
                     "function_type": row[2] if len(row) > 2 else None,
                     "properties": row[4] if len(row) > 4 else None,
+                    "scope": "global" if global_scope else "database",
                 }
             )
         return functions
 
     async def list_tasks(self, conn: asyncmy.Connection, database: str) -> list[dict]:
-        """TASKs via ``information_schema.tasks`` (no ``SHOW CREATE`` exists)."""
+        """TASKs via ``information_schema.tasks`` (no ``SHOW CREATE`` exists).
+
+        The column is ``DATABASE`` (not ``DATABASE_NAME``) and the schedule and
+        body live in ``SCHEDULE`` / ``DEFINITION``, which makes a ``CREATE TASK``
+        reconstruction possible. When the engine does not expose tasks at all
+        (some builds disable the feature), the read is empty.
+        """
         try:
             rows = await self._query(
                 conn,
-                "SELECT TASK_NAME FROM information_schema.tasks "
-                "WHERE DATABASE_NAME = %s ORDER BY TASK_NAME",
+                "SELECT TASK_NAME, SCHEDULE, DEFINITION, PROPERTIES "
+                "FROM information_schema.tasks "
+                "WHERE DATABASE = %s ORDER BY TASK_NAME",
                 (database,),
             )
         except Exception:
             return []
-        return [{"name": row[0], "kind": "task"} for row in rows]
+        tasks = []
+        for row in rows:
+            tasks.append(
+                {
+                    "name": row[0],
+                    "kind": "task",
+                    "schedule": row[1] if len(row) > 1 else None,
+                    "definition": row[2] if len(row) > 2 else None,
+                    "properties": row[3] if len(row) > 3 else None,
+                }
+            )
+        return tasks
 
     async def list_pipes(self, conn: asyncmy.Connection, database: str) -> list[dict]:
         """PIPEs via ``information_schema.pipes`` (no ``SHOW CREATE`` exists)."""
@@ -300,6 +395,38 @@ class MigrationRepository:
             if name:
                 policies.append({"name": str(name), "kind": "row_access_policy"})
         return policies
+
+    async def list_columns(
+        self, conn: asyncmy.Connection, database: str, table: str
+    ) -> list[tuple[str, str]]:
+        """``(COLUMN_NAME, DATA_TYPE)`` for a table, in ordinal order.
+
+        Used by the data mover to build an explicit column list, so the copy is
+        independent of physical column order between source and target and of any
+        partition/hidden column the engine might otherwise include.
+        """
+        rows = await self._query(
+            conn,
+            "SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.columns "
+            "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s ORDER BY ORDINAL_POSITION",
+            (database, table),
+        )
+        return [(row[0], row[1]) for row in rows]
+
+    async def count_rows(self, conn: asyncmy.Connection, database: str, table: str) -> int | None:
+        """``SELECT COUNT(*)`` over a table on the given connection."""
+        rows = await self._query(conn, f"SELECT COUNT(*) FROM `{database}`.`{table}`")
+        return int(rows[0][0]) if rows else None
+
+    async def scalar(self, conn: asyncmy.Connection, statement: str) -> float | None:
+        """Run a single-value aggregate and return it as a float (or ``None``)."""
+        rows = await self._query(conn, statement)
+        if not rows or rows[0][0] is None:
+            return None
+        try:
+            return float(rows[0][0])
+        except (TypeError, ValueError):
+            return None
 
     # ── DDL / definitions (read-only, over the source connection) ─
 

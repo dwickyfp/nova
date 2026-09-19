@@ -1,6 +1,6 @@
-import { AssistantPanel } from './assistant-panel'
-import { AssistantToggle } from './assistant-toggle'
-import { useAssistant, useAssistantPanelProps } from './assistant-provider'
+import { AssistantPanel } from "./assistant-panel";
+import { AssistantToggle } from "./assistant-toggle";
+import { useAssistant, useAssistantPanelProps } from "./assistant-provider";
 
 /**
  * The global assistant surface: the panel plus its persistent toggle. Mounted
@@ -10,13 +10,13 @@ import { useAssistant, useAssistantPanelProps } from './assistant-provider'
  * as the trigger.
  */
 export function AssistantDock() {
-  const { open, toggle } = useAssistant()
-  const panelProps = useAssistantPanelProps()
+  const { open } = useAssistant();
+  const panelProps = useAssistantPanelProps();
 
   return (
     <>
       <AssistantPanel {...panelProps} />
-      <AssistantToggle open={open} onToggle={toggle} />
+      <AssistantToggle draggable={!open} />
     </>
-  )
+  );
 }

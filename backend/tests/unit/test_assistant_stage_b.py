@@ -47,11 +47,14 @@ class FakeProvider:
         self._script = list(script)
         self.calls: list[dict] = []
 
-    async def resolve(self):
+    async def resolve(self, *, provider_id=None, model=None):
         from app.modules.assistant.provider import ProviderConfig
 
         return ProviderConfig(
-            provider_id="p1", model="m1", endpoint="http://x/v1/chat/completions", api_key="k"
+            provider_id=provider_id or "p1",
+            model=model or "m1",
+            endpoint="http://x/v1/chat/completions",
+            api_key="k",
         )
 
     async def complete(self, *, messages, tools=None, provider=None):
@@ -59,6 +62,18 @@ class FakeProvider:
         if not self._script:
             return {"role": "assistant", "content": "done"}
         return self._script.pop(0)
+
+    async def stream(self, *, messages, tools=None, provider=None):
+        """Mirrors the real client: text deltas, then the assembled message.
+
+        The loop consumes this path now, so the double must yield the same
+        ``(kind, payload)`` pairs the provider produces.
+        """
+        message = await self.complete(messages=messages, tools=tools, provider=provider)
+        text = message.get("content") or ""
+        if text:
+            yield ("delta", text)
+        yield ("message", message)
 
 
 def _tool_call(call_id: str, name: str = "query_execute", args: dict | None = None) -> dict:
@@ -132,6 +147,17 @@ def test_event_names_and_shapes_are_frozen():
     assert _frame_event(events.error("x", "y")) == "error"
     assert _frame_data(events.error("x", "y")) == {"code": "x", "message": "y"}
 
+    assert _frame_event(events.thinking("act", "step")) == "thinking"
+    assert _frame_data(events.thinking("act", "step")) == {
+        "phase": "act",
+        "text": "step",
+        "status": "running",
+    }
+
+    plan_data = _frame_data(events.plan([{"id": "a", "text": "t", "status": "pending"}]))
+    assert _frame_event(events.plan([])) == "plan"
+    assert plan_data["steps"][0]["id"] == "a"
+
     assert _frame_event(events.ping()) == "ping"
 
 
@@ -179,8 +205,247 @@ async def test_loop_emits_text_and_done_on_a_plain_answer():
             resolve_consent=lambda inv, cls: _allow(),
         )
     )
-    assert [_frame_event(f) for f in frames] == ["text_delta", "done"]
-    assert _frame_data(frames[0])["text"] == "hello"
+    events_seen = [_frame_event(f) for f in frames]
+    # The plan and thinking frames are the agentic envelope; the answer is the
+    # text_delta and the turn ends with done.
+    assert events_seen[0] == "plan"
+    assert events_seen[-1] == "done"
+    deltas = [f for f in frames if _frame_event(f) == "text_delta"]
+    assert [_frame_data(d)["text"] for d in deltas] == ["hello"]
+
+
+async def test_loop_opens_with_a_plan_then_thinking_before_answer():
+    """The turn must be transparent: a plan frame, then thinking, then the answer."""
+    provider = FakeProvider([{"role": "assistant", "content": "hello"}])
+    loop = AssistantLoop(provider=provider, registry=ToolRegistry())
+    frames = await _collect(
+        loop.run(
+            thread=_thread(),
+            user_content="hi",
+            context=LoopContext(user_name="alice"),
+            resolve_consent=lambda inv, cls: _allow(),
+        )
+    )
+    events_seen = [_frame_event(f) for f in frames]
+
+    # The plan is the very first frame, before any model output.
+    assert events_seen[0] == "plan"
+    plan = _frame_data(frames[0])["steps"]
+    assert any(step["id"] == "understand" for step in plan)
+    # A registry without ``load_skill`` must not advertise a skill step.
+    assert not any(step["id"] == "skill" for step in plan)
+
+    # Thinking frames bracket the answer and end with the answer phase.
+    assert "thinking" in events_seen
+    phases = [_frame_data(f)["phase"] for f in frames if _frame_event(f) == "thinking"]
+    assert phases[0] == "plan"
+    assert phases[-1] == "answer"
+    assert events_seen[-1] == "done"
+
+
+async def test_a_no_consent_tool_runs_without_prompting_while_a_query_still_prompts():
+    """``load_skill`` never prompts; ``query_execute`` does, with no grant."""
+
+    class PureTool:
+        name = "load_skill"
+        classification = "read_only"
+        description = "load"
+        parameters = {"type": "object", "properties": {}}
+        requires_consent = False
+
+        def preview(self, invocation):
+            return "load"
+
+        async def run(self, invocation, context):
+            from app.modules.assistant.tools import ToolOutcome
+
+            return ToolOutcome(ok=True, summary="body")
+
+    provider = FakeProvider(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "load_skill", "arguments": "{}"},
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "ok"},
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(PureTool())
+    registry.register(StubTool())
+    loop = AssistantLoop(provider=provider, registry=registry)
+
+    asked: list[str] = []
+
+    async def resolver(invocation, classification):
+        asked.append(invocation.tool_name)
+        return True
+
+    frames = await _collect(
+        loop.run(
+            thread=_thread(),
+            user_content="go",
+            context=LoopContext(user_name="alice"),
+            resolve_consent=resolver,
+        )
+    )
+
+    # A pure tool never reaches the consent resolver and never emits a card.
+    assert asked == []
+    assert not any(_frame_event(f) == "tool_call" for f in frames)
+
+    # The same loop *does* prompt for a query tool.
+    provider2 = FakeProvider(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "c2",
+                        "type": "function",
+                        "function": {
+                            "name": "query_execute",
+                            "arguments": json.dumps({"sql": "SELECT 1"}),
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "ok"},
+        ]
+    )
+    registry2 = ToolRegistry()
+    registry2.register(StubTool())
+    loop2 = AssistantLoop(provider=provider2, registry=registry2)
+    asked2: list[str] = []
+
+    async def resolver2(invocation, classification):
+        asked2.append(invocation.tool_name)
+        return True
+
+    frames2 = await _collect(
+        loop2.run(
+            thread=_thread(),
+            user_content="go",
+            context=LoopContext(user_name="alice"),
+            resolve_consent=resolver2,
+        )
+    )
+    assert asked2 == ["query_execute"]
+    assert any(_frame_event(f) == "tool_call" for f in frames2)
+
+
+async def test_default_requires_consent_is_true():
+    from app.modules.assistant.tools import requires_consent
+
+    assert requires_consent(StubTool()) is True
+    assert requires_consent(LoadSkill) is False
+
+
+class LoadSkill:
+    requires_consent = False
+
+
+async def test_loop_announces_a_skill_load_as_its_own_step():
+    """A ``load_skill`` call surfaces a distinct ``skill`` thinking frame."""
+
+    class SkillTool:
+        name = "load_skill"
+        classification = "read_only"
+        description = "load"
+        parameters = {"type": "object", "properties": {}}
+
+        def preview(self, invocation):
+            return "load skill `create-table`"
+
+        async def run(self, invocation, context):
+            from app.modules.assistant.tools import ToolOutcome
+
+            return ToolOutcome(ok=True, summary="[nova-skill] body")
+
+    provider = FakeProvider(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "load_skill",
+                            "arguments": json.dumps({"name": "create-table"}),
+                        },
+                    }
+                ],
+            },
+            {"role": "assistant", "content": "done"},
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(SkillTool())
+    loop = AssistantLoop(provider=provider, registry=registry)
+
+    frames = await _collect(
+        loop.run(
+            thread=_thread(),
+            user_content="create a table",
+            context=LoopContext(user_name="alice"),
+            resolve_consent=lambda inv, cls: _allow(),
+        )
+    )
+
+    # The plan advertises the skill step when the tool is registered.
+    plan = _frame_data(frames[0])["steps"]
+    assert any(step["id"] == "skill" for step in plan)
+
+    skill_frames = [
+        _frame_data(f)
+        for f in frames
+        if _frame_event(f) == "thinking" and _frame_data(f)["phase"] == "skill"
+    ]
+    assert skill_frames
+    assert "create-table" in skill_frames[0]["text"]
+    # A skill load is not "observed"; only query results are.
+    phases = [_frame_data(f)["phase"] for f in frames if _frame_event(f) == "thinking"]
+    assert "observe" not in phases
+
+
+async def test_loop_forwards_each_streamed_fragment_as_its_own_delta():
+    """A streamed answer must surface fragment-by-fragment, not as one blob.
+
+    The provider emits three deltas then the assembled message; the loop has to
+    forward all three before ``done`` for the panel to render progressively.
+    """
+
+    class FragmentingProvider(FakeProvider):
+        async def stream(self, *, messages, tools=None, provider=None):
+            self.calls.append({"messages": messages, "tools": tools})
+            for fragment in ("Hel", "lo ", "world"):
+                yield ("delta", fragment)
+            yield ("message", {"role": "assistant", "content": "Hello world"})
+
+    loop = AssistantLoop(provider=FragmentingProvider([]), registry=ToolRegistry())
+    frames = await _collect(
+        loop.run(
+            thread=_thread(),
+            user_content="hi",
+            context=LoopContext(user_name="alice"),
+            resolve_consent=lambda inv, cls: _allow(),
+        )
+    )
+
+    deltas = [f for f in frames if _frame_event(f) == "text_delta"]
+    assert len(deltas) == 3
+    assert _frame_event(frames[-1]) == "done"
+    assert "".join(_frame_data(f)["text"] for f in deltas) == "Hello world"
 
 
 # ── NOVA-69: exactly one user message per turn ───────────────────────────────
@@ -409,7 +674,7 @@ async def test_denied_tool_call_is_surfaced_and_not_rerun():
             resolve_consent=lambda inv, cls: _deny(),
         )
     )
-    assert _frame_event(frames[0]) == "tool_call"
+    assert any(_frame_event(f) == "tool_call" for f in frames)
     assert any(
         _frame_event(f) == "tool_status" and _frame_data(f)["status"] == "denied"
         for f in frames
@@ -492,6 +757,90 @@ async def test_provider_raises_when_nothing_is_configured(monkeypatch):
     monkeypatch.setattr("app.modules.assistant.provider.ai_service.list_providers", empty)
     with pytest.raises(AssistantProviderError):
         await client.resolve()
+
+
+async def test_provider_resolve_honours_the_selected_model(monkeypatch):
+    client = AssistantProviderClient()
+
+    async def providers():
+        return [
+            {
+                "id": "p2",
+                "name": "WithKey",
+                "is_active": True,
+                "has_api_key": True,
+                "endpoint": "http://h:8000/v1",
+            }
+        ]
+
+    async def key(provider_id):
+        return "secret-key"
+
+    async def models(provider_id):
+        return [
+            {"id": "m1", "name": "model-x", "is_active": True},
+            {"id": "m2", "name": "model-y", "is_active": True},
+        ]
+
+    monkeypatch.setattr(
+        "app.modules.assistant.provider.ai_service.list_providers", providers
+    )
+    monkeypatch.setattr("app.modules.assistant.provider.ai_service.get_provider_api_key", key)
+    monkeypatch.setattr("app.modules.assistant.provider.ai_service.list_models", models)
+
+    config = await client.resolve(provider_id="p2", model="model-y")
+    assert config.model == "model-y"
+
+
+async def test_provider_resolve_rejects_an_unregistered_model(monkeypatch):
+    client = AssistantProviderClient()
+
+    async def providers():
+        return [
+            {
+                "id": "p2",
+                "name": "WithKey",
+                "is_active": True,
+                "has_api_key": True,
+                "endpoint": "http://h:8000/v1",
+            }
+        ]
+
+    async def key(provider_id):
+        return "secret-key"
+
+    async def models(provider_id):
+        return [{"id": "m1", "name": "model-x", "is_active": True}]
+
+    monkeypatch.setattr(
+        "app.modules.assistant.provider.ai_service.list_providers", providers
+    )
+    monkeypatch.setattr("app.modules.assistant.provider.ai_service.get_provider_api_key", key)
+    monkeypatch.setattr("app.modules.assistant.provider.ai_service.list_models", models)
+
+    with pytest.raises(AssistantProviderError):
+        await client.resolve(provider_id="p2", model="not-a-real-model")
+
+
+async def test_provider_resolve_rejects_an_unknown_provider(monkeypatch):
+    client = AssistantProviderClient()
+
+    async def providers():
+        return [
+            {
+                "id": "p2",
+                "name": "WithKey",
+                "is_active": True,
+                "has_api_key": True,
+                "endpoint": "http://h:8000/v1",
+            }
+        ]
+
+    monkeypatch.setattr(
+        "app.modules.assistant.provider.ai_service.list_providers", providers
+    )
+    with pytest.raises(AssistantProviderError):
+        await client.resolve(provider_id="does-not-exist")
 
 
 def test_chat_endpoint_composition_matches_ai_functions():

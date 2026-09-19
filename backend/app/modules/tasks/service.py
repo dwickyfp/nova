@@ -143,6 +143,13 @@ class TaskService:
 
         Optional PROPERTIES clause appended before AS when properties dict is
         non-empty.
+
+        When ``database`` is given the session is switched to it first. The
+        engine resolves an **unqualified body** (``INSERT INTO t …``) against
+        the session database — verified on 4.1.x: without it the submit fails
+        ``No database selected`` — and qualifying only the task name is not
+        enough. The switch also makes ``SHOW TASKS``/``ALTER``/``DROP`` address
+        the task in that database.
         """
         name: str = check_identifier(data["name"], field="task name")
         sql: str = data["sql"]
@@ -200,27 +207,35 @@ class TaskService:
 
         try:
             async with conn.cursor() as cur:
+                if database:
+                    await cur.execute(f"USE `{database}`")
                 await cur.execute(submit_sql)
         except Exception as exc:
             log.error("SUBMIT TASK %s failed: %s", name, exc)
             raise
         return {"success": True, "task_name": name, "sql": submit_sql}
 
-    async def suspend_task(self, conn: TaskConnection, name: str) -> dict:
+    async def suspend_task(self, conn: TaskConnection, name: str, database: str = "") -> dict:
         """Suspend (pause) a running periodic task."""
         name = check_identifier(name, field="task name")
         async with conn.cursor() as cur:
+            if database:
+                await cur.execute(f"USE `{check_identifier(database, field='database')}`")
             await cur.execute(f"ALTER TASK `{name}` SUSPEND")
         return {"success": True, "task_name": name, "action": "suspended"}
 
-    async def resume_task(self, conn: TaskConnection, name: str) -> dict:
+    async def resume_task(self, conn: TaskConnection, name: str, database: str = "") -> dict:
         """Resume a suspended periodic task."""
         name = check_identifier(name, field="task name")
         async with conn.cursor() as cur:
+            if database:
+                await cur.execute(f"USE `{check_identifier(database, field='database')}`")
             await cur.execute(f"ALTER TASK `{name}` RESUME")
         return {"success": True, "task_name": name, "action": "resumed"}
 
-    async def drop_task(self, conn: TaskConnection, name: str, force: bool = False) -> dict:
+    async def drop_task(
+        self, conn: TaskConnection, name: str, force: bool = False, database: str = ""
+    ) -> dict:
         """Drop a task.  When *force* is True, uses IF EXISTS + FORCE."""
         name = check_identifier(name, field="task name")
         drop_sql = (
@@ -228,6 +243,8 @@ class TaskService:
         )
 
         async with conn.cursor() as cur:
+            if database:
+                await cur.execute(f"USE `{check_identifier(database, field='database')}`")
             await cur.execute(drop_sql)
         return {"success": True, "task_name": name, "action": "dropped"}
 

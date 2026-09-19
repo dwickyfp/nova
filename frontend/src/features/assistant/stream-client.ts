@@ -12,6 +12,12 @@ export type TurnContext = {
   database?: string | null
   schema?: string | null
   role?: string | null
+  /**
+   * Model (and its provider) pinned for this turn by the panel's selector.
+   * Omitted lets the backend use the provider's first active model.
+   */
+  model?: string | null
+  providerId?: string | null
 }
 
 /**
@@ -28,14 +34,21 @@ export type TurnContext = {
 export async function streamAssistantTurn(
   threadId: string,
   content: string,
-  { signal, onEvent, database, schema, role }: StreamTurnOptions & TurnContext
+  { signal, onEvent, database, schema, role, model, providerId }: StreamTurnOptions & TurnContext
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/assistant/threads/${encodeURIComponent(threadId)}/messages`,
     {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
-      body: JSON.stringify({ content, database, schema, role }),
+      body: JSON.stringify({
+        content,
+        database,
+        schema,
+        role,
+        model,
+        provider_id: providerId,
+      }),
       signal,
     }
   )

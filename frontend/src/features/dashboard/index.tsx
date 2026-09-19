@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -10,7 +10,6 @@ import {
   Database,
   FileCode2,
   FileSearch,
-  FolderOpen,
   Plus,
   Search,
   ShieldCheck,
@@ -36,7 +35,7 @@ import {
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
 
-type RecentType = "query" | "stage" | "database" | "task";
+type RecentType = "query";
 type RecentTab = "all" | RecentType;
 
 type RecentWorkItem = {
@@ -47,6 +46,8 @@ type RecentWorkItem = {
   viewed: string;
   updated: string;
   sortTime: number;
+  fileId: string | null;
+  sql: string | null;
 };
 
 type QueryHistoryResponse = {
@@ -71,35 +72,6 @@ type WorkspaceTreeResponse = {
     created_at: string | null;
     updated_at: string | null;
   }[];
-};
-
-type StageListResponse = {
-  stages: {
-    id: string;
-    name: string;
-    database_name: string;
-    schema_name: string;
-    created_at: string | null;
-  }[];
-  count: number;
-};
-
-type CatalogsResponse = {
-  catalogs: {
-    name: string;
-    type: string;
-    databases: string[];
-  }[];
-};
-
-type TaskListResponse = {
-  tasks: {
-    name: string;
-    database: string;
-    state: string;
-    created_at: string | null;
-  }[];
-  count: number;
 };
 
 const RECENT_WORK_LIMIT = 10;
@@ -171,7 +143,7 @@ const starterTemplates = [
     title: "Build a load pipeline",
     category: "Tasks",
     topic: "Automation",
-    href: "/tasks-manager",
+    href: "/tasks",
     icon: ArrowDownToLine,
   },
 ];
@@ -179,9 +151,6 @@ const starterTemplates = [
 const recentTabs: { value: RecentTab; label: string }[] = [
   { value: "all", label: "All" },
   { value: "query", label: "Queries" },
-  { value: "stage", label: "Stages" },
-  { value: "database", label: "Databases" },
-  { value: "task", label: "Tasks" },
 ];
 
 const recentTypeMeta: Record<
@@ -189,12 +158,10 @@ const recentTypeMeta: Record<
   { label: string; icon: typeof FileCode2 }
 > = {
   query: { label: "SQL query", icon: FileCode2 },
-  stage: { label: "Stage file", icon: FolderOpen },
-  database: { label: "Database object", icon: Database },
-  task: { label: "Task", icon: Clock3 },
 };
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
@@ -208,52 +175,30 @@ export function Dashboard() {
     queryFn: () => api.get<QueryHistoryResponse>("/query/history?limit=10"),
   });
 
-  const stagesQuery = useQuery<StageListResponse>({
-    queryKey: ["dashboard", "stages"],
-    queryFn: () => api.get<StageListResponse>("/stages"),
-  });
-
-  const catalogsQuery = useQuery<CatalogsResponse>({
-    queryKey: ["dashboard", "catalogs"],
-    queryFn: () => api.get<CatalogsResponse>("/explorer/catalogs"),
-  });
-
-  const tasksQuery = useQuery<TaskListResponse>({
-    queryKey: ["dashboard", "tasks"],
-    queryFn: () => api.get<TaskListResponse>("/tasks"),
-  });
-
   const recentWork = useMemo(
     () =>
       buildRecentWorkItems({
         workspace: workspaceQuery.data,
         queryHistory: queryHistoryQuery.data,
-        stages: stagesQuery.data,
-        catalogs: catalogsQuery.data,
-        tasks: tasksQuery.data,
       }),
-    [
-      catalogsQuery.data,
-      queryHistoryQuery.data,
-      stagesQuery.data,
-      tasksQuery.data,
-      workspaceQuery.data,
-    ],
+    [queryHistoryQuery.data, workspaceQuery.data],
   );
 
   const recentWorkLoading =
-    workspaceQuery.isLoading ||
-    queryHistoryQuery.isLoading ||
-    stagesQuery.isLoading ||
-    catalogsQuery.isLoading ||
-    tasksQuery.isLoading;
+    workspaceQuery.isLoading || queryHistoryQuery.isLoading;
 
   const recentWorkHasError =
-    workspaceQuery.isError ||
-    queryHistoryQuery.isError ||
-    stagesQuery.isError ||
-    catalogsQuery.isError ||
-    tasksQuery.isError;
+    workspaceQuery.isError || queryHistoryQuery.isError;
+
+  const openRecentWork = (item: RecentWorkItem) => {
+    void navigate({
+      to: "/workspaces",
+      search: {
+        file: item.fileId ?? undefined,
+        q: item.sql ?? undefined,
+      },
+    });
+  };
 
   const filteredRecentWork = useMemo(
     () =>
@@ -372,6 +317,7 @@ export function Dashboard() {
                     )}
                     hasError={recentWorkHasError}
                     loading={recentWorkLoading}
+                    onSelect={openRecentWork}
                   />
                 </TabsContent>
               ))}
@@ -427,15 +373,9 @@ export function Dashboard() {
 function buildRecentWorkItems({
   workspace,
   queryHistory,
-  stages,
-  catalogs,
-  tasks,
 }: {
   workspace?: WorkspaceTreeResponse;
   queryHistory?: QueryHistoryResponse;
-  stages?: StageListResponse;
-  catalogs?: CatalogsResponse;
-  tasks?: TaskListResponse;
 }): RecentWorkItem[] {
   const workspaceItems =
     workspace?.entries
@@ -450,6 +390,8 @@ function buildRecentWorkItems({
           viewed: formatRelativeTime(updatedAt),
           updated: formatRelativeTime(updatedAt),
           sortTime: toTime(updatedAt),
+          fileId: entry.id,
+          sql: null,
         };
       }) ?? [];
 
@@ -467,51 +409,12 @@ function buildRecentWorkItems({
         viewed: formatRelativeTime(item.event_time),
         updated: formatRelativeTime(item.event_time),
         sortTime: toTime(item.event_time),
+        fileId: item.file_id,
+        sql: item.sql_text,
       };
     }) ?? [];
 
-  const stageItems =
-    stages?.stages.map((stage) => ({
-      id: `stage:${stage.id}`,
-      title: `@${stage.name}`,
-      type: "stage" as const,
-      location: [stage.database_name, stage.schema_name].join("."),
-      viewed: formatRelativeTime(stage.created_at),
-      updated: formatRelativeTime(stage.created_at),
-      sortTime: toTime(stage.created_at),
-    })) ?? [];
-
-  const databaseItems =
-    catalogs?.catalogs.flatMap((catalog) =>
-      catalog.databases.map((database) => ({
-        id: `database:${catalog.name}:${database}`,
-        title: database,
-        type: "database" as const,
-        location: catalog.name || catalog.type || "CATALOG",
-        viewed: "Available",
-        updated: "-",
-        sortTime: 0,
-      })),
-    ) ?? [];
-
-  const taskItems =
-    tasks?.tasks.map((task) => ({
-      id: `task:${task.database}:${task.name}`,
-      title: task.name,
-      type: "task" as const,
-      location: task.database || task.state || "TASKS",
-      viewed: formatRelativeTime(task.created_at),
-      updated: formatRelativeTime(task.created_at),
-      sortTime: toTime(task.created_at),
-    })) ?? [];
-
-  return [
-    ...workspaceItems,
-    ...queryItems,
-    ...stageItems,
-    ...taskItems,
-    ...databaseItems,
-  ]
+  return [...workspaceItems, ...queryItems]
     .sort((a, b) => b.sortTime - a.sortTime || a.title.localeCompare(b.title))
     .slice(0, RECENT_WORK_LIMIT);
 }
@@ -558,10 +461,12 @@ function RecentWorkTable({
   items,
   loading,
   hasError,
+  onSelect,
 }: {
   items: RecentWorkItem[];
   loading: boolean;
   hasError: boolean;
+  onSelect: (item: RecentWorkItem) => void;
 }) {
   if (loading && items.length === 0) {
     return (
@@ -610,7 +515,19 @@ function RecentWorkTable({
           {items.map((item) => {
             const meta = recentTypeMeta[item.type];
             return (
-              <TableRow key={item.id}>
+              <TableRow
+                key={item.id}
+                role="button"
+                tabIndex={0}
+                className="cursor-pointer focus-visible:bg-muted/60 focus-visible:outline-none"
+                onClick={() => onSelect(item)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelect(item);
+                  }
+                }}
+              >
                 <TableCell>
                   <div className="flex min-w-0 items-center gap-3">
                     <meta.icon className="size-4 shrink-0 text-muted-foreground" />

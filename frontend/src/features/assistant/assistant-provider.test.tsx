@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AssistantProvider, useAssistant } from './assistant-provider'
+import { ASSISTANT_MAX_WIDTH } from './assistant-panel-state'
 import type { WorkspaceTreeResponse } from '@/features/workspaces/types'
 
 function makeTree(overrides: Partial<WorkspaceTreeResponse> = {}): WorkspaceTreeResponse {
@@ -38,11 +39,19 @@ function makeClient() {
 }
 
 function Probe() {
-  const { open, toggle, collapsedToPersist, setBinding, conversation } = useAssistant()
+  const { open, toggle, collapsedToPersist, setBinding, conversation, width, setWidth } =
+    useAssistant()
   return (
     <div>
       <span data-testid='open'>{String(open)}</span>
       <span data-testid='collapsed'>{String(collapsedToPersist())}</span>
+      <span data-testid='width'>{width}</span>
+      <button type='button' onClick={() => setWidth(600)}>
+        widen
+      </button>
+      <button type='button' onClick={() => setWidth(9999)}>
+        widen-beyond-max
+      </button>
       <span data-testid='thread'>{conversation.threadId ?? 'none'}</span>
       <span data-testid='messages'>{conversation.messages.length}</span>
       <button type='button' onClick={toggle}>
@@ -97,6 +106,16 @@ describe('AssistantProvider', () => {
     const { getByTestId } = await renderProbe(makeTree({ assistant_collapsed: true }))
 
     await expect.element(getByTestId('open')).toHaveTextContent('false')
+  })
+
+  it('clamps a resize to the allowed range before persisting it', async () => {
+    const { getByTestId, getByRole } = await renderProbe(makeTree())
+
+    await getByRole('button', { name: 'widen', exact: true }).click()
+    await expect.element(getByTestId('width')).toHaveTextContent('600')
+
+    await getByRole('button', { name: 'widen-beyond-max', exact: true }).click()
+    await expect.element(getByTestId('width')).toHaveTextContent(String(ASSISTANT_MAX_WIDTH))
   })
 
   it('fetches the tree with the shared workspace-tree key exactly once', async () => {

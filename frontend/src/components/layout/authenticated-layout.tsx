@@ -26,10 +26,23 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
     if (!accessToken || user) return
 
     void api
-      .get<{ username: string; roles: string[]; active_role?: string | null }>('/auth/me')
-      .then(({ username, roles, active_role }) =>
+      .get<{
+        username: string
+        roles: string[]
+        active_role?: string | null
+        must_change_password?: boolean
+      }>('/auth/me')
+      .then(({ username, roles, active_role, must_change_password }) => {
+        // A required password change gates every authenticated route. A reload
+        // must not let the user skip it: drop the session and send them back to
+        // sign-in, where the change flow runs.
+        if (must_change_password) {
+          useAuthStore.getState().auth.reset()
+          window.location.href = '/sign-in'
+          return
+        }
         setUser({ username, roles, activeRole: active_role ?? roles[0] ?? null })
-      )
+      })
   }, [accessToken, setUser, user])
 
   return (

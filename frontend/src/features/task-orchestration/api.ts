@@ -1,4 +1,4 @@
-import { api } from '@/lib/api-client';
+import { api } from "@/lib/api-client";
 
 /**
  * Read API for Nova task orchestration (`CREATE TASK` graphs). This is a
@@ -12,42 +12,42 @@ import { api } from '@/lib/api-client';
  */
 
 export const ORCHESTRATION_GRAPH_RUN_STATES = [
-  'pending',
-  'running',
-  'success',
-  'failed',
-  'cancelled',
+  "pending",
+  "running",
+  "success",
+  "failed",
+  "cancelled",
 ] as const;
 
 export const ORCHESTRATION_TASK_RUN_STATES = [
-  'pending',
-  'running',
-  'success',
-  'failed',
-  'skipped',
-  'abandoned',
+  "pending",
+  "running",
+  "success",
+  "failed",
+  "skipped",
+  "abandoned",
 ] as const;
 
 export const ORCHESTRATION_TRIGGER_TYPES = [
-  'manual',
-  'schedule',
-  'stream',
-  'reconcile',
+  "manual",
+  "schedule",
+  "stream",
+  "reconcile",
 ] as const;
 
 export const ORCHESTRATION_OVERLAP_POLICIES = [
-  'skip',
-  'queue',
-  'allow',
+  "skip",
+  "queue",
+  "allow",
 ] as const;
 
 export const ORCHESTRATION_SCHEDULE_KINDS = [
-  'manual',
-  'interval',
-  'cron',
+  "manual",
+  "interval",
+  "cron",
 ] as const;
 
-export const ORCHESTRATION_EDGE_KINDS = ['after', 'finalize'] as const;
+export const ORCHESTRATION_EDGE_KINDS = ["after", "finalize"] as const;
 
 export type GraphRunState = (typeof ORCHESTRATION_GRAPH_RUN_STATES)[number];
 export type TaskRunState = (typeof ORCHESTRATION_TASK_RUN_STATES)[number];
@@ -65,15 +65,29 @@ export interface GraphRunSummary {
   finished_at: string | null;
 }
 
+/**
+ * Run tallies for one graph. `total` is not necessarily `success + failed`:
+ * a `cancelled` run counts in `total` but in neither bucket.
+ */
+export interface RunCounts {
+  total: number;
+  success: number;
+  failed: number;
+}
+
 export interface GraphSummary {
   graph_id: string;
   root_task: string | null;
+  database_name: string | null;
+  schema_name: string | null;
   node_count: number;
   schedule_kind: ScheduleKind | null;
   schedule_expr: string | null;
   timezone: string | null;
   overlap_policy: OverlapPolicy;
   last_run: GraphRunSummary | null;
+  run_counts: RunCounts;
+  created_at: string | null;
 }
 
 export interface GraphListResponse {
@@ -120,6 +134,7 @@ export interface GraphRunResponse {
 
 export interface GraphRunListResponse {
   runs: GraphRunResponse[];
+  /** Total runs for the graph, independent of `limit`/`offset`. */
   count: number;
 }
 
@@ -141,7 +156,7 @@ export interface GraphRunDetailResponse {
   node_runs: NodeRunResponse[];
 }
 
-const BASE = '/task-orchestration';
+const BASE = "/task-orchestration";
 
 export const fetchGraphs = async (
   signal?: AbortSignal,
@@ -165,6 +180,26 @@ export const fetchGraphRuns = async (
     `${BASE}/graphs/${encodeURIComponent(graphId)}/runs`,
     signal,
   );
+
+/**
+ * One page of a graph's run history. Paging is server-side, so a graph with a
+ * long history loads ten rows rather than all of them; the response's `count`
+ * is the full history size and drives the page controls.
+ */
+export const fetchGraphRunsPage = async (
+  graphId: string,
+  { limit, offset }: { limit: number; offset: number },
+  signal?: AbortSignal,
+): Promise<GraphRunListResponse> => {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return api.get<GraphRunListResponse>(
+    `${BASE}/graphs/${encodeURIComponent(graphId)}/runs?${params.toString()}`,
+    signal,
+  );
+};
 
 export const fetchGraphRun = async (
   graphRunId: string,

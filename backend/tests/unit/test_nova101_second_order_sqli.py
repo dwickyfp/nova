@@ -144,7 +144,9 @@ class TestTaskIntervalIsAllowListed:
     async def test_valid_intervals_still_assemble(self, service, conn, interval):
         result = await service.create_task(conn, _task_payload(interval=interval))
         assert f"EVERY(INTERVAL {interval})" in result["sql"]
-        assert conn.calls == [result["sql"]]
+        # The session switches to the task database first so an unqualified
+        # body resolves; the submit is the last statement.
+        assert conn.calls == ["USE `qa_nova89`", result["sql"]]
 
     async def test_injection_marker_never_reaches_the_connection(self, service, conn):
         with pytest.raises(ForbiddenSQLError):
@@ -184,7 +186,9 @@ class TestTaskStartTimeIsAllowListed:
     async def test_valid_start_times_still_assemble(self, service, conn, start_time):
         result = await service.create_task(conn, _task_payload(start_time=start_time))
         assert f"SCHEDULE START('{start_time}')" in result["sql"]
-        assert conn.calls == [result["sql"]]
+        # The session switches to the task database first so an unqualified
+        # body resolves; the submit is the last statement.
+        assert conn.calls == ["USE `qa_nova89`", result["sql"]]
 
 
 # ── AC1/AC2: tasks/service.py — properties ──────────────────────────────────
@@ -220,7 +224,9 @@ class TestTaskPropertiesAreAllowListed:
             _task_payload(properties={"replication_num": "3", "storage_medium": "SSD"}),
         )
         assert 'PROPERTIES ("replication_num" = "3", "storage_medium" = "SSD")' in result["sql"]
-        assert conn.calls == [result["sql"]]
+        # The session switches to the task database first so an unqualified
+        # body resolves; the submit is the last statement.
+        assert conn.calls == ["USE `qa_nova89`", result["sql"]]
 
 
 # ── AC1/AC2/AC3: SET ROLE identifier allow-list ─────────────────────────────

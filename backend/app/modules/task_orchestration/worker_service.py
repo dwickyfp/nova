@@ -18,15 +18,22 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from typing import Any
 
 from app.core.config import settings
 from app.modules.task_orchestration.consumer import GraphRunConsumer
+from app.modules.task_orchestration.dag import GraphState
 from app.modules.task_orchestration.execution import DelegateExecutor
 from app.modules.task_orchestration.reconciler import Reconciler
 from app.modules.task_orchestration.repository import TaskOrchestrationRepository
 from app.modules.task_orchestration.worker import GraphRunJob, GraphRunWorker
 
 logger = logging.getLogger(__name__)
+
+#: A settled graph run no longer holds the QUEUE slot.
+_TERMINAL_GRAPH_STATES = frozenset(
+    {GraphState.SUCCESS.value, GraphState.FAILED.value, GraphState.CANCELLED.value}
+)
 
 
 class WorkerService:
@@ -126,26 +133,44 @@ class WorkerService:
     async def run_forever(self, stop_event: asyncio.Event) -> None:
         logger.info("nova-worker started; waiting for graph runs")
         await self._consumer.ensure_group()
-        next_reconcile = asyncio.get_running_loop().time()
 
+        # Reconciliation runs as its own background task, not inline in the
+        # consume loop. A node can block for the whole poll window (up to
+        # WORKER_TASK_POLL_TIMEOUT_SECONDS, 4 h by default), and previously the
+        # loop only reached `reconcile_once` after that delivery returned — so
+        # every recovery path (lost delivery, abandoned node, deferred `queue`
+        # run) was stalled for hours behind one slow node. Decoupling them keeps
+        # recovery on its own cadence regardless of execution latency.
+        reconcile_task = asyncio.create_task(
+            self._reconcile_forever(stop_event), name="nova-worker-reconcile"
+        )
+
+        try:
+            while not stop_event.is_set():
+                try:
+                    await self._process_available(block_ms=500)
+                except Exception:
+                    logger.exception("worker cycle failed; continuing")
+
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop_event.wait(), timeout=0.5)
+        finally:
+            reconcile_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reconcile_task
+            logger.info("nova-worker stopped")
+
+    async def _reconcile_forever(self, stop_event: asyncio.Event) -> None:
+        """Run reconciliation on its own interval, independently of execution."""
         while not stop_event.is_set():
             try:
-                await self._process_available(block_ms=500)
+                await self.reconcile_once()
             except Exception:
-                logger.exception("worker cycle failed; continuing")
-
-            now = asyncio.get_running_loop().time()
-            if now >= next_reconcile:
-                try:
-                    await self.reconcile_once()
-                except Exception:
-                    logger.exception("reconcile pass failed; continuing")
-                next_reconcile = now + self._reconcile_interval
-
+                logger.exception("reconcile pass failed; continuing")
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(stop_event.wait(), timeout=0.5)
-
-        logger.info("nova-worker stopped")
+                await asyncio.wait_for(
+                    stop_event.wait(), timeout=self._reconcile_interval
+                )
 
     async def _process_available(self, *, block_ms: int) -> int:
         processed = 0
@@ -169,13 +194,57 @@ class WorkerService:
         await self._consumer.ack(stream_id)
         if state is not None:
             logger.info("graph run %s handled -> %s", payload.get("graph_run_id"), state)
+        # Only a *settled* run frees the QUEUE slot for a sibling. A run that
+        # returned ``pending`` is itself the deferred one, and waking a sibling
+        # here would risk a wake loop; the slot is still occupied.
+        if state is not None and state.value in _TERMINAL_GRAPH_STATES:
+            await self._wake_deferred_queue_runs(str(payload.get("graph_id") or ""))
 
-    async def _requeue(self, run: dict) -> None:
-        """Re-run a graph from durable state, without the stream.
+    #: How many deferred siblings one settle may chain-wake. QUEUE is "one at a
+    #: time", so each settle wakes exactly the next; the cap only guards against
+    #: an unexpectedly pathological backlog turning one settle into an unbounded
+    #: loop. The reconciler still catches up anything the cap leaves behind.
+    MAX_QUEUE_WAKE_CHAIN = 100
 
-        The graph's task ids are re-derived from the graph edges rather than the
-        original payload, so a reconciler recovery needs nothing from Redis.
+    async def _wake_deferred_queue_runs(self, graph_id: str) -> None:
+        """Start deferred ``queue`` runs now that a sibling has settled.
+
+        A ``queue`` run defers itself (returns ``pending``) while another run for
+        the same graph is active. Without this, the only thing that ever
+        re-delivers it is the periodic reconciler, so a deferred run waits up to
+        a full reconcile interval and — if the active-run scan is capped — can
+        starve behind a backlog. Waking the next sibling on settle makes QUEUE
+        "one after another" without depending on the reconcile cadence.
+
+        The wake is **iterative and bounded**: each settled run wakes the oldest
+        pending sibling, and that sibling's own settle wakes the next. The chain
+        runs here (one graph at a time) rather than as unbounded async recursion,
+        and the cap keeps one settle from monopolising the loop; anything left is
+        picked up by the reconciler.
         """
+        if not graph_id:
+            return
+        for _ in range(self.MAX_QUEUE_WAKE_CHAIN):
+            try:
+                active = await self._repository.list_active_graph_runs(graph_id)
+            except Exception:
+                logger.exception("could not list active runs for %s", graph_id)
+                return
+            # ``list_active_graph_runs`` orders by ``started_at``, so the first
+            # pending row is the oldest deferred run.
+            pending = next(
+                (run for run in active if str(run.get("state")) == "pending"), None
+            )
+            if pending is None:
+                return
+            state = await self._drive(pending)
+            # Stop unless this run actually settled; a still-deferred run would
+            # make this loop spin, and the reconciler will retry it later.
+            if state is None or state.value not in _TERMINAL_GRAPH_STATES:
+                return
+
+    async def _drive(self, run: dict[str, Any]) -> GraphState | None:
+        """Handle one graph run from durable state (no stream, no ack)."""
         graph_id = str(run["graph_id"])
         task_ids = [str(t["id"]) for t in await self._repository.list_tasks(graph_id)]
         payload = {
@@ -184,5 +253,26 @@ class WorkerService:
             "trigger_type": "reconcile",
             "task_ids": ",".join(task_ids),
         }
+        return await self._worker.handle(GraphRunJob.from_payload(payload))
+
+    async def _requeue(self, run: dict[str, Any]) -> None:
+        """Re-run a graph from durable state, without the stream.
+
+        The graph's task ids are re-derived from the graph edges rather than the
+        original payload, so a reconciler recovery needs nothing from Redis.
+
+        This path deliberately does **not** call :meth:`_handle`: that method
+        acks a stream id, and there is no stream entry for a reconciler-driven
+        re-run — acking the graph-run id would be a no-op at best and could ack
+        an unrelated pending delivery at worst. The handler is idempotent, so
+        driving the worker directly is safe; a failure is simply retried on the
+        next reconcile pass (the row stays non-terminal).
+        """
         logger.info("reconciling graph run %s", run["id"])
-        await self._handle(str(run["id"]), payload)
+        state = await self._drive(run)
+        if state is not None:
+            logger.info("graph run %s reconciled -> %s", run["id"], state)
+        # A settled run frees the QUEUE slot; advance the deferred chain so it
+        # does not wait for the reconcile cadence.
+        if state is not None and state.value in _TERMINAL_GRAPH_STATES:
+            await self._wake_deferred_queue_runs(str(run["graph_id"]))

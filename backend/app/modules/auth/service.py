@@ -5,6 +5,10 @@ import asyncmy.errors
 
 from app.common.audit import write_audit_log
 from app.common.nova_system import is_setup_complete, mark_setup_complete
+from app.common.user_flags import (
+    clear_must_change_password,
+    is_must_change_password,
+)
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
@@ -114,7 +118,40 @@ class AuthService:
         if setup_done and password == "nova" and username == "nova_admin":
             raise DefaultPasswordError()
 
-        # 5. Normal authenticated session
+        # 5. A user created with a generated password must change it at first
+        # login. They are authenticated (the credential is valid), but the
+        # session is marked so the UI routes them to the change-password screen
+        # before anything else. This is the same shape as SETUP_REQUIRED above.
+        if await is_must_change_password(username):
+            roles = await self.get_user_roles(username, password)
+            enc_password = encrypt_password(password)
+            session_id = await session_store.create(
+                username,
+                enc_password,
+                roles,
+                active_role=roles[0] if roles else None,
+            )
+            token = create_access_token(username, session_id)
+            await write_audit_log(
+                event_type="login",
+                user_name=username,
+                action="LOGIN",
+                object_type="USER",
+                object_name=username,
+                status="SUCCESS",
+                session_id=session_id,
+            )
+            return {
+                "status": "PASSWORD_CHANGE_REQUIRED",
+                "access_token": token,
+                "token_type": "bearer",
+                "user": username,
+                "roles": roles,
+                "active_role": roles[0] if roles else None,
+                "message": "Your administrator requires a password change before first use",
+            }
+
+        # 6. Normal authenticated session
         roles = await self.get_user_roles(username, password)
         enc_password = encrypt_password(password)
         session_id = await session_store.create(
@@ -215,6 +252,9 @@ class AuthService:
         await db.execute_system(
             f"ALTER USER '{self._escape(username)}' IDENTIFIED BY '{self._escape(new_password)}'"
         )
+
+        # The requirement is satisfied: clear it so the next login is normal.
+        await clear_must_change_password(username)
 
         return {"status": "PASSWORD_CHANGED", "message": "Password updated successfully"}
 

@@ -33,6 +33,21 @@ def shared_stack_host_port(env: str, default: int) -> int:
     return int(override) if override else default
 
 
+def engine_port(explicit: str | None, env: str, default: int) -> int:
+    """Resolve a StarRocks FE port to an ``int``.
+
+    ``NOVA_ORCH_SR_PORT`` is read as a string by ``os.getenv``; passing that
+    straight to ``asyncmy.connect`` fails with ``ValueError('port should be of
+    type int')``, which the reachability probe reports as "StarRocks not
+    reachable" — so the documented override silently skipped every integration
+    test instead of pointing them at the running engine. Coercing here makes the
+    override actually work.
+    """
+    if explicit:
+        return int(explicit)
+    return shared_stack_host_port(env, default)
+
+
 def require_shared_stack(request: FixtureRequest, *, enabled: bool = True) -> None:
     """Bring up the shared stack and skip when it is unavailable.
 

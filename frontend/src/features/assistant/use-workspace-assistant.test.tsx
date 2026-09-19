@@ -11,7 +11,10 @@ const resetGrant = vi.fn()
 
 vi.mock('./thread-client', () => ({
   createThread: (...args: unknown[]) => createThread(...args),
+  getThread: vi.fn(),
+  listThreads: vi.fn(async () => ({ threads: [], count: 0 })),
   resetGrant: (...args: unknown[]) => resetGrant(...args),
+  setGrant: vi.fn(async () => true),
 }))
 
 vi.mock('./stream-client', async () => {

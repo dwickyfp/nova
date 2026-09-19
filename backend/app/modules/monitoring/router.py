@@ -13,6 +13,8 @@ Endpoints under /api/v1/monitoring:
   GET  /metrics/fe             → FE metrics summary
   GET  /loads                  → paginated data load history
   GET  /loads/stats            → load stats summary
+  GET  /alerts                 → production alert rules evaluated live
+  GET  /readiness              → read-only production readiness audit
 
 Authorization: every endpoint is gated with ``require_role``. Reads use
 ``READ_ROLES``; ``POST /queries/kill`` uses the (identical) ``KILL_ROLES`` set
@@ -289,3 +291,35 @@ async def get_load_stats(
     """Aggregate load stats: total, finished, cancelled, loading."""
     result = await monitoring_service.get_load_stats()
     return LoadStatsResponse(**result)
+
+
+# ── Alerts ───────────────────────────────────────────────────────────
+
+
+@router.get("/alerts")
+async def get_alerts(
+    user: dict = require_read,
+):
+    """Evaluate production alert rules against live engine state.
+
+    Each rule reports ``firing`` / ``ok`` / ``unknown`` plus a severity, so the
+    UI can distinguish "healthy" from "the engine did not expose this metric".
+    """
+    return await monitoring_service.get_alerts()
+
+
+# ── Production readiness audit ───────────────────────────────────────
+
+
+@router.get("/readiness")
+async def get_readiness(
+    user: dict = require_read,
+):
+    """Read-only production readiness audit.
+
+    Returns per-category findings with one of ``PASS`` / ``NEEDS_CHANGE`` /
+    ``BLOCKED`` / ``REVIEW`` plus an overall verdict. Nothing is mutated: the
+    audit only reads engine state, and external gates it cannot prove are
+    reported as ``REVIEW`` rather than passed silently.
+    """
+    return await monitoring_service.get_readiness()

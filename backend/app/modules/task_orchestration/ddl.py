@@ -76,11 +76,17 @@ class LoweredTask:
     fragment, e.g. an ``INSERT INTO …``), matching what ``TaskSpec.body`` and
     ``execution.build_submit_task`` consume at execution time. The remaining
     fields are the normalised metadata.
+
+    ``database_name`` / ``schema_name`` scope the task, exactly like a stage
+    (``CONFIG_STAGES``): a task belongs to one ``database.schema``, and the
+    explorer lists it under that schema. ``name`` is the bare task name, not the
+    qualified spelling.
     """
 
     name: str
     body: str
     database_name: str | None = None
+    schema_name: str | None = None
     schedule_kind: str = "manual"
     schedule_expr: str | None = None
     when_expr: str | None = None
@@ -90,6 +96,12 @@ class LoweredTask:
     after: tuple[str, ...] = ()
     #: Target of a ``FINALIZE`` edge, if present.
     finalize: str | None = None
+
+    @property
+    def qualified_name(self) -> str:
+        """The ``database.schema.name`` spelling, for messages and graph keys."""
+        parts = [p for p in (self.database_name, self.schema_name, self.name) if p]
+        return ".".join(parts)
 
 
 class _TaskSyntaxErrorListener(ErrorListener):
@@ -114,18 +126,77 @@ def is_create_task(sql: str) -> bool:
     return bool(re.match(r"^\s*CREATE\s+TASK\b", sql, re.IGNORECASE))
 
 
+def _unquote_identifier(value: str) -> str:
+    """Strip surrounding backticks from one qualified-name segment."""
+    text = value.strip()
+    if len(text) >= 2 and text.startswith("`") and text.endswith("`"):
+        return text[1:-1].replace("``", "`")
+    return text
+
+
+def _split_qualified_task_name(
+    raw: str,
+) -> tuple[str, str | None, str | None]:
+    """Split ``db.schema.task`` into ``(name, database, schema)``.
+
+    The task name is the last segment; the scope is built right-to-left from the
+    preceding segments, tolerating both ``db.schema.task`` and ``schema.task``.
+    A four-part name (``catalog.db.schema.task``) keeps the rightmost two scope
+    segments and drops the catalog, because Nova scopes tasks by
+    ``database.schema`` only. Segments are split on ``.`` outside backticks so a
+    quoted ``\`my.db\`.schema.task`` is not mis-split. Empty segments (a stray
+    leading/trailing dot) are rejected.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+    in_tick = False
+    for char in raw:
+        if char == "`":
+            in_tick = not in_tick
+            current.append(char)
+        elif char == "." and not in_tick:
+            segments.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    segments.append("".join(current))
+
+    parts = [_unquote_identifier(segment) for segment in segments]
+    if any(not part for part in parts):
+        raise TaskDDLError(f"invalid task name {raw!r}: empty name segment")
+    if len(parts) > 3:
+        raise TaskDDLError(
+            f"invalid task name {raw!r}: expected task, schema.task, or "
+            "database.schema.task"
+        )
+
+    name = parts[-1]
+    scope = parts[:-1]
+    database_name = scope[0] if len(scope) >= 2 else None
+    schema_name = scope[-1] if scope else None
+    return name, database_name, schema_name
+
+
 def parse_create_task(
     sql: str,
     *,
     database: str | None = None,
+    schema: str | None = None,
     timezone: str | None = None,
 ) -> LoweredTask:
     """Parse ``sql`` and lower it to metadata.
 
-    ``database`` is the session's default schema, used when the statement does
-    not fully qualify the task name; ``timezone`` is the task's IANA zone
-    (StarRocks interprets ``START`` literals in the session zone, so it is never
-    assumed to be UTC by the caller).
+    The task name is a **qualified name** — ``database.schema.task`` — exactly
+    like a stage. The task belongs to that ``database.schema``; a name that
+    omits the scope falls back to the session's ``database``/``schema`` (the
+    same defaults the caller passes for the body). One level, two levels, or
+    three, the *last* segment is the task name and the preceding segments are
+    the scope, right-to-left: ``db.schema.name`` → database ``db``, schema
+    ``schema``; ``schema.name`` → schema ``schema``.
+
+    ``timezone`` is the task's IANA zone (StarRocks interprets ``START``
+    literals in the session zone, so it is never assumed to be UTC by the
+    caller).
 
     Raises :class:`TaskDDLError` for a syntax error or any validation failure
     above. No SQL literal is echoed into an error message.
@@ -148,6 +219,14 @@ def parse_create_task(
     task_name = _slice(sql, statement.qualifiedName())
     if not task_name:
         raise TaskDDLError("CREATE TASK requires a task name")
+
+    # The name is qualified like a stage: `db.schema.task`. Split the scope off
+    # before validation so the stored identity is (database, schema, name).
+    bare_name, scoped_database, scoped_schema = _split_qualified_task_name(task_name)
+    if not bare_name:
+        raise TaskDDLError("CREATE TASK requires a task name")
+    task_database = scoped_database or database
+    task_schema = scoped_schema or schema or "default"
 
     clauses: dict[str, object] = {}
     for clause_ctx in _find_all(statement, "TaskClauseContext"):
@@ -192,12 +271,13 @@ def parse_create_task(
     # grammar work, not merely on PR 3b. Stated here so the constraint is not
     # rediscovered as a runtime surprise.
 
-    _validate_own_edges(task_name, after, finalize)
+    _validate_own_edges(bare_name, after, finalize)
 
     return LoweredTask(
-        name=task_name,
+        name=bare_name,
         body=body,
-        database_name=database,
+        database_name=task_database,
+        schema_name=task_schema,
         schedule_kind=schedule_kind,
         schedule_expr=schedule_expr,
         when_expr=when_expr,
@@ -226,7 +306,7 @@ def _clause_after(sql: str, clause) -> tuple[str, ...]:
     if inner is None:
         raise TaskDDLError("AFTER clause is malformed")
     names = tuple(
-        _slice(sql, q) for q in _find_all(inner, "QualifiedNameContext")
+        _bare_task_ref(_slice(sql, q)) for q in _find_all(inner, "QualifiedNameContext")
     )
     if not names:
         raise TaskDDLError("AFTER requires at least one task name")
@@ -241,10 +321,28 @@ def _clause_finalize(sql: str, clause) -> str | None:
     inner = _first_child(clause, "TaskFinalizeClauseContext")
     if inner is None:
         raise TaskDDLError("FINALIZE clause is malformed")
-    name = _slice(sql, inner.qualifiedName())
+    name = _bare_task_ref(_slice(sql, inner.qualifiedName()))
     if not name:
         raise TaskDDLError("FINALIZE requires a task name")
     return name
+
+
+def _bare_task_ref(raw: str) -> str:
+    """A parent/finalizer reference, which must be a bare name in the schema.
+
+    A graph is single-schema (a node cannot span schemas), so an ``AFTER`` /
+    ``FINALIZE`` target is a bare task name resolved in the child's own
+    ``database.schema``. A qualified reference is rejected rather than
+    silently stripped: stripping would make ``AFTER other_schema.t`` resolve to
+    a same-named task in this schema, which is not what the author wrote.
+    """
+    bare, database, schema = _split_qualified_task_name(raw)
+    if database is not None or schema is not None:
+        raise TaskDDLError(
+            f"{raw!r} must be a bare task name; a task graph is scoped to one "
+            "database.schema and parents cannot reference another schema"
+        )
+    return bare
 
 
 def _clause_when(sql: str, clause) -> str | None:

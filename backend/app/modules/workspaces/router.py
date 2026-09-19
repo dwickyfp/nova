@@ -14,6 +14,9 @@ from app.modules.workspaces.schemas import (
     WorkspaceFileCreate,
     WorkspaceFileResponse,
     WorkspaceFileUpdate,
+    WorkspaceFileVersion,
+    WorkspaceFileVersionResponse,
+    WorkspaceFileVersionsResponse,
     WorkspaceFolderCreate,
     WorkspaceRenameRequest,
     WorkspaceStateRequest,
@@ -60,6 +63,31 @@ async def update_workspace_file(
 async def delete_workspace_file(entry_id: str, user: dict = Depends(get_current_user)):
     await workspace_service.delete_entry(user["username"], entry_id)
     return {"success": True}
+
+
+@router.get("/files/{entry_id}/versions", response_model=WorkspaceFileVersionsResponse)
+async def list_workspace_file_versions(
+    entry_id: str, user: dict = Depends(get_current_user)
+):
+    versions = await workspace_service.list_file_versions(user["username"], entry_id)
+    return WorkspaceFileVersionsResponse(
+        versions=[WorkspaceFileVersion(**version) for version in versions]
+    )
+
+
+@router.get(
+    "/files/{entry_id}/versions/{version}",
+    response_model=WorkspaceFileVersionResponse,
+)
+async def get_workspace_file_version(
+    entry_id: str, version: int, user: dict = Depends(get_current_user)
+):
+    record, content = await workspace_service.get_file_version_record(
+        user["username"], entry_id, version
+    )
+    return WorkspaceFileVersionResponse(
+        version=WorkspaceFileVersion(**record), content=content
+    )
 
 
 @router.post("/folders", status_code=201)

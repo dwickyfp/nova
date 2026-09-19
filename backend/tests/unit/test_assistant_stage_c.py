@@ -98,14 +98,28 @@ class FakeProvider:
         self._script = list(script)
         self.calls: list[dict] = []
 
-    async def resolve(self):
+    async def resolve(self, *, provider_id=None, model=None):
         from app.modules.assistant.provider import ProviderConfig
 
-        return ProviderConfig(provider_id="p1", model="m1", endpoint="http://x/v1", api_key="k")
+        return ProviderConfig(
+            provider_id=provider_id or "p1",
+            model=model or "m1",
+            endpoint="http://x/v1",
+            api_key="k",
+        )
 
     async def complete(self, *, messages, tools=None, provider=None):
         self.calls.append({"messages": messages, "tools": tools})
         return self._script.pop(0) if self._script else {"role": "assistant", "content": "done"}
+
+    async def stream(self, *, messages, tools=None, provider=None):
+        # The loop drives the streaming path; mirror the real client by emitting
+        # the whole reply as one delta, then the assembled message.
+        message = await self.complete(messages=messages, tools=tools, provider=provider)
+        text = message.get("content") or ""
+        if text:
+            yield ("delta", text)
+        yield ("message", message)
 
 
 def _invocation(sql: str, call_id: str = "c1") -> ToolInvocation:

@@ -30,8 +30,17 @@ describe('sidebar navigation', () => {
     const urls = navUrls()
 
     expect(urls).toContain('/migration')
-    expect(urls).toContain('/tasks-manager')
-    expect(urls).toContain('/task-graphs')
+    expect(urls).toContain('/tasks')
     expect(urls).toContain('/ml-models')
+  })
+
+  // Tasks and Task Graphs were merged into one Tasks page (NOVA task UI
+  // rework): the flow now lives on the task detail page, so a separate
+  // Task Graphs entry would split the navigation again.
+  it('has a single Tasks entry, with no separate Task Graphs entry', () => {
+    const urls = navUrls()
+
+    expect(urls).not.toContain('/tasks-manager')
+    expect(urls).not.toContain('/task-graphs')
   })
 })

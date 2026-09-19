@@ -5,9 +5,14 @@ import { MessageList } from './message-list'
 import { useAssistantTurn } from './use-assistant-turn'
 
 const resetGrant = vi.fn()
+const getThread = vi.fn()
+const setGrant = vi.fn()
 
 vi.mock('./thread-client', () => ({
   resetGrant: (...args: unknown[]) => resetGrant(...args),
+  setGrant: (...args: unknown[]) => setGrant(...args),
+  getThread: (...args: unknown[]) => getThread(...args),
+  listThreads: vi.fn(async () => ({ threads: [], count: 0 })),
 }))
 
 type Turn = ReturnType<typeof useAssistantTurn>
@@ -20,7 +25,13 @@ function Harness({
 }: {
   holder: { current: Turn | null }
   ensureThread?: () => Promise<string | null>
-  context?: { database?: string | null; schema?: string | null; role?: string | null }
+  context?: {
+    database?: string | null
+    schema?: string | null
+    role?: string | null
+    model?: string | null
+    providerId?: string | null
+  }
   onError?: (message: string) => void
 }) {
   const turn = useAssistantTurn({ ensureThread, context, onError })
@@ -63,6 +74,8 @@ function sseResponse(frames: string[]) {
 
 afterEach(() => {
   resetGrant.mockReset()
+  getThread.mockReset()
+  setGrant.mockReset()
   vi.restoreAllMocks()
 })
 
@@ -105,12 +118,32 @@ describe('useAssistantTurn', () => {
 
     await holder.current!.sendMessage('hi')
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    // Absent model/provider are omitted from the body (undefined keys drop in
+    // JSON.stringify), so the backend falls back to its default model.
     expect(body).toEqual({
       content: 'hi',
       database: 'analytics',
       schema: 'public',
       role: 'analyst',
     })
+  })
+
+  it('pins the selected model and provider on the turn', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(sseResponse(['event: done\ndata: {"message_id":"m","finish_reason":"stop"}\n\n']))
+    const holder: { current: Turn | null } = { current: null }
+    await render(
+      <Harness
+        holder={holder}
+        context={{ database: 'analytics', model: 'model-y', providerId: 'p2' }}
+      />
+    )
+
+    await holder.current!.sendMessage('hi')
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.model).toBe('model-y')
+    expect(body.provider_id).toBe('p2')
   })
 
   it('does not open a stream when no thread can be resolved', async () => {
@@ -242,5 +275,123 @@ describe('useAssistantTurn grant reset', () => {
     await expect.element(getByText('Thread not found')).toBeInTheDocument()
     expect(onError).toHaveBeenCalledWith('Thread not found')
     expect(holder.current!.grantActive).toBe(true)
+  })
+
+  it('switches to an existing thread and replays its stored messages', async () => {
+    getThread.mockResolvedValue({
+      thread: { thread_id: 't-2', title: 'Old chat' },
+      messages: [
+        { message_id: 'm1', role: 'user', content: 'previous question', created_at: '2026-01-01T00:00:00Z' },
+        { message_id: 'm2', role: 'assistant', content: 'previous answer', created_at: '2026-01-01T00:00:01Z' },
+      ],
+    })
+    const holder: { current: Turn | null } = { current: null }
+    const { getByText } = await render(<Harness holder={holder} />)
+
+    await holder.current!.loadThread('t-2')
+
+    expect(getThread).toHaveBeenCalledWith('t-2')
+    await expect.element(getByText('previous question')).toBeInTheDocument()
+    await expect.element(getByText('previous answer')).toBeInTheDocument()
+    expect(holder.current!.threadId).toBe('t-2')
+  })
+
+  it('surfaces a failed thread load instead of leaving a blank panel', async () => {
+    getThread.mockRejectedValue(new Error('Thread not found'))
+    const onError = vi.fn()
+    const holder: { current: Turn | null } = { current: null }
+    await render(<Harness holder={holder} onError={onError} />)
+
+    await holder.current!.loadThread('gone')
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('Thread not found'))
+  })
+
+  it('clears the conversation and forgets the thread for a new chat', async () => {
+    getThread.mockResolvedValue({
+      thread: { thread_id: 't-2', title: 'Old chat' },
+      messages: [
+        { message_id: 'm1', role: 'user', content: 'previous question', created_at: '2026-01-01T00:00:00Z' },
+      ],
+    })
+    const holder: { current: Turn | null } = { current: null }
+    const { getByText, container } = await render(<Harness holder={holder} />)
+    await holder.current!.loadThread('t-2')
+    await expect.element(getByText('previous question')).toBeInTheDocument()
+
+    holder.current!.startNewThread()
+
+    await vi.waitFor(() => expect(holder.current!.threadId).toBeNull())
+    expect(container.textContent).not.toContain('previous question')
+  })
+
+  it('revokes an active grant when starting a new chat', async () => {
+    resetGrant.mockResolvedValue(undefined)
+    mockTurnThenDecision(true)
+    const holder: { current: Turn | null } = { current: null }
+    await render(<Harness holder={holder} />)
+    await holder.current!.sendMessage('hi')
+    await holder.current!.decide({ toolCallId: 'call-1', decision: 'approve', alwaysAllow: true })
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true))
+
+    holder.current!.startNewThread()
+
+    await vi.waitFor(() => expect(resetGrant).toHaveBeenCalledWith('t-1'))
+  })
+})
+
+describe('useAssistantTurn approval mode', () => {
+  it('presets the conversation grant and reflects it in the mode', async () => {
+    setGrant.mockResolvedValue(true)
+    const holder: { current: Turn | null } = { current: null }
+    await render(<Harness holder={holder} />)
+    expect(holder.current!.approvalMode).toBe('ask')
+
+    await holder.current!.setApprovalMode('allow_read_only')
+
+    expect(setGrant).toHaveBeenCalledWith('t-1', true)
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true))
+    expect(holder.current!.approvalMode).toBe('allow_read_only')
+  })
+
+  it('clears the grant when switching back to ask', async () => {
+    setGrant.mockResolvedValueOnce(true)
+    const holder: { current: Turn | null } = { current: null }
+    await render(<Harness holder={holder} />)
+    await holder.current!.setApprovalMode('allow_read_only')
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true))
+
+    setGrant.mockResolvedValueOnce(false)
+    await holder.current!.setApprovalMode('ask')
+
+    expect(setGrant).toHaveBeenLastCalledWith('t-1', false)
+    await vi.waitFor(() => expect(holder.current!.grantActive).toBe(false))
+    expect(holder.current!.approvalMode).toBe('ask')
+  })
+
+  it('leaves the mode unchanged and surfaces the error when persisting fails', async () => {
+    setGrant.mockRejectedValue(new Error('Not allowed'))
+    const onError = vi.fn()
+    const holder: { current: Turn | null } = { current: null }
+    await render(<Harness holder={holder} onError={onError} />)
+
+    await holder.current!.setApprovalMode('allow_read_only')
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('Not allowed'))
+    expect(holder.current!.grantActive).toBe(false)
+    expect(holder.current!.approvalMode).toBe('ask')
+  })
+
+  it('aborts the mode change when no thread can be resolved', async () => {
+    const onError = vi.fn()
+    const holder: { current: Turn | null } = { current: null }
+    await render(
+      <Harness holder={holder} ensureThread={async () => null} onError={onError} />
+    )
+
+    await holder.current!.setApprovalMode('allow_read_only')
+
+    expect(setGrant).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalled()
   })
 })

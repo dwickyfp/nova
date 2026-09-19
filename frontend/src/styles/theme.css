@@ -35,6 +35,13 @@
   --info-strong: #4369c4;
   --success-strong: #107c70;
 
+  /* Search match mark. A solid fill (not an opacity tint) so the match stays
+     legible on the white background, the hover surface, and the selected row's
+     --primary tint alike. Amber reads as "found", not as another --primary
+     selection. */
+  --search-highlight: #fde68a;
+  --search-highlight-foreground: #78350f;
+
   /* Surfaces: one token per nesting depth. Opacity variants of --card and
      --border are not part of the vocabulary. */
   --surface-1: oklch(0.988 0.002 247.896);
@@ -61,6 +68,17 @@
   --chart-tone-4: #aac7f5;
   --chart-tone-5: #c4daf8;
   --chart-tone-6: #deedfb;
+
+  /* Code highlighting (highlight.js token roles). Kept as explicit tokens so
+     the markdown renderer never carries raw hex, and so both themes read from
+     the same vocabulary the charts already use. */
+  --code-keyword: #a53126;
+  --code-string: #107c70;
+  --code-number: #986411;
+  --code-comment: #8e99a4;
+  --code-function: #4369c4;
+  --code-type: #6b46c1;
+  --code-attr: #c9662e;
 
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
@@ -103,6 +121,12 @@
   --info-strong: #7398ed;
   --success-strong: #2cc6b6;
 
+  /* Search match mark. Amber fill with near-black text; opaque so it sits on
+     the dark background, the --secondary hover surface, and the selected row's
+     --primary tint without washing out. */
+  --search-highlight: #8a5a05;
+  --search-highlight-foreground: #ffe9b8;
+
   --surface-1: #0e131a;
   --surface-2: #11161d;
   --surface-3: #171d26;
@@ -125,6 +149,14 @@
   --chart-tone-4: #aac7f5;
   --chart-tone-5: #c4daf8;
   --chart-tone-6: #deedfb;
+
+  --code-keyword: #f36b5b;
+  --code-string: #2cc6b6;
+  --code-number: #f0ad3d;
+  --code-comment: #6b7a8d;
+  --code-function: #7398ed;
+  --code-type: #a78bfa;
+  --code-attr: #e89b17;
 }
 
 @theme inline {
@@ -157,6 +189,8 @@
   --color-info-strong: var(--info-strong);
   --color-success: var(--success);
   --color-success-strong: var(--success-strong);
+  --color-search-highlight: var(--search-highlight);
+  --color-search-highlight-foreground: var(--search-highlight-foreground);
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
@@ -187,4 +221,57 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-code-keyword: var(--code-keyword);
+  --color-code-string: var(--code-string);
+  --color-code-number: var(--code-number);
+  --color-code-comment: var(--code-comment);
+  --color-code-function: var(--code-function);
+  --color-code-type: var(--code-type);
+  --color-code-attr: var(--code-attr);
+}
+
+/* highlight.js token roles, mapped onto the code tokens above. */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name {
+  color: var(--code-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-meta .hljs-string {
+  color: var(--code-string);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-boolean {
+  color: var(--code-number);
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: var(--code-function);
+}
+.hljs-type,
+.hljs-class,
+.hljs-title.class_ {
+  color: var(--code-type);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-property {
+  color: var(--code-attr);
+}
+.hljs-symbol,
+.hljs-bullet,
+.hljs-operator,
+.hljs-punctuation {
+  color: var(--foreground);
 }

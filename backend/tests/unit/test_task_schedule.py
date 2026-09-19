@@ -304,3 +304,66 @@ class TestCronExactFireInstant:
         last = datetime(2026, 1, 1, 2, 0, tzinfo=UTC)
         now = datetime(2026, 1, 2, 2, 0, tzinfo=UTC)
         assert is_due("cron", "0 2 * * *", "UTC", last, now) is True
+
+
+class TestDueOccurrences:
+    """``due_occurrences`` backs the scheduler's bounded catch-up (backfill)."""
+
+    def _occ(self, kind, expr, anchor, now, **kw):
+        from app.modules.task_orchestration.schedule import due_occurrences
+
+        return due_occurrences(kind, expr, "UTC", anchor, now, **kw)
+
+    def test_interval_returns_every_missed_occurrence_in_order(self):
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 1, 0, 17, tzinfo=UTC)
+        assert self._occ("interval", "5 minute", anchor, now) == [
+            datetime(2026, 1, 1, 0, 5, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 10, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 15, tzinfo=UTC),
+        ]
+
+    def test_manual_is_never_due(self):
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 2, 0, 0, tzinfo=UTC)
+        assert self._occ("manual", "", anchor, now) == []
+
+    def test_future_first_fire_is_not_due(self):
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 1, 0, 3, tzinfo=UTC)
+        assert self._occ("interval", "5 minute", anchor, now) == []
+
+    def test_cap_keeps_the_newest_occurrences(self):
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 1, 1, 0, tzinfo=UTC)
+        result = self._occ("interval", "5 minute", anchor, now, limit=3)
+        assert result == [
+            datetime(2026, 1, 1, 0, 50, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 55, tzinfo=UTC),
+            datetime(2026, 1, 1, 1, 0, tzinfo=UTC),
+        ]
+
+    def test_cron_exact_fire_instant_is_included(self):
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 1, 1, 2, 0, tzinfo=UTC)
+        assert self._occ("cron", "0 2 * * *", anchor, now) == [now]
+
+    def test_last_element_matches_latest_occurrence(self):
+        """The two functions must never disagree — ``latest`` is the tail."""
+        anchor = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        for now in (
+            datetime(2026, 1, 1, 0, 17, tzinfo=UTC),
+            datetime(2026, 1, 1, 2, 0, tzinfo=UTC),
+            datetime(2026, 1, 2, 5, 0, tzinfo=UTC),
+        ):
+            latest = latest_occurrence("cron", "0 2 * * *", "UTC", anchor, now)
+            occ = self._occ("cron", "0 2 * * *", anchor, now)
+            assert (occ[-1] if occ else None) == latest
+
+    def test_naive_inputs_are_rejected(self):
+        from app.modules.task_orchestration.schedule import due_occurrences
+
+        with pytest.raises(ScheduleError):
+            due_occurrences(
+                "interval", "5 minute", "UTC", datetime(2026, 1, 1), datetime(2026, 1, 2)
+            )

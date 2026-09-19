@@ -53,6 +53,19 @@ class WorkspaceService:
         clean_path = relative_path.strip("/")
         return "/".join(part for part in [base_prefix, username, clean_path] if part)
 
+    def _version_object_key(self, username: str, entry_id: str, version: int) -> str:
+        """Object key for one saved snapshot.
+
+        Kept under a ``.versions`` folder so the live file key is never
+        touched by the history path and a rename of the file does not have to
+        move its snapshot history. The key is derived from the immutable
+        ``entry_id`` plus the monotonic ``version`` number.
+        """
+        base_prefix = load_nova_app_config().workspace.base_prefix.strip("/")
+        return "/".join(
+            [base_prefix, username, ".versions", entry_id, f"{version}.sql"]
+        )
+
     async def get_tree(self, username: str) -> dict:
         # ``_repo`` translates NOVA_SYSTEM bootstrap failures (missing table,
         # engine down) into ``WorkspaceNotReadyError`` already; nothing extra
@@ -145,6 +158,11 @@ class WorkspaceService:
         entry = await self._repo.get_entry(username, entry_id)
         if not entry:
             raise StorageError("Workspace entry not found", status_code=404)
+        # Snapshot the current content before it is overwritten, so every save
+        # has a recoverable predecessor. Snapshotting reads the live object; a
+        # missing object (a brand-new file whose first write is this one) is
+        # treated as no predecessor.
+        await self._snapshot_version(username, entry_id, entry, next_content=content)
         result = self._put_object(entry["object_key"], content.encode("utf-8"))
         await self._repo.update_entry(
             entry_id=entry_id,
@@ -157,6 +175,78 @@ class WorkspaceService:
         )
         updated = await self._repo.get_entry(username, entry_id)
         return updated
+
+    async def _snapshot_version(
+        self, username: str, entry_id: str, entry: dict, *, next_content: str
+    ) -> None:
+        """Persist the entry's current content as the next version.
+
+        ``next_content`` is what the caller is about to write. A save that does
+        not change the content is not a new version, so the snapshot is skipped
+        when the current bytes equal the incoming bytes — this is what keeps an
+        autosave loop from piling up identical versions. The dedup is
+        content-based, not etag-based, because a rewrite that produces
+        identical bytes is still the same version to a user.
+        """
+        try:
+            current = self._read_object(entry["object_key"])
+        except StorageError:
+            # No live object yet: nothing to snapshot. The next update will
+            # snapshot the content written by this one.
+            return
+
+        if not current:
+            # An empty file has no meaningful history to keep.
+            return
+
+        if current == next_content.encode("utf-8"):
+            return
+
+        version = await self._repo.next_version_number(username, entry_id)
+        key = self._version_object_key(username, entry_id, version)
+        result = self._put_object(key, current)
+        await self._repo.insert_version(
+            version_id=str(uuid4()),
+            entry_id=entry_id,
+            username=username,
+            version=version,
+            object_key=key,
+            size_bytes=len(current),
+            etag=result.get("ETag", "").strip('"'),
+        )
+
+    async def list_file_versions(
+        self, username: str, entry_id: str, limit: int = 100
+    ) -> list[dict]:
+        entry = await self._repo.get_entry(username, entry_id)
+        if not entry:
+            raise StorageError("Workspace entry not found", status_code=404)
+        if entry["entry_type"] != "file":
+            raise StorageError("Only SQL files have versions", status_code=400)
+        return await self._repo.list_versions(username, entry_id, limit)
+
+    async def get_file_version(self, username: str, entry_id: str, version: int) -> str:
+        entry = await self._repo.get_entry(username, entry_id)
+        if not entry:
+            raise StorageError("Workspace entry not found", status_code=404)
+        record = await self._repo.get_version(username, entry_id, version)
+        if not record:
+            raise StorageError("Version not found", status_code=404)
+        content = self._read_object(record["object_key"])
+        return content.decode("utf-8")
+
+    async def get_file_version_record(
+        self, username: str, entry_id: str, version: int
+    ) -> tuple[dict, str]:
+        """Return one version's metadata and its content in a single lookup."""
+        entry = await self._repo.get_entry(username, entry_id)
+        if not entry:
+            raise StorageError("Workspace entry not found", status_code=404)
+        record = await self._repo.get_version(username, entry_id, version)
+        if not record:
+            raise StorageError("Version not found", status_code=404)
+        content = self._read_object(record["object_key"]).decode("utf-8")
+        return record, content
 
     async def rename_entry(
         self,
@@ -251,6 +341,7 @@ class WorkspaceService:
         for item in sorted(targets, key=lambda row: len(row["path"].split("/")), reverse=True):
             if item["entry_type"] == "file" and item["object_key"]:
                 self._delete_object(item["object_key"])
+                await self._purge_versions(username, item["id"])
             await self._repo.soft_delete_entry(username, item["id"])
         await write_audit_log(
             event_type="workspace",
@@ -260,6 +351,17 @@ class WorkspaceService:
             object_name=entry["path"],
             status="SUCCESS",
         )
+
+    async def _purge_versions(self, username: str, entry_id: str) -> None:
+        """Delete a file's version objects and metadata when the file goes.
+
+        Soft delete already hides the file; this makes the snapshot objects
+        unreachable too, so a deleted file does not leave orphaned history in
+        the bucket.
+        """
+        for record in await self._repo.list_versions(username, entry_id, limit=1000):
+            self._delete_object(record["object_key"])
+        await self._repo.delete_versions_for_entry(username, entry_id)
 
     async def save_state(
         self,

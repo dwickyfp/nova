@@ -8,12 +8,17 @@ Endpoints under ``/api/v1/assistant``:
   DELETE /threads/{thread_id}                      → delete
   POST   /threads/{thread_id}/messages             → run a turn (SSE stream)
   POST   /tool-calls/{tool_call_id}/decision       → resolve a pending tool call
+  PUT    /threads/{thread_id}/grant                → set/clear the read-only grant
   DELETE /threads/{thread_id}/grant                → reset the conversation grant
 
 Every route requires ``get_current_user``. Threads are scoped to their owner;
 an unknown or foreign id answers 404, never 403, so existence does not leak.
+The scoping is enforced in SQL (``repository.py``), so one user's history can
+never be returned to another.
 
-State is process-local (E5a): a restart clears threads and grants.
+Threads and messages are persisted in ``NOVA_SYSTEM`` and survive a reload.
+Consent grants stay process-local (``state.py``): an always-allow grant is
+deliberately ephemeral and is not revived by a restart.
 """
 
 # ruff: noqa: B008 — `Depends(...)` in a default is FastAPI's dependency
@@ -35,9 +40,11 @@ from app.modules.assistant import events
 from app.modules.assistant.consent import consent_broker
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.registry import tool_registry
+from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.schemas import (
     ConsentDecisionRequest,
     ConsentDecisionResponse,
+    GrantRequest,
     MessageRequest,
     MessageView,
     ThreadCreateRequest,
@@ -47,7 +54,7 @@ from app.modules.assistant.schemas import (
     ThreadView,
 )
 from app.modules.assistant.service import AssistantLoop, LoopContext
-from app.modules.assistant.state import AssistantMessage, AssistantThread, thread_store
+from app.modules.assistant.state import AssistantMessage, thread_store
 from app.modules.assistant.tools import ToolInvocation
 
 logger = logging.getLogger(__name__)
@@ -58,29 +65,34 @@ router = APIRouter()
 _loop = AssistantLoop(provider=assistant_provider, registry=tool_registry)
 
 
-def _thread_view(thread: AssistantThread) -> ThreadView:
+def _thread_view(row: dict) -> ThreadView:
     return ThreadView(
-        thread_id=thread.thread_id,
-        title=thread.title,
-        workspace_file_id=thread.workspace_file_id,
-        created_at=thread.created_at,
-        updated_at=thread.updated_at,
-        message_count=len(thread.messages),
+        thread_id=row["thread_id"],
+        title=row["title"],
+        workspace_file_id=row.get("workspace_file_id"),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        message_count=row.get("message_count", 0),
     )
 
 
-def _message_view(message) -> MessageView:
+def _message_view(row: dict) -> MessageView:
     return MessageView(
-        message_id=message.message_id,
-        role=message.role,
-        content=message.content,
-        tool_call=message.tool_call,
-        created_at=message.created_at,
+        message_id=row["message_id"],
+        role=row["role"],
+        content=row.get("content", ""),
+        tool_call=None,
+        created_at=row["created_at"],
     )
 
 
-def _require_thread(thread_id: str, user_name: str) -> AssistantThread:
-    thread = thread_store.get(thread_id, user_name=user_name)
+async def _require_thread(thread_id: str, user_name: str) -> dict:
+    """Fetch a thread owned by ``user_name``, or 404.
+
+    The owner filter is in SQL, so a foreign or unknown id is indistinguishable
+    from a missing one — existence never leaks.
+    """
+    thread = await assistant_repository.get_thread(thread_id, user_name=user_name)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
     return thread
@@ -106,7 +118,7 @@ def _text_from_frame(frame: str) -> str:
 
 @router.get("/threads", response_model=ThreadListResponse)
 async def list_threads(user: dict = Depends(get_current_user)):
-    threads = thread_store.list_for_user(user["username"])
+    threads = await assistant_repository.list_threads(user_name=user["username"])
     views = [_thread_view(t) for t in threads]
     return ThreadListResponse(threads=views, count=len(views))
 
@@ -116,10 +128,17 @@ async def create_thread(
     body: ThreadCreateRequest,
     user: dict = Depends(get_current_user),
 ):
-    thread = thread_store.create(
+    thread = await assistant_repository.create_thread(
         user_name=user["username"],
         title=body.title,
         workspace_file_id=body.workspace_file_id,
+    )
+    # Register the runtime object so the first turn has a consent holder.
+    thread_store.register(
+        thread_id=thread["thread_id"],
+        user_name=user["username"],
+        title=thread["title"],
+        workspace_file_id=thread.get("workspace_file_id"),
     )
     return _thread_view(thread)
 
@@ -129,10 +148,13 @@ async def get_thread(
     thread_id: str,
     user: dict = Depends(get_current_user),
 ):
-    thread = _require_thread(thread_id, user["username"])
+    thread = await _require_thread(thread_id, user["username"])
+    messages = await assistant_repository.list_messages(
+        thread_id, user_name=user["username"]
+    )
     return ThreadDetailResponse(
         thread=_thread_view(thread),
-        messages=[_message_view(m) for m in thread.messages],
+        messages=[_message_view(m) for m in messages],
     )
 
 
@@ -142,10 +164,14 @@ async def rename_thread(
     body: ThreadUpdateRequest,
     user: dict = Depends(get_current_user),
 ):
-    thread = _require_thread(thread_id, user["username"])
+    thread = await _require_thread(thread_id, user["username"])
     if body.title is not None:
-        thread.title = body.title
-        thread.touch()
+        updated = await assistant_repository.rename_thread(
+            thread_id, body.title, user_name=user["username"]
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        thread = updated
     return _thread_view(thread)
 
 
@@ -154,8 +180,12 @@ async def delete_thread(
     thread_id: str,
     user: dict = Depends(get_current_user),
 ):
-    if not thread_store.delete(thread_id, user_name=user["username"]):
+    if not await assistant_repository.delete_thread(
+        thread_id, user_name=user["username"]
+    ):
         raise HTTPException(status_code=404, detail="Thread not found")
+    # Drop the runtime entry too, so a lingering grant cannot outlive the thread.
+    thread_store.remove(thread_id, user_name=user["username"])
     return None
 
 
@@ -165,9 +195,45 @@ async def reset_grant(
     user: dict = Depends(get_current_user),
 ):
     """Revoke the conversation's read-only always-allow grant (E2b)."""
-    thread = _require_thread(thread_id, user["username"])
-    thread.consent.always_allow_read_only = False
+    await _require_thread(thread_id, user["username"])
+    runtime = thread_store.get(thread_id, user_name=user["username"])
+    if runtime is not None:
+        runtime.consent.always_allow_read_only = False
     return None
+
+
+@router.put("/threads/{thread_id}/grant")
+async def set_grant(
+    thread_id: str,
+    body: GrantRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Set or clear the conversation's read-only always-allow grant.
+
+    The composer's approval-mode selector calls this before a turn so a
+    read-only query runs without a per-call approval card. This is the UI
+    presenting the grant up front, which is what NOVA-122 requires: the grant
+    is only ever the read-only policy (never a way to auto-approve a
+    destructive call), and the loop still consults the per-statement
+    classification before skipping a card. Setting ``false`` is equivalent to
+    the ``DELETE`` above.
+
+    Owner-scoped: a foreign or unknown thread answers 404, never 403.
+
+    The runtime entry is registered here (not only on the next turn) so the
+    grant takes effect even if the user sets the mode before the first message
+    of a fresh thread. Registering is idempotent — an existing entry is reused,
+    so a live grant is never reset by this call.
+    """
+    thread_row = await _require_thread(thread_id, user["username"])
+    runtime = thread_store.register(
+        thread_id=thread_id,
+        user_name=user["username"],
+        title=thread_row["title"],
+        workspace_file_id=thread_row.get("workspace_file_id"),
+    )
+    runtime.consent.always_allow_read_only = body.always_allow_read_only
+    return {"grant_active": runtime.consent.always_allow_read_only}
 
 
 @router.post("/threads/{thread_id}/messages")
@@ -181,24 +247,48 @@ async def send_message(
 
     The user's message is stored before the stream starts, so an interrupted
     turn still leaves a coherent transcript. The assistant's reply is stored as
-    one message when the stream ends.
+    one message when the stream ends. Both writes are user-scoped in SQL.
     """
-    thread = _require_thread(thread_id, user["username"])
+    thread_row = await _require_thread(thread_id, user["username"])
+    user_name = user["username"]
 
-    user_message = AssistantMessage(
-        message_id=str(uuid4()), role="user", content=body.content
+    # The runtime object the loop reads: history loaded from the database plus
+    # the process-local consent policy. Registered (not recreated) so a live
+    # always-allow grant survives across turns.
+    runtime = thread_store.register(
+        thread_id=thread_id,
+        user_name=user_name,
+        title=thread_row["title"],
+        workspace_file_id=thread_row.get("workspace_file_id"),
     )
-    thread.messages.append(user_message)
-    thread.touch()
+    history = await assistant_repository.list_messages(thread_id, user_name=user_name)
+    runtime.messages = [
+        AssistantMessage(
+            message_id=row["message_id"],
+            role=row["role"],
+            content=row["content"],
+            created_at=row["created_at"],
+        )
+        for row in history
+    ]
+
+    # Store the user's message before the stream starts, so a disconnect still
+    # leaves a coherent transcript.
+    await assistant_repository.append_message(
+        thread_id, user_name=user_name, role="user", content=body.content
+    )
+    runtime.messages.append(
+        AssistantMessage(message_id=str(uuid4()), role="user", content=body.content)
+    )
 
     context = LoopContext(
-        user_name=user["username"],
+        user_name=user_name,
         database=body.database,
         schema_name=body.schema_name,
         role=body.role,
-        workspace_file_id=thread.workspace_file_id,
+        workspace_file_id=thread_row.get("workspace_file_id"),
         session_id=user.get("session_id"),
-        thread_id=thread.thread_id,
+        thread_id=thread_id,
         user=user,
     )
 
@@ -209,8 +299,8 @@ async def send_message(
         # out of band. If the stream is disconnected, treat it as cancelled.
         future = consent_broker.open(
             invocation.tool_call_id,
-            thread_id=thread.thread_id,
-            user_name=thread.user_name,
+            thread_id=thread_id,
+            user_name=user_name,
             classification=classification,
         )
 
@@ -221,7 +311,7 @@ async def send_message(
                     # its owner, so the owner check is satisfied and the loop
                     # is released with ``None`` (cancelled).
                     consent_broker.resolve(
-                        invocation.tool_call_id, None, user_name=thread.user_name
+                        invocation.tool_call_id, None, user_name=user_name
                     )
                     return
                 await asyncio.sleep(0.25)
@@ -236,11 +326,13 @@ async def send_message(
         reply_parts: list[str] = []
         try:
             async for frame in _loop.run(
-                thread=thread,
+                thread=runtime,
                 user_content=body.content,
                 context=context,
                 resolve_consent=resolve_consent,
                 cancelled=lambda: False,
+                model=body.model,
+                provider_id=body.provider_id,
             ):
                 if await request.is_disconnected():
                     break
@@ -255,16 +347,19 @@ async def send_message(
             yield events.done(str(uuid4()), finish_reason="error")
         finally:
             # Fold the visible reply into the transcript. Tool frames are not
-            # replayed; only the assistant's text is part of the thread.
+            # replayed; only the assistant's text is part of the thread. The
+            # write is best-effort: a storage failure must not turn a completed
+            # answer into a stream error the user cannot see the cause of.
             if reply_parts:
-                thread.messages.append(
-                    AssistantMessage(
-                        message_id=str(uuid4()),
+                try:
+                    await assistant_repository.append_message(
+                        thread_id,
+                        user_name=user_name,
                         role="assistant",
                         content="".join(reply_parts),
                     )
-                )
-                thread.touch()
+                except Exception:
+                    logger.exception("Could not persist the assistant reply")
 
     return StreamingResponse(
         generate(),

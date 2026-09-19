@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends
 
+from app.common.user_flags import is_must_change_password
 from app.core.deps import get_current_user
 from app.core.redis import session_store
 from app.modules.auth.schemas import (
@@ -70,12 +71,17 @@ async def logout(user: dict = Depends(get_current_user)):
 
 @router.get("/me", response_model=SessionInfo)
 async def get_me(user: dict = Depends(get_current_user)):
-    """Get current session info."""
+    """Get current session info.
+
+    ``must_change_password`` is read here too, so a reload after a forced-change
+    login cannot skip the requirement by going straight to a route.
+    """
     return SessionInfo(
         username=user["username"],
         roles=user["roles"],
         active_role=user.get("active_role"),
         session_id=user["session_id"],
+        must_change_password=await is_must_change_password(user["username"]),
     )
 
 

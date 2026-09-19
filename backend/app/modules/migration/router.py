@@ -24,19 +24,32 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.common.responses import SanitizingJSONResponse
+from app.core.config import settings
 from app.core.deps import get_current_user
 
+from .data_mover import DataMovementError
 from .schemas import (
     DryRunRequest,
     DryRunResponse,
     EngineStatusResponse,
     EnumerateRequest,
     EnumerateResponse,
+    ExecuteRequest,
+    ExecuteResponse,
+    PlanRequest,
+    PlanResponse,
+    PreflightRequest,
+    PreflightResponse,
     SourceConnectionListResponse,
     SourceConnectionRequest,
     SourceConnectionResponse,
 )
-from .service import migration_service
+from .service import (
+    MigrationExecuteConfirmationError,
+    MigrationExecuteGateError,
+    MigrationPreflightError,
+    migration_service,
+)
 from .source import SourceConnectionError
 
 router = APIRouter()
@@ -57,12 +70,16 @@ async def capabilities(user: CurrentUser):
     return {
         "phase": "11",
         "version": "v1",
-        "phases": ["assess", "dry_run"],
-        "write_operations": False,
-        "execute_available": False,
+        "phases": ["assess", "dry_run", "plan", "preflight", "execute"],
+        # True because an execute endpoint now exists — but it is **gated**: it
+        # refuses unless the operator enabled it (issue #7). ``write_operations``
+        # mirrors that gate so a client shows the right affordance.
+        "write_operations": settings.MIGRATION_EXECUTE_ENABLED,
+        "execute_available": settings.MIGRATION_EXECUTE_ENABLED,
         "execute_gate": {"issue": "#7", "name": "backup/restore"},
         "mv_ddl_surface": "SHOW CREATE MATERIALIZED VIEW",
         "source_required": True,
+        "execute_require_confirmation": settings.MIGRATION_EXECUTE_REQUIRE_CONFIRMATION,
     }
 
 
@@ -150,6 +167,102 @@ async def dry_run(body: DryRunRequest, user: CurrentUser):
         return await migration_service.dry_run(
             body.source, body.database, body.objects, actor=user["username"]
         )
+    except SourceConnectionError as exc:
+        raise _source_http_error(exc) from exc
+
+
+@router.post(
+    "/plan",
+    response_model=PlanResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def plan(body: PlanRequest, user: CurrentUser):
+    """Build a dependency-ordered apply plan. Read-only — executes nothing.
+
+    The plan lists the statements a cutover would run, in order, plus the objects
+    that cannot be executed. There is no apply endpoint: execution is gated on
+    #7 (backup/restore). This endpoint exists so an operator can inspect and
+    review exactly what a future execute would do.
+    """
+    try:
+        return await migration_service.plan(
+            body.source,
+            body.database,
+            target_database=body.target_database,
+            objects=body.objects,
+            create_database=body.create_database,
+            actor=user["username"],
+        )
+    except SourceConnectionError as exc:
+        raise _source_http_error(exc) from exc
+
+
+@router.post(
+    "/preflight",
+    response_model=PreflightResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def preflight(body: PreflightRequest, user: CurrentUser):
+    """Check the caller's target privileges and shared storage. Read-only.
+
+    Runs nothing: it reads the caller's own grants and, for data movement,
+    reports whether a transfer stage is configured. Use it to fix grants before
+    execute rather than discovering them per-object.
+    """
+    try:
+        return await migration_service.preflight(
+            body.source,
+            body.database,
+            target_database=body.target_database,
+            objects=body.objects,
+            create_database=body.create_database,
+            include_data=body.include_data,
+            actor=user["username"],
+            encrypted_password=user["encrypted_password"],
+            session_id=user.get("session_id"),
+            role=user.get("active_role"),
+        )
+    except SourceConnectionError as exc:
+        raise _source_http_error(exc) from exc
+
+
+@router.post(
+    "/execute",
+    response_model=ExecuteResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def execute(body: ExecuteRequest, user: CurrentUser):
+    """Apply a plan to the target database. Gated on #7 (backup/restore).
+
+    Refuses (403) unless the operator enabled execute; refuses (422) unless the
+    caller acknowledged the omissions and, when required, matched the target
+    database confirmation. Statements run as the authenticated user, so
+    StarRocks RBAC is the real authority. Each object gets its own result.
+    """
+    try:
+        return await migration_service.execute(
+            body.source,
+            body.database,
+            target_database=body.target_database,
+            objects=body.objects,
+            create_database=body.create_database,
+            acknowledge_omissions=body.acknowledge_omissions,
+            confirmation=body.confirmation,
+            actor=user["username"],
+            encrypted_password=user["encrypted_password"],
+            session_id=user.get("session_id"),
+            role=user.get("active_role"),
+            include_data=body.include_data,
+            stage_connection=body.stage_connection,
+        )
+    except DataMovementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except MigrationPreflightError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MigrationExecuteGateError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except MigrationExecuteConfirmationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except SourceConnectionError as exc:
         raise _source_http_error(exc) from exc
 

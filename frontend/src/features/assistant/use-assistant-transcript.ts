@@ -1,10 +1,43 @@
 import { useCallback, useState } from 'react'
-import type { AssistantEvent, AssistantMessage, ToolCallView, TurnState } from './types'
+import type { AttachedQuery } from './query-attach'
+import type {
+  AssistantEvent,
+  AssistantMessage,
+  PlanStep,
+  ThinkingPhase,
+  ThinkingStatus,
+  ToolCallView,
+  TurnState,
+} from './types'
+
+/** One observed agentic step, kept so the block renders the whole trace. */
+export type ActivityStep = {
+  key: string
+  phase: ThinkingPhase
+  text: string
+  status: ThinkingStatus
+}
 
 export type TranscriptMessage = AssistantMessage & {
   turn_state?: TurnState
   /** Client-side correlation for tool_status. Not part of the wire shape. */
   tool_call_id?: string
+  /**
+   * Client-side only: the agentic trace for a turn (plan + thinking steps), on
+   * a message with `role: 'activity'`. Never part of the wire contract.
+   */
+  activity_steps?: ActivityStep[]
+  activity_plan?: PlanStep[]
+  /**
+   * Client-side only: queries attached to a user message. `content` carries the
+   * serialized prompt the model received (attachment preamble + typed text);
+   * these let the bubble render the attachments as cards and show only the text
+   * the user actually typed. Absent on a transcript restored from the server,
+   * where the wire text is all that is available.
+   */
+  attachments?: AttachedQuery[]
+  /** The user's typed text without the attachment preamble. */
+  display_text?: string
 }
 
 let localId = 0
@@ -14,7 +47,7 @@ function nextLocalId(prefix: string) {
 }
 
 type Action =
-  | { type: 'user_message'; content: string }
+  | { type: 'user_message'; content: string; attachments?: AttachedQuery[]; displayText?: string }
   | { type: 'event'; event: AssistantEvent }
   | { type: 'cancelled' }
   | { type: 'reset' }
@@ -75,10 +108,60 @@ function applyToolStatus(
   )
 }
 
+/**
+ * The activity block for the current turn: the plan plus the thinking steps.
+ *
+ * One block per turn, kept at the tail so it sits immediately above the answer
+ * the model is writing. A new turn (after a user message) starts a new block, so
+ * the trace stays attached to the turn that produced it.
+ */
+function upsertActivity(
+  state: TranscriptMessage[],
+  update: (steps: ActivityStep[], plan: PlanStep[]) => Partial<TranscriptMessage>
+): TranscriptMessage[] {
+  const index = state.findIndex((message) => message.role === 'activity')
+  if (index === -1) {
+    const block: TranscriptMessage = {
+      message_id: nextLocalId('activity'),
+      role: 'activity',
+      content: '',
+      tool_call: null,
+      created_at: new Date().toISOString(),
+      activity_steps: [],
+      activity_plan: [],
+      ...update([], []),
+    }
+    return [...state, block]
+  }
+  const current = state[index]
+  return [
+    ...state.slice(0, index),
+    {
+      ...current,
+      ...update(current.activity_steps ?? [], current.activity_plan ?? []),
+    },
+    ...state.slice(index + 1),
+  ]
+}
+
 function applyEvent(state: TranscriptMessage[], event: AssistantEvent): TranscriptMessage[] {
   switch (event.type) {
     case 'text_delta':
       return appendAssistantText(state, event.text)
+    case 'thinking':
+      return upsertActivity(state, (steps) => ({
+        activity_steps: [
+          ...steps,
+          {
+            key: nextLocalId('step'),
+            phase: event.phase,
+            text: event.text,
+            status: event.status,
+          },
+        ],
+      }))
+    case 'plan':
+      return upsertActivity(state, () => ({ activity_plan: event.steps }))
     case 'tool_call':
       return upsertToolCall(state, event.payload.tool_call_id, {
         tool_name: event.payload.tool_name,
@@ -91,11 +174,26 @@ function applyEvent(state: TranscriptMessage[], event: AssistantEvent): Transcri
     case 'tool_status':
       return applyToolStatus(state, event.tool_call_id, event.status)
     case 'done':
-      return state.map((message) =>
-        message.role === 'assistant' && message.turn_state === 'streaming'
-          ? { ...message, message_id: event.message_id, turn_state: 'done' }
-          : message
-      )
+      return state.map((message) => {
+        if (message.role === 'assistant' && message.turn_state === 'streaming') {
+          return { ...message, message_id: event.message_id, turn_state: 'done' }
+        }
+        // No step may be left spinning once the turn ends.
+        if (message.role === 'activity' && message.activity_steps) {
+          return {
+            ...message,
+            activity_steps: message.activity_steps.map((step) =>
+              step.status === 'running' ? { ...step, status: 'done' } : step
+            ),
+            activity_plan: message.activity_plan?.map((step) =>
+              step.status === 'pending' || step.status === 'running'
+                ? { ...step, status: 'done' }
+                : step
+            ),
+          }
+        }
+        return message
+      })
     case 'error':
       return [
         ...state,
@@ -124,6 +222,8 @@ export function transcriptReducer(state: TranscriptMessage[], action: Action): T
           content: action.content,
           tool_call: null,
           created_at: new Date().toISOString(),
+          attachments: action.attachments,
+          display_text: action.displayText,
         },
       ]
     case 'event':
@@ -141,7 +241,10 @@ export function useAssistantTranscript() {
   const [messages, setMessages] = useState<TranscriptMessage[]>([])
 
   const addUserMessage = useCallback(
-    (content: string) => setMessages((prev) => transcriptReducer(prev, { type: 'user_message', content })),
+    (content: string, attachments?: AttachedQuery[], displayText?: string) =>
+      setMessages((prev) =>
+        transcriptReducer(prev, { type: 'user_message', content, attachments, displayText })
+      ),
     []
   )
   const applyEvent = useCallback(
@@ -153,6 +256,7 @@ export function useAssistantTranscript() {
     []
   )
   const reset = useCallback(() => setMessages((prev) => transcriptReducer(prev, { type: 'reset' })), [])
+  const replace = useCallback((next: TranscriptMessage[]) => setMessages(next), [])
 
-  return { messages, addUserMessage, applyEvent, markCancelled, reset }
+  return { messages, addUserMessage, applyEvent, markCancelled, reset, replace }
 }

@@ -29,14 +29,31 @@ export type ToolCallView = {
 
 export type AssistantMessage = {
   message_id: string
-  role: 'user' | 'assistant' | 'tool'
+  /**
+   * `activity` is a client-only role carrying the agentic trace (plan +
+   * thinking steps). The backend never emits it.
+   */
+  role: 'user' | 'assistant' | 'tool' | 'activity'
   content: string
   tool_call: ToolCallView | null
   created_at: string
 }
 
+/** The agentic phases a thinking frame can carry. */
+export type ThinkingPhase = 'plan' | 'skill' | 'act' | 'observe' | 'answer'
+
+export type ThinkingStatus = 'running' | 'done'
+
+export type PlanStep = {
+  id: string
+  text: string
+  status: 'pending' | 'running' | 'done'
+}
+
 export type AssistantEvent =
   | { type: 'text_delta'; text: string }
+  | { type: 'thinking'; phase: ThinkingPhase; text: string; status: ThinkingStatus }
+  | { type: 'plan'; steps: PlanStep[] }
   | { type: 'tool_call'; payload: ToolCallView & { tool_call_id: string } }
   | { type: 'tool_status'; tool_call_id: string; status: ToolCallStatus }
   | { type: 'done'; message_id: string; finish_reason: string }

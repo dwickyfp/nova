@@ -13,10 +13,10 @@ import {
   Zap,
   Activity,
   ArrowRightLeft,
-  GitFork,
   Workflow,
   Server,
   Settings,
+  ShieldAlert,
 } from 'lucide-react';
 import { type SidebarData } from '../types';
 
@@ -47,18 +47,19 @@ export const sidebarData: SidebarData = {
         },
         {
           title: 'Tasks',
-          url: '/tasks-manager',
+          url: '/tasks',
           icon: Workflow,
         },
         {
-          title: 'Task Graphs',
-          url: '/task-graphs',
-          icon: GitFork,
-        },
-        {
-          title: 'ML Models',
-          url: '/ml-models',
+          title: 'AI & ML',
           icon: Brain,
+          items: [
+            {
+              title: 'ML Models',
+              url: '/ml-models',
+              icon: Brain,
+            },
+          ],
         },
       ],
     },
@@ -133,6 +134,11 @@ export const sidebarData: SidebarData = {
               title: 'Cluster Monitor',
               url: '/monitoring/cluster',
               icon: Server,
+            },
+            {
+              title: 'Production Health',
+              url: '/monitoring/health',
+              icon: ShieldAlert,
             },
           ],
         },

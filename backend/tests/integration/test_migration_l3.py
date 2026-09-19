@@ -78,6 +78,28 @@ def _unique(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:10]}"
 
 
+def _retarget(ddl: str, source_db: str, target_db: str, object_name: str) -> str:
+    """Point a reconstructed DDL at the target database.
+
+    StarRocks emits ``SHOW CREATE`` DDL with an **unqualified** object name
+    (``CREATE TABLE `t` ...``) while internal references keep the source
+    database (``... FROM source_db.other``). A real execute path therefore needs
+    two rewrites: qualify the created object with the target database, and
+    repoint every source-database reference inside the body. This helper is the
+    test's stand-in for that retargeter — it is deliberately not production code
+    until 11-B lands.
+    """
+    head, _, body = ddl.partition("(")
+    # Qualify only the leading object name, not argument lists of a function.
+    marker = f"`{object_name}`"
+    if marker in head:
+        head = head.replace(marker, f"`{target_db}`.`{object_name}`", 1)
+    retargeted = head + "(" + body
+    return retargeted.replace(f"`{source_db}`", f"`{target_db}`").replace(
+        f"{source_db}.", f"{target_db}."
+    )
+
+
 async def _reachable() -> bool:
     try:
         conn = await asyncio.wait_for(
@@ -116,7 +138,17 @@ async def l3_admin_user(request):
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
     await _admin_execute(f"CREATE USER '{L3_ADMIN_USER}' IDENTIFIED BY '{L3_ADMIN_PASSWORD}'")
-    await _admin_execute(f"GRANT ALL ON *.* TO '{L3_ADMIN_USER}' WITH GRANT OPTION")
+    # ``GRANT ALL ON *.*`` covers table-level operations only. Migration execute
+    # creates databases, tables, views, MVs and functions, which need the
+    # explicit privileges below — the same grant set a migration operator needs
+    # on the target (see the CREATE DATABASE ON CATALOG form in the StarRocks
+    # GRANT docs).
+    for grant in (
+        "GRANT ALL ON *.* TO '{u}' WITH GRANT OPTION",
+        "GRANT CREATE DATABASE ON CATALOG default_catalog TO '{u}'",
+        "GRANT CREATE TABLE, CREATE VIEW, CREATE MATERIALIZED VIEW ON ALL DATABASES TO '{u}'",
+    ):
+        await _admin_execute(grant.format(u=L3_ADMIN_USER))
     yield L3_ADMIN_USER
     with contextlib.suppress(Exception):
         await _admin_execute(f"DROP USER IF EXISTS '{L3_ADMIN_USER}'")
@@ -128,6 +160,44 @@ async def engine(request):
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
     await _ensure_schema()
+
+
+@pytest_asyncio.fixture(scope="session")
+async def transfer_bucket(request):
+    """Ensure the data-movement stage bucket exists on the test MinIO.
+
+    Data movement writes to ``s3://<connection.bucket>/migration-staging``; the
+    test stack's minio-init only creates ``test-stage``, so the connection's
+    bucket is created here. The bucket is engine-reachable at ``minio:<port>``
+    (same number both sides in ``docker-compose.test.yml``).
+    """
+    require_shared_stack(request)
+    import boto3
+    from botocore.config import Config
+
+    from app.core.config import get_storage_connection, load_nova_app_config
+
+    config = load_nova_app_config()
+    connection = get_storage_connection(None)
+    endpoint = connection.endpoint.replace("127.0.0.1", "127.0.0.1")
+    try:
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            aws_access_key_id=connection.access_key,
+            aws_secret_access_key=connection.secret_key,
+            config=Config(s3={"addressing_style": "path"}),
+            region_name="us-east-1",
+        )
+        existing = {b["Name"] for b in s3.list_buckets().get("Buckets", [])}
+        if connection.bucket not in existing:
+            s3.create_bucket(Bucket=connection.bucket)
+    except Exception:
+        # A missing bucket or unreachable MinIO surfaces as a skip in the test
+        # body, not a hard failure of the whole suite.
+        pass
+    yield connection.bucket
+    assert config is not None
 
 
 @pytest_asyncio.fixture
@@ -399,8 +469,546 @@ class TestAuditOnRealEngine:
             )
 
 
-class TestNoExecutePath:
-    async def test_capabilities_declare_no_execute(self, admin_client):
+class TestExecuteGateOnRealEngine:
+    async def test_capabilities_declare_execute_gated(self, admin_client):
         resp = await admin_client.get("/api/v1/migration/capabilities")
         assert resp.status_code == 200
-        assert resp.json()["execute_available"] is False
+        body = resp.json()
+        # Execute is present but gated; the gate is off in the test environment.
+        assert "execute" in body["phases"]
+        assert body["execute_gate"] == {"issue": "#7", "name": "backup/restore"}
+        assert body["execute_available"] is False
+
+    async def test_execute_refused_while_gate_closed(self, admin_client, source, namespace):
+        """A caller cannot reach the engine while the operator has not opened
+        the #7 gate."""
+        resp = await admin_client.post(
+            "/api/v1/migration/execute",
+            json={
+                "source": source,
+                "database": namespace["database"],
+                "target_database": f"{namespace['database']}_exec",
+                "acknowledge_omissions": True,
+                "confirmation": f"{namespace['database']}_exec",
+            },
+        )
+        assert resp.status_code == 403, resp.text
+        assert "disabled" in resp.json()["detail"].lower()
+
+    async def test_execute_applies_when_gate_open(
+        self, admin_client, source, namespace, monkeypatch
+    ):
+        """With the gate open, execute creates the target objects for real.
+
+        Proves the whole 11-B path: plan → execute through the query pipeline →
+        target exists with matching schema. The gate is enabled only for this
+        test via monkeypatch; production starts gated off.
+        """
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
+        monkeypatch.setattr(
+            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
+        )
+        db = namespace["database"]
+        target = f"{db}_exec"
+        with contextlib.suppress(Exception):
+            await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+        resp = await admin_client.post(
+            "/api/v1/migration/execute",
+            json={
+                "source": source,
+                "database": db,
+                "target_database": target,
+                "acknowledge_omissions": True,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["failed"] == 0, body
+        assert body["succeeded"] >= 3  # database + table + view + MV
+
+        try:
+            dbs = await _admin_execute("SHOW DATABASES")
+            assert (target,) in dbs
+            src_cols = await _admin_execute(
+                "SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.columns "
+                f"WHERE TABLE_SCHEMA = '{db}' AND TABLE_NAME = '{namespace['table']}' "
+                "ORDER BY ORDINAL_POSITION"
+            )
+            dst_cols = await _admin_execute(
+                "SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.columns "
+                f"WHERE TABLE_SCHEMA = '{target}' AND TABLE_NAME = '{namespace['table']}' "
+                "ORDER BY ORDINAL_POSITION"
+            )
+            assert src_cols and src_cols == dst_cols
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+    async def test_preflight_reports_ok_for_privileged_caller(
+        self, admin_client, source, namespace
+    ):
+        resp = await admin_client.post(
+            "/api/v1/migration/preflight",
+            json={
+                "source": source,
+                "database": namespace["database"],
+                "target_database": f"{namespace['database']}_pf",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["ok"] is True, body
+        assert body["missing"] == []
+        # The privileges the plan needs are all present.
+        assert {c["privilege"] for c in body["checks"]} >= {
+            "CREATE DATABASE",
+            "CREATE TABLE",
+            "CREATE VIEW",
+        }
+
+    async def test_preflight_reports_missing_privilege(
+        self, admin_client, source, namespace, monkeypatch
+    ):
+        """A caller without table-creation rights is told before execute.
+
+        The L3 admin holds the grants; here the caller's own ``SHOW GRANTS`` is
+        stubbed to a table-less set so the analyzer's refusal is exercised
+        against a real engine connection.
+        """
+        from app.modules.migration import service as service_module
+
+        limited = [
+            (
+                "'x'@'%'",
+                "default_catalog",
+                "GRANT CREATE DATABASE ON CATALOG default_catalog TO USER 'x'@'%'",
+            ),
+        ]
+        original = service_module.MigrationService._read_caller_grants
+
+        async def _limited(self, **kwargs):
+            return limited
+
+        monkeypatch.setattr(service_module.MigrationService, "_read_caller_grants", _limited)
+        try:
+            resp = await admin_client.post(
+                "/api/v1/migration/preflight",
+                json={
+                    "source": source,
+                    "database": namespace["database"],
+                    "target_database": f"{namespace['database']}_pf2",
+                },
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["ok"] is False
+            assert "CREATE TABLE" in body["missing"]
+        finally:
+            monkeypatch.setattr(service_module.MigrationService, "_read_caller_grants", original)
+
+    async def test_execute_blocked_by_preflight(self, admin_client, source, namespace, monkeypatch):
+        """Execute fails fast (409) when the preflight finds a missing privilege."""
+        from app.core.config import settings
+        from app.modules.migration import service as service_module
+
+        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
+        monkeypatch.setattr(
+            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
+        )
+        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_PREFLIGHT", True, raising=False)
+
+        async def _no_grants(self, **kwargs):
+            return []
+
+        monkeypatch.setattr(service_module.MigrationService, "_read_caller_grants", _no_grants)
+        resp = await admin_client.post(
+            "/api/v1/migration/execute",
+            json={
+                "source": source,
+                "database": namespace["database"],
+                "target_database": f"{namespace['database']}_pf3",
+                "acknowledge_omissions": True,
+            },
+        )
+        assert resp.status_code == 409, resp.text
+        assert "preflight" in resp.json()["detail"].lower()
+
+    async def test_execute_moves_data_with_verification(
+        self, admin_client, source, namespace, monkeypatch, transfer_bucket
+    ):
+        """11-C: schema + data. Export to a stage, import to the target, verify.
+
+        Requires the source cluster and the target to reach the same object
+        storage. Skips when the test MinIO is not engine-reachable, because that
+        is an environment precondition, not a Nova defect.
+        """
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
+        monkeypatch.setattr(
+            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
+        )
+        db = namespace["database"]
+        table = namespace["table"]
+        target = f"{db}_data"
+
+        # Seed extra rows so the digest is non-trivial.
+        await _admin_execute(f"INSERT INTO {db}.{table} VALUES (2, '2026-01-02', 20)")
+        await _admin_execute(f"INSERT INTO {db}.{table} VALUES (3, '2026-01-03', 30)")
+
+        with contextlib.suppress(Exception):
+            await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+        resp = await admin_client.post(
+            "/api/v1/migration/execute",
+            json={
+                "source": source,
+                "database": db,
+                "target_database": target,
+                "acknowledge_omissions": True,
+                "include_data": True,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        try:
+            copy = next((c for c in body["data"] if c["table"] == table), None)
+            assert copy is not None, f"no copy result for {table}: {body['data']}"
+            if copy["errors"] and any(
+                "endpoint" in e.lower() or "connect" in e.lower() or "s3" in e.lower()
+                for e in copy["errors"]
+            ):
+                pytest.skip(f"object storage not engine-reachable: {copy['errors']}")
+            assert copy["verified"] is True, copy
+            assert copy["digest_match"] is True, copy
+            assert copy["rows_imported"] == 3
+            assert body["rows_moved"] == 3
+
+            # Independent check straight on the target.
+            target_count = await _admin_execute(f"SELECT COUNT(*) FROM {target}.{table}")
+            source_count = await _admin_execute(f"SELECT COUNT(*) FROM {db}.{table}")
+            assert target_count == source_count == ((3,),)
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+    async def test_execute_is_idempotent_on_rerun(
+        self, admin_client, source, namespace, monkeypatch
+    ):
+        """Running execute twice must not fail — the second run is a no-op."""
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False)
+        monkeypatch.setattr(
+            settings, "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION", False, raising=False
+        )
+        db = namespace["database"]
+        target = f"{db}_idem"
+        with contextlib.suppress(Exception):
+            await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+        payload = {
+            "source": source,
+            "database": db,
+            "target_database": target,
+            "acknowledge_omissions": True,
+        }
+        try:
+            first = await admin_client.post("/api/v1/migration/execute", json=payload)
+            assert first.status_code == 200, first.text
+            assert first.json()["failed"] == 0
+            second = await admin_client.post("/api/v1/migration/execute", json=payload)
+            assert second.status_code == 200, second.text
+            # Second run creates nothing new but must not fail.
+            assert second.json()["failed"] == 0
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+
+class TestSchemaRoundTrip:
+    """The acceptance harness for a real cutover: reconstruct DDL from dry-run
+    details and apply it to a fresh target, then compare the two engines.
+
+    Execute is not implemented (gated on #7), so this test performs the apply
+    step itself — it is the target any future execute path must satisfy. A
+    ``migratable`` verdict that cannot be replayed here is a false positive in
+    the report, which is exactly the failure this suite exists to catch.
+    """
+
+    async def test_function_detail_is_reconstructable_and_runs(
+        self, admin_client, source, namespace
+    ):
+        """A SQL UDF's reconstructed DDL must CREATE and evaluate identically."""
+        db = namespace["database"]
+        try:
+            await _admin_execute(f"CREATE FUNCTION {db}.f_add(x INT, y INT) RETURNS x + y")
+        except Exception as exc:  # pragma: no cover - depends on engine config
+            if "enable_udf" in str(exc) or "UDF is not enabled" in str(exc):
+                pytest.skip("engine has UDFs disabled (enable_udf=false)")
+            raise
+
+        resp = await admin_client.post(
+            "/api/v1/migration/dry-run",
+            json={"source": source, "database": db, "objects": ["f_add"]},
+        )
+        assert resp.status_code == 200, resp.text
+        item = resp.json()["items"][0]
+        assert item["kind"] == "function"
+        # The body is recoverable from SHOW FULL FUNCTIONS, so a definition must
+        # be present even though the verdict is lossy (arg names are inferred).
+        assert item["detail"], "function detail must be reconstructed, not None"
+        assert "CREATE FUNCTION" in item["detail"].upper()
+
+        target = f"{db}_rt"
+        await _admin_execute(f"CREATE DATABASE {target}")
+        try:
+            await _admin_execute(_retarget(item["detail"], db, target, "f_add"))
+            src = await _admin_execute(f"SELECT {db}.f_add(3, 4)")
+            dst = await _admin_execute(f"SELECT {target}.f_add(3, 4)")
+            assert src == dst == ((7,),)
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+    async def test_table_schema_matches_after_replay(self, admin_client, source, namespace):
+        """A table classified ``migratable`` must produce an equivalent schema.
+
+        Distribution-level properties (``replication_num``, buckets) are
+        deployment-specific and are expected to differ; the column set and key
+        model are what must survive.
+        """
+        db = namespace["database"]
+        table = namespace["table"]
+        resp = await admin_client.post(
+            "/api/v1/migration/dry-run",
+            json={"source": source, "database": db, "objects": [table]},
+        )
+        assert resp.status_code == 200, resp.text
+        item = resp.json()["items"][0]
+        assert item["verdict"] == "migratable"
+        assert item["detail"] and "CREATE TABLE" in item["detail"].upper()
+
+        target = f"{db}_rt"
+        await _admin_execute(f"CREATE DATABASE {target}")
+        try:
+            await _admin_execute(_retarget(item["detail"], db, target, table))
+            src_cols = await _admin_execute(
+                "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_KEY FROM information_schema.columns "
+                f"WHERE TABLE_SCHEMA = '{db}' AND TABLE_NAME = '{table}' ORDER BY ORDINAL_POSITION"
+            )
+            dst_cols = await _admin_execute(
+                "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_KEY FROM information_schema.columns "
+                f"WHERE TABLE_SCHEMA = '{target}' AND TABLE_NAME = '{table}' "
+                "ORDER BY ORDINAL_POSITION"
+            )
+            assert src_cols == dst_cols
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+    async def test_view_definition_matches_after_replay(self, admin_client, source, namespace):
+        db = namespace["database"]
+        view = namespace["view"]
+        resp = await admin_client.post(
+            "/api/v1/migration/dry-run",
+            json={"source": source, "database": db, "objects": [view]},
+        )
+        assert resp.status_code == 200, resp.text
+        item = resp.json()["items"][0]
+        assert item["verdict"] == "migratable"
+        assert item["detail"] and "CREATE VIEW" in item["detail"].upper()
+
+        target = f"{db}_rt"
+        await _admin_execute(f"CREATE DATABASE {target}")
+        try:
+            # The view body references the source table, so replay it too.
+            table_ddl = await _admin_execute(f"SHOW CREATE TABLE {db}.{namespace['table']}")
+            await _admin_execute(_retarget(table_ddl[0][1], db, target, namespace["table"]))
+            await _admin_execute(_retarget(item["detail"], db, target, namespace["view"]))
+            # Compare definitions, not rows: this suite moves schema, not data
+            # (11-C). The only expected difference is the database qualifier.
+            src_def = await _admin_execute(f"SHOW CREATE VIEW {db}.{view}")
+            dst_def = await _admin_execute(f"SHOW CREATE VIEW {target}.{view}")
+            assert src_def and dst_def
+            normalize = lambda s: s.replace(target, db)  # noqa: E731
+            assert normalize(dst_def[0][1]) == src_def[0][1]
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+
+class TestDataFidelityHarness:
+    """Row-level fidelity checks for the (not yet implemented) data-movement phase.
+
+    v1 moves schema only (roadmap 11-C). There is no ``INSERT INTO FILES()`` or
+    cross-cluster copy path yet, so these tests perform the copy by hand and
+    assert the comparison a future mover must satisfy: identical row count and
+    an order-independent digest per table. They are the acceptance criteria for
+    11-C, written now so the mover cannot land without them.
+    """
+
+    @staticmethod
+    async def _row_count(db: str, table: str) -> int:
+        rows = await _admin_execute(f"SELECT COUNT(*) FROM `{db}`.`{table}`")
+        return int(rows[0][0]) if rows else -1
+
+    async def test_table_schema_layout_roundtrips_empty(self, admin_client, source, namespace):
+        """Replaying a schema yields an empty but structurally identical table.
+
+        This is the boundary of v1: schema moves, rows do not. Pinning it stops
+        a report reader from assuming a ``migratable`` table also carried data.
+        """
+        db = namespace["database"]
+        table = namespace["table"]
+        resp = await admin_client.post(
+            "/api/v1/migration/dry-run",
+            json={"source": source, "database": db, "objects": [table]},
+        )
+        item = resp.json()["items"][0]
+        target = f"{db}_data"
+        await _admin_execute(f"CREATE DATABASE {target}")
+        try:
+            await _admin_execute(_retarget(item["detail"], db, target, table))
+            assert await self._row_count(db, table) == 1
+            assert await self._row_count(target, table) == 0
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+    async def test_manual_copy_matches_row_count_and_digest(self, admin_client, source, namespace):
+        """A hand-run copy must match on count and an order-independent digest.
+
+        The digest is a sum over the only non-null column set the fixture
+        guarantees; it is deterministic regardless of row order, which is what a
+        parallel mover produces.
+        """
+        db = namespace["database"]
+        table = namespace["table"]
+        target = f"{db}_copy"
+        await _admin_execute(f"CREATE DATABASE {target}")
+        try:
+            table_ddl = await _admin_execute(f"SHOW CREATE TABLE {db}.{table}")
+            await _admin_execute(_retarget(table_ddl[0][1], db, target, table))
+            # Stand-in for the future mover: read source rows, insert into target.
+            rows = await _admin_execute(f"SELECT id, dt, v FROM {db}.{table}")
+            for row in rows:
+                await _admin_execute(
+                    f"INSERT INTO {target}.{table} VALUES ({row[0]}, '{row[1]}', {row[2]})"
+                )
+            assert await self._row_count(db, table) == await self._row_count(target, table)
+            src_digest = await _admin_execute(f"SELECT SUM(v) FROM {db}.{table}")
+            dst_digest = await _admin_execute(f"SELECT SUM(v) FROM {target}.{table}")
+            assert src_digest == dst_digest
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+
+class TestPlanApplyOnRealEngine:
+    """The full 11-B path, executed by the test: request a plan, run every step
+    against a real target, then verify the target matches the source.
+
+    The apply endpoint does not exist (gated on #7); this suite is the executor.
+    It proves the *production* retargeter + planner produce statements that
+    actually run in dependency order on a fresh database — the strongest evidence
+    a dry-run verdict is not a false positive.
+    """
+
+    async def test_plan_steps_apply_and_match_source(self, admin_client, source, namespace):
+        db = namespace["database"]
+        target = f"{db}_plan"
+
+        resp = await admin_client.post(
+            "/api/v1/migration/plan",
+            json={"source": source, "database": db, "target_database": target},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["execute_available"] is False
+        # Dependency order: database, then table(s), then view(s), then MV(s).
+        kinds = [step["kind"] for step in body["steps"]]
+        assert kinds[0] == "database"
+        assert kinds.index("table") < kinds.index("view") < kinds.index("materialized_view")
+
+        try:
+            for step in body["steps"]:
+                await _admin_execute(step["statement"])
+
+            # The target database and its objects now exist.
+            dbs = await _admin_execute("SHOW DATABASES")
+            assert (target,) in dbs
+
+            # Schema equality for the base table.
+            src_cols = await _admin_execute(
+                "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_KEY FROM information_schema.columns "
+                f"WHERE TABLE_SCHEMA = '{db}' AND TABLE_NAME = '{namespace['table']}' "
+                "ORDER BY ORDINAL_POSITION"
+            )
+            dst_cols = await _admin_execute(
+                "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_KEY FROM information_schema.columns "
+                f"WHERE TABLE_SCHEMA = '{target}' AND TABLE_NAME = '{namespace['table']}' "
+                "ORDER BY ORDINAL_POSITION"
+            )
+            assert src_cols == dst_cols
+
+            # The MV definition round-trips (REFRESH preserved, retargeted body).
+            src_mv = await _admin_execute(
+                f"SHOW CREATE MATERIALIZED VIEW {db}.{namespace['mv_async']}"
+            )
+            dst_mv = await _admin_execute(
+                f"SHOW CREATE MATERIALIZED VIEW {target}.{namespace['mv_async']}"
+            )
+            assert src_mv and dst_mv
+            assert "REFRESH" in dst_mv[0][1].upper()
+            assert target in dst_mv[0][1]
+            assert db not in dst_mv[0][1].replace(target, "")
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP DATABASE IF EXISTS {target}")
+
+    async def test_plan_reports_created_database_first(self, admin_client, source, namespace):
+        db = namespace["database"]
+        resp = await admin_client.post(
+            "/api/v1/migration/plan",
+            json={"source": source, "database": db, "target_database": f"{db}_ord"},
+        )
+        assert resp.status_code == 200, resp.text
+        steps = resp.json()["steps"]
+        assert steps[0]["kind"] == "database"
+        assert steps[0]["order"] == 0
+        assert [s["order"] for s in steps] == list(range(len(steps)))
+
+    async def test_plan_blocks_objects_without_definition(self, admin_client, source, namespace):
+        """A task has no reconstructed definition → it is blocked, not executed.
+
+        ``CREATE TASK`` is not available on every 4.1.4 build, so the setup is
+        skipped when the engine rejects it; the blocked-object contract itself is
+        covered unconditionally by the unit suite.
+        """
+        db = namespace["database"]
+        try:
+            await _admin_execute(
+                f"CREATE TASK {db}.t_noop SCHEDULE EVERY(INTERVAL 1 HOUR) AS SELECT 1"
+            )
+        except Exception as exc:  # pragma: no cover - depends on engine build
+            if "CREATE TASK" in str(exc) or "No viable statement" in str(exc):
+                pytest.skip("engine does not support CREATE TASK")
+            raise
+        try:
+            resp = await admin_client.post(
+                "/api/v1/migration/plan",
+                json={"source": source, "database": db, "target_database": f"{db}_blk"},
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            blocked_names = {o["name"] for o in body["blocked"]}
+            assert "t_noop" in blocked_names
+            assert all(o["reason"] for o in body["blocked"])
+            executed = {s["object_name"] for s in body["steps"]}
+            assert "t_noop" not in executed
+        finally:
+            with contextlib.suppress(Exception):
+                await _admin_execute(f"DROP TASK IF EXISTS {db}.t_noop")

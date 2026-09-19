@@ -79,6 +79,17 @@ class StageSummary(BaseModel):
     created_at: datetime | None = None
 
 
+class TaskSummary(BaseModel):
+    """A Nova ``CREATE TASK`` definition, credential-invisible (no body)."""
+
+    id: str | None = None
+    name: str
+    schedule_kind: str | None = None
+    schedule_expr: str | None = None
+    timezone: str | None = None
+    overlap_policy: str | None = None
+
+
 class DatabaseObjectsResponse(BaseModel):
     """All objects inside a database for the explorer tree."""
 
@@ -89,6 +100,7 @@ class DatabaseObjectsResponse(BaseModel):
     functions: list[FunctionSummary]
     pipes: list[PipeSummary]
     stages: list[StageSummary]
+    tasks: list[TaskSummary] = Field(default_factory=list)
     summary: dict[str, int] = Field(default_factory=dict)
 
 

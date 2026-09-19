@@ -18,8 +18,11 @@ The rules are deliberately conservative and are grounded in the NOVA-84 research
   VIEW`` (which carries ``REFRESH``/``PARTITION BY``/``PROPERTIES``); **sync**
   MVs stay ``lossy`` on every surface because that statement only emits
   ``CREATE MATERIALIZED VIEW ... AS SELECT``.
-* UDFs reconstructed from ``SHOW FULL FUNCTIONS`` are ``lossy`` when they carry a
-  non-native body (Java/Python jar) the column set cannot reproduce.
+* UDFs are ``lossy`` on every surface. Native SQL bodies are reconstructable
+  from ``SHOW FULL FUNCTIONS`` (the body is in the ``Properties`` column) but the
+  argument *names* are not exposed by any surface and are inferred from the body,
+  so the result may differ; non-native (Java/Python jar) bodies cannot be carried
+  at all.
 * ``ACCOUNTADMIN`` is never offered for replication.
 * ``replication_num`` / bucketing are deployment-specific and are remapped rather
   than copied; a table is still ``migratable`` (data + schema), and this is
@@ -30,6 +33,7 @@ The module imports nothing from infrastructure so it stays trivially testable.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from app.modules.migration.schemas import MigrationVerdict, ObjectKind
@@ -66,14 +70,15 @@ REASON_ROW_ACCESS_NO_DDL = (
     "ROW ACCESS POLICY has no DDL export in StarRocks 4.1.4; the policy cannot "
     "be carried to Nova and would be lost without an explicit skip."
 )
-REASON_TASK_NO_SHOW_CREATE = (
-    "TASK has no SHOW CREATE in StarRocks 4.1.4; Nova reconstructs a partial "
-    "definition from information_schema, so the original SQL and properties are "
-    "lossy."
+REASON_TASK_RECONSTRUCTED = (
+    "TASK has no SHOW CREATE in StarRocks 4.1.4; Nova reconstructs CREATE TASK "
+    "from information_schema.tasks (SCHEDULE + DEFINITION). Properties and the "
+    "exact original statement may differ, so the definition is lossy."
 )
 REASON_PIPE_NO_SHOW_CREATE = (
-    "PIPE has no SHOW CREATE in StarRocks 4.1.4; Nova reconstructs the DDL from "
-    "information_schema properties, and the original SELECT body is lossy."
+    "PIPE has no SHOW CREATE in StarRocks 4.1.4, and information_schema.pipes "
+    "exposes only properties/state with no SELECT body, so the ingest definition "
+    "cannot be reconstructed and is not offered for migration."
 )
 REASON_SYNC_MV_LOSSY = (
     "Sync materialized view: SHOW CREATE MATERIALIZED VIEW emits only "
@@ -89,10 +94,18 @@ REASON_TABLE_MIGRATABLE = (
     "for the target cluster."
 )
 REASON_VIEW_MIGRATABLE = "View definition migrates via SHOW CREATE VIEW."
-REASON_FUNCTION_MIGRATABLE = "Native SQL function definition migrates via its reconstructed DDL."
+REASON_FUNCTION_MIGRATABLE = (
+    "Native SQL function: the body is recoverable from SHOW FULL FUNCTIONS."
+)
 REASON_FUNCTION_LOSSY = (
     "Function body is non-native (jar/UDF payload) and is not carried by the "
     "SHOW FULL FUNCTIONS column set, so the definition is lossy."
+)
+REASON_SQL_FUNCTION_ARG_NAMES_LOSSY = (
+    "SQL function: StarRocks 4.1.4 has no SHOW CREATE FUNCTION and the "
+    "SHOW FULL FUNCTIONS signature carries argument types only, so argument "
+    "names are reconstructed from the body's backticked identifiers and may "
+    "differ from the original definition."
 )
 
 #: Distribution/bucketing properties that are deployment-specific. They do not
@@ -127,13 +140,110 @@ def classify_materialized_view(refresh_type: str | None) -> Verdict:
 
 
 def classify_function(function_type: str | None) -> Verdict:
+    """Classify a UDF.
+
+    Only native SQL bodies are reconstructable, and even then the argument names
+    are inferred rather than read (no ``SHOW CREATE FUNCTION`` exists on 4.1.4),
+    so the verdict is ``lossy`` with an explicit reason. A jar/payload body
+    (Java/Python) cannot be carried at all and is ``lossy`` for a different
+    reason. Neither is ever reported ``migratable``: the operator must see that
+    the function needs review.
+    """
     if function_type and function_type.upper() in NATIVE_FUNCTION_TYPES:
-        return _migratable(REASON_FUNCTION_MIGRATABLE)
+        return _lossy(REASON_SQL_FUNCTION_ARG_NAMES_LOSSY)
     return _lossy(REASON_FUNCTION_LOSSY)
 
 
+#: The identifier form StarRocks emits for an SQL UDF argument in the body.
+_ARG_IDENTIFIER = re.compile(r"`([^`]+)`")
+
+
+def reconstruct_sql_function_ddl(
+    *,
+    name: str,
+    signature: str | None,
+    body: str | None,
+    scope: str = "database",
+) -> str | None:
+    """Rebuild a ``CREATE [GLOBAL] FUNCTION`` for an SQL UDF, or ``None``.
+
+    StarRocks 4.1.4 exposes no ``SHOW CREATE FUNCTION``; the only definition
+    surface is ``SHOW FULL FUNCTIONS``, whose ``Signature`` carries argument
+    *types* (``f_add(INT,INT)``) and whose ``Properties`` carries the body
+    (``"`x` + `y`"``). The argument *names* are not exposed anywhere, so they are
+    recovered from the body's backticked identifiers in first-appearance order —
+    which is how the engine itself references them.
+
+    This is deliberately best-effort: if the identifier count cannot cover the
+    signature arity, ``None`` is returned rather than a statement that would fail
+    or silently differ. The caller reports the function as ``lossy`` regardless.
+    """
+    if not name or not signature or not body:
+        return None
+    open_paren = signature.find("(")
+    close_paren = signature.rfind(")")
+    if open_paren < 0 or close_paren < open_paren:
+        return None
+    arg_types = [part.strip() for part in signature[open_paren + 1 : close_paren].split(",")]
+    arg_types = [part for part in arg_types if part]
+    if not arg_types:
+        return None
+
+    names: list[str] = []
+    for match in _ARG_IDENTIFIER.finditer(body):
+        candidate = match.group(1)
+        if candidate not in names:
+            names.append(candidate)
+    if len(names) < len(arg_types):
+        return None
+
+    args_sql = ", ".join(
+        f"`{arg_name}` {arg_type}" for arg_name, arg_type in zip(names, arg_types, strict=False)
+    )
+    prefix = "GLOBAL " if scope == "global" else ""
+    qualified = f"`{name}`" if scope == "global" else f"`{name}`"
+    return f"CREATE {prefix}FUNCTION {qualified}({args_sql}) RETURNS {body}"
+
+
 def classify_task() -> Verdict:
-    return _lossy(REASON_TASK_NO_SHOW_CREATE)
+    """A TASK is reconstructed from ``information_schema.tasks``.
+
+    ``SCHEDULE`` and ``DEFINITION`` are both exposed, so a ``CREATE TASK`` can be
+    rebuilt. It stays ``lossy``: ``PROPERTIES`` and the exact original statement
+    are not all carried, and the reconstruction is best-effort.
+    """
+    return _lossy(REASON_TASK_RECONSTRUCTED)
+
+
+def reconstruct_task_ddl(
+    *,
+    name: str,
+    schedule: str | None,
+    definition: str | None,
+    properties: str | None = None,
+) -> str | None:
+    """Rebuild a ``CREATE TASK`` from ``information_schema.tasks``, or ``None``.
+
+    ``definition`` is the SQL body and ``schedule`` the cadence. Both are
+    required: a task without a body or a schedule is not reproducible, and Nova
+    returns ``None`` rather than emitting an invalid statement. ``properties`` is
+    carried when present, verbatim.
+    """
+    if not name or not definition or not schedule:
+        return None
+    schedule = schedule.strip()
+    body = definition.strip().rstrip(";")
+    if not schedule or not body:
+        return None
+    # The engine stores the schedule already in its clause form
+    # (e.g. "EVERY(INTERVAL 1 HOUR)"); use it as-is rather than re-parsing.
+    properties_sql = ""
+    if properties and properties.strip() and properties.strip().upper() != "NULL":
+        raw = properties.strip()
+        properties_sql = (
+            f"\nPROPERTIES ({raw})" if not raw.startswith("(") else f"\nPROPERTIES {raw}"
+        )
+    return f"CREATE TASK `{name}`\nSCHEDULE {schedule}{properties_sql}\nAS {body}"
 
 
 def classify_pipe() -> Verdict:

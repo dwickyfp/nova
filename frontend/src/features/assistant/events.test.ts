@@ -34,6 +34,39 @@ describe('parseAssistantEvent', () => {
     })
   })
 
+  it('parses a thinking frame', () => {
+    expect(
+      parseAssistantEvent(
+        'thinking',
+        JSON.stringify({ phase: 'skill', text: 'Loading skill: create-table', status: 'done' })
+      )
+    ).toEqual({
+      type: 'thinking',
+      phase: 'skill',
+      text: 'Loading skill: create-table',
+      status: 'done',
+    })
+  })
+
+  it('rejects an unknown thinking phase or status', () => {
+    expect(parseAssistantEvent('thinking', '{"phase":"x","text":"t","status":"done"}')).toBeNull()
+    expect(parseAssistantEvent('thinking', '{"phase":"act","text":"t","status":"x"}')).toBeNull()
+  })
+
+  it('parses a plan frame and rejects a malformed step', () => {
+    expect(
+      parseAssistantEvent(
+        'plan',
+        JSON.stringify({ steps: [{ id: 'a', text: 'Understand', status: 'running' }] })
+      )
+    ).toEqual({
+      type: 'plan',
+      steps: [{ id: 'a', text: 'Understand', status: 'running' }],
+    })
+    expect(parseAssistantEvent('plan', '{"steps":[{"id":"a"}]}')).toBeNull()
+    expect(parseAssistantEvent('plan', '{"steps":"nope"}')).toBeNull()
+  })
+
   it('parses a tool status transition', () => {
     expect(
       parseAssistantEvent('tool_status', JSON.stringify({ tool_call_id: 'tc-1', status: 'running' }))

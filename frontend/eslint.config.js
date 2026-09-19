@@ -44,6 +44,10 @@ export default tseslint.config(
         'warn',
         { allowConstantExport: true },
       ],
+      // Catches a hook called conditionally (e.g. a chained `a ?? useHook()`
+      // short-circuit). That class of bug crashed WorkspacesPage with
+      // "change in the order of Hooks"; the rule is enabled so it cannot recur.
+      'react-hooks/rules-of-hooks': 'error',
       '@typescript-eslint/no-unused-vars': [
         'error',
         {

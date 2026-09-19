@@ -1,14 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import type { AttachedQuery } from './query-attach'
 import type { AssistantEvent } from './types'
 import { useAssistantConversation } from './use-assistant-conversation'
+
+const attachment: AttachedQuery = {
+  id: 'att-1',
+  sql: 'select * from NOVA_ANALYTICS.default.channel_performance',
+  tabId: 'tab-1',
+  fileName: 'Untitled-2.sql',
+  database: 'NOVA_ANALYTICS',
+  schema: 'default',
+  role: 'ACCOUNTADMIN',
+  startLine: 1,
+  endLine: 2,
+  createdAt: 0,
+}
 
 const streamAssistantTurn = vi.fn()
 const resetGrant = vi.fn()
 
 vi.mock('./thread-client', () => ({
   createThread: vi.fn(),
+  getThread: vi.fn(),
   resetGrant: (...args: unknown[]) => resetGrant(...args),
+  setGrant: vi.fn(async () => true),
 }))
 
 vi.mock('./stream-client', async () => {
@@ -39,7 +55,15 @@ function Harness({
     retainOnLeave,
   })
   holder.current = conversation
-  return <span data-testid='count'>{conversation.messages.length}</span>
+  const user = conversation.messages.find((message) => message.role === 'user')
+  return (
+    <span>
+      <span data-testid='count'>{conversation.messages.length}</span>
+      <span data-testid='attachment-count'>{user?.attachments?.length ?? 0}</span>
+      <span data-testid='display-text'>{user?.display_text ?? ''}</span>
+      <span data-testid='content'>{user?.content ?? ''}</span>
+    </span>
+  )
 }
 
 function echoStream() {
@@ -147,5 +171,20 @@ describe('useAssistantConversation', () => {
 
     await view.rerender(<Harness holder={holder} bindingKey='file-1' ensureThread={async () => 'thread-a'} />)
     await expect.element(view.getByTestId('count')).toHaveTextContent('2')
+  })
+
+  it('keeps attachments and the typed text on the stored user message', async () => {
+    echoStream()
+    const holder: { current: Conversation | null } = { current: null }
+    const view = await render(
+      <Harness holder={holder} bindingKey='file-1' ensureThread={async () => 'thread-a'} />
+    )
+
+    await holder.current!.sendMessage('change it', [attachment])
+
+    await expect.element(view.getByTestId('attachment-count')).toHaveTextContent('1')
+    await expect.element(view.getByTestId('display-text')).toHaveTextContent('change it')
+    // The model still receives the serialized preamble.
+    await expect.element(view.getByTestId('content')).toHaveTextContent('[Attached query')
   })
 })

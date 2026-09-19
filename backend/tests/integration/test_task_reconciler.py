@@ -44,13 +44,13 @@ from app.modules.task_orchestration.repository import (
 )
 from tests.integration._nova_system_ddl import ensure_audit_log
 from tests.integration._stack import (
+    engine_port,
     require_shared_stack,
-    shared_stack_host_port,
 )
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
-SR_PORT = _EXPLICIT_PORT or shared_stack_host_port("NOVA_TEST_FE_MYSQL_PORT", 29030)
+SR_PORT = engine_port(_EXPLICIT_PORT, "NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
 SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
 _USE_SHARED_STACK = _EXPLICIT_PORT is None
@@ -122,6 +122,12 @@ async def engine_infra(request):
 @pytest_asyncio.fixture
 async def cleanup_runs(engine_infra):
     created: dict[str, list[str]] = {"graph": [], "task": []}
+    await db.execute_system(
+        "CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.NOVA_RECONCILE_PROBE ("
+        " id INT NOT NULL"
+        ") PRIMARY KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 "
+        'PROPERTIES("replication_num"="1")'
+    )
     yield created
     for run in created["graph"]:
         for node in await repo.list_task_runs(run):
@@ -129,6 +135,7 @@ async def cleanup_runs(engine_infra):
         await repo.delete_graph_run(run)
     for task in created["task"]:
         await repo.delete_task(task)
+    await db.execute_system("DROP TABLE IF EXISTS NOVA_SYSTEM.NOVA_RECONCILE_PROBE")
 
 
 @pytest_asyncio.fixture
@@ -273,7 +280,7 @@ class TestLostTraceAgainstEngine:
             {
                 "name": name,
                 "timezone": "UTC",
-                "definition": "INSERT INTO NOVA_SYSTEM.nova_reconcile_probe SELECT 1",
+                "definition": "INSERT INTO NOVA_SYSTEM.NOVA_RECONCILE_PROBE SELECT 1",
                 "database_name": "NOVA_SYSTEM",
                 "schedule_kind": "manual",
             },
@@ -322,7 +329,7 @@ class TestLostTraceAgainstEngine:
             {
                 "name": name,
                 "timezone": "UTC",
-                "definition": "INSERT INTO NOVA_SYSTEM.nova_reconcile_probe SELECT 1",
+                "definition": "INSERT INTO NOVA_SYSTEM.NOVA_RECONCILE_PROBE SELECT 1",
                 "database_name": "NOVA_SYSTEM",
                 "schedule_kind": "manual",
             },
@@ -665,7 +672,7 @@ class TestAutoPauseThresholdAgainstEngine:
             {
                 "name": name,
                 "timezone": "UTC",
-                "definition": "INSERT INTO NOVA_SYSTEM.nova_reconcile_probe SELECT 1",
+                "definition": "INSERT INTO NOVA_SYSTEM.NOVA_RECONCILE_PROBE SELECT 1",
                 "database_name": "NOVA_SYSTEM",
                 "schedule_kind": "manual",
             },
@@ -731,7 +738,7 @@ class TestLostTraceSettlesThroughWorkerService:
             {
                 "name": name,
                 "timezone": "UTC",
-                "definition": "INSERT INTO NOVA_SYSTEM.nova_reconcile_probe SELECT 1",
+                "definition": "INSERT INTO NOVA_SYSTEM.NOVA_RECONCILE_PROBE SELECT 1",
                 "database_name": "NOVA_SYSTEM",
                 "schedule_kind": "manual",
             },
@@ -753,12 +760,6 @@ class TestLostTraceSettlesThroughWorkerService:
                 "state": "running",
                 "delegated": True,
             }
-        )
-        await db.execute_system(
-            "CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.nova_reconcile_probe ("
-            " id INT NOT NULL"
-            ") PRIMARY KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 "
-            'PROPERTIES("replication_num"="1")'
         )
 
         executor = DelegateExecutor(

@@ -158,10 +158,19 @@ class Reconciler:
         )
 
     async def scan(self) -> ReconcileReport:
-        """Find work the stream may have lost. Pure reads, no writes."""
+        """Find work the stream may have lost. Pure reads, no writes.
+
+        Only genuinely **pending** runs are re-enqueued: a ``running`` run is
+        being executed by a live worker (or is covered by the heartbeat path
+        below), so re-enqueueing it would just create delivery churn. Splitting
+        the two also removes a starvation window — the previous shared
+        ``["pending", "running"]`` query was ordered oldest-first and capped, so
+        a long-lived ``running`` run could occupy the cap and hide newer
+        ``pending`` runs from recovery.
+        """
         report = ReconcileReport()
 
-        pending = await self._repository.list_graph_runs_by_state(["pending", "running"])
+        pending = await self._repository.list_graph_runs_by_state(["pending"])
         for run in pending:
             report.pending_graph_runs.append(str(run["id"]))
 

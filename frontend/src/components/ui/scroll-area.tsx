@@ -14,10 +14,12 @@ function ScrollArea({
   className,
   children,
   orientation = 'vertical',
+  ref,
   ...props
 }: ScrollAreaProps) {
   return (
     <ScrollAreaPrimitive.Root
+      ref={ref}
       data-slot='scroll-area'
       className={cn('relative', className)}
       {...props}

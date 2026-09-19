@@ -39,7 +39,7 @@ from app.modules.migration.verdicts import (
     REASON_PIPE_NO_SHOW_CREATE,
     REASON_ROW_ACCESS_NO_DDL,
     REASON_SYNC_MV_LOSSY,
-    REASON_TASK_NO_SHOW_CREATE,
+    REASON_TASK_RECONSTRUCTED,
     classify,
 )
 
@@ -60,6 +60,7 @@ class FakeMigrationRepository:
         self.views: dict[str, list[dict[str, Any]]] = {}
         self.materialized_views: dict[str, list[dict[str, Any]]] = {}
         self.functions: dict[str, list[dict[str, Any]]] = {}
+        self.global_functions: list[dict[str, Any]] = []
         self.tasks: dict[str, list[dict[str, Any]]] = {}
         self.pipes: dict[str, list[dict[str, Any]]] = {}
         self.masking_policies: dict[str, list[dict[str, Any]]] = {}
@@ -139,6 +140,9 @@ class FakeMigrationRepository:
     async def list_functions(self, conn, database: str) -> list[dict]:
         return self.functions.get(database, [])
 
+    async def list_global_functions(self, conn) -> list[dict]:
+        return self.global_functions
+
     async def list_tasks(self, conn, database: str) -> list[dict]:
         return self.tasks.get(database, [])
 
@@ -163,6 +167,9 @@ class FakeMigrationRepository:
     async def get_materialized_view_ddl(self, conn, database: str, mv: str) -> str | None:
         self.ddl_calls.append(f"MATERIALIZED_VIEW:{database}.{mv}")
         return self.ddls.get(("materialized_view", database, mv))
+
+    async def target_replication_num(self) -> int | None:
+        return None
 
 
 class RecordingAudit:
@@ -239,8 +246,22 @@ def _seed_all(repo: FakeMigrationRepository, database: str = "db1") -> None:
         {
             "name": "add_one",
             "kind": "function",
-            "signature": "add_one(int)",
-            "function_type": "SCALAR",
+            "signature": "add_one(INT)",
+            "function_type": "SQL",
+            "return_type": "BIGINT",
+            "properties": "`x` + 1",
+            "scope": "database",
+        }
+    ]
+    repo.global_functions = [
+        {
+            "name": "g_upper",
+            "kind": "function",
+            "signature": "g_upper(VARCHAR)",
+            "function_type": "SQL",
+            "return_type": "VARCHAR",
+            "properties": "upper(`s`)",
+            "scope": "global",
         }
     ]
     repo.tasks[database] = [{"name": "t1", "kind": "task"}]
@@ -281,7 +302,7 @@ class TestVerdictRules:
     def test_task_is_lossy_never_migratable(self):
         verdict = classify(ObjectKind.TASK)
         assert verdict.verdict is MigrationVerdict.LOSSY
-        assert verdict.reason == REASON_TASK_NO_SHOW_CREATE
+        assert verdict.reason == REASON_TASK_RECONSTRUCTED
 
     def test_pipe_is_lossy_never_migratable(self):
         verdict = classify(ObjectKind.PIPE)
@@ -305,6 +326,111 @@ class TestVerdictRules:
         assert verdict.verdict is MigrationVerdict.MIGRATABLE
         assert any("replication_num" in note for note in verdict.notes)
 
+    def test_sql_function_is_lossy_not_migratable(self):
+        """No SHOW CREATE FUNCTION exists; arg names are inferred, so lossy."""
+        from app.modules.migration.verdicts import REASON_SQL_FUNCTION_ARG_NAMES_LOSSY
+
+        verdict = classify(ObjectKind.FUNCTION, function_type="SQL")
+        assert verdict.verdict is MigrationVerdict.LOSSY
+        assert verdict.reason == REASON_SQL_FUNCTION_ARG_NAMES_LOSSY
+
+    def test_non_native_function_is_lossy(self):
+        verdict = classify(ObjectKind.FUNCTION, function_type="JAVA")
+        assert verdict.verdict is MigrationVerdict.LOSSY
+
+
+class TestReconstructTaskDdl:
+    def test_reconstructs_schedule_and_body(self):
+        from app.modules.migration.verdicts import reconstruct_task_ddl
+
+        ddl = reconstruct_task_ddl(
+            name="t1",
+            schedule="EVERY(INTERVAL 1 HOUR)",
+            definition="INSERT INTO t SELECT 1",
+        )
+        assert ddl == (
+            "CREATE TASK `t1`\nSCHEDULE EVERY(INTERVAL 1 HOUR)\nAS INSERT INTO t SELECT 1"
+        )
+
+    def test_includes_properties(self):
+        from app.modules.migration.verdicts import reconstruct_task_ddl
+
+        ddl = reconstruct_task_ddl(
+            name="t1",
+            schedule="EVERY(INTERVAL 1 HOUR)",
+            definition="SELECT 1",
+            properties='"session.timeout"="10"',
+        )
+        assert 'PROPERTIES ("session.timeout"="10")' in ddl
+
+    def test_returns_none_without_definition_or_schedule(self):
+        from app.modules.migration.verdicts import reconstruct_task_ddl
+
+        assert (
+            reconstruct_task_ddl(name="t", schedule="EVERY(INTERVAL 1 HOUR)", definition=None)
+            is None
+        )
+        assert reconstruct_task_ddl(name="t", schedule=None, definition="SELECT 1") is None
+
+    def test_task_does_not_need_boolean_ish_extras(self):
+        """A task with schedule + definition is retargetable to a plan step."""
+        from app.modules.migration.planner import PlanCandidate, PlanStepKind, build_plan
+
+        ddl = "CREATE TASK `t1`\nSCHEDULE EVERY(INTERVAL 1 HOUR)\nAS SELECT 1"
+        plan = build_plan(
+            [PlanCandidate("t1", ObjectKind.TASK, MigrationVerdict.LOSSY, ddl)],
+            source_database="src",
+            target_database="tgt",
+        )
+        kinds = [s.kind for s in plan.steps]
+        assert PlanStepKind.TASK in kinds
+        task_step = next(s for s in plan.steps if s.kind is PlanStepKind.TASK)
+        assert "`tgt`.`t1`" in task_step.statement
+
+
+class TestReconstructSqlFunctionDdl:
+    def test_reconstructs_body_and_infers_arg_names(self):
+        from app.modules.migration.verdicts import reconstruct_sql_function_ddl
+
+        ddl = reconstruct_sql_function_ddl(
+            name="f_add",
+            signature="f_add(INT,INT)",
+            body="`x` + `y`",
+            scope="database",
+        )
+        assert ddl == "CREATE FUNCTION `f_add`(`x` INT, `y` INT) RETURNS `x` + `y`"
+
+    def test_reconstructs_global_function(self):
+        from app.modules.migration.verdicts import reconstruct_sql_function_ddl
+
+        ddl = reconstruct_sql_function_ddl(
+            name="g_upper",
+            signature="g_upper(VARCHAR)",
+            body="upper(`s`)",
+            scope="global",
+        )
+        assert ddl == "CREATE GLOBAL FUNCTION `g_upper`(`s` VARCHAR) RETURNS upper(`s`)"
+
+    def test_returns_none_when_body_missing(self):
+        from app.modules.migration.verdicts import reconstruct_sql_function_ddl
+
+        assert reconstruct_sql_function_ddl(name="f", signature="f(INT)", body=None) is None
+
+    def test_returns_none_when_arity_cannot_be_recovered(self):
+        """A body with fewer identifiers than the signature arity is not invented."""
+        from app.modules.migration.verdicts import reconstruct_sql_function_ddl
+
+        assert (
+            reconstruct_sql_function_ddl(name="f", signature="f(INT,INT)", body="`x` + 1") is None
+        )
+
+    async def test_dry_run_populates_function_detail(self, fake_repo, fake_audit):
+        _seed_all(fake_repo)
+        response = await migration_service.dry_run(SOURCE, "db1", ["add_one"], actor="alice")
+        item = response.items[0]
+        assert item.verdict is MigrationVerdict.LOSSY
+        assert item.detail == "CREATE FUNCTION `add_one`(`x` INT) RETURNS `x` + 1"
+
 
 # ── Service: enumeration + dry-run ──────────────────────────────
 
@@ -327,8 +453,18 @@ class TestEnumerate:
     async def test_counts_match_seeded_objects(self, fake_repo, fake_audit):
         _seed_all(fake_repo)
         response = await migration_service.enumerate(SOURCE, "db1")
-        # 1 table + 1 view + 2 MVs + 1 function + 1 task + 1 pipe + 2 policies
-        assert response.count == 9
+        # 1 table + 1 view + 2 MVs + 1 function + 1 global function + 1 task
+        # + 1 pipe + 2 policies
+        assert response.count == 10
+
+    async def test_global_function_is_enumerated(self, fake_repo, fake_audit):
+        """Global SQL UDFs are enumerated once per source, not per database."""
+        _seed_all(fake_repo)
+        response = await migration_service.enumerate(SOURCE, "db1")
+        kinds = {obj.name: obj.kind for obj in response.objects}
+        assert kinds["g_upper"] is ObjectKind.FUNCTION
+        by_name = {obj.name: obj for obj in response.objects}
+        assert by_name["g_upper"].extra.get("scope") == "global"
 
     async def test_unknown_source_fails_closed(self, fake_repo, fake_audit):
         """Finding 1 — an unknown source must raise, never read the local engine."""
@@ -368,12 +504,12 @@ class TestDryRun:
         _seed_all(fake_repo)
         response = await migration_service.dry_run(SOURCE, "db1", [], actor="alice")
         summary = response.summary
-        # orders + v_orders + mv_async + native SCALAR add_one.
-        assert summary.migratable == 4
-        # mv_sync + t1 + p1
-        assert summary.lossy == 3
+        # orders + v_orders + mv_async.
+        assert summary.migratable == 3
+        # mv_sync + t1 + p1 + add_one + g_upper (UDF arg names inferred → lossy).
+        assert summary.lossy == 5
         assert summary.skipped == 2  # mask_email, rap_region
-        assert summary.total == 9
+        assert summary.total == 10
 
     async def test_selection_narrows_items(self, fake_repo, fake_audit):
         _seed_all(fake_repo)
@@ -511,14 +647,16 @@ class TestNoCredentialLeak:
 
 
 class TestHttpContract:
-    def test_capabilities_declares_no_execute(self, client):
+    def test_capabilities_declares_execute_gated(self, client):
         resp = client.get("/api/v1/migration/capabilities")
         assert resp.status_code == 200
         body = resp.json()
+        # Execute exists but is off by default — the gate, not absence, is the
+        # contract now (issue #7).
         assert body["execute_available"] is False
         assert body["source_required"] is True
         assert "dry_run" in body["phases"]
-        assert "execute" not in body["phases"]
+        assert "execute" in body["phases"]
 
     def test_enumerate_endpoint(self, fake_repo, fake_audit, client):
         _seed_all(fake_repo)
@@ -528,7 +666,7 @@ class TestHttpContract:
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["count"] == 9
+        assert body["count"] == 10
         kinds = {o["name"]: o["kind"] for o in body["objects"]}
         assert kinds["mv_async"] == "materialized_view"
 
@@ -553,7 +691,7 @@ class TestHttpContract:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["summary"]["skipped"] == 2
-        assert body["summary"]["lossy"] == 3
+        assert body["summary"]["lossy"] == 5
 
     def test_dry_run_unknown_source_is_404(self, fake_repo, fake_audit, client):
         resp = client.post(
@@ -573,33 +711,74 @@ class TestHttpContract:
         assert client.post("/api/v1/migration/sources", json=payload).status_code == 400
 
 
-# ── Execute is absent (AC6) ─────────────────────────────────────
+# ── Execute is gated (issue #7) ─────────────────────────────────
 
 
-class TestExecuteAbsent:
-    NO_EXECUTE_PATHS = (
-        "/api/v1/migration/execute",
-        "/api/v1/migration/run",
-        "/api/v1/migration/cutover",
-        "/api/v1/migration/start",
-    )
+class TestExecuteGated:
+    """Execute exists but refuses unless the operator opened the gate.
 
-    @pytest.mark.parametrize("path", NO_EXECUTE_PATHS)
-    def test_no_execute_endpoint(self, client, path):
-        assert client.get(path).status_code == 404
-        assert client.post(path, json={}).status_code == 404
+    The gate is ``MIGRATION_EXECUTE_ENABLED`` (default False), the caller must
+    acknowledge omissions, and — when required — confirm the target database
+    name. These tests pin the refusals; a caller cannot reach the engine while
+    the gate is closed.
+    """
 
-    def test_router_has_no_execute_route(self):
-        paths = {getattr(route, "path", "") for route in migration_router.router.routes}
-        # ``/dry-run`` legitimately contains "run"; only execution-shaped
-        # segments are forbidden. Check the path segments, not the substring.
-        forbidden = {"execute", "run", "cutover", "start", "apply", "sync"}
-        for path in paths:
-            segments = {s for s in path.split("/") if s}
-            assert not (segments & forbidden), path
+    PAYLOAD = {
+        "source": SOURCE,
+        "database": "db1",
+        "target_database": "db1",
+        "acknowledge_omissions": True,
+        "confirmation": "db1",
+    }
 
-    def test_no_module_executes_the_engine(self):
-        """The only engine call is a filesystem status check, never a subprocess."""
+    def test_execute_disabled_returns_403(self, fake_repo, fake_audit, client, monkeypatch):
+        from app.modules.migration import service as service_module
+
+        monkeypatch.setattr(
+            service_module.settings, "MIGRATION_EXECUTE_ENABLED", False, raising=False
+        )
+        _seed_all(fake_repo)
+        resp = client.post("/api/v1/migration/execute", json=self.PAYLOAD)
+        assert resp.status_code == 403, resp.text
+        assert "disabled" in resp.json()["detail"].lower()
+
+    def test_execute_requires_acknowledgement(self, fake_repo, fake_audit, client, monkeypatch):
+        from app.modules.migration import service as service_module
+
+        monkeypatch.setattr(
+            service_module.settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False
+        )
+        _seed_all(fake_repo)
+        payload = dict(self.PAYLOAD, acknowledge_omissions=False)
+        resp = client.post("/api/v1/migration/execute", json=payload)
+        assert resp.status_code == 422, resp.text
+
+    def test_execute_requires_target_confirmation(self, fake_repo, fake_audit, client, monkeypatch):
+        from app.modules.migration import service as service_module
+
+        monkeypatch.setattr(
+            service_module.settings, "MIGRATION_EXECUTE_ENABLED", True, raising=False
+        )
+        monkeypatch.setattr(
+            service_module.settings,
+            "MIGRATION_EXECUTE_REQUIRE_CONFIRMATION",
+            True,
+            raising=False,
+        )
+        _seed_all(fake_repo)
+        payload = dict(self.PAYLOAD, confirmation="wrong_name")
+        resp = client.post("/api/v1/migration/execute", json=payload)
+        assert resp.status_code == 422, resp.text
+
+    def test_capabilities_report_gate_state(self, client):
+        body = client.get("/api/v1/migration/capabilities").json()
+        # Execute is declared but its availability reflects the gate.
+        assert "execute" in body["phases"]
+        assert body["execute_gate"] == {"issue": "#7", "name": "backup/restore"}
+        assert body["execute_available"] is False  # default: disabled
+
+    def test_no_module_shells_out(self):
+        """Execution goes through the query pipeline, never a subprocess."""
         import inspect
 
         from app.modules.migration import engine as engine_module

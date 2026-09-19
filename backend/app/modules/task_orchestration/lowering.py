@@ -63,20 +63,23 @@ async def persist_lowered_task(
     ``created_by`` and therefore the identity the worker submits ``SUBMIT TASK``
     as (delegate-first, design D9.4). No password is accepted or stored.
 
-    ``graph_id`` defaults to the task name, matching the existing convention
-    where a task's own name identifies its graph. The edges are written first so
-    the merged graph is complete when it is validated.
+    ``graph_id`` defaults to the task's **qualified** name
+    (``database.schema.name``), so a graph's identity is unique across schemas:
+    two schemas may each hold a task named ``etl_daily`` without their edges
+    colliding. The edges are written first so the merged graph is complete when
+    it is validated.
 
     Raises :class:`TaskLoweringError` when the merged graph would contain a
     cycle, after removing the rows this call created so a rejected statement
     leaves no partial task behind.
     """
-    graph_key = graph_id or task.name
+    graph_key = graph_id or task.qualified_name
 
     created_task = await task_orchestration_repository.create_task(
         {
             "name": task.name,
             "database_name": task.database_name,
+            "schema_name": task.schema_name,
             "definition": task.body,
             "schedule_kind": task.schedule_kind,
             "schedule_expr": task.schedule_expr,
@@ -116,7 +119,7 @@ async def persist_lowered_task(
                 )
             )
 
-        await _validate_merged_graph(graph_key, task.name)
+        await _validate_merged_graph(graph_key, task.name, (task.database_name, task.schema_name))
     except GraphValidationError as exc:
         await _rollback(created_task, created_edges)
         raise TaskLoweringError(str(exc)) from exc
@@ -127,7 +130,9 @@ async def persist_lowered_task(
     return PersistedTask(task=created_task, edges=created_edges)
 
 
-async def _validate_merged_graph(graph_id: str, root: str) -> None:
+async def _validate_merged_graph(
+    graph_id: str, root: str, scope: tuple[str | None, str | None]
+) -> None:
     """Validate the connected component that contains ``root``.
 
     Validating only ``root``'s own ``graph_id`` is not enough: edges are keyed by
@@ -137,13 +142,20 @@ async def _validate_merged_graph(graph_id: str, root: str) -> None:
     So all edges are read once and the component reachable from ``root`` (in
     either direction) is validated as a whole.
 
+    Because a graph is single-schema and edge endpoints are bare names, the edge
+    set is restricted to the task's own ``database.schema`` first — otherwise a
+    same-named task in another schema would be pulled into this component and a
+    cycle could be reported (or missed) across schemas.
+
     Finalizer edges are excluded from the dependency graph, exactly as
     ``dag.graph_from_task_rows`` does, so this matches what execution builds.
     """
+    database_name, schema_name = scope
     all_edges = [
         Edge(parent=str(e["parent_task"]), child=str(e["child_task"]))
         for e in await task_orchestration_repository.list_all_edges()
         if str(e.get("edge_kind") or "after") == "after"
+        and _edge_in_scope(str(e.get("graph_id") or ""), database_name, schema_name)
     ]
 
     component = _component(root, all_edges)
@@ -153,6 +165,24 @@ async def _validate_merged_graph(graph_id: str, root: str) -> None:
         if edge.parent in component and edge.child in component
     ]
     validate_graph(Graph.from_edges(sorted(component), component_edges))
+
+
+def _edge_in_scope(
+    edge_graph_id: str, database_name: str | None, schema_name: str | None
+) -> bool:
+    """Whether an edge belongs to the same ``database.schema`` as the task.
+
+    The edge's ``graph_id`` is the qualified root name, so the scope is its
+    first two segments. A task with no ``database_name`` (legacy/unscoped) keeps
+    the pre-scope behaviour of validating every edge by name — its schema
+    default must not silently exclude the edges that would reveal a cycle.
+    """
+    if not database_name:
+        return True
+    parts = edge_graph_id.split(".")
+    if len(parts) != 3:
+        return False
+    return parts[0] == database_name and parts[1] == schema_name
 
 
 def _component(root: str, edges: list[Edge]) -> set[str]:

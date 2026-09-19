@@ -151,6 +151,147 @@ class DryRunResponse(BaseModel):
     engine_path: str | None = None
 
 
+class PlanStepKind(StrEnum):
+    """The ordered phases of a migration plan."""
+
+    DATABASE = "database"
+    TABLE = "table"
+    VIEW = "view"
+    MATERIALIZED_VIEW = "materialized_view"
+    FUNCTION = "function"
+    TASK = "task"
+
+
+class PlanRequest(BaseModel):
+    """Build a dependency-ordered apply plan for one database.
+
+    Read-only: planning opens the source, collects definitions, and retargets
+    them, but executes **nothing** on the target. ``target_database`` defaults to
+    the source database name (same name on the Nova target). The apply endpoint
+    that consumes a plan is gated on issue #7 and does not exist yet.
+    """
+
+    source: str = Field(..., min_length=1, max_length=256)
+    database: str = Field(..., min_length=1, max_length=256)
+    target_database: str = Field(default="", max_length=256)
+    objects: list[str] = Field(default_factory=list)
+    create_database: bool = True
+
+
+class PlanStepResponse(BaseModel):
+    order: int
+    kind: PlanStepKind
+    object_name: str
+    statement: str
+    dropped_properties: list[str] = Field(default_factory=list)
+
+
+class BlockedObjectResponse(BaseModel):
+    name: str
+    kind: ObjectKind
+    reason: str
+
+
+class PlanResponse(BaseModel):
+    source_database: str
+    target_database: str
+    steps: list[PlanStepResponse]
+    blocked: list[BlockedObjectResponse]
+    step_count: int
+    #: Always False in v1 — there is no execute path. Present so the client does
+    #: not invent one (mirrors ``capabilities.execute_available``).
+    execute_available: bool = False
+
+
+class ExecuteRequest(BaseModel):
+    """Apply a plan to the target database.
+
+    Gated: the endpoint returns 403 unless the operator has enabled execute
+    (``MIGRATION_EXECUTE_ENABLED``) — the explicit acknowledgement that a
+    restorable backup exists (#7). When the plan contains lossy or blocked
+    objects, ``acknowledge_omissions`` must be true; the caller is confirming it
+    has read the report. ``confirmation`` must equal the target database name
+    when confirmation is required, so a mis-typed run cannot proceed.
+    """
+
+    source: str = Field(..., min_length=1, max_length=256)
+    database: str = Field(..., min_length=1, max_length=256)
+    target_database: str = Field(default="", max_length=256)
+    objects: list[str] = Field(default_factory=list)
+    create_database: bool = True
+    acknowledge_omissions: bool = False
+    confirmation: str = Field(default="", max_length=256)
+    #: Move rows after the schema is applied. Requires shared object storage
+    #: between the source and the target. Default False: schema-only.
+    include_data: bool = False
+    #: Named storage connection used as the transfer stage. Empty means the
+    #: workspace default.
+    stage_connection: str = Field(default="", max_length=256)
+
+
+class ExecuteStepResult(BaseModel):
+    order: int
+    kind: PlanStepKind
+    object_name: str
+    statement: str
+    status: str  # "ok" | "failed" | "skipped"
+    error: str | None = None
+
+
+class TableCopyResult(BaseModel):
+    """The outcome of copying one table's rows."""
+
+    table: str
+    rows_exported: int
+    rows_imported: int
+    verified: bool
+    digest_match: bool | None = None
+    note: str = ""
+    errors: list[str] = Field(default_factory=list)
+
+
+class ExecuteResponse(BaseModel):
+    source_database: str
+    target_database: str
+    results: list[ExecuteStepResult]
+    blocked: list[BlockedObjectResponse] = Field(default_factory=list)
+    succeeded: int
+    failed: int
+    skipped: int
+    #: Populated only when ``include_data`` was requested.
+    data: list[TableCopyResult] = Field(default_factory=list)
+    rows_moved: int = 0
+
+
+class PreflightRequest(BaseModel):
+    """Check target privileges and shared storage before execute. Read-only."""
+
+    source: str = Field(..., min_length=1, max_length=256)
+    database: str = Field(..., min_length=1, max_length=256)
+    target_database: str = Field(default="", max_length=256)
+    objects: list[str] = Field(default_factory=list)
+    create_database: bool = True
+    include_data: bool = False
+
+
+class PreflightCheckResponse(BaseModel):
+    privilege: str
+    reason: str
+    satisfied: bool
+
+
+class PreflightResponse(BaseModel):
+    source_database: str
+    target_database: str
+    database_step_planned: bool
+    checks: list[PreflightCheckResponse]
+    missing: list[str]
+    storage_checked: bool = False
+    storage_ok: bool | None = None
+    storage_reason: str = ""
+    ok: bool
+
+
 class EngineStatusResponse(BaseModel):
     """Whether the optional ``starrocks-cluster-sync`` binary is usable.
 

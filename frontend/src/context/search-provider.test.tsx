@@ -109,13 +109,13 @@ describe('SearchProvider and CommandMenu', () => {
 
     await openCommandPalette(screen)
 
-    // 'Tasks' labels two nav items (/tasks-manager and the nested /tasks), so target
-    // the Data Management entry by its accessible name and not merely by its text.
+    // 'Tasks' labels the Data Management entry and a nested Monitoring entry, so
+    // target the Data Management one by its accessible name and not by its text.
     await userEvent.click(
       screen.getByRole('option', { name: 'Tasks', exact: true })
     )
 
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/tasks-manager' })
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/tasks' })
     await expect
       .element(screen.getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
       .not.toBeInTheDocument()

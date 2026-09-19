@@ -54,7 +54,7 @@ function getSafeRedirectPath(redirectTo?: string): string {
 }
 
 type LoginResult = {
-  status: 'AUTHENTICATED' | 'SETUP_REQUIRED'
+  status: 'AUTHENTICATED' | 'SETUP_REQUIRED' | 'PASSWORD_CHANGE_REQUIRED'
   access_token: string
   user: string | AuthUser | null
   roles?: string[]
@@ -86,6 +86,9 @@ export function UserAuthForm({
 }: UserAuthFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [setupToken, setSetupToken] = useState<string | null>(null)
+  // Set when the admin required a password change: the credential is valid, but
+  // the user must set a new password before entering Nova.
+  const [forcedChangeToken, setForcedChangeToken] = useState<string | null>(null)
   const navigate = useNavigate()
   const { auth } = useAuthStore()
 
@@ -130,6 +133,11 @@ export function UserAuthForm({
         // Switch to setup form
         setSetupToken(result.access_token)
         toast.info('First login — please set a new password.')
+      } else if (result.status === 'PASSWORD_CHANGE_REQUIRED') {
+        // The password is valid, but the administrator requires a change before
+        // first use. Store the session token so the change request is authorized.
+        setForcedChangeToken(result.access_token)
+        toast.info('Please set a new password before continuing.')
       } else if (result.status === 'AUTHENTICATED') {
         auth.setAccessToken(result.access_token)
         auth.setUser(getAuthUser(result))
@@ -195,6 +203,105 @@ export function UserAuthForm({
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // ── Forced password change submit ────────────────────────
+  async function onForcedChangeSubmit(data: z.infer<typeof setupSchema>) {
+    setIsLoading(true)
+    try {
+      const res = await fetch('/api/v1/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${forcedChangeToken}`,
+        },
+        body: JSON.stringify({
+          current_password: loginForm.getValues('password'),
+          new_password: data.newPassword,
+          confirm_password: data.confirmPassword,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        toast.error(err.detail || 'Could not change the password.')
+        setIsLoading(false)
+        return
+      }
+
+      // The change clears the flag server-side; log in with the new password so
+      // the session carries the new credential.
+      const loginRes = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: loginForm.getValues('username'),
+          password: data.newPassword,
+        }),
+      })
+      if (loginRes.ok) {
+        const loginResult = (await loginRes.json()) as LoginResult
+        auth.setAccessToken(loginResult.access_token)
+        auth.setUser(getAuthUser(loginResult))
+        navigate({ to: getSafeRedirectPath(redirectTo), replace: true })
+        toast.success('Password changed. Welcome to Nove!')
+      } else {
+        toast.error('Password changed but login failed. Please log in manually.')
+        setForcedChangeToken(null)
+      }
+    } catch {
+      toast.error('Network error. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // ── Render: Forced password change ───────────────────────
+  if (forcedChangeToken) {
+    return (
+      <Form {...setupForm}>
+        <form
+          key="forced-change-form"
+          onSubmit={setupForm.handleSubmit(onForcedChangeSubmit)}
+          className={cn('grid gap-3', className)}
+          {...props}
+        >
+          <div className='rounded-md bg-muted p-3 text-sm text-muted-foreground'>
+            Your administrator requires a new password before first use.
+          </div>
+          <FormField
+            control={setupForm.control}
+            name='newPassword'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>New Password</FormLabel>
+                <FormControl>
+                  <PasswordInput placeholder='Enter new password' {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={setupForm.control}
+            name='confirmPassword'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Confirm Password</FormLabel>
+                <FormControl>
+                  <PasswordInput placeholder='Confirm new password' {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <Button className='mt-2' disabled={isLoading}>
+            {isLoading ? <Loader2 className='animate-spin' /> : <KeyRound />}
+            Change Password & Continue
+          </Button>
+        </form>
+      </Form>
+    )
   }
 
   // ── Render: Setup form ───────────────────────────────────

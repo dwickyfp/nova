@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from app.core.database import db
 
@@ -19,9 +19,9 @@ _GRAPH_RUNS = "NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS"
 _TASK_RUNS = "NOVA_SYSTEM.CONFIG_TASK_RUNS"
 
 _TASK_COLUMNS = (
-    "id, name, database_name, definition, schedule_kind, schedule_expr, timezone, "
-    "when_expr, overlap_policy, owner_role, created_by, consecutive_fail_count, "
-    "version, created_at, updated_at"
+    "id, name, database_name, schema_name, definition, schedule_kind, schedule_expr, "
+    "timezone, when_expr, overlap_policy, owner_role, created_by, "
+    "consecutive_fail_count, version, created_at, updated_at"
 )
 _EDGE_COLUMNS = "id, graph_id, parent_task, child_task, edge_kind, created_at"
 _GRAPH_RUN_COLUMNS = (
@@ -40,6 +40,7 @@ _UPDATABLE_COLUMNS: dict[str, frozenset[str]] = {
         {
             "name",
             "database_name",
+            "schema_name",
             "definition",
             "schedule_kind",
             "schedule_expr",
@@ -93,6 +94,53 @@ def _assignments(entity: str, data: dict[str, Any]) -> tuple[str, list[Any]]:
     return clause, list(data.values())
 
 
+def _node_run_id(graph_run_id: str, task_id: str, attempt: int) -> str:
+    """The deterministic primary key of one node attempt.
+
+    Reproducible across processes and restarts, and within the 64-char column,
+    so two concurrent creators collide on the same row instead of each inserting
+    a duplicate (the double-execution defect).
+    """
+    key = f"nova:task_run:{graph_run_id}:{task_id}:{attempt}"
+    return str(uuid5(NAMESPACE_URL, key))
+
+
+def scope_from_graph_id(graph_id: str) -> tuple[str, str] | None:
+    """Split a qualified graph id into ``(database_name, schema_name)``.
+
+    A graph id is the root task's qualified name, ``database.schema.name`` (or a
+    legacy bare task id / bare name). Returns ``None`` when the id is not
+    three-part qualified, so callers can fall back to name-only resolution for
+    rows written before tasks were schema-scoped.
+    """
+    parts = graph_id.split(".")
+    if len(parts) == 3 and all(parts):
+        return parts[0], parts[1]
+    return None
+
+
+def task_graph_id(task: dict[str, Any]) -> str:
+    """The graph id of a task row: its qualified ``database.schema.name``.
+
+    An unscoped legacy row falls back to its bare name, matching the pre-scope
+    convention where a task's own name identified its graph.
+    """
+    parts = [
+        str(part)
+        for part in (task.get("database_name"), task.get("schema_name"), task.get("name"))
+        if part
+    ]
+    return ".".join(parts)
+
+
+def _task_scope_key(task: dict[str, Any]) -> tuple[str, str] | None:
+    database = task.get("database_name")
+    schema = task.get("schema_name")
+    if database and schema:
+        return str(database), str(schema)
+    return None
+
+
 class TaskOrchestrationRepository:
     """CRUD over the four ``CONFIG_TASK*`` tables."""
 
@@ -138,15 +186,16 @@ class TaskOrchestrationRepository:
         await db.execute_system(
             f"""
             INSERT INTO {_TASKS}
-            (id, name, database_name, definition, schedule_kind, schedule_expr,
-             timezone, when_expr, overlap_policy, owner_role, created_by, version,
-             created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, NOW(), NOW())
+            (id, name, database_name, schema_name, definition, schedule_kind,
+             schedule_expr, timezone, when_expr, overlap_policy, owner_role,
+             created_by, version, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, NOW(), NOW())
             """,
             [
                 task_id,
                 data["name"],
                 data.get("database_name"),
+                data.get("schema_name"),
                 data.get("definition"),
                 data.get("schedule_kind", "manual"),
                 data.get("schedule_expr"),
@@ -170,20 +219,74 @@ class TaskOrchestrationRepository:
             return None
         return self._to_dict(_TASK_COLUMNS, result["rows"][0])
 
+    async def find_task(
+        self, name: str, database_name: str | None, schema_name: str | None
+    ) -> dict[str, Any] | None:
+        """The task with this exact ``(database, schema, name)`` identity.
+
+        Tasks are schema-scoped, so ``name`` alone is ambiguous. ``NULL`` scope
+        columns are matched with ``<=>`` (NULL-safe equality) so a legacy row
+        created before the scope column existed resolves the same way it was
+        written.
+        """
+        result = await db.execute_system(
+            f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
+            "WHERE name = %s AND database_name <=> %s AND schema_name <=> %s "
+            "LIMIT 1",
+            [name, database_name, schema_name],
+        )
+        if not result["rows"]:
+            return None
+        return self._to_dict(_TASK_COLUMNS, result["rows"][0])
+
+    async def list_tasks_for_schema(
+        self, database_name: str, schema_name: str
+    ) -> list[dict[str, Any]]:
+        """Every task scoped to one ``database.schema``, for the explorer."""
+        result = await db.execute_system(
+            f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
+            "WHERE database_name = %s AND schema_name = %s ORDER BY name",
+            [database_name, schema_name],
+        )
+        return [self._to_dict(_TASK_COLUMNS, row) for row in result["rows"]]
+
     async def list_tasks(self, graph_id: str | None = None) -> list[dict[str, Any]]:
+        """Task rows, either all or the members of one graph.
+
+        A graph is single-schema, and its id is the root task's **qualified**
+        name (``database.schema.name``). Membership is therefore resolved by the
+        graph's scope plus the edge endpoints (bare names): filtering by name
+        alone would merge two same-named tasks in different schemas.
+        """
         if graph_id is None:
             sql = f"SELECT {_TASK_COLUMNS} FROM {_TASKS} ORDER BY name"
             params: list[Any] = []
         else:
-            sql = (
-                f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
-                "WHERE name IN ("
+            scope = scope_from_graph_id(graph_id)
+            names_sql = (
+                "name IN ("
                 f"  SELECT parent_task FROM {_EDGES} WHERE graph_id = %s "
                 "   UNION "
                 f"  SELECT child_task FROM {_EDGES} WHERE graph_id = %s"
-                ") ORDER BY name"
+                ")"
             )
-            params = [graph_id, graph_id]
+            if scope is None:
+                # Legacy/unscoped graph id: the graph id is the task's own bare
+                # id, so resolve by name only.
+                sql = (
+                    f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
+                    "WHERE id = %s OR "
+                    f"({names_sql}) ORDER BY name"
+                )
+                params = [graph_id, graph_id, graph_id]
+            else:
+                database_name, schema_name = scope
+                sql = (
+                    f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
+                    "WHERE database_name = %s AND schema_name = %s AND "
+                    f"({names_sql}) ORDER BY name"
+                )
+                params = [database_name, schema_name, graph_id, graph_id]
         result = await db.execute_system(sql, params)
         return [self._to_dict(_TASK_COLUMNS, row) for row in result["rows"]]
 
@@ -294,28 +397,37 @@ class TaskOrchestrationRepository:
     # single-node graphs) belong next to the write path that produced them.
 
     async def list_graph_ids(self) -> list[str]:
-        """Every graph id that has at least one edge, plus standalone task ids.
+        """Every graph id that has at least one edge, plus standalone task graphs.
 
         A graph is identified by its edges' ``graph_id``. A task with no edges is
-        a single-node graph keyed by its own id — the same convention
+        a single-node graph keyed by its **qualified** name — the same convention
         ``scheduler.build_graphs`` uses, so the API and the scheduler agree on
-        what a graph is.
+        what a graph is. A legacy row with no scope keeps its bare name / task id.
         """
         edges = await self.list_all_edges()
         graph_ids = sorted({str(edge["graph_id"]) for edge in edges})
 
-        referenced = {
-            str(endpoint)
-            for edge in edges
-            for endpoint in (edge["parent_task"], edge["child_task"])
-        }
-        tasks = await self.list_tasks()
-        standalone = sorted(
-            str(task["id"]) for task in tasks if str(task["name"]) not in referenced
-        )
-        # A standalone task's graph id is its task id; keep the two sets distinct
-        # in case an id and an edge graph_id ever collide.
-        return [*graph_ids, *[gid for gid in standalone if gid not in graph_ids]]
+        # Endpoint names by scope, so a task is only "referenced" by an edge in
+        # its own scope (a same-named task in another schema is its own graph).
+        referenced: dict[tuple[str, ...], set[str]] = {}
+        for edge in edges:
+            scope = scope_from_graph_id(str(edge["graph_id"]))
+            referenced.setdefault(scope or (), set()).update(
+                (str(edge["parent_task"]), str(edge["child_task"]))
+            )
+
+        standalone: list[str] = []
+        for task in await self.list_tasks():
+            scope = _task_scope_key(task)
+            name = str(task["name"])
+            if name in referenced.get(scope or (), set()):
+                continue
+            if scope and name in referenced.get((), set()):
+                continue
+            qualified = task_graph_id(task)
+            if qualified not in graph_ids:
+                standalone.append(qualified)
+        return [*graph_ids, *sorted(set(standalone) - set(graph_ids))]
 
     async def get_tasks_by_names(self, names: list[str]) -> list[dict[str, Any]]:
         """Task rows for ``names``, in one query.
@@ -367,16 +479,91 @@ class TaskOrchestrationRepository:
         )
         return [self._to_dict(_TASK_RUN_COLUMNS, row) for row in result["rows"]]
 
+    async def count_graph_runs(self, graph_id: str) -> int:
+        """Total number of runs for a graph — the pagination denominator."""
+        result = await db.execute_system(
+            f"SELECT COUNT(*) FROM {_GRAPH_RUNS} WHERE graph_id = %s",
+            [graph_id],
+        )
+        if not result["rows"] or not result["rows"][0]:
+            return 0
+        return int(result["rows"][0][0] or 0)
+
+    async def list_graph_runs_page(
+        self, graph_id: str, *, limit: int, offset: int
+    ) -> list[dict[str, Any]]:
+        """One page of a graph's runs, newest first.
+
+        Ordered and bounded in the engine rather than sliced in the router, so a
+        graph with a long history never materialises every row to show ten of
+        them. ``id`` is the tiebreaker after ``started_at`` so two runs that
+        started in the same second paginate deterministically.
+        """
+        result = await db.execute_system(
+            f"SELECT {_GRAPH_RUN_COLUMNS} FROM {_GRAPH_RUNS} "
+            "WHERE graph_id = %s ORDER BY started_at DESC, id DESC LIMIT %s OFFSET %s",
+            [graph_id, max(1, limit), max(0, offset)],
+        )
+        runs = [self._to_dict(_GRAPH_RUN_COLUMNS, row) for row in result["rows"]]
+        for run in runs:
+            run["wal_marks"] = self._decode_wal_marks(run["wal_marks"])
+        return runs
+
+    async def count_graph_runs_by_graph(self) -> dict[str, dict[str, int]]:
+        """Per-graph ``{total, success, failed}`` tallies, in one query.
+
+        The list endpoint needs a tally for every visible graph, so a per-graph
+        count would be N queries. This folds the whole ``CONFIG_TASK_GRAPH_RUNS``
+        table instead — the table is config-plane (one row per graph run), so one
+        sweep is the right shape, exactly like the read model behind
+        ``/graphs``.
+
+        ``cancelled`` is deliberately in ``total`` but in neither bucket; see
+        ``schemas.RunCounts`` for why.
+        """
+        result = await db.execute_system(
+            "SELECT graph_id, "
+            "COUNT(*) AS total, "
+            "SUM(CASE WHEN state = 'success' THEN 1 ELSE 0 END) AS success, "
+            "SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END) AS failed "
+            f"FROM {_GRAPH_RUNS} GROUP BY graph_id"
+        )
+        tallies: dict[str, dict[str, int]] = {}
+        for row in result["rows"]:
+            graph_id = str(row[0])
+            tallies[graph_id] = {
+                "total": int(row[1] or 0),
+                "success": int(row[2] or 0),
+                "failed": int(row[3] or 0),
+            }
+        return tallies
+
     # ── Graph runs ─────────────────────────────────────────────
 
     async def create_graph_run(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Insert a graph run, **never overwriting an existing row**.
+
+        ``NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS`` is a StarRocks Primary-Key table,
+        so a plain ``INSERT`` on an existing primary key is a **destructive
+        full-row upsert**: it would reset a run that is already ``running`` or
+        ``success`` back to ``pending`` (verified against 4.1.x on 2026-09-19).
+        The scheduler keys runs by a deterministic ``(graph_id, due_at)`` id, so
+        a second tick — or a second leader during a lock-TTL window — must treat
+        the existing row as the run, not clobber it.
+
+        The guarded ``INSERT … SELECT … WHERE NOT EXISTS`` is the primitive that
+        makes this safe: it inserts only when the id is absent and leaves an
+        existing row untouched (verified: ``affected = 0`` and the row keeps its
+        state).
+        """
         run_id = data.get("id") or str(uuid4())
         await db.execute_system(
             f"""
             INSERT INTO {_GRAPH_RUNS}
             (id, graph_id, trigger_type, state, overlap_policy, wal_marks,
              started_at, finished_at)
-            VALUES (%s, %s, %s, %s, %s, %s, NOW(), NULL)
+            SELECT %s, %s, %s, %s, %s, %s, NOW(), NULL
+            WHERE NOT EXISTS (SELECT 1 FROM {_GRAPH_RUNS} WHERE id = %s)
             """,
             [
                 run_id,
@@ -385,11 +572,47 @@ class TaskOrchestrationRepository:
                 data.get("state", "pending"),
                 data.get("overlap_policy", "skip"),
                 self._encode_wal_marks(data.get("wal_marks")),
+                run_id,
             ],
         )
         created = await self.get_graph_run(run_id)
         assert created is not None
         return created
+
+    async def create_graph_run_once(
+        self, data: dict[str, Any]
+    ) -> tuple[dict[str, Any], bool]:
+        """Create-if-absent. Returns ``(row, created)``.
+
+        ``created`` is authoritative: it comes from the guarded insert's own
+        affected-row count, not from a read-then-write check (which two
+        concurrent ticks could both pass). ``affected == 1`` means **this** call
+        inserted the row and therefore owns the publish; ``affected == 0`` means
+        a concurrent creator got there first and owns it.
+        """
+        run_id = data.get("id") or str(uuid4())
+        result = await db.execute_system(
+            f"""
+            INSERT INTO {_GRAPH_RUNS}
+            (id, graph_id, trigger_type, state, overlap_policy, wal_marks,
+             started_at, finished_at)
+            SELECT %s, %s, %s, %s, %s, %s, NOW(), NULL
+            WHERE NOT EXISTS (SELECT 1 FROM {_GRAPH_RUNS} WHERE id = %s)
+            """,
+            [
+                run_id,
+                data["graph_id"],
+                data.get("trigger_type", "manual"),
+                data.get("state", "pending"),
+                data.get("overlap_policy", "skip"),
+                self._encode_wal_marks(data.get("wal_marks")),
+                run_id,
+            ],
+        )
+        inserted = int(result.get("affected") or 0) == 1
+        created = await self.get_graph_run(run_id)
+        assert created is not None
+        return created, inserted
 
     async def get_graph_run(self, run_id: str) -> dict[str, Any] | None:
         result = await db.execute_system(
@@ -450,12 +673,15 @@ class TaskOrchestrationRepository:
         return bool(result.get("affected"))
 
     async def list_graph_runs_by_state(
-        self, states: list[str], *, limit: int = 200
+        self, states: list[str], *, limit: int = 1000
     ) -> list[dict[str, Any]]:
         """Graph runs in any of ``states`` — the reconciler's work list.
 
         The reconciler polls only graph runs that are actually active, never
-        every task (design §2, resource note).
+        every task (design §2, resource note). The cap is generous because the
+        list is the recovery work-set: a ``pending`` run beyond the cap would not
+        be re-enqueued, so the bound is set well above a realistic in-flight
+        backlog rather than tuned for the common case.
         """
         if not states:
             return []
@@ -629,24 +855,33 @@ class TaskOrchestrationRepository:
     async def create_task_run_once(
         self, graph_run_id: str, task_id: str, attempt: int = 1
     ) -> dict[str, Any]:
-        """Create a node run, returning any pre-existing row for the attempt.
+        """Create a node run, or return the one that already exists.
 
         At-least-once delivery means two workers may race to create the same
-        node run. The primary key makes one insert win; the loser reads the
-        winner's row and does not execute.
+        node run. Two things make this safe:
+
+        * the row id is **deterministic** — a UUID v5 over
+          ``(graph_run_id, task_id, attempt)`` — so both racers target the same
+          primary key instead of two random ids (the previous bug: a plain
+          ``uuid4()`` let both rows exist and the node ran twice); and
+        * the insert is ``INSERT … SELECT … WHERE NOT EXISTS``, so it never
+          overwrites a row a racer already advanced past ``pending`` (a plain
+          ``INSERT`` is a destructive upsert on a Primary-Key table).
         """
-        existing = await self.get_node_run(graph_run_id, task_id)
-        if existing is not None:
-            return existing
-        return await self.create_task_run(
-            {
-                "graph_run_id": graph_run_id,
-                "task_id": task_id,
-                "attempt": attempt,
-                "state": "pending",
-                "delegated": True,
-            }
+        run_id = _node_run_id(graph_run_id, task_id, attempt)
+        await db.execute_system(
+            f"""
+            INSERT INTO {_TASK_RUNS}
+            (id, graph_run_id, task_id, attempt, state, delegated,
+             starrocks_query_id, error_message, started_at, finished_at)
+            SELECT %s, %s, %s, %s, 'pending', 1, NULL, NULL, NOW(), NULL
+            WHERE NOT EXISTS (SELECT 1 FROM {_TASK_RUNS} WHERE id = %s)
+            """,
+            [run_id, graph_run_id, task_id, attempt, run_id],
         )
+        created = await self.get_task_run(run_id)
+        assert created is not None
+        return created
 
     async def mark_task_run_heartbeat(self, run_id: str) -> None:
         """Refresh a node's liveness stamp while it executes."""

@@ -39,13 +39,13 @@ from app.modules.task_orchestration.repository import (
     task_orchestration_repository as repo,
 )
 from tests.integration._stack import (
+    engine_port,
     require_shared_stack,
-    shared_stack_host_port,
 )
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
-SR_PORT = _EXPLICIT_PORT or shared_stack_host_port("NOVA_TEST_FE_MYSQL_PORT", 29030)
+SR_PORT = engine_port(_EXPLICIT_PORT, "NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
 SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
 _USE_SHARED_STACK = _EXPLICIT_PORT is None
@@ -341,6 +341,82 @@ class TestRepositoryCrud:
         assert await repo.get_task_run(created["id"]) is None
 
 
+class TestIdempotentCreatePrimitives:
+    """The Primary-Key table makes a plain INSERT a destructive upsert.
+
+    These tests pin the two primitives the scheduler and worker rely on:
+    ``create_graph_run_once`` must never clobber an existing run's state, and
+    ``create_task_run_once`` must resolve two racing creators to one row (the
+    deterministic id), so a node cannot execute twice.
+    """
+
+    async def test_create_graph_run_once_is_non_destructive(self, orchestration_db):
+        await _ensure_ddl()
+        run_id = f"gr_{uuid4().hex}"
+        graph_id = f"g_{uuid4().hex}"
+        try:
+            created, is_new = await repo.create_graph_run_once(
+                {
+                    "id": run_id,
+                    "graph_id": graph_id,
+                    "trigger_type": "schedule",
+                    "state": "pending",
+                }
+            )
+            assert is_new is True and created["state"] == "pending"
+
+            # The worker claims it; a second create for the same due instant
+            # must not reset it back to pending.
+            await repo.transition_graph_run(run_id, ["pending"], "success")
+
+            regotten, is_new2 = await repo.create_graph_run_once(
+                {
+                    "id": run_id,
+                    "graph_id": graph_id,
+                    "trigger_type": "schedule",
+                    "state": "pending",
+                }
+            )
+            assert is_new2 is False
+            assert regotten["state"] == "success", (
+                "a re-tick must not clobber a settled run (PK upsert would)"
+            )
+        finally:
+            await repo.delete_graph_run(run_id)
+
+    async def test_create_task_run_once_resolves_racers_to_one_row(
+        self, orchestration_db
+    ):
+        await _ensure_ddl()
+        graph_run_id = f"gr_{uuid4().hex}"
+        task_id = f"t_{uuid4().hex}"
+        try:
+            first = await repo.create_task_run_once(graph_run_id, task_id)
+            second = await repo.create_task_run_once(graph_run_id, task_id)
+            assert first["id"] == second["id"], "racers must share one primary key"
+            rows = await repo.list_task_runs(graph_run_id)
+            assert len(rows) == 1, "a node must have exactly one row for an attempt"
+        finally:
+            for row in await repo.list_task_runs(graph_run_id):
+                await repo.delete_task_run(row["id"])
+
+    async def test_create_task_run_once_does_not_clobber_a_running_row(
+        self, orchestration_db
+    ):
+        await _ensure_ddl()
+        graph_run_id = f"gr_{uuid4().hex}"
+        task_id = f"t_{uuid4().hex}"
+        try:
+            row = await repo.create_task_run_once(graph_run_id, task_id)
+            await repo.transition_task_run(row["id"], ["pending"], "running")
+            await repo.create_task_run_once(graph_run_id, task_id)
+            again = await repo.get_task_run(row["id"])
+            assert again is not None and again["state"] == "running"
+        finally:
+            for r in await repo.list_task_runs(graph_run_id):
+                await repo.delete_task_run(r["id"])
+
+
 class TestListTasksByGraph:
     async def test_returns_only_member_tasks_by_name(self, orchestration_db):
         """Regression: list_tasks(graph_id) previously referenced a nonexistent
@@ -496,17 +572,19 @@ class TestCreateTaskLoweringAgainstEngine:
         suffix = uuid4().hex[:8]
         name = f"etl_{suffix}"
         task = parse_create_task(
-            f"CREATE TASK {name} AFTER parent_a, parent_b "
+            f"CREATE TASK NOVA_DEMO.default.{name} AFTER parent_a, parent_b "
             f"FINALIZE notify_task WHEN x > 1 AND y < 2 "
             f"OVERLAP_POLICY = 'QUEUE' SCHEDULE = '0 2 * * * UTC' "
             f"AS INSERT INTO t SELECT 1",
-            database="NOVA_DEMO",
             timezone="Asia/Jakarta",
         )
         persisted = await persist_lowered_task(task, created_by="alice")
+        graph_id = f"NOVA_DEMO.default.{name}"
         try:
             row = persisted.task
             assert row["name"] == name
+            assert row["database_name"] == "NOVA_DEMO"
+            assert row["schema_name"] == "default"
             assert row["schedule_kind"] == "cron"
             assert row["schedule_expr"] == "0 2 * * *"
             assert row["timezone"] == "UTC"
@@ -514,15 +592,64 @@ class TestCreateTaskLoweringAgainstEngine:
             assert row["overlap_policy"] == "queue"
             assert row["created_by"] == "alice"
 
-            edges = await repo.list_edges(name)
+            edges = await repo.list_edges(graph_id)
             by_kind = {(e["parent_task"], e["edge_kind"]) for e in edges}
             assert ("parent_a", "after") in by_kind
             assert ("parent_b", "after") in by_kind
             assert ("notify_task", "finalize") in by_kind
         finally:
-            for edge in await repo.list_edges(name):
+            for edge in await repo.list_edges(graph_id):
                 await repo.delete_edge(edge["id"])
             await repo.delete_task(row["id"])
+
+    async def test_same_name_in_two_schemas_are_distinct_tasks(self, orchestration_db):
+        """A task is scoped to database.schema; name alone is not an identity.
+
+        Two schemas may each hold a task named the same. They must be two rows,
+        each owned by its own schema, so an explorer node for one schema never
+        shows the other's task.
+        """
+        await _ensure_ddl()
+        from app.modules.task_orchestration.ddl import parse_create_task
+        from app.modules.task_orchestration.lowering import persist_lowered_task
+
+        suffix = uuid4().hex[:8]
+        name = f"etl_{suffix}"
+        silver = await persist_lowered_task(
+            parse_create_task(
+                f"CREATE TASK NOVA_DEMO.silver.{name} AS INSERT INTO t SELECT 1",
+                timezone="UTC",
+            ),
+            created_by="alice",
+        )
+        gold = await persist_lowered_task(
+            parse_create_task(
+                f"CREATE TASK NOVA_DEMO.gold.{name} AS INSERT INTO t SELECT 1",
+                timezone="UTC",
+            ),
+            created_by="alice",
+        )
+        try:
+            assert silver.task["id"] != gold.task["id"]
+            assert (silver.task["database_name"], silver.task["schema_name"]) == (
+                "NOVA_DEMO",
+                "silver",
+            )
+            assert (gold.task["database_name"], gold.task["schema_name"]) == (
+                "NOVA_DEMO",
+                "gold",
+            )
+            silver_rows = await repo.list_tasks_for_schema("NOVA_DEMO", "silver")
+            assert [r["id"] for r in silver_rows if r["name"] == name] == [
+                silver.task["id"]
+            ]
+            gold_rows = await repo.list_tasks_for_schema("NOVA_DEMO", "gold")
+            assert [r["id"] for r in gold_rows if r["name"] == name] == [
+                gold.task["id"]
+            ]
+        finally:
+            await repo.delete_task(silver.task["id"])
+            await repo.delete_task(gold.task["id"])
 
     async def test_finalize_edge_does_not_become_a_dependency_in_the_graph(self, orchestration_db):
         """The finalizer is stored but excluded from the dependency adjacency.
@@ -715,28 +842,29 @@ class TestReadApiRepositoryAgainstEngine:
         finalizer = f"api_f_{suffix}"
 
         parent_task = parse_create_task(
-            f"CREATE TASK {parent} AS INSERT INTO t SELECT 1",
-            database="NOVA_DEMO",
+            f"CREATE TASK NOVA_DEMO.default.{parent} AS INSERT INTO t SELECT 1",
             timezone="UTC",
         )
         persisted_a = await persist_lowered_task(parent_task, created_by="alice")
         child_task = parse_create_task(
-            f"CREATE TASK {child} AFTER {parent} AS INSERT INTO t SELECT 1",
-            database="NOVA_DEMO",
+            f"CREATE TASK NOVA_DEMO.default.{child} AFTER {parent} "
+            "AS INSERT INTO t SELECT 1",
             timezone="UTC",
         )
         persisted_b = await persist_lowered_task(child_task, created_by="alice")
         finalizer_task = parse_create_task(
-            f"CREATE TASK {finalizer} FINALIZE {parent} AS INSERT INTO t SELECT 1",
-            database="NOVA_DEMO",
+            f"CREATE TASK NOVA_DEMO.default.{finalizer} FINALIZE {parent} "
+            "AS INSERT INTO t SELECT 1",
             timezone="UTC",
         )
         persisted_f = await persist_lowered_task(finalizer_task, created_by="alice")
 
+        child_graph = f"NOVA_DEMO.default.{child}"
+        finalizer_graph = f"NOVA_DEMO.default.{finalizer}"
         try:
-            # list_graph_ids must surface the graph.
+            # list_graph_ids must surface the graph (qualified).
             graph_ids = await repo.list_graph_ids()
-            assert child in graph_ids or parent in graph_ids
+            assert child_graph in graph_ids or f"NOVA_DEMO.default.{parent}" in graph_ids
 
             # The graph's tasks, resolvable by name (the API's detail path).
             names = [parent, child, finalizer]
@@ -744,22 +872,26 @@ class TestReadApiRepositoryAgainstEngine:
             assert {str(t["name"]) for t in resolved} == set(names)
 
             # Edges carry their kind so the UI can distinguish the finalizer.
-            edges = await repo.list_edges(child)
+            edges = await repo.list_edges(child_graph)
             kinds = {(e["parent_task"], e["edge_kind"]) for e in edges}
             assert (parent, "after") in kinds
 
-            fin_edges = await repo.list_edges(finalizer)
+            fin_edges = await repo.list_edges(finalizer_graph)
             assert (parent, "finalize") in {
                 (e["parent_task"], e["edge_kind"]) for e in fin_edges
             }
 
             # The read model for runs: no run yet, so latest is None and the
             # per-graph task-run query returns an empty list, not an error.
-            assert await repo.get_latest_graph_run(child) is None
-            assert await repo.list_task_runs_for_graph(child) == []
+            assert await repo.get_latest_graph_run(child_graph) is None
+            assert await repo.list_task_runs_for_graph(child_graph) == []
         finally:
-            for row in (persisted_f, persisted_b, persisted_a):
-                for edge in await repo.list_edges(row.task["name"]):
+            for row, graph_id in (
+                (persisted_f, finalizer_graph),
+                (persisted_b, child_graph),
+                (persisted_a, f"NOVA_DEMO.default.{parent}"),
+            ):
+                for edge in await repo.list_edges(graph_id):
                     await repo.delete_edge(edge["id"])
                 await repo.delete_task(row.task["id"])
 

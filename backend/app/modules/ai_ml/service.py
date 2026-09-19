@@ -98,11 +98,16 @@ class AIService:
             conn.close()
 
     async def get_provider_api_key(self, provider_id: str) -> str | None:
-        """Return the decrypted API key for a provider. Internal use only."""
+        """Return the decrypted API key for a provider. Internal use only.
+
+        The value read from the table is Fernet ciphertext (``enc:...``), so it
+        must be decrypted here: handing the ciphertext to a provider client made
+        every outbound call carry the wrong bearer token and fail with 401.
+        """
         provider = await self.get_provider(provider_id, reveal=True)
         if not provider:
             return None
-        return provider.get("api_key")
+        return self._safe_decrypt(provider.get("api_key"))
 
     @staticmethod
     def _api_key_is_set(value: str | None) -> bool:
@@ -184,15 +189,22 @@ class AIService:
 
         Only fields present in `data` are updated; existing values are preserved.
         """
-        existing = await self.get_provider(provider_id)
+        # ``reveal=True`` is required here: ``get_provider`` strips ``api_key``
+        # into ``has_api_key``/``api_key_masked`` when masked, so reading the
+        # masked row would treat the key as absent and wipe it on every update
+        # that does not supply a new one.
+        existing = await self.get_provider(provider_id, reveal=True)
         if not existing:
             return None
 
+        new_key = data.get("api_key")
         merged = {
             "name": data.get("name", existing["name"]),
             "type": data.get("type", existing["type"]),
             "endpoint": data.get("endpoint", existing["endpoint"]),
-            "api_key": encrypt(data.get("api_key", decrypt(existing.get("api_key")))),
+            # Empty/omitted key means "keep the stored one"; the stored value is
+            # already ciphertext and ``encrypt`` passes it through unchanged.
+            "api_key": encrypt(new_key) if new_key else existing.get("api_key"),
             "default_params": data.get("default_params", existing.get("default_params")),
             "is_active": data.get("is_active", existing.get("is_active", True)),
             "created_at": existing.get("created_at"),

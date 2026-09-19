@@ -34,9 +34,11 @@ def build_registry() -> ToolRegistry:
     A factory (rather than only the process-wide instance) so tests get an
     isolated registry.
     """
+    from app.modules.assistant.tools.load_skill import load_skill_tool
     from app.modules.assistant.tools.query_execute import query_execute_tool
 
     registry = ToolRegistry()
+    registry.register(load_skill_tool)
     registry.register(query_execute_tool)
     return registry
 

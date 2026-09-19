@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   AlertCircle,
   ArrowRightLeft,
@@ -6,6 +7,7 @@ import {
   Database,
   Eye,
   FolderTree,
+  Info,
   KeyRound,
   Layers3,
   Loader2,
@@ -16,6 +18,8 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PreviewDataTab } from './preview-data-tab'
 import {
   formatBytes,
   formatModel,
@@ -82,6 +86,8 @@ export function ExplorerDetail({
   onCreateCatalog?: () => void
   onDropCatalog?: (name: string) => void
 }) {
+  const [tableTab, setTableTab] = useState<'information' | 'preview'>('information')
+
   if (!node) {
     return (
       <div className='flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-dashed border-border bg-surface-1'>
@@ -122,109 +128,136 @@ export function ExplorerDetail({
           </div>
         </div>
 
-        {/* Properties */}
-        <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-          <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
-          <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
-            <div className='space-y-1'>
-              <p className='text-sm text-muted-foreground'>Table Model</p>
-              <div className='text-base font-medium'>{formatModel(tableDetail.properties.table_model)}</div>
-            </div>
-            <div className='space-y-1'>
-              <p className='text-sm text-muted-foreground'>Primary Key</p>
-              <div className='text-base font-medium'>{stripBackticks(tableDetail.properties.primary_key)}</div>
-            </div>
-            <div className='space-y-1'>
-              <p className='text-sm text-muted-foreground'>Distribution</p>
-              <div className='text-base font-medium'>
-                {tableDetail.properties.distribute_type
-                  ? `${tableDetail.properties.distribute_type}(${stripBackticks(tableDetail.properties.distribute_key)})`
-                  : '—'}
+        <Tabs
+          value={tableTab}
+          onValueChange={(value) => setTableTab(value as 'information' | 'preview')}
+        >
+          <TabsList>
+            <TabsTrigger value='information' className='gap-1.5'>
+              <Info className='size-3.5' />
+              Information
+            </TabsTrigger>
+            <TabsTrigger value='preview' className='gap-1.5'>
+              <Table2 className='size-3.5' />
+              Preview Data
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value='information' className='mt-4 space-y-5'>
+            {/* Properties */}
+            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
+              <h2 className='mb-4 text-xl font-semibold'>Properties</h2>
+              <div className='grid gap-x-6 gap-y-4 md:grid-cols-3'>
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Table Model</p>
+                  <div className='text-base font-medium'>{formatModel(tableDetail.properties.table_model)}</div>
+                </div>
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Primary Key</p>
+                  <div className='text-base font-medium'>{stripBackticks(tableDetail.properties.primary_key)}</div>
+                </div>
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Distribution</p>
+                  <div className='text-base font-medium'>
+                    {tableDetail.properties.distribute_type
+                      ? `${tableDetail.properties.distribute_type}(${stripBackticks(tableDetail.properties.distribute_key)})`
+                      : '—'}
+                  </div>
+                </div>
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Buckets</p>
+                  <div className='text-base font-medium'>{tableDetail.properties.distribute_bucket ?? '—'}</div>
+                </div>
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Sort Key</p>
+                  <div className='text-base font-medium'>{stripBackticks(tableDetail.properties.sort_key)}</div>
+                </div>
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Row Count</p>
+                  <div className='text-base font-medium'>{tableDetail.row_count?.toLocaleString() ?? '—'}</div>
+                </div>
+                <div className='space-y-1'>
+                  <p className='text-sm text-muted-foreground'>Data Size</p>
+                  <div className='text-base font-medium'>{formatBytes(tableDetail.data_size)}</div>
+                </div>
               </div>
-            </div>
-            <div className='space-y-1'>
-              <p className='text-sm text-muted-foreground'>Buckets</p>
-              <div className='text-base font-medium'>{tableDetail.properties.distribute_bucket ?? '—'}</div>
-            </div>
-            <div className='space-y-1'>
-              <p className='text-sm text-muted-foreground'>Sort Key</p>
-              <div className='text-base font-medium'>{stripBackticks(tableDetail.properties.sort_key)}</div>
-            </div>
-            <div className='space-y-1'>
-              <p className='text-sm text-muted-foreground'>Row Count</p>
-              <div className='text-base font-medium'>{tableDetail.row_count?.toLocaleString() ?? '—'}</div>
-            </div>
-            <div className='space-y-1'>
-              <p className='text-sm text-muted-foreground'>Data Size</p>
-              <div className='text-base font-medium'>{formatBytes(tableDetail.data_size)}</div>
-            </div>
-          </div>
 
-          {/* Table properties */}
-          {Object.keys(tableDetail.properties.properties).length > 0 && (
-            <div className='mt-4 border-t border-border pt-4'>
-              <p className='mb-2 text-sm font-medium text-muted-foreground'>Storage Properties</p>
-              <div className='flex flex-wrap gap-2'>
-                {Object.entries(tableDetail.properties.properties).map(([k, v]) => (
-                  <Badge key={k} variant='outline' className='gap-1'>
-                    <span className='text-muted-foreground'>{k}:</span> {v}
-                  </Badge>
-                ))}
+              {/* Table properties */}
+              {Object.keys(tableDetail.properties.properties).length > 0 && (
+                <div className='mt-4 border-t border-border pt-4'>
+                  <p className='mb-2 text-sm font-medium text-muted-foreground'>Storage Properties</p>
+                  <div className='flex flex-wrap gap-2'>
+                    {Object.entries(tableDetail.properties.properties).map(([k, v]) => (
+                      <Badge key={k} variant='outline' className='gap-1'>
+                        <span className='text-muted-foreground'>{k}:</span> {v}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Columns */}
+            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
+              <h2 className='mb-4 text-xl font-semibold'>
+                Columns <span className='text-muted-foreground'>({tableDetail.columns.length})</span>
+              </h2>
+              <div className='overflow-x-auto'>
+                <table className='w-full text-sm'>
+                  <thead>
+                    <tr className='border-b border-border text-left text-muted-foreground'>
+                      <th className='pb-2 pr-4 font-medium'>Name</th>
+                      <th className='pb-2 pr-4 font-medium'>Type</th>
+                      <th className='pb-2 pr-4 font-medium'>Nullable</th>
+                      <th className='pb-2 pr-4 font-medium'>Key</th>
+                      <th className='pb-2 font-medium'>Default</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableDetail.columns.map((col) => (
+                      <tr key={col.name} className='border-b border-surface-border'>
+                        <td className='py-2 pr-4 font-medium'>{col.name}</td>
+                        <td className='py-2 pr-4 text-muted-foreground'>{col.column_type || col.data_type}</td>
+                        <td className='py-2 pr-4 text-muted-foreground'>{col.is_nullable}</td>
+                        <td className='py-2 pr-4'>
+                          {col.column_key === 'PRI' ? (
+                            <span title='Primary Key'><KeyRound className='h-4 w-4 text-primary' /></span>
+                          ) : col.column_key === 'UNI' ? (
+                            <span title='Unique Key'><KeyRound className='h-4 w-4 text-warning-strong' /></span>
+                          ) : col.column_key === 'MUL' ? (
+                            <span title='Index'><KeyRound className='h-4 w-4 text-muted-foreground' /></span>
+                          ) : (
+                            <span className='text-muted-foreground'>—</span>
+                          )}
+                        </td>
+                        <td className='py-2 text-muted-foreground'>{col.column_default || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </div>
-          )}
-        </section>
+            </section>
 
-        {/* Columns */}
-        <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-          <h2 className='mb-4 text-xl font-semibold'>
-            Columns <span className='text-muted-foreground'>({tableDetail.columns.length})</span>
-          </h2>
-          <div className='overflow-x-auto'>
-            <table className='w-full text-sm'>
-              <thead>
-                <tr className='border-b border-border text-left text-muted-foreground'>
-                  <th className='pb-2 pr-4 font-medium'>Name</th>
-                  <th className='pb-2 pr-4 font-medium'>Type</th>
-                  <th className='pb-2 pr-4 font-medium'>Nullable</th>
-                  <th className='pb-2 pr-4 font-medium'>Key</th>
-                  <th className='pb-2 font-medium'>Default</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tableDetail.columns.map((col) => (
-                  <tr key={col.name} className='border-b border-surface-border'>
-                    <td className='py-2 pr-4 font-medium'>{col.name}</td>
-                    <td className='py-2 pr-4 text-muted-foreground'>{col.column_type || col.data_type}</td>
-                    <td className='py-2 pr-4 text-muted-foreground'>{col.is_nullable}</td>
-                    <td className='py-2 pr-4'>
-                      {col.column_key === 'PRI' ? (
-                        <span title='Primary Key'><KeyRound className='h-4 w-4 text-primary' /></span>
-                      ) : col.column_key === 'UNI' ? (
-                        <span title='Unique Key'><KeyRound className='h-4 w-4 text-warning-strong' /></span>
-                      ) : col.column_key === 'MUL' ? (
-                        <span title='Index'><KeyRound className='h-4 w-4 text-muted-foreground' /></span>
-                      ) : (
-                        <span className='text-muted-foreground'>—</span>
-                      )}
-                    </td>
-                    <td className='py-2 text-muted-foreground'>{col.column_default || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+            {/* DDL */}
+            {tableDetail.properties.create_ddl && (
+              <section className='rounded-2xl border border-border bg-surface-2 p-6'>
+                <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
+                <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
+                  <code>{tableDetail.properties.create_ddl}</code>
+                </pre>
+              </section>
+            )}
+          </TabsContent>
 
-        {/* DDL */}
-        {tableDetail.properties.create_ddl && (
-          <section className='rounded-2xl border border-border bg-surface-2 p-6'>
-            <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
-            <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
-              <code>{tableDetail.properties.create_ddl}</code>
-            </pre>
-          </section>
-        )}
+          <TabsContent value='preview' className='mt-4'>
+            <section className='rounded-2xl border border-border bg-surface-2 p-6'>
+              <PreviewDataTab
+                database={tableDetail.database}
+                table={tableDetail.name}
+              />
+            </section>
+          </TabsContent>
+        </Tabs>
       </div>
     )
   }
@@ -307,7 +340,7 @@ export function ExplorerDetail({
           </h2>
           <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
             {databases.map((db) => {
-              const cached = dbCache?.get(db)
+              const cached = dbCache?.get(`${catalogName}/${db}`)
               const tableCount = cached?.summary.tables ?? 0
               const viewCount = cached?.summary.views ?? 0
               const mvCount = cached?.summary.materialized_views ?? 0
@@ -344,7 +377,11 @@ export function ExplorerDetail({
   // ── Database detail view ─────────────────────────────────
   if (node.type === 'database') {
     const dbName = node.database || node.label
-    const cached = dbCache?.get(dbName)
+    // The cache is keyed by `catalog/database` so an external database and a
+    // self-managed one sharing a name do not collide (see index.tsx).
+    const cached = node.catalog
+      ? dbCache?.get(`${node.catalog}/${dbName}`)
+      : dbCache?.get(dbName)
 
     return (
       <div className='space-y-5'>
