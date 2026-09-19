@@ -582,6 +582,89 @@ def test_nova_surface_token_scan_keeps_the_whole_reference_span() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Defect 2f (NOVA-141): a fused decimal followed by a hyphenated segment
+#
+# ``stageReference : AT stageSegment (stageSeparator stageSegment | fusedDecimal)*``
+# lets a fused decimal (``.2024``) continue the reference, but only with another
+# ``stageSeparator`` (``.`` / ``/``) or another ``fusedDecimal``. A ``MINUS_SYMBOL``
+# is neither, so the grammar cannot continue and rejects the statement
+# (``@stage1.data.2024-11-30.csv`` is a syntax error at the hyphen). The
+# Nova-surface token scan used to break out of the loop there and return the
+# *truncated* ``@stage1.data.2024`` with ``errs=0`` — a valid-looking verdict on a
+# wrong path, and the dangerous direction of the NOVA-136 asymmetry. The scan must
+# mirror the grammar and reject instead.
+#
+# Semantics decided by the Team Lead on NOVA-141: both paths REJECT. The grammar
+# is the source of truth, and returning a partial reference silently would hide a
+# wrong path from the user while the remainder (``-11-30.csv``) is re-parsed as
+# other tokens.
+# ---------------------------------------------------------------------------
+
+
+#: The three probe shapes from the issue, plus their grammar rejection position.
+_NOVA141_REJECTED = [
+    "@stage1.data.2024-11-30.csv",
+    "@stage1.data.2024.01-01.csv",
+    "@stage-2.data.2024-11.csv",
+]
+
+
+@pytest.mark.parametrize("reference", _NOVA141_REJECTED)
+def test_nova_surface_scan_rejects_fused_decimal_plus_hyphen(reference: str) -> None:
+    """When the grammar rejects a reference, the scan must not return a truncated one.
+
+    NOVA-136 AC2 makes the grammar the control: wherever the grammar refuses the
+    text, the Nova surface must not claim a reference with the wrong
+    ``stage_name``/``path_parts`` and ``errs=0``.
+    """
+    from_control = parse_sql(f"SELECT * FROM {reference}")
+    assert from_control.command_type == CommandType.REGULAR
+    assert from_control.stage_refs == []
+    assert [(e.line, e.column) for e in from_control.errors] != []
+
+    for sql in (
+        f"LIST {reference}",
+        f"LIST FILES {reference}",
+        f"COPY INTO t FROM {reference}",
+    ):
+        result = parse_sql(sql)
+        assert result.stage_refs == [], f"{sql} returned a truncated reference"
+        assert result.command_type == CommandType.REGULAR, f"{sql} stayed a stage command"
+
+
+@pytest.mark.parametrize("reference", _NOVA141_REJECTED)
+def test_proxy_reference_lookup_agrees_with_the_grammar(reference: str) -> None:
+    """The proxy's session-variable guard uses the same token logic, so it rejects too.
+
+    ``stage_reference_at`` shares ``_reference_from_tokens``; if it still answered
+    with a truncated ``full_match`` the proxy would leave a fragment alone as if it
+    were a complete stage.
+    """
+    from app.modules.query.dialect.parser import stage_reference_at
+
+    sql = f"SELECT * FROM {reference}"
+    assert stage_reference_at(sql, sql.index("@")) is None
+
+
+def test_nova141_does_not_regress_the_nova136_forms() -> None:
+    """The rejection is narrow: the correct hyphen/fused-dot forms still resolve."""
+    for sql, full_match in [
+        ("LIST @stage-2.data.csv", "@stage-2.data.csv"),
+        ("COPY INTO t FROM @daily-load-2.data.csv", "@daily-load-2.data.csv"),
+        ("LIST @stage1.2024.01.data.csv", "@stage1.2024.01.data.csv"),
+        ("COPY INTO t FROM @stage1.2024.csv", "@stage1.2024.csv"),
+        ("LIST @stage1/", "@stage1/"),
+    ]:
+        result = parse_sql(sql)
+        assert [ref.full_match for ref in result.stage_refs] == [full_match], sql
+        assert result.errors == []
+
+    alias = parse_sql("SELECT * FROM @stage1.2024 t")
+    assert alias.stage_refs[0].full_match == "@stage1.2024"
+    assert "t" not in alias.stage_refs[0].path_parts
+
+
+# ---------------------------------------------------------------------------
 # AC-5 mitigation: @-free SQL never builds the ANTLR4 tree
 # ---------------------------------------------------------------------------
 

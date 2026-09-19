@@ -905,7 +905,10 @@ def _reference_from_tokens(tokens: list, start_index: int, sql: str) -> StageRef
       separator+segment pair the lexer glued into one token, so it continues the
       reference directly and does **not** absorb a following atom (``fusedDecimal``,
       not ``decimalAtom``) — that is what keeps ``FROM @stage1.2024 t``'s ``t``
-      a table alias.
+      a table alias;
+    * a ``MINUS_SYMBOL`` straight after a fused decimal is where the grammar
+      stops matching (``@stage1.data.2024-11-30.csv``), so the reference is
+      rejected rather than closed early (NOVA-141).
     """
     if start_index >= len(tokens) or tokens[start_index].text != "@":
         return None
@@ -940,6 +943,16 @@ def _reference_from_tokens(tokens: list, start_index: int, sql: str) -> StageRef
         fused = _fused_decimal_parts(token)
         if fused is None:
             break
+        # ``stageReference`` is ``AT stageSegment (stageSeparator stageSegment |
+        # fusedDecimal)*``: after a ``fusedDecimal`` the only legal continuation
+        # is another ``stageSeparator`` or another ``fusedDecimal``. A
+        # ``MINUS_SYMBOL`` is neither, so the grammar cannot continue and rejects
+        # (``@stage1.data.2024-11-30.csv`` is a syntax error at the hyphen). The
+        # scan must mirror that: returning the truncated ``@stage1.data.2024``
+        # with ``errs=0`` would hand the Nova surfaces a wrong path while the
+        # remainder (``-11-30.csv``) is silently re-parsed as other tokens.
+        if index + 1 < len(tokens) and tokens[index + 1].text == "-":
+            return None
         segments.extend(fused)
         index += 1
 
