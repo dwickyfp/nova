@@ -753,7 +753,8 @@ Design contract: `docs/specs/nova-61-agentic-assistant-design.md`.
 - [x] **10-A** Design spec pinned to E1a/E2b/E5a and the locked v1 subset — `docs/specs/nova-61-agentic-assistant-design.md` (PR #74)
 - [x] **10-B** Backend assistant module `backend/app/modules/assistant/` — auth-required thread endpoints, provider wiring to `CONFIG_AI_PROVIDERS`, bounded plan→tool→reflect loop with the SSE event contract (`text_delta`, `tool_call`, `tool_status`, `done`, `error`, `ping`) — `router.py`, `service.py`, `provider.py`, `events.py`, `state.py`, `consent.py` (PR #77)
 - [x] **10-C** `query_execute` tool — delegate-first via `QueryService.execute_statements` (never a socket, never port 9030), read-only allowlist layered above the unchanged `sql_guard.py`, per-call/always-allow/deny consent, audit correlation — `tools/query_execute.py`, `tools/policy.py`, `tools/redaction.py`; proven by `backend/tests/unit/test_assistant_stage_c.py` (no-socket import test, delegate-first test, deny-before-engine, consent IDOR→404, redacted audit SQL) (PR #83, NOVA-77)
-- [x] **10-D** Assistant panel — right-side panel in the workspace `<section>` using `Bot` for the assistant surface, transcript + streaming + stop, inline tool-call card with approval controls, session management — `frontend/src/features/assistant/` (`assistant-panel.tsx`, `use-assistant-turn.ts`, `stream-client.ts`, `tool-call-card.tsx`); 322 frontend tests green (PRs #78, #81)
+- [x] **10-D** Assistant panel — transcript + streaming + stop, inline tool-call card with approval controls, session management — `frontend/src/features/assistant/` (`assistant-panel.tsx`, `use-assistant-turn.ts`, `stream-client.ts`, `tool-call-card.tsx`); 322 frontend tests green (PRs #78, #81)
+- [x] **10-G** Global assistant surface (NOVA-139) — panel promoted from the workspace `<section>` to a single mount in `authenticated-layout.tsx`, full-height on the right of every `_authenticated` route; persistent bottom-right toggle, width transition honouring `prefers-reduced-motion`, provider-owned open state. — `assistant-dock.tsx`, `assistant-provider.tsx`, `assistant-toggle.tsx`, `use-assistant-conversation.ts`
 - [x] **10-E** SQL skill retrieval from `docs/sql_docs/` — advisory context only; invariant enforcement stays in `sql_guard.py` — `backend/app/modules/assistant/skills.py` (12 source docs, revision-hashed, token-budget enforced, credential-screened); proven by `backend/tests/unit/test_assistant_skill.py`. Blocker cleared: NOVA-59 landed, `docs/sql_docs/` is on `main`
 - [x] **10-F** Measured benchmark for the loop, tool, consent and skill-assembly path + a committed report — `docs/benchmarks/nova-61-assistant.md` + `backend/tests/benchmark/` (`harness.py`, `test_assistant_loop.py`, `test_assistant_engine.py`) (NOVA-92, PR #98)
 
@@ -765,6 +766,15 @@ browser/file tools, `CREATE TABLE`-by-prompt, dbt, notebooks,
 ## Decision Log
 
 Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.
+
+### Global assistant panel (NOVA-139) — 2026-09-19
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **Move the panel mount from the workspace `<section>` to `authenticated-layout.tsx` and own it in a React context provider** | The user asked for the assistant on every page, not just `/workspaces`. A single mount in the one wrapper all `_authenticated` routes share is the smallest change that makes it global, and a context provider (not zustand) matches how `layout-provider` already owns cross-route UI state | The provider holds one conversation at a time; a page must register its binding to attach a thread | A second concurrent surface needs its own conversation, or panel state grows beyond open/closed + binding |
+| **Open state persists through the existing `assistant_collapsed` workspace field, owned by the provider** | Reuses the already-tested backend field and keeps `assistant-panel-state.ts` the only polarity translation, so a write and a read cannot drift | The value is initialised from the workspaces tree, so its first fetch is the persistence gate | A user-scoped preference store lands (`CONFIG_USER_PREFERENCES` is deliberately not it — see NOVA-61 E2b) |
+| **Align the panel's breakpoint ladder with the sidebar (`md` inline / `Sheet` below)** | The old 1024px threshold left 769–1023px with a sidebar but nowhere for the panel, which the global requirement makes visible | The inline panel takes width a little earlier than before | The panel proves unusable inline at `md` with the editor open |
+| **Keep the aside mounted while closed and gate it with `inert`, rather than `display:none`** | The user asked for a visible open/close transition; a width transition needs the element present, and `inert` keeps the hidden transcript and controls out of the tab order | A closed panel is at zero width but still in the DOM | A rendering cost from the hidden panel shows up in profiling |
 
 ### Internal ML endpoint authentication (NOVA-90) — 2026-09-18
 

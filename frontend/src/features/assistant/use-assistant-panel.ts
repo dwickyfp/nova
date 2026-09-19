@@ -1,11 +1,12 @@
 import * as React from 'react'
 
-const NARROW_QUERY = '(max-width: 1023px)'
+const NARROW_QUERY = '(max-width: 767px)'
 
 /**
- * The assistant panel is inline above 1024px and a `Sheet` overlay below it.
- * A right panel needs the editor to keep a workable width, so the switch point
- * is higher than the app's 768px mobile breakpoint.
+ * The assistant panel is inline from `md` (768px) up, matching the sidebar's
+ * own breakpoint, and a `Sheet` overlay below it. Keeping the two ladders
+ * aligned means a viewport can never fall into a gap where the sidebar is
+ * inline but the panel has no surface.
  */
 export function useIsNarrowForAssistant() {
   return React.useSyncExternalStore(

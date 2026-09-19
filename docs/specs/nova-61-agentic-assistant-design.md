@@ -435,7 +435,7 @@ and re-checked against `main@0c55f14`.
 | Audit write | `backend/app/common/audit.py:10`; table `docker/init-nova.sql:311` |
 | Provider read (masked) | `backend/app/modules/ai_ml/service.py:46`, `:94`, `:112` |
 | Provider/model tables | `docker/init-nova.sql:112`, `:126` |
-| Panel anchor (Stage D) | `frontend/src/features/workspaces/index.tsx:1144`, `:1294` |
+| Panel anchor (Stage D) | `frontend/src/features/assistant/assistant-dock.tsx`, mounted in `frontend/src/components/layout/authenticated-layout.tsx` (NOVA-139: global, formerly `frontend/src/features/workspaces/index.tsx`) |
 | Design-system primitives | `frontend/src/components/ui/` (Sheet `sheet.tsx:44-79`, ScrollArea, StatusBadge, ConfirmDialog) |
 
 ---
@@ -447,7 +447,7 @@ and re-checked against `main@0c55f14`.
 | A | **T-A0** this spec | — | done when merged |
 | B | T-B1 module skeleton + provider wiring; T-B2 bounded loop + SSE; T-B3 **in-memory state** (E5a makes this S: no tables) | T-A0 | B1→B2 serialized in the module |
 | C | T-C1 `query_execute` delegate-first; T-C2 consent (E2b in-memory); T-C3 audit correlation | T-A0, E1/E2 (answered) | C1→C2 serialized |
-| D | T-D1 panel shell + `Bot` icon; T-D2 transcript/stream/stop; T-D3 tool card + approval; T-D4 session management | T-B2 event contract (D can start against a stub) | no design-system violation |
+| D | T-D1 panel shell + `Bot` icon; T-D2 transcript/stream/stop; T-D3 tool card + approval; T-D4 session management | T-B2 event contract (D can start against a stub) | no design-system violation. NOVA-139 later promoted the panel from the workspace `<section>` to a global dock in `authenticated-layout.tsx`; the SSE/thread/consent contract is unchanged |
 | E | T-E1 SQL skill retrieval | **NOVA-59** | blocked until `docs/sql_docs/` lands; advisory only — invariant enforcement stays in `sql_guard.py` |
 
 Shared module: `backend/app/modules/assistant/`. B1/B2 and C1/C2 serialize

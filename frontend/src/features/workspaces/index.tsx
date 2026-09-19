@@ -5,6 +5,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type SetStateAction,
   startTransition,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -64,8 +65,9 @@ import {
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
-import { AssistantPanel } from '@/features/assistant'
-import { useWorkspaceAssistant } from '@/features/assistant/use-workspace-assistant'
+import { useAssistant } from '@/features/assistant'
+import type { TurnContext } from '@/features/assistant'
+import { createThread } from '@/features/assistant/thread-client'
 import { DatabaseSchemaSelector } from './database-schema-selector'
 import {
   type CompletionResponse,
@@ -95,7 +97,6 @@ import type {
   WorkspaceTreeResponse,
 } from './types'
 import { InlineSelect } from './inline-select'
-import { initialAssistantOpen, assistantCollapsedToPersist } from './assistant-panel-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -576,7 +577,6 @@ export function WorkspacesPage() {
   const queryClient = useQueryClient()
   const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases'>('workspaces')
   const [secondaryCollapsed, setSecondaryCollapsed] = useState(false)
-  const [assistantOpen, setAssistantOpen] = useState(false)
   const [workspaceSearch, setWorkspaceSearch] = useState('')
   const [databaseSearch, setDatabaseSearch] = useState('')
   const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({})
@@ -627,19 +627,46 @@ export function WorkspacesPage() {
   const saveTimerRef = useRef<number | null>(null)
   const stateSaveTimerRef = useRef<number | null>(null)
   const editorContentRef = useRef('')
-  // The persisted tree arrives after first paint. Initialize the panel from it
-  // once so a later refetch cannot clobber a toggle the user just made.
-  const assistantOpenInitializedRef = useRef(false)
 
-  const assistant = useWorkspaceAssistant({
-    fileId: activeTabId,
-    context: {
+  const {
+    open: assistantOpen,
+    toggle: toggleAssistant,
+    setBinding,
+    initialiseOpen,
+    collapsedToPersist,
+  } = useAssistant()
+  const threadsRef = useRef<Record<string, string>>({})
+  const ensureThread = useCallback(async () => {
+    if (!activeTabId) return null
+    const existing = threadsRef.current[activeTabId]
+    if (existing) return existing
+    const thread = await createThread(activeTabId)
+    threadsRef.current[activeTabId] = thread.thread_id
+    return thread.thread_id
+  }, [activeTabId])
+
+  const assistantContext = useMemo<TurnContext>(
+    () => ({
       database: activeTab?.database ?? null,
       schema: activeTab?.schema ?? null,
       role: activeTab?.role ?? null,
-    },
-    onError: (message) => toast.error(message),
-  })
+    }),
+    [activeTab?.database, activeTab?.role, activeTab?.schema]
+  )
+
+  const assistantOnError = useCallback((message: string) => toast.error(message), [])
+
+  // The global panel owns open/closed and the conversation; the workspace
+  // supplies only the per-file binding (thread + active tab context).
+  useEffect(() => {
+    setBinding({
+      key: activeTabId,
+      context: assistantContext,
+      ensureThread,
+      onError: assistantOnError,
+    })
+    return () => setBinding(null)
+  }, [activeTabId, assistantContext, ensureThread, assistantOnError, setBinding])
 
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
     queryKey: ['workspace-tree'],
@@ -671,10 +698,7 @@ export function WorkspacesPage() {
     const context = queryContextQuery.data
     if (!tree || !context) return
     setSecondaryCollapsed(tree.sidebar_collapsed)
-    if (!assistantOpenInitializedRef.current) {
-      setAssistantOpen(initialAssistantOpen(tree))
-      assistantOpenInitializedRef.current = true
-    }
+    initialiseOpen(tree)
     setOpenTabIds((prev) => (prev.length ? prev : tree.open_tabs))
     setActiveTabId((prev) => prev ?? tree.active_tab ?? tree.open_tabs[0] ?? null)
 
@@ -698,7 +722,7 @@ export function WorkspacesPage() {
       }
       return next
     })
-  }, [queryContextQuery.data, workspaceTreeQuery.data])
+  }, [initialiseOpen, queryContextQuery.data, workspaceTreeQuery.data])
 
   useEffect(() => {
     if (!activeTabId) return
@@ -829,7 +853,7 @@ export function WorkspacesPage() {
         open_tabs: openTabIds,
         active_tab: activeTabId,
         sidebar_collapsed: secondaryCollapsed,
-        assistant_collapsed: assistantCollapsedToPersist(assistantOpen),
+        assistant_collapsed: collapsedToPersist(),
         last_database: activeTab?.database ?? null,
         last_schema: activeTab?.schema ?? null,
         last_role: activeTab?.role ?? null,
@@ -846,6 +870,7 @@ export function WorkspacesPage() {
     activeTab?.schema,
     activeTabId,
     assistantOpen,
+    collapsedToPersist,
     openTabIds,
     queryContextQuery.data,
     secondaryCollapsed,
@@ -1416,8 +1441,9 @@ export function WorkspacesPage() {
                 size='sm'
                 className='mb-0.5 ml-auto shrink-0 gap-1.5'
                 aria-pressed={assistantOpen}
+                aria-expanded={assistantOpen}
                 aria-controls='assistant-panel'
-                onClick={() => setAssistantOpen((prev) => !prev)}
+                onClick={toggleAssistant}
               >
                 <Bot className='size-4' />
                 Assistant
@@ -1752,21 +1778,6 @@ export function WorkspacesPage() {
             </div>
           )}
         </section>
-
-        <AssistantPanel
-          open={assistantOpen}
-          onOpenChange={setAssistantOpen}
-          messages={assistant.messages}
-          onSendMessage={assistant.sendMessage}
-          onDecide={assistant.decide}
-          decidingToolCallId={assistant.decidingToolCallId}
-          streaming={assistant.streaming}
-          onStop={assistant.stop}
-          statusMessage={assistant.statusMessage}
-          grantActive={assistant.grantActive}
-          onResetPermissions={assistant.resetPermissions}
-          resettingPermissions={assistant.resettingGrant}
-        />
       </div>
     </div>
   )
