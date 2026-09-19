@@ -165,22 +165,30 @@ function AssistantBody({
   )
 }
 
-function AssistantHeader({ onClose }: { onClose: () => void }) {
+function AssistantHeader({
+  onClose,
+  showClose = true,
+}: {
+  onClose: () => void
+  showClose?: boolean
+}) {
   return (
     <div className='flex items-center justify-between gap-2 border-b px-3 py-2'>
       <div className='flex items-center gap-2'>
         <Bot aria-hidden='true' className='size-4 text-muted-foreground' />
         <h2 className='text-sm font-medium'>Assistant</h2>
       </div>
-      <Button
-        type='button'
-        variant='ghost'
-        size='icon'
-        onClick={onClose}
-        aria-label='Close assistant'
-      >
-        <PanelRightClose className='size-4' />
-      </Button>
+      {showClose ? (
+        <Button
+          type='button'
+          variant='ghost'
+          size='icon'
+          onClick={onClose}
+          aria-label='Close assistant'
+        >
+          <PanelRightClose className='size-4' />
+        </Button>
+      ) : null}
     </div>
   )
 }
@@ -203,16 +211,29 @@ export function AssistantPanel(props: AssistantPanelProps) {
     )
   }
 
-  if (!open) return null
-
   return (
-    <aside
-      id='assistant-panel'
-      aria-label='Assistant'
-      className={cn('flex min-h-0 shrink-0 flex-col border-l bg-background', PANEL_WIDTH)}
+    // The wrapper animates its width so the panel slides rather than blinking
+    // in and out. The aside stays mounted while closed, so `inert` (not
+    // unmounting) is what keeps its transcript and controls out of the tab
+    // order and off the accessibility tree.
+    <div
+      data-state={open ? 'open' : 'closed'}
+      className={cn(
+        'shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
+        open ? PANEL_WIDTH : 'w-0'
+      )}
     >
-      <AssistantHeader onClose={() => onOpenChange(false)} />
-      <AssistantBody {...props} />
-    </aside>
+      <aside
+        id='assistant-panel'
+        aria-label='Assistant'
+        inert={!open}
+        className={cn('flex h-full min-h-0 flex-col border-l bg-background', PANEL_WIDTH)}
+      >
+        {/* The layout-level FAB is the hide control in wide mode, so the header
+            does not add a second one next to it. The Sheet keeps its own. */}
+        <AssistantHeader onClose={() => onOpenChange(false)} showClose={false} />
+        <AssistantBody {...props} />
+      </aside>
+    </div>
   )
 }
