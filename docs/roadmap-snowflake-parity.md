@@ -5,7 +5,7 @@
 > artifact the team executes against.
 > **Matrix source:** NOVA-49 *Nova Snowflake Capability Matrix* (canonical tracker).
 > **Engine pin at the time of writing:** `starrocks/fe-ubuntu:4.1.4` (commit `4a9848e`) — raised
-> from `4.1.1` by NOVA-51; unchanged by this document.
+> from `4.1.1` by NOVA-51 (see §2 Phase 0 row #2); unchanged by this document.
 > **Every factual claim below was verified against a primary source on 2026-09-18.** Claims that
 > could not be verified are marked `[BELUM TERVERIFIKASI]` and are never load-bearing.
 
@@ -19,7 +19,7 @@ reproduced here because every phase below depends on them.
 | # | Decision | Consequence for this roadmap |
 |---|---|---|
 | **R1** | **MLflow is adopted as the ML registry.** Nova stops building a native registry. | Row 13 is re-worded `PARTIAL → EMBED_OPEN_SOURCE (MLflow)`. Phase 3 carries the integration. Full proposal in §3. |
-| **R2** | ~~**The engine pin stays on tag `4.1.1` through Phase 9b.** The bump is a separate, sequenced task.~~ **Satisfied and superseded by NOVA-51** (2026-09-18): the engine pin is now `4.1.4` (commit `4a9848e`). The original intent holds — the bump did not touch the 9b critical path, and it pins to a **commit SHA**, not a tag. | Engine bump (#2 / NOVA-51) was sequenced into Phase 0 and completed without disturbing the 9b critical path. |
+| **R2** | ~~**The engine pin stays on tag `4.1.1` through Phase 9b.** The bump is a separate, sequenced task.~~ **Satisfied and superseded by NOVA-51** (2026-09-18): the engine pin is now `4.1.4` (commit `4a9848e`). The original intent holds — the bump did not touch the 9b critical path, and it pins to a **commit SHA**, not a tag. | Engine bump (#2 / NOVA-51) was sequenced into Phase 0, executed and complete — it landed after 9b merged, as its own PR with its own QA, and did not disturb the 9b critical path. |
 | **R3** | **Phase 0 = #2 + #9. #9 leads Phase 1 as a parallel track.** #9 is not a hard predecessor of #3/#4. | The dependency table in §2 encodes this: #9 depends on nothing, and #3/#4/#7/#16/#15/#12 do not depend on #9. |
 
 **Principle that survives every decision above:** the data format stays open.
@@ -73,15 +73,18 @@ behind on security and grammar, and no route to open table formats.
 
 | Item | Capability | Strategy | Effort | Prio | Depends on | Exit criteria (measurable) |
 |---|---|---|---|---|---|---|
-| **#2** | Engine version currency (`4.1.1` → `4.1.4`) | `WRAP_STARROCKS` | S | P1 | 9b stages 1–4 merged | Bump PR re-vendors the grammar from a **recorded commit SHA**; CI drift check passes against that SHA; `information_schema.task_runs` read path holds the predicate-escape fix; full L3 task-reconciler suite green on the new image. Tracked as **NOVA-51** — scope unchanged. |
+| **#2** | Engine version currency (`4.1.1` → `4.1.4`) — **COMPLETE** | `WRAP_STARROCKS` | S | P1 | ~~9b stages 1–4 merged~~ | **Done.** `docker/docker-compose-engine.yml:122,159` pin `starrocks/fe-ubuntu:4.1.4` / `be-ubuntu:4.1.4`; the vendored `backend/app/sql_dialect/grammar/upstream/StarRocks.g4` is byte-identical to upstream tag `4.1.4` (diff = 0); `backend/scripts/check_grammar_drift.py` and `backend/tests/integration/test_engine_4_1_4_regressions.py` are present in bump commit `525f624`. Tracked as **NOVA-51** — `done`. |
 | **#9** | External catalogs (Iceberg, Delta, Hive, Paimon, JDBC) | `WRAP_STARROCKS` | M | P1 | nothing | At least **Iceberg + Hive** catalog create/alter/drop through Nova API and UI; a query against an external table returns rows; catalog credentials stay out of every API response, log, and `NOVA_SYSTEM` row; external table appears in the catalog tree. |
 
-**Sequencing constraint (R2):** #2 must not start before 9b stages 1–4 have
-merged. Its own QA runs on its own head. Do **not** roll the bump into a 9b PR.
+**Sequencing constraint (R2):** #2 had to wait until 9b stages 1–4 merged, as its
+own PR with its own QA — never rolled into a 9b PR. That is done: the bump landed
+as `525f624`, merged at `0c55f14`.
 
-**Revisit trigger (R3):** if the #9 spike shows Iceberg catalog support is gated
-on an engine fix that only `4.1.3+` carries, then #9 waits behind NOVA-51 and
-this document is amended. The spike must state which engine fix, with a link.
+**Revisit trigger (R3):** the spike must say whether Iceberg catalog support is
+gated on an engine fix absent from the pinned engine, naming the fix and a link.
+Since #2 landed, the pin is `4.1.4`, so the original "waits behind NOVA-51"
+branch is moot — the spike is tracked as **NOVA-60** and its answer can only
+amend the *minimum engine version*, not re-sequence #9 behind a pending bump.
 
 ### Phase 1 — Core parity (starts in parallel with Phase 0)
 
@@ -96,7 +99,7 @@ engineering risk: no new component, no new dependency, no open decision.
 | **#7** | Backup / restore / time travel | `WRAP_STARROCKS` | M | P1 | nothing | `BACKUP SNAPSHOT` / `RESTORE SNAPSHOT` driven from Nova; snapshot list; recycle-bin browser with recovery; a dropped table is recovered and its row count matches pre-drop, asserted by an L3 test. |
 | **#16** | Resource groups / warehouses | `WRAP_STARROCKS` | M | P1 | nothing | Resource group CRUD + classifier configuration; a query routed to a group is attributed to it in `SHOW` output, asserted by test; the group's quota is enforced by the engine, not simulated by Nova. |
 | **#15** | Stage-native `@stage` file access | `NOVA_NATIVE` | M | P0 | nothing | All 8 open defects from NOVA-17 closed; `@stage` parse is grammar-based, not regex; the `ml_engine` `training_sql` path runs through the guard, the `@stage` translator, credential injection, and redaction; regression tests for each defect. |
-| **#12** | Task DAG / cron / streams | `NOVA_NATIVE` | L | P0 | nothing | **9a is already complete and merged.** Remaining: 9b (grammar + lowering + graph UI, NOVA-54, in flight) and 9c (stream providers). Phase 1 closes 9b; 9c follows. |
+| **#12** | Task DAG / cron / streams | `NOVA_NATIVE` | L | P0 | nothing | **9a complete and merged. 9b complete and merged** (grammar + lowering + runtime + task graph UI, PRs #57, #60, #61, #62, #64, #65; `NOVA-54` `done`). Remaining scope: **9c (stream providers)** only. |
 
 **Why #3/#4/#7/#16 can start immediately:** all four are `WRAP_STARROCKS` over
 statements the engine already accepts, with no dependency on #9 or on the engine
@@ -168,15 +171,15 @@ Full decisions, contract and task breakdown: `docs/specs/nova-61-agentic-assista
 ### Dependency summary
 
 ```
-Phase 0  #2 (NOVA-51) ──── requires 9b stages 1–4 merged (R2)
-         #9 (external catalogs) ── no predecessor
+Phase 0  #2 (NOVA-51) ── COMPLETE (pin 4.1.4, bump commit 525f624)
+         #9 (external catalogs) ── no predecessor; readiness spike is NOVA-60
 
 Phase 1  #3 ─┐
          #4 ─┼─ no predecessor, parallel with Phase 0
          #7 ─┤
          #16 ─┘
          #15 ─ no predecessor
-         #12 ─ 9a done; 9b (NOVA-54) in flight; 9c follows
+         #12 ─ 9a done; 9b done (NOVA-54); 9c remains
 
 Phase 2  #8 ─ no predecessor
          #21 ── #16
@@ -366,12 +369,12 @@ Verification date for every claim in this document: **2026-09-18**.
 | StarRocks tags `4.1.0 … 4.1.4`; `4.1.4` has no release page | `api.github.com/repos/StarRocks/starrocks/tags`, `.../releases?per_page=40`, `.../releases/tags/4.1.4` |
 | Grammar line counts and the absence of `FINALIZE` / `CRON` / `OVERLAP_POLICY` / `ALLOW_OVERLAPPING`; `submitTaskStatement` identical across tags | raw `StarRocks.g4` and `StarRocksLex.g4` at `4.1.1`, `4.1.3`, `branch-4.1`, diffed locally |
 | MLflow latest release `v3.16.1`, 2026-09-17 | `github.com/mlflow/mlflow/releases` |
-| Engine pin is `4.1.4` (NOVA-51, commit `4a9848e`) | `docker/docker-compose-engine.yml:122,159`; `README.md:543` |
+| Engine pin is `4.1.4` (NOVA-51, commit `4a9848e`, bump commit `525f624`) | `docker/docker-compose-engine.yml:122,159`; `README.md:543` |
 | NOVA-62 shipped Iceberg + Hive external catalogs (CRUD + external-table listing) | `backend/app/modules/external_catalogs/{service,router,schemas}.py`, `backend/app/main.py:179`; tests `backend/tests/unit/test_external_catalogs.py`, `backend/tests/integration/test_external_catalogs_l3.py`; correction verified 2026-09-18 (NOVA-112) |
 | `external_catalogs/` was an empty stub **only at `9bb2a87`**; superseded by NOVA-62 | repo read at `9bb2a87`, re-verified at NOVA-112 |
 | `model_type` is `classification\|regression` only | `backend/app/modules/ml_engine/schemas.py:15-19` |
 | ML tables and their columns | `docker/init-nova.sql:265-301` |
-| Grammar foundation merged at `4.1.1` (`095657f`); 9b in flight | `git log` at the task checkout |
+| Grammar foundation merged at `4.1.1` (`095657f`); 9b complete and merged | `git log origin/main`; `README.md` Phase 9 prose |
 
 **Not verified, and therefore not asserted anywhere above:**
 
