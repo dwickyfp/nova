@@ -930,8 +930,10 @@ export function WorkspacesPage() {
           },
         }))
       })
-    } catch {
-      // Silent fail — file creation error
+    } catch (error) {
+      // Surface the backend's classified reason (e.g. storage unavailable)
+      // instead of swallowing it — see NOVA-137.
+      toast.error(error instanceof Error ? error.message : 'Failed to create file.')
     }
   }
 

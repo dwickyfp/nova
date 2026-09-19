@@ -5,13 +5,14 @@ from uuid import uuid4
 
 import boto3
 from botocore.client import Config as BotoConfig
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from app.common.audit import write_audit_log
 from app.core.config import get_storage_connection, load_nova_app_config
 from app.core.exceptions import StorageError
 from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.workspaces.repository import workspace_repository
+from app.modules.workspaces.storage_errors import classify_storage_error
 
 
 class WorkspaceService:
@@ -53,6 +54,10 @@ class WorkspaceService:
         return "/".join(part for part in [base_prefix, username, clean_path] if part)
 
     async def get_tree(self, username: str) -> dict:
+        # ``_repo`` translates NOVA_SYSTEM bootstrap failures (missing table,
+        # engine down) into ``WorkspaceNotReadyError`` already; nothing extra
+        # to catch here. Kept as a plain await so a genuine bug still surfaces
+        # as a 500 rather than being masked as "not ready".
         entries = await self._repo.list_entries(username)
         prefs = await self._repo.get_preferences(
             username,
@@ -185,7 +190,7 @@ class WorkspaceService:
             for item in descendants:
                 if item["path"] == old_path or not item["path"].startswith(f"{old_path}/"):
                     continue
-                rel_suffix = item["path"][len(old_path):].lstrip("/")
+                rel_suffix = item["path"][len(old_path) :].lstrip("/")
                 if item["entry_type"] == "file" and item["object_key"]:
                     new_key = self.build_object_key(username, f"{new_path}/{rel_suffix}")
                     self._move_object(item["object_key"], new_key)
@@ -239,7 +244,8 @@ class WorkspaceService:
             raise StorageError("Workspace entry not found", status_code=404)
         all_entries = await self._repo.list_entries(username)
         targets = [
-            item for item in all_entries
+            item
+            for item in all_entries
             if item["id"] == entry_id or item["path"].startswith(f"{entry['path']}/")
         ]
         for item in sorted(targets, key=lambda row: len(row["path"].split("/")), reverse=True):
@@ -285,19 +291,27 @@ class WorkspaceService:
     def _put_object(self, key: str, body: bytes) -> dict:
         try:
             return self._client().put_object(Bucket=self._bucket(), Key=key, Body=body)
-        except ClientError as exc:
-            raise StorageError(f"Failed to save workspace file: {exc}") from exc
+        except (ClientError, BotoCoreError) as exc:
+            raise classify_storage_error(exc, action="save") from exc
 
     def _read_object(self, key: str) -> bytes:
         try:
             return self._client().get_object(Bucket=self._bucket(), Key=key)["Body"].read()
         except ClientError as exc:
-            raise StorageError(f"Failed to read workspace file: {exc}", status_code=404) from exc
+            error = classify_storage_error(exc, action="read")
+            if error.status_code == 502:
+                # A read that fails for a reason we could not classify is most
+                # likely "object gone"; preserve the endpoint's existing 404
+                # contract for the file-open path (NOVA-137).
+                error.status_code = 404
+            raise error from exc
+        except BotoCoreError as exc:
+            raise classify_storage_error(exc, action="read") from exc
 
     def _delete_object(self, key: str) -> None:
         try:
             self._client().delete_object(Bucket=self._bucket(), Key=key)
-        except ClientError:
+        except (ClientError, BotoCoreError):
             return
 
     def _move_object(self, source_key: str, dest_key: str) -> None:
@@ -309,8 +323,8 @@ class WorkspaceService:
                 Key=dest_key,
             )
             client.delete_object(Bucket=self._bucket(), Key=source_key)
-        except ClientError as exc:
-            raise StorageError(f"Failed to move workspace file: {exc}") from exc
+        except (ClientError, BotoCoreError) as exc:
+            raise classify_storage_error(exc, action="move") from exc
 
     @staticmethod
     def _parent_of(path: str) -> str:

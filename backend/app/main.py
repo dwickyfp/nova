@@ -70,6 +70,18 @@ async def lifespan(app: FastAPI):
     await session_store.init()
     await init_nova_system()
 
+    # Workspace object storage (NOVA-137). Idempotent: creates the configured
+    # bucket if absent so the first "create file" does not fail with
+    # NoSuchBucket. Best-effort and non-fatal — a missing bucket only breaks
+    # the workspace feature, and the request path still classifies the failure
+    # into a 503 with an actionable message.
+    try:
+        from app.modules.workspaces.storage_bootstrap import ensure_workspace_bucket
+
+        ensure_workspace_bucket()
+    except Exception as e:
+        logger.warning("Could not ensure workspace storage bucket: %s", e)
+
     # Nova-managed external catalog metadata (NOVA-62). Best-effort: the engine
     # catalog is the source of truth, and a missing mirror table only degrades
     # the list endpoint, not the service.
