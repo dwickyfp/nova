@@ -71,6 +71,27 @@ class FakeRepository:
         self.graph_runs[row["id"]] = row
         return row
 
+    async def create_graph_run_once(
+        self, data: dict[str, Any]
+    ) -> tuple[dict[str, Any], bool]:
+        """Non-destructive create-if-absent, mirroring the Primary-Key guard.
+
+        The real repository decides ownership from the guarded insert's affected
+        count, and refuses to clobber an existing row (a plain INSERT on a
+        Primary-Key table is a destructive upsert), so the fake returns the
+        existing row with ``created=False``.
+        """
+        self.calls.append("create_graph_run_once")
+        run_id = data["id"]
+        existing = self.graph_runs.get(run_id)
+        if existing is not None:
+            return existing, False
+        return await self.create_graph_run(data), True
+
+    async def delete_graph_run(self, run_id: str) -> bool:
+        self.calls.append("delete_graph_run")
+        return self.graph_runs.pop(run_id, None) is not None
+
     async def list_active_graph_runs(self, graph_id: str) -> list[dict[str, Any]]:
         self.calls.append("list_active_graph_runs")
         return [
@@ -104,13 +125,20 @@ def make_task(
     created_at: datetime | None = None,
     overlap_policy: str = "skip",
 ) -> dict[str, Any]:
+    """A task row for planning.
+
+    ``created_at`` defaults to ``None`` — the planner then treats ``now`` as the
+    anchor, so the task has no missed occurrence and is not due. A test that
+    wants a due occurrence passes ``created_at`` explicitly, which also makes
+    the number of due occurrences (catch-up) deterministic.
+    """
     return {
         "id": task_id or f"id_{name}",
         "name": name,
         "schedule_kind": kind,
         "schedule_expr": expr,
         "timezone": tz,
-        "created_at": created_at or datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        "created_at": created_at,
         "overlap_policy": overlap_policy,
     }
 
@@ -332,8 +360,14 @@ class TestDeterministicRunId:
 
 
 class TestPlanTick:
+    #: An anchor one 5-minute step before the last occurrence at or before
+    #: ``NOW`` (00:17). With anchor 00:10 the next fire is 00:15, so exactly one
+    #: occurrence is due and catch-up emits a single run. Tests that want more or
+    #: fewer occurrences pass their own ``created_at``.
+    ONE_STEP_ANCHOR = datetime(2026, 1, 1, 0, 10, tzinfo=UTC)
+
     def test_single_interval_task_is_due(self):
-        tasks = [make_task("solo")]
+        tasks = [make_task("solo", created_at=self.ONE_STEP_ANCHOR)]
         plan = plan_tick(tasks, [], NOW)
         assert len(plan.due) == 1
         assert plan.due[0].task_names == ["solo"]
@@ -348,10 +382,32 @@ class TestPlanTick:
         # First interval fire is one step after creation (00:21), after NOW.
         assert plan_tick(tasks, [], NOW).due == []
 
+    def test_catch_up_emits_each_missed_occurrence(self):
+        """A late tick fires the occurrences it missed, not only the last one."""
+        # Anchor at 00:00, NOW at 00:17, 5-minute cadence: 00:05/10/15 are missed.
+        tasks = [make_task("solo", created_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC))]
+        plan = plan_tick(tasks, [], NOW)
+        assert [d.due_at for d in plan.due] == [
+            datetime(2026, 1, 1, 0, 5, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 10, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 15, tzinfo=UTC),
+        ]
+
+    def test_catch_up_is_bounded_keeping_the_newest(self):
+        """A long outage converges to the present instead of replaying history."""
+        from app.modules.task_orchestration.schedule import MAX_CATCH_UP_OCCURRENCES
+
+        # Anchor far in the past -> far more occurrences than the cap.
+        tasks = [make_task("solo", created_at=datetime(2025, 1, 1, tzinfo=UTC))]
+        plan = plan_tick(tasks, [], NOW)
+        assert len(plan.due) == MAX_CATCH_UP_OCCURRENCES
+        # The newest missed occurrence (00:15) is present; the oldest are dropped.
+        assert plan.due[-1].due_at == datetime(2026, 1, 1, 0, 15, tzinfo=UTC)
+
     def test_root_only_triggers_a_graph_not_each_node(self):
         """Criterion 8: A -> B -> [C, D] is one graph run, not four."""
         tasks = [
-            make_task("A"),
+            make_task("A", created_at=self.ONE_STEP_ANCHOR),
             make_task("B", kind="manual", expr=""),
             make_task("C", kind="manual", expr=""),
             make_task("D", kind="manual", expr=""),
@@ -370,35 +426,115 @@ class TestPlanTick:
 
     def test_child_schedule_does_not_trigger_a_second_run(self):
         """Only roots anchor; a scheduled child must not double-fire the graph."""
-        tasks = [make_task("A"), make_task("B")]
+        tasks = [
+            make_task("A", created_at=self.ONE_STEP_ANCHOR),
+            make_task("B", created_at=self.ONE_STEP_ANCHOR),
+        ]
         edges = [make_edge("g_dag", "A", "B")]
         plan = plan_tick(tasks, edges, NOW)
         assert len(plan.due) == 1
         assert plan.due[0].task_names == ["A", "B"]
 
     def test_two_disjoint_graphs_are_two_runs(self):
-        tasks = [make_task("A"), make_task("X")]
+        tasks = [
+            make_task("A", created_at=self.ONE_STEP_ANCHOR),
+            make_task("X", created_at=self.ONE_STEP_ANCHOR),
+        ]
         plan = plan_tick(tasks, [], NOW)
         assert len(plan.due) == 2
-        assert {d.graph_id for d in plan.due} == {"id_A", "id_X"}
+        # An unscoped standalone task's graph id is its bare name.
+        assert {d.graph_id for d in plan.due} == {"A", "X"}
+
+    def test_two_scheduled_roots_in_one_graph_are_two_occurrences(self):
+        """A graph with several scheduled roots fires once per due root.
+
+        Previously only the earliest occurrence across a graph's roots was
+        enqueued, so a second root was silently dropped forever once the
+        earliest root's run existed. Each due root is its own occurrence and its
+        own (deterministically keyed) run.
+
+        ``A -> B`` and ``C -> B``: A and C are both roots (no incoming edge)
+        feeding the join B, and both are scheduled with different cadences.
+        """
+        tasks = [
+            # Each anchor yields exactly one due occurrence for its cadence
+            # (A: 00:16 from a 4-min step at 00:12; C: 00:17 from a 3-min step at
+            # 00:14), so the test observes two distinct roots, not a catch-up.
+            make_task(
+                "A",
+                expr="EVERY(INTERVAL 4 MINUTE)",
+                created_at=datetime(2026, 1, 1, 0, 12, tzinfo=UTC),
+            ),
+            make_task(
+                "C",
+                expr="EVERY(INTERVAL 3 MINUTE)",
+                created_at=datetime(2026, 1, 1, 0, 14, tzinfo=UTC),
+            ),
+            make_task("B", kind="manual", expr=""),
+        ]
+        edges = [
+            make_edge("g_dag", "A", "B"),
+            make_edge("g_dag", "C", "B"),
+        ]
+        plan = plan_tick(tasks, edges, NOW)
+
+        assert len(plan.due) == 2, "both roots are due and must fire"
+        assert {d.root_task for d in plan.due} == {"A", "C"}
+        # Distinct occurrences -> distinct idempotency keys.
+        assert len({d.run_id for d in plan.due}) == 2
+
+    def test_two_roots_due_at_the_same_instant_do_not_collide(self):
+        """Same instant, different roots: two runs, not one.
+
+        The run id includes the root, so two roots whose occurrences coincide
+        cannot collapse onto one primary key (which would drop one root's work).
+        """
+        tasks = [
+            # Same cadence, so both roots land on the same 00:16 occurrence —
+            # the identity collision this test guards against. Anchor at 00:12
+            # gives exactly that one step.
+            make_task(
+                "A",
+                expr="EVERY(INTERVAL 4 MINUTE)",
+                created_at=datetime(2026, 1, 1, 0, 12, tzinfo=UTC),
+            ),
+            make_task(
+                "C",
+                expr="EVERY(INTERVAL 4 MINUTE)",
+                created_at=datetime(2026, 1, 1, 0, 12, tzinfo=UTC),
+            ),
+            make_task("B", kind="manual", expr=""),
+        ]
+        edges = [
+            make_edge("g", "A", "B"),
+            make_edge("g", "C", "B"),
+        ]
+        plan = plan_tick(tasks, edges, NOW)
+
+        assert len(plan.due) == 2
+        assert plan.due[0].due_at == plan.due[1].due_at
+        assert len({d.run_id for d in plan.due}) == 2
 
     def test_invalid_schedule_is_skipped_not_fatal(self):
-        tasks = [make_task("broken", kind="cron", expr="not a cron"), make_task("ok")]
+        tasks = [
+            make_task("broken", kind="cron", expr="not a cron"),
+            make_task("ok", created_at=self.ONE_STEP_ANCHOR),
+        ]
         plan = plan_tick(tasks, [], NOW)
         assert [d.task_names for d in plan.due] == [["ok"]]
         assert plan.skipped == 1
 
     def test_offset_engine_zone_anchors_a_naive_created_at(self):
         """NOVA-41: a naive anchor is read in the engine's offset zone."""
-        tasks = [make_task("solo", created_at=datetime(2026, 1, 1, 7, 0))]
-        # 07:00 at UTC+7 is 00:00Z, so the 00:15Z occurrence is due at NOW.
+        # 07:00 at UTC+7 is 00:00Z; 12:10 at UTC+7 is 00:10Z, one step before NOW.
+        tasks = [make_task("solo", created_at=datetime(2026, 1, 1, 7, 10))]
         plan = plan_tick(tasks, [], NOW, "+07:00")
         assert [d.task_names for d in plan.due] == [["solo"]]
 
     def test_unusable_engine_zone_skips_every_task_not_crashes(self):
         """NOVA-41: a bad anchor zone counts as skipped, not a raised tick.
 
-        ``naive_engine_time_to_utc`` runs before ``latest_occurrence``; it must be
+        ``naive_engine_time_to_utc`` runs before the occurrence walk; it must be
         inside the same ``ScheduleError`` guard so one bad zone cannot abort the
         whole tick. The anchor must be naive for the engine zone to be consulted.
         """
@@ -408,22 +544,58 @@ class TestPlanTick:
         assert bad.skipped == 1
 
     def test_one_broken_task_does_not_suppress_a_healthy_one(self):
-        tasks = [make_task("broken", tz="Not/AZone"), make_task("ok")]
+        tasks = [
+            make_task("broken", tz="Not/AZone", created_at=self.ONE_STEP_ANCHOR),
+            make_task("ok", created_at=self.ONE_STEP_ANCHOR),
+        ]
         plan = plan_tick(tasks, [], NOW)
         assert [d.task_names for d in plan.due] == [["ok"]]
         assert plan.skipped == 1
 
 
+class TestSchemaScoping:
+    """Tasks are scoped to a database.schema, like a stage."""
+
+    def _scoped(self, name: str, database: str, schema: str, **kwargs):
+        task = make_task(name, created_at=TestPlanTick.ONE_STEP_ANCHOR, **kwargs)
+        task["database_name"] = database
+        task["schema_name"] = schema
+        return task
+
+    def test_same_name_in_two_schemas_are_two_standalone_graphs(self):
+        tasks = [
+            self._scoped("etl_daily", "db1", "silver"),
+            self._scoped("etl_daily", "db1", "gold"),
+        ]
+        plan = plan_tick(tasks, [], NOW)
+        assert {d.graph_id for d in plan.due} == {
+            "db1.silver.etl_daily",
+            "db1.gold.etl_daily",
+        }
+        assert len(plan.due) == 2
+
+    def test_a_scheduled_root_uses_its_own_schema_task_row(self):
+        """Two same-named roots must not share one task row.
+
+        The graph id is qualified, so each graph resolves its root within its own
+        scope: a schedule set on one schema's task must not fire the other's.
+        """
+        scheduled = self._scoped("etl", "db1", "silver", expr="EVERY(INTERVAL 5 MINUTE)")
+        manual = self._scoped("etl", "db1", "gold", kind="manual", expr="")
+        plan = plan_tick([scheduled, manual], [], NOW)
+        assert [d.graph_id for d in plan.due] == ["db1.silver.etl"]
+
+
 class TestTickOrderingAndIdempotency:
     async def test_persist_happens_before_publish(self):
         """Criterion 5: NOVA_SYSTEM first, Redis second."""
-        repo = FakeRepository([make_task("solo")])
+        repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
         transport = RecordingTransport()
         tick = SchedulerTick(repo, transport)
 
         await tick.tick(NOW)
 
-        create_index = repo.calls.index("create_graph_run")
+        create_index = repo.calls.index("create_graph_run_once")
         assert create_index >= 0
         assert len(transport.published) == 1
         persisted_id = next(iter(repo.graph_runs))
@@ -432,18 +604,50 @@ class TestTickOrderingAndIdempotency:
         assert published_tasks == ["id_solo"]
 
     async def test_graph_run_survives_a_failed_publish(self):
-        """The row exists even when the push fails — Redis is not the source."""
-        repo = FakeRepository([make_task("solo")])
+        """The row exists even when the push fails — Redis is not the source.
+
+        A transport failure is isolated per graph (``_enqueue`` is called inside
+        a try/except), so it must be logged rather than escape the tick: a
+        single Redis blip must not abandon every later due graph in the batch.
+        The persisted row is what the reconciler re-derives from.
+        """
+        repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
         tick = SchedulerTick(repo, RecordingTransport(fail=True))
 
-        with pytest.raises(RuntimeError):
-            await tick.tick(NOW)
+        plan = await tick.tick(NOW)
 
-        assert len(repo.graph_runs) == 1
+        assert len(repo.graph_runs) == 1, "the row must survive a failed publish"
+        assert len(plan.due) == 1
+
+    async def test_one_failed_publish_does_not_drop_the_rest_of_the_batch(self):
+        """Per-graph isolation: a bad graph must not starve its siblings."""
+
+        class FlakyTransport(RecordingTransport):
+            def __init__(self) -> None:
+                super().__init__()
+                self.calls = 0
+
+            async def publish_graph_run(self, graph_run, task_ids):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("redis down")
+                return await super().publish_graph_run(graph_run, task_ids)
+
+        repo = FakeRepository([
+            make_task("A", created_at=TestPlanTick.ONE_STEP_ANCHOR),
+            make_task("X", created_at=TestPlanTick.ONE_STEP_ANCHOR),
+        ])
+        transport = FlakyTransport()
+
+        plan = await SchedulerTick(repo, transport).tick(NOW)
+
+        assert len(plan.due) == 2
+        assert len(repo.graph_runs) == 2, "both rows persisted despite one failure"
+        assert len(transport.published) == 1, "the healthy graph was still pushed"
 
     async def test_two_ticks_for_one_due_time_create_one_run(self):
         """Criterion 6: the deterministic id makes a repeated tick a no-op."""
-        repo = FakeRepository([make_task("solo")])
+        repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
         transport = RecordingTransport()
         tick = SchedulerTick(repo, transport)
 
@@ -457,7 +661,9 @@ class TestTickOrderingAndIdempotency:
         # `queue` is required for a second run to be enqueued while the first is
         # still active; with the default `skip` the occurrence is deliberately
         # dropped (see the overlap tests).
-        repo = FakeRepository([make_task("solo", overlap_policy="queue")])
+        repo = FakeRepository([
+            make_task("solo", overlap_policy="queue", created_at=TestPlanTick.ONE_STEP_ANCHOR)
+        ])
         transport = RecordingTransport()
         tick = SchedulerTick(repo, transport)
 
@@ -467,9 +673,31 @@ class TestTickOrderingAndIdempotency:
         assert len(repo.graph_runs) == 2
         assert len(transport.published) == 2
 
+    async def test_retick_does_not_reset_an_existing_run(self):
+        """Regression: a re-tick must not clobber a run the worker already moved.
+
+        ``CONFIG_TASK_GRAPH_RUNS`` is a StarRocks Primary-Key table where a
+        plain INSERT is a destructive upsert, so a second tick for the same due
+        instant used to reset a ``running``/``success`` run back to ``pending``
+        and re-publish it — resurrecting completed work. Create-if-absent must
+        leave the existing row (and its state) untouched.
+        """
+        repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
+        transport = RecordingTransport()
+        tick = SchedulerTick(repo, transport)
+
+        await tick.tick(NOW)
+        run_id = next(iter(repo.graph_runs))
+        repo.graph_runs[run_id]["state"] = "success"
+
+        await tick.tick(NOW)
+
+        assert repo.graph_runs[run_id]["state"] == "success"
+        assert len(transport.published) == 1, "a re-tick must not re-publish"
+
     async def test_payload_carries_ids_and_metadata_only(self):
         """Credential-invisible: the stream payload is ids plus trigger type."""
-        repo = FakeRepository([make_task("solo")])
+        repo = FakeRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
         transport = RecordingTransport()
         await SchedulerTick(repo, transport).tick(NOW)
 

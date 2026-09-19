@@ -88,11 +88,16 @@ async def create_task(
 @router.patch("/{name}/suspend")
 async def suspend_task(
     name: str,
+    database: str = Query(""),
     conn=user_connection,
 ):
-    """Suspend (pause) a periodic task."""
+    """Suspend (pause) a periodic task.
+
+    ``database`` scopes the ALTER; the engine needs a session database to
+    resolve an unqualified task name.
+    """
     try:
-        return await task_service.suspend_task(conn, name)
+        return await task_service.suspend_task(conn, name, database=database)
     except Exception as exc:
         log.error("Suspend task '%s' failed: %s", name, exc, exc_info=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -104,11 +109,12 @@ async def suspend_task(
 @router.patch("/{name}/resume")
 async def resume_task(
     name: str,
+    database: str = Query(""),
     conn=user_connection,
 ):
     """Resume a suspended periodic task."""
     try:
-        return await task_service.resume_task(conn, name)
+        return await task_service.resume_task(conn, name, database=database)
     except Exception as exc:
         log.error("Resume task '%s' failed: %s", name, exc, exc_info=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -121,11 +127,12 @@ async def resume_task(
 async def drop_task(
     name: str,
     force: bool = Query(False),
+    database: str = Query(""),
     conn=user_connection,
 ):
     """Drop a task. Pass ``force=true`` for DROP TASK IF EXISTS … FORCE."""
     try:
-        return await task_service.drop_task(conn, name, force=force)
+        return await task_service.drop_task(conn, name, force=force, database=database)
     except Exception as exc:
         log.error("Drop task '%s' failed: %s", name, exc, exc_info=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc

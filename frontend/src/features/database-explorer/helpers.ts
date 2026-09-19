@@ -1,6 +1,7 @@
 import {
   ArrowRightLeft,
   Box,
+  CalendarClock,
   Database,
   Eye,
   FolderOpen,
@@ -48,6 +49,7 @@ export function getNodeIcon(type: ExplorerNodeType) {
     case 'function': return Sigma
     case 'pipe': return ArrowRightLeft
     case 'stage': return Box
+    case 'task': return CalendarClock
   }
 }
 
@@ -73,6 +75,42 @@ export function filterTree(nodes: ExplorerNode[], query: string): ExplorerNode[]
     }
   }
   return results
+}
+
+// Every node on a path to a matching node, including group nodes that only
+// survive so their matching descendant stays reachable. Search uses this to
+// open the ancestors of a result in one pass; leaves are skipped because
+// expanding them does nothing.
+export function collectMatchingAncestorIds(
+  nodes: ExplorerNode[],
+  query: string,
+): Set<string> {
+  const ids = new Set<string>()
+  if (!query) return ids
+
+  const walk = (node: ExplorerNode, ancestors: string[]): boolean => {
+    const children: ExplorerNode[] = node.children ?? []
+    let hasMatchingDescendant = false
+    for (const child of children) {
+      if (walk(child, [...ancestors, node.id])) hasMatchingDescendant = true
+    }
+
+    const matchesSelf =
+      node.label.toLowerCase().includes(query) ||
+      getNodeTypeLabel(node.type).toLowerCase().includes(query)
+
+    // "Loading..." and "No Objects Found" never count: expanding them shows
+    // nothing, and matching them would pop empty groups open on every search.
+    const isPlaceholder = node.label === 'Loading...' || node.label === 'No Objects Found'
+
+    if (!isPlaceholder && (matchesSelf || hasMatchingDescendant)) {
+      for (const ancestor of ancestors) ids.add(ancestor)
+    }
+    return hasMatchingDescendant || (matchesSelf && !isPlaceholder)
+  }
+
+  for (const node of nodes) walk(node, [])
+  return ids
 }
 
 export function findNodeById(nodes: ExplorerNode[], id: string): ExplorerNode | null {
@@ -294,6 +332,33 @@ export function buildDatabaseChildren(
           ],
         }))
       : [emptyNode(`${idBase}-stages`, 'Stages')],
+  })
+
+  // Tasks group — Nova CREATE TASK definitions scoped to this database.schema.
+  const tasks = data.tasks ?? []
+  children.push({
+    id: `${idBase}-tasks`,
+    label: 'Tasks',
+    type: 'group',
+    path: [catalogPath, db, 'Tasks'],
+    database: db,
+    catalog,
+    metadata: [{ label: 'Count', value: String(tasks.length) }],
+    children: tasks.length > 0
+      ? tasks.map((t) => ({
+          id: `${idBase}-task-${t.name}`,
+          label: t.name,
+          type: 'task' as ExplorerNodeType,
+          path: [catalogPath, db, 'Tasks', t.name],
+          database: db,
+          metadata: [
+            ...(t.schedule_kind ? [{ label: 'Schedule', value: t.schedule_kind }] : []),
+            ...(t.schedule_expr ? [{ label: 'Expr', value: t.schedule_expr }] : []),
+            ...(t.timezone ? [{ label: 'Timezone', value: t.timezone }] : []),
+            ...(t.overlap_policy ? [{ label: 'Overlap', value: t.overlap_policy }] : []),
+          ],
+        }))
+      : [emptyNode(`${idBase}-tasks`, 'Tasks')],
   })
 
   return children

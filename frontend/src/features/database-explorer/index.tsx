@@ -42,6 +42,7 @@ import {
 import {
   buildCatalogTree,
   buildDatabaseChildren,
+  collectMatchingAncestorIds,
   filterTree,
   findNodeById,
 } from './helpers'
@@ -65,7 +66,6 @@ import type {
 // ── Resizable Sidebar ──────────────────────────────────────
 
 interface ResizableSidebarProps {
-  minWidth: number
   maxWidth: number
   defaultWidth: number
   autoCloseThreshold: number
@@ -86,7 +86,6 @@ interface ResizableSidebarProps {
 }
 
 function ResizableExplorerSidebar({
-  minWidth,
   maxWidth,
   defaultWidth,
   autoCloseThreshold,
@@ -127,19 +126,15 @@ function ResizableExplorerSidebar({
       const delta = e.clientX - startX.current
       const newWidth = startWidth.current + delta
 
-      if (newWidth < autoCloseThreshold) {
-        // Trigger smooth collapse animation
+      if (newWidth <= autoCloseThreshold) {
+        // Release the drag and let the panel fall smoothly to zero width
         isResizing.current = false
         document.body.style.cursor = ''
         document.body.style.userSelect = ''
         setAnimating(true)
         setWidth(0)
-        setTimeout(() => {
-          setCollapsed(true)
-          setAnimating(false)
-        }, 200) // match CSS transition duration
       } else {
-        setWidth(Math.min(Math.max(newWidth, minWidth), maxWidth))
+        setWidth(Math.min(newWidth, maxWidth))
       }
     }
 
@@ -157,7 +152,7 @@ function ResizableExplorerSidebar({
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [autoCloseThreshold, minWidth, maxWidth])
+  }, [autoCloseThreshold, maxWidth])
 
   const handleOpen = useCallback(() => {
     setCollapsed(false)
@@ -167,7 +162,6 @@ function ResizableExplorerSidebar({
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         setWidth(defaultWidth)
-        setTimeout(() => setAnimating(false), 200)
       })
     })
   }, [defaultWidth])
@@ -194,6 +188,13 @@ function ResizableExplorerSidebar({
           (animating || !isResizing.current) && 'transition-[width] duration-200 ease-in-out',
         )}
         style={{ width: `${width}px` }}
+        onTransitionEnd={() => {
+          if (!animating) return
+          if (width === 0) {
+            setCollapsed(true)
+          }
+          setAnimating(false)
+        }}
       >
         <div className='flex items-center gap-2 border-b px-3 py-2'>
           <div className='relative flex-1'>
@@ -250,6 +251,7 @@ function ResizableExplorerSidebar({
                   onToggle={toggleExpanded}
                   onSelect={setSelectedId}
                   onCreateStage={onCreateStage}
+                  searchQuery={searchQuery}
                 />
               ))}
             </SidebarMenu>
@@ -505,6 +507,20 @@ export function DatabaseExplorerPage() {
     [tree, normalizedQuery],
   )
 
+  // While a search is active, open every ancestor on the path to a result so the
+  // match is visible without a manual expand. Union-only: query changes never
+  // collapse what the user opened; clearing the search restores the tree as-is.
+  useEffect(() => {
+    if (!normalizedQuery) return
+    const ancestorIds = collectMatchingAncestorIds(tree, normalizedQuery)
+    if (ancestorIds.size === 0) return
+    setExpandedIds((current) => {
+      const missing = [...ancestorIds].filter((id) => !current.has(id))
+      if (missing.length === 0) return current
+      return new Set([...current, ...ancestorIds])
+    })
+  }, [tree, normalizedQuery])
+
   const selectedPath = selectedNode?.path ?? []
 
   return (
@@ -550,14 +566,14 @@ export function DatabaseExplorerPage() {
         {/* Resizable sidebar state */}
         {(() => {
           // Constants
-          const MIN_WIDTH = 180
           const MAX_WIDTH = 480
           const DEFAULT_WIDTH = 288 // w-72
-          const AUTO_CLOSE_THRESHOLD = 140
+          // Collapse as soon as the drag reaches the minimum width — no dead zone
+          const MIN_WIDTH = 180
+          const AUTO_CLOSE_THRESHOLD = MIN_WIDTH
 
           return (
             <ResizableExplorerSidebar
-              minWidth={MIN_WIDTH}
               maxWidth={MAX_WIDTH}
               defaultWidth={DEFAULT_WIDTH}
               autoCloseThreshold={AUTO_CLOSE_THRESHOLD}

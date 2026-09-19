@@ -1,34 +1,44 @@
-import { page } from 'vitest/browser'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render } from 'vitest-browser-react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { WorkspaceTreeResponse } from '@/features/workspaces/types'
-import { AssistantProvider } from './assistant-provider'
-import { AssistantDock } from './assistant-dock'
+import { page } from "vitest/browser";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { render } from "vitest-browser-react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { WorkspaceTreeResponse } from "@/features/workspaces/types";
+import { AssistantProvider } from "./assistant-provider";
+import { AssistantDock } from "./assistant-dock";
 
-function makeTree(overrides: Partial<WorkspaceTreeResponse> = {}): WorkspaceTreeResponse {
+function makeTree(
+  overrides: Partial<WorkspaceTreeResponse> = {},
+): WorkspaceTreeResponse {
   return {
-    root_name: 'workspace',
+    root_name: "workspace",
     entries: [],
     open_tabs: [],
     active_tab: null,
     sidebar_collapsed: false,
     assistant_collapsed: false,
-    defaults: { database: 'analytics', schema: 'public', role: 'ACCOUNTADMIN' },
+    defaults: { database: "analytics", schema: "public", role: "ACCOUNTADMIN" },
     ...overrides,
-  }
+  };
 }
 
 function mockTree(tree: WorkspaceTreeResponse) {
-  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-    if (String(input).includes('/workspaces/tree')) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    if (String(input).includes("/workspaces/tree")) {
       return new Response(JSON.stringify(tree), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+        headers: { "Content-Type": "application/json" },
+      });
     }
-    return new Response(null, { status: 204 })
-  })
+    // The panel's empty state reads the recent-threads list; answer it with an
+    // empty list so the query resolves instead of logging a shape error.
+    if (String(input).includes("/assistant/threads")) {
+      return new Response(JSON.stringify({ threads: [], count: 0 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(null, { status: 204 });
+  });
 }
 
 /**
@@ -38,154 +48,219 @@ function mockTree(tree: WorkspaceTreeResponse) {
  */
 function LayoutHarness({ route }: { route: string }) {
   return (
-    <div className='flex h-svh'>
-      <div data-testid='route'>{route}</div>
+    <div className="flex h-svh">
+      <div data-testid="route">{route}</div>
       <AssistantDock />
     </div>
-  )
+  );
 }
 
-function renderLayout(tree: WorkspaceTreeResponse, route = 'dashboard') {
-  mockTree(tree)
+function renderLayout(tree: WorkspaceTreeResponse, route = "dashboard") {
+  mockTree(tree);
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <AssistantProvider>
         <LayoutHarness route={route} />
       </AssistantProvider>
-    </QueryClientProvider>
-  )
+    </QueryClientProvider>,
+  );
 }
 
-describe('AssistantDock', () => {
+describe("AssistantDock", () => {
   afterEach(() => {
-    vi.restoreAllMocks()
-  })
+    vi.restoreAllMocks();
+  });
 
-  it('restores an open panel from the tree without WorkspacesPage mounted', async () => {
-    await page.viewport(1440, 900)
+  it("restores an open panel from the tree without WorkspacesPage mounted", async () => {
+    await page.viewport(1440, 900);
     try {
-      const { getByRole, container } = await renderLayout(makeTree({ assistant_collapsed: false }))
+      const { getByRole, container } = await renderLayout(
+        makeTree({ assistant_collapsed: false }),
+      );
 
-      await expect.element(getByRole('button', { name: 'Hide assistant' })).toBeInTheDocument()
-      expect(container.querySelector('#assistant-panel')?.hasAttribute('inert')).toBe(false)
+      await expect
+        .element(getByRole("button", { name: "Close assistant" }))
+        .toBeInTheDocument();
+      await expect
+        .poll(() =>
+          container.querySelector("#assistant-panel")?.hasAttribute("inert"),
+        )
+        .toBe(false);
     } finally {
-      await page.viewport(375, 800)
+      await page.viewport(375, 800);
     }
-  })
+  });
 
-  it('renders a collapsed panel when the tree says it is collapsed', async () => {
-    await page.viewport(1440, 900)
+  it("renders a collapsed panel when the tree says it is collapsed", async () => {
+    await page.viewport(1440, 900);
     try {
-      const { getByRole, container } = await renderLayout(makeTree({ assistant_collapsed: true }))
+      const { getByRole, container } = await renderLayout(
+        makeTree({ assistant_collapsed: true }),
+      );
 
-      await expect.element(getByRole('button', { name: 'Show assistant' })).toBeInTheDocument()
-      expect(container.querySelector('#assistant-panel')?.hasAttribute('inert')).toBe(true)
+      await expect
+        .element(getByRole("button", { name: "Ask Nove" }))
+        .toBeInTheDocument();
+      expect(
+        container.querySelector("#assistant-panel")?.hasAttribute("inert"),
+      ).toBe(true);
     } finally {
-      await page.viewport(375, 800)
+      await page.viewport(375, 800);
     }
-  })
+  });
 
-  it('opens and closes the panel through the persistent toggle', async () => {
-    await page.viewport(1440, 900)
+  it("opens from the FAB and closes from the header control", async () => {
+    await page.viewport(1440, 900);
     try {
-      const { getByRole, container } = await renderLayout(makeTree({ assistant_collapsed: true }))
+      const { getByRole, container } = await renderLayout(
+        makeTree({ assistant_collapsed: true }),
+      );
 
-      await getByRole('button', { name: 'Show assistant' }).click()
-      await expect.element(getByRole('button', { name: 'Hide assistant' })).toBeInTheDocument()
-      expect(container.querySelector('#assistant-panel')?.hasAttribute('inert')).toBe(false)
+      await getByRole("button", { name: "Ask Nove" }).click();
+      await expect
+        .element(getByRole("button", { name: "Close assistant" }))
+        .toBeInTheDocument();
+      expect(
+        container.querySelector("#assistant-panel")?.hasAttribute("inert"),
+      ).toBe(false);
 
-      await getByRole('button', { name: 'Hide assistant' }).click()
-      await expect.element(getByRole('button', { name: 'Show assistant' })).toBeInTheDocument()
-      expect(container.querySelector('#assistant-panel')?.hasAttribute('inert')).toBe(true)
+      await getByRole("button", { name: "Close assistant" }).click();
+      await expect
+        .element(getByRole("button", { name: "Ask Nove" }))
+        .toBeInTheDocument();
+      expect(
+        container.querySelector("#assistant-panel")?.hasAttribute("inert"),
+      ).toBe(true);
     } finally {
-      await page.viewport(375, 800)
+      await page.viewport(375, 800);
     }
-  })
+  });
 
-  it('keeps the open state across a route change', async () => {
-    await page.viewport(1440, 900)
+  it("keeps the open state across a route change", async () => {
+    await page.viewport(1440, 900);
     try {
-      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      mockTree(makeTree({ assistant_collapsed: true }))
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      mockTree(makeTree({ assistant_collapsed: true }));
       const { getByRole, rerender } = await render(
         <QueryClientProvider client={client}>
           <AssistantProvider>
-            <LayoutHarness route='dashboard' />
+            <LayoutHarness route="dashboard" />
           </AssistantProvider>
-        </QueryClientProvider>
-      )
+        </QueryClientProvider>,
+      );
 
-      await getByRole('button', { name: 'Show assistant' }).click()
-      await expect.element(getByRole('button', { name: 'Hide assistant' })).toBeInTheDocument()
+      await getByRole("button", { name: "Ask Nove" }).click();
+      await expect
+        .element(getByRole("button", { name: "Close assistant" }))
+        .toBeInTheDocument();
 
       // A route change swaps the slot but keeps the provider, so the assistant
       // (and its open state) is not remounted.
       await rerender(
         <QueryClientProvider client={client}>
           <AssistantProvider>
-            <LayoutHarness route='database-explorer' />
+            <LayoutHarness route="database-explorer" />
           </AssistantProvider>
-        </QueryClientProvider>
-      )
+        </QueryClientProvider>,
+      );
 
-      await expect.element(getByRole('button', { name: 'Hide assistant' })).toBeInTheDocument()
+      await expect
+        .element(getByRole("button", { name: "Close assistant" }))
+        .toBeInTheDocument();
     } finally {
-      await page.viewport(375, 800)
+      await page.viewport(375, 800);
     }
-  })
+  });
 
-  it('guards the panel transition against reduced motion', async () => {
-    await page.viewport(1440, 900)
+  it("guards the panel transition against reduced motion", async () => {
+    await page.viewport(1440, 900);
     try {
-      const { container } = await renderLayout(makeTree({ assistant_collapsed: false }))
+      const { container } = await renderLayout(
+        makeTree({ assistant_collapsed: false }),
+      );
 
-      const aside = container.querySelector('#assistant-panel')
-      expect(aside?.parentElement?.className).toContain('motion-reduce:transition-none')
-      expect(aside?.parentElement?.className).toContain('transition-[width]')
+      const aside = container.querySelector("#assistant-panel");
+      expect(aside?.parentElement?.className).toContain(
+        "motion-reduce:transition-none",
+      );
+      expect(aside?.parentElement?.className).toContain("transition-[width]");
     } finally {
-      await page.viewport(375, 800)
+      await page.viewport(375, 800);
     }
-  })
+  });
 
-  it('moves the FAB out of the composer corner when open', async () => {
-    await page.viewport(1440, 900)
+  it("hides the floating FAB once the panel is open", async () => {
+    await page.viewport(1440, 900);
     try {
       // The browser test runner does not load the Tailwind stylesheet, so the
       // measured geometry is the UA default. Assert the position contract here;
       // the live click-through measures the real boxes.
-      const { getByRole } = await renderLayout(makeTree({ assistant_collapsed: true }))
+      const { getByRole, container } = await renderLayout(
+        makeTree({ assistant_collapsed: true }),
+      );
 
-      const closed = getByRole('button', { name: 'Show assistant' }).element()
-      expect(closed.className).toContain('bottom-4')
-      expect(closed.className).not.toContain('top-4')
+      // The toggle anchors to the right edge through a wrapper whose `bottom`
+      // is inline (the draggable offset), so the position contract is the
+      // wrapper's style rather than a `bottom-4` class.
+      const closed = getByRole("button", { name: "Ask Nove" }).element();
+      const anchor = closed.closest("div[style]") as HTMLElement | null;
+      // The default `bottom-4` (1rem) plus a zero offset; the browser may order
+      // the two addends either way.
+      expect(anchor?.style.bottom).toContain("1rem");
+      expect(anchor?.style.bottom).toContain("0px");
 
-      await getByRole('button', { name: 'Show assistant' }).click()
-      const open = getByRole('button', { name: 'Hide assistant' }).element()
-      expect(open.className).toContain('top-4')
-      expect(open.className).not.toContain('bottom-4')
+      await getByRole("button", { name: "Ask Nove" }).click();
+      // Closing lives in the header; no FAB floats over it.
+      await expect
+        .poll(
+          () =>
+            container.querySelectorAll('button[aria-label="Ask Nove"]').length,
+        )
+        .toBe(0);
+      await expect
+        .element(getByRole("button", { name: "Close assistant" }))
+        .toBeInTheDocument();
     } finally {
-      await page.viewport(375, 800)
+      await page.viewport(375, 800);
     }
-  })
+  });
 
-  it('ladders the panel inline at 768px and as a Sheet just below it', async () => {
+  it("ladders the panel inline at 768px and as a Sheet just below it", async () => {
     try {
-      await page.viewport(768, 900)
-      const wide = await renderLayout(makeTree({ assistant_collapsed: false }), 'database-explorer')
-      await expect.element(wide.getByRole('complementary', { name: 'Assistant' })).toBeInTheDocument()
-      await expect.element(wide.getByRole('button', { name: 'Hide assistant' })).toBeInTheDocument()
-      wide.unmount()
+      await page.viewport(768, 900);
+      const wide = await renderLayout(
+        makeTree({ assistant_collapsed: false }),
+        "database-explorer",
+      );
+      await expect
+        .element(wide.getByRole("complementary", { name: "Nove" }))
+        .toBeInTheDocument();
+      await expect
+        .element(wide.getByRole("button", { name: "Close assistant" }))
+        .toBeInTheDocument();
+      wide.unmount();
 
-      await page.viewport(767, 900)
-      const narrow = await renderLayout(makeTree({ assistant_collapsed: false }), 'database-explorer')
+      await page.viewport(767, 900);
+      const narrow = await renderLayout(
+        makeTree({ assistant_collapsed: false }),
+        "database-explorer",
+      );
       // Below md the panel is a Sheet overlay with its own close control; the
       // FAB is the trigger that opened it and is inert behind the overlay.
-      const dialog = narrow.getByRole('dialog')
-      await expect.element(dialog).toBeInTheDocument()
-      await expect.element(narrow.getByRole('button', { name: 'Close assistant' })).toBeInTheDocument()
-      narrow.unmount()
+      const dialog = narrow.getByRole("dialog");
+      await expect.element(dialog).toBeInTheDocument();
+      await expect
+        .element(narrow.getByRole("button", { name: "Close assistant" }))
+        .toBeInTheDocument();
+      narrow.unmount();
     } finally {
-      await page.viewport(375, 800)
+      await page.viewport(375, 800);
     }
-  })
-})
+  });
+});

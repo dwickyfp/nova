@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TurnContext } from './stream-client'
 import type { AssistantEvent } from './types'
+import type { AttachedQuery } from './query-attach'
 import { transcriptReducer, type TranscriptMessage } from './use-assistant-transcript'
 import { useAssistantTurn, type AssistantTurnSnapshot } from './use-assistant-turn'
 
@@ -26,6 +27,11 @@ export type AssistantConversationOptions = {
    */
   retainOnLeave?: (key: string | null) => boolean
   onError?: (message: string) => void
+  /**
+   * Called when a completed turn proposes a SQL rewrite for a single attached
+   * query. Forwarded to the turn driver; the workspace owns what to do with it.
+   */
+  onProposedRewrite?: (input: { attachment: AttachedQuery; sql: string; messageId: string }) => void
 }
 
 type ConversationStore = {
@@ -51,6 +57,7 @@ export function useAssistantConversation({
   bindingKey,
   retainOnLeave,
   onError,
+  onProposedRewrite,
 }: AssistantConversationOptions) {
   const [store, setStore] = useState<ConversationStore>({ messages: {}, turns: {} })
   const keyRef = useRef(bindingKey)
@@ -64,7 +71,7 @@ export function useAssistantConversation({
   const transcript = {
     messages,
     addUserMessage: useCallback(
-      (content: string) =>
+      (content: string, attachments?: AttachedQuery[], displayText?: string) =>
         setStore((prev) => ({
           ...prev,
           messages: {
@@ -72,6 +79,8 @@ export function useAssistantConversation({
             [binding]: transcriptReducer(prev.messages[binding] ?? [], {
               type: 'user_message',
               content,
+              attachments,
+              displayText,
             }),
           },
         })),
@@ -107,9 +116,17 @@ export function useAssistantConversation({
         })),
       [binding]
     ),
+    replace: useCallback(
+      (next: TranscriptMessage[]) =>
+        setStore((prev) => ({
+          ...prev,
+          messages: { ...prev.messages, [binding]: next },
+        })),
+      [binding]
+    ),
   }
 
-  const assistant = useAssistantTurn({ ensureThread, context, onError, transcript })
+  const assistant = useAssistantTurn({ ensureThread, context, onError, onProposedRewrite, transcript })
   const { snapshot, restore, resetPermissions } = assistant
   const snapshotRef = useRef(snapshot)
   snapshotRef.current = snapshot

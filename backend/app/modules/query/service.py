@@ -18,16 +18,29 @@ import time
 import asyncmy
 
 from app.common.audit import write_audit_log
-from app.common.sql_guard import CredentialsRedactionError, split_sql_statements
+from app.common.sql_guard import (
+    CredentialsRedactionError,
+    is_destructive_sql,
+    split_sql_statements,
+)
+from app.common.user_flags import set_must_change_password
 from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
 from app.core.security import decrypt_password
+from app.modules.query.dialect.force_password_change import (
+    is_force_password_change,
+    parse_force_password_change,
+)
 from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.dialect.ml_model import is_create_ml_model, parse_create_ml_model
 from app.modules.query.dialect.parser import parse_sql
 from app.modules.query.dialect.translator import StorageConfig
 from app.modules.query.repository import QueryRepository, QueryResult
+from app.modules.query.role_resolver import (
+    is_permission_error,
+    resolve_fallback_role,
+)
 from app.modules.query.sql_pipeline import (
     guard_user_statement,
     prepare_stage_sql,
@@ -87,6 +100,29 @@ _SEGMENT = r"`?[A-Za-z_][\w$]*`?"
 #: recorded here rather than hidden.
 _DEFAULT_SCHEMA_TABLE_REF = re.compile(
     rf"""(?:\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+|,\s*)
+         (?P<db>{_SEGMENT})\s*\.\s*(?:`default`|default)\s*\.\s*(?P<table>{_SEGMENT})""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+#: A ``DESCRIBE``/``DESC`` target carrying the UI's ``default`` placeholder.
+#:
+#: ``DESCRIBE`` is its own statement shape, not a table position after a
+#: keyword: the target starts immediately after ``DESCRIBE``/``DESC`` (with an
+#: optional ``EXTENDED``/``FORMATTED`` modifier the engine rejects but the UI
+#: can still emit). The table-reference anchor above does not cover it, so
+#: ``DESCRIBE NOVA_ANALYTICS.default.channel_performance`` reached StarRocks
+#: untranslated and the engine answered with a syntax error at the first dot —
+#: ``DESCRIBE`` accepts ``[catalog.]db.table`` but has no ``default``
+#: placeholder. This anchor collapses the middle segment the same way the table
+#: anchor does.
+#:
+#: The optional leading ``catalog.`` is part of the match so a three-part
+#: ``catalog.db.default.table`` collapses to ``catalog.db.table`` rather than
+#: leaving a stray ``catalog.`` behind; only the ``db.default.table`` span is
+#: replaced below.
+_DESCRIBE_TABLE_REF = re.compile(
+    rf"""\b(?:DESCRIBE|DESC)\s+
+         (?:{_SEGMENT}\s*\.\s*)?
          (?P<db>{_SEGMENT})\s*\.\s*(?:`default`|default)\s*\.\s*(?P<table>{_SEGMENT})""",
     re.IGNORECASE | re.VERBOSE,
 )
@@ -274,6 +310,21 @@ class QueryService:
                 schema=schema,
             )
 
+        # Nova `ALTER USER … REQUIRE PASSWORD CHANGE` is metadata, not engine SQL:
+        # StarRocks has no such attribute, so the flag is recorded in
+        # NOVA_SYSTEM and the statement is never sent to the engine. Same
+        # interception shape as the two above.
+        if is_force_password_change(normalized_sql):
+            return await self._execute_force_password_change(
+                sql=sql,
+                normalized_sql=normalized_sql,
+                username=username,
+                database=database,
+                session_id=session_id,
+                file_id=file_id,
+                schema=schema,
+            )
+
         # 2. Parse: detect @stage references
         parsed = parse_sql(normalized_sql)
 
@@ -370,15 +421,50 @@ class QueryService:
         # repository hands back is independently safe.
         redacted_sql = redact_for_output(executed_sql)
         try:
-            result = await self._repo.execute_as_user(
-                sql=executed_sql,
-                username=username,
-                password=password,
-                database=database,
-                role=role,
-                max_rows=max_rows,
-                connected=connection,
-            )
+            try:
+                result = await self._repo.execute_as_user(
+                    sql=executed_sql,
+                    username=username,
+                    password=password,
+                    database=database,
+                    role=role,
+                    max_rows=max_rows,
+                    connected=connection,
+                )
+            except Exception as exc:
+                # Automatic role fallback: when the session's active role lacks
+                # a privilege but the user holds another granted role that has
+                # it, retry once under that role. Restricted to the
+                # connection-opening path (no injected ``connection``): the
+                # MySQL proxy owns a long-lived authenticated socket and its own
+                # role semantics, so switching roles under it would be
+                # surprising. Destructive statements are never retried — an
+                # auto-elevated DROP is exactly the action that must stay
+                # deliberate. The session and UI role are untouched; only this
+                # one execution runs under the fallback role.
+                fallback = await self._maybe_fallback_role(
+                    exc=exc,
+                    sql=sql,
+                    username=username,
+                    active_role=role,
+                    connection=connection,
+                )
+                if fallback is None:
+                    raise
+                result = await self._repo.execute_as_user(
+                    sql=executed_sql,
+                    username=username,
+                    password=password,
+                    database=database,
+                    role=fallback,
+                    max_rows=max_rows,
+                    connected=connection,
+                )
+                warnings = warnings + [
+                    f"⚑ Ran as {fallback}: the active role "
+                    f"{role or '(none)'} lacked the required privilege."
+                ]
+
             result.original_sql = sql
             result.executed_sql = redacted_sql
             result.warnings = warnings
@@ -422,6 +508,49 @@ class QueryService:
                 schema_name=schema,
             )
             raise
+
+    async def _maybe_fallback_role(
+        self,
+        *,
+        exc: Exception,
+        sql: str,
+        username: str,
+        active_role: str | None,
+        connection: asyncmy.Connection | None,
+    ) -> str | None:
+        """A granted role to retry under, or ``None`` to let the error stand.
+
+        Returns a role only when every guard passes: the failure is a genuine
+        privilege error, the statement is not destructive, no proxy connection
+        was injected, and the user actually holds another role with the needed
+        privilege. Resolution is best-effort — any failure to compute a
+        candidate returns ``None`` so the original engine error is what the user
+        sees, never a resolver error.
+        """
+        if connection is not None:
+            return None
+        if not is_permission_error(str(exc)):
+            return None
+        if is_destructive_sql(sql):
+            return None
+        try:
+            fallback = await resolve_fallback_role(
+                username=username,
+                sql=sql,
+                active_role=active_role,
+            )
+        except Exception:
+            logger.exception("role fallback resolution failed; keeping the original error")
+            return None
+        if fallback and fallback != active_role:
+            logger.info(
+                "auto-selected role %s for %s after %s lacked privilege",
+                fallback,
+                username,
+                active_role,
+            )
+            return fallback
+        return None
 
     async def _audit_secret_resolutions(self, *, username: str) -> None:
         """Persist the auditable *facts* of any secret reference resolved above.
@@ -700,7 +829,9 @@ class QueryService:
                     "cannot determine the engine timezone; CREATE TASK stores an "
                     "explicit IANA zone and will not assume UTC"
                 )
-            task = parse_create_task(normalized_sql, database=database, timezone=timezone)
+            task = parse_create_task(
+                normalized_sql, database=database, schema=schema, timezone=timezone
+            )
             persisted = await persist_lowered_task(task, created_by=username)
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             task_row = persisted.task
@@ -711,7 +842,7 @@ class QueryService:
                 user_name=username,
                 action="execute",
                 object_type="task",
-                object_name=task.name,
+                object_name=task.qualified_name,
                 status="SUCCESS",
                 sql_text=sql,
                 rewritten_sql=normalized_sql,
@@ -719,13 +850,15 @@ class QueryService:
                 rows_affected=1,
                 session_id=session_id,
                 file_id=file_id,
-                database_name=database,
-                schema_name=schema,
+                database_name=task.database_name,
+                schema_name=task.schema_name,
             )
             return QueryResult(
                 columns=[
                     "task_id",
                     "name",
+                    "database_name",
+                    "schema_name",
                     "schedule_kind",
                     "schedule_expr",
                     "overlap_policy",
@@ -735,6 +868,8 @@ class QueryService:
                     [
                         task_row["id"],
                         task_row["name"],
+                        task_row["database_name"],
+                        task_row["schema_name"],
                         task_row["schedule_kind"],
                         task_row["schedule_expr"],
                         task_row["overlap_policy"],
@@ -782,6 +917,84 @@ class QueryService:
                 original_sql=sql,
                 executed_sql=normalized_sql,
             )
+
+    async def _execute_force_password_change(
+        self,
+        *,
+        sql: str,
+        normalized_sql: str,
+        username: str,
+        database: str | None,
+        session_id: str | None,
+        file_id: str | None,
+        schema: str | None,
+    ) -> QueryResult:
+        """Record the first-login password-change flag for a user.
+
+        The statement is Nova metadata: StarRocks has no such attribute, so it is
+        parsed here and written to ``NOVA_SYSTEM.CONFIG_USER_PREFERENCES``; the
+        engine never sees it. Only the flag is stored — no password.
+        """
+        start = time.monotonic()
+        try:
+            parsed = parse_force_password_change(normalized_sql)
+        except ValueError as exc:
+            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="execute",
+                object_type="user",
+                object_name=username,
+                status="ERROR",
+                sql_text=sql,
+                rewritten_sql=normalized_sql,
+                error_message=str(exc),
+                duration_ms=int(elapsed_ms),
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+            return QueryResult(
+                error=str(exc),
+                elapsed_ms=elapsed_ms,
+                original_sql=sql,
+                executed_sql=normalized_sql,
+            )
+
+        await set_must_change_password(parsed.username, required=parsed.required)
+        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+        await write_audit_log(
+            event_type="query",
+            user_name=username,
+            action="execute",
+            object_type="user",
+            object_name=parsed.username,
+            status="SUCCESS",
+            sql_text=sql,
+            rewritten_sql=normalized_sql,
+            duration_ms=int(elapsed_ms),
+            rows_affected=1,
+            session_id=session_id,
+            file_id=file_id,
+            database_name=database,
+            schema_name=schema,
+        )
+        return QueryResult(
+            columns=["user", "must_change_password"],
+            rows=[[parsed.username, parsed.required]],
+            row_count=1,
+            affected_rows=1,
+            elapsed_ms=elapsed_ms,
+            original_sql=sql,
+            executed_sql=normalized_sql,
+            warnings=[
+                "ALTER USER … REQUIRE PASSWORD CHANGE is Nova metadata; no statement "
+                "was sent to StarRocks. The user is asked to change the password at "
+                "their next login."
+            ],
+        )
 
     async def get_history(
         self,
@@ -1018,6 +1231,7 @@ class QueryService:
         self,
         username: str,
         encrypted_password: str,
+        active_role: str | None = None,
     ) -> dict:
         password = decrypt_password(encrypted_password)
         databases = await self._list_user_databases(username, password)
@@ -1036,6 +1250,14 @@ class QueryService:
             databases[0] if databases else None
         )
         schemas = await self.list_schemas(database=default_db)
+        # The session's active role wins over the persisted ``last_role`` pref:
+        # the UI treats the bottom-left switcher as the one active role, and the
+        # engine executes under exactly that role, so the context must not
+        # advertise a different one. ``last_role`` remains only as a fallback
+        # for sessions (or callers) that predate ``active_role``.
+        context_role = active_role or pref_map.get("workspace.last_role") or (
+            roles[0] if roles else None
+        )
         return {
             "roles": roles,
             "databases": databases,
@@ -1044,7 +1266,7 @@ class QueryService:
                 "database": default_db,
                 "schema": pref_map.get("workspace.last_schema")
                 or (schemas[0] if schemas else None),
-                "role": pref_map.get("workspace.last_role") or (roles[0] if roles else None),
+                "role": context_role,
             },
         }
 
@@ -1488,9 +1710,12 @@ class QueryService:
         The fix is therefore positional, not textual: ``default`` is collapsed
         only when it is the middle segment of a *table reference*, meaning it
         is preceded by ``FROM``/``JOIN``/``INTO``/``UPDATE``/``TABLE`` and
-        followed by a table name. Strings, comments and ``@stage`` paths are
-        masked out first so nothing inside them is considered, and mask
-        characters preserve offsets so the rewrite is exact.
+        followed by a table name. A ``DESCRIBE``/``DESC`` target is a second
+        position, because the target follows the statement keyword rather than
+        a table-introducing one; see :data:`_DESCRIBE_TABLE_REF`. Strings,
+        comments and ``@stage`` paths are masked out first so nothing inside
+        them is considered, and mask characters preserve offsets so the rewrite
+        is exact.
 
         This is deliberately the narrow fix, not the parser fix. NOVA-17 has
         accepted ANTLR4 with the official StarRocks grammar as the real
@@ -1506,6 +1731,13 @@ class QueryService:
             # Replace only the ``db.default.table`` span, keeping the leading
             # keyword and any whitespace exactly as the user wrote them. The
             # mask is offset-preserving, so spans map onto ``out`` directly.
+            start = match.start("db")
+            end = match.end("table")
+            out = out[:start] + f"{match.group('db')}.{match.group('table')}" + out[end:]
+        # ``DESCRIBE db.default.table`` is a separate anchor: the target is not
+        # in a table-introducing-keyword position, so the pattern above misses
+        # it. Same right-to-left, same span replacement.
+        for match in reversed(list(_DESCRIBE_TABLE_REF.finditer(masked))):
             start = match.start("db")
             end = match.end("table")
             out = out[:start] + f"{match.group('db')}.{match.group('table')}" + out[end:]

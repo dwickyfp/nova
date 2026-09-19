@@ -22,6 +22,15 @@ from app.modules.task_orchestration import router as orch_router
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
+def _qualified(task: dict[str, Any]) -> str:
+    parts = [
+        str(part)
+        for part in (task.get("database_name"), task.get("schema_name"), task.get("name"))
+        if part
+    ]
+    return ".".join(parts)
+
+
 class FakeRepository:
     """The repository surface the read API uses, in memory."""
 
@@ -40,13 +49,16 @@ class FakeRepository:
         schedule_kind: str = "manual",
         schedule_expr: str | None = None,
         overlap_policy: str = "skip",
+        database_name: str = "db1",
+        schema_name: str = "default",
     ) -> str:
         task_id = f"id_{name}"
         self.tasks[name] = {
             "id": task_id,
             "name": name,
             "definition": "INSERT INTO t SELECT 1",
-            "database_name": "db1",
+            "database_name": database_name,
+            "schema_name": schema_name,
             "created_by": owner,
             "schedule_kind": schedule_kind,
             "schedule_expr": schedule_expr,
@@ -132,8 +144,11 @@ class FakeRepository:
             for e in self.edges
             for endpoint in (e["parent_task"], e["child_task"])
         }
+        # A standalone task's graph id is its qualified name, matching the repo.
         standalone = sorted(
-            str(t["id"]) for t in self.tasks.values() if str(t["name"]) not in referenced
+            _qualified(t)
+            for t in self.tasks.values()
+            if str(t["name"]) not in referenced
         )
         return [*graph_ids, *[gid for gid in standalone if gid not in graph_ids]]
 
@@ -147,6 +162,30 @@ class FakeRepository:
 
     async def list_graph_runs(self, graph_id: str):
         return [r for r in self.graph_runs.values() if r["graph_id"] == graph_id]
+
+    async def count_graph_runs(self, graph_id: str) -> int:
+        return len([r for r in self.graph_runs.values() if r["graph_id"] == graph_id])
+
+    async def list_graph_runs_page(self, graph_id: str, *, limit: int, offset: int):
+        runs = sorted(
+            (r for r in self.graph_runs.values() if r["graph_id"] == graph_id),
+            key=lambda r: (r.get("started_at") or NOW, r["id"]),
+            reverse=True,
+        )
+        return runs[offset : offset + limit]
+
+    async def count_graph_runs_by_graph(self) -> dict[str, dict[str, int]]:
+        tallies: dict[str, dict[str, int]] = {}
+        for run in self.graph_runs.values():
+            tally = tallies.setdefault(
+                str(run["graph_id"]), {"total": 0, "success": 0, "failed": 0}
+            )
+            tally["total"] += 1
+            if run["state"] == "success":
+                tally["success"] += 1
+            elif run["state"] == "failed":
+                tally["failed"] += 1
+        return tallies
 
     async def list_graph_runs_by_state(self, states, *, limit=200):
         return [r for r in self.graph_runs.values() if r["state"] in states]
@@ -218,9 +257,9 @@ def graph_with_finalizer(repo: FakeRepository) -> None:
     repo.add_task("a", schedule_kind="cron", schedule_expr="0 2 * * *")
     repo.add_task("b")
     repo.add_task("f", when_expr="flag = TRUE")
-    repo.add_edge("g1", "a", "b")
-    repo.add_edge("g1", "a", "f", kind="finalize")
-    repo.add_graph_run("run1", "g1", state="success", overlap_policy="queue")
+    repo.add_edge("db1.default.g1", "a", "b")
+    repo.add_edge("db1.default.g1", "a", "f", kind="finalize")
+    repo.add_graph_run("run1", "db1.default.g1", state="success", overlap_policy="queue")
     repo.add_task_run("tr_a", "run1", "id_a", state="success")
     repo.add_task_run("tr_b", "run1", "id_b", state="failed", error_message="boom")
     repo.add_task_run("tr_f", "run1", "id_f", state="skipped")
@@ -235,7 +274,7 @@ def mixed_ownership_graph(repo: FakeRepository) -> None:
     """
     repo.add_task("m_a", owner="alice")
     repo.add_task("m_b", owner="bob")
-    repo.add_edge("g_mixed", "m_a", "m_b")
+    repo.add_edge("db1.default.g_mixed", "m_a", "m_b")
 
 
 class TestGraphList:
@@ -248,7 +287,7 @@ class TestGraphList:
 
         assert body["count"] == 1
         graph = body["graphs"][0]
-        assert graph["graph_id"] == "g1"
+        assert graph["graph_id"] == "db1.default.g1"
         assert graph["root_task"] == "a"
         assert graph["node_count"] == 3
         assert graph["schedule_kind"] == "cron"
@@ -273,7 +312,7 @@ class TestGraphDetail:
         graph_with_finalizer(repo)
         client = make_client(repo, alice())
 
-        body = client.get("/api/v1/task-orchestration/graphs/g1").json()
+        body = client.get("/api/v1/task-orchestration/graphs/db1.default.g1").json()
 
         assert body["node_count"] == 3
         kinds = {(e["parent_task"], e["child_task"]): e["edge_kind"] for e in body["edges"]}
@@ -291,13 +330,13 @@ class TestGraphDetail:
         repo = FakeRepository()
         repo.add_task("a")
         repo.add_task("b")
-        repo.add_edge("g1", "a", "b")
-        repo.add_graph_run("run1", "g1")
+        repo.add_edge("db1.default.g1", "a", "b")
+        repo.add_graph_run("run1", "db1.default.g1")
         repo.add_task_run("tr1", "run1", "id_a", state="failed", attempt=1)
         repo.add_task_run("tr2", "run1", "id_a", state="success", attempt=2)
         client = make_client(repo, alice())
 
-        body = client.get("/api/v1/task-orchestration/graphs/g1").json()
+        body = client.get("/api/v1/task-orchestration/graphs/db1.default.g1").json()
         node_a = next(n for n in body["nodes"] if n["name"] == "a")
         assert node_a["last_state"] == "success"
 
@@ -317,21 +356,21 @@ class TestOwnershipScoping:
 
         assert client.get("/api/v1/task-orchestration/graphs").json()["count"] == 0
         assert (
-            client.get("/api/v1/task-orchestration/graphs/g1").status_code == 404
+            client.get("/api/v1/task-orchestration/graphs/db1.default.g1").status_code == 404
         ), "an unauthorized graph must 404, not reveal that it exists"
 
     def test_the_owner_sees_their_graph(self) -> None:
         repo = FakeRepository()
         graph_with_finalizer(repo)
         client = make_client(repo, alice())
-        assert client.get("/api/v1/task-orchestration/graphs/g1").status_code == 200
+        assert client.get("/api/v1/task-orchestration/graphs/db1.default.g1").status_code == 200
 
     def test_an_admin_sees_every_graph(self) -> None:
         repo = FakeRepository()
         graph_with_finalizer(repo)
         client = make_client(repo, admin())
         assert client.get("/api/v1/task-orchestration/graphs").json()["count"] == 1
-        assert client.get("/api/v1/task-orchestration/graphs/g1").status_code == 200
+        assert client.get("/api/v1/task-orchestration/graphs/db1.default.g1").status_code == 200
 
     def test_a_run_cannot_be_enumerated_across_owners(self) -> None:
         repo = FakeRepository()
@@ -359,7 +398,7 @@ class TestMixedOwnershipIsFailClosed:
         for who, client in (("alice", alice_client), ("bob", bob_client)):
             listed = client.get("/api/v1/task-orchestration/graphs").json()
             assert listed["count"] == 0, f"{who} must not list a mixed-ownership graph"
-            detail = client.get("/api/v1/task-orchestration/graphs/g_mixed")
+            detail = client.get("/api/v1/task-orchestration/graphs/db1.default.g_mixed")
             assert detail.status_code == 404, f"{who} must get 404, not the graph"
 
     def test_an_admin_sees_the_mixed_graph(self) -> None:
@@ -368,7 +407,7 @@ class TestMixedOwnershipIsFailClosed:
         client = make_client(repo, admin())
 
         assert client.get("/api/v1/task-orchestration/graphs").json()["count"] == 1
-        body = client.get("/api/v1/task-orchestration/graphs/g_mixed").json()
+        body = client.get("/api/v1/task-orchestration/graphs/db1.default.g_mixed").json()
         assert {n["name"] for n in body["nodes"]} == {"m_a", "m_b"}
 
     def test_each_node_is_owned_by_exactly_one_single_owner(self) -> None:
@@ -393,7 +432,7 @@ class TestRunEndpoints:
         graph_with_finalizer(repo)
         client = make_client(repo, alice())
 
-        body = client.get("/api/v1/task-orchestration/graphs/g1/runs").json()
+        body = client.get("/api/v1/task-orchestration/graphs/db1.default.g1/runs").json()
         assert body["count"] == 1
         run = body["runs"][0]
         assert run["id"] == "run1"
@@ -411,19 +450,171 @@ class TestRunEndpoints:
         assert states == {"id_a": "success", "id_b": "failed", "id_f": "skipped"}
 
 
+class TestRunCounts:
+    """`GET /graphs` carries run tallies so the task list needs one call."""
+
+    def test_counts_split_success_failed_and_total(self) -> None:
+        repo = FakeRepository()
+        repo.add_task("a")
+        repo.add_graph_run("r1", "db1.default.a", state="success")
+        repo.add_graph_run("r2", "db1.default.a", state="failed")
+        repo.add_graph_run("r3", "db1.default.a", state="success")
+        client = make_client(repo, alice())
+
+        graph = client.get("/api/v1/task-orchestration/graphs").json()["graphs"][0]
+        assert graph["run_counts"] == {"total": 3, "success": 2, "failed": 1}
+
+    def test_cancelled_is_counted_in_total_but_not_success_or_failed(self) -> None:
+        repo = FakeRepository()
+        repo.add_task("a")
+        repo.add_graph_run("r1", "db1.default.a", state="cancelled")
+        client = make_client(repo, alice())
+
+        graph = client.get("/api/v1/task-orchestration/graphs").json()["graphs"][0]
+        assert graph["run_counts"] == {"total": 1, "success": 0, "failed": 0}
+
+    def test_a_graph_with_no_runs_reports_zeroes(self) -> None:
+        repo = FakeRepository()
+        repo.add_task("a")
+        client = make_client(repo, alice())
+
+        graph = client.get("/api/v1/task-orchestration/graphs").json()["graphs"][0]
+        assert graph["run_counts"] == {"total": 0, "success": 0, "failed": 0}
+
+
+class TestRunPagination:
+    def test_limit_and_offset_slice_the_history_and_count_is_unpaginated(self) -> None:
+        repo = FakeRepository()
+        repo.add_task("a")
+        for index in range(5):
+            repo.add_graph_run(
+                f"r{index}",
+                "db1.default.a",
+                started_at=datetime(2026, 1, 1, 12, index, tzinfo=UTC),
+            )
+        client = make_client(repo, alice())
+
+        body = client.get(
+            "/api/v1/task-orchestration/graphs/db1.default.a/runs?limit=2&offset=0"
+        ).json()
+        assert body["count"] == 5, "count is the full history, not the page"
+        assert [r["id"] for r in body["runs"]] == ["r4", "r3"]
+
+        page2 = client.get(
+            "/api/v1/task-orchestration/graphs/db1.default.a/runs?limit=2&offset=2"
+        ).json()
+        assert [r["id"] for r in page2["runs"]] == ["r2", "r1"]
+
+    def test_rejects_a_nonpositive_limit(self) -> None:
+        repo = FakeRepository()
+        repo.add_task("a")
+        client = make_client(repo, alice())
+        response = client.get(
+            "/api/v1/task-orchestration/graphs/db1.default.a/runs?limit=0"
+        )
+        assert response.status_code == 422
+
+
+class TestStandaloneGraph:
+    """A task with no edges is still a one-node graph.
+
+    This is the regression guard for the reported defect: a standalone task
+    listed a graph id but its detail answered `0 nodes`, because the detail
+    lookup did not resolve the task row behind the qualified graph id.
+    """
+
+    def test_a_standalone_task_is_a_single_node_graph(self) -> None:
+        repo = FakeRepository()
+        repo.add_task("solo")
+        client = make_client(repo, alice())
+
+        listed = client.get("/api/v1/task-orchestration/graphs").json()
+        assert listed["count"] == 1
+        graph_id = listed["graphs"][0]["graph_id"]
+        assert graph_id == "db1.default.solo"
+
+        detail = client.get(f"/api/v1/task-orchestration/graphs/{graph_id}").json()
+        assert detail["node_count"] == 1
+        assert [n["name"] for n in detail["nodes"]] == ["solo"]
+        assert detail["nodes"][0]["last_state"] is None
+
+    def test_a_standalone_task_that_has_run_reports_its_state(self) -> None:
+        repo = FakeRepository()
+        repo.add_task("solo")
+        repo.add_graph_run("run1", "db1.default.solo", state="success")
+        repo.add_task_run("tr1", "run1", "id_solo", state="success")
+        client = make_client(repo, alice())
+
+        detail = client.get(
+            "/api/v1/task-orchestration/graphs/db1.default.solo"
+        ).json()
+        assert detail["node_count"] == 1
+        assert detail["nodes"][0]["last_state"] == "success"
+
+    def test_a_chain_adds_nodes_to_the_same_graph(self) -> None:
+        repo = FakeRepository()
+        repo.add_task("a")
+        repo.add_task("b")
+        repo.add_edge("db1.default.g1", "a", "b")
+        client = make_client(repo, alice())
+
+        detail = client.get("/api/v1/task-orchestration/graphs/db1.default.g1").json()
+        assert detail["node_count"] == 2
+        assert {n["name"] for n in detail["nodes"]} == {"a", "b"}
+
+    def test_an_edge_whose_task_row_is_gone_does_not_list_an_empty_graph(self) -> None:
+        # The data can hold an orphan edge: a task row dropped while its edge
+        # remained. It must not surface as a graph that renders zero nodes.
+        repo = FakeRepository()
+        repo.add_edge("db1.default.ghost", "gone_parent", "gone_child")
+        client = make_client(repo, alice())
+
+        listed = client.get("/api/v1/task-orchestration/graphs").json()
+        assert listed["count"] == 0
+        assert (
+            client.get("/api/v1/task-orchestration/graphs/db1.default.ghost").status_code
+            == 404
+        )
+
+    def test_an_admin_does_not_see_an_orphan_graph_either(self) -> None:
+        # "Admin sees every graph" means every graph that exists, not every
+        # dangling edge: an empty flow is a bug, not a privilege.
+        repo = FakeRepository()
+        repo.add_edge("db1.default.ghost", "gone_parent", "gone_child")
+        client = make_client(repo, admin())
+
+        assert client.get("/api/v1/task-orchestration/graphs").json()["count"] == 0
+
+    def test_a_task_row_without_a_schema_still_resolves_from_a_scoped_graph_id(
+        self,
+    ) -> None:
+        # A legacy row has schema_name NULL while the edge's graph id carries
+        # both parts. The bare-name fallback must still find it, or the flow
+        # renders empty.
+        repo = FakeRepository()
+        repo.add_task("a", schema_name=None)
+        repo.add_task("b", schema_name=None)
+        repo.add_edge("db1.default.g1", "a", "b")
+        client = make_client(repo, alice())
+
+        detail = client.get("/api/v1/task-orchestration/graphs/db1.default.g1").json()
+        assert detail["node_count"] == 2
+        assert {n["name"] for n in detail["nodes"]} == {"a", "b"}
+
+
 class TestCredentialInvisibility:
     def test_task_body_is_not_exposed(self) -> None:
         repo = FakeRepository()
         graph_with_finalizer(repo)
         client = make_client(repo, alice())
-        body = client.get("/api/v1/task-orchestration/graphs/g1").json()
+        body = client.get("/api/v1/task-orchestration/graphs/db1.default.g1").json()
         serialized = str(body).lower()
         assert "insert into" not in serialized, "the task body must not be returned"
 
     def test_node_error_message_is_redacted(self) -> None:
         repo = FakeRepository()
         repo.add_task("a")
-        repo.add_graph_run("run1", "id_a")
+        repo.add_graph_run("run1", "db1.default.a")
         repo.add_task_run(
             "tr_a",
             "run1",
@@ -445,8 +636,8 @@ class TestCredentialInvisibility:
         client = make_client(repo, alice())
         for path in (
             "/api/v1/task-orchestration/graphs",
-            "/api/v1/task-orchestration/graphs/g1",
-            "/api/v1/task-orchestration/graphs/g1/runs",
+            "/api/v1/task-orchestration/graphs/db1.default.g1",
+            "/api/v1/task-orchestration/graphs/db1.default.g1/runs",
             "/api/v1/task-orchestration/runs/run1",
         ):
             serialized = str(client.get(path).json()).lower()

@@ -1,13 +1,27 @@
-import { Bot, PanelRightClose, SendHorizontal, ShieldCheck, Square } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  Bot,
+  MessageSquarePlus,
+  PanelRightClose,
+  ShieldCheck,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
-import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import type { SelectedModel } from './assistant-provider'
+import { ASSISTANT_DEFAULT_WIDTH } from './assistant-panel-state'
+import { AssistantComposer } from './assistant-composer'
+import { AssistantEmptyState } from './assistant-empty-state'
+import type { ApprovalMode } from './use-assistant-turn'
 import { MessageList } from './message-list'
+import type { TurnContext } from './stream-client'
+import { PanelResizeHandle } from './panel-resize-handle'
+import { ThreadHistory } from './thread-history'
+import type { ThreadView } from './thread-client'
 import type { ToolCallCardProps } from './tool-call-card'
 import type { TranscriptMessage } from './use-assistant-transcript'
+import type { AttachedQuery } from './query-attach'
 import { useIsNarrowForAssistant } from './use-assistant-panel'
 
 export type AssistantPanelProps = {
@@ -31,9 +45,40 @@ export type AssistantPanelProps = {
   onResetPermissions?: () => void
   /** Disables the reset control while the revoke request is in flight. */
   resettingPermissions?: boolean
+  /** Model pinned for the next turn; null lets the backend choose. */
+  selectedModel?: SelectedModel
+  onSelectModel?: (model: SelectedModel) => void
+  /** How the next read-only query is approved, shown in the composer. */
+  approvalMode?: ApprovalMode
+  onSelectApprovalMode?: (mode: ApprovalMode) => void
+  /** True while an approval-mode change is being persisted. */
+  settlingApprovalMode?: boolean
+  /** Clears the conversation so the next message starts a fresh thread. */
+  onNewChat?: () => void
+  /** Switches the panel to an existing thread. */
+  onOpenThread?: (threadId: string) => void | Promise<void>
+  activeThreadId?: string | null
+  /** True while an existing thread's messages are being fetched. */
+  loadingThread?: boolean
+  /** Panel width in px (wide mode). Defaults to the standard width when absent. */
+  width?: number
+  /** Commits a new panel width after a resize gesture. */
+  onResize?: (width: number) => void
+  /**
+   * Database/schema/role a code card's Run button executes against. Omitted in
+   * a bare panel (no provider), where Run is hidden.
+   */
+  activeContext?: TurnContext
+  /** Queries attached from the workspace, shown as badges above the composer. */
+  attachments?: AttachedQuery[]
+  onRemoveAttachment?: (id: string) => void
+  /** Label shown at the left of the header (workspace file, or the default). */
+  title?: string
+  /** Name the empty state's greeting addresses. */
+  userName?: string | null
+  /** Recent conversations listed in the empty state; omitted hides the section. */
+  recentThreads?: ThreadView[]
 }
-
-const PANEL_WIDTH = 'w-[22rem]'
 
 function ResetPermissionsBar({
   active,
@@ -79,8 +124,37 @@ function AssistantBody({
   grantActive,
   onResetPermissions,
   resettingPermissions,
+  loadingThread,
+  selectedModel,
+  onSelectModel,
+  approvalMode,
+  onSelectApprovalMode,
+  settlingApprovalMode,
+  activeContext,
+  attachments,
+  onRemoveAttachment,
+  userName,
+  onOpenThread,
+  activeThreadId,
+  recentThreads,
 }: AssistantPanelProps) {
   const hasTranscript = Boolean(children) || Boolean(messages?.length)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const lastMessage = messages?.[messages.length - 1]
+  // Signature of the transcript's visible state, so auto-scroll follows both a
+  // new message and each streamed delta appended to the last one.
+  const transcriptSignal = `${messages?.length ?? 0}:${lastMessage?.content.length ?? 0}`
+
+  useEffect(() => {
+    // Scroll the transcript viewport itself, not an ancestor: a sentinel plus
+    // `scrollIntoView` can scroll the page when the panel is inside a scrolling
+    // document, which dragged the whole layout. The viewport is the node Radix
+    // marks with `data-slot`, and it is the only element that should move.
+    const viewport = scrollRef.current?.querySelector<HTMLElement>(
+      '[data-slot=scroll-area-viewport]'
+    )
+    if (viewport) viewport.scrollTop = viewport.scrollHeight
+  }, [transcriptSignal, loadingThread])
 
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
@@ -89,106 +163,101 @@ function AssistantBody({
         onReset={() => onResetPermissions?.()}
         resetting={Boolean(resettingPermissions)}
       />
-      <ScrollArea className='min-h-0 flex-1'>
+      {/* `h-0` + `flex-1` pins the scroll area to the leftover space in the
+          column, so the transcript scrolls inside the panel rather than the
+          page growing taller. */}
+      <ScrollArea ref={scrollRef} className='h-0 min-h-0 flex-1'>
         <div className='flex min-h-full flex-col p-3'>
-          {children ??
+          {loadingThread ? (
+            <p className='p-4 text-center text-xs text-muted-foreground'>Loading conversation…</p>
+          ) : (
+            children ??
             (hasTranscript ? (
               <MessageList
                 messages={messages ?? []}
                 onDecide={onDecide}
                 decidingToolCallId={decidingToolCallId}
                 statusMessage={statusMessage}
+                activeContext={activeContext}
               />
             ) : (
-              <EmptyState
-                icon={Bot}
-                title='Ask about this workspace'
-                description='The assistant can explain schema, draft dialect-aware SQL, and run read-only queries with your approval.'
+              <AssistantEmptyState
+                userName={userName}
+                onSendMessage={onSendMessage}
+                onOpenThread={onOpenThread}
+                activeThreadId={activeThreadId}
+                recentThreads={recentThreads}
               />
-            ))}
-        </div>
-      </ScrollArea>
-      <form
-        className='border-t p-3'
-        onSubmit={(event) => {
-          event.preventDefault()
-          const form = event.currentTarget
-          const field = form.elements.namedItem('assistant-message') as HTMLTextAreaElement | null
-          const value = field?.value.trim()
-          if (!value || streaming || disabled || !onSendMessage) return
-          onSendMessage(value)
-          if (field) field.value = ''
-        }}
-      >
-        {disabled ? (
-          <p className='mb-2 text-xs text-muted-foreground'>
-            The assistant backend is not connected yet. This panel is read-only until it is.
-          </p>
-        ) : null}
-        <div className='flex items-end gap-2'>
-          <Textarea
-            name='assistant-message'
-            rows={2}
-            placeholder='Ask a question or describe a query'
-            disabled={disabled || !onSendMessage}
-            className='min-h-9 flex-1 resize-none'
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault()
-                event.currentTarget.form?.requestSubmit()
-              }
-            }}
-          />
-          {streaming ? (
-            <Button
-              type='button'
-              size='icon'
-              variant='outline'
-              onClick={onStop}
-              aria-label='Stop generating'
-            >
-              <Square className='size-4' />
-            </Button>
-          ) : (
-            <Button
-              type='submit'
-              size='icon'
-              disabled={disabled || !onSendMessage}
-              aria-label='Send message'
-            >
-              <SendHorizontal className='size-4' />
-            </Button>
+            ))
           )}
         </div>
-      </form>
+      </ScrollArea>
+      <AssistantComposer
+        onSendMessage={onSendMessage}
+        streaming={streaming}
+        onStop={onStop}
+        disabled={disabled}
+        selectedModel={selectedModel}
+        onSelectModel={onSelectModel}
+        approvalMode={approvalMode}
+        onSelectApprovalMode={onSelectApprovalMode}
+        settlingApprovalMode={settlingApprovalMode}
+        attachments={attachments}
+        onRemoveAttachment={onRemoveAttachment}
+      />
     </div>
   )
 }
 
 function AssistantHeader({
   onClose,
-  showClose = true,
+  onNewChat,
+  onOpenThread,
+  activeThreadId,
+  busy,
+  title,
 }: {
   onClose: () => void
-  showClose?: boolean
+  onNewChat?: () => void
+  onOpenThread?: (threadId: string) => void | Promise<void>
+  activeThreadId?: string | null
+  busy?: boolean
+  title?: string
 }) {
   return (
-    <div className='flex items-center justify-between gap-2 border-b px-3 py-2'>
-      <div className='flex items-center gap-2'>
-        <Bot aria-hidden='true' className='size-4 text-muted-foreground' />
-        <h2 className='text-sm font-medium'>Assistant</h2>
-      </div>
-      {showClose ? (
+    // Deliberately borderless: the header floats over the panel so the surface
+    // reads as one continuous sheet rather than a framed card.
+    <div className='flex items-center gap-2 px-3 py-2'>
+      <Bot aria-hidden='true' className='size-4 shrink-0 text-muted-foreground' />
+      <h2 className='min-w-0 flex-1 truncate text-sm font-medium'>{title ?? 'Nove'}</h2>
+      {onNewChat ? (
         <Button
           type='button'
           variant='ghost'
           size='icon'
-          onClick={onClose}
-          aria-label='Close assistant'
+          onClick={onNewChat}
+          disabled={busy}
+          aria-label='New chat'
         >
-          <PanelRightClose className='size-4' />
+          <MessageSquarePlus aria-hidden='true' className='size-4' />
         </Button>
       ) : null}
+      {onOpenThread ? (
+        <ThreadHistory
+          activeThreadId={activeThreadId ?? null}
+          onOpenThread={onOpenThread}
+          disabled={busy}
+        />
+      ) : null}
+      <Button
+        type='button'
+        variant='ghost'
+        size='icon'
+        onClick={onClose}
+        aria-label='Close assistant'
+      >
+        <PanelRightClose className='size-4' />
+      </Button>
     </div>
   )
 }
@@ -196,14 +265,29 @@ function AssistantHeader({
 export function AssistantPanel(props: AssistantPanelProps) {
   const { open, onOpenChange } = props
   const isNarrow = useIsNarrowForAssistant()
+  const busy = Boolean(props.streaming) || Boolean(props.loadingThread)
+  // Live width during a drag, so the panel edge tracks the pointer instead of
+  // only snapping to the committed value on release.
+  const [previewWidth, setPreviewWidth] = useState<number | null>(null)
+
+  const header = (
+    <AssistantHeader
+      onClose={() => onOpenChange(false)}
+      onNewChat={props.onNewChat}
+      onOpenThread={props.onOpenThread}
+      activeThreadId={props.activeThreadId}
+      busy={busy}
+      title={props.title}
+    />
+  )
 
   if (isNarrow) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side='right' className={cn('p-0', PANEL_WIDTH, 'sm:max-w-[22rem]')}>
-          <SheetTitle className='sr-only'>Assistant</SheetTitle>
+        <SheetContent side='right' className='flex w-[22rem] flex-col p-0 sm:max-w-[22rem]'>
+          <SheetTitle className='sr-only'>Nove</SheetTitle>
           <div className='flex h-full min-h-0 flex-col'>
-            <AssistantHeader onClose={() => onOpenChange(false)} />
+            {header}
             <AssistantBody {...props} />
           </div>
         </SheetContent>
@@ -211,27 +295,45 @@ export function AssistantPanel(props: AssistantPanelProps) {
     )
   }
 
+  const committedWidth = props.width ?? ASSISTANT_DEFAULT_WIDTH
+  const width = previewWidth ?? committedWidth
+  const displayWidth = open ? width : 0
+  const dragging = previewWidth !== null
+
   return (
     // The wrapper animates its width so the panel slides rather than blinking
-    // in and out. The aside stays mounted while closed, so `inert` (not
-    // unmounting) is what keeps its transcript and controls out of the tab
-    // order and off the accessibility tree.
+    // in and out. The width is inline (a drag-resized value cannot be a static
+    // class) and the transition is suspended while dragging so the edge tracks
+    // the pointer instead of lagging behind it. `h-full` + `min-h-0` are what
+    // bound the transcript's scroll area to the viewport. The aside stays
+    // mounted while closed, so `inert` (not unmounting) keeps its transcript
+    // and controls out of the tab order and off the accessibility tree.
     <div
       data-state={open ? 'open' : 'closed'}
+      style={{ width: displayWidth }}
       className={cn(
-        'shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
-        open ? PANEL_WIDTH : 'w-0'
+        'relative h-full min-h-0 shrink-0 overflow-hidden',
+        !dragging &&
+          'transition-[width] duration-200 ease-in-out motion-reduce:transition-none'
       )}
     >
+      {open && props.onResize ? (
+        <PanelResizeHandle
+          width={committedWidth}
+          onResize={props.onResize}
+          onPreview={setPreviewWidth}
+        />
+      ) : null}
       <aside
         id='assistant-panel'
-        aria-label='Assistant'
+        aria-label='Nove'
         inert={!open}
-        className={cn('flex h-full min-h-0 flex-col border-l bg-background', PANEL_WIDTH)}
+        style={{ width }}
+        className='flex h-full min-h-0 flex-col border-l bg-background'
       >
-        {/* The layout-level FAB is the hide control in wide mode, so the header
-            does not add a second one next to it. The Sheet keeps its own. */}
-        <AssistantHeader onClose={() => onOpenChange(false)} showClose={false} />
+        {/* Closing lives in the header now, so the layout FAB is only the
+            open control and is hidden while the panel is open. */}
+        {header}
         <AssistantBody {...props} />
       </aside>
     </div>

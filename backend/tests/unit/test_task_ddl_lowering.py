@@ -57,13 +57,65 @@ class TestClauseLowering:
         assert task.after == ("a",)
         assert task.finalize is None
 
+
+class TestTaskScope:
+    """A task name is qualified (``database.schema.task``), like a stage."""
+
+    def test_three_part_name_sets_database_and_schema(self) -> None:
+        task = lower("CREATE TASK analytics.etl.daily AS INSERT INTO t SELECT 1")
+        assert (task.database_name, task.schema_name, task.name) == (
+            "analytics",
+            "etl",
+            "daily",
+        )
+        assert task.qualified_name == "analytics.etl.daily"
+
+    def test_two_part_name_sets_schema_from_the_session_database(self) -> None:
+        task = lower("CREATE TASK etl.daily AS INSERT INTO t SELECT 1")
+        # database comes from the session default ("db1" in the test helper).
+        assert (task.database_name, task.schema_name, task.name) == (
+            "db1",
+            "etl",
+            "daily",
+        )
+
+    def test_bare_name_falls_back_to_session_scope(self) -> None:
+        task = lower("CREATE TASK daily AS INSERT INTO t SELECT 1", schema="silver")
+        assert (task.database_name, task.schema_name, task.name) == (
+            "db1",
+            "silver",
+            "daily",
+        )
+
+    def test_backticked_segments_are_split_and_unquoted(self) -> None:
+        task = lower("CREATE TASK `my db`.`sch`.`my task` AS INSERT INTO t SELECT 1")
+        assert (task.database_name, task.schema_name, task.name) == (
+            "my db",
+            "sch",
+            "my task",
+        )
+
+    def test_four_part_name_is_rejected(self) -> None:
+        with pytest.raises(TaskDDLError, match="database.schema.task"):
+            lower("CREATE TASK cat.db.sch.t AS INSERT INTO t SELECT 1")
+
+    def test_after_single_parent(self) -> None:
+        task = lower("CREATE TASK t1 AFTER a AS INSERT INTO t SELECT 1")
+        assert task.after == ("a",)
+        assert task.finalize is None
+
     def test_after_multiple_parents(self) -> None:
         task = lower("CREATE TASK t1 AFTER a, b, c AS INSERT INTO t SELECT 1")
         assert task.after == ("a", "b", "c")
 
-    def test_after_qualified_parent(self) -> None:
-        task = lower("CREATE TASK t1 AFTER db1.sch.a AS INSERT INTO t SELECT 1")
-        assert task.after == ("db1.sch.a",)
+    def test_after_qualified_parent_is_rejected(self) -> None:
+        """A graph is single-schema, so a parent is a bare name, not qualified.
+
+        Stripping the scope would silently resolve `other.t` to a same-named
+        task in this schema, so the qualified form is rejected outright.
+        """
+        with pytest.raises(TaskDDLError, match="bare task name"):
+            lower("CREATE TASK db1.sch.t1 AFTER db1.sch.a AS INSERT INTO t SELECT 1")
 
     def test_finalize_normalises_both_spellings(self) -> None:
         with_eq = lower("CREATE TASK t1 FINALIZE = b AS INSERT INTO t SELECT 1")
@@ -302,10 +354,17 @@ class TestPersistLoweredTask:
 
     async def test_cycle_against_stored_rows_rolls_back(self, repo) -> None:
         # `a AFTER t1` already exists, so adding `t1 AFTER a` closes a loop.
-        await repo.create_task({"name": "a", "timezone": "UTC"}, "alice")
-        await repo.create_edge("t1", {"parent_task": "t1", "child_task": "a", "edge_kind": "after"})
+        # Graph ids are qualified (database.schema.root), matching the lowering.
+        await repo.create_task(
+            {"name": "a", "database_name": "db1", "schema_name": "default", "timezone": "UTC"},
+            "alice",
+        )
+        await repo.create_edge(
+            "db1.default.t1",
+            {"parent_task": "t1", "child_task": "a", "edge_kind": "after"},
+        )
 
-        task = lower("CREATE TASK t1 AFTER a AS INSERT INTO t SELECT 1")
+        task = lower("CREATE TASK db1.default.t1 AFTER a AS INSERT INTO t SELECT 1")
         with pytest.raises(TaskLoweringError, match="cycle"):
             await persist_lowered_task(task, created_by="alice")
 
@@ -320,18 +379,27 @@ class TestPersistLoweredTask:
         graph `a`. A per-graph-key check would see neither, so this proves the
         component-based validation is what actually catches it.
         """
-        await repo.create_task({"name": "a", "timezone": "UTC"}, "alice")
-        await repo.create_task({"name": "b", "timezone": "UTC"}, "alice")
+        await repo.create_task(
+            {"name": "a", "database_name": "db1", "schema_name": "default", "timezone": "UTC"},
+            "alice",
+        )
+        await repo.create_task(
+            {"name": "b", "database_name": "db1", "schema_name": "default", "timezone": "UTC"},
+            "alice",
+        )
         # graph_id differs from the new task's name on purpose: this is the
         # `CREATE TASK b AFTER a` row.
-        await repo.create_edge("b", {"parent_task": "a", "child_task": "b", "edge_kind": "after"})
+        await repo.create_edge(
+            "db1.default.b",
+            {"parent_task": "a", "child_task": "b", "edge_kind": "after"},
+        )
 
         tasks_before = len(repo.tasks)
-        task = lower("CREATE TASK a AFTER b AS INSERT INTO t SELECT 1")
+        task = lower("CREATE TASK db1.default.a AFTER b AS INSERT INTO t SELECT 1")
         with pytest.raises(TaskLoweringError, match="cycle"):
             await persist_lowered_task(task, created_by="alice")
 
         # The rejected task row was rolled back: only the two pre-seeded rows
         # remain, and no edge for the new statement survived.
         assert len(repo.tasks) == tasks_before
-        assert not any(e["graph_id"] == "a" for e in repo.edges)
+        assert not any(e["graph_id"] == "db1.default.a" for e in repo.edges)

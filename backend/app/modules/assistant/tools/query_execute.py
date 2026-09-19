@@ -101,6 +101,10 @@ class QueryExecuteTool:
         "DDL statements are refused."
     )
     parameters = _TOOL_PARAMETERS
+    #: Explicit: running SQL touches the user's data and always needs approval
+    #: (unless a conversation grant covers it). Stated rather than relying on the
+    #: default so the contract is visible next to the tool it governs.
+    requires_consent = True
 
     def __init__(self, *, max_rows: int = ASSISTANT_MAX_ROWS) -> None:
         self.max_rows = max_rows
@@ -172,7 +176,7 @@ class QueryExecuteTool:
                 encrypted_password=encrypted_password,
                 database=_context_value(context, "database"),
                 schema=_context_value(context, "schema_name"),
-                role=_context_value(context, "role"),
+                role=_active_role(context),
                 max_rows=self.max_rows,
                 session_id=_context_value(context, "audit_session_id"),
                 confirm_destructive=False,
@@ -334,6 +338,10 @@ def _render_result(result: Any) -> str:
             "rows_returned": len(preview_rows),
             "truncated": truncated,
             "rows": preview_rows,
+            # The first warning carries the role the statement actually ran
+            # under when Nova auto-selected a different granted role. Redacted
+            # like the error, because a warning can echo the executed SQL.
+            "warning": _safe_redact((result.warnings or [None])[0]),
         },
         default=str,
     )
@@ -355,6 +363,26 @@ def _sql_from(invocation: ToolInvocation) -> str:
 def _context_value(context: Any, name: str) -> str | None:
     value = getattr(context, name, None)
     return value if isinstance(value, str) and value else None
+
+
+def _active_role(context: Any) -> str | None:
+    """The role the assistant tool must execute as.
+
+    The authenticated session's ``active_role`` is the single source of truth
+    (the same value the HTTP query path resolves), so the assistant cannot run
+    under a different role than the one the UI shows as active. Falls back to
+    the workbook context role only when no session is attached — a direct
+    unit-test call — so the tool still has a role in that path.
+    """
+    user = getattr(context, "user", None)
+    if isinstance(user, dict):
+        active = user.get("active_role")
+        if isinstance(active, str) and active:
+            return active
+        granted = user.get("roles") or []
+        if granted:
+            return granted[0]
+    return _context_value(context, "role")
 
 
 def _safe_redact(sql: str) -> str:

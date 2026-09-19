@@ -27,6 +27,27 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
+#: Immutable snapshot of a workspace file at each save. The content itself
+#: lives as a separate object in the workspace bucket (see
+#: ``WorkspaceService._version_object_key``); this row is metadata only, so a
+#: large query never bloats StarRocks. Primary Key on ``id`` because a version
+#: is written once and read by (entry, version); ``version`` is a monotonic
+#: per-entry counter assigned under the same save that writes the object.
+WORKSPACE_FILE_VERSIONS_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS (
+    id          VARCHAR(64) NOT NULL,
+    entry_id    VARCHAR(64) NOT NULL,
+    user_name   VARCHAR(128) NOT NULL,
+    version     BIGINT NOT NULL,
+    object_key  VARCHAR(1024) NOT NULL,
+    size_bytes  BIGINT DEFAULT "0",
+    etag        VARCHAR(256),
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
 
 TASK_ORCHESTRATION_DDL = (
     """
@@ -34,6 +55,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASKS (
     id             VARCHAR(64) NOT NULL,
     name           VARCHAR(256) NOT NULL,
     database_name  VARCHAR(128),
+    schema_name    VARCHAR(128),
     definition     TEXT,
     schedule_kind  VARCHAR(32) NOT NULL,
     schedule_expr  VARCHAR(256),
@@ -113,6 +135,11 @@ TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # not expose the count, so Nova keeps its own to detect the threshold
     # (NOVA-37 AC #3). Reset to 0 on a successful run.
     ("CONFIG_TASKS", "consecutive_fail_count", "INT DEFAULT \"0\""),
+    # Tasks are scoped to a database.schema like a stage (CONFIG_STAGES). The
+    # column was added after the table shipped, so an existing install needs the
+    # additive migration; existing rows default to NULL and are treated as the
+    # legacy flat-``name`` scope until re-created.
+    ("CONFIG_TASKS", "schema_name", "VARCHAR(128)"),
     # NOVA-54 / 9b: distinguishes a normal dependency edge (``after``) from a
     # ``FINALIZE`` edge. The finalizer must be stored, not dropped: its run
     # semantics are wired in PR 3b, and losing the flag here would make a
@@ -167,6 +194,7 @@ async def init_nova_system() -> None:
     """
     try:
         await db.execute_system(WORKSPACE_ENTRIES_DDL)
+        await db.execute_system(WORKSPACE_FILE_VERSIONS_DDL)
         result = await db.execute_system(
             "SELECT pref_value FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "
             "WHERE user_name = '__system__' AND pref_key = 'setup_complete'"

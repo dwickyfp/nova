@@ -24,10 +24,34 @@ router = APIRouter()
 __all__ = ["SanitizingJSONResponse", "router"]
 
 
+def _resolve_active_role(user: dict) -> str | None:
+    """Return the role the engine must activate for this request.
+
+    The session's ``active_role`` (set at login and changed through
+    ``POST /auth/switch-role``) is the single source of truth for the role a
+    statement runs under. Request bodies do not get to choose it: a body
+    ``role`` used to be forwarded to ``SET ROLE`` unvalidated, which let any
+    caller attempt a role it had not been granted and let the UI show one role
+    while executing under another (the bottom-left switcher versus the
+    workspace tab picker).
+
+    Falls back to the first granted role for older sessions that predate
+    ``active_role``. The value is re-checked against the granted set so a
+    corrupted or forged session cannot elevate.
+    """
+    granted = user.get("roles") or []
+    active = user.get("active_role")
+    if active and active in granted:
+        return active
+    return granted[0] if granted else None
+
+
 class QueryRequest(BaseModel):
     sql: str = Field(..., min_length=1)
     database: str | None = None
     schema_name: str | None = Field(None, alias="schema")
+    #: Accepted for backward compatibility but ignored — the active role comes
+    #: from the session (:func:`_resolve_active_role`), never the request body.
     role: str | None = None
     max_rows: int = Field(500, ge=1, le=5000)
     file_id: str | None = None
@@ -83,7 +107,7 @@ async def execute_query(
         encrypted_password=user["encrypted_password"],
         database=req.database,
         schema=req.schema_name,
-        role=req.role,
+        role=_resolve_active_role(user),
         max_rows=req.max_rows,
         session_id=user["session_id"],
         confirm_destructive=req.confirm_destructive,
@@ -138,7 +162,7 @@ async def explain_query(
         username=user["username"],
         encrypted_password=user["encrypted_password"],
         database=req.database,
-        role=req.role,
+        role=_resolve_active_role(user),
     )
 
     # ``success`` is derived from ``error``, so the marker has to reach the
@@ -164,6 +188,7 @@ async def get_query_context(user: dict = Depends(get_current_user)):
     return await query_service.get_context(
         username=user["username"],
         encrypted_password=user["encrypted_password"],
+        active_role=_resolve_active_role(user),
     )
 
 

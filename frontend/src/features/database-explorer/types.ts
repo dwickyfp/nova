@@ -8,6 +8,7 @@ export type ExplorerNodeType =
   | 'function'
   | 'pipe'
   | 'stage'
+  | 'task'
 
 export type ExplorerNode = {
   id: string
@@ -140,6 +141,15 @@ export type StageSummary = {
   created_at: string | null
 }
 
+export type TaskSummary = {
+  id: string
+  name: string
+  schedule_kind: string | null
+  schedule_expr: string | null
+  timezone: string | null
+  overlap_policy: string | null
+}
+
 export type DatabaseObjectsResponse = {
   database: string
   tables: TableSummary[]
@@ -148,6 +158,7 @@ export type DatabaseObjectsResponse = {
   functions: FunctionSummary[]
   pipes: PipeSummary[]
   stages: StageSummary[]
+  tasks: TaskSummary[]
   summary: Record<string, number>
 }
 

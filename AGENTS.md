@@ -336,7 +336,11 @@ User: SELECT * FROM @stage1.data.csv
 ```
 NOVA_SYSTEM
 ├── CONFIG                      ← CRUD (Primary Key tables)
-│   ├── STAGES                  ← Stage definitions
+│   ├── STAGES                  ← Stage definitions (schema-scoped)
+│   ├── TASKS                   ← Nova CREATE TASK definitions (schema-scoped)
+│   ├── TASK_EDGES              ← Task DAG edges (single-schema graphs)
+│   ├── TASK_GRAPH_RUNS         ← One row per graph execution
+│   ├── TASK_RUNS               ← One row per node attempt
 │   ├── PINNED_QUERIES          ← Saved queries
 │   ├── USER_PREFERENCES        ← UI settings
 │   ├── AI_PROVIDERS            ← LLM provider connections (OpenAI, Anthropic, etc.)
@@ -387,6 +391,20 @@ NOVA_SYSTEM
 | Write Java/Spring Boot | Python only (FastAPI) |
 
 **Build-tooling carve-out (NOVA-17, 2026-09-17):** the row above governs **application code**. A Java toolchain is permitted **at build/CI time only** for parser generation — currently `antlr-4.13.2`, used to regenerate Nova's SQL parser from `StarRocks.g4`/`StarRocksLex.g4`. The rule that matters is unchanged: **no JVM in the runtime or request path**, and the generated parser is committed as Python. See the Decision Log in `README.md`.
+
+---
+
+<!-- antislop:start -->
+## antislop
+For UI, copy, people, mobile layout, or code comments work, load the antislop skill for the task:
+- Core filter, always on: `antislop`
+- UI / visual: `antislop-ui`
+- Copy & text: `antislop-copywriting`
+- People: `antislop-human`
+- Mobile / responsive: `antislop-layoutmobile`
+- Code comments: `antislop-code`
+Before starting, ask the user when antislop applies: during the work, or after it is done.
+<!-- antislop:end -->
 
 ---
 

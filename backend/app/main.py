@@ -38,6 +38,7 @@ from app.modules.pipes.router import router as pipes_router
 from app.modules.query.router import router as query_router
 from app.modules.resource_groups.router import router as resource_groups_router
 from app.modules.stages.router import router as stages_router
+from app.modules.system.router import router as system_router
 from app.modules.tables.router import router as tables_router
 from app.modules.task_orchestration.router import router as task_orchestration_router
 from app.modules.tasks.router import router as tasks_router
@@ -102,10 +103,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Could not ensure migration source schema: %s", e)
 
+    # Assistant conversation storage. Threads/messages used to live in process
+    # memory and vanished on reload; persisting them per user is what survives a
+    # restart. Best-effort: without it the assistant still answers, but history
+    # is not durable.
+    try:
+        from app.modules.assistant.repository import assistant_repository
+
+        await assistant_repository.ensure_schema()
+    except Exception as e:
+        logger.warning("Could not ensure assistant conversation schema: %s", e)
+
     # Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)
     # so they are available as SQL functions from the start.
     try:
         from app.modules.llm_functions.service import llm_function_service
+
         result = await llm_function_service.register_all_udfs()
         logger.info(
             "LLM UDFs registered: %d ok, %d failed",
@@ -172,6 +185,7 @@ def create_app() -> FastAPI:
     app.include_router(views_router, prefix=f"{prefix}/views", tags=["views"])
     app.include_router(stages_router, prefix=f"{prefix}/stages", tags=["stages"])
     app.include_router(explorer_router, prefix=f"{prefix}/explorer", tags=["explorer"])
+    app.include_router(system_router, prefix=f"{prefix}/system", tags=["system"])
     app.include_router(users_router, prefix=f"{prefix}/users", tags=["users"])
     app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["ai"])
     app.include_router(llm_fn_router, prefix=f"{prefix}/ai", tags=["ai"])
@@ -220,8 +234,10 @@ def create_app() -> FastAPI:
         prefix=f"{prefix}/external-catalogs",
         tags=["external-catalogs"],
     )
-    # Phase 11 v1 — Migration Connector: Assessment + Dry-run only. There is no
-    # Execute endpoint; cutover is gated on #7 (backup/restore).
+    # Phase 11 — Migration Connector: assess, dry-run, plan, and execute.
+    # Execute is gated on #7 (backup/restore): the endpoint exists but refuses
+    # (403) unless the operator sets MIGRATION_EXECUTE_ENABLED. Data movement is
+    # not implemented (11-C).
     app.include_router(
         migration_router, prefix=f"{prefix}/migration", tags=["migration"]
     )

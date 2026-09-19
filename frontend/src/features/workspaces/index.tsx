@@ -13,13 +13,13 @@ import {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { getRouteApi } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { format as formatSql } from 'sql-formatter'
 import Editor, { type Monaco } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart3,
-  Bot,
   Braces,
   ChevronDown,
   ChevronLeft,
@@ -32,12 +32,12 @@ import {
   Folder,
   GripHorizontal,
   Hash,
+  History,
   MoreHorizontal,
   Pencil,
   Play,
   Plus,
   RefreshCw,
-  Route,
   Square,
   Search,
   Table2,
@@ -64,10 +64,17 @@ import {
 } from 'recharts'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 import { Header } from '@/components/layout/header'
 import { useAssistant } from '@/features/assistant'
 import type { TurnContext } from '@/features/assistant'
 import { createThread } from '@/features/assistant/thread-client'
+import {
+  applyHunks,
+  buildRewriteHunks,
+  type AttachedQuery,
+  type ProposedRewrite,
+} from '@/features/assistant/query-attach'
 import { DatabaseSchemaSelector } from './database-schema-selector'
 import {
   type CompletionResponse,
@@ -83,6 +90,8 @@ import {
 } from './stage-completion'
 import { useTheme } from '@/context/theme-provider'
 import { readToken } from '@/lib/read-token'
+import { applyNovaSqlTheme } from './monaco-theme'
+import { FileHistoryDialog } from './file-history-dialog'
 import { ExplainTreeView } from './explain-tree'
 import { QueryHistory } from './query-history'
 import type {
@@ -96,7 +105,6 @@ import type {
   WorkspaceTabState,
   WorkspaceTreeResponse,
 } from './types'
-import { InlineSelect } from './inline-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -108,17 +116,43 @@ import { SidebarMenu, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubItem } from
 
 type MonacoEditorInstance = Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0]
 
+const workspacesRoute = getRouteApi('/_authenticated/workspaces/')
+
 let activeSqlEditorInstance: MonacoEditorInstance | null = null
+let activeSqlSelection: import('monaco-editor').Selection | null = null
 
 function getSqlForExecution(fallbackSql: string) {
   const editor = activeSqlEditorInstance
-  const selection = editor?.getSelection()
+  const liveSelection = editor?.getSelection()
+  const selection =
+    liveSelection && !liveSelection.isEmpty()
+      ? liveSelection
+      : activeSqlSelection && !activeSqlSelection.isEmpty()
+        ? activeSqlSelection
+        : null
   const selectedSql =
-    editor && selection && !selection.isEmpty()
-      ? editor.getModel()?.getValueInRange(selection).trim()
-      : ''
+    editor && selection ? (editor.getModel()?.getValueInRange(selection).trim() ?? '') : ''
 
   return selectedSql || fallbackSql.trim()
+}
+
+/**
+ * Returns the plan text when a result set is an EXPLAIN plan, otherwise null.
+ *
+ * The check is on the leading keyword of the statement rather than on the
+ * result shape: an EXPLAIN row set happens to hold one column today, but that
+ * is an engine detail, while "the user asked for a plan" is the actual intent
+ * we render for. The column-shape branch is kept only as a fallback for plans
+ * loaded from history, where `original_sql` may have been rewritten.
+ */
+function explainPlanFromResult(result: QueryResponse): string | null {
+  if (!result.success || !result.rows.length) return null
+  const firstKeyword = result.original_sql.trim().split(/\s+/, 1)[0]?.toUpperCase()
+  const looksLikePlan =
+    firstKeyword === 'EXPLAIN' ||
+    (result.columns.length === 1 && /explain/i.test(result.columns[0] ?? ''))
+  if (!looksLikePlan) return null
+  return result.rows.map((row) => String(row[0] ?? '')).join('\n')
 }
 
 const SQL_KEYWORDS = [
@@ -575,6 +609,7 @@ const SQL_KEYWORDS = [
 
 export function WorkspacesPage() {
   const queryClient = useQueryClient()
+  const search = workspacesRoute.useSearch()
   const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases'>('workspaces')
   const [secondaryCollapsed, setSecondaryCollapsed] = useState(false)
   const [workspaceSearch, setWorkspaceSearch] = useState('')
@@ -588,10 +623,8 @@ export function WorkspacesPage() {
   const [schemasByDatabase, setSchemasByDatabase] = useState<Record<string, Array<{ name: string }>>>({})
   const [resultsHeight, setResultsHeight] = useState(350)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
-  const [resultsTab, setResultsTab] = useState<'results' | 'history' | 'explain' | 'chart'>('results')
+  const [resultsTab, setResultsTab] = useState<'results' | 'history' | 'chart'>('results')
   const [isResizingResults, setIsResizingResults] = useState(false)
-  const [explainResult, setExplainResult] = useState<string | null>(null)
-  const [explaining, setExplaining] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<'file' | 'all'>('file')
   const [queryResults, setQueryResults] = useState<QueryResponse[] | null>(() => {
     try {
@@ -612,6 +645,14 @@ export function WorkspacesPage() {
   })
   const [activeResultIdx, setActiveResultIdx] = useState(0)
   const activeResult = queryResults?.[activeResultIdx] ?? null
+  /**
+   * The Explain tab used to be a separate surface fed by a dedicated endpoint.
+   * It is now folded into Results: an EXPLAIN run returns its plan as ordinary
+   * rows, so the same panel decides how to render them. Detection reads the
+   * statement the engine actually received (`original_sql`), not the editor
+   * buffer, so re-running history entries behaves the same way.
+   */
+  const activeExplainPlan = activeResult ? explainPlanFromResult(activeResult) : null
   const [running, setRunning] = useState(false)
   const [elapsedMs, setElapsedMs] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
@@ -619,19 +660,37 @@ export function WorkspacesPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const activeTab = activeTabId ? tabs[activeTabId] : null
+  // The bottom-left switcher is the single source of truth for the active role.
+  // Everything the workspace does — execution, schema listing, completions —
+  // must run under this role, otherwise the UI can show one role while the
+  // engine runs under another. Tab state keeps a role field for persistence and
+  // read-only display, but it is always this value.
+  //
+  // Both selectors are separate, unconditional hook calls: combining them with
+  // `??` chained onto a second `useAuthStore(...)` call would skip that second
+  // hook whenever `activeRole` is set, changing the hook count between renders
+  // ("change in the order of Hooks"). The fallback is resolved outside the hooks.
+  const activeRole = useAuthStore((state) => state.auth.user?.activeRole)
+  const firstRole = useAuthStore((state) => state.auth.user?.roles[0])
+  const sessionRole = activeRole ?? firstRole ?? ''
   const deferredWorkspaceSearch = useDeferredValue(workspaceSearch)
   const deferredDatabaseSearch = useDeferredValue(databaseSearch)
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const saveTimerRef = useRef<number | null>(null)
   const stateSaveTimerRef = useRef<number | null>(null)
   const editorContentRef = useRef('')
+  const pendingRevealRef = useRef<{ tabId: string; sql: string } | null>(null)
 
   const {
     open: assistantOpen,
     toggle: toggleAssistant,
     setBinding,
+    attachQuery,
+    proposedRewrite,
+    setProposedRewrite,
     collapsedToPersist,
   } = useAssistant()
   const threadsRef = useRef<Record<string, string>>({})
@@ -648,18 +707,41 @@ export function WorkspacesPage() {
     () => ({
       database: activeTab?.database ?? null,
       schema: activeTab?.schema ?? null,
-      role: activeTab?.role ?? null,
+      role: sessionRole || null,
     }),
-    [activeTab?.database, activeTab?.role, activeTab?.schema]
+    [activeTab?.database, activeTab?.schema, sessionRole]
   )
 
   const assistantOnError = useCallback((message: string) => toast.error(message), [])
+
+  /**
+   * Turns the assistant's proposed SQL into line hunks against the tab the
+   * selection came from. Computed here (not in the provider) because the
+   * editor's current text is the diff's "before" and only this surface has it.
+   * If the referenced tab is gone the proposal is dropped.
+   */
+  const assistantOnProposedRewrite = useCallback(
+    ({ attachment, sql, messageId }: { attachment: AttachedQuery; sql: string; messageId: string }) => {
+      const sourceTab = tabs[attachment.tabId]
+      if (!sourceTab) return
+      const before = sourceTab.content
+      setProposedRewrite({
+        attachmentId: attachment.id,
+        tabId: attachment.tabId,
+        sql,
+        hunks: buildRewriteHunks(before, sql),
+        sourceMessageId: messageId,
+      })
+    },
+    [tabs, setProposedRewrite]
+  )
 
   // The global panel owns open/closed and the conversation; the workspace
   // supplies only the per-file binding (thread + active tab context). With no
   // file open the binding is cleared so the provider's global conversation
   // applies, instead of the workspace claiming the global key and inheriting a
   // closed file's transcript.
+  const activeTabTitle = activeTab?.title
   useEffect(() => {
     if (!activeTabId) {
       setBinding(null)
@@ -670,9 +752,19 @@ export function WorkspacesPage() {
       context: assistantContext,
       ensureThread,
       onError: assistantOnError,
+      onProposedRewrite: assistantOnProposedRewrite,
+      title: activeTabTitle,
     })
     return () => setBinding(null)
-  }, [activeTabId, assistantContext, ensureThread, assistantOnError, setBinding])
+  }, [
+    activeTabId,
+    activeTabTitle,
+    assistantContext,
+    ensureThread,
+    assistantOnError,
+    assistantOnProposedRewrite,
+    setBinding,
+  ])
 
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
     queryKey: ['workspace-tree'],
@@ -721,7 +813,7 @@ export function WorkspacesPage() {
           savedContent: '',
           database: tree.defaults.database ?? context.defaults.database ?? context.databases[0] ?? '',
           schema: tree.defaults.schema ?? context.defaults.schema ?? context.schemas[0] ?? 'default',
-          role: tree.defaults.role ?? context.defaults.role ?? context.roles[0] ?? '',
+          role: sessionRole || tree.defaults.role || context.defaults.role || context.roles[0] || '',
           loaded: false,
         }
       }
@@ -736,12 +828,41 @@ export function WorkspacesPage() {
     void openTab(activeTabId)
   }, [activeTabId, tabs])
 
+  // Deep links from Home's Recent work: `?file=<id>` opens that worksheet and
+  // `?q=<sql>` selects the matching statement so the user lands on the query,
+  // not just the file. Runs once per distinct link; the pending reveal is
+  // consumed after the editor mounts the file content.
+  useEffect(() => {
+    if (!(workspaceTreeQuery.data && queryContextQuery.data)) return
+    const fileId = search.file
+    if (!fileId) return
+    setOpenTabIds((prev) => (prev.includes(fileId) ? prev : [...prev, fileId]))
+    setActiveTabId(fileId)
+    if (search.q) {
+      pendingRevealRef.current = { tabId: fileId, sql: search.q }
+    }
+  }, [search.file, search.q, workspaceTreeQuery.data, queryContextQuery.data])
+
+  useEffect(() => {
+    const pending = pendingRevealRef.current
+    if (!pending) return
+    if (activeTabId !== pending.tabId) return
+    const tab = tabs[pending.tabId]
+    if (!tab?.loaded) return
+    pendingRevealRef.current = null
+    const sql = pending.sql
+    const frame = window.requestAnimationFrame(() => {
+      revealSqlSelection(tab.content, sql)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeTabId, tabs])
+
   // Pre-load schemas when active tab's database changes
   useEffect(() => {
     if (!activeTab?.database || schemasByDatabase[activeTab.database]) return
     void api
       .get<SchemaResponse>(
-        `/objects/databases/${encodeURIComponent(activeTab.database)}/schemas${activeTab.role ? `?role=${encodeURIComponent(activeTab.role)}` : ''}`
+        `/objects/databases/${encodeURIComponent(activeTab.database)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ''}`
       )
       .then((response) => {
         setSchemasByDatabase((prev) => ({
@@ -750,7 +871,7 @@ export function WorkspacesPage() {
         }))
       })
       .catch(() => {})
-  }, [activeTab?.database, activeTab?.role])
+  }, [activeTab?.database, sessionRole])
 
   useEffect(() => {
     if (!activeTab) return
@@ -759,7 +880,7 @@ export function WorkspacesPage() {
       window.clearTimeout(saveTimerRef.current)
     }
     saveTimerRef.current = window.setTimeout(() => {
-      void saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, activeTab.role)
+      void saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, sessionRole)
         .catch(() => {})
     }, 700)
     return () => {
@@ -804,12 +925,12 @@ export function WorkspacesPage() {
     const handleBeforeUnload = () => {
       if (!activeTab) return
       if (activeTab.loaded && activeTab.content !== activeTab.savedContent) {
-        void saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, activeTab.role)
+        void saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, sessionRole)
       }
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [activeTab])
+  }, [activeTab, sessionRole])
 
   const filteredEntries = useMemo(() => {
     const entries = workspaceTreeQuery.data?.entries ?? []
@@ -861,7 +982,7 @@ export function WorkspacesPage() {
         assistant_collapsed: collapsedToPersist(),
         last_database: activeTab?.database ?? null,
         last_schema: activeTab?.schema ?? null,
-        last_role: activeTab?.role ?? null,
+        last_role: sessionRole || null,
       })
     }, 300)
     return () => {
@@ -871,7 +992,6 @@ export function WorkspacesPage() {
     }
   }, [
     activeTab?.database,
-    activeTab?.role,
     activeTab?.schema,
     activeTabId,
     assistantOpen,
@@ -879,6 +999,7 @@ export function WorkspacesPage() {
     openTabIds,
     queryContextQuery.data,
     secondaryCollapsed,
+    sessionRole,
     workspaceTreeQuery.data,
   ])
 
@@ -896,7 +1017,7 @@ export function WorkspacesPage() {
         savedContent: file.content,
         database: prev[id]?.database ?? defaults?.database ?? context?.defaults.database ?? context?.databases[0] ?? '',
         schema: prev[id]?.schema ?? defaults?.schema ?? context?.defaults.schema ?? 'default',
-        role: prev[id]?.role ?? defaults?.role ?? context?.defaults.role ?? context?.roles[0] ?? '',
+        role: sessionRole || prev[id]?.role || defaults?.role || context?.defaults.role || context?.roles[0] || '',
         loaded: true,
       },
     }))
@@ -955,7 +1076,7 @@ export function WorkspacesPage() {
               queryContextQuery.data?.databases[0] ??
               '',
             schema: activeTab?.schema ?? queryContextQuery.data?.defaults.schema ?? 'default',
-            role: activeTab?.role ?? queryContextQuery.data?.defaults.role ?? queryContextQuery.data?.roles[0] ?? '',
+            role: sessionRole || queryContextQuery.data?.defaults.role || queryContextQuery.data?.roles[0] || '',
             loaded: true,
           },
         }))
@@ -1048,7 +1169,6 @@ export function WorkspacesPage() {
           sql,
           database: activeTab.database || null,
           schema: activeTab.schema || null,
-          role: activeTab.role || null,
           max_rows: 500,
           file_id: activeTab.id,
           confirm_destructive: confirmDestructive,
@@ -1058,7 +1178,7 @@ export function WorkspacesPage() {
       setQueryResults(response)
       void queryClient.invalidateQueries({ queryKey: ['query-history'] })
       if (activeTab.content !== activeTab.savedContent) {
-        await saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, activeTab.role)
+        await saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, sessionRole)
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -1102,35 +1222,128 @@ export function WorkspacesPage() {
     }
   }
 
-  async function runExplain() {
-    if (!activeTab) return
-    const sql = editorContentRef.current.trim() || activeTab.content.trim()
-    if (!sql) return
-    setExplaining(true)
-    setExplainResult(null)
-    setResultsTab('explain')
-    try {
-      const response = await api.post<QueryResponse>('/query/explain', {
-        sql,
-        database: activeTab.database || null,
-        schema: activeTab.schema || null,
-        role: activeTab.role || null,
-      })
-      // EXPLAIN returns rows with a single column containing plan text
-      const planText = response.rows.map((row) => row[0]).join('\n')
-      setExplainResult(planText)
-    } catch (error) {
-      setExplainResult(error instanceof Error ? error.message : 'EXPLAIN failed')
-    } finally {
-      setExplaining(false)
+  /**
+   * Locates the statement referenced by a Home deep link inside the freshly
+   * loaded worksheet and selects it, so the editor scrolls to and highlights
+   * the query instead of dropping the cursor at line 1. Matching tolerates the
+   * whitespace differences between the audited SQL and the saved file.
+   */
+  function revealSqlSelection(content: string, sql: string) {
+    const editor = activeSqlEditorInstance
+    const model = editor?.getModel()
+    if (!editor || !model) return
+    const needle = sql.trim()
+    if (!needle) return
+
+    const haystack = content
+    let matchIndex = haystack.indexOf(needle)
+    let matchLength = needle.length
+
+    if (matchIndex === -1) {
+      // Whitespace-tolerant fallback: walk the source once, emitting the same
+      // single-space collapse the needle uses, while remembering where each
+      // emitted character came from. The first original index whose collapsed
+      // stream matches the needle marks the selection start.
+      const collapsedNeedle = needle.replace(/\s+/g, ' ')
+      const positions: number[] = []
+      let collapsedHaystack = ''
+      for (let i = 0; i < haystack.length; i += 1) {
+        const char = haystack[i]
+        if (/\s/.test(char)) {
+          if (collapsedHaystack.endsWith(' ')) continue
+          collapsedHaystack += ' '
+        } else {
+          collapsedHaystack += char
+        }
+        positions.push(i)
+      }
+      const collapsedIndex = collapsedHaystack.indexOf(collapsedNeedle)
+      if (collapsedIndex === -1) return
+      const startIndex = positions[collapsedIndex]
+      const endIndex = positions[collapsedIndex + collapsedNeedle.length - 1]
+      if (startIndex === undefined || endIndex === undefined) return
+      matchIndex = startIndex
+      matchLength = endIndex - startIndex + 1
     }
+
+    const start = model.getPositionAt(matchIndex)
+    const end = model.getPositionAt(matchIndex + matchLength)
+    editor.setSelection({
+      startLineNumber: start.lineNumber,
+      startColumn: start.column,
+      endLineNumber: end.lineNumber,
+      endColumn: end.column,
+    })
+    editor.revealRangeInCenter({
+      startLineNumber: start.lineNumber,
+      startColumn: start.column,
+      endLineNumber: end.lineNumber,
+      endColumn: end.column,
+    })
+    editor.focus()
   }
 
-  async function flushTabSave(tabId: string | null) {
-    if (!tabId) return
+  /**
+   * Attaches the editor's current selection (or the whole document when there
+   * is none) to the assistant as a badge. The line range is 1-based inclusive
+   * so the rewrite diff can locate it later.
+   */
+  function attachEditorSelectionToAssistant() {
+    if (!activeTab) return
+    const editor = activeSqlEditorInstance
+    const model = editor?.getModel()
+    const selection = editor?.getSelection()
+    if (!editor || !model || !selection) return
+    const selectedSql = selection.isEmpty() ? '' : model.getValueInRange(selection)
+    const sql = (selectedSql || editor.getValue()).trim()
+    if (!sql) {
+      toast.error('Select a query to attach first')
+      return
+    }
+    const startLine = selection.isEmpty() ? 1 : selection.startLineNumber
+    const endLine = selection.isEmpty() ? model.getLineCount() : selection.endLineNumber
+    attachQuery({
+      sql,
+      tabId: activeTab.id,
+      fileName: activeTab.title,
+      database: activeTab.database || null,
+      schema: activeTab.schema || null,
+      role: sessionRole || null,
+      startLine,
+      endLine,
+    })
+    if (!assistantOpen) toggleAssistant()
+    toast.success('Query attached to Nove')
+  }
+
+  /** Replaces the target tab's content with the proposed SQL and saves it. */
+  async function approveProposedRewrite() {
+    const rewrite = proposedRewrite
+    if (!rewrite) return
+    const tab = tabs[rewrite.tabId]
+    if (!tab) {
+      setProposedRewrite(null)
+      return
+    }
+    const nextContent = applyHunks(tab.content, rewrite.hunks)
+    editorContentRef.current = nextContent
+    setTabs((prev) => ({
+      ...prev,
+      [rewrite.tabId]: { ...prev[rewrite.tabId], content: nextContent },
+    }))
+    setProposedRewrite(null)
+    await saveFile(rewrite.tabId, nextContent, tab.database, tab.schema, sessionRole)
+    toast.success('Rewrite applied')
+  }
+
+  function denyProposedRewrite() {
+    setProposedRewrite(null)
+  }
+
+  async function flushTabSave(tabId: string | null) {    if (!tabId) return
     const tab = tabs[tabId]
     if (!tab || !tab.loaded || tab.content === tab.savedContent) return
-    await saveFile(tab.id, tab.content, tab.database, tab.schema, tab.role)
+    await saveFile(tab.id, tab.content, tab.database, tab.schema, sessionRole)
   }
 
   function exportToExcel() {
@@ -1310,9 +1523,9 @@ export function WorkspacesPage() {
                                 '',
                               schema: activeTab?.schema ?? queryContextQuery.data?.defaults.schema ?? 'default',
                               role:
-                                activeTab?.role ??
-                                queryContextQuery.data?.defaults.role ??
-                                queryContextQuery.data?.roles[0] ??
+                                sessionRole ||
+                                queryContextQuery.data?.defaults.role ||
+                                queryContextQuery.data?.roles[0] ||
                                 '',
                               loaded: false,
                             } satisfies WorkspaceTabState),
@@ -1338,7 +1551,7 @@ export function WorkspacesPage() {
                           [key]: !prev[key],
                         }))
                       }
-                      role={activeTab?.role ?? queryContextQuery.data?.defaults.role ?? undefined}
+                      role={sessionRole || queryContextQuery.data?.defaults.role || undefined}
                       setSchemasByDatabase={setSchemasByDatabase}
                     />
                   )}
@@ -1440,19 +1653,6 @@ export function WorkspacesPage() {
               >
                 <Plus className='size-3.5' />
               </button>
-              <Button
-                type='button'
-                variant={assistantOpen ? 'secondary' : 'ghost'}
-                size='sm'
-                className='mb-0.5 ml-auto shrink-0 gap-1.5'
-                aria-pressed={assistantOpen}
-                aria-expanded={assistantOpen}
-                aria-controls='assistant-panel'
-                onClick={toggleAssistant}
-              >
-                <Bot className='size-4' />
-                Assistant
-              </Button>
             </div>
           </div>
 
@@ -1484,26 +1684,27 @@ export function WorkspacesPage() {
                 <Button
                   size='sm'
                   variant='outline'
-                  title='Explain query plan'
-                  onClick={() => void runExplain()}
-                  disabled={explaining}
+                  title='Version history'
+                  onClick={() => setHistoryOpen(true)}
                 >
-                  <Route className='size-4' />
-                  {explaining ? 'Explaining...' : 'Explain'}
+                  <History className='size-4' />
+                  History
                 </Button>
                 <div className='flex flex-1 flex-wrap items-center justify-end gap-2'>
-                  <InlineSelect
-                    label='Role'
-                    value={activeTab.role}
-                    options={queryContextQuery.data?.roles ?? []}
-                    icon={<UserRoundCog className='size-3.5' />}
-                    onChange={(value) =>
-                      setTabs((prev) => ({
-                        ...prev,
-                        [activeTab.id]: { ...prev[activeTab.id], role: value },
-                      }))
-                    }
-                  />
+                  {/*
+                    Read-only mirror of the session role. The active role is
+                    chosen in the bottom-left account menu (Switch Role) and is
+                    the single role the engine executes under, so it must not be
+                    overridable per tab — that was how the UI could show one
+                    role while queries ran as another.
+                  */}
+                  <span
+                    className='flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground'
+                    title='Active role — switch it from the account menu (bottom-left)'
+                  >
+                    <UserRoundCog className='size-3.5' />
+                    {sessionRole || 'No role'}
+                  </span>
                   <DatabaseSchemaSelector
                     databases={queryContextQuery.data?.databases ?? []}
                     selectedDatabase={activeTab.database}
@@ -1511,7 +1712,7 @@ export function WorkspacesPage() {
                     selectedSchema={activeTab.schema}
                     onSelectDatabase={async (value) => {
                       const schemas = await api.get<SchemaResponse>(
-                        `/objects/databases/${encodeURIComponent(value)}/schemas${activeTab.role ? `?role=${encodeURIComponent(activeTab.role)}` : ''}`
+                        `/objects/databases/${encodeURIComponent(value)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ''}`
                       )
                       setSchemasByDatabase((prev) => ({
                         ...prev,
@@ -1546,7 +1747,7 @@ export function WorkspacesPage() {
                     value={activeTab.content}
                     database={activeTab.database}
                     schema={activeTab.schema}
-                    role={activeTab.role}
+                    role={sessionRole}
                     onChange={(value) => {
                       const content = value ?? ''
                       editorContentRef.current = content
@@ -1559,6 +1760,14 @@ export function WorkspacesPage() {
                       }))
                     }}
                     onRun={() => runQuery()}
+                    onAttachSelection={attachEditorSelectionToAssistant}
+                    proposedRewrite={
+                      proposedRewrite && proposedRewrite.tabId === activeTab.id
+                        ? proposedRewrite
+                        : null
+                    }
+                    onApproveRewrite={() => void approveProposedRewrite()}
+                    onDenyRewrite={denyProposedRewrite}
                   />
                 </div>
 
@@ -1603,6 +1812,11 @@ export function WorkspacesPage() {
                         )}
                       >
                         Results
+                        {activeExplainPlan !== null && (
+                          <span className='rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary'>
+                            Explain
+                          </span>
+                        )}
                         {queryResults && queryResults.length > 0 && (
                           <span className='text-muted-foreground'>
                             {queryResults.reduce((s, r) => s + r.row_count, 0)}r •{' '}
@@ -1623,19 +1837,6 @@ export function WorkspacesPage() {
                       >
                         <Clock className='size-3' />
                         History
-                      </button>
-                      <button
-                        type='button'
-                        onClick={() => setResultsTab('explain')}
-                        className={cn(
-                          'flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors',
-                          resultsTab === 'explain'
-                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
-                            : 'border-b border-b-border text-muted-foreground hover:bg-muted/50'
-                        )}
-                      >
-                        <Route className='size-3' />
-                        Explain
                       </button>
                       <button
                         type='button'
@@ -1727,7 +1928,13 @@ export function WorkspacesPage() {
                         </div>
                       )}
                       <div className='min-h-0 flex-1 overflow-auto'>
-                        <QueryResults queryResult={activeResult} />
+                        {activeExplainPlan !== null ? (
+                          <div className='p-3'>
+                            <ExplainTreeView planText={activeExplainPlan} />
+                          </div>
+                        ) : (
+                          <QueryResults queryResult={activeResult} />
+                        )}
                       </div>
                     </div>
                   )}
@@ -1760,19 +1967,6 @@ export function WorkspacesPage() {
                       }}
                     />
                   )}
-                  {!resultsCollapsed && resultsTab === 'explain' && (
-                    <div className='h-full overflow-auto p-3'>
-                      {explainResult === null && !explaining ? (
-                        <div className='text-sm text-muted-foreground'>
-                          Click <strong>Explain</strong> in the toolbar to view the query execution plan.
-                        </div>
-                      ) : explaining ? (
-                        <div className='text-sm text-muted-foreground'>Generating execution plan…</div>
-                      ) : (
-                        <ExplainTreeView planText={explainResult!} />
-                      )}
-                    </div>
-                  )}
                   {!resultsCollapsed && resultsTab === 'chart' && <ChartVisualization queryResult={activeResult} />}
                 </div>
               </div>
@@ -1784,6 +1978,12 @@ export function WorkspacesPage() {
           )}
         </section>
       </div>
+      <FileHistoryDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        entryId={activeTab?.id ?? null}
+        fileName={activeTab?.title ?? ''}
+      />
     </div>
   )
 }
@@ -2672,6 +2872,19 @@ function formatAxisTick(value: unknown, maxLength: number = 18) {
 
 function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null }) {
   const { resolvedTheme } = useTheme()
+  // Re-read whenever the theme flips: tokens resolve to different values. Declared
+  // with the other hooks, above the empty-result early return, so the hook order
+  // is identical whether or not the current result has rows.
+  const chartTheme = useMemo(
+    () => ({
+      mutedForeground: readToken('--muted-foreground', '#5c6e87'),
+      border: readToken('--border', '#e0e5ec'),
+      popover: readToken('--popover', '#ffffff'),
+      foreground: readToken('--foreground', '#1e293b'),
+      background: readToken('--background', '#ffffff'),
+    }),
+    [resolvedTheme]
+  )
   const [builderCollapsed, setBuilderCollapsed] = useState(false)
   const [chartType, setChartType] = useState<ChartType>('bar')
   const [xCol, setXCol] = useState('')
@@ -2993,17 +3206,6 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
     effectiveYColumns.length < 4
   const chartTitle = CHART_TYPE_OPTIONS.find((option) => option.value === chartType)?.label ?? 'Chart'
   const hasChartData = chartModel.data.length > 0 && chartModel.series.length > 0
-  // Re-read whenever the theme flips: tokens resolve to different values.
-  const chartTheme = useMemo(
-    () => ({
-      mutedForeground: readToken('--muted-foreground', '#5c6e87'),
-      border: readToken('--border', '#e0e5ec'),
-      popover: readToken('--popover', '#ffffff'),
-      foreground: readToken('--foreground', '#1e293b'),
-      background: readToken('--background', '#ffffff'),
-    }),
-    [resolvedTheme]
-  )
   const axisTickStyle = {
     fontSize: 11,
     fill: chartTheme.mutedForeground,
@@ -3589,6 +3791,10 @@ function MonacoSqlEditor({
   role,
   onChange,
   onRun,
+  onAttachSelection,
+  proposedRewrite,
+  onApproveRewrite,
+  onDenyRewrite,
 }: {
   value: string
   database: string
@@ -3596,6 +3802,10 @@ function MonacoSqlEditor({
   role: string
   onChange: (value?: string) => void
   onRun: () => void
+  onAttachSelection: () => void
+  proposedRewrite: ProposedRewrite | null
+  onApproveRewrite: () => void
+  onDenyRewrite: () => void
 }) {
   const providerRef = useRef<{ dispose(): void } | null>(null)
   const completionRequestRef = useRef<{
@@ -3604,6 +3814,8 @@ function MonacoSqlEditor({
   } | null>(null)
   const onRunRef = useRef(onRun)
   onRunRef.current = onRun
+  const onAttachSelectionRef = useRef(onAttachSelection)
+  onAttachSelectionRef.current = onAttachSelection
   // Refs for completion provider — prevents stale closure (provider registered once at mount)
   const valueRef = useRef(value)
   valueRef.current = value
@@ -3615,12 +3827,24 @@ function MonacoSqlEditor({
   roleRef.current = role
   const { resolvedTheme } = useTheme()
 
+  // The mounted editor + its monaco namespace, kept so the diff effect and the
+  // context-menu action created at mount can reach them without a re-mount.
+  const editorRef = useRef<MonacoEditorInstance | null>(null)
+  const selectionListenerRef = useRef<{ dispose(): void } | null>(null)
+  const monacoRef = useRef<Monaco | null>(null)
+  // Flips once `onMount` has handed us the namespace, so the theme effect below
+  // also runs on the first paint instead of only on later theme toggles.
+  const [monacoReady, setMonacoReady] = useState(false)
+
   useEffect(() => {
     return () => {
       completionRequestRef.current?.controller.abort()
       providerRef.current?.dispose()
+      selectionListenerRef.current?.dispose()
+      selectionListenerRef.current = null
       if (activeSqlEditorInstance) {
         activeSqlEditorInstance = null
+        activeSqlSelection = null
       }
     }
   }, [])
@@ -3629,6 +3853,71 @@ function MonacoSqlEditor({
     completionRequestRef.current?.controller.abort()
     completionRequestRef.current = null
   }, [database, schema])
+
+  // Re-define and re-select the Nova SQL theme on first mount and whenever the
+  // resolved theme changes. `onMount` runs once, so without this the editor
+  // keeps whatever was selected at mount and a later light/dark toggle never
+  // repaints it.
+  useEffect(() => {
+    const monaco = monacoRef.current
+    if (!monaco) return
+    const frame = requestAnimationFrame(() => {
+      applyNovaSqlTheme(monaco, resolvedTheme === 'dark')
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [resolvedTheme, monacoReady])
+
+  /**
+   * Paints the proposed rewrite into the editor: replaced original lines in
+   * red, proposed lines in blue, inserted as whole-line decorations with a
+   * margin marker so an empty proposed line still shows. Partial-line rewrites
+   * naturally produce single-line hunks, so only the changed lines light up.
+   */
+  useEffect(() => {
+    const editor = editorRef.current
+    const monaco = monacoRef.current
+    if (!editor || !monaco) return
+
+    const collection = editor.createDecorationsCollection()
+    if (!proposedRewrite) {
+      collection.clear()
+      return () => collection.clear()
+    }
+
+    const decorations: import('monaco-editor').editor.IModelDeltaDecoration[] = []
+    for (const hunk of proposedRewrite.hunks) {
+      // An insert has no original lines to mark red; its proposed lines are
+      // shown in the overlay. Replace/delete light up the original range.
+      if (hunk.kind === 'insert') continue
+      decorations.push({
+        range: new monaco.Range(hunk.startLine, 1, hunk.endLine, 1),
+        options: {
+          isWholeLine: true,
+          className: 'nova-rewrite-old-line',
+          linesDecorationsClassName: 'nova-rewrite-old-gutter',
+        },
+      })
+    }
+
+    collection.set(decorations)
+    return () => collection.clear()
+  }, [proposedRewrite])
+
+  // Colour tokens for the diff decorations live here because Monaco injects
+  // them outside the module CSS scope.
+  useEffect(() => {
+    const styleId = 'nova-rewrite-diff-styles'
+    if (document.getElementById(styleId)) return
+    const style = document.createElement('style')
+    style.id = styleId
+    style.textContent = `
+      .nova-rewrite-old-line { background: color-mix(in srgb, var(--destructive) 14%, transparent); }
+      .nova-rewrite-old-gutter { border-left: 3px solid var(--destructive); }
+      .nova-rewrite-new-line { background: color-mix(in srgb, var(--info) 16%, transparent); }
+      .nova-rewrite-new-gutter { border-left: 3px solid var(--info); }
+    `
+    document.head.appendChild(style)
+  }, [])
 
   async function provideCompletions(
     textUntilPosition: string,
@@ -3747,56 +4036,20 @@ function MonacoSqlEditor({
 
   function handleMount(editor: Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0], monaco: Monaco) {
     activeSqlEditorInstance = editor
-    // Define custom Nova themes — light and dark
-    monaco.editor.defineTheme('nova-light', {
-      base: 'vs',
-      inherit: true,
-      rules: [
-        { token: 'keyword', foreground: 'd04738', fontStyle: 'bold' },
-        { token: 'keyword.sql', foreground: 'd04738', fontStyle: 'bold' },
-        { token: 'predefined.sql', foreground: 'd04738' },
-        { token: 'operator.sql', foreground: 'd04738' },
-        { token: 'string', foreground: '1a8974' },
-        { token: 'string.sql', foreground: '1a8974' },
-        { token: 'number', foreground: 'c9662e' },
-        { token: 'comment', foreground: '8e99a4', fontStyle: 'italic' },
-        { token: 'type', foreground: '6b46c1' },
-        { token: 'identifier', foreground: '2c3e50' },
-        { token: 'predefined', foreground: 'd04738' },
-      ],
-      colors: {
-        'editor.background': readToken('--card', '#ffffff'),
-        'editor.foreground': readToken('--foreground', '#2c3e50'),
-        'editor.lineHighlightBackground': readToken('--muted', '#f8f9fa'),
-        'editor.selectionBackground': readToken('--accent', '#fff0ed'),
-        'editorCursor.foreground': readToken('--primary', '#d04738'),
-      },
+    editorRef.current = editor
+    monacoRef.current = monaco
+    setMonacoReady(true)
+    // Remember the last non-empty selection. Clicking the Run button blurs the
+    // editor and collapses the live selection, which would otherwise make the
+    // fallback in `getSqlForExecution` run the whole buffer instead of the
+    // highlighted text.
+    selectionListenerRef.current?.dispose()
+    activeSqlSelection = null
+    selectionListenerRef.current = editor.onDidChangeCursorSelection((event) => {
+      activeSqlSelection = event.selection.isEmpty() ? null : event.selection
     })
-    monaco.editor.defineTheme('nova-dark', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: 'keyword', foreground: 'f36b5b', fontStyle: 'bold' },
-        { token: 'keyword.sql', foreground: 'f36b5b', fontStyle: 'bold' },
-        { token: 'predefined.sql', foreground: 'f36b5b' },
-        { token: 'operator.sql', foreground: 'f36b5b' },
-        { token: 'string', foreground: '2cc6b6' },
-        { token: 'string.sql', foreground: '2cc6b6' },
-        { token: 'number', foreground: 'f0ad3d' },
-        { token: 'comment', foreground: '6b7a8d', fontStyle: 'italic' },
-        { token: 'type', foreground: 'a78bfa' },
-        { token: 'identifier', foreground: 'e2e8f0' },
-        { token: 'predefined', foreground: 'f36b5b' },
-      ],
-      colors: {
-        'editor.background': readToken('--card', '#0f1117'),
-        'editor.foreground': readToken('--foreground', '#e2e8f0'),
-        'editor.lineHighlightBackground': readToken('--muted', '#1a1d2e'),
-        'editor.selectionBackground': readToken('--accent', '#202833'),
-        'editorCursor.foreground': readToken('--primary', '#d04538'),
-      },
-    })
-    monaco.editor.setTheme(resolvedTheme === 'dark' ? 'nova-dark' : 'nova-light')
+    // Define and select the Nova SQL themes (shared with the version preview).
+    applyNovaSqlTheme(monaco, resolvedTheme === 'dark')
 
     providerRef.current?.dispose()
     providerRef.current = monaco.languages.registerCompletionItemProvider('sql', {
@@ -3938,6 +4191,18 @@ function MonacoSqlEditor({
       },
     })
 
+    // "Attach to Nove" in the editor's right-click menu, in the navigation
+    // group so it sits above the native clipboard entries.
+    editor.addAction({
+      id: 'attach-to-nova',
+      label: 'Attach to Nove',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1,
+      run: () => {
+        onAttachSelectionRef.current()
+      },
+    })
+
     // Ctrl/Cmd+Enter to run query — DOM listener is more reliable than
     // Monaco's addCommand which can be swallowed by the keybinding service
     const editorDomNode = editor.getDomNode()
@@ -3954,34 +4219,84 @@ function MonacoSqlEditor({
   }
 
   return (
-    <Editor
-      height='100%'
-      language='sql'
-      theme={resolvedTheme === 'dark' ? 'nova-dark' : 'nova-light'}
-      value={value}
-      onChange={onChange}
-      onMount={handleMount}
-      options={{
-        minimap: { enabled: false },
-        fontSize: 13,
-        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
-        fontLigatures: true,
-        fontWeight: '400',
-        lineHeight: 22,
-        automaticLayout: true,
-        wordWrap: 'on',
-        wordBasedSuggestions: 'off',
-        suggest: {
-          showWords: false,
-        },
-        suggestOnTriggerCharacters: true,
-        scrollBeyondLastLine: false,
-        renderLineHighlight: 'none',
-        overviewRulerBorder: false,
-        hideCursorInOverviewRuler: true,
-        padding: { top: 10, bottom: 12 },
-      }}
-    />
+    <div className='relative h-full min-h-0'>
+      <Editor
+        height='100%'
+        language='sql'
+        theme={resolvedTheme === 'dark' ? 'nova-dark' : 'nova-light'}
+        value={value}
+        onChange={onChange}
+        onMount={handleMount}
+        options={{
+          minimap: { enabled: false },
+          fontSize: 12,
+          fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+          fontLigatures: true,
+          fontWeight: '400',
+          lineHeight: 20,
+          automaticLayout: true,
+          wordWrap: 'on',
+          wordBasedSuggestions: 'off',
+          suggest: {
+            showWords: false,
+          },
+          suggestOnTriggerCharacters: true,
+          scrollBeyondLastLine: false,
+          renderLineHighlight: 'none',
+          overviewRulerBorder: false,
+          hideCursorInOverviewRuler: true,
+          padding: { top: 10, bottom: 12 },
+        }}
+      />
+      {proposedRewrite ? (
+        <div className='pointer-events-none absolute inset-x-3 bottom-3 z-10'>
+          <div className='pointer-events-auto max-h-[45%] overflow-auto rounded-lg border bg-background shadow-lg'>
+            <div className='flex items-center justify-between gap-2 border-b px-3 py-2'>
+              <p className='text-xs font-medium'>Proposed rewrite from Nove</p>
+              <p className='text-xs text-muted-foreground'>
+                {proposedRewrite.hunks.length} change
+                {proposedRewrite.hunks.length === 1 ? '' : 's'}
+              </p>
+            </div>
+            <div className='flex flex-col gap-1.5 p-2'>
+              {proposedRewrite.hunks.map((hunk, index) => (
+                <div key={`${hunk.startLine}-${index}`} className='grid grid-cols-2 gap-1.5'>
+                  <div className='min-w-0 rounded border border-destructive/30 bg-destructive/10 p-1.5'>
+                    <p className='mb-0.5 text-[0.65rem] font-medium uppercase text-destructive'>
+                      Before
+                    </p>
+                    <pre className='overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem] text-muted-foreground'>
+                      {hunk.kind === 'insert'
+                        ? '(none)'
+                        : value
+                            .split('\n')
+                            .slice(hunk.startLine - 1, hunk.endLine)
+                            .join('\n')}
+                    </pre>
+                  </div>
+                  <div className='min-w-0 rounded border border-info/40 bg-info/10 p-1.5'>
+                    <p className='mb-0.5 text-[0.65rem] font-medium uppercase text-info-strong'>
+                      After
+                    </p>
+                    <pre className='overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem]'>
+                      {hunk.kind === 'delete' ? '(removed)' : hunk.lines.join('\n') || '(none)'}
+                    </pre>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className='flex items-center justify-end gap-2 border-t px-3 py-2'>
+              <Button type='button' size='sm' variant='outline' onClick={onDenyRewrite}>
+                Deny
+              </Button>
+              <Button type='button' size='sm' onClick={onApproveRewrite}>
+                Approve
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   )
 }
 

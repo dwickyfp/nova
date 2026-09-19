@@ -37,6 +37,11 @@ from tests.unit.test_task_scheduler_tick import (
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
+#: An anchor one 5-minute step before the last occurrence at or before ``NOW``
+#: (11:55), so exactly one occurrence (12:00) is due and catch-up emits a single
+#: run. A task with no ``created_at`` is anchored at ``now`` and is never due.
+ONE_STEP_ANCHOR = datetime(2026, 1, 1, 11, 55, tzinfo=UTC)
+
 
 @pytest.fixture
 def audit(monkeypatch):
@@ -73,21 +78,30 @@ class TestShouldEnqueue:
 
 class TestSchedulerEnqueue:
     async def test_skip_drops_a_due_occurrence_while_one_is_active(self) -> None:
-        repo = SchedulerFakeRepository([make_task("solo", overlap_policy="skip")])
+        repo = SchedulerFakeRepository(
+            [make_task(
+                "solo", overlap_policy="skip", created_at=ONE_STEP_ANCHOR
+            )]
+        )
         transport = RecordingTransport()
         tick = SchedulerTick(repo, transport)
 
         first = await tick.tick(NOW)
+        # The second tick is late, so it catches up: 12:00 and 12:05 are both due.
         second = await tick.tick(NOW + timedelta(minutes=5))
 
         assert len(first.due) == 1
-        assert len(second.due) == 1, "the graph is still due; it was just refused"
+        assert len(second.due) == 2, "both missed occurrences are due"
+        # 12:00 already has a run (idempotent, not an overlap skip); 12:05 is the
+        # genuinely new occurrence and `skip` refuses it while 12:00 is active.
         assert second.overlap_skipped == 1
         assert len(repo.graph_runs) == 1
         assert len(transport.published) == 1
 
     async def test_queue_enqueues_a_second_run(self) -> None:
-        repo = SchedulerFakeRepository([make_task("solo", overlap_policy="queue")])
+        repo = SchedulerFakeRepository([make_task(
+                "solo", overlap_policy="queue", created_at=ONE_STEP_ANCHOR
+            )])
         transport = RecordingTransport()
         tick = SchedulerTick(repo, transport)
 
@@ -99,7 +113,9 @@ class TestSchedulerEnqueue:
         assert len(transport.published) == 2
 
     async def test_allow_enqueues_a_second_run(self) -> None:
-        repo = SchedulerFakeRepository([make_task("solo", overlap_policy="allow")])
+        repo = SchedulerFakeRepository([make_task(
+                "solo", overlap_policy="allow", created_at=ONE_STEP_ANCHOR
+            )])
         transport = RecordingTransport()
         tick = SchedulerTick(repo, transport)
 
@@ -110,7 +126,9 @@ class TestSchedulerEnqueue:
         assert len(repo.graph_runs) == 2
 
     async def test_the_root_tasks_policy_is_copied_onto_the_run(self) -> None:
-        repo = SchedulerFakeRepository([make_task("solo", overlap_policy="allow")])
+        repo = SchedulerFakeRepository([make_task(
+                "solo", overlap_policy="allow", created_at=ONE_STEP_ANCHOR
+            )])
         transport = RecordingTransport()
         await SchedulerTick(repo, transport).tick(NOW)
 
@@ -122,15 +140,22 @@ class TestSchedulerEnqueue:
         from app.modules.task_orchestration.ddl import parse_create_task
 
         lowered = parse_create_task(
-            "CREATE TASK nightly SCHEDULE = '0 12 * * * UTC' AS INSERT INTO t SELECT 1",
-            database="db1",
+            "CREATE TASK db1.etl.nightly SCHEDULE = '0 12 * * * UTC' "
+            "AS INSERT INTO t SELECT 1",
             timezone="UTC",
+        )
+        # The task is schema-scoped: the graph id is the qualified name.
+        assert (lowered.database_name, lowered.schema_name, lowered.name) == (
+            "db1",
+            "etl",
+            "nightly",
         )
         root = {
             "id": "id_nightly",
             "name": lowered.name,
-            "definition": lowered.body,
             "database_name": lowered.database_name,
+            "schema_name": lowered.schema_name,
+            "definition": lowered.body,
             "created_by": "alice",
             "schedule_kind": lowered.schedule_kind,
             "schedule_expr": lowered.schedule_expr,
@@ -146,13 +171,55 @@ class TestSchedulerEnqueue:
         plan = await SchedulerTick(repo, transport).tick(NOW)
 
         assert len(plan.due) == 1
-        assert plan.due[0].graph_id == "id_nightly"
+        assert plan.due[0].graph_id == "db1.etl.nightly"
         assert len(transport.published) == 1
+
+    async def test_catch_up_respects_skip(self) -> None:
+        """A late `skip` task catches up to one run, not the whole backlog.
+
+        Catch-up makes several occurrences due; `skip` refuses all but the first
+        because a run is then active, so exactly one run is created.
+        """
+        repo = SchedulerFakeRepository(
+            [
+                make_task(
+                    "solo",
+                    overlap_policy="skip",
+                    created_at=NOW - timedelta(minutes=20),
+                )
+            ]
+        )
+        transport = RecordingTransport()
+        plan = await SchedulerTick(repo, transport).tick(NOW)
+
+        assert len(plan.due) == 4
+        assert plan.overlap_skipped == 3
+        assert len(repo.graph_runs) == 1
+        assert len(transport.published) == 1
+
+    async def test_catch_up_enqueues_every_occurrence_for_queue(self) -> None:
+        """`queue` honours the whole backlog, one run per missed occurrence."""
+        repo = SchedulerFakeRepository(
+            [
+                make_task(
+                    "solo",
+                    overlap_policy="queue",
+                    created_at=NOW - timedelta(minutes=20),
+                )
+            ]
+        )
+        transport = RecordingTransport()
+        plan = await SchedulerTick(repo, transport).tick(NOW)
+
+        assert len(plan.due) == 4
+        assert plan.overlap_skipped == 0
+        assert len(repo.graph_runs) == 4
+        assert len(transport.published) == 4
 
     def test_plan_prefers_the_strictest_policy_default(self) -> None:
         # A task row with no policy (legacy row) plans as `skip`, the strictest
         # choice, so an unset value can never start an overlap by accident.
-        task = make_task("solo")
+        task = make_task("solo", created_at=ONE_STEP_ANCHOR)
         del task["overlap_policy"]
         plan = plan_tick([task], [], NOW, "UTC")
         assert plan.due, "the interval task should be due"

@@ -97,6 +97,76 @@ describe('UserAuthForm', () => {
     expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true })
   })
 
+  it('shows the forced change-password form when the admin requires it', async () => {
+    fetchMock.mockReset()
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => ({
+        status: 'PASSWORD_CHANGE_REQUIRED',
+        access_token: 'forced-token',
+        user: 'dwicky',
+        roles: ['public'],
+      }),
+    } as Response)
+
+    await userEvent.fill(usernameInput, 'dwicky')
+    await userEvent.fill(passwordInput, 'generated-pass')
+    await userEvent.click(signInButton)
+
+    await expect
+      .element(
+        screen.getByText('Your administrator requires a new password before first use.')
+      )
+      .toBeInTheDocument()
+    await expect
+      .element(screen.getByRole('button', { name: /Change Password & Continue/i }))
+      .toBeInTheDocument()
+  })
+
+  it('changes the password and logs in with the new one', async () => {
+    fetchMock.mockReset()
+    // 1) login -> forced; 2) change-password; 3) login with new password.
+    fetchMock
+      .mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          status: 'PASSWORD_CHANGE_REQUIRED',
+          access_token: 'forced-token',
+          user: 'dwicky',
+          roles: ['public'],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => ({}) } as Response)
+      .mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          status: 'AUTHENTICATED',
+          access_token: 'new-token',
+          user: 'dwicky',
+          roles: ['public'],
+        }),
+      } as Response)
+
+    await userEvent.fill(usernameInput, 'dwicky')
+    await userEvent.fill(passwordInput, 'generated-pass')
+    await userEvent.click(signInButton)
+
+    await userEvent.fill(screen.getByLabelText(/^New Password$/i), 'NewPass123!')
+    await userEvent.fill(screen.getByLabelText(/^Confirm Password$/i), 'NewPass123!')
+    await userEvent.click(screen.getByRole('button', { name: /Change Password & Continue/i }))
+
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/auth/change-password',
+        expect.objectContaining({ method: 'POST' })
+      )
+    )
+    await vi.waitFor(() => expect(setAccessTokenMock).toHaveBeenCalledWith('new-token'))
+  })
+
   it('navigates to a safe internal redirect path', async () => {
     // Render into a fresh container: vitest only cleans up between tests, so the form
     // mounted by beforeEach would otherwise still be in the document and every locator

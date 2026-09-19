@@ -175,15 +175,47 @@ def _raising_fernet():
 
 
 class TestConfigHasNoUsableDefaults:
-    """The shipped defaults must not be a working signing key (NOVA-108)."""
+    """The shipped defaults must not be a working signing key (NOVA-108).
+
+    These assertions are about what the code **ships**, so the check must not be
+    influenced by a developer's ``backend/.env`` or an exported variable. A plain
+    ``Settings()`` reads both (the class declares ``env_file=".env"``), which
+    made the test pass in CI and fail on any machine with a real key configured
+    — the local-config leak NOVA-108 is about, one level up. ``_DefaultsOnly``
+    drops every external source and leaves only the field defaults, so the test
+    measures the code and nothing else.
+    """
+
+    @staticmethod
+    def _defaults_only():
+        from pydantic_settings import BaseSettings
+
+        from app.core.config import Settings
+
+        class _DefaultsOnly(Settings):
+            model_config = BaseSettings.model_config
+
+            @classmethod
+            def settings_customise_sources(
+                cls,
+                settings_cls,
+                init_settings,
+                env_settings,
+                dotenv_settings,
+                file_secret_settings,
+            ):
+                # No init, no process env, no .env, no secrets dir: only the
+                # declared field defaults remain.
+                return ()
+
+        return _DefaultsOnly()
 
     def test_default_secret_key_is_not_a_published_constant(self):
-        from app.core.config import Settings
-
-        assert Settings().SECRET_KEY == ""
-        assert Settings().FERNET_KEY == ""
+        defaults = self._defaults_only()
+        assert defaults.SECRET_KEY == ""
+        assert defaults.FERNET_KEY == ""
 
     def test_placeholder_set_is_shared_by_validation(self):
-        from app.core.config import Settings
+        defaults = self._defaults_only()
+        assert defaults.SECRET_KEY not in secret_keys_module.KNOWN_PLACEHOLDER_SECRET_KEYS
 
-        assert Settings().SECRET_KEY not in secret_keys_module.KNOWN_PLACEHOLDER_SECRET_KEYS

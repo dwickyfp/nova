@@ -8,6 +8,7 @@ import {
   Check,
   SquareUser,
   Search,
+  Info,
 } from 'lucide-react'
 import useDialogState from '@/hooks/use-dialog-state'
 import { api } from '@/lib/api-client'
@@ -32,6 +33,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { SignOutDialog } from '@/components/sign-out-dialog'
+import { ConnectionInfoDialog } from '@/components/connection-info-dialog'
 import { Input } from '@/components/ui/input'
 
 type NavUserProps = {
@@ -41,6 +43,7 @@ type NavUserProps = {
 export function NavUser({ user }: NavUserProps) {
   const { isMobile } = useSidebar()
   const [open, setOpen] = useDialogState()
+  const [infoOpen, setInfoOpen] = useDialogState()
   const { theme, setTheme } = useTheme()
   const [roleSearch, setRoleSearch] = useState('')
   const setUser = useAuthStore((state) => state.auth.setUser)
@@ -196,6 +199,13 @@ export function NavUser({ user }: NavUserProps) {
               </DropdownMenuSub>
 
               <DropdownMenuSeparator />
+              {/* ── Information ── */}
+              <DropdownMenuItem onClick={() => setInfoOpen(true)}>
+                <Info />
+                Information
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
               {/* ── Sign out ── */}
               <DropdownMenuItem
                 variant='destructive'
@@ -210,6 +220,7 @@ export function NavUser({ user }: NavUserProps) {
       </SidebarMenu>
 
       <SignOutDialog open={!!open} onOpenChange={setOpen} />
+      <ConnectionInfoDialog open={!!infoOpen} onOpenChange={setInfoOpen} />
     </>
   )
 }

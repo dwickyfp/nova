@@ -79,6 +79,42 @@ _GET_PREFERENCES = """
     WHERE user_name = %s AND pref_key IN ({placeholders})
 """
 
+_VERSION_COLUMNS = "id, entry_id, user_name, version, object_key, size_bytes, etag, created_at"
+
+#: The next version number for an entry. ``MAX`` over the PK table is exact
+#: because a save writes at most one row per entry per call and the table is
+#: single-writer per (user, entry) in practice.
+_SELECT_NEXT_VERSION = """
+    SELECT COALESCE(MAX(version), 0) + 1
+    FROM NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS
+    WHERE entry_id = %s AND user_name = %s
+"""
+
+_SELECT_VERSIONS = f"""
+    SELECT {_VERSION_COLUMNS}
+    FROM NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS
+    WHERE entry_id = %s AND user_name = %s
+    ORDER BY version DESC
+    LIMIT %s
+"""
+
+_SELECT_VERSION = f"""
+    SELECT {_VERSION_COLUMNS}
+    FROM NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS
+    WHERE entry_id = %s AND user_name = %s AND version = %s
+"""
+
+_INSERT_VERSION = """
+    INSERT INTO NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS
+    (id, entry_id, user_name, version, object_key, size_bytes, etag, created_at)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+"""
+
+_DELETE_VERSIONS_FOR_ENTRY = """
+    DELETE FROM NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS
+    WHERE entry_id = %s AND user_name = %s
+"""
+
 
 async def _system_query(coro: Awaitable[T]) -> T:
     """Await a system query, mapping bootstrap failures to a typed 503."""
@@ -105,6 +141,19 @@ def _to_entry(row: list[Any], path: str) -> dict[str, Any]:
         "etag": row[7],
         "created_at": row[8],
         "updated_at": row[9],
+    }
+
+
+def _to_version(row: list[Any]) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "entry_id": row[1],
+        "user_name": row[2],
+        "version": row[3],
+        "object_key": row[4],
+        "size_bytes": row[5] or 0,
+        "etag": row[6],
+        "created_at": row[7],
     }
 
 
@@ -172,6 +221,53 @@ class WorkspaceRepository:
             )
         )
         return {row[0]: row[1] for row in result["rows"]}
+
+    async def next_version_number(self, username: str, entry_id: str) -> int:
+        result = await _system_query(
+            db.execute_system(_SELECT_NEXT_VERSION, [entry_id, username])
+        )
+        return int(result["rows"][0][0]) if result["rows"] else 1
+
+    async def insert_version(
+        self,
+        *,
+        version_id: str,
+        entry_id: str,
+        username: str,
+        version: int,
+        object_key: str,
+        size_bytes: int,
+        etag: str | None,
+    ) -> None:
+        await _system_query(
+            db.execute_system(
+                _INSERT_VERSION,
+                [version_id, entry_id, username, version, object_key, size_bytes, etag],
+            )
+        )
+
+    async def list_versions(
+        self, username: str, entry_id: str, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        result = await _system_query(
+            db.execute_system(_SELECT_VERSIONS, [entry_id, username, limit])
+        )
+        return [_to_version(row) for row in result["rows"]]
+
+    async def get_version(
+        self, username: str, entry_id: str, version: int
+    ) -> dict[str, Any] | None:
+        result = await _system_query(
+            db.execute_system(_SELECT_VERSION, [entry_id, username, version])
+        )
+        if not result["rows"]:
+            return None
+        return _to_version(result["rows"][0])
+
+    async def delete_versions_for_entry(self, username: str, entry_id: str) -> None:
+        await _system_query(
+            db.execute_system(_DELETE_VERSIONS_FOR_ENTRY, [entry_id, username])
+        )
 
     @staticmethod
     def build_path(parent_path: str, name: str) -> str:

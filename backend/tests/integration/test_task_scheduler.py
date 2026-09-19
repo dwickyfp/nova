@@ -39,13 +39,14 @@ from app.modules.task_orchestration.transport import (
     RedisGraphRunTransport,
 )
 from tests.integration._stack import (
+    engine_port,
     require_shared_stack,
     shared_stack_host_port,
 )
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
-SR_PORT = _EXPLICIT_PORT or shared_stack_host_port("NOVA_TEST_FE_MYSQL_PORT", 29030)
+SR_PORT = engine_port(_EXPLICIT_PORT, "NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
 SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
 _USE_SHARED_STACK = _EXPLICIT_PORT is None
@@ -149,13 +150,38 @@ async def clean_stream(scheduler_infra):
     await client.delete(stream_key)
 
 
+#: The schema every seeded task lives in. A task is scoped, so its graph id is
+#: the qualified ``database.schema.name``.
+_SEED_DB = "NOVA_DEMO"
+_SEED_SCHEMA = "default"
+
+
+def _graph_id(name: str) -> str:
+    return f"{_SEED_DB}.{_SEED_SCHEMA}.{name}"
+
+
 async def _seed_interval_task(name: str, *, minutes: int = 5):
     return await repo.create_task(
         {
             "name": name,
+            "database_name": _SEED_DB,
+            "schema_name": _SEED_SCHEMA,
             "timezone": "UTC",
             "schedule_kind": "interval",
             "schedule_expr": f"EVERY(INTERVAL {minutes} MINUTE)",
+        },
+        created_by="scheduler-test",
+    )
+
+
+async def _seed_manual_task(name: str):
+    return await repo.create_task(
+        {
+            "name": name,
+            "database_name": _SEED_DB,
+            "schema_name": _SEED_SCHEMA,
+            "timezone": "UTC",
+            "schedule_kind": "manual",
         },
         created_by="scheduler-test",
     )
@@ -198,17 +224,17 @@ class TestRealTransportEndToEnd:
             now = _after_first_interval()
             await tick.tick(now)
 
-            entries = await _entries_for_graph(client, clean_stream, task["id"])
+            entries = await _entries_for_graph(client, clean_stream, _graph_id(name))
             assert len(entries) == 1
             _, fields = entries[0]
             run_id = fields["graph_run_id"]
 
             row = await repo.get_graph_run(run_id)
             assert row is not None, "stream job must reference a persisted graph run"
-            assert row["graph_id"] == task["id"]
+            assert row["graph_id"] == _graph_id(name)
             assert fields["task_ids"] == task["id"]
         finally:
-            runs = await repo.list_graph_runs(task["id"])
+            runs = await repo.list_graph_runs(_graph_id(name))
             for run in runs:
                 await repo.delete_graph_run(run["id"])
             await _cleanup_task(task)
@@ -223,10 +249,10 @@ class TestRealTransportEndToEnd:
             await tick.tick(now)
             await tick.tick(now)
 
-            entries = await _entries_for_graph(client, clean_stream, task["id"])
+            entries = await _entries_for_graph(client, clean_stream, _graph_id(name))
             assert len(entries) == 1
         finally:
-            runs = await repo.list_graph_runs(task["id"])
+            runs = await repo.list_graph_runs(_graph_id(name))
             assert len(runs) == 1, "one due-time must produce exactly one graph run"
             for run in runs:
                 await repo.delete_graph_run(run["id"])
@@ -237,21 +263,14 @@ class TestRealTransportEndToEnd:
     ):
         client: aioredis.Redis = scheduler_infra
         suffix = uuid4().hex[:8]
-        graph_id = f"g_{suffix}"
+        # A graph is single-schema, so every node shares the scope; the graph id
+        # is the root's qualified name.
+        graph_id = _graph_id(f"a_{suffix}")
         tasks = [
             await _seed_interval_task(f"a_{suffix}"),
-            await repo.create_task(
-                {"name": f"b_{suffix}", "timezone": "UTC", "schedule_kind": "manual"},
-                created_by="scheduler-test",
-            ),
-            await repo.create_task(
-                {"name": f"c_{suffix}", "timezone": "UTC", "schedule_kind": "manual"},
-                created_by="scheduler-test",
-            ),
-            await repo.create_task(
-                {"name": f"d_{suffix}", "timezone": "UTC", "schedule_kind": "manual"},
-                created_by="scheduler-test",
-            ),
+            await _seed_manual_task(f"b_{suffix}"),
+            await _seed_manual_task(f"c_{suffix}"),
+            await _seed_manual_task(f"d_{suffix}"),
         ]
         edges = [
             await repo.create_edge(
@@ -278,7 +297,7 @@ class TestRealTransportEndToEnd:
             for edge in edges:
                 await repo.delete_edge(edge["id"])
             for task in tasks:
-                for run in await repo.list_graph_runs(task["id"]):
+                for run in await repo.list_graph_runs(_graph_id(str(task["name"]))):
                     await repo.delete_graph_run(run["id"])
                 await _cleanup_task(task)
 
@@ -305,13 +324,13 @@ class TestRealTransportEndToEnd:
             await SchedulerTick(repo, RedisGraphRunTransport(client)).tick(
                 _after_first_interval()
             )
-            entries = await _entries_for_graph(client, clean_stream, task["id"])
+            entries = await _entries_for_graph(client, clean_stream, _graph_id(name))
             assert entries
             serialized = str(entries[0][1]).lower()
             for bad in ("password", "secret", "token", "credential"):
                 assert bad not in serialized
         finally:
-            for run in await repo.list_graph_runs(task["id"]):
+            for run in await repo.list_graph_runs(_graph_id(str(task["name"]))):
                 await repo.delete_graph_run(run["id"])
             await _cleanup_task(task)
 
@@ -348,13 +367,13 @@ class TestEngineTimezoneFromEngine:
             plan = await SchedulerTick(repo, RedisGraphRunTransport(client)).tick(
                 _after_first_interval()
             )
-            entries = await _entries_for_graph(client, clean_stream, task["id"])
+            entries = await _entries_for_graph(client, clean_stream, _graph_id(name))
             assert len(entries) == 1, (
                 f"interval task did not fire with engine tz {detected!r} "
                 f"(due={len(plan.due)})"
             )
             assert (await repo.get_graph_run(entries[0][1]["graph_run_id"])) is not None
         finally:
-            for run in await repo.list_graph_runs(task["id"]):
+            for run in await repo.list_graph_runs(_graph_id(str(task["name"]))):
                 await repo.delete_graph_run(run["id"])
             await _cleanup_task(task)

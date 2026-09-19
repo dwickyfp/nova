@@ -84,12 +84,19 @@ class ThreadUpdateRequest(BaseModel):
 
 
 class MessageRequest(BaseModel):
-    """A user turn. The response is an SSE stream, not a JSON body."""
+    """A user turn. The response is an SSE stream, not a JSON body.
+
+    ``model`` optionally pins the model for this turn (the panel's model
+    selector). It is a model *name* registered under the resolved provider; when
+    omitted, the provider's first active model is used.
+    """
 
     content: str = Field(..., min_length=1, max_length=32_000)
     database: str | None = Field(default=None, max_length=128)
     schema_name: str | None = Field(default=None, alias="schema", max_length=128)
     role: str | None = Field(default=None, max_length=128)
+    model: str | None = Field(default=None, max_length=256)
+    provider_id: str | None = Field(default=None, max_length=64)
 
     model_config = {"populate_by_name": True}
 
@@ -108,3 +115,15 @@ class ConsentDecisionResponse(BaseModel):
     tool_call_id: str
     status: ToolStatus
     grant_active: bool = False
+
+
+class GrantRequest(BaseModel):
+    """Set or clear the conversation's read-only always-allow grant.
+
+    The composer's approval-mode selector sets this before a turn runs, so a
+    read-only query does not need a per-call approval card. Only the
+    read-only grant exists, so the value is a bounded boolean rather than a
+    policy string; a future grant type adds a field, not a free-form policy.
+    """
+
+    always_allow_read_only: bool

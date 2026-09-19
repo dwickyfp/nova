@@ -269,6 +269,34 @@ class ExplorerRepository:
             log.debug("No stages found for database %s", database)
             return []
 
+    async def list_tasks(self, database: str) -> list[dict]:
+        """Nova ``CREATE TASK`` definitions from CONFIG_TASKS for a database.
+
+        Credential-invisible: only names/schedule metadata are selected, never
+        the task body (which can name a stage whose credentials Nova injects at
+        execution time).
+        """
+        sql = (
+            "SELECT name, schedule_kind, schedule_expr, timezone, overlap_policy "
+            "FROM NOVA_SYSTEM.CONFIG_TASKS "
+            "WHERE database_name = %s"
+        )
+        try:
+            result = await db.execute_system(sql, [database])
+            return [
+                {
+                    "name": row[0],
+                    "schedule_kind": row[1],
+                    "schedule_expr": row[2],
+                    "timezone": row[3],
+                    "overlap_policy": row[4],
+                }
+                for row in result["rows"]
+            ]
+        except Exception:
+            log.debug("No tasks found for database %s", database)
+            return []
+
     # ── Detail views ───────────────────────────────────────────
 
     async def get_table_detail(self, database: str, table: str) -> dict | None:

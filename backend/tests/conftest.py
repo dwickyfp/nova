@@ -119,9 +119,7 @@ def _preflight_failure() -> str | None:
         return "docker is not installed"
 
     try:
-        daemon = subprocess.run(
-            ["docker", "info"], capture_output=True, text=True, timeout=15
-        )
+        daemon = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.SubprocessError) as exc:
         return f"docker daemon is not reachable ({exc.__class__.__name__})"
     if daemon.returncode != 0:
@@ -240,9 +238,7 @@ async def sr_root(docker_services):
     conn = None
     for i in range(60):
         try:
-            conn = await asyncmy.connect(
-                host="127.0.0.1", port=port, user="root", password=""
-            )
+            conn = await asyncmy.connect(host="127.0.0.1", port=port, user="root", password="")
         except Exception:
             if i == 59:
                 raise
@@ -251,13 +247,9 @@ async def sr_root(docker_services):
         break
 
     async with conn.cursor() as cur:
-        await cur.execute(
-            "CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY 'nova'"
-        )
+        await cur.execute("CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY 'nova'")
         await cur.execute("GRANT ALL ON *.* TO 'nova_admin' WITH GRANT OPTION")
-        await cur.execute(
-            "CREATE USER IF NOT EXISTS 'testanalyst' IDENTIFIED BY 'testpass'"
-        )
+        await cur.execute("CREATE USER IF NOT EXISTS 'testanalyst' IDENTIFIED BY 'testpass'")
         await cur.execute("CREATE ROLE IF NOT EXISTS 'test_analyst'")
         await cur.execute("GRANT 'test_analyst' TO 'testanalyst'")
         await cur.execute("GRANT SELECT ON *.* TO ROLE 'test_analyst'")
@@ -305,6 +297,18 @@ async def app(sr_root, minio_client, redis_client):
     cfg.settings.STARROCKS_ROOT_PASSWORD = ""
     cfg.settings.REDIS_URL = f"redis://127.0.0.1:{ports['redis']}/0"
     cfg.settings.S3_ENDPOINT = f"http://127.0.0.1:{ports['minio']}"
+    # The test MinIO uses the compose defaults. ``nova.yaml`` substitutes
+    # ``${MINIO_ACCESS_KEY}`` / ``${MINIO_SECRET_KEY}``, so point those at the
+    # test credentials before the app config is first loaded — otherwise the
+    # placeholder values in a developer's shell leak into storage-backed tests
+    # (data movement, @stage FILES()) and MinIO rejects them.
+    os.environ["MINIO_ACCESS_KEY"] = "minioadmin"
+    os.environ["MINIO_SECRET_KEY"] = "minioadmin"
+    cfg.settings.S3_ACCESS_KEY = "minioadmin"
+    cfg.settings.S3_SECRET_KEY = "minioadmin"
+    # ``load_nova_app_config`` is lru_cached; drop any earlier parse so the
+    # substituted credentials take effect.
+    cfg.load_nova_app_config.cache_clear()
     cfg.settings.SECRET_KEY = "test-secret-key-for-testing-only-32chars!"
     cfg.settings.FERNET_KEY = "8f3Q1sVx0m2pR7tY5uW9zB4cD6eF1gH3jK5lM7nO9pQ="
     cfg.settings.SESSION_TTL_SECONDS = 300

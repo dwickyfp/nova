@@ -61,6 +61,18 @@ class AssistantTool(Protocol):
     ) -> ToolOutcome: ...
 
 
+def requires_consent(tool: AssistantTool) -> bool:
+    """Whether ``tool`` must be approved by the user before it runs.
+
+    Default ``True``: any tool that touches the engine or the user's data must be
+    approved. A pure tool — one that only reads packaged, credential-free
+    reference data, such as ``load_skill`` — sets ``requires_consent = False`` so
+    it never prompts. Read with ``getattr`` so a tool that omits the attribute is
+    treated as consent-requiring (fail closed).
+    """
+    return bool(getattr(tool, "requires_consent", True))
+
+
 class ToolRegistry:
     """Name → tool map. v1 holds at most one tool (``query_execute``)."""
 

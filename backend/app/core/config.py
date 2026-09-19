@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     PROXY_MAX_CONNECTIONS: int = 100
     PROXY_CONNECT_TIMEOUT: int = 10
     PROXY_READ_TIMEOUT: int = 300
+    #: Host clients should use to reach the proxy. Empty means "infer from the
+    #: request" (the browser host), which is correct for the common single-host
+    #: deployment. Set it when the proxy is reached through a different
+    #: hostname/load balancer than the web UI.
+    PROXY_PUBLIC_HOST: str = ""
 
     # --- Redis (session store) ---
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -84,8 +89,24 @@ class Settings(BaseSettings):
     # never bundles or redistributes it (its license is undeclared), so the
     # operator installs it and points this at the executable. Empty means "not
     # configured"; the connector reports a typed, non-fatal error rather than
-    # guessing a location. Execute is gated on #7 and does not run here.
+    # guessing a location.
     MIGRATION_CLUSTER_SYNC_BINARY: str = ""
+
+    # Execute is gated on issue #7 (backup/restore). This flag is the operator's
+    # explicit acknowledgement that a restorable backup exists; it is **False by
+    # default** and the execute endpoint returns 403 until the operator sets it.
+    # A flag alone is not the backup — the operator owns that guarantee; this is
+    # a deliberate gate, not a safety mechanism Nova can enforce.
+    MIGRATION_EXECUTE_ENABLED: bool = False
+
+    # Whether the execute endpoint also requires the caller to pass the exact
+    # target database name as a second confirmation (guards a mis-typed run).
+    MIGRATION_EXECUTE_REQUIRE_CONFIRMATION: bool = True
+
+    # Whether execute runs the privilege/storage preflight first and refuses on a
+    # missing privilege. On by default: a migration that half-applies because the
+    # caller lacked CREATE TABLE is worse than a refusal with the missing grant.
+    MIGRATION_EXECUTE_PREFLIGHT: bool = True
 
     # --- Security ---
     # No default on purpose (NOVA-108): the environment must supply real keys,
@@ -110,9 +131,7 @@ class Settings(BaseSettings):
     S3_ACCESS_KEY: str = "minioadmin"
     S3_SECRET_KEY: str = "minioadmin"
     S3_BUCKET: str = "nova-stages"
-    NOVA_CONFIG_PATH: str = str(
-        Path(__file__).resolve().parents[3] / "docker" / "nova.yaml"
-    )
+    NOVA_CONFIG_PATH: str = str(Path(__file__).resolve().parents[3] / "docker" / "nova.yaml")
 
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]

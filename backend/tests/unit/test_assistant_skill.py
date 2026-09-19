@@ -23,8 +23,8 @@ from __future__ import annotations
 from app.modules.assistant.service import (
     _DEFAULT_SYSTEM_PROMPT,
     AssistantLoop,
-    _default_skill_prompt,
 )
+from app.modules.assistant.skill_registry import skill_library
 from app.modules.assistant.skills import (
     _SOURCE_DOCS,
     DEFAULT_SKILL_PROMPT,
@@ -104,7 +104,9 @@ def test_revision_changes_when_a_source_doc_changes(monkeypatch, tmp_path):
 
 def test_default_primer_is_within_budget():
     assert default_skill.metadata.tokens <= default_skill.metadata.token_budget
-    assert default_skill.metadata.token_budget == 2000
+    # Raised from 2000 to fit the scope-boundary guardrail section, then to 3000
+    # to fit the writing-style rules in the seed.
+    assert default_skill.metadata.token_budget == 3000
 
 
 def test_budget_counts_the_seed_prompt():
@@ -135,21 +137,25 @@ def test_metadata_reports_revision_budget_and_document_count():
     assert len(metadata.revision) == 64
     assert metadata.document_count == 5
     assert metadata.sections[0] == "identity"
+    assert "scope-boundary" in metadata.sections
     assert "refusal-rules" in metadata.sections
 
 
 # ── AC #7 (assembly portion): the loop keeps its contract ────────────────────
 
 
-def test_default_injection_uses_the_assembled_skill():
+def test_default_injection_uses_the_assembled_skill_plus_the_skill_catalog():
     loop = AssistantLoop(provider=_NullProvider(), registry=ToolRegistry())
-    assert loop._system_prompt == DEFAULT_SKILL_PROMPT
-    assert loop._system_prompt == _default_skill_prompt()
+    # The assembled skill (T-E1) is the base prompt; the curated skill catalog is
+    # appended so the model knows what it may load.
+    assert loop._system_prompt.startswith(DEFAULT_SKILL_PROMPT)
+    assert "Available skills" in loop._system_prompt
+    assert "`create-table`" in loop._system_prompt
 
 
-def test_explicit_system_prompt_still_wins():
+def test_explicit_system_prompt_still_wins_as_the_base():
     loop = AssistantLoop(provider=_NullProvider(), registry=ToolRegistry(), system_prompt="custom")
-    assert loop._system_prompt == "custom"
+    assert loop._system_prompt.startswith("custom")
 
 
 def test_seed_prompt_is_preserved_verbatim_and_first():
@@ -157,6 +163,81 @@ def test_seed_prompt_is_preserved_verbatim_and_first():
     assert prompt.startswith(_DEFAULT_SYSTEM_PROMPT.strip())
     # The seed is not paraphrased into the excerpt blocks.
     assert not prompt.startswith(EXCERPT_OPEN)
+
+
+def test_seed_prompt_names_the_assistant_nove():
+    assert "Nove" in _DEFAULT_SYSTEM_PROMPT
+
+
+def test_seed_prompt_permits_authoring_account_ddl():
+    """Regression: a benign "write me a CREATE USER" must not be refused.
+
+    The model over-refused after being told the read-only tool denies CREATE; the
+    seed prompt must state that authoring SQL (including account/role DDL) is
+    allowed, while only the four protected-object operations are forbidden.
+    """
+    prompt = _DEFAULT_SYSTEM_PROMPT
+    assert "Authoring SQL text is always allowed" in prompt
+    assert "CREATE USER" in prompt
+    # The read-only restriction is scoped to the tool, not to authoring.
+    assert "query_execute" in prompt
+    # The four protected-object operations stay forbidden.
+    assert "DROP ROLE ACCOUNTADMIN" in prompt
+
+
+def test_seed_prompt_bounds_the_assistant_to_nova_scope():
+    """Off-topic questions (e.g. "siapa jokowi?") must be declined, not answered.
+
+    The boundary is a standing instruction, not advisory: the seed must scope
+    the assistant to the Nova warehouse, name the out-of-scope classes, and say
+    the boundary is not bypassable.
+    """
+    prompt = _DEFAULT_SYSTEM_PROMPT
+    assert "Nova data-warehouse work only" in prompt
+    assert "not bypassable" in prompt
+    # The classic jailbreak framings are named so the model recognises them.
+    assert "pretend" in prompt
+    assert "persona" in prompt
+    # The decline is short and pre-emptive, not a partial answer.
+    assert "one short sentence" in prompt
+
+
+def test_primer_carries_the_scope_boundary_section():
+    """The boundary ships in the assembled skill too, not only the seed."""
+    boundary = default_skill.retrieve("scope-boundary")
+    assert "Decline anything else" in boundary
+    assert "not bypassable" in boundary
+
+
+def test_seed_prompt_carries_the_writing_style_rules():
+    """Nove's prose must not read as AI slop.
+
+    Every answer is prose, so the anti-slop rules live in the seed (shipped with
+    every turn), not only in the load-on-demand library. This pins the parts
+    that matter: the em-dash ban, the chatbot openers/closers, the empty hype
+    words, and the no-fabrication rule.
+    """
+    prompt = _DEFAULT_SYSTEM_PROMPT
+    assert "Writing style" in prompt
+    assert "No em dashes" in prompt
+    assert "Let's dive in" in prompt
+    assert "I hope this helps" in prompt
+    # Empty hype vocabulary is named so the model can recognise and avoid it.
+    assert "seamless" in prompt
+    assert "empower" in prompt
+    # A fabricated result is a defect, not just a style miss.
+    assert "never invent a number" in prompt
+
+
+def test_writing_style_skill_is_loadable():
+    """The long-form writing playbook is browsable and loadable."""
+    skill = skill_library.get("writing-style")
+    assert skill is not None
+    assert "em dash" in skill.body.lower()
+    assert skill.triggers
+    excerpt = skill_library.load("writing-style")
+    assert excerpt.startswith("[nova-skill")
+    assert excerpt.rstrip().endswith("[end nova-skill]")
 
 
 def test_excerpts_are_delimited_as_data():
@@ -240,3 +321,7 @@ class _NullProvider:
 
     async def complete(self, **kwargs):  # pragma: no cover
         raise AssertionError("the provider must not be called while building a prompt")
+
+    async def stream(self, **kwargs):  # pragma: no cover
+        raise AssertionError("the provider must not be called while building a prompt")
+        yield  # pragma: no cover - marks this as an async generator

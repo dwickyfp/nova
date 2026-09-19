@@ -507,6 +507,41 @@ class TestRestartSafety:
         assert executor.submissions == []
 
 
+class TestFinalizeOwnership:
+    """The terminal transition decides who records a node's outcome.
+
+    If the reconciler abandoned the row while a slow node was still executing,
+    the late worker's ``running -> terminal`` write affects no rows. Its outcome
+    must then be dropped silently — not audited as if this delivery still owned
+    the row (which produced a misleading ``NODE_*`` audit and re-evaluation
+    churn).
+    """
+
+    async def test_result_is_dropped_and_not_audited_when_row_was_abandoned(
+        self, audit
+    ):
+        repo = FakeRepository()
+        repo.add_task("A")
+        repo.add_graph_run("gr1", "id_A", state="running")
+        row = await repo.create_task_run_once("gr1", "id_A")
+        row["state"] = "running"
+
+        class AbandoningExecutor(RecordingExecutor):
+            async def execute(self, spec, owner, *, heartbeat=None):
+                # Simulate the reconciler abandoning the node mid-flight.
+                repo.task_runs[row["id"]]["state"] = "abandoned"
+                return ExecutionResult(query_id="q1", state="FINISHED")
+
+        executor = AbandoningExecutor()
+        await GraphRunWorker(repo, executor)._execute_one(
+            GraphRunJob("gr1", "id_A"), repo.tasks["id_A"], row["id"]
+        )
+
+        assert repo.task_runs[row["id"]]["state"] == "abandoned"
+        assert repo.task_runs[row["id"]].get("starrocks_query_id") is None
+        assert audit == [], "no NODE_* audit may be written for a row we lost"
+
+
 class TestEngineObservationResilience:
     """The engine's task-run surface can fail; observing it must not gate the submit.
 

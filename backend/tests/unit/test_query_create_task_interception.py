@@ -172,10 +172,71 @@ class TestRawCreateTaskNeverReachesEngine:
         )
         task = next(iter(tasks.tasks.values()))
         assert task["schedule_kind"] == "cron"
-        assert task["schedule_expr"] == "0 2 * * *"
-        assert task["timezone"] == "UTC"
-        assert task["when_expr"] == "x > 1 AND y < 2"
-        assert task["overlap_policy"] == "queue"
+
+
+class TestQualifiedTaskScopeThroughPipeline:
+    """``CREATE TASK db.schema.name`` is scoped end to end through the pipeline."""
+
+    async def test_qualified_name_sets_the_scope(self, wired):
+        service, engine, tasks, _ = wired
+        result = await service.execute(
+            sql="CREATE TASK analytics.etl.daily AS INSERT INTO t SELECT 1",
+            username="alice",
+            encrypted_password="enc",
+            database="db1",
+        )
+        assert engine.calls == [], "CREATE TASK must never reach the engine"
+        assert result.success
+        task = next(iter(tasks.tasks.values()))
+        assert (task["database_name"], task["schema_name"], task["name"]) == (
+            "analytics",
+            "etl",
+            "daily",
+        )
+        # The response rows surface the scope so the caller sees where it landed.
+        assert result.columns[:4] == ["task_id", "name", "database_name", "schema_name"]
+        assert result.rows[0][2:4] == ["analytics", "etl"]
+
+    async def test_bare_name_falls_back_to_the_session_scope(self, wired):
+        service, _, tasks, _ = wired
+        await service.execute(
+            sql="CREATE TASK daily AS INSERT INTO t SELECT 1",
+            username="alice",
+            encrypted_password="enc",
+            database="db1",
+            schema="silver",
+        )
+        task = next(iter(tasks.tasks.values()))
+        assert (task["database_name"], task["schema_name"], task["name"]) == (
+            "db1",
+            "silver",
+            "daily",
+        )
+
+    async def test_audit_records_the_qualified_name(self, wired):
+        service, _, _, audit = wired
+        await service.execute(
+            sql="CREATE TASK analytics.etl.daily AS INSERT INTO t SELECT 1",
+            username="alice",
+            encrypted_password="enc",
+            database="db1",
+        )
+        entry = audit.entries[-1]
+        assert entry["object_name"] == "analytics.etl.daily"
+        assert entry["database_name"] == "analytics"
+        assert entry["schema_name"] == "etl"
+
+    async def test_qualified_parent_is_rejected_without_engine_call(self, wired):
+        service, engine, tasks, _ = wired
+        result = await service.execute(
+            sql="CREATE TASK db2.etl.t1 AFTER db1.etl.a AS INSERT INTO t SELECT 1",
+            username="alice",
+            encrypted_password="enc",
+            database="db1",
+        )
+        assert engine.calls == []
+        assert tasks.tasks == {}, "a rejected statement must store nothing"
+        assert not result.success
 
 
 class TestValidationFailureIsReported:

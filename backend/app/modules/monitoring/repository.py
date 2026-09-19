@@ -5,9 +5,13 @@ so they work regardless of the authenticated user's RBAC privileges.
 """
 
 import logging
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from app.core.database import db
+
+if TYPE_CHECKING:
+    from app.modules.monitoring.alerts import AlertMetrics
+    from app.modules.monitoring.readiness import AuditInput
 
 logger = logging.getLogger(__name__)
 
@@ -642,7 +646,301 @@ class MonitoringRepository:
             "other": row[4] or 0,
         }
 
+    # ── Alert metric collection ──────────────────────────────────────
+
+    async def collect_alert_metrics(self) -> "AlertMetrics":
+        """Build an :class:`AlertMetrics` snapshot from live engine state.
+
+        Each probe is independent: one failing probe leaves its metric ``None``
+        (unknown) instead of aborting the whole snapshot, and only a total loss
+        of engine connectivity sets ``engine_reachable=False``. This keeps the
+        alert engine honest — an unreadable counter is never reported as zero.
+        """
+        from app.modules.monitoring.alerts import AlertMetrics
+
+        metrics = AlertMetrics()
+        reachable = False
+
+        # FE membership -------------------------------------------------
+        try:
+            result = await db.execute_system("SHOW FRONTENDS")
+            rows = self._rows_to_maps(result)
+            reachable = True
+            metrics.fe_total = len(rows)
+            metrics.fe_alive = sum(1 for r in rows if self._truthy(r.get("Alive")))
+            metrics.fe_leader_count = sum(
+                1
+                for r in rows
+                if str(r.get("Role", "")).upper() == "LEADER"
+                and self._truthy(r.get("Alive"))
+                and self._truthy(r.get("Join"))
+            )
+            metrics.fe_max_journal_lag = self._journal_lag(rows)
+            metrics.fe_meta_log_count = self._max_int(rows, ("MetaLogCount", "metaLogCount"))
+        except Exception as exc:
+            logger.warning("Alert probe SHOW FRONTENDS failed: %s", exc)
+
+        # BE membership / storage --------------------------------------
+        try:
+            result = await db.execute_system("SHOW BACKENDS")
+            rows = self._rows_to_maps(result)
+            reachable = True
+            metrics.be_total = len(rows)
+            live = [
+                r
+                for r in rows
+                if self._truthy(r.get("Alive"))
+                and not self._truthy(r.get("SystemDecommissioned"))
+                and not self._truthy(r.get("ClusterDecommissioned"))
+            ]
+            metrics.be_alive = len(live)
+            metrics.be_disk_used_pct_max = self._max_float(
+                live, ("MaxDiskUsedPct", "UsedPct")
+            )
+        except Exception as exc:
+            logger.warning("Alert probe SHOW BACKENDS failed: %s", exc)
+
+        # Compaction score (FE) ----------------------------------------
+        try:
+            result = await db.execute_system(
+                "SELECT MAX(MAX_COMPACTION_SCORE) FROM information_schema.be_tablets"
+            )
+            if result["rows"]:
+                metrics.max_compaction_score = self._float_or_none(result["rows"][0][0])
+        except Exception as exc:
+            logger.debug("Alert probe compaction score failed: %s", exc)
+
+        # BE compaction failures ---------------------------------------
+        try:
+            result = await db.execute_system(
+                "SELECT SUM(C) FROM ("
+                " SELECT COUNT(*) AS C FROM information_schema.be_compactions"
+                " WHERE STATUS != 'SUCCESS'"
+                ") t"
+            )
+            if result["rows"]:
+                metrics.be_compaction_failures = self._int_or_none(result["rows"][0][0])
+        except Exception as exc:
+            logger.debug("Alert probe compaction failures failed: %s", exc)
+
+        # FE metric ratios ---------------------------------------------
+        try:
+            metrics.query_err_rate, metrics.query_latency_p95_ms = (
+                await self._fe_query_metrics()
+            )
+        except Exception as exc:
+            logger.debug("Alert probe fe query metrics failed: %s", exc)
+
+        try:
+            metrics.fe_heap_used_ratio = await self._fe_heap_ratio()
+        except Exception as exc:
+            logger.debug("Alert probe fe heap failed: %s", exc)
+
+        metrics.engine_reachable = reachable
+        return metrics
+
+    async def collect_audit_input(self) -> "AuditInput":
+        """Gather the read-only observations the readiness audit evaluates.
+
+        Membership and repositories come from the engine. The root
+        empty-password probe runs on a *separate* connection as ``root`` so it
+        cannot be conflated with the system-pool identity doing the rest of the
+        reads; a failure to prove rejection is reported as unknown, never as a
+        pass.
+        """
+        from app.modules.monitoring.readiness import AuditInput
+
+        data = AuditInput()
+        reachable = False
+
+        try:
+            fe = self._rows_to_maps(await db.execute_system("SHOW FRONTENDS"))
+            data.fe_rows = fe
+            reachable = True
+            for r in fe:
+                if r.get("ClusterId") is not None:
+                    data.cluster_id = str(r.get("ClusterId"))
+                    break
+            for r in fe:
+                if str(r.get("Role", "")).upper() == "LEADER":
+                    data.version = str(r.get("Version")) if r.get("Version") else None
+                    break
+            if not data.version and fe:
+                data.version = str(fe[0].get("Version")) if fe[0].get("Version") else None
+        except Exception as exc:
+            logger.warning("Readiness probe SHOW FRONTENDS failed: %s", exc)
+
+        try:
+            data.be_rows = self._rows_to_maps(await db.execute_system("SHOW BACKENDS"))
+            reachable = True
+        except Exception as exc:
+            logger.warning("Readiness probe SHOW BACKENDS failed: %s", exc)
+
+        try:
+            data.repository_rows = self._rows_to_maps(
+                await db.execute_system("SHOW REPOSITORIES")
+            )
+        except Exception as exc:
+            logger.debug("Readiness probe SHOW REPOSITORIES failed: %s", exc)
+
+        data.root_password_rejected = await self._probe_root_empty_password()
+        data.engine_reachable = reachable
+        return data
+
+    async def _probe_root_empty_password(self) -> bool | None:
+        """True if root is correctly rejected; False if it authenticates; None if unknown.
+
+        Opens a fresh ``asyncmy`` connection as ``root`` with an empty password
+        so a rejected login is observed as an error code, distinct from any
+        pooled connection state. Uses the same driver as the rest of the app
+        (no pymysql dependency at runtime).
+        """
+        import asyncmy
+
+        from app.core.config import settings
+
+        try:
+            conn = await asyncmy.connect(
+                host=settings.STARROCKS_HOST,
+                port=settings.STARROCKS_FE_MYSQL_PORT,
+                user="root",
+                password="",
+                connect_timeout=5,
+            )
+        except Exception as exc:
+            code = exc.args[0] if getattr(exc, "args", None) else None
+            if code in (1045, 1698):
+                return True
+            logger.debug("Could not probe root empty password: %s", exc)
+            return None
+        else:
+            conn.close()
+            return False  # authenticated with empty password — a real problem
+
+    async def _fe_query_metrics(self) -> tuple[float | None, float | None]:
+        """Derive error rate and P95 latency from ``information_schema.fe_metrics``."""
+        err_rate: float | None = None
+        p95: float | None = None
+        try:
+            result = await db.execute_system(
+                """
+                SELECT NAME, VALUE
+                FROM information_schema.fe_metrics
+                WHERE NAME IN (
+                    'query_total', 'query_err', 'query_latency_95th_ms'
+                )
+                """
+            )
+            by_name: dict[str, float] = {}
+            for row in result["rows"]:
+                name = str(row[0] or "").lower()
+                value = self._float_or_none(row[1])
+                if value is not None:
+                    by_name[name] = value
+            total = by_name.get("query_total")
+            err = by_name.get("query_err")
+            if total is not None and err is not None and total > 0:
+                err_rate = err / total
+            p95 = by_name.get("query_latency_95th_ms")
+        except Exception:
+            return None, None
+        return err_rate, p95
+
+    async def _fe_heap_ratio(self) -> float | None:
+        """Used/max FE heap ratio. Returns None unless both halves are known."""
+        used: float | None = None
+        cap: float | None = None
+        try:
+            result = await db.execute_system(
+                """
+                SELECT NAME, LABELS, VALUE
+                FROM information_schema.fe_metrics
+                WHERE NAME = 'jvm_heap_size_bytes'
+                """
+            )
+            for row in result["rows"]:
+                labels = str(row[1] or "").lower()
+                value = self._float_or_none(row[2])
+                if value is None:
+                    continue
+                if "'used'" in labels or '"used"' in labels or "=used" in labels:
+                    used = value
+                elif "'max'" in labels or '"max"' in labels or "=max" in labels:
+                    cap = value
+        except Exception:
+            return None
+        if used is None or cap is None or cap <= 0:
+            return None
+        return used / cap
+
     # ── Internal helpers ─────────────────────────────────────────────
+
+    @staticmethod
+    def _rows_to_maps(result: dict) -> list[dict]:
+        columns = [str(c) for c in result.get("columns", [])]
+        return [
+            {columns[i]: value for i, value in enumerate(row) if i < len(columns)}
+            for row in (result.get("rows") or [])
+        ]
+
+    @staticmethod
+    def _truthy(value) -> bool:
+        if value is None:
+            return False
+        return str(value).strip().lower() in {"true", "1", "yes", "alive", "ok"}
+
+    @classmethod
+    def _journal_lag(cls, rows: list[dict]) -> int | None:
+        journals: list[int] = []
+        for r in rows:
+            if str(r.get("Role", "")).upper() not in {"LEADER", "FOLLOWER"}:
+                continue
+            value = cls._int_or_none(r.get("ReplayedJournalId"))
+            if value is not None:
+                journals.append(value)
+        if len(journals) < 2:
+            return None
+        return max(journals) - min(journals)
+
+    @classmethod
+    def _max_int(cls, rows: list[dict], keys: tuple[str, ...]) -> int | None:
+        values = []
+        for r in rows:
+            for key in keys:
+                value = cls._int_or_none(r.get(key))
+                if value is not None:
+                    values.append(value)
+                    break
+        return max(values) if values else None
+
+    @classmethod
+    def _max_float(cls, rows: list[dict], keys: tuple[str, ...]) -> float | None:
+        values = []
+        for r in rows:
+            for key in keys:
+                value = cls._float_or_none(r.get(key))
+                if value is not None:
+                    values.append(value)
+                    break
+        return max(values) if values else None
+
+    @staticmethod
+    def _float_or_none(raw) -> float | None:
+        if raw is None:
+            return None
+        try:
+            return float(str(raw).strip().rstrip("%"))
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _int_or_none(raw) -> int | None:
+        if raw is None:
+            return None
+        try:
+            return int(float(str(raw).strip()))
+        except (ValueError, TypeError):
+            return None
 
     @staticmethod
     def _parse_metric_value(raw) -> int | float | str:

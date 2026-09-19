@@ -65,6 +65,14 @@ PRESERVED_CASES = [
     ("SELECT @@version", "SELECT @@version"),
     # No placeholder present at all: the routine must be a no-op.
     ("SELECT 1", "SELECT 1"),
+    # A DESCRIBE target that is already engine-shaped, or has no placeholder.
+    ("DESCRIBE db.t", "DESCRIBE db.t"),
+    ("DESCRIBE t", "DESCRIBE t"),
+    ("DESC NOVA_ANALYTICS.channel_performance", "DESC NOVA_ANALYTICS.channel_performance"),
+    # A DESCRIBE of a stage reference: the mask wins, as in the FROM case.
+    ("DESCRIBE @stage1.data.default.csv", "DESCRIBE @stage1.data.default.csv"),
+    # A `.default.` inside a string literal after DESCRIBE is user data.
+    ("DESCRIBE 'a.default.b'", "DESCRIBE 'a.default.b'"),
 ]
 
 
@@ -108,6 +116,28 @@ COLLAPSED_CASES = [
         "SELECT * FROM a.default.b, c.default.d",
         "SELECT * FROM a.b, c.d",
     ),
+    # DESCRIBE/DESC targets: the target follows the statement keyword, so the
+    # table-reference anchor above does not reach it. Without this anchor the
+    # statement reached StarRocks with the placeholder and failed with a syntax
+    # error at the first dot (the assistant's ``DESCRIBE
+    # NOVA_ANALYTICS.default.channel_performance`` regression).
+    (
+        "DESCRIBE NOVA_ANALYTICS.default.channel_performance",
+        "DESCRIBE NOVA_ANALYTICS.channel_performance",
+    ),
+    ("DESC mydb.default.orders", "DESC mydb.orders"),
+    ("describe nova_analytics.default.t", "describe nova_analytics.t"),
+    # A catalogue-qualified target keeps its catalogue; only the placeholder
+    # `db.default.table` span is collapsed.
+    (
+        "DESCRIBE default_catalog.NOVA_ANALYTICS.default.channel_performance",
+        "DESCRIBE default_catalog.NOVA_ANALYTICS.channel_performance",
+    ),
+    ("DESC `mydb`.`default`.`orders`", "DESC `mydb`.`orders`"),
+    # A DESCRIBE later in a multi-statement script is rewritten too.
+    ("select 1; describe db.default.t;", "select 1; describe db.t;"),
+    # A trailing comment must not disable the rewrite.
+    ("DESCRIBE db.default.t -- comment", "DESCRIBE db.t -- comment"),
 ]
 
 

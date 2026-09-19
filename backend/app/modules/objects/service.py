@@ -267,6 +267,13 @@ class ObjectService:
             """,
             [database, schema],
         )
+        tasks = await self._schema_tasks(
+            database,
+            schema,
+            username=username,
+            encrypted_password=encrypted_password,
+            role=role,
+        )
         return {
             "database": database,
             "schema": schema,
@@ -274,7 +281,55 @@ class ObjectService:
             "views": objects["views"],
             "materialized_views": objects["materialized_views"],
             "stages": [{"id": row[0], "name": row[1], "type": "STAGE"} for row in stage_rows["rows"]],
+            "tasks": tasks,
         }
+
+    async def _schema_tasks(
+        self,
+        database: str,
+        schema: str,
+        *,
+        username: str,
+        encrypted_password: str,
+        role: str | None = None,
+    ) -> list[dict]:
+        """Tasks scoped to ``database.schema``, filtered by the caller's access.
+
+        Tasks are Nova metadata, not engine objects, so StarRocks' own privilege
+        filter does not apply. Authorization is enforced by asking the engine what
+        databases the **caller** can see (``SHOW DATABASES`` runs as the caller);
+        a database the caller cannot access yields no tasks, the same fail-closed
+        behaviour as a table they cannot read. Only ids/names/states are returned
+        — never the task body or any credential.
+        """
+        visible = await self._repo.list_databases(
+            username=username,
+            encrypted_password=encrypted_password,
+            role=role,
+        )
+        if database not in {row["name"] for row in visible}:
+            return []
+        result = await db.execute_system(
+            """
+            SELECT id, name, schedule_kind, schedule_expr, timezone, overlap_policy
+            FROM NOVA_SYSTEM.CONFIG_TASKS
+            WHERE database_name = %s AND schema_name = %s
+            ORDER BY name
+            """,
+            [database, schema],
+        )
+        columns = (
+            "id",
+            "name",
+            "schedule_kind",
+            "schedule_expr",
+            "timezone",
+            "overlap_policy",
+        )
+        return [
+            {**dict(zip(columns, row, strict=True)), "type": "TASK"}
+            for row in result["rows"]
+        ]
 
 
 # Need to import db for get_columns

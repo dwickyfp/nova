@@ -58,5 +58,28 @@ class MonitoringService:
     async def get_load_stats(self) -> dict:
         return await monitoring_repo.get_load_stats()
 
+    # ── Alerts ───────────────────────────────────────────────────────
+
+    async def get_alerts(self) -> dict:
+        """Evaluate production alert rules against live engine state."""
+        from app.modules.monitoring.alerts import evaluate_rules, summarize
+
+        metrics = await monitoring_repo.collect_alert_metrics()
+        results = evaluate_rules(metrics)
+        summary = summarize(results, engine_reachable=metrics.engine_reachable)
+        return {
+            "summary": summary,
+            "alerts": [r.as_dict() for r in results],
+        }
+
+    # ── Production readiness audit ───────────────────────────────────
+
+    async def get_readiness(self) -> dict:
+        """Run the read-only production readiness audit."""
+        from app.modules.monitoring.readiness import build_report
+
+        data = await monitoring_repo.collect_audit_input()
+        return build_report(data)
+
 
 monitoring_service = MonitoringService()

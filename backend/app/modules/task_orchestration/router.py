@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from typing import Any, get_args
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.common.sql_guard import redact_sql_credentials
 from app.core.deps import get_current_user
@@ -67,6 +67,22 @@ current_user = Depends(get_current_user)
 def _is_admin(user: dict[str, Any]) -> bool:
     roles = user.get("roles") or []
     return any(role in roles for role in ADMIN_ROLES)
+
+
+def _qualified_name(task: dict[str, Any]) -> str:
+    """``database.schema.name`` for a task row, or its bare name if unscoped."""
+    parts = [
+        str(part)
+        for part in (task.get("database_name"), task.get("schema_name"), task.get("name"))
+        if part
+    ]
+    return ".".join(parts)
+
+
+def _scope_of_graph(graph_id: str) -> tuple[str, ...]:
+    """The ``(database, schema)`` scope encoded in a qualified graph id."""
+    parts = graph_id.split(".")
+    return tuple(parts[:2]) if len(parts) == 3 and all(parts) else ()
 
 
 def _owned_by_caller(task: dict[str, Any], user: dict[str, Any]) -> bool:
@@ -96,7 +112,12 @@ class _GraphAccess:
         self._repository = repository
         self._user = user
         self._graph_ids: list[str] | None = None
-        self._tasks_by_name: dict[str, dict[str, Any]] = {}
+        # Keyed by (database, schema, name): a task name alone is ambiguous
+        # because two schemas may each hold a task of the same name.
+        self._tasks_by_qualified: dict[str, dict[str, Any]] = {}
+        self._tasks_by_id: dict[str, dict[str, Any]] = {}
+        # Bare-name fallback; see `_task_by_name` for when it is the only match.
+        self._tasks_by_name_only: dict[str, dict[str, Any]] = {}
         self._edges_by_graph: dict[str, list[dict[str, Any]]] = {}
         self._visible: list[str] | None = None
 
@@ -112,7 +133,12 @@ class _GraphAccess:
             return
         graph_ids = await self._repository.list_graph_ids()
         for task in await self._repository.list_tasks():
-            self._tasks_by_name[str(task["name"])] = task
+            self._tasks_by_qualified[_qualified_name(task)] = task
+            self._tasks_by_id[str(task["id"])] = task
+            # Last write wins on a duplicate bare name; the scoped lookup is
+            # consulted first, so this fallback only ever serves a row the
+            # qualified map could not resolve.
+            self._tasks_by_name_only[str(task["name"])] = task
         for graph_id in graph_ids:
             self._edges_by_graph[graph_id] = await self._repository.list_edges(graph_id)
         self._graph_ids = graph_ids
@@ -120,22 +146,43 @@ class _GraphAccess:
     def _tasks_for(self, graph_id: str) -> list[dict[str, Any]]:
         edges = self._edges_by_graph.get(graph_id, [])
         if edges:
+            scope = _scope_of_graph(graph_id)
             names = {
                 str(endpoint)
                 for edge in edges
                 for endpoint in (edge["parent_task"], edge["child_task"])
             }
-            return [
-                self._tasks_by_name[name]
-                for name in names
-                if name in self._tasks_by_name
-            ]
-        # Standalone graph: keyed by task id, not name.
-        task = next(
-            (row for row in self._tasks_by_name.values() if str(row["id"]) == graph_id),
-            None,
+            found: list[dict[str, Any]] = []
+            for name in sorted(names):
+                task = self._task_by_name(name, scope)
+                if task is not None:
+                    found.append(task)
+            return found
+        # Standalone graph: its id is the task's qualified name (or, for a
+        # legacy row, the task id).
+        task = (
+            self._tasks_by_qualified.get(graph_id)
+            or self._tasks_by_id.get(graph_id)
+            or self._task_by_name(graph_id.rpartition(".")[2], _scope_of_graph(graph_id))
         )
         return [task] if task else []
+
+    def _task_by_name(
+        self, name: str, scope: tuple[str, ...]
+    ) -> dict[str, Any] | None:
+        """Resolve an edge endpoint to its task row.
+
+        An edge stores a **bare** task name, but the task row is scoped. The
+        qualified lookup is the precise one; the bare-name fallback covers a row
+        whose scope is incomplete (``schema_name`` NULL) while the edge's graph
+        id still carries both parts — a state the data holds today (legacy and
+        test rows), where the strict lookup would silently render zero nodes.
+        """
+        if scope:
+            scoped = self._tasks_by_qualified.get(".".join((*scope, name)))
+            if scoped is not None:
+                return scoped
+        return self._tasks_by_name_only.get(name)
 
     async def visible_graph_ids(self) -> list[str]:
         await self._load()
@@ -145,10 +192,14 @@ class _GraphAccess:
         visible: list[str] = []
         for graph_id in self._graph_ids:
             tasks = self._tasks_for(graph_id)
-            if tasks and all(_owned_by_caller(task, self._user) for task in tasks):
-                visible.append(graph_id)
-            elif not tasks and _is_admin(self._user):
-                # A standalone task whose row is missing: only an admin sees it.
+            # A graph with no resolvable task is not a graph the UI can render:
+            # it is an orphan (its task rows were dropped while edges remained),
+            # and showing it as an empty flow is worse than hiding it. This holds
+            # for admins too — "admin sees everything" means every graph that
+            # exists, not every dangling edge.
+            if not tasks:
+                continue
+            if all(_owned_by_caller(task, self._user) for task in tasks):
                 visible.append(graph_id)
         self._visible = visible
         return visible
@@ -168,25 +219,97 @@ class _GraphAccess:
         return self._tasks_for(graph_id)
 
 
+@router.get("/tasks", response_model=schemas.TaskListResponse)
+async def list_tasks(
+    database: str | None = None,
+    schema: str | None = None,
+    user: dict = current_user,
+) -> schemas.TaskListResponse:
+    """List Nova tasks, optionally scoped to one ``database.schema``.
+
+    Tasks are owned by a ``database.schema`` like a stage. Without the query
+    parameters the caller sees every task they own; with both, only that
+    schema's tasks. Ownership is the same rule the graph endpoints use: a caller
+    sees a task they created, and an admin sees everything. The task **body** is
+    never returned — it can name a stage whose credentials Nova injects at
+    execution time.
+    """
+    access = _GraphAccess(_repository, user)
+    visible = set(await access.visible_graph_ids())
+    tallies = await _repository.count_graph_runs_by_graph()
+    tasks: list[schemas.TaskSummary] = []
+    for task in await _repository.list_tasks():
+        if database is not None and str(task.get("database_name") or "") != database:
+            continue
+        if schema is not None and str(task.get("schema_name") or "") != schema:
+            continue
+        graph_id = _task_graph_id(task)
+        # A task is visible when its graph is visible (same ownership rule the
+        # graph endpoints enforce), so the list cannot leak a task the graph
+        # view would hide.
+        if graph_id not in visible and not _owned_by_caller(task, user):
+            continue
+        tasks.append(
+            schemas.TaskSummary(
+                id=str(task["id"]),
+                name=str(task["name"]),
+                database_name=task.get("database_name"),
+                schema_name=task.get("schema_name"),
+                schedule_kind=_narrow(
+                    task.get("schedule_kind"), get_args(schemas.ScheduleKind), "manual"
+                ),
+                schedule_expr=task.get("schedule_expr"),
+                timezone=task.get("timezone"),
+                overlap_policy=_narrow(
+                    task.get("overlap_policy"), _OVERLAP_POLICIES, "skip"
+                ),
+                created_by=task.get("created_by"),
+                graph_id=graph_id,
+                created_at=task.get("created_at"),
+                run_counts=_run_counts(tallies.get(graph_id)),
+            )
+        )
+    tasks.sort(key=lambda task: (task.database_name or "", task.schema_name or "", task.name))
+    return schemas.TaskListResponse(tasks=tasks, count=len(tasks))
+
+
+def _task_graph_id(task: dict[str, Any]) -> str:
+    """The graph id a task belongs to: its qualified name (or bare name)."""
+    parts = [
+        str(part)
+        for part in (task.get("database_name"), task.get("schema_name"), task.get("name"))
+        if part
+    ]
+    return ".".join(parts)
+
+
 @router.get("/graphs", response_model=schemas.GraphListResponse)
 async def list_graphs(user: dict = current_user) -> schemas.GraphListResponse:
-    """List the graphs the caller may see, with each graph's last run."""
+    """List the graphs the caller may see, with each graph's last run and tallies."""
     access = _GraphAccess(_repository, user)
+    tallies = await _repository.count_graph_runs_by_graph()
     summaries: list[schemas.GraphSummary] = []
     for graph_id in await access.visible_graph_ids():
         graph_tasks = await access.require(graph_id)
         root = _root_task(access.edges_for(graph_id), graph_tasks)
         last_run = await _repository.get_latest_graph_run(graph_id)
+        scope_task = root or (graph_tasks[0] if graph_tasks else None)
         summaries.append(
             schemas.GraphSummary(
                 graph_id=graph_id,
                 root_task=root["name"] if root else None,
+                database_name=(scope_task or {}).get("database_name"),
+                schema_name=(scope_task or {}).get("schema_name"),
                 node_count=len(graph_tasks),
                 schedule_kind=(root or {}).get("schedule_kind"),
                 schedule_expr=(root or {}).get("schedule_expr"),
                 timezone=(root or {}).get("timezone"),
                 overlap_policy=(root or {}).get("overlap_policy") or "skip",
                 last_run=_run_summary(last_run),
+                run_counts=_run_counts(tallies.get(graph_id)),
+                # The anchor node's creation time represents the graph's; a
+                # graph has no row of its own.
+                created_at=(root or scope_task or {}).get("created_at"),
             )
         )
     return schemas.GraphListResponse(graphs=summaries, count=len(summaries))
@@ -207,6 +330,8 @@ async def get_graph(
         schemas.GraphNode(
             name=str(task["name"]),
             task_id=str(task["id"]),
+            database_name=task.get("database_name"),
+            schema_name=task.get("schema_name"),
             schedule_kind=_narrow(
                 task.get("schedule_kind"), get_args(schemas.ScheduleKind), "manual"
             ),
@@ -245,14 +370,24 @@ async def get_graph(
 
 @router.get("/graphs/{graph_id}/runs", response_model=schemas.GraphRunListResponse)
 async def list_graph_runs(
-    graph_id: str, user: dict = current_user
+    graph_id: str,
+    limit: int = Query(10, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: dict = current_user,
 ) -> schemas.GraphRunListResponse:
-    """Run history for a graph, newest first."""
+    """One page of a graph's run history, newest first.
+
+    Pagination is in the engine, not the client: a graph with thousands of runs
+    must not serialise all of them to render ten. The response carries the
+    unpaginated ``count`` so the UI can build its page controls without a second
+    call.
+    """
     access = _GraphAccess(_repository, user)
     await access.require(graph_id)
-    runs = await _repository.list_graph_runs(graph_id)
+    total = await _repository.count_graph_runs(graph_id)
+    runs = await _repository.list_graph_runs_page(graph_id, limit=limit, offset=offset)
     return schemas.GraphRunListResponse(
-        runs=[_run_response(run) for run in runs], count=len(runs)
+        runs=[_run_response(run) for run in runs], count=total
     )
 
 
@@ -329,6 +464,19 @@ _TRIGGER_TYPES = get_args(schemas.TriggerType)
 _OVERLAP_POLICIES = get_args(schemas.OverlapPolicy)
 _TASK_RUN_STATES = get_args(schemas.TaskRunState)
 _EDGE_KINDS = get_args(schemas.EdgeKind)
+
+
+def _run_counts(tally: dict[str, int] | None) -> schemas.RunCounts:
+    """Fold a repository tally (or its absence) into the response model.
+
+    A graph with no runs has no row in the tally map, so ``None`` is a valid
+    input and means ``{0, 0, 0}`` rather than an error.
+    """
+    return schemas.RunCounts(
+        total=int((tally or {}).get("total") or 0),
+        success=int((tally or {}).get("success") or 0),
+        failed=int((tally or {}).get("failed") or 0),
+    )
 
 
 def _run_summary(run: dict[str, Any] | None) -> schemas.GraphRunSummary | None:

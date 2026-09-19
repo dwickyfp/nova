@@ -105,8 +105,10 @@ class FakeRepository:
     async def reset_consecutive_failures(self, task_id: str) -> None:
         self.tasks[task_id]["consecutive_fail_count"] = 0
 
-    async def list_graph_runs_by_state(self, states, *, limit=200):
-        return []
+    async def list_graph_runs_by_state(self, states, *, limit=1000):
+        return [
+            r for r in self.graph_runs.values() if r["state"] in states
+        ][:limit]
 
     async def list_stale_task_runs(self, older_than_seconds, *, limit=200):
         return self.stale_task_runs[:limit]
@@ -927,3 +929,22 @@ class TestConnectionAcquireTolerance:
         assert report.lost_traces == []
         assert repo.task_runs["n1"]["state"] == "running"
         assert audit == []
+
+
+class TestScanPendingOnly:
+    """``scan`` reports only genuinely ``pending`` runs for re-enqueue.
+
+    A ``running`` run is being executed (or is covered by the heartbeat path),
+    so re-enqueueing it would be delivery churn. Separating the two also removes
+    a starvation window: a shared oldest-first capped query let a long-lived
+    ``running`` run hide newer ``pending`` runs from recovery.
+    """
+
+    async def test_running_run_is_not_reported_as_pending(self, audit):
+        repo = FakeRepository()
+        repo.graph_runs["gr_pending"] = {"id": "gr_pending", "state": "pending"}
+        repo.graph_runs["gr_running"] = {"id": "gr_running", "state": "running"}
+
+        report = await Reconciler(repo).scan()
+
+        assert report.pending_graph_runs == ["gr_pending"]

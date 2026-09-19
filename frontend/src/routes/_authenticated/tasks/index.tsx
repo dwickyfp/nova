@@ -1,22 +1,22 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { Header } from '@/components/layout/header'
-import { Main } from '@/components/layout/main'
-import { Search } from '@/components/search'
-import { MonitoringTasks } from '@/features/monitoring/tasks'
+import { createFileRoute } from "@tanstack/react-router";
+import { Header } from "@/components/layout/header";
+import { Main } from "@/components/layout/main";
+import { Search } from "@/components/search";
+import { TaskList } from "@/features/task-orchestration";
 
-export const Route = createFileRoute('/_authenticated/tasks/')({
+export const Route = createFileRoute("/_authenticated/tasks/")({
   component: RouteComponent,
-})
+});
 
 function RouteComponent() {
   return (
     <>
       <Header>
-        <Search className='me-auto' />
+        <Search className="me-auto" />
       </Header>
       <Main fixed>
-        <MonitoringTasks />
+        <TaskList />
       </Main>
     </>
-  )
+  );
 }

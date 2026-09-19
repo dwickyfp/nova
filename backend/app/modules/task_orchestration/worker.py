@@ -154,19 +154,25 @@ class GraphRunWorker:
 
     async def _drive(self, job: GraphRunJob) -> GraphState | None:
         """Evaluate and execute until the graph settles."""
-        tasks = await self._repository.list_tasks()
+        # Load only this graph's members. The graph is single-schema and its id
+        # is the root's qualified name, so this resolves node rows within the
+        # right scope — a global task list would collide same-named tasks in
+        # different schemas.
+        tasks = await self._repository.list_tasks(job.graph_id)
         edges = await self._repository.list_edges(job.graph_id)
         by_id = {task["id"]: task for task in tasks}
         by_name = {task["name"]: task for task in tasks}
 
-        node_names = [
-            name for name in {t["name"] for t in tasks} if name in {
-                str(edge["parent_task"]) for edge in edges
-            } | {str(edge["child_task"]) for edge in edges}
-        ]
+        edge_names = {
+            str(edge["parent_task"]) for edge in edges
+        } | {str(edge["child_task"]) for edge in edges}
+        node_names = [name for name in by_name if name in edge_names]
         if not node_names:
-            # A standalone task is a one-node graph keyed by its own id.
-            standalone = by_id.get(job.graph_id)
+            # A standalone task is a one-node graph; its graph id is its own
+            # qualified name, so match on the bare name within the scope this
+            # graph id already restricts to.
+            bare = job.graph_id.rsplit(".", 1)[-1]
+            standalone = by_name.get(bare) or by_id.get(job.graph_id)
             if standalone is not None:
                 node_names = [standalone["name"]]
 
@@ -375,22 +381,13 @@ class GraphRunWorker:
             )
         except Exception as exc:  # noqa: BLE001 - an error is a failure, not a skip
             message = _safe_message(exc)
-            await self._repository.transition_task_run(
-                run_id,
-                [NodeState.RUNNING.value],
-                NodeState.FAILED.value,
-                error_message=message,
+            await self._finalize(
+                job, task, run_id, owner, NodeState.FAILED, error=message
             )
-            await self._audit(job, task, owner, NodeState.FAILED.value, message)
             return False
         if allowed:
             return True
-        await self._repository.transition_task_run(
-            run_id,
-            [NodeState.RUNNING.value],
-            NodeState.SKIPPED.value,
-        )
-        await self._audit(job, task, owner, NodeState.SKIPPED.value, None)
+        await self._finalize(job, task, run_id, owner, NodeState.SKIPPED)
         return False
 
     async def _execute_one(
@@ -398,24 +395,19 @@ class GraphRunWorker:
     ) -> None:
         owner = task.get("created_by")
         if not owner:
-            await self._repository.transition_task_run(
+            await self._finalize(
+                job,
+                task,
                 run_id,
-                [NodeState.RUNNING.value],
-                NodeState.FAILED.value,
-                error_message="task has no owner; delegate-first cannot run",
+                owner,
+                NodeState.FAILED,
+                error="task has no owner; delegate-first cannot run",
             )
-            await self._audit(job, task, owner, NodeState.FAILED.value, "task owner unknown")
             return
 
         body = task.get("definition") or ""
         if not body.strip():
-            await self._repository.transition_task_run(
-                run_id,
-                [NodeState.RUNNING.value],
-                NodeState.SKIPPED.value,
-                error_message=None,
-            )
-            await self._audit(job, task, owner, NodeState.SKIPPED.value, "empty body")
+            await self._finalize(job, task, run_id, owner, NodeState.SKIPPED)
             return
 
         spec = TaskSpec(
@@ -431,27 +423,23 @@ class GraphRunWorker:
         try:
             result = await self._executor.execute(spec, owner, heartbeat=heartbeat)
         except NodeExecutionError as exc:
-            await self._repository.transition_task_run(
+            await self._finalize(
+                job,
+                task,
                 run_id,
-                [NodeState.RUNNING.value],
-                NodeState.FAILED.value,
+                owner,
+                NodeState.FAILED,
                 query_id=exc.query_id,
-                error_message=str(exc),
+                error=str(exc),
             )
-            await self._audit(job, task, owner, NodeState.FAILED.value, str(exc))
             return
         except Exception as exc:  # noqa: BLE001 - any failure fails the node
             # CredentialUnavailable and connection errors land here. Never
             # include the exception's repr if it could carry a secret; the
             # executor already redacts engine messages.
-            message = _safe_message(exc)
-            await self._repository.transition_task_run(
-                run_id,
-                [NodeState.RUNNING.value],
-                NodeState.FAILED.value,
-                error_message=message,
+            await self._finalize(
+                job, task, run_id, owner, NodeState.FAILED, error=_safe_message(exc)
             )
-            await self._audit(job, task, owner, NodeState.FAILED.value, message)
             return
 
         state = (
@@ -461,14 +449,53 @@ class GraphRunWorker:
             if result.state.upper() == "SUSPENDED"
             else NodeState.FAILED
         )
-        await self._repository.transition_task_run(
+        await self._finalize(
+            job,
+            task,
+            run_id,
+            owner,
+            state,
+            query_id=result.query_id,
+            error=result.error_message,
+        )
+
+    async def _finalize(
+        self,
+        job: GraphRunJob,
+        task: dict[str, Any],
+        run_id: str,
+        owner: str | None,
+        state: NodeState,
+        *,
+        query_id: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Move a ``running`` node to its terminal state, then audit it.
+
+        The transition is the conditional write that decides ownership: if the
+        reconciler already abandoned this row (the worker's heartbeat lapsed, or
+        the node took longer than the heartbeat window), the write affects no
+        rows. In that case the outcome is **not** this delivery's to record — a
+        concurrent delivery or the reconciler owns the row — so no audit is
+        written and the result is not silently double-reported. Writing the
+        audit unconditionally (the previous behaviour) produced a ``NODE_*``
+        audit for a row this delivery no longer controlled.
+        """
+        moved = await self._repository.transition_task_run(
             run_id,
             [NodeState.RUNNING.value],
             state.value,
-            query_id=result.query_id,
-            error_message=result.error_message,
+            query_id=query_id,
+            error_message=error,
         )
-        await self._audit(job, task, owner, state.value, result.error_message)
+        if not moved:
+            logger.info(
+                "node run %s was not in 'running'; %s outcome not recorded by this delivery",
+                run_id,
+                state.value,
+            )
+            return
+        await self._audit(job, task, owner, state.value, error)
 
     async def _settle(
         self, job: GraphRunJob, state: GraphState, *, reason: str | None = None

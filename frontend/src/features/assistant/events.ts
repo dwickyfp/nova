@@ -1,4 +1,11 @@
-import type { AssistantEvent, ToolCallStatus, ToolClassification } from './types'
+import type {
+  AssistantEvent,
+  PlanStep,
+  ThinkingPhase,
+  ThinkingStatus,
+  ToolCallStatus,
+  ToolClassification,
+} from './types'
 
 /**
  * Parses one SSE frame into a typed event. Returns null for frames the client
@@ -16,6 +23,10 @@ export function parseAssistantEvent(eventName: string, data: string): AssistantE
   switch (eventName) {
     case 'text_delta':
       return typeof record.text === 'string' ? { type: 'text_delta', text: record.text } : null
+    case 'thinking':
+      return parseThinking(record)
+    case 'plan':
+      return parsePlan(record)
     case 'tool_call':
       return parseToolCall(record)
     case 'tool_status': {
@@ -57,6 +68,49 @@ export function isToolCallStatus(value: unknown): value is ToolCallStatus {
 
 export function isToolClassification(value: unknown): value is ToolClassification {
   return typeof value === 'string' && (CLASSIFICATIONS as string[]).includes(value)
+}
+
+const THINKING_PHASES: ThinkingPhase[] = ['plan', 'skill', 'act', 'observe', 'answer']
+const THINKING_STATUSES: ThinkingStatus[] = ['running', 'done']
+
+export function isThinkingPhase(value: unknown): value is ThinkingPhase {
+  return typeof value === 'string' && (THINKING_PHASES as string[]).includes(value)
+}
+
+function parseThinking(record: Record<string, unknown>): AssistantEvent | null {
+  if (
+    !isThinkingPhase(record.phase) ||
+    typeof record.text !== 'string' ||
+    typeof record.status !== 'string' ||
+    !(THINKING_STATUSES as string[]).includes(record.status)
+  ) {
+    return null
+  }
+  return {
+    type: 'thinking',
+    phase: record.phase,
+    text: record.text,
+    status: record.status as ThinkingStatus,
+  }
+}
+
+function parsePlan(record: Record<string, unknown>): AssistantEvent | null {
+  const raw = record.steps
+  if (!Array.isArray(raw)) return null
+  const steps: PlanStep[] = []
+  for (const entry of raw) {
+    if (
+      typeof entry !== 'object' ||
+      entry === null ||
+      typeof (entry as PlanStep).id !== 'string' ||
+      typeof (entry as PlanStep).text !== 'string' ||
+      typeof (entry as PlanStep).status !== 'string'
+    ) {
+      return null
+    }
+    steps.push(entry as PlanStep)
+  }
+  return { type: 'plan', steps }
 }
 
 function parseToolCall(record: Record<string, unknown>): AssistantEvent | null {

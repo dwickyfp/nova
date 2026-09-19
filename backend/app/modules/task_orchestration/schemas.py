@@ -149,18 +149,62 @@ class GraphRunSummary(BaseModel):
     finished_at: datetime | None = None
 
 
+class RunCounts(BaseModel):
+    """Run tallies for one graph, folded from ``CONFIG_TASK_GRAPH_RUNS``.
+
+    ``failed`` counts only ``failed``; ``cancelled`` is neither a success nor a
+    failure, so ``total`` is not necessarily ``success + failed``. That
+    asymmetry is deliberate: the UI must be able to show a run that was
+    cancelled without pretending it failed.
+    """
+
+    total: int = 0
+    success: int = 0
+    failed: int = 0
+
+
+class TaskSummary(BaseModel):
+    """One row of `GET /task-orchestration/tasks` (schema-scoped list)."""
+
+    id: str
+    name: str
+    database_name: str | None = None
+    schema_name: str | None = None
+    schedule_kind: ScheduleKind
+    schedule_expr: str | None = None
+    timezone: str | None = None
+    overlap_policy: OverlapPolicy = "skip"
+    created_by: str | None = None
+    #: The graph this task belongs to (its root's qualified name).
+    graph_id: str | None = None
+    created_at: datetime | None = None
+    run_counts: RunCounts = Field(default_factory=RunCounts)
+
+
+class TaskListResponse(BaseModel):
+    tasks: list[TaskSummary]
+    count: int
+
+
 class GraphSummary(BaseModel):
     """One row of `GET /graphs`."""
 
     graph_id: str
     #: The schedule anchor: a root task with no incoming edge, when there is one.
     root_task: str | None = None
+    #: The graph's scope, recovered from any member task.
+    database_name: str | None = None
+    schema_name: str | None = None
     node_count: int = 0
     schedule_kind: ScheduleKind | None = None
     schedule_expr: str | None = None
     timezone: str | None = None
     overlap_policy: OverlapPolicy = "skip"
     last_run: GraphRunSummary | None = None
+    run_counts: RunCounts = Field(default_factory=RunCounts)
+    #: When the graph's anchor task was created. Null only for a legacy row whose
+    #: created_at predates the column.
+    created_at: datetime | None = None
 
 
 class GraphListResponse(BaseModel):
@@ -173,6 +217,8 @@ class GraphNode(BaseModel):
 
     name: str
     task_id: str
+    database_name: str | None = None
+    schema_name: str | None = None
     schedule_kind: ScheduleKind
     schedule_expr: str | None = None
     timezone: str | None = None

@@ -24,10 +24,13 @@ from uuid import NAMESPACE_URL, uuid5
 
 from app.core.config import settings
 from app.modules.task_orchestration.graph import Edge, Graph
-from app.modules.task_orchestration.repository import TaskOrchestrationRepository
+from app.modules.task_orchestration.repository import (
+    TaskOrchestrationRepository,
+    scope_from_graph_id,
+)
 from app.modules.task_orchestration.schedule import (
     ScheduleError,
-    latest_occurrence,
+    due_occurrences,
     resolve_timezone,
 )
 from app.modules.task_orchestration.transport import GraphRunTransport
@@ -59,14 +62,18 @@ def should_enqueue(overlap_policy: str, active_runs: int) -> bool:
     return overlap_policy in {"queue", "allow"}
 
 
-def deterministic_run_id(graph_id: str, due_at: datetime) -> str:
-    """The idempotency key for a (graph, due-time) pair.
+def deterministic_run_id(graph_id: str, due_at: datetime, root_task: str = "") -> str:
+    """The idempotency key for a ``(graph, root occurrence)`` pair.
 
     A UUID v5 keeps it within the 64-char primary-key column and makes the key
     reproducible across processes and restarts, which is what turns a double
-    tick into a single graph run.
+    tick into a single graph run. ``root_task`` is part of the key because one
+    graph may have several scheduled roots; excluding it would make two distinct
+    roots due at the same instant collide on one run.
     """
-    return str(uuid5(NAMESPACE_URL, f"nova:graph_run:{graph_id}:{due_at.isoformat()}"))
+    return str(
+        uuid5(NAMESPACE_URL, f"nova:graph_run:{graph_id}:{root_task}:{due_at.isoformat()}")
+    )
 
 
 @dataclass(frozen=True)
@@ -79,10 +86,12 @@ class DueGraph:
     task_names: list[str]
     #: The enqueue-time overlap policy, taken from the graph's root task.
     overlap_policy: str = "skip"
+    #: The root task whose schedule anchored this occurrence.
+    root_task: str = ""
 
     @property
     def run_id(self) -> str:
-        return deterministic_run_id(self.graph_id, self.due_at)
+        return deterministic_run_id(self.graph_id, self.due_at, self.root_task)
 
 
 @dataclass
@@ -137,15 +146,25 @@ async def resolve_engine_timezone(repository: TaskOrchestrationRepository) -> st
     return "UTC"
 
 
+def task_qualified_name(task: dict[str, Any]) -> str:
+    """``database.schema.name`` for a task row, or its bare name if unscoped."""
+    parts = [
+        str(part)
+        for part in (task.get("database_name"), task.get("schema_name"), task.get("name"))
+        if part
+    ]
+    return ".".join(parts)
+
+
 def build_graphs(tasks: list[dict[str, Any]], edges: list[dict[str, Any]]) -> dict[str, Graph]:
     """Group tasks and edges by ``graph_id``.
 
     Graph membership is explicit: an edge's ``graph_id`` names its graph. Tasks
-    that appear in no edge are single-node graphs keyed by their own id, so a
-    standalone scheduled task still gets a graph run.
-
-    Edge endpoints are task **names** (the repository stores names), so the
-    per-graph task list is resolved by name.
+    that appear in no edge are single-node graphs keyed by their own **qualified**
+    name, so a standalone scheduled task still gets a graph run. A graph id is
+    itself qualified (``database.schema.name``), so a graph's scope is recovered
+    from it and its node names resolve within that scope — two same-named tasks
+    in different schemas are two graphs, not one.
     """
     by_graph: dict[str, list[Edge]] = {}
     for edge in edges:
@@ -153,8 +172,19 @@ def build_graphs(tasks: list[dict[str, Any]], edges: list[dict[str, Any]]) -> di
             Edge(parent=str(edge["parent_task"]), child=str(edge["child_task"]))
         )
 
+    graph_ids_with_edges = set(by_graph)
+    # Endpoint names by scope, plus an unscoped bucket for legacy edges whose
+    # graph id is not qualified. A task is "referenced" if its own scope (or the
+    # unscoped bucket) contains its name.
+    referenced: dict[tuple[str, str] | None, set[str]] = {}
+    for graph_id, graph_edges in by_graph.items():
+        bucket = scope_from_graph_id(graph_id)
+        endpoints = referenced.setdefault(bucket, set())
+        endpoints.update(
+            endpoint for edge in graph_edges for endpoint in (edge.parent, edge.child)
+        )
+
     graphs: dict[str, Graph] = {}
-    referenced: set[str] = set()
     for graph_id, graph_edges in by_graph.items():
         names = [
             name
@@ -163,13 +193,29 @@ def build_graphs(tasks: list[dict[str, Any]], edges: list[dict[str, Any]]) -> di
             }
         ]
         graphs[graph_id] = Graph.from_edges(names, graph_edges)
-        referenced.update(names)
 
     for task in tasks:
-        if task["name"] not in referenced:
-            graphs[task["id"]] = Graph.from_edges([task["name"]], [])
+        qualified = task_qualified_name(task)
+        # A task belongs to a graph if a graph with its qualified name exists,
+        # or it is an endpoint of an edge in its own scope (or an unscoped edge).
+        if qualified in graph_ids_with_edges:
+            continue
+        scope = _task_scope(task)
+        if str(task["name"]) in referenced.get(scope, set()):
+            continue
+        if scope is not None and str(task["name"]) in referenced.get(None, set()):
+            continue
+        graphs[qualified] = Graph.from_edges([str(task["name"])], [])
 
     return graphs
+
+
+def _task_scope(task: dict[str, Any]) -> tuple[str, str] | None:
+    database = task.get("database_name")
+    schema = task.get("schema_name")
+    if database and schema:
+        return str(database), str(schema)
+    return None
 
 
 def _graph_task_ids(
@@ -188,28 +234,44 @@ def plan_tick(
 ) -> SchedulerPlan:
     """Compute the due graphs for this tick. Pure — no I/O, no side effects.
 
-    Only **root** tasks (no incoming edge) are schedule anchors: a graph run is
-    triggered once per due root, and a single run covers every node reachable
-    from it. Enqueueing per task would multiply one DAG into one run per node,
-    which design §2 explicitly rejects.
+    Only **root** tasks (no incoming edge) are schedule anchors: a due root
+    creates one graph run covering every node reachable from it. Enqueueing per
+    task would multiply one DAG into one run per node, which design §2
+    explicitly rejects.
+
+    A graph may have **several scheduled roots** (``A`` at 12:00, ``B`` at
+    12:05 under one ``graph_id``). Each due root is its own occurrence and gets
+    its own run: previously only the earliest occurrence across a graph's roots
+    was ever enqueued, so every other root's cadence was silently dropped once
+    the earliest run existed. The occurrence is part of the run id, so two
+    roots due at different instants resolve to different (idempotent) runs.
+
+    A tick that arrives late **catches up**: every occurrence missed since the
+    anchor is emitted, each with its own idempotent run id, so a scheduler
+    outage does not silently swallow the fires in between. The catch-up is
+    bounded (``schedule.MAX_CATCH_UP_OCCURRENCES``) so a very long outage
+    converges to the present instead of replaying unbounded history.
 
     ``engine_timezone`` is the StarRocks session timezone that ``created_at``
     was written in; callers obtain it from the engine (see
     ``resolve_engine_timezone``) rather than a config default.
     """
-    tasks_by_name = {t["name"]: t for t in tasks}
     graphs = build_graphs(tasks, edges)
     due: list[DueGraph] = []
     skipped = 0
 
     for graph_id, graph in graphs.items():
+        # Resolve node rows **within this graph's scope**. A single global
+        # ``{name: task}`` map would collide two same-named tasks in different
+        # schemas, and a root in one schema could anchor a run using another
+        # schema's task row.
+        scope = scope_from_graph_id(graph_id)
+        scoped = _tasks_by_name(tasks, scope)
         children = {child for kids in graph.adjacency.values() for child in kids}
         roots = [name for name in graph.nodes if name not in children]
 
-        graph_due_at: datetime | None = None
-        root_task: dict[str, Any] | None = None
         for name in sorted(roots):
-            task = tasks_by_name.get(name)
+            task = scoped.get(name)
             if task is None:
                 continue
             kind = (task.get("schedule_kind") or "").lower()
@@ -221,7 +283,7 @@ def plan_tick(
                     anchor = naive_engine_time_to_utc(created_at, engine_timezone)
                 else:
                     anchor = now
-                occurrence = latest_occurrence(
+                occurrences = due_occurrences(
                     kind,
                     task.get("schedule_expr") or "",
                     task.get("timezone") or "",
@@ -232,27 +294,43 @@ def plan_tick(
                 logger.warning("task %r has an unusable schedule: %s", name, exc)
                 skipped += 1
                 continue
-            if occurrence is None:
+            if not occurrences:
                 continue
-            if graph_due_at is None or occurrence < graph_due_at:
-                graph_due_at = occurrence
-                root_task = task
 
-        if graph_due_at is None or root_task is None:
-            continue
-
-        task_ids, task_names = _graph_task_ids(graph, tasks_by_name)
-        due.append(
-            DueGraph(
-                graph_id=graph_id,
-                due_at=graph_due_at,
-                task_ids=task_ids,
-                task_names=task_names,
-                overlap_policy=_normalise_overlap(root_task.get("overlap_policy")),
-            )
-        )
+            task_ids, task_names = _graph_task_ids(graph, scoped)
+            policy = _normalise_overlap(task.get("overlap_policy"))
+            for occurrence in occurrences:
+                due.append(
+                    DueGraph(
+                        graph_id=graph_id,
+                        due_at=occurrence,
+                        task_ids=task_ids,
+                        task_names=task_names,
+                        overlap_policy=policy,
+                        root_task=name,
+                    )
+                )
 
     return SchedulerPlan(due=due, skipped=skipped)
+
+
+def _tasks_by_name(
+    tasks: list[dict[str, Any]], scope: tuple[str, str] | None
+) -> dict[str, dict[str, Any]]:
+    """Task rows keyed by bare name, restricted to ``scope`` when given.
+
+    An unscoped graph (a legacy graph id) falls back to every task, preserving
+    the pre-scope behaviour for rows written before the scope columns existed.
+    """
+    if scope is None:
+        return {str(task["name"]): task for task in tasks}
+    database_name, schema_name = scope
+    return {
+        str(task["name"]): task
+        for task in tasks
+        if str(task.get("database_name") or "") == database_name
+        and str(task.get("schema_name") or "") == schema_name
+    }
 
 
 def _normalise_overlap(value: Any) -> str:
@@ -284,35 +362,71 @@ class SchedulerTick:
         plan = plan_tick(tasks, edges, moment, engine_timezone)
 
         for due in plan.due:
-            existing = await self._repository.get_graph_run(due.run_id)
-            if existing is not None:
-                continue
-
-            # Overlap policy is enforced here, at enqueue. `skip` refuses to
-            # create a run while one is active; `queue` creates it (the worker
-            # defers it behind the active run); `allow` creates it and lets it
-            # run concurrently. The decision reads the active runs once, so a
-            # long list cannot change mid-decision.
-            active = await self._repository.list_active_graph_runs(due.graph_id)
-            if not should_enqueue(due.overlap_policy, len(active)):
-                logger.info(
-                    "skipping due graph %s: %s overlap policy with %d active run(s)",
+            # One graph's failure must not abandon the rest of the batch. Before
+            # this guard a single transport error (or a DB blip) escaped
+            # ``tick`` and every later due graph in the same batch was silently
+            # dropped until the next tick.
+            try:
+                await self._enqueue(due, plan)
+            except Exception:
+                logger.exception(
+                    "failed to enqueue due graph %s (root %s); continuing",
                     due.graph_id,
-                    due.overlap_policy,
-                    len(active),
+                    due.root_task or "-",
                 )
-                plan.overlap_skipped += 1
-                continue
-
-            created = await self._repository.create_graph_run(
-                {
-                    "id": due.run_id,
-                    "graph_id": due.graph_id,
-                    "trigger_type": "schedule",
-                    "state": "pending",
-                    "overlap_policy": due.overlap_policy,
-                }
-            )
-            await self._transport.publish_graph_run(created, due.task_ids)
 
         return plan
+
+    async def _enqueue(self, due: DueGraph, plan: SchedulerPlan) -> None:
+        """Persist then publish one due occurrence, idempotently.
+
+        The overlap policy is evaluated against the runs that already exist —
+        **before** this occurrence's row is created — so a policy refusal never
+        leaves a stray ``pending`` row behind (a stray row would count as active
+        forever and block every future occurrence under ``skip``).
+
+        The create is **create-if-absent**: ``CONFIG_TASK_GRAPH_RUNS`` is a
+        StarRocks Primary-Key table where a plain ``INSERT`` is a destructive
+        upsert, so a re-tick (or a second leader during a lock-TTL window) must
+        not reset a run that is already ``running``/``success``. Only a
+        genuinely new row is published; an existing one means the occurrence is
+        already owned by the stream or the reconciler.
+        """
+        # Idempotency short-circuit first: on a re-tick for an occurrence that
+        # already exists, there is nothing to decide — the stream or the
+        # reconciler already owns it. Checking this before the overlap policy
+        # keeps a re-tick from being miscounted as an overlap skip.
+        existing = await self._repository.get_graph_run(due.run_id)
+        if existing is not None:
+            return
+
+        # `skip` refuses to create a run while one is active; `queue` creates it
+        # (the worker defers it behind the active run); `allow` creates it and
+        # lets it run concurrently. The decision reads the active runs once, so
+        # a long list cannot change mid-decision.
+        active = await self._repository.list_active_graph_runs(due.graph_id)
+        if not should_enqueue(due.overlap_policy, len(active)):
+            logger.info(
+                "dropping due graph %s (root %s): %s overlap policy with %d active run(s)",
+                due.graph_id,
+                due.root_task or "-",
+                due.overlap_policy,
+                len(active),
+            )
+            plan.overlap_skipped += 1
+            return
+
+        created, is_new = await self._repository.create_graph_run_once(
+            {
+                "id": due.run_id,
+                "graph_id": due.graph_id,
+                "trigger_type": "schedule",
+                "state": "pending",
+                "overlap_policy": due.overlap_policy,
+            }
+        )
+        if not is_new:
+            # A concurrent tick created it between our read and our write. It
+            # owns the publish; we must not double-publish.
+            return
+        await self._transport.publish_graph_run(created, due.task_ids)

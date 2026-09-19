@@ -17,7 +17,7 @@ describe('AssistantPanel', () => {
       const { getByRole } = await render(
         <AssistantPanel open onOpenChange={() => {}} />
       )
-      const panel = getByRole('complementary', { name: 'Assistant' })
+      const panel = getByRole('complementary', { name: 'Nove' })
       await expect.element(panel).toBeInTheDocument()
     } finally {
       await page.viewport(375, 800)
@@ -28,7 +28,7 @@ describe('AssistantPanel', () => {
     const { getByText, getByRole } = await render(
       <AssistantPanel open onOpenChange={() => {}} />
     )
-    await expect.element(getByText('Ask about this workspace')).toBeInTheDocument()
+    await expect.element(getByText('How can I help?')).toBeInTheDocument()
     await expect
       .element(getByRole('button', { name: 'Close assistant' }))
       .toBeInTheDocument()
@@ -41,7 +41,7 @@ describe('AssistantPanel', () => {
       </AssistantPanel>
     )
     await expect.element(getByText('SELECT 1')).toBeInTheDocument()
-    expect(container.textContent).not.toContain('Ask about this workspace')
+    expect(container.textContent).not.toContain('How can I help?')
   })
 
   it('submits a trimmed message and clears the composer', async () => {
@@ -57,12 +57,16 @@ describe('AssistantPanel', () => {
     await expect.element(field).toHaveValue('')
   })
 
-  it('does not send an empty message', async () => {
+  it('keeps Send disabled until the message has content', async () => {
     const onSendMessage = vi.fn()
-    const { getByRole } = await render(
+    const { getByRole, getByPlaceholder } = await render(
       <AssistantPanel open onOpenChange={() => {}} onSendMessage={onSendMessage} />
     )
-    await getByRole('button', { name: 'Send message' }).click()
+    const send = getByRole('button', { name: 'Send message' })
+    await expect.element(send).toBeDisabled()
+
+    await getByPlaceholder('Ask a question or describe a query').fill('   ')
+    await expect.element(send).toBeDisabled()
     expect(onSendMessage).not.toHaveBeenCalled()
   })
 
@@ -73,6 +77,52 @@ describe('AssistantPanel', () => {
     )
     await getByRole('button', { name: 'Close assistant' }).click()
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('labels the header with the given title instead of the default', async () => {
+    const { getByText } = await render(
+      <AssistantPanel open onOpenChange={() => {}} title='sales.sql' />
+    )
+    await expect.element(getByText('sales.sql')).toBeInTheDocument()
+  })
+
+  it('renders a seamless header without a bottom divider', async () => {
+    await page.viewport(1440, 900)
+    try {
+      const { getByRole } = await render(<AssistantPanel open onOpenChange={() => {}} />)
+      const header = getByRole('heading', { name: 'Nove' }).element()
+        .parentElement as HTMLElement
+      expect(header.className).not.toContain('border-b')
+    } finally {
+      await page.viewport(375, 800)
+    }
+  })
+
+  it('greets the signed-in user in the empty state', async () => {
+    const { getByText } = await render(
+      <AssistantPanel open onOpenChange={() => {}} userName='Dwicky' />
+    )
+    await expect.element(getByText('Hi Dwicky,')).toBeInTheDocument()
+  })
+
+  it('offers New chat in the header and fires it', async () => {
+    const onNewChat = vi.fn()
+    const { getByRole } = await render(
+      <AssistantPanel open onOpenChange={() => {}} onNewChat={onNewChat} />
+    )
+    await getByRole('button', { name: 'New chat' }).click()
+    expect(onNewChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no history/new-chat controls when the panel has no handlers', async () => {
+    // A bare panel (no provider wiring) still renders the shell without
+    // reaching for data it cannot fetch.
+    const { getByRole, container } = await render(
+      <AssistantPanel open onOpenChange={() => {}} />
+    )
+    await expect.element(getByRole('button', { name: 'Close assistant' })).toBeInTheDocument()
+    expect(container.querySelector('button[aria-label="New chat"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="Chat history"]')).toBeNull()
   })
 
   it('renders transcript messages instead of the empty state', async () => {
@@ -93,7 +143,7 @@ describe('AssistantPanel', () => {
       />
     )
     await expect.element(getByText('Revenue is grouped by region.')).toBeInTheDocument()
-    expect(container.textContent).not.toContain('Ask about this workspace')
+    expect(container.textContent).not.toContain('How can I help?')
   })
 
   it('swaps Send for Stop while streaming and fires onStop', async () => {
@@ -153,5 +203,55 @@ describe('AssistantPanel', () => {
       />
     )
     await expect.element(getByRole('button', { name: 'Resetting' })).toBeDisabled()
+  })
+
+  it('applies the given width inline and shows the resize handle', async () => {
+    await page.viewport(1440, 900)
+    try {
+      const { getByRole, container } = await render(
+        <AssistantPanel open onOpenChange={() => {}} width={512} onResize={() => {}} />
+      )
+      const aside = container.querySelector('#assistant-panel') as HTMLElement
+      expect(aside.style.width).toBe('512px')
+      await expect.element(getByRole('separator', { name: 'Resize assistant panel' })).toBeInTheDocument()
+    } finally {
+      await page.viewport(375, 800)
+    }
+  })
+
+  it('omits the resize handle when no resize handler is given', async () => {
+    await page.viewport(1440, 900)
+    try {
+      const { container } = await render(<AssistantPanel open onOpenChange={() => {}} />)
+      expect(
+        container.querySelector('[aria-label="Resize assistant panel"]')
+      ).toBeNull()
+    } finally {
+      await page.viewport(375, 800)
+    }
+  })
+
+  it('follows the pointer during a drag and commits the clamped width', async () => {
+    await page.viewport(1440, 900)
+    const onResize = vi.fn()
+    try {
+      const { getByRole, container } = await render(
+        <AssistantPanel open onOpenChange={() => {}} width={400} onResize={onResize} />
+      )
+      const handle = getByRole('separator', { name: 'Resize assistant panel' }).element()
+      const aside = container.querySelector('#assistant-panel') as HTMLElement
+
+      handle.dispatchEvent(
+        new PointerEvent('pointerdown', { clientX: 1000, bubbles: true })
+      )
+      // Drag left by 80px: a right-anchored panel widens to 480 while dragging.
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX: 920 }))
+      await vi.waitFor(() => expect(aside.style.width).toBe('480px'))
+
+      window.dispatchEvent(new PointerEvent('pointerup', { clientX: 920 }))
+      await vi.waitFor(() => expect(onResize).toHaveBeenCalledWith(480))
+    } finally {
+      await page.viewport(375, 800)
+    }
   })
 })

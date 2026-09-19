@@ -18,8 +18,6 @@ import { Route as AuthenticatedMigrationRouteImport } from './routes/_authentica
 import { Route as AuthenticatedMonitoringRouteRouteImport } from './routes/_authenticated/monitoring/route'
 import { Route as AuthenticatedQueryCostRouteImport } from './routes/_authenticated/query-cost'
 import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authenticated/query-history'
-import { Route as AuthenticatedTaskGraphsRouteImport } from './routes/_authenticated/task-graphs'
-import { Route as AuthenticatedTasksManagerRouteImport } from './routes/_authenticated/tasks-manager'
 import { Route as AuthenticatedAiProvidersIndexRouteImport } from './routes/_authenticated/ai-providers/index'
 import { Route as AuthenticatedExternalCatalogsIndexRouteImport } from './routes/_authenticated/external-catalogs/index'
 import { Route as AuthenticatedFunctionsIndexRouteImport } from './routes/_authenticated/functions/index'
@@ -28,6 +26,7 @@ import { Route as AuthenticatedMonitoringIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedMonitoringActiveRouteImport } from './routes/_authenticated/monitoring/active'
 import { Route as AuthenticatedMonitoringAuditRouteImport } from './routes/_authenticated/monitoring/audit'
 import { Route as AuthenticatedMonitoringClusterRouteImport } from './routes/_authenticated/monitoring/cluster'
+import { Route as AuthenticatedMonitoringHealthRouteImport } from './routes/_authenticated/monitoring/health'
 import { Route as AuthenticatedMonitoringLoadsRouteImport } from './routes/_authenticated/monitoring/loads'
 import { Route as AuthenticatedMonitoringTasksRouteImport } from './routes/_authenticated/monitoring/tasks'
 import { Route as AuthenticatedRolesIndexRouteImport } from './routes/_authenticated/roles/index'
@@ -35,6 +34,7 @@ import { Route as AuthenticatedRolesNameRouteImport } from './routes/_authentica
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedStagesIndexRouteImport } from './routes/_authenticated/stages/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
+import { Route as AuthenticatedTasksGraphIdRouteImport } from './routes/_authenticated/tasks/$graphId'
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedUsersUsernameRouteImport } from './routes/_authenticated/users/$username'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
@@ -87,17 +87,6 @@ const AuthenticatedQueryHistoryRoute =
     path: '/query-history',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedTaskGraphsRoute = AuthenticatedTaskGraphsRouteImport.update({
-  id: '/task-graphs',
-  path: '/task-graphs',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedTasksManagerRoute =
-  AuthenticatedTasksManagerRouteImport.update({
-    id: '/tasks-manager',
-    path: '/tasks-manager',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedAiProvidersIndexRoute =
   AuthenticatedAiProvidersIndexRouteImport.update({
     id: '/ai-providers/',
@@ -146,6 +135,12 @@ const AuthenticatedMonitoringClusterRoute =
     path: '/cluster',
     getParentRoute: () => AuthenticatedMonitoringRouteRoute,
   } as any)
+const AuthenticatedMonitoringHealthRoute =
+  AuthenticatedMonitoringHealthRouteImport.update({
+    id: '/health',
+    path: '/health',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
 const AuthenticatedMonitoringLoadsRoute =
   AuthenticatedMonitoringLoadsRouteImport.update({
     id: '/loads',
@@ -185,6 +180,12 @@ const AuthenticatedTasksIndexRoute = AuthenticatedTasksIndexRouteImport.update({
   path: '/tasks/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedTasksGraphIdRoute =
+  AuthenticatedTasksGraphIdRouteImport.update({
+    id: '/tasks/$graphId',
+    path: '/tasks/$graphId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
   id: '/users/',
   path: '/users/',
@@ -212,14 +213,14 @@ export interface FileRoutesByFullPath {
   '/migration': typeof AuthenticatedMigrationRoute
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
-  '/task-graphs': typeof AuthenticatedTaskGraphsRoute
-  '/tasks-manager': typeof AuthenticatedTasksManagerRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
   '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
+  '/monitoring/health': typeof AuthenticatedMonitoringHealthRoute
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
   '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/roles/$name': typeof AuthenticatedRolesNameRoute
+  '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
   '/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
@@ -240,15 +241,15 @@ export interface FileRoutesByTo {
   '/migration': typeof AuthenticatedMigrationRoute
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
-  '/task-graphs': typeof AuthenticatedTaskGraphsRoute
-  '/tasks-manager': typeof AuthenticatedTasksManagerRoute
   '/': typeof AuthenticatedIndexRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
   '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
+  '/monitoring/health': typeof AuthenticatedMonitoringHealthRoute
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
   '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/roles/$name': typeof AuthenticatedRolesNameRoute
+  '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/ai-providers': typeof AuthenticatedAiProvidersIndexRoute
   '/external-catalogs': typeof AuthenticatedExternalCatalogsIndexRoute
@@ -272,15 +273,15 @@ export interface FileRoutesById {
   '/_authenticated/migration': typeof AuthenticatedMigrationRoute
   '/_authenticated/query-cost': typeof AuthenticatedQueryCostRoute
   '/_authenticated/query-history': typeof AuthenticatedQueryHistoryRoute
-  '/_authenticated/task-graphs': typeof AuthenticatedTaskGraphsRoute
-  '/_authenticated/tasks-manager': typeof AuthenticatedTasksManagerRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/_authenticated/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
   '/_authenticated/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
+  '/_authenticated/monitoring/health': typeof AuthenticatedMonitoringHealthRoute
   '/_authenticated/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
   '/_authenticated/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/_authenticated/roles/$name': typeof AuthenticatedRolesNameRoute
+  '/_authenticated/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/_authenticated/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/_authenticated/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
   '/_authenticated/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
@@ -305,14 +306,14 @@ export interface FileRouteTypes {
     | '/migration'
     | '/query-cost'
     | '/query-history'
-    | '/task-graphs'
-    | '/tasks-manager'
     | '/monitoring/active'
     | '/monitoring/audit'
     | '/monitoring/cluster'
+    | '/monitoring/health'
     | '/monitoring/loads'
     | '/monitoring/tasks'
     | '/roles/$name'
+    | '/tasks/$graphId'
     | '/users/$username'
     | '/ai-providers/'
     | '/external-catalogs/'
@@ -333,15 +334,15 @@ export interface FileRouteTypes {
     | '/migration'
     | '/query-cost'
     | '/query-history'
-    | '/task-graphs'
-    | '/tasks-manager'
     | '/'
     | '/monitoring/active'
     | '/monitoring/audit'
     | '/monitoring/cluster'
+    | '/monitoring/health'
     | '/monitoring/loads'
     | '/monitoring/tasks'
     | '/roles/$name'
+    | '/tasks/$graphId'
     | '/users/$username'
     | '/ai-providers'
     | '/external-catalogs'
@@ -364,15 +365,15 @@ export interface FileRouteTypes {
     | '/_authenticated/migration'
     | '/_authenticated/query-cost'
     | '/_authenticated/query-history'
-    | '/_authenticated/task-graphs'
-    | '/_authenticated/tasks-manager'
     | '/_authenticated/'
     | '/_authenticated/monitoring/active'
     | '/_authenticated/monitoring/audit'
     | '/_authenticated/monitoring/cluster'
+    | '/_authenticated/monitoring/health'
     | '/_authenticated/monitoring/loads'
     | '/_authenticated/monitoring/tasks'
     | '/_authenticated/roles/$name'
+    | '/_authenticated/tasks/$graphId'
     | '/_authenticated/users/$username'
     | '/_authenticated/ai-providers/'
     | '/_authenticated/external-catalogs/'
@@ -457,20 +458,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedQueryHistoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/task-graphs': {
-      id: '/_authenticated/task-graphs'
-      path: '/task-graphs'
-      fullPath: '/task-graphs'
-      preLoaderRoute: typeof AuthenticatedTaskGraphsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/tasks-manager': {
-      id: '/_authenticated/tasks-manager'
-      path: '/tasks-manager'
-      fullPath: '/tasks-manager'
-      preLoaderRoute: typeof AuthenticatedTasksManagerRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/ai-providers/': {
       id: '/_authenticated/ai-providers/'
       path: '/ai-providers'
@@ -527,6 +514,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonitoringClusterRouteImport
       parentRoute: typeof AuthenticatedMonitoringRouteRoute
     }
+    '/_authenticated/monitoring/health': {
+      id: '/_authenticated/monitoring/health'
+      path: '/health'
+      fullPath: '/monitoring/health'
+      preLoaderRoute: typeof AuthenticatedMonitoringHealthRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
     '/_authenticated/monitoring/loads': {
       id: '/_authenticated/monitoring/loads'
       path: '/loads'
@@ -576,6 +570,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTasksIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/tasks/$graphId': {
+      id: '/_authenticated/tasks/$graphId'
+      path: '/tasks/$graphId'
+      fullPath: '/tasks/$graphId'
+      preLoaderRoute: typeof AuthenticatedTasksGraphIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/users/': {
       id: '/_authenticated/users/'
       path: '/users'
@@ -604,6 +605,7 @@ interface AuthenticatedMonitoringRouteRouteChildren {
   AuthenticatedMonitoringActiveRoute: typeof AuthenticatedMonitoringActiveRoute
   AuthenticatedMonitoringAuditRoute: typeof AuthenticatedMonitoringAuditRoute
   AuthenticatedMonitoringClusterRoute: typeof AuthenticatedMonitoringClusterRoute
+  AuthenticatedMonitoringHealthRoute: typeof AuthenticatedMonitoringHealthRoute
   AuthenticatedMonitoringLoadsRoute: typeof AuthenticatedMonitoringLoadsRoute
   AuthenticatedMonitoringTasksRoute: typeof AuthenticatedMonitoringTasksRoute
   AuthenticatedMonitoringIndexRoute: typeof AuthenticatedMonitoringIndexRoute
@@ -614,6 +616,7 @@ const AuthenticatedMonitoringRouteRouteChildren: AuthenticatedMonitoringRouteRou
     AuthenticatedMonitoringActiveRoute: AuthenticatedMonitoringActiveRoute,
     AuthenticatedMonitoringAuditRoute: AuthenticatedMonitoringAuditRoute,
     AuthenticatedMonitoringClusterRoute: AuthenticatedMonitoringClusterRoute,
+    AuthenticatedMonitoringHealthRoute: AuthenticatedMonitoringHealthRoute,
     AuthenticatedMonitoringLoadsRoute: AuthenticatedMonitoringLoadsRoute,
     AuthenticatedMonitoringTasksRoute: AuthenticatedMonitoringTasksRoute,
     AuthenticatedMonitoringIndexRoute: AuthenticatedMonitoringIndexRoute,
@@ -631,10 +634,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMigrationRoute: typeof AuthenticatedMigrationRoute
   AuthenticatedQueryCostRoute: typeof AuthenticatedQueryCostRoute
   AuthenticatedQueryHistoryRoute: typeof AuthenticatedQueryHistoryRoute
-  AuthenticatedTaskGraphsRoute: typeof AuthenticatedTaskGraphsRoute
-  AuthenticatedTasksManagerRoute: typeof AuthenticatedTasksManagerRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedRolesNameRoute: typeof AuthenticatedRolesNameRoute
+  AuthenticatedTasksGraphIdRoute: typeof AuthenticatedTasksGraphIdRoute
   AuthenticatedUsersUsernameRoute: typeof AuthenticatedUsersUsernameRoute
   AuthenticatedAiProvidersIndexRoute: typeof AuthenticatedAiProvidersIndexRoute
   AuthenticatedExternalCatalogsIndexRoute: typeof AuthenticatedExternalCatalogsIndexRoute
@@ -656,10 +658,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMigrationRoute: AuthenticatedMigrationRoute,
   AuthenticatedQueryCostRoute: AuthenticatedQueryCostRoute,
   AuthenticatedQueryHistoryRoute: AuthenticatedQueryHistoryRoute,
-  AuthenticatedTaskGraphsRoute: AuthenticatedTaskGraphsRoute,
-  AuthenticatedTasksManagerRoute: AuthenticatedTasksManagerRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedRolesNameRoute: AuthenticatedRolesNameRoute,
+  AuthenticatedTasksGraphIdRoute: AuthenticatedTasksGraphIdRoute,
   AuthenticatedUsersUsernameRoute: AuthenticatedUsersUsernameRoute,
   AuthenticatedAiProvidersIndexRoute: AuthenticatedAiProvidersIndexRoute,
   AuthenticatedExternalCatalogsIndexRoute:

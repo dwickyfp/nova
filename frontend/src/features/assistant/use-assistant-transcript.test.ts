@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { AttachedQuery } from './query-attach'
 import { transcriptReducer, type TranscriptMessage } from './use-assistant-transcript'
 import type { AssistantEvent } from './types'
 
@@ -6,7 +7,36 @@ function reduce(state: TranscriptMessage[], ...events: AssistantEvent[]) {
   return events.reduce((acc, event) => transcriptReducer(acc, { type: 'event', event }), state)
 }
 
+const attachment: AttachedQuery = {
+  id: 'att-1',
+  sql: 'SELECT 1',
+  tabId: 'tab-1',
+  fileName: 'query.sql',
+  database: 'db',
+  schema: 'default',
+  role: 'ACCOUNTADMIN',
+  startLine: 1,
+  endLine: 1,
+  createdAt: 0,
+}
+
 describe('transcriptReducer', () => {
+  it('carries attachments and the typed display text on a user message', () => {
+    const state = transcriptReducer([], {
+      type: 'user_message',
+      content: '[Attached query (file: query.sql)]\n```sql\nSELECT 1\n```\n\n---\n\ndo it',
+      attachments: [attachment],
+      displayText: 'do it',
+    })
+    expect(state[0].attachments).toEqual([attachment])
+    expect(state[0].display_text).toBe('do it')
+  })
+
+  it('leaves a user message without attachments unchanged', () => {
+    const state = transcriptReducer([], { type: 'user_message', content: 'plain' })
+    expect(state[0].attachments).toBeUndefined()
+    expect(state[0].display_text).toBeUndefined()
+  })
   it('appends text deltas into a single streaming assistant message', () => {
     const state = reduce(
       [],
@@ -65,5 +95,39 @@ describe('transcriptReducer', () => {
 
   it('ignores ping frames', () => {
     expect(reduce([], { type: 'ping' })).toEqual([])
+  })
+
+  it('collects the plan and thinking steps into one activity block', () => {
+    const state = reduce(
+      [],
+      { type: 'plan', steps: [{ id: 'understand', text: 'Understand', status: 'running' }] },
+      { type: 'thinking', phase: 'plan', text: 'Understanding', status: 'running' },
+      { type: 'thinking', phase: 'skill', text: 'Loading skill: create-table', status: 'done' }
+    )
+    expect(state).toHaveLength(1)
+    expect(state[0].role).toBe('activity')
+    expect(state[0].activity_plan?.[0].id).toBe('understand')
+    expect(state[0].activity_steps?.map((s) => s.phase)).toEqual(['plan', 'skill'])
+  })
+
+  it('keeps the activity block above the answer and updates it in place', () => {
+    const state = reduce(
+      [],
+      { type: 'thinking', phase: 'act', text: 'Working', status: 'running' },
+      { type: 'text_delta', text: 'Answer' },
+      { type: 'thinking', phase: 'answer', text: 'Writing', status: 'done' }
+    )
+    expect(state.map((m) => m.role)).toEqual(['activity', 'assistant'])
+    expect(state[0].activity_steps).toHaveLength(2)
+  })
+
+  it('settles any running activity step when the turn ends', () => {
+    const state = reduce(
+      [],
+      { type: 'thinking', phase: 'act', text: 'Working', status: 'running' },
+      { type: 'text_delta', text: 'done' },
+      { type: 'done', message_id: 'm1', finish_reason: 'stop' }
+    )
+    expect(state[0].activity_steps?.every((s) => s.status === 'done')).toBe(true)
   })
 })

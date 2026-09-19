@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetGrant } from "./thread-client";
+import { resetGrant, setGrant } from "./thread-client";
 
 vi.mock("@/stores/auth-store", () => ({
   useAuthStore: {
@@ -64,5 +64,59 @@ describe("resetGrant", () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
 
     await expect(resetGrant("thread-1")).rejects.toThrow("Failed to fetch");
+  });
+});
+
+describe("setGrant", () => {
+  it("PUTs the read-only flag and returns the backend's grant state", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ grant_active: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(setGrant("thread-1", true)).resolves.toBe(true);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/v1/assistant/threads/thread-1/grant");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({ always_allow_read_only: true });
+  });
+
+  it("url-encodes the thread id", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ grant_active: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await setGrant("thread/with space", false);
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/v1/assistant/threads/thread%2Fwith%20space/grant");
+  });
+
+  it("reports false on a 404 instead of throwing", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Thread not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(setGrant("thread-1", true)).resolves.toBe(false);
+  });
+
+  it("rejects with the backend detail on any other failure", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Not allowed" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(setGrant("thread-1", true)).rejects.toThrow("Not allowed");
   });
 });

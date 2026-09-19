@@ -109,6 +109,19 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_ENTRIES (
 DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS (
+  id          VARCHAR(64) NOT NULL,
+  entry_id    VARCHAR(64) NOT NULL,
+  user_name   VARCHAR(128) NOT NULL,
+  version     BIGINT NOT NULL,
+  object_key  VARCHAR(1024) NOT NULL,
+  size_bytes  BIGINT DEFAULT "0",
+  etag        VARCHAR(256),
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AI_PROVIDERS (
   id             VARCHAR(64) NOT NULL,
   name           VARCHAR(128) NOT NULL,
@@ -136,6 +149,31 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AI_MODELS (
   created_by     VARCHAR(128)
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+-- Assistant conversations. Persisted per user so history survives a reload;
+-- every read/write is filtered by user_name. No credential column exists here.
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS (
+    thread_id         VARCHAR(64) NOT NULL,
+    user_name         VARCHAR(128) NOT NULL,
+    title             VARCHAR(256) NOT NULL,
+    workspace_file_id VARCHAR(64),
+    created_at        DATETIME NOT NULL,
+    updated_at        DATETIME NOT NULL
+) PRIMARY KEY(thread_id)
+DISTRIBUTED BY HASH(thread_id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES (
+    message_id  VARCHAR(64) NOT NULL,
+    thread_id   VARCHAR(64) NOT NULL,
+    user_name   VARCHAR(128) NOT NULL,
+    seq         INT NOT NULL,
+    role        VARCHAR(16) NOT NULL,
+    content     TEXT,
+    created_at  DATETIME NOT NULL
+) PRIMARY KEY(message_id)
+DISTRIBUTED BY HASH(message_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_OBJECT_TAGS (
@@ -185,6 +223,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASKS (
   id             VARCHAR(64) NOT NULL,
   name           VARCHAR(256) NOT NULL,
   database_name  VARCHAR(128),
+  schema_name    VARCHAR(128),
   definition     TEXT,
   schedule_kind  VARCHAR(32) NOT NULL,
   schedule_expr  VARCHAR(256),

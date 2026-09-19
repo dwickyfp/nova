@@ -1,16 +1,16 @@
-"""In-memory assistant state (E5a) — threads, messages, and consent grants.
+"""Runtime assistant state — consent grants keyed by thread.
 
-**Nothing here is persisted.** E5a was chosen so there is no credential surface
-at rest: a conversation lives in this process only and dies on restart. The
-single-database invariant is therefore not touched (there are no
-``CONFIG_ASSISTANT_*`` tables in v1).
+Threads and messages are **persisted** in ``NOVA_SYSTEM.CONFIG_ASSISTANT_*``
+(``repository.py``), so a conversation survives a reload and is scoped per user
+in SQL. This module holds the one thing that must stay in process memory:
 
-The consequence is thread affinity: a thread created on worker A is invisible to
-worker B. v1 assumes a single web worker or sticky routing; this is stated in
-§2 of the design spec and is the revisit trigger for E5b persistence.
+* **Consent (E2b).** A read-only always-allow grant belongs to a live
+  conversation. It is deliberately ephemeral: a restart must not revive a grant,
+  so it lives here and dies with the process.
 
-Consent (E2b) lives on the thread, so it is scoped to the conversation by
-construction and is lost with it.
+``AssistantThread`` is the runtime object the loop reads (history + consent) and
+the router appends to. The router builds one from the repository for a turn and
+writes the messages back, so the loop never needs to know about the database.
 """
 
 from __future__ import annotations
@@ -71,11 +71,13 @@ class AssistantThread:
 
 
 class ThreadStore:
-    """Process-local thread store.
+    """Runtime thread/consent store.
 
-    A plain dict guarded by a lock is sufficient: v1 is single-worker (E5a) and
-    the critical sections are tiny (create/fetch/append). It is **not** an
-    attempt at durable storage.
+    Holds the live consent policy per thread. Threads and messages themselves are
+    durable in the repository; this store only keeps the ephemeral grant and is
+    registered on demand when a turn starts. A plain dict guarded by a lock is
+    sufficient: the critical sections are tiny and the value is per-process by
+    design.
     """
 
     def __init__(self) -> None:
@@ -98,6 +100,33 @@ class ThreadStore:
         with self._lock:
             self._threads[thread.thread_id] = thread
         return thread
+
+    def register(
+        self,
+        *,
+        thread_id: str,
+        user_name: str,
+        title: str,
+        workspace_file_id: str | None = None,
+    ) -> AssistantThread:
+        """Adopt a persisted thread into the runtime store (idempotent).
+
+        Called when a turn starts, so the loop has a runtime object for consent
+        even after a reload wiped the process. An existing entry is returned
+        unchanged, so a live grant is never reset by reopening the thread.
+        """
+        with self._lock:
+            existing = self._threads.get(thread_id)
+            if existing is not None and existing.user_name == user_name:
+                return existing
+            thread = AssistantThread(
+                thread_id=thread_id,
+                user_name=user_name,
+                title=title,
+                workspace_file_id=workspace_file_id,
+            )
+            self._threads[thread_id] = thread
+            return thread
 
     def get(self, thread_id: str, *, user_name: str) -> AssistantThread | None:
         """Fetch a thread, scoped to its owner.
@@ -123,6 +152,13 @@ class ThreadStore:
                 return False
             del self._threads[thread_id]
             return True
+
+    def remove(self, thread_id: str, *, user_name: str) -> None:
+        """Drop the runtime entry for a deleted thread (consent goes with it)."""
+        with self._lock:
+            thread = self._threads.get(thread_id)
+            if thread is not None and thread.user_name == user_name:
+                del self._threads[thread_id]
 
     def clear(self) -> None:
         """Test helper — drop every thread."""

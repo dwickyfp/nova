@@ -101,26 +101,39 @@ metadata. The statement is intercepted in the query pipeline and **never sent to
 the engine**; each node's `SUBMIT TASK` is built by the worker from the stored
 body at execution time.
 
+**A task is scoped to a `database.schema`, like a stage.** The task name is a
+qualified name (`database.schema.task`); the explorer shows a **Tasks** node
+under each schema, and two schemas may each hold a task of the same name without
+colliding. A graph is **single-schema**: `AFTER` / `FINALIZE` reference a bare
+task name resolved in the same `database.schema`, and a qualified parent is
+rejected rather than silently stripped. The graph id is the root's qualified
+name, so a graph run is unambiguous across schemas.
+
+> **Scope & identity.** Stored columns `CONFIG_TASKS.database_name` +
+> `schema_name`; a name that omits the scope falls back to the session's
+> database/schema. This mirrors `CONFIG_STAGES`, which is already
+> schema-scoped, and keeps the single-database rule (`NOVA_SYSTEM` owns state).
+
 ```sql
--- Cron root task (Nova cron, not an engine cron)
-CREATE TASK etl_root
+-- Cron root task in analytics.etl (Nova cron, not an engine cron)
+CREATE TASK analytics.etl.etl_root
   SCHEDULE = 'USING CRON 0 2 * * * Asia/Jakarta'
   AS INSERT OVERWRITE agg_daily SELECT * FROM staging;
 
--- Dependency edge
-CREATE TASK etl_clean
+-- Dependency edge: parent is a bare name in the same schema
+CREATE TASK analytics.etl.etl_clean
   AFTER etl_root
   AS INSERT OVERWRITE agg_clean SELECT * FROM agg_daily;
 
 -- Multiple parents and a condition
-CREATE TASK etl_join
+CREATE TASK analytics.etl.etl_join
   AFTER etl_a, etl_b
   WHEN load_count > 0
   OVERLAP_POLICY = 'QUEUE'
   AS INSERT INTO etl_log SELECT 1;
 
 -- Finalizer
-CREATE TASK etl_notify
+CREATE TASK analytics.etl.etl_notify
   FINALIZE etl_root
   AS INSERT INTO etl_log SELECT 1;
 ```
@@ -130,6 +143,7 @@ allows):
 
 | Rule | Detail |
 |---|---|
+| **Scope** | The task name is `database.schema.task`; `schema.task` uses the session database, `task` uses the session database/schema. A four-part name is rejected. |
 | **Order** | `AFTER`, `FINALIZE`, `WHEN`, `OVERLAP_POLICY`, `SCHEDULE` — any other order is rejected. |
 | **No duplicates** | Each clause appears at most once. |
 | **`SCHEDULE`** | `SCHEDULE = '<cron>'` maps to `schedule_kind="cron"`; an optional `USING CRON` prefix and an optional trailing IANA zone are accepted (`'0 2 * * * Asia/Jakarta'`). `SCHEDULE START(…) EVERY(…)` maps to `interval`. An invalid cron is rejected before anything is stored. |
@@ -137,8 +151,8 @@ allows):
 | **`FINALIZE` / `OVERLAP_POLICY` spelling** | `FINALIZE b` and `FINALIZE = b` are the same clause. |
 | **`WHEN`** | Stored verbatim, so `AND`/`OR` structure is preserved. |
 | **Body** | `CTAS | INSERT | CACHE SELECT` only; `AS SELECT` is rejected by the grammar. |
-| **Cycles** | A statement that would close a cycle in the merged graph is rejected and rolled back. |
-| **`AFTER`** | One task cannot depend on itself; a repeated parent is rejected. |
+| **Cycles** | A statement that would close a cycle in the merged graph is rejected and rolled back. Cycle detection is scoped to the task's `database.schema`. |
+| **`AFTER`** | One task cannot depend on itself; a repeated parent is rejected; a parent must be a bare name in the same schema (a qualified parent is rejected). |
 
 `OVERLAP_POLICY` values are validated against the Nova enum
 (`backend/app/modules/task_orchestration/schemas.py`); `FINALIZE` edges are stored

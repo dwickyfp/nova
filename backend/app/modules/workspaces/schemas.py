@@ -57,6 +57,24 @@ class WorkspaceFileResponse(BaseModel):
     content: str
 
 
+class WorkspaceFileVersion(BaseModel):
+    id: str
+    entry_id: str
+    version: int
+    size_bytes: int = 0
+    etag: str | None = None
+    created_at: datetime | None = None
+
+
+class WorkspaceFileVersionsResponse(BaseModel):
+    versions: list[WorkspaceFileVersion]
+
+
+class WorkspaceFileVersionResponse(BaseModel):
+    version: WorkspaceFileVersion
+    content: str
+
+
 class WorkspaceStateRequest(BaseModel):
     open_tabs: list[str] = []
     active_tab: str | None = None

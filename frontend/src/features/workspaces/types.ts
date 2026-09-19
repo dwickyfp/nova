@@ -50,6 +50,8 @@ export type QueryResponse = {
   warnings: string[]
   destructive?: boolean
   needs_confirmation?: boolean
+  /** Engine or pipeline error text when `success` is false. */
+  error?: string | null
 }
 
 export type SchemaResponse = {
@@ -92,4 +94,22 @@ export type HistoryItem = {
 export type HistoryResponse = {
   items: HistoryItem[]
   total: number
+}
+
+export type FileVersion = {
+  id: string
+  entry_id: string
+  version: number
+  size_bytes: number
+  etag: string | null
+  created_at: string | null
+}
+
+export type FileVersionsResponse = {
+  versions: FileVersion[]
+}
+
+export type FileVersionResponse = {
+  version: FileVersion
+  content: string
 }

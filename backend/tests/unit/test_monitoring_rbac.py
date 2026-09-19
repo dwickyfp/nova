@@ -122,6 +122,14 @@ class _SpyService:
         self.read_calls.append("load_stats")
         return {}
 
+    async def get_alerts(self) -> dict[str, Any]:
+        self.read_calls.append("alerts")
+        return {"summary": {}, "alerts": []}
+
+    async def get_readiness(self) -> dict[str, Any]:
+        self.read_calls.append("readiness")
+        return {"findings": [], "counts": {}, "result": "PRODUCTION_ACCEPTANCE_PENDING"}
+
 
 @pytest.fixture
 def spy(monkeypatch) -> _SpyService:
@@ -139,6 +147,8 @@ def spy(monkeypatch) -> _SpyService:
         "get_fe_metrics_summary",
         "get_data_loads",
         "get_load_stats",
+        "get_alerts",
+        "get_readiness",
     ):
         monkeypatch.setattr(monitoring_router.monitoring_service, name, getattr(service, name))
     return service
@@ -180,6 +190,8 @@ READ_ENDPOINTS = [
     ("GET", "/metrics/fe"),
     ("GET", "/loads"),
     ("GET", "/loads/stats"),
+    ("GET", "/alerts"),
+    ("GET", "/readiness"),
 ]
 
 

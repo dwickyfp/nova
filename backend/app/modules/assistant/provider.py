@@ -22,6 +22,7 @@ Credential handling, stated because it is the whole risk surface:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +35,7 @@ from app.common.ssrf_guard import (
 )
 from app.core.exceptions import NovaException
 from app.modules.ai_ml.service import ai_service
+from app.modules.assistant.streaming import StreamAccumulator, parse_sse_data_line
 
 logger = logging.getLogger(__name__)
 
@@ -84,67 +86,85 @@ class AssistantProviderClient:
             return f"{endpoint}/chat/completions"
         return f"{endpoint}/v1/chat/completions"
 
-    async def resolve(self) -> ProviderConfig:
+    async def resolve(
+        self, *, provider_id: str | None = None, model: str | None = None
+    ) -> ProviderConfig:
         """Pick the active provider/model pair.
 
-        v1 uses the first active provider that has an API key. Model selection
-        is a follow-on concern (the spec does not require per-thread model
-        choice); a provider whose key is unreadable is skipped rather than
+        Defaults to the first active provider that has an API key. A caller may
+        pin ``provider_id`` and/or ``model`` for one turn (the panel's model
+        selector); a provider whose key is unreadable is skipped rather than
         crashing the turn.
+
+        ``model`` is accepted only when it is a registered, active model of the
+        chosen provider. An unknown name is rejected here rather than sent
+        upstream, so a stale selection fails with a clear message instead of a
+        provider-side error.
         """
         providers = await ai_service.list_providers()
         for provider in providers:
             if not provider.get("is_active", True) or not provider.get("has_api_key"):
                 continue
+            if provider_id and provider["id"] != provider_id:
+                continue
             api_key = await ai_service.get_provider_api_key(provider["id"])
             if not api_key:
                 continue
-            model = await self._default_model(provider["id"])
+            resolved_model = await self._resolve_model(provider["id"], model)
             return ProviderConfig(
                 provider_id=provider["id"],
-                model=model,
+                model=resolved_model,
                 endpoint=self._chat_endpoint(provider["endpoint"]),
                 api_key=api_key,
+            )
+        if provider_id:
+            raise AssistantProviderError(
+                "The selected AI provider is not available. "
+                "Pick another model or provider in the assistant panel."
             )
         raise AssistantProviderError(
             "No active AI provider with an API key is configured. "
             "Add one under AI Providers before using the assistant."
         )
 
-    async def _default_model(self, provider_id: str) -> str:
-        """First active model for the provider, else a conservative default.
+    async def _resolve_model(self, provider_id: str, requested: str | None) -> str:
+        """First active model, or the caller's choice when it is registered.
 
-        The default name is a fallback only; a provider that has registered
-        models should always resolve one, and the provider itself rejects an
-        unknown model with a clear error if the fallback is wrong.
+        A provider that has no registered models falls back to a conservative
+        default name; the provider itself then rejects it with a clear error.
         """
         models = await ai_service.list_models(provider_id)
-        for model in models:
-            if model.get("is_active", True):
-                return model["name"]
+        active = [m["name"] for m in models if m.get("is_active", True)]
+        if requested:
+            if requested not in active:
+                raise AssistantProviderError(
+                    "The selected model is not available for this provider. "
+                    "Pick another model in the assistant panel."
+                )
+            return requested
+        if active:
+            return active[0]
         return "gpt-4o-mini"
 
-    async def complete(
-        self,
-        *,
+    @staticmethod
+    def _request_body(
+        config: ProviderConfig,
         messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        provider: ProviderConfig | None = None,
+        tools: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
-        """One chat-completions call. Returns the raw assistant message dict.
-
-        ``messages`` must already contain only content that is safe to send:
-        redacted SQL, no credentials. This method does not redact — the caller
-        owns context construction.
-        """
-        config = provider or await self.resolve()
-        body: dict[str, Any] = {
-            "model": config.model,
-            "messages": messages,
-        }
+        body: dict[str, Any] = {"model": config.model, "messages": messages}
         if tools:
             body["tools"] = tools
+        return body
 
+    @staticmethod
+    def _headers(config: ProviderConfig) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {config.api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _validate_endpoint(self, config: ProviderConfig) -> None:
         # The endpoint is a stored config value, not a literal the caller
         # controls, so it is validated here before the request as well as at
         # write time. The guard's transport re-checks every redirect hop, so a
@@ -161,15 +181,40 @@ class AssistantProviderClient:
                 "AI provider endpoint is not allowed: it must be a public http(s) URL"
             ) from None
 
+    def _raise_for_status(self, response: httpx.Response, config: ProviderConfig) -> None:
+        if response.status_code >= 400:
+            # The status is safe; the body may echo the request, so it is not
+            # put in the message (it goes to the debug log only, key-free).
+            logger.warning(
+                "Assistant provider call returned HTTP %s (provider=%s)",
+                response.status_code,
+                config.provider_id,
+            )
+            raise AssistantProviderError(
+                f"AI provider returned HTTP {response.status_code}"
+            )
+
+    async def complete(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        provider: ProviderConfig | None = None,
+    ) -> dict[str, Any]:
+        """One non-streaming chat-completions call. Returns the assistant message.
+
+        ``messages`` must already contain only content that is safe to send:
+        redacted SQL, no credentials. This method does not redact — the caller
+        owns context construction.
+        """
+        config = provider or await self.resolve()
+        body = self._request_body(config, messages, tools)
+        self._validate_endpoint(config)
+
         try:
             async with guarded_async_client(timeout=self._timeout) as client:
                 response = await client.post(
-                    config.endpoint,
-                    headers={
-                        "Authorization": f"Bearer {config.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=body,
+                    config.endpoint, headers=self._headers(config), json=body
                 )
         except BlockedEndpointError:
             # A redirect hop was refused by the guarded transport.
@@ -186,17 +231,7 @@ class AssistantProviderClient:
                 f"AI provider request failed: {type(exc).__name__}"
             ) from exc
 
-        if response.status_code >= 400:
-            # The status is safe; the body may echo the request, so it is not
-            # put in the message (it goes to the debug log only, key-free).
-            logger.warning(
-                "Assistant provider call returned HTTP %s (provider=%s)",
-                response.status_code,
-                config.provider_id,
-            )
-            raise AssistantProviderError(
-                f"AI provider returned HTTP {response.status_code}"
-            )
+        self._raise_for_status(response, config)
 
         try:
             payload = response.json()
@@ -205,6 +240,63 @@ class AssistantProviderClient:
             raise AssistantProviderError(
                 "AI provider returned an unexpected response shape"
             ) from exc
+
+    async def stream(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        provider: ProviderConfig | None = None,
+    ) -> AsyncIterator[tuple[str, Any]]:
+        """One streaming chat-completions call.
+
+        Yields ``("delta", text)`` for each content fragment as it arrives, then
+        exactly one ``("message", dict)`` with the assembled assistant message
+        (the same shape ``complete`` returns). Tool calls are accumulated from
+        their fragmented deltas and only surfaced in that final message, because
+        a tool call is not actionable until its arguments are complete.
+
+        Raises ``AssistantProviderError`` for any transport or status failure;
+        the caller maps that to an ``error`` frame.
+        """
+        config = provider or await self.resolve()
+        body = self._request_body(config, messages, tools)
+        body["stream"] = True
+        self._validate_endpoint(config)
+
+        accumulator = StreamAccumulator()
+        try:
+            async with (
+                guarded_async_client(timeout=self._timeout) as client,
+                client.stream(
+                    "POST",
+                    config.endpoint,
+                    headers=self._headers(config),
+                    json=body,
+                ) as response,
+            ):
+                self._raise_for_status(response, config)
+                async for line in response.aiter_lines():
+                    payload = parse_sse_data_line(line)
+                    if payload is None:
+                        continue
+                    text = accumulator.feed(payload)
+                    if text:
+                        yield ("delta", text)
+        except BlockedEndpointError:
+            logger.warning(
+                "Blocked assistant call redirect to a non-public address (provider=%s)",
+                config.provider_id,
+            )
+            raise AssistantProviderError(
+                "AI provider endpoint is not allowed: it must be a public http(s) URL"
+            ) from None
+        except httpx.HTTPError as exc:
+            raise AssistantProviderError(
+                f"AI provider request failed: {type(exc).__name__}"
+            ) from exc
+
+        yield ("message", accumulator.message())
 
 
 assistant_provider = AssistantProviderClient()

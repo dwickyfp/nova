@@ -9,7 +9,8 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    status: str  # "AUTHENTICATED" | "SETUP_REQUIRED"
+    # "AUTHENTICATED" | "SETUP_REQUIRED" | "PASSWORD_CHANGE_REQUIRED"
+    status: str
     access_token: str | None = None
     token_type: str = "bearer"
     user: str | None = None
@@ -39,6 +40,10 @@ class SessionInfo(BaseModel):
     roles: list[str]
     active_role: str | None = None
     session_id: str
+    #: True when the user must set a new password before using Nova. The UI
+    #: routes them to the change-password screen on load if this is set, so a
+    #: reload cannot skip the requirement.
+    must_change_password: bool = False
 
 
 class SwitchRoleRequest(BaseModel):

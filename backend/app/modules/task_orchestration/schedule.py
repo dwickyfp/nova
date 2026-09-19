@@ -289,3 +289,89 @@ def latest_occurrence(
         return candidate.astimezone(ZoneInfo("UTC"))
 
     raise ScheduleError(f"unsupported schedule kind: {schedule_kind!r}")
+
+
+#: The most occurrences one catch-up (backfill) may emit for one root.
+#: Bounded so a task whose scheduler was down for a long time cannot enqueue an
+#: unbounded backlog in a single tick. The **newest** ``MAX_CATCH_UP_OCCURRENCES``
+#: missed fires are emitted and older ones are dropped, so the task converges to
+#: the present rather than replaying ancient history. Five covers a short outage
+#: (a few missed fires) without a burst of runs for a task anchored long ago.
+MAX_CATCH_UP_OCCURRENCES = 5
+
+
+def due_occurrences(
+    schedule_kind: str,
+    schedule_expr: str,
+    timezone: str,
+    anchor: datetime,
+    now: datetime,
+    *,
+    limit: int = MAX_CATCH_UP_OCCURRENCES,
+) -> list[datetime]:
+    """Every scheduled fire at or before ``now``, at or after ``anchor``.
+
+    The scheduler's due-time watermark is derived, not stored (a task's
+    ``created_at`` is the anchor), so a tick that arrives late must be able to
+    fire the occurrences it missed — not only the most recent one. This returns
+    the missed occurrences in ascending order, capped at ``limit``; when the
+    backlog exceeds the cap the **newest** ``limit`` occurrences are returned
+    (the oldest are dropped) so the task catches up to the present rather than
+    replaying ancient history.
+
+    ``latest_occurrence`` is exactly the last element of this list, kept as a
+    separate function because it is the common, cheap case. Both ``anchor`` and
+    ``now`` must be timezone-aware; results are UTC instants.
+    """
+    if anchor.tzinfo is None or now.tzinfo is None:
+        raise ScheduleError("anchor and now must be timezone-aware")
+
+    kind = (schedule_kind or "").lower()
+    if kind == "manual":
+        return []
+
+    if limit <= 0:
+        return []
+
+    zone = resolve_timezone(timezone)
+    local_now = now.astimezone(zone)
+    local_anchor = anchor.astimezone(zone)
+    if local_now < local_anchor:
+        return []
+
+    if kind == "cron":
+        iterator = parse_cron(schedule_expr)
+        # ``get_prev`` is strictly before its reference, so anchor the walk one
+        # microsecond past ``now`` to include a fire exactly at ``now``.
+        cursor = local_now + timedelta(microseconds=1)
+        raw: list[datetime] = []
+        # Walk backwards; stop as soon as we fall below the anchor or hit the
+        # cap. Walking back from ``now`` is what makes the cap keep the newest.
+        while len(raw) < limit:
+            candidate = iterator.get_prev(datetime, start_time=cursor)
+            if candidate is None or candidate < local_anchor:
+                break
+            raw.append(candidate)
+            # ``get_prev`` is strictly-before, so step back past this hit.
+            cursor = candidate.replace(microsecond=0) - timedelta(seconds=1)
+        raw.reverse()
+        return [c.astimezone(ZoneInfo("UTC")) for c in raw]
+
+    if kind == "interval":
+        interval = parse_interval(schedule_expr)
+        step = interval.resolve(local_anchor)
+        if step <= timedelta(0):
+            return []
+        elapsed = local_now - local_anchor
+        count = elapsed // step
+        if count < 1:
+            return []
+        # Occurrences are anchor + k*step for k in [1, count]. Keep the newest
+        # ``limit`` of them.
+        first_k = max(1, int(count) - limit + 1)
+        return [
+            (local_anchor + k * step).astimezone(ZoneInfo("UTC"))
+            for k in range(first_k, int(count) + 1)
+        ]
+
+    raise ScheduleError(f"unsupported schedule kind: {schedule_kind!r}")
