@@ -108,7 +108,7 @@ def test_permission_error_retries_under_fallback_role(monkeypatch, grant_roles):
     client = _client(monkeypatch, roles=["ROLE_A", "ROLE_B"], active_role="ROLE_A", engine=engine)
 
     payload = client.post(
-        EXECUTE_ENDPOINT, json={"sql": f"INSERT INTO db_b.t VALUES (1)"}
+        EXECUTE_ENDPOINT, json={"sql": "INSERT INTO db_b.t VALUES (1)"}
     ).json()
 
     assert payload[0]["success"] is True
@@ -209,7 +209,9 @@ def test_least_privilege_role_wins(monkeypatch, grant_roles):
             "ROLE_C": [("INSERT", "db_b"), ("DROP", "db_b"), ("ALTER", "db_b")],
         },
     )
-    client = _client(monkeypatch, roles=["ROLE_A", "ROLE_B", "ROLE_C"], active_role="ROLE_A", engine=engine)
+    client = _client(
+        monkeypatch, roles=["ROLE_A", "ROLE_B", "ROLE_C"], active_role="ROLE_A", engine=engine
+    )
 
     client.post(EXECUTE_ENDPOINT, json={"sql": "INSERT INTO db_b.t VALUES (1)"})
 

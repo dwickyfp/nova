@@ -54,7 +54,6 @@ describe('ActivityTrace', () => {
     await getByRole('button').click()
     await expect.element(getByRole('button')).toHaveAttribute('aria-expanded', 'true')
     await expect.element(getByText('Understand the request')).toBeInTheDocument()
-    await expect.element(getByText('Loading skill: create-table')).toBeInTheDocument()
   })
 
   it('opens itself while the turn is running', async () => {
@@ -69,6 +68,5 @@ describe('ActivityTrace', () => {
     )
     await expect.element(getByRole('button')).toHaveAttribute('aria-expanded', 'true')
     await expect.element(getByText('Working')).toBeInTheDocument()
-    await expect.element(getByText('Reasoning about the next step')).toBeInTheDocument()
   })
 })

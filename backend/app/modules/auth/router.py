@@ -1,10 +1,11 @@
 """Auth API router — login, logout, setup, session info."""
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 
 from app.common.user_flags import is_must_change_password
 from app.core.deps import get_current_user
-from app.core.redis import session_store
 from app.modules.auth.schemas import (
     ChangePasswordRequest,
     LoginRequest,
@@ -17,6 +18,10 @@ from app.modules.auth.schemas import (
 from app.modules.auth.service import auth_service
 
 router = APIRouter()
+
+#: ``Annotated`` dependency alias (the tree's convention; a ``Depends()`` in an
+#: argument default trips ruff B008).
+CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -32,7 +37,7 @@ async def login(req: LoginRequest):
 @router.post("/setup", response_model=SetupResponse)
 async def setup(
     req: SetupRequest,
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
 ):
     """First-login setup: change the nova_admin password.
 
@@ -50,7 +55,7 @@ async def setup(
 @router.post("/change-password")
 async def change_password(
     req: ChangePasswordRequest,
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
 ):
     """Change password for the authenticated user."""
     result = await auth_service.change_password(
@@ -63,14 +68,14 @@ async def change_password(
 
 
 @router.post("/logout")
-async def logout(user: dict = Depends(get_current_user)):
+async def logout(user: CurrentUser):
     """Delete the current session."""
     await auth_service.logout(user["session_id"])
     return {"status": "LOGGED_OUT"}
 
 
 @router.get("/me", response_model=SessionInfo)
-async def get_me(user: dict = Depends(get_current_user)):
+async def get_me(user: CurrentUser):
     """Get current session info.
 
     ``must_change_password`` is read here too, so a reload after a forced-change
@@ -88,7 +93,7 @@ async def get_me(user: dict = Depends(get_current_user)):
 @router.post("/switch-role")
 async def switch_role(
     req: SwitchRoleRequest,
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
 ):
     """Switch active role in the current session."""
     result = await auth_service.switch_role(user["session_id"], req.role)

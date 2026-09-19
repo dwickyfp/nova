@@ -1,6 +1,7 @@
 """Query API router — execute SQL, explain, query history."""
 
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -14,6 +15,10 @@ from app.core.deps import get_current_user
 from app.modules.query.service import query_service
 
 router = APIRouter()
+
+#: ``Annotated`` dependency alias (the tree's convention; a ``Depends()`` in an
+#: argument default trips ruff B008).
+CurrentUser = Annotated[dict, Depends(get_current_user)]
 
 #: Re-exported for the query-response contract described in AGENTS.md §2: the
 #: class moved to ``app/common/responses`` so the global exception handler can
@@ -93,7 +98,7 @@ class CompletionResponse(BaseModel):
 )
 async def execute_query(
     req: QueryRequest,
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
 ):
     """Execute one or more SQL statements (split by `;`).
 
@@ -151,7 +156,7 @@ async def execute_query(
 )
 async def explain_query(
     req: QueryRequest,
-    user: dict = Depends(get_current_user),
+    user: CurrentUser,
 ):
     """Get the EXPLAIN plan for a SQL statement.
 
@@ -184,7 +189,7 @@ async def explain_query(
 
 
 @router.get("/context")
-async def get_query_context(user: dict = Depends(get_current_user)):
+async def get_query_context(user: CurrentUser):
     return await query_service.get_context(
         username=user["username"],
         encrypted_password=user["encrypted_password"],
@@ -195,6 +200,7 @@ async def get_query_context(user: dict = Depends(get_current_user)):
 @router.get("/completions", response_model=CompletionResponse)
 async def get_query_completions(
     kind: str,
+    user: CurrentUser,
     prefix: str = "",
     database: str | None = None,
     schema: str | None = None,
@@ -202,7 +208,6 @@ async def get_query_completions(
     table: str | None = None,
     stage: str | None = None,
     folder: str | None = None,
-    user: dict = Depends(get_current_user),
 ):
     result = await query_service.get_completions(
         username=user["username"],
@@ -244,6 +249,7 @@ class HistoryResponse(BaseModel):
 
 @router.get("/history", response_model=HistoryResponse)
 async def get_query_history(
+    user: CurrentUser,
     file_id: str | None = None,
     status: str | None = None,
     limit: int = 50,
@@ -254,7 +260,6 @@ async def get_query_history(
     date_to: str | None = None,
     min_duration_ms: int | None = None,
     user_name: str | None = None,
-    user: dict = Depends(get_current_user),
 ):
     """Get query execution history for the current user.
 
@@ -288,6 +293,7 @@ class HistoryStatsResponse(BaseModel):
 
 @router.get("/history/stats", response_model=HistoryStatsResponse)
 async def get_query_history_stats(
+    user: CurrentUser,
     file_id: str | None = None,
     status: str | None = None,
     search: str | None = None,
@@ -296,7 +302,6 @@ async def get_query_history_stats(
     date_to: str | None = None,
     min_duration_ms: int | None = None,
     user_name: str | None = None,
-    user: dict = Depends(get_current_user),
 ):
     """Get aggregate statistics for query execution history.
 

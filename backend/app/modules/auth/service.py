@@ -12,7 +12,7 @@ from app.common.user_flags import (
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
-from app.core.security import create_access_token, decrypt_password, encrypt_password
+from app.core.security import create_access_token, encrypt_password
 from app.modules.auth.exceptions import (
     DefaultPasswordError,
     InvalidCredentialsError,
@@ -197,7 +197,9 @@ class AuthService:
             "active_role": requested_role,
         }
 
-    async def setup(self, username: str, session_id: str, new_password: str, confirm_password: str) -> dict:
+    async def setup(
+        self, username: str, session_id: str, new_password: str, confirm_password: str
+    ) -> dict:
         """First-login setup: change admin password.
 
         Only nova_admin can run setup. Only works before setup is marked complete.
@@ -226,7 +228,7 @@ class AuthService:
             # Delete old session, create new with updated password
             roles = session["roles"]
             await session_store.delete(session_id)
-            new_session_id = await session_store.create("nova_admin", enc_password, roles)
+            await session_store.create("nova_admin", enc_password, roles)
             # Note: caller should issue new JWT with new session_id
 
         # Mark setup complete
