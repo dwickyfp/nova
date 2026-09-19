@@ -40,6 +40,14 @@ const AssistantContext = createContext<AssistantContextType | null>(null)
 
 const EMPTY_CONTEXT: TurnContext = { database: null, schema: null, role: null }
 
+/**
+ * Stable identity for the conversation that is not bound to a workspace file.
+ * It must not be `null`, because the workspace uses `null` for "no file open";
+ * a sentinel keeps the global conversation distinct from that state and
+ * unbroken as the user moves between pages.
+ */
+export const GLOBAL_ASSISTANT_BINDING_KEY = '__global__'
+
 export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpenState] = useState(false)
   const [binding, setBindingState] = useState<AssistantBinding | null>(null)
@@ -64,13 +72,16 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const treeContext = tree?.defaults
 
   /**
-   * The binding used outside the workspace. Threads do not require a file, so a
-   * file-less thread with the tree's default database/schema/role keeps the
-   * composer live on every route instead of aborting the send.
+   * The binding used whenever no workspace file is bound, so the panel works on
+   * every route. Threads do not require a file, so this creates a file-less
+   * thread with the tree's default database/schema/role. The turn driver caches
+   * the thread for the life of the conversation and only calls `ensureThread`
+   * when none is set, so a new conversation gets a new thread without this
+   * closure having to hold one across binding changes.
    */
   const defaultBinding = useMemo<AssistantBinding>(
     () => ({
-      key: null,
+      key: GLOBAL_ASSISTANT_BINDING_KEY,
       context: treeContext ?? EMPTY_CONTEXT,
       ensureThread: () => createThread(null).then((thread) => thread.thread_id),
     }),

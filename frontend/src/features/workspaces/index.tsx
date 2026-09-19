@@ -656,8 +656,15 @@ export function WorkspacesPage() {
   const assistantOnError = useCallback((message: string) => toast.error(message), [])
 
   // The global panel owns open/closed and the conversation; the workspace
-  // supplies only the per-file binding (thread + active tab context).
+  // supplies only the per-file binding (thread + active tab context). With no
+  // file open the binding is cleared so the provider's global conversation
+  // applies, instead of the workspace claiming the global key and inheriting a
+  // closed file's transcript.
   useEffect(() => {
+    if (!activeTabId) {
+      setBinding(null)
+      return
+    }
     setBinding({
       key: activeTabId,
       context: assistantContext,

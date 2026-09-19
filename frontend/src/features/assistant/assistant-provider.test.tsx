@@ -44,6 +44,7 @@ function Probe() {
       <span data-testid='open'>{String(open)}</span>
       <span data-testid='collapsed'>{String(collapsedToPersist())}</span>
       <span data-testid='thread'>{conversation.threadId ?? 'none'}</span>
+      <span data-testid='messages'>{conversation.messages.length}</span>
       <button type='button' onClick={toggle}>
         toggle
       </button>
@@ -240,5 +241,131 @@ describe('AssistantProvider', () => {
     expect(JSON.parse(String((messages?.[1] as RequestInit).body))).toMatchObject({
       database: 'tab_db',
     })
+  })
+})
+
+/**
+ * Mocks the tree, file-less thread creation and the SSE turn, so a test can
+ * drive a global conversation and switch to a file binding and back.
+ */
+function mockFullApi() {
+  let threadSeq = 0
+  const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input)
+    if (url.includes('/workspaces/tree')) {
+      return new Response(JSON.stringify(makeTree()), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    if (url.endsWith('/assistant/threads')) {
+      threadSeq += 1
+      return new Response(
+        JSON.stringify({
+          thread_id: `thread-${threadSeq}`,
+          title: 't',
+          workspace_file_id: null,
+          created_at: '2026-09-19T00:00:00Z',
+          updated_at: '2026-09-19T00:00:00Z',
+          message_count: 0,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+    if (url.endsWith('/messages')) {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'event: text_delta\ndata: {"text":"ok"}\n\nevent: done\ndata: {"message_id":"m","finish_reason":"stop"}\n\n'
+            )
+          )
+          controller.close()
+        },
+      })
+      return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    }
+    return new Response(null, { status: 204 })
+  })
+  return { spy, threadCount: () => threadSeq }
+}
+
+function NavigationProbe() {
+  const { setBinding, conversation } = useAssistant()
+  return (
+    <div>
+      <span data-testid='messages'>{conversation.messages.length}</span>
+      <span data-testid='thread'>{conversation.threadId ?? 'none'}</span>
+      <button
+        type='button'
+        onClick={() =>
+          setBinding({
+            key: 'file-1',
+            context: { database: 'tab_db', schema: null, role: null },
+            ensureThread: async () => 'file-thread',
+          })
+        }
+      >
+        open-file
+      </button>
+      <button type='button' onClick={() => setBinding(null)}>
+        no-file
+      </button>
+      <button type='button' onClick={() => void conversation.sendMessage('hi')}>
+        send
+      </button>
+    </div>
+  )
+}
+
+describe('AssistantProvider binding identity', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('keeps one global conversation while moving between non-workspace routes', async () => {
+    const api = mockFullApi()
+    const { getByTestId, getByRole } = await render(
+      <QueryClientProvider client={makeClient()}>
+        <AssistantProvider>
+          <NavigationProbe />
+        </AssistantProvider>
+      </QueryClientProvider>
+    )
+
+    await getByRole('button', { name: 'send' }).click()
+    await vi.waitFor(() => expect(getByTestId('messages').element().textContent).toBe('2'))
+
+    // A route change with no workspace file re-renders the same global binding,
+    // so the transcript is not reset and no second thread is created.
+    await vi.waitFor(() => expect(api.threadCount()).toBe(1))
+    await expect.element(getByTestId('messages')).toHaveTextContent('2')
+    expect(api.threadCount()).toBe(1)
+  })
+
+  it('resets when a workspace file binding replaces the global one, and back', async () => {
+    const api = mockFullApi()
+    const { getByTestId, getByRole } = await render(
+      <QueryClientProvider client={makeClient()}>
+        <AssistantProvider>
+          <NavigationProbe />
+        </AssistantProvider>
+      </QueryClientProvider>
+    )
+
+    await getByRole('button', { name: 'send' }).click()
+    await vi.waitFor(() => expect(getByTestId('messages').element().textContent).toBe('2'))
+
+    await getByRole('button', { name: 'open-file' }).click()
+    await expect.element(getByTestId('messages')).toHaveTextContent('0')
+
+    await getByRole('button', { name: 'no-file' }).click()
+    await expect.element(getByTestId('messages')).toHaveTextContent('0')
+    await expect.element(getByTestId('thread')).toHaveTextContent('none')
+
+    // The next send starts a fresh global conversation, not the file's.
+    await getByRole('button', { name: 'send' }).click()
+    await vi.waitFor(() => expect(getByTestId('messages').element().textContent).toBe('2'))
+    expect(api.threadCount()).toBe(2)
   })
 })
