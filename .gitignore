@@ -45,6 +45,9 @@ htmlcov/
 # Docker volumes
 docker/data/
 
+# Local dev process logs (dev.sh)
+.dev-logs/
+
 # ANTLR generator jar, downloaded on demand by backend/scripts/generate_grammar.sh.
 # Build-time only; never a runtime dependency.
 .antlr/

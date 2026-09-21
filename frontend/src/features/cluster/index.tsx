@@ -4,7 +4,10 @@ import {
   Activity,
   AlertCircle,
   AlertTriangle,
+  CalendarClock,
   CheckCircle2,
+  Cpu,
+  Database,
   Gauge,
   RefreshCw,
   Server,
@@ -28,10 +31,13 @@ import {
   countAlive,
   fetchFeMetrics,
   fetchNodes,
+  fetchRuntimeHealth,
   hasAnyMetric,
   metricValue,
   successRate,
   type NodeRow,
+  type RuntimeHealthResponse,
+  type RuntimeHealthStatus,
 } from './api'
 
 function formatNumber(value: number | null | undefined) {
@@ -55,6 +61,127 @@ function nodeStatusLabel(node: NodeRow) {
   if (node.alive === true) return 'Alive'
   if (node.alive === false) return 'Down'
   return 'Unknown'
+}
+
+function runtimeStatusTone(status: RuntimeHealthStatus) {
+  if (status === 'healthy') return 'success' as const
+  if (status === 'unhealthy') return 'danger' as const
+  return 'warning' as const
+}
+
+function runtimeStatusLabel(status: RuntimeHealthStatus) {
+  if (status === 'healthy') return 'Healthy'
+  if (status === 'unhealthy') return 'Unhealthy'
+  return 'Unknown'
+}
+
+export function RuntimeHealthPanel({
+  data,
+  isLoading,
+  isError,
+  onRetry,
+}: {
+  data: RuntimeHealthResponse | undefined
+  isLoading: boolean
+  isError: boolean
+  onRetry: () => void
+}) {
+  const services = data
+    ? [
+        { label: 'Redis', health: data.redis, icon: Database },
+        {
+          label: 'Nova scheduler',
+          health: data.scheduler,
+          icon: CalendarClock,
+        },
+        { label: 'Nova worker', health: data.worker, icon: Cpu },
+      ]
+    : []
+  const unhealthy = services.filter(
+    ({ health }) => health.status === 'unhealthy',
+  ).length
+  const unknown = services.filter(
+    ({ health }) => health.status === 'unknown',
+  ).length
+  const summary =
+    unhealthy > 0
+      ? {
+          tone: 'danger' as const,
+          label:
+            unhealthy === 1
+              ? '1 service needs attention'
+              : `${unhealthy} services need attention`,
+        }
+      : unknown > 0
+        ? { tone: 'warning' as const, label: `${unknown} unknown` }
+        : { tone: 'success' as const, label: 'All healthy' }
+
+  return (
+    <section className='rounded-xl border border-border bg-surface-2'>
+      <div className='flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4'>
+        <div>
+          <h2 className='text-sm font-medium'>Nova services</h2>
+          <p className='mt-1 text-xs text-muted-foreground'>
+            Redis and the standalone processes used by task orchestration.
+          </p>
+        </div>
+        {!isLoading && !isError && data ? (
+          <StatusBadge tone={summary.tone}>{summary.label}</StatusBadge>
+        ) : null}
+      </div>
+
+      {isLoading ? (
+        <div className='px-5 py-4'>
+          <LoadingLines rows={3} />
+        </div>
+      ) : isError ? (
+        <div className='px-5 py-4'>
+          <EmptyState
+            variant='error'
+            icon={AlertCircle}
+            title='Could not check Nova services'
+            description='The runtime health endpoint did not respond. Existing cluster data remains available.'
+            action={
+              <Button variant='outline' size='sm' onClick={onRetry}>
+                Retry
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+        <div className='divide-y divide-border'>
+          {services.map(({ label, health, icon: Icon }) => (
+            <div
+              key={label}
+              className='flex flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between'
+            >
+              <div className='flex min-w-0 items-start gap-3'>
+                <span
+                  aria-hidden='true'
+                  className='flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground'
+                >
+                  <Icon className='size-4' />
+                </span>
+                <div className='min-w-0'>
+                  <p className='text-sm font-medium'>{label}</p>
+                  <p className='mt-0.5 text-xs text-muted-foreground'>
+                    {health.message}
+                  </p>
+                </div>
+              </div>
+              <StatusBadge
+                className='ms-11 sm:ms-0'
+                tone={runtimeStatusTone(health.status)}
+                dot
+              >
+                {runtimeStatusLabel(health.status)}
+              </StatusBadge>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
 }
 
 function NodeTable({
@@ -136,7 +263,9 @@ function NodeTable({
                   key={`${node.host}-${node.port}-${index}`}
                   className='border-b border-border last:border-0'
                 >
-                  <td className='px-5 py-2.5 font-mono text-xs'>{node.host || '-'}</td>
+                  <td className='px-5 py-2.5 font-mono text-xs'>
+                    {node.host || '-'}
+                  </td>
                   <td className='px-5 py-2.5'>
                     {node.role ? (
                       <Badge variant='secondary'>{node.role}</Badge>
@@ -185,6 +314,11 @@ export function ClusterMonitorPage() {
     queryKey: ['cluster', 'fe-metrics'],
     queryFn: fetchFeMetrics,
   })
+  const runtimeHealthQuery = useQuery({
+    queryKey: ['cluster', 'runtime-health'],
+    queryFn: fetchRuntimeHealth,
+    refetchInterval: 15_000,
+  })
 
   useEffect(() => {
     if (metricsQuery.error) {
@@ -201,7 +335,10 @@ export function ClusterMonitorPage() {
   const backends = backendsQuery.data ?? []
 
   const isRefreshing =
-    frontendsQuery.isFetching || backendsQuery.isFetching || metricsQuery.isFetching
+    frontendsQuery.isFetching ||
+    backendsQuery.isFetching ||
+    metricsQuery.isFetching ||
+    runtimeHealthQuery.isFetching
 
   return (
     <div className='space-y-6'>
@@ -217,12 +354,22 @@ export function ClusterMonitorPage() {
               void frontendsQuery.refetch()
               void backendsQuery.refetch()
               void metricsQuery.refetch()
+              void runtimeHealthQuery.refetch()
             }}
           >
-            <RefreshCw className={cn('me-1.5 size-4', isRefreshing && 'animate-spin')} />
+            <RefreshCw
+              className={cn('me-1.5 size-4', isRefreshing && 'animate-spin')}
+            />
             Refresh
           </Button>
         }
+      />
+
+      <RuntimeHealthPanel
+        data={runtimeHealthQuery.data}
+        isLoading={runtimeHealthQuery.isLoading}
+        isError={runtimeHealthQuery.isError}
+        onRetry={() => void runtimeHealthQuery.refetch()}
       />
 
       <section>
@@ -238,7 +385,11 @@ export function ClusterMonitorPage() {
             title='Could not load frontend metrics'
             description='The monitoring endpoint did not respond. Node inventory below is unaffected.'
             action={
-              <Button variant='outline' size='sm' onClick={() => void metricsQuery.refetch()}>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => void metricsQuery.refetch()}
+              >
                 Retry
               </Button>
             }
@@ -294,13 +445,17 @@ export function ClusterMonitorPage() {
             <MetricCard
               weight='compact'
               label='p95 latency'
-              value={formatLatency(metricValue(metrics, 'query_latency_95th_ms'))}
+              value={formatLatency(
+                metricValue(metrics, 'query_latency_95th_ms'),
+              )}
               icon={Gauge}
             />
             <MetricCard
               weight='compact'
               label='p99 latency'
-              value={formatLatency(metricValue(metrics, 'query_latency_99th_ms'))}
+              value={formatLatency(
+                metricValue(metrics, 'query_latency_99th_ms'),
+              )}
               icon={Gauge}
             />
           </div>

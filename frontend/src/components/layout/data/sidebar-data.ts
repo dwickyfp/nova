@@ -1,11 +1,14 @@
 import {
   Bot,
   Brain,
+  Blocks,
+  BookOpen,
   Clock,
   Database,
   House,
   ListTodo,
   Shield,
+  Sparkles,
   SquareChartGantt,
   TrendingUp,
   Upload,
@@ -17,6 +20,7 @@ import {
   Server,
   Settings,
   ShieldAlert,
+  Wrench,
 } from 'lucide-react';
 import { type SidebarData } from '../types';
 
@@ -58,6 +62,35 @@ export const sidebarData: SidebarData = {
               title: 'ML Models',
               url: '/ml-models',
               icon: Brain,
+            },
+            {
+              title: 'Agent',
+              url: '/agents',
+              icon: Bot,
+            },
+            {
+              title: 'Semantic',
+              url: '/agents/semantic',
+              icon: Blocks,
+            },
+            {
+              title: 'Skills',
+              url: '/agents/skills',
+              icon: BookOpen,
+            },
+            {
+              title: 'Tools',
+              url: '/agents/tools',
+              icon: Wrench,
+            },
+            {
+              title: 'Nova Studio',
+              url: '/studio',
+              icon: Sparkles,
+              // A full-page standalone surface: open it in a new tab so the
+              // console keeps its current page, the way Snowflake CoWork opens
+              // separately.
+              newTab: true,
             },
           ],
         },

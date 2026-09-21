@@ -23,8 +23,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.modules.migration.chunk_planner import ChunkStrategy, TableChunk
+
 #: A bare identifier, used to validate column names read from the source.
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+
+#: A date/datetime literal the planner may emit. Bounds come from engine
+#: statistics, but they are validated anyway: a bound is interpolated into SQL,
+#: so only a recognisable literal is allowed through.
+_DATE_LITERAL = re.compile(r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}:\d{2}(\.\d+)?)?$")
 
 #: Numeric types StarRocks can SUM for the digest. A column outside this set is
 #: skipped by the digest rather than cast (a cast could change the value or fail
@@ -58,6 +65,48 @@ def is_numeric_type(data_type: str) -> bool:
     """Whether a StarRocks column type can feed the SUM digest."""
     normalized = (data_type or "").strip().lower()
     return normalized.startswith(_NUMERIC_TYPE_PREFIXES)
+
+
+def _sql_literal(value: object) -> str:
+    """Render a chunk bound as a safe SQL literal.
+
+    Numbers pass through; a date/datetime-shaped string is quoted; anything else
+    is refused, because the bound is interpolated into a predicate and a value
+    that is not a known literal shape is a bug, not a query to guess at.
+    """
+    if isinstance(value, bool):
+        raise DataMovementError("Boolean chunk bound is not supported")
+    if isinstance(value, (int, float)):
+        return repr(value)
+    text = str(value)
+    if _DATE_LITERAL.match(text):
+        return f"'{text}'"
+    raise DataMovementError(f"Unsafe chunk bound: {value!r}")
+
+
+def chunk_predicate(chunk: TableChunk, key_column: str) -> str:
+    """The ``WHERE`` predicate selecting one chunk's rows.
+
+    Only ``KEY_RANGE`` produces a predicate, because it is the only strategy
+    whose bound is a column expression; ``PARTITION`` selection is done by the
+    engine at read time and ``LIMIT``/``SINGLE`` carry no filter. The key column
+    is validated through :func:`quote`, so a chunk cannot inject an identifier.
+
+    Bounds are half-open: ``lower`` inclusive, ``upper`` exclusive, matching
+    :class:`~app.modules.migration.chunk_planner.TableChunk`. A ``None`` bound is
+    unbounded on that side.
+    """
+    if chunk.strategy is not ChunkStrategy.KEY_RANGE:
+        return ""
+    column = quote(key_column)
+    parts: list[str] = []
+    if chunk.lower is not None:
+        operator = ">=" if chunk.lower_inclusive else ">"
+        parts.append(f"{column} {operator} {_sql_literal(chunk.lower)}")
+    if chunk.upper is not None:
+        operator = "<=" if chunk.upper_inclusive else "<"
+        parts.append(f"{column} {operator} {_sql_literal(chunk.upper)}")
+    return " AND ".join(parts)
 
 
 @dataclass(frozen=True)

@@ -57,6 +57,7 @@ markers = [
     "engine: requires the real StarRocks/Redis/MinIO stack from docker-compose.test.yml",
     "slow: excluded from the fast local loop",
     "benchmark: deterministic microbenchmark; offline, no network, no engine",
+    "eval: deterministic agentic-harness behaviour evaluation; offline, no network, no engine",
 ]
 
 [tool.coverage.run]

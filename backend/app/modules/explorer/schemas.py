@@ -26,6 +26,18 @@ class CatalogsResponse(BaseModel):
     catalogs: list[CatalogInfo]
 
 
+class CreateDatabaseRequest(BaseModel):
+    """Request body for POST /explorer/catalogs/{catalog}/databases.
+
+    ``name`` is validated by the DDL allow-list, not here; ``min_length=1`` only
+    keeps an empty name from reaching the handler at all (FastAPI answers 422 for
+    it). StarRocks' ``CREATE DATABASE`` takes no ``COMMENT`` clause, so an extra
+    ``comment`` field in the body is ignored rather than interpolated.
+    """
+
+    name: str = Field(min_length=1)
+
+
 # ---------------------------------------------------------------------------
 # Database summary
 # ---------------------------------------------------------------------------

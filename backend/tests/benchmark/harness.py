@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import statistics
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -31,15 +31,23 @@ from app.modules.assistant.tools import (
 class ScriptedProvider:
     """A provider seam that returns a fixed script of messages.
 
-    ``complete`` returns the queued message for each call. When the script is
-    exhausted it repeats the last entry, so a loop that calls the provider more
-    than the script expects still terminates at its own cap instead of raising.
+    It implements the two methods the loop actually calls — ``resolve`` and
+    ``stream`` — so a benchmark measures a real loop iteration, not a
+    provider-resolution failure. (The previous version predated the streaming
+    loop and silently exercised the error path, which made every ``*_turn``
+    number meaningless; this is the fix.)
+
+    ``stream`` yields each scripted message as one ``delta`` for its text, then
+    a single ``message`` frame, mirroring the real provider's contract. When the
+    script is exhausted it repeats the last entry, so a loop that calls the
+    provider more than the script expects still terminates at its own cap
+    instead of raising.
     """
 
     script: list[dict[str, Any]]
     calls: int = 0
 
-    async def resolve(self) -> Any:
+    async def resolve(self, **_: Any) -> Any:
         from app.modules.assistant.provider import ProviderConfig
 
         return ProviderConfig(
@@ -49,6 +57,26 @@ class ScriptedProvider:
             api_key="not-a-real-key",
         )
 
+    async def stream(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        provider: Any = None,
+    ) -> AsyncIterator[tuple[str, Any]]:
+        """Yield ``("delta", text)`` frames then one ``("message", dict)``.
+
+        This is the same shape ``AssistantProviderClient.stream`` produces, so
+        the loop's buffering, tool-call handling, and termination paths are all
+        exercised.
+        """
+        self.calls += 1
+        message = self._next_message()
+        content = str(message.get("content") or "")
+        if content:
+            yield ("delta", content)
+        yield ("message", message)
+
     async def complete(
         self,
         *,
@@ -57,6 +85,9 @@ class ScriptedProvider:
         provider: Any = None,
     ) -> dict[str, Any]:
         self.calls += 1
+        return self._next_message()
+
+    def _next_message(self) -> dict[str, Any]:
         if not self.script:
             return {"role": "assistant", "content": "ok"}
         if len(self.script) == 1:
@@ -84,9 +115,7 @@ class RecordingTool:
     def preview(self, invocation: ToolInvocation) -> str:
         return str(invocation.arguments.get("sql", "SELECT 1"))
 
-    async def run(
-        self, invocation: ToolInvocation, context: Any
-    ) -> ToolOutcome:
+    async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         self.runs += 1
         if self.ok:
             return ToolOutcome(ok=True, summary="1 row (benchmark)")
@@ -94,9 +123,17 @@ class RecordingTool:
 
 
 def tool_call_frame(
-    call_id: str, *, name: str = "query_execute", sql: str = "SELECT 1"
+    call_id: str,
+    *,
+    name: str = "query_execute",
+    sql: str = "SELECT 1",
+    arguments: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """One OpenAI-shaped assistant message proposing a tool call."""
+    """One OpenAI-shaped assistant message proposing a tool call.
+
+    ``arguments`` overrides the default ``{"sql": ...}``, for a tool that takes
+    a different shape (``load_skill`` takes a skill name).
+    """
     return {
         "role": "assistant",
         "content": "",
@@ -106,7 +143,7 @@ def tool_call_frame(
                 "type": "function",
                 "function": {
                     "name": name,
-                    "arguments": json.dumps({"sql": sql}),
+                    "arguments": json.dumps(arguments or {"sql": sql}),
                 },
             }
         ],
@@ -143,16 +180,19 @@ def thread(
             AssistantMessage(message_id=f"u{i}", role="user", content=f"question {i}")
         )
         t.messages.append(
-            AssistantMessage(
-                message_id=f"a{i}", role="assistant", content=f"answer {i}"
-            )
+            AssistantMessage(message_id=f"a{i}", role="assistant", content=f"answer {i}")
         )
     t.consent.always_allow_read_only = read_only_grant
     return t
 
 
-async def drain(loop: AssistantLoop, *, thread_: AssistantThread, content: str = "go",
-                resolver: Callable[[ToolInvocation, str], Awaitable[bool | None]] = allow) -> int:
+async def drain(
+    loop: AssistantLoop,
+    *,
+    thread_: AssistantThread,
+    content: str = "go",
+    resolver: Callable[[ToolInvocation, str], Awaitable[bool | None]] = allow,
+) -> int:
     """Run one full turn to completion, returning the frame count."""
     frames = 0
     async for _frame in loop.run(

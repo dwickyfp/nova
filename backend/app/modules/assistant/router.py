@@ -83,6 +83,11 @@ def _message_view(row: dict) -> MessageView:
         content=row.get("content", ""),
         tool_call=None,
         created_at=row["created_at"],
+        steps=row.get("steps") or [],
+        prompt_tokens=row.get("prompt_tokens"),
+        completion_tokens=row.get("completion_tokens"),
+        total_tokens=row.get("total_tokens"),
+        model_name=row.get("model_name"),
     )
 
 
@@ -267,6 +272,7 @@ async def send_message(
             message_id=row["message_id"],
             role=row["role"],
             content=row["content"],
+            steps=row.get("steps") or [],
             created_at=row["created_at"],
         )
         for row in history
@@ -350,13 +356,20 @@ async def send_message(
             # replayed; only the assistant's text is part of the thread. The
             # write is best-effort: a storage failure must not turn a completed
             # answer into a stream error the user cannot see the cause of.
-            if reply_parts:
+            if reply_parts or context.steps or context.pending_output:
                 try:
+                    steps = list(context.steps or [])
+                    if context.pending_output:
+                        steps.extend(context.pending_output)
                     await assistant_repository.append_message(
                         thread_id,
                         user_name=user_name,
                         role="assistant",
                         content="".join(reply_parts),
+                        model_name=body.model,
+                        usage=context.usage,
+                        steps=steps,
+                        instructions=context.instructions,
                     )
                 except Exception:
                     logger.exception("Could not persist the assistant reply")

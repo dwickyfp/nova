@@ -1,0 +1,241 @@
+version: 0.1.1
+name: nova_sales
+description: E-commerce sales model over the built-in NOVA_DEMO warehouse.
+ai_context:
+  instructions: >-
+    Use this model for revenue, order, customer, product, and category questions.
+    Order amounts are stored on NOVA_DEMO.orders.total_amount.
+datasets:
+  - name: orders
+    source: NOVA_DEMO.orders
+    primary_key: [order_id]
+    description: One row per customer order.
+    ai_context:
+      synonyms: [sales, transactions, purchases]
+    fields:
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_id
+        description: Order identifier
+      - name: customer_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: customer_id
+        description: Customer who placed the order
+      - name: order_date
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_date
+        datatype: DateTime
+        dimension:
+          is_time: true
+        description: When the order was placed
+        ai_context:
+          synonyms: [order date, purchase date, transaction date]
+      - name: status
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: status
+        description: Order status (completed, shipped, processing, pending)
+        ai_context:
+          synonyms: [order status, state]
+      - name: total_amount
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: total_amount
+        datatype: Decimal
+        description: Order total in IDR
+        ai_context:
+          synonyms: [revenue, amount, sales, total sales]
+      - name: payment_method
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: payment_method
+        description: Payment method (DANA, GoPay, QRIS, Bank Transfer, Credit Card)
+      - name: shipping_city
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: shipping_city
+        description: Destination city
+        ai_context:
+          synonyms: [city, destination]
+  - name: customers
+    source: NOVA_DEMO.customers
+    primary_key: [customer_id]
+    description: Customer master data.
+    ai_context:
+      synonyms: [buyers, accounts]
+    fields:
+      - name: customer_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: customer_id
+        description: Customer identifier
+      - name: full_name
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: "CONCAT(first_name, ' ', last_name)"
+        description: Customer full name
+        ai_context:
+          synonyms: [name, customer name]
+      - name: city
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: city
+        description: Customer city
+      - name: country
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: country
+        description: Customer country
+      - name: created_at
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: created_at
+        datatype: DateTime
+        dimension:
+          is_time: true
+        description: When the customer was created
+  - name: order_items
+    source: NOVA_DEMO.order_items
+    primary_key: [item_id]
+    description: Line items of an order.
+    fields:
+      - name: item_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: item_id
+        description: Line item identifier
+      - name: order_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: order_id
+        description: Parent order
+      - name: product_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: product_id
+        description: Product ordered
+      - name: quantity
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: quantity
+        datatype: Integer
+        description: Units ordered
+        ai_context:
+          synonyms: [units, qty]
+      - name: subtotal
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: subtotal
+        datatype: Decimal
+        description: Line total in IDR
+  - name: products
+    source: NOVA_CATALOG.products
+    primary_key: [product_id]
+    description: Product catalog.
+    ai_context:
+      synonyms: [items, skus]
+    fields:
+      - name: product_id
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: product_id
+        description: Product identifier
+      - name: product_name
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: product_name
+        description: Product name
+      - name: category
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: category
+        description: Product category (Electronics, Audio, Accessories, Storage)
+      - name: brand
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: brand
+        description: Product brand
+      - name: price
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: price
+        datatype: Decimal
+        description: List price in IDR
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [customer_id]
+  - name: order_items_to_orders
+    from: order_items
+    to: orders
+    from_columns: [order_id]
+    to_columns: [order_id]
+  - name: order_items_to_products
+    from: order_items
+    to: products
+    from_columns: [product_id]
+    to_columns: [product_id]
+metrics:
+  - name: total_revenue
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.total_amount)
+    datatype: Decimal
+    description: Total order revenue in IDR
+    ai_context:
+      synonyms: [revenue, total sales, sales]
+  - name: order_count
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: COUNT(DISTINCT orders.order_id)
+    datatype: Integer
+    description: Number of orders
+    ai_context:
+      synonyms: [orders, number of orders]
+  - name: avg_order_value
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(orders.total_amount) / NULLIF(COUNT(DISTINCT orders.order_id), 0)
+    datatype: Decimal
+    description: Average revenue per order
+    ai_context:
+      synonyms: [AOV, average order value]
+  - name: units_sold
+    expression:
+      dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(order_items.quantity)
+    datatype: Integer
+    description: Total units sold across order lines
+    ai_context:
+      synonyms: [quantity, units, items sold]

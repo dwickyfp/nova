@@ -20,6 +20,8 @@ from app.modules.assistant.tools._boundary import (
     ToolInvocation,
     ToolOutcome,
     ToolRegistry,
+    record_provider_usage,
+    report_tool_progress,
     requires_consent,
 )
 
@@ -29,5 +31,7 @@ __all__ = [
     "ToolInvocation",
     "ToolOutcome",
     "ToolRegistry",
+    "record_provider_usage",
+    "report_tool_progress",
     "requires_consent",
 ]

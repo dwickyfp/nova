@@ -517,6 +517,16 @@ uv run pytest tests/benchmark -q -s -m engine   # needs the Docker test stack
 
 See [docs/benchmarks/nova-61-assistant.md](docs/benchmarks/nova-61-assistant.md).
 
+Agent behaviour evaluation (offline, no provider key, no engine):
+
+```bash
+cd backend
+uv run pytest tests/eval -q          # CI gate: 13 scenarios, 37 checks
+uv run python -m tests.eval.report   # human-readable scorecard
+```
+
+See [docs/benchmarks/nova-124-agentic-harness.md](docs/benchmarks/nova-124-agentic-harness.md).
+
 Frontend:
 
 ```bash

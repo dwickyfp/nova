@@ -114,6 +114,15 @@ class _SpyService:
         self.read_calls.append("fe")
         return {}
 
+    async def get_runtime_health(self) -> dict[str, Any]:
+        self.read_calls.append("runtime_health")
+        return {
+            "checked_at": "2026-09-21T00:00:00Z",
+            "redis": {"status": "healthy", "message": "ok"},
+            "scheduler": {"status": "healthy", "message": "ok"},
+            "worker": {"status": "healthy", "message": "ok", "instances": 1},
+        }
+
     async def get_data_loads(self, **kwargs) -> dict[str, Any]:
         self.read_calls.append("loads")
         return {"items": [], "total": 0}
@@ -145,6 +154,7 @@ def spy(monkeypatch) -> _SpyService:
         "get_query_cost_history",
         "get_cost_aggregation",
         "get_fe_metrics_summary",
+        "get_runtime_health",
         "get_data_loads",
         "get_load_stats",
         "get_alerts",
@@ -188,6 +198,7 @@ READ_ENDPOINTS = [
     ("GET", "/cost/history"),
     ("GET", "/cost/aggregation"),
     ("GET", "/metrics/fe"),
+    ("GET", "/runtime-health"),
     ("GET", "/loads"),
     ("GET", "/loads/stats"),
     ("GET", "/alerts"),

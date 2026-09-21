@@ -1,6 +1,6 @@
-import * as React from 'react'
+import * as React from "react";
 
-const NARROW_QUERY = '(max-width: 767px)'
+const NARROW_QUERY = "(max-width: 767px)";
 
 /**
  * The assistant panel is inline from `md` (768px) up, matching the sidebar's
@@ -11,11 +11,11 @@ const NARROW_QUERY = '(max-width: 767px)'
 export function useIsNarrowForAssistant() {
   return React.useSyncExternalStore(
     (callback) => {
-      const mql = window.matchMedia(NARROW_QUERY)
-      mql.addEventListener('change', callback)
-      return () => mql.removeEventListener('change', callback)
+      const mql = window.matchMedia(NARROW_QUERY);
+      mql.addEventListener("change", callback);
+      return () => mql.removeEventListener("change", callback);
     },
     () => window.matchMedia(NARROW_QUERY).matches,
-    () => false
-  )
+    () => false,
+  );
 }

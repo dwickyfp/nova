@@ -21,8 +21,10 @@ Credential handling, stated because it is the whole risk surface:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +40,8 @@ from app.modules.ai_ml.service import ai_service
 from app.modules.assistant.streaming import StreamAccumulator, parse_sse_data_line
 
 logger = logging.getLogger(__name__)
+
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 
 class AssistantProviderError(NovaException):
@@ -69,8 +73,16 @@ class AssistantProviderClient:
     the same convention rather than inventing a provider abstraction.
     """
 
-    def __init__(self, timeout_seconds: float = 60.0) -> None:
+    def __init__(
+        self,
+        timeout_seconds: float = 60.0,
+        *,
+        max_attempts: int = 3,
+        retry_base_seconds: float = 0.25,
+    ) -> None:
         self._timeout = timeout_seconds
+        self._max_attempts = max(1, max_attempts)
+        self._retry_base_seconds = max(0.0, retry_base_seconds)
 
     @staticmethod
     def _chat_endpoint(endpoint: str) -> str:
@@ -194,6 +206,17 @@ class AssistantProviderClient:
                 f"AI provider returned HTTP {response.status_code}"
             )
 
+    async def _backoff(self, attempt: int, response: httpx.Response | None = None) -> None:
+        """Bound retry delay without exposing provider response content."""
+        delay = min(self._retry_base_seconds * (2**attempt), 2.0)
+        if response is not None:
+            retry_after = response.headers.get("retry-after")
+            if retry_after:
+                with suppress(ValueError):
+                    delay = min(max(float(retry_after), 0.0), 5.0)
+        if delay:
+            await asyncio.sleep(delay)
+
     async def complete(
         self,
         *,
@@ -211,31 +234,65 @@ class AssistantProviderClient:
         body = self._request_body(config, messages, tools)
         self._validate_endpoint(config)
 
-        try:
-            async with guarded_async_client(timeout=self._timeout) as client:
-                response = await client.post(
-                    config.endpoint, headers=self._headers(config), json=body
+        response: httpx.Response | None = None
+        for attempt in range(self._max_attempts):
+            try:
+                async with guarded_async_client(timeout=self._timeout) as client:
+                    response = await client.post(
+                        config.endpoint, headers=self._headers(config), json=body
+                    )
+            except BlockedEndpointError:
+                # A redirect hop was refused by the guarded transport.
+                logger.warning(
+                    "Blocked assistant call redirect to a non-public address (provider=%s)",
+                    config.provider_id,
                 )
-        except BlockedEndpointError:
-            # A redirect hop was refused by the guarded transport.
-            logger.warning(
-                "Blocked assistant call redirect to a non-public address (provider=%s)",
-                config.provider_id,
-            )
-            raise AssistantProviderError(
-                "AI provider endpoint is not allowed: it must be a public http(s) URL"
-            ) from None
-        except httpx.HTTPError as exc:
-            # ``str(exc)`` can carry the URL, never the key or the body.
-            raise AssistantProviderError(
-                f"AI provider request failed: {type(exc).__name__}"
-            ) from exc
+                raise AssistantProviderError(
+                    "AI provider endpoint is not allowed: it must be a public http(s) URL"
+                ) from None
+            except httpx.HTTPError as exc:
+                if attempt + 1 < self._max_attempts:
+                    logger.info(
+                        "Retrying assistant provider transport failure "
+                        "(provider=%s attempt=%s)",
+                        config.provider_id,
+                        attempt + 2,
+                    )
+                    await self._backoff(attempt)
+                    continue
+                # ``str(exc)`` can carry the URL, never the key or the body.
+                raise AssistantProviderError(
+                    f"AI provider request failed: {type(exc).__name__}"
+                ) from exc
 
-        self._raise_for_status(response, config)
+            if (
+                response.status_code in _RETRYABLE_STATUS_CODES
+                and attempt + 1 < self._max_attempts
+            ):
+                logger.info(
+                    "Retrying assistant provider HTTP %s (provider=%s attempt=%s)",
+                    response.status_code,
+                    config.provider_id,
+                    attempt + 2,
+                )
+                await self._backoff(attempt, response)
+                continue
+            self._raise_for_status(response, config)
+            break
+
+        if response is None:  # Defensive; the loop either assigns or raises.
+            raise AssistantProviderError("AI provider request failed")
 
         try:
             payload = response.json()
-            return payload["choices"][0]["message"]
+            message = dict(payload["choices"][0]["message"])
+            # Nested model calls (for example semantic SQL generation) use
+            # ``complete`` rather than the streaming accumulator. Preserve
+            # usage on the returned message so the enclosing agent run can
+            # account for every provider call, not only the final response.
+            if isinstance(payload.get("usage"), dict):
+                message["usage"] = payload["usage"]
+            return message
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise AssistantProviderError(
                 "AI provider returned an unexpected response shape"
@@ -262,41 +319,63 @@ class AssistantProviderClient:
         config = provider or await self.resolve()
         body = self._request_body(config, messages, tools)
         body["stream"] = True
+        # Ask the provider to report token usage on the final chunk. Without
+        # this, OpenAI-compatible streamers omit `usage` entirely, and Studio
+        # Observability has nothing to total. Providers that ignore the option
+        # simply send no usage, which the accumulator tolerates.
+        body["stream_options"] = {"include_usage": True}
         self._validate_endpoint(config)
 
-        accumulator = StreamAccumulator()
-        try:
-            async with (
-                guarded_async_client(timeout=self._timeout) as client,
-                client.stream(
-                    "POST",
-                    config.endpoint,
-                    headers=self._headers(config),
-                    json=body,
-                ) as response,
-            ):
-                self._raise_for_status(response, config)
-                async for line in response.aiter_lines():
-                    payload = parse_sse_data_line(line)
-                    if payload is None:
+        for attempt in range(self._max_attempts):
+            accumulator = StreamAccumulator()
+            emitted_delta = False
+            response: httpx.Response | None = None
+            try:
+                async with (
+                    guarded_async_client(timeout=self._timeout) as client,
+                    client.stream(
+                        "POST",
+                        config.endpoint,
+                        headers=self._headers(config),
+                        json=body,
+                    ) as response,
+                ):
+                    if (
+                        response.status_code in _RETRYABLE_STATUS_CODES
+                        and attempt + 1 < self._max_attempts
+                    ):
+                        await self._backoff(attempt, response)
                         continue
-                    text = accumulator.feed(payload)
-                    if text:
-                        yield ("delta", text)
-        except BlockedEndpointError:
-            logger.warning(
-                "Blocked assistant call redirect to a non-public address (provider=%s)",
-                config.provider_id,
-            )
-            raise AssistantProviderError(
-                "AI provider endpoint is not allowed: it must be a public http(s) URL"
-            ) from None
-        except httpx.HTTPError as exc:
-            raise AssistantProviderError(
-                f"AI provider request failed: {type(exc).__name__}"
-            ) from exc
+                    self._raise_for_status(response, config)
+                    async for line in response.aiter_lines():
+                        payload = parse_sse_data_line(line)
+                        if payload is None:
+                            continue
+                        text = accumulator.feed(payload)
+                        if text:
+                            emitted_delta = True
+                            yield ("delta", text)
+            except BlockedEndpointError:
+                logger.warning(
+                    "Blocked assistant call redirect to a non-public address (provider=%s)",
+                    config.provider_id,
+                )
+                raise AssistantProviderError(
+                    "AI provider endpoint is not allowed: it must be a public http(s) URL"
+                ) from None
+            except httpx.HTTPError as exc:
+                # Retrying after a visible delta would duplicate user-visible
+                # text. Fail that run and let the caller persist the partial
+                # trace instead. Handshake/transport failures are safe to retry.
+                if not emitted_delta and attempt + 1 < self._max_attempts:
+                    await self._backoff(attempt, response)
+                    continue
+                raise AssistantProviderError(
+                    f"AI provider request failed: {type(exc).__name__}"
+                ) from exc
 
-        yield ("message", accumulator.message())
+            yield ("message", accumulator.message())
+            return
 
 
 assistant_provider = AssistantProviderClient()

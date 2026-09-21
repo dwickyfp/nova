@@ -21,6 +21,25 @@ export function fetchFeMetrics() {
   return api.get<FeMetricsResponse>('/monitoring/metrics/fe')
 }
 
+export type RuntimeHealthStatus = 'healthy' | 'unhealthy' | 'unknown'
+
+export type RuntimeServiceHealth = {
+  status: RuntimeHealthStatus
+  message: string
+  instances?: number | null
+}
+
+export type RuntimeHealthResponse = {
+  checked_at: string
+  redis: RuntimeServiceHealth
+  scheduler: RuntimeServiceHealth
+  worker: RuntimeServiceHealth
+}
+
+export function fetchRuntimeHealth() {
+  return api.get<RuntimeHealthResponse>('/monitoring/runtime-health')
+}
+
 type QueryResponse = {
   success: boolean
   columns: string[]
@@ -33,7 +52,9 @@ type QueryResponse = {
  * generic query endpoint, the same read-only path the docs/13 node-management
  * contract names. No new backend route is involved.
  */
-export async function fetchNodes(kind: 'frontends' | 'backends'): Promise<NodeRow[]> {
+export async function fetchNodes(
+  kind: 'frontends' | 'backends',
+): Promise<NodeRow[]> {
   const statement = kind === 'frontends' ? 'SHOW FRONTENDS' : 'SHOW BACKENDS'
   const [result] = await api.post<QueryResponse[]>('/query/execute', {
     sql: statement,
@@ -56,7 +77,11 @@ export type NodeRow = {
 const HOST_KEYS = ['Host', 'IP', 'Address']
 const PORT_KEYS = ['HttpPort', 'Port', 'BePort', 'HeartbeatPort']
 const ALIVE_KEYS = ['Alive', 'Status', 'State']
-const HEARTBEAT_KEYS = ['LastHeartbeat', 'LastStartTime', 'LastSuccessReportTabletsTime']
+const HEARTBEAT_KEYS = [
+  'LastHeartbeat',
+  'LastStartTime',
+  'LastSuccessReportTabletsTime',
+]
 const ROLE_KEYS = ['Role', 'NodeRole', 'Type']
 
 function pick(record: Record<string, string>, keys: string[]) {
@@ -127,7 +152,7 @@ export function successRate(metrics: FeMetrics | undefined): number | null {
  */
 export function metricValue(
   metrics: FeMetrics | undefined,
-  key: keyof FeMetrics
+  key: keyof FeMetrics,
 ): number | null {
   const value = metrics?.[key]
   return typeof value === 'number' ? value : null

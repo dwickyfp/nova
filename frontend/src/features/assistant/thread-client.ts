@@ -1,4 +1,4 @@
-import { ApiError, api } from '@/lib/api-client'
+import { ApiError, api } from "@/lib/api-client";
 
 /**
  * Thread CRUD, mirroring `backend/app/modules/assistant/router.py`.
@@ -7,54 +7,64 @@ import { ApiError, api } from '@/lib/api-client'
  */
 
 export type ThreadView = {
-  thread_id: string
-  title: string
-  workspace_file_id: string | null
-  created_at: string
-  updated_at: string
-  message_count: number
-}
+  thread_id: string;
+  title: string;
+  workspace_file_id: string | null;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+};
 
 export type ThreadListResponse = {
-  threads: ThreadView[]
-  count: number
-}
+  threads: ThreadView[];
+  count: number;
+};
 
 /** A stored message as returned by the thread detail endpoint. */
 export type ThreadMessageView = {
-  message_id: string
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  created_at: string
-}
+  message_id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  created_at: string;
+};
 
 export type ThreadDetailResponse = {
-  thread: ThreadView
-  messages: ThreadMessageView[]
-}
+  thread: ThreadView;
+  messages: ThreadMessageView[];
+};
 
-export async function createThread(workspaceFileId?: string | null): Promise<ThreadView> {
-  return api.post<ThreadView>('/assistant/threads', {
+export async function createThread(
+  workspaceFileId?: string | null,
+): Promise<ThreadView> {
+  return api.post<ThreadView>("/assistant/threads", {
     workspace_file_id: workspaceFileId ?? null,
-  })
+  });
 }
 
 export async function listThreads(): Promise<ThreadListResponse> {
-  return api.get<ThreadListResponse>('/assistant/threads')
+  return api.get<ThreadListResponse>("/assistant/threads");
 }
 
-export async function getThread(threadId: string): Promise<ThreadDetailResponse> {
+export async function getThread(
+  threadId: string,
+): Promise<ThreadDetailResponse> {
   return api.get<ThreadDetailResponse>(
-    `/assistant/threads/${encodeURIComponent(threadId)}`
-  )
+    `/assistant/threads/${encodeURIComponent(threadId)}`,
+  );
 }
 
-export async function renameThread(threadId: string, title: string): Promise<ThreadView> {
-  return api.patch<ThreadView>(`/assistant/threads/${encodeURIComponent(threadId)}`, { title })
+export async function renameThread(
+  threadId: string,
+  title: string,
+): Promise<ThreadView> {
+  return api.patch<ThreadView>(
+    `/assistant/threads/${encodeURIComponent(threadId)}`,
+    { title },
+  );
 }
 
 export async function deleteThread(threadId: string): Promise<void> {
-  await api.delete(`/assistant/threads/${encodeURIComponent(threadId)}`)
+  await api.delete(`/assistant/threads/${encodeURIComponent(threadId)}`);
 }
 
 /**
@@ -66,10 +76,12 @@ export async function deleteThread(threadId: string): Promise<void> {
  */
 export async function resetGrant(threadId: string): Promise<void> {
   try {
-    await api.delete(`/assistant/threads/${encodeURIComponent(threadId)}/grant`)
+    await api.delete(
+      `/assistant/threads/${encodeURIComponent(threadId)}/grant`,
+    );
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return
-    throw error
+    if (error instanceof ApiError && error.status === 404) return;
+    throw error;
   }
 }
 
@@ -81,15 +93,18 @@ export async function resetGrant(threadId: string): Promise<void> {
  * the requested mode cannot be persisted — that is reported as `false` rather
  * than thrown, matching `resetGrant`'s tolerance for a missing thread.
  */
-export async function setGrant(threadId: string, alwaysAllow: boolean): Promise<boolean> {
+export async function setGrant(
+  threadId: string,
+  alwaysAllow: boolean,
+): Promise<boolean> {
   try {
     const response = await api.put<{ grant_active: boolean }>(
       `/assistant/threads/${encodeURIComponent(threadId)}/grant`,
-      { always_allow_read_only: alwaysAllow }
-    )
-    return response.grant_active
+      { always_allow_read_only: alwaysAllow },
+    );
+    return response.grant_active;
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return false
-    throw error
+    if (error instanceof ApiError && error.status === 404) return false;
+    throw error;
   }
 }

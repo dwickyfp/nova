@@ -19,6 +19,8 @@ from app.core.exceptions import register_exception_handlers
 from app.core.redis import session_store
 
 # --- Module routers ---
+from app.modules.agents.router import router as agents_router
+from app.modules.agents.studio_router import router as studio_router
 from app.modules.ai_ml.router import router as ai_router
 from app.modules.assistant.router import router as assistant_router
 from app.modules.auth.router import router as auth_router
@@ -68,6 +70,9 @@ async def lifespan(app: FastAPI):
 
     # Startup
     await db.init_system_pool()
+    # Align the engine's global time_zone with Nova's session pin (advisory; the
+    # per-session init_command is the guarantee). Best-effort inside the method.
+    await db.apply_global_time_zone()
     await session_store.init()
     await init_nova_system()
 
@@ -113,6 +118,16 @@ async def lifespan(app: FastAPI):
         await assistant_repository.ensure_schema()
     except Exception as e:
         logger.warning("Could not ensure assistant conversation schema: %s", e)
+
+    # Agent Studio storage (Phase 12): agents, semantic models, user skills.
+    # Best-effort in the same way: without it the routes answer 500 rather than
+    # taking the whole web service down at boot.
+    try:
+        from app.modules.agents.repository import agent_repository
+
+        await agent_repository.ensure_schema()
+    except Exception as e:
+        logger.warning("Could not ensure Agent Studio schema: %s", e)
 
     # Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)
     # so they are available as SQL functions from the start.
@@ -228,6 +243,17 @@ def create_app() -> FastAPI:
     app.include_router(
         assistant_router, prefix=f"{prefix}/assistant", tags=["assistant"]
     )
+    # Phase 12 — Agent Studio: build-your-own agents, semantic models (Ossie),
+    # and user skills, plus the Nova Studio run surface. Composes the Phase 10
+    # assistant loop rather than modifying it. See
+    # docs/specs/nova-12-agent-studio-implementation-plan.md.
+    # Nova Studio settings, capabilities, and the Skill/Tools registries.
+    # Registered BEFORE the agent router: it has literal paths ("/tools",
+    # "/mcp-servers", "/studio/...") that the agent router's dynamic
+    # "/{agent_id}" would otherwise capture. FastAPI matches in declaration
+    # order, so the literal routes must come first.
+    app.include_router(studio_router, prefix=f"{prefix}/agents", tags=["agents"])
+    app.include_router(agents_router, prefix=f"{prefix}/agents", tags=["agents"])
     # External catalogs (Iceberg + Hive, GA-only) — NOVA-62 / Phase 0 #9.
     app.include_router(
         external_catalogs_router,

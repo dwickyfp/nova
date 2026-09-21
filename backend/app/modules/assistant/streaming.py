@@ -39,8 +39,19 @@ class StreamAccumulator:
     content: str = ""
     finish_reason: str | None = None
     tool_calls: dict[int, _ToolCallAccumulator] = field(default_factory=dict)
+    #: Token usage, when the provider reports it. OpenAI-compatible providers
+    #: send a final chunk (often with an empty ``choices`` array) carrying
+    #: ``usage``: ``{prompt_tokens, completion_tokens, total_tokens}``. Kept so
+    #: Studio Observability can total tokens per turn without a second call.
+    usage: dict[str, Any] | None = None
 
     def feed(self, payload: dict[str, Any]) -> str:
+        # Usage may arrive on the final chunk, which sometimes carries no
+        # choices. Capture it before the choices check.
+        usage = payload.get("usage")
+        if isinstance(usage, dict):
+            self.usage = usage
+
         choices = payload.get("choices")
         if not isinstance(choices, list) or not choices:
             return ""
@@ -104,6 +115,8 @@ class StreamAccumulator:
                 }
                 for _, slot in sorted(self.tool_calls.items())
             ]
+        if self.usage is not None:
+            message["usage"] = self.usage
         return message
 
 

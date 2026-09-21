@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, ExternalLink } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -71,14 +71,28 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
         isActive={checkIsActive(href, item)}
         tooltip={item.title}
       >
-        <Link to={item.url} onClick={() => setOpenMobile(false)}>
-          {item.icon && <item.icon />}
-          <span>{item.title}</span>
-          {item.badge && <NavBadge>{item.badge}</NavBadge>}
-          {item.showChevron && (
-            <ChevronRight className='ms-auto size-4 text-sidebar-foreground/60 transition-colors group-hover/menu-button:text-sidebar-accent-foreground' />
-          )}
-        </Link>
+        {item.newTab ? (
+          <a
+            href={item.url as string}
+            target='_blank'
+            rel='noopener noreferrer'
+            onClick={() => setOpenMobile(false)}
+          >
+            {item.icon && <item.icon />}
+            <span>{item.title}</span>
+            {item.badge && <NavBadge>{item.badge}</NavBadge>}
+            <ExternalLink className='ms-auto size-3.5 text-sidebar-foreground/60 transition-colors group-hover/menu-button:text-sidebar-accent-foreground' />
+          </a>
+        ) : (
+          <Link to={item.url} onClick={() => setOpenMobile(false)}>
+            {item.icon && <item.icon />}
+            <span>{item.title}</span>
+            {item.badge && <NavBadge>{item.badge}</NavBadge>}
+            {item.showChevron && (
+              <ChevronRight className='ms-auto size-4 text-sidebar-foreground/60 transition-colors group-hover/menu-button:text-sidebar-accent-foreground' />
+            )}
+          </Link>
+        )}
       </SidebarMenuButton>
     </SidebarMenuItem>
   )
@@ -115,11 +129,25 @@ function SidebarMenuCollapsible({
                   asChild
                   isActive={checkIsActive(href, subItem)}
                 >
-                  <Link to={subItem.url} onClick={() => setOpenMobile(false)}>
-                    {subItem.icon && <subItem.icon />}
-                    <span>{subItem.title}</span>
-                    {subItem.badge && <NavBadge>{subItem.badge}</NavBadge>}
-                  </Link>
+                  {subItem.newTab ? (
+                    <a
+                      href={subItem.url as string}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      onClick={() => setOpenMobile(false)}
+                    >
+                      {subItem.icon && <subItem.icon />}
+                      <span>{subItem.title}</span>
+                      {subItem.badge && <NavBadge>{subItem.badge}</NavBadge>}
+                      <ExternalLink className='ms-auto size-3.5 text-sidebar-foreground/60' />
+                    </a>
+                  ) : (
+                    <Link to={subItem.url} onClick={() => setOpenMobile(false)}>
+                      {subItem.icon && <subItem.icon />}
+                      <span>{subItem.title}</span>
+                      {subItem.badge && <NavBadge>{subItem.badge}</NavBadge>}
+                    </Link>
+                  )}
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
             ))}

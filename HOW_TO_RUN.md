@@ -355,7 +355,15 @@ WORKER_TASK_POLL_INTERVAL_SECONDS=1
 WORKER_TASK_POLL_TIMEOUT_SECONDS=14400
 WORKER_HEARTBEAT_TIMEOUT_SECONDS=120
 WORKER_RECONCILE_INTERVAL_SECONDS=30
+WORKER_REGISTRY_KEY=nova:workers:heartbeats
+WORKER_PROCESS_HEARTBEAT_INTERVAL_SECONDS=10
+WORKER_PROCESS_STALE_SECONDS=30
 ```
+
+Heartbeat proses di registry Redis membuat worker yang sedang idle tetap tampak
+di **Monitoring → Cluster**. Scheduler dinilai dari leader lease aktif, sedangkan
+Redis diperiksa dengan `PING`; tidak ada credential atau body task yang disimpan
+di registry health ini.
 
 Catatan operasional:
 

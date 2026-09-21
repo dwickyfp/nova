@@ -1,14 +1,21 @@
-import { useCallback, useRef, useState } from 'react'
-import { streamAssistantTurn, decideToolCall, type TurnContext } from './stream-client'
-import { getThread, resetGrant, setGrant } from './thread-client'
-import type { ToolCallDecision } from './tool-call-card'
-import type { AssistantEvent } from './types'
-import { useAssistantTranscript, type TranscriptMessage } from './use-assistant-transcript'
+import { useCallback, useRef, useState } from "react";
+import {
+  streamAssistantTurn,
+  decideToolCall,
+  type TurnContext,
+} from "./stream-client";
+import { getThread, resetGrant, setGrant } from "./thread-client";
+import type { ToolCallDecision } from "./tool-call-card";
+import type { AssistantEvent } from "./types";
+import {
+  useAssistantTranscript,
+  type TranscriptMessage,
+} from "./use-assistant-transcript";
 import {
   extractSqlCodeBlock,
   formatAttachmentsForPrompt,
   type AttachedQuery,
-} from './query-attach'
+} from "./query-attach";
 
 /**
  * How the next read-only tool call is approved.
@@ -18,43 +25,47 @@ import {
  * covers a destructive statement — the backend's grant is read-only-only, and
  * the loop still consults the per-statement classification.
  */
-export type ApprovalMode = 'ask' | 'allow_read_only'
+export type ApprovalMode = "ask" | "allow_read_only";
 
-const STATUS_TEXT: Partial<Record<AssistantEvent['type'], string>> = {
-  tool_call: 'The assistant is waiting for your approval.',
-  done: 'The assistant finished responding.',
-  error: 'The assistant ran into an error.',
-}
+const STATUS_TEXT: Partial<Record<AssistantEvent["type"], string>> = {
+  tool_call: "The assistant is waiting for your approval.",
+  done: "The assistant finished responding.",
+  error: "The assistant ran into an error.",
+};
 
 export type AssistantTurnOptions = {
   /**
    * Resolves the thread to send into, creating one on first use. Returning
    * null aborts the turn (for example, no file is open).
    */
-  ensureThread: () => Promise<string | null>
+  ensureThread: () => Promise<string | null>;
   /** Active worksheet context for this turn. */
-  context?: TurnContext
-  onError?: (message: string) => void
+  context?: TurnContext;
+  onError?: (message: string) => void;
   /**
    * Called when a completed turn ends with a single attached query and the
    * answer contains a SQL block: the workspace turns that block into an inline
    * before/after diff. Not called for plain chat answers or multi-attachment
    * turns, where a rewrite has no single target.
    */
-  onProposedRewrite?: (input: { attachment: AttachedQuery; sql: string; messageId: string }) => void
+  onProposedRewrite?: (input: {
+    attachment: AttachedQuery;
+    sql: string;
+    messageId: string;
+  }) => void;
   /**
    * Transcript store to drive. The provider injects one per conversation
    * binding so switching bindings can restore a previous conversation's
    * messages; standalone callers get their own.
    */
-  transcript?: ReturnType<typeof useAssistantTranscript>
-}
+  transcript?: ReturnType<typeof useAssistantTranscript>;
+};
 
 /** The parts of a conversation that must survive a binding switch. */
 export type AssistantTurnSnapshot = {
-  threadId: string | null
-  grantActive: boolean
-}
+  threadId: string | null;
+  grantActive: boolean;
+};
 
 /**
  * Drives one assistant turn: user message, SSE events, stop, and consent.
@@ -68,38 +79,40 @@ export function useAssistantTurn({
   onProposedRewrite,
   transcript: injectedTranscript,
 }: AssistantTurnOptions) {
-  const ownTranscript = useAssistantTranscript()
-  const transcript = injectedTranscript ?? ownTranscript
-  const [streaming, setStreaming] = useState(false)
-  const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [decidingToolCallId, setDecidingToolCallId] = useState<string | null>(null)
-  const [threadId, setThreadId] = useState<string | null>(null)
-  const [grantActive, setGrantActive] = useState(false)
-  const [resettingGrant, setResettingGrant] = useState(false)
-  const [settlingGrant, setSettlingGrant] = useState(false)
-  const [loadingThread, setLoadingThread] = useState(false)
-  const abortRef = useRef<AbortController | null>(null)
+  const ownTranscript = useAssistantTranscript();
+  const transcript = injectedTranscript ?? ownTranscript;
+  const [streaming, setStreaming] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [decidingToolCallId, setDecidingToolCallId] = useState<string | null>(
+    null,
+  );
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [grantActive, setGrantActive] = useState(false);
+  const [resettingGrant, setResettingGrant] = useState(false);
+  const [settlingGrant, setSettlingGrant] = useState(false);
+  const [loadingThread, setLoadingThread] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
     async (message: string, attachments: AttachedQuery[] = []) => {
-      if (streaming) return
-      const thread = threadId ?? (await ensureThread())
+      if (streaming) return;
+      const thread = threadId ?? (await ensureThread());
       if (!thread) {
-        onError?.('Open or create a SQL file before asking the assistant')
-        return
+        onError?.("Open or create a SQL file before asking the assistant");
+        return;
       }
-      if (thread !== threadId) setThreadId(thread)
+      if (thread !== threadId) setThreadId(thread);
 
-      const prompt = `${formatAttachmentsForPrompt(attachments)}${message}`
-      transcript.addUserMessage(prompt, attachments, message)
-      const controller = new AbortController()
-      abortRef.current = controller
-      setStreaming(true)
-      setStatusMessage('The assistant is responding.')
+      const prompt = `${formatAttachmentsForPrompt(attachments)}${message}`;
+      transcript.addUserMessage(prompt, attachments, message);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setStreaming(true);
+      setStatusMessage("The assistant is responding.");
       // Accumulated answer text, so a completed turn can be scanned for a
       // proposed SQL rewrite without reading back through transcript state.
-      let answer = ''
-      let answerMessageId = ''
+      let answer = "";
+      let answerMessageId = "";
       try {
         await streamAssistantTurn(thread, prompt, {
           signal: controller.signal,
@@ -109,38 +122,39 @@ export function useAssistantTurn({
           model: context?.model,
           providerId: context?.providerId,
           onEvent: (event) => {
-            transcript.applyEvent(event)
-            if (event.type === 'text_delta') answer += event.text
-            if (event.type === 'done') answerMessageId = event.message_id
-            const status = STATUS_TEXT[event.type]
-            if (status) setStatusMessage(status)
+            transcript.applyEvent(event);
+            if (event.type === "text_delta") answer += event.text;
+            if (event.type === "done") answerMessageId = event.message_id;
+            const status = STATUS_TEXT[event.type];
+            if (status) setStatusMessage(status);
           },
-        })
+        });
         if (controller.signal.aborted) {
-          transcript.markCancelled()
-          setStatusMessage('Response stopped.')
+          transcript.markCancelled();
+          setStatusMessage("Response stopped.");
         } else if (attachments.length === 1) {
-          const code = extractSqlCodeBlock(answer)
+          const code = extractSqlCodeBlock(answer);
           if (code) {
             onProposedRewrite?.({
               attachment: attachments[0],
               sql: code,
               messageId: answerMessageId,
-            })
+            });
           }
         }
       } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          transcript.markCancelled()
-          setStatusMessage('Response stopped.')
+        if (error instanceof DOMException && error.name === "AbortError") {
+          transcript.markCancelled();
+          setStatusMessage("Response stopped.");
         } else {
-          const message = error instanceof Error ? error.message : 'The assistant failed'
-          transcript.applyEvent({ type: 'error', code: 'transport', message })
-          onError?.(message)
+          const message =
+            error instanceof Error ? error.message : "The assistant failed";
+          transcript.applyEvent({ type: "error", code: "transport", message });
+          onError?.(message);
         }
       } finally {
-        abortRef.current = null
-        setStreaming(false)
+        abortRef.current = null;
+        setStreaming(false);
       }
     },
     [
@@ -155,12 +169,12 @@ export function useAssistantTurn({
       streaming,
       threadId,
       transcript,
-    ]
-  )
+    ],
+  );
 
   const stop = useCallback(() => {
-    abortRef.current?.abort()
-  }, [])
+    abortRef.current?.abort();
+  }, []);
 
   /**
    * Sets the conversation's approval mode, persisting the grant on the current
@@ -174,27 +188,29 @@ export function useAssistantTurn({
    */
   const setApprovalMode = useCallback(
     async (mode: ApprovalMode) => {
-      if (settlingGrant) return
-      const thread = threadId ?? (await ensureThread())
+      if (settlingGrant) return;
+      const thread = threadId ?? (await ensureThread());
       if (!thread) {
-        onError?.('Open or create a SQL file before changing approval mode')
-        return
+        onError?.("Open or create a SQL file before changing approval mode");
+        return;
       }
-      if (thread !== threadId) setThreadId(thread)
-      setSettlingGrant(true)
+      if (thread !== threadId) setThreadId(thread);
+      setSettlingGrant(true);
       try {
-        const active = await setGrant(thread, mode === 'allow_read_only')
-        setGrantActive(active)
+        const active = await setGrant(thread, mode === "allow_read_only");
+        setGrantActive(active);
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'The approval mode was not changed'
-        onError?.(message)
+          error instanceof Error
+            ? error.message
+            : "The approval mode was not changed";
+        onError?.(message);
       } finally {
-        setSettlingGrant(false)
+        setSettlingGrant(false);
       }
     },
-    [ensureThread, onError, settlingGrant, threadId]
-  )
+    [ensureThread, onError, settlingGrant, threadId],
+  );
 
   /**
    * Switches the conversation to an existing thread: adopts its id, replaces
@@ -204,36 +220,39 @@ export function useAssistantTurn({
    */
   const loadThread = useCallback(
     async (targetThreadId: string) => {
-      abortRef.current?.abort()
-      abortRef.current = null
-      setStreaming(false)
-      setStatusMessage(null)
-      setDecidingToolCallId(null)
-      setLoadingThread(true)
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setStreaming(false);
+      setStatusMessage(null);
+      setDecidingToolCallId(null);
+      setLoadingThread(true);
       try {
-        const detail = await getThread(targetThreadId)
+        const detail = await getThread(targetThreadId);
         const restored: TranscriptMessage[] = detail.messages
-          .filter((message) => message.role !== 'tool')
+          .filter((message) => message.role !== "tool")
           .map((message) => ({
             message_id: message.message_id,
             role: message.role,
             content: message.content,
             tool_call: null,
             created_at: message.created_at,
-            turn_state: 'done',
-          }))
-        transcript.replace(restored)
-        setThreadId(detail.thread.thread_id)
-        setGrantActive(false)
+            turn_state: "done",
+          }));
+        transcript.replace(restored);
+        setThreadId(detail.thread.thread_id);
+        setGrantActive(false);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'The thread could not be opened'
-        onError?.(message)
+        const message =
+          error instanceof Error
+            ? error.message
+            : "The thread could not be opened";
+        onError?.(message);
       } finally {
-        setLoadingThread(false)
+        setLoadingThread(false);
       }
     },
-    [onError, transcript]
-  )
+    [onError, transcript],
+  );
 
   /**
    * Clears the conversation so the next message starts a fresh thread. The
@@ -241,49 +260,54 @@ export function useAssistantTurn({
    * dropped, matching how a binding switch closes a conversation.
    */
   const startNewThread = useCallback(() => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setStreaming(false)
-    setStatusMessage(null)
-    setDecidingToolCallId(null)
-    if (grantActive && threadId) void resetGrant(threadId)
-    setGrantActive(false)
-    setThreadId(null)
-    transcript.replace([])
-  }, [grantActive, threadId, transcript])
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreaming(false);
+    setStatusMessage(null);
+    setDecidingToolCallId(null);
+    if (grantActive && threadId) void resetGrant(threadId);
+    setGrantActive(false);
+    setThreadId(null);
+    transcript.replace([]);
+  }, [grantActive, threadId, transcript]);
 
   const decide = useCallback(
     async ({ toolCallId, decision, alwaysAllow }: ToolCallDecision) => {
-      setDecidingToolCallId(toolCallId)
+      setDecidingToolCallId(toolCallId);
       try {
-        const result = await decideToolCall(toolCallId, decision, alwaysAllow)
-        setGrantActive(result.grant_active)
+        const result = await decideToolCall(toolCallId, decision, alwaysAllow);
+        setGrantActive(result.grant_active);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'The decision was not applied'
-        transcript.applyEvent({ type: 'error', code: 'consent', message })
-        onError?.(message)
+        const message =
+          error instanceof Error
+            ? error.message
+            : "The decision was not applied";
+        transcript.applyEvent({ type: "error", code: "consent", message });
+        onError?.(message);
       } finally {
-        setDecidingToolCallId(null)
+        setDecidingToolCallId(null);
       }
     },
-    [onError, transcript]
-  )
+    [onError, transcript],
+  );
 
   const resetPermissions = useCallback(async () => {
-    if (!threadId || resettingGrant) return
-    setResettingGrant(true)
+    if (!threadId || resettingGrant) return;
+    setResettingGrant(true);
     try {
-      await resetGrant(threadId)
-      setGrantActive(false)
+      await resetGrant(threadId);
+      setGrantActive(false);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'The conversation permissions were not reset'
-      transcript.applyEvent({ type: 'error', code: 'consent', message })
-      onError?.(message)
+        error instanceof Error
+          ? error.message
+          : "The conversation permissions were not reset";
+      transcript.applyEvent({ type: "error", code: "consent", message });
+      onError?.(message);
     } finally {
-      setResettingGrant(false)
+      setResettingGrant(false);
     }
-  }, [onError, resettingGrant, threadId, transcript])
+  }, [onError, resettingGrant, threadId, transcript]);
 
   /**
    * Reads the conversation's thread/grant binding so a caller that keeps one
@@ -292,20 +316,20 @@ export function useAssistantTurn({
    * conversation, never one mid-turn.
    */
   const snapshot = useCallback((): AssistantTurnSnapshot => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    return { threadId, grantActive }
-  }, [grantActive, threadId])
+    abortRef.current?.abort();
+    abortRef.current = null;
+    return { threadId, grantActive };
+  }, [grantActive, threadId]);
 
   const restore = useCallback((snapshot: AssistantTurnSnapshot) => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setThreadId(snapshot.threadId)
-    setGrantActive(snapshot.grantActive)
-    setStreaming(false)
-    setStatusMessage(null)
-    setDecidingToolCallId(null)
-  }, [])
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setThreadId(snapshot.threadId);
+    setGrantActive(snapshot.grantActive);
+    setStreaming(false);
+    setStatusMessage(null);
+    setDecidingToolCallId(null);
+  }, []);
 
   return {
     threadId,
@@ -317,7 +341,7 @@ export function useAssistantTurn({
     // The selector's value is the grant itself, so it can never show a mode the
     // backend would not honour: every path that changes the grant (a card's
     // always-allow, reset, thread switch) moves the selector with it.
-    approvalMode: (grantActive ? 'allow_read_only' : 'ask') as ApprovalMode,
+    approvalMode: (grantActive ? "allow_read_only" : "ask") as ApprovalMode,
     setApprovalMode,
     settlingGrant,
     resetPermissions,
@@ -330,5 +354,5 @@ export function useAssistantTurn({
     startNewThread,
     snapshot,
     restore,
-  }
+  };
 }

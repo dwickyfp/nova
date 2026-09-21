@@ -81,7 +81,9 @@ describe("setGrant", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/v1/assistant/threads/thread-1/grant");
     expect(init.method).toBe("PUT");
-    expect(JSON.parse(init.body as string)).toEqual({ always_allow_read_only: true });
+    expect(JSON.parse(init.body as string)).toEqual({
+      always_allow_read_only: true,
+    });
   });
 
   it("url-encodes the thread id", async () => {
