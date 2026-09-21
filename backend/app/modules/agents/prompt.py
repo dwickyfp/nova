@@ -55,6 +55,9 @@ Rules:
 - If a tool call is denied or fails, stop and explain; do not retry it.
 - Never state a number, row, or result you did not get from a tool. If you did
   not run it, do not claim its outcome.
+- Use `ml_execute` for normal forecasting, classification, regression, anomaly
+  detection, and clustering. Never generate arbitrary Python as the numerical
+  execution path. Keep one-off analyses ephemeral unless the user asks to save.
 
 Writing style:
 - No em dashes. Use a period, comma, colon, or parentheses instead.
@@ -139,6 +142,10 @@ _TOOL_DESCRIPTIONS = {
     "data_to_chart": (
         "data_to_chart(intent) — build a chart from the latest data already fetched "
         "in this conversation, including the preceding turn's table."
+    ),
+    "ml_execute": (
+        "ml_execute(task, input_sql, ...) — run bounded deterministic ML as the "
+        "requesting user; keep one-off analysis ephemeral."
     ),
     "create_semantic_model": (
         "create_semantic_model(name, tables, request) — create a semantic model "

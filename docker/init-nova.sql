@@ -330,10 +330,11 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODELS (
   schema_name   VARCHAR(128),
   created_at  DATETIME NOT NULL,
   created_by  VARCHAR(128),
+  current_version INT DEFAULT "0",
   updated_at  DATETIME NOT NULL
-) DUPLICATE KEY(model_id, model_type)
+) PRIMARY KEY(model_id)
 DISTRIBUTED BY HASH(model_id) BUCKETS 4
-PROPERTIES("replication_num"="1");
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_VERSIONS (
   model_id     VARCHAR(64) NOT NULL,
@@ -341,22 +342,55 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_VERSIONS (
   status       VARCHAR(32) NOT NULL,
   training_rows BIGINT,
   metrics      TEXT,
+  artifact_uri VARCHAR(2048),
+  artifact_sha256 VARCHAR(64),
+  artifact_size BIGINT,
+  task VARCHAR(64),
+  framework VARCHAR(128),
+  framework_version VARCHAR(64),
+  algorithm VARCHAR(128),
+  feature_schema TEXT,
+  training_duration_ms BIGINT,
   model_binary TEXT,
   created_at   DATETIME NOT NULL,
   created_by   VARCHAR(128)
-) DUPLICATE KEY(model_id, version)
+) PRIMARY KEY(model_id, version)
 DISTRIBUTED BY HASH(model_id) BUCKETS 4
-PROPERTIES("replication_num"="1");
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_ALIASES (
   alias_name  VARCHAR(128) NOT NULL,
+  owner_name  VARCHAR(128) NOT NULL,
+  database_name VARCHAR(128) NOT NULL,
   model_id    VARCHAR(64) NOT NULL,
   version     INT NOT NULL,
   created_at  DATETIME NOT NULL,
   updated_at  DATETIME NOT NULL
-) DUPLICATE KEY(alias_name, model_id)
+) PRIMARY KEY(alias_name, owner_name, database_name)
 DISTRIBUTED BY HASH(alias_name) BUCKETS 2
-PROPERTIES("replication_num"="1");
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_RUNS (
+  run_id VARCHAR(64) NOT NULL,
+  task VARCHAR(64) NOT NULL,
+  mode VARCHAR(32) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  owner_name VARCHAR(128) NOT NULL,
+  tenant_name VARCHAR(128) NOT NULL,
+  database_name VARCHAR(128),
+  model_id VARCHAR(64),
+  model_version INT,
+  artifact_uri VARCHAR(2048),
+  fingerprint VARCHAR(64),
+  telemetry TEXT,
+  error_class VARCHAR(128),
+  error_message TEXT,
+  created_at DATETIME NOT NULL,
+  expires_at DATETIME,
+  updated_at DATETIME NOT NULL
+) PRIMARY KEY(run_id)
+DISTRIBUTED BY HASH(run_id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 -- ═══════════════════════════════════════
 -- AUDIT Schema

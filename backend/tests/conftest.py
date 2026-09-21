@@ -34,12 +34,14 @@ COMPOSE_FILE = "docker-compose.test.yml"
 PORT_ENV = {
     "starrocks-fe": "NOVA_TEST_FE_MYSQL_PORT",
     "starrocks-fe-http": "NOVA_TEST_FE_HTTP_PORT",
+    "starrocks-fe-arrow": "NOVA_TEST_FE_ARROW_PORT",
     "minio": "NOVA_TEST_MINIO_PORT",
     "redis": "NOVA_TEST_REDIS_PORT",
 }
 PORT_DEFAULTS = {
     "starrocks-fe": 29030,
     "starrocks-fe-http": 28030,
+    "starrocks-fe-arrow": 29408,
     "minio": 29000,
     "redis": 26379,
 }
@@ -293,6 +295,7 @@ async def app(sr_root, minio_client, redis_client):
 
     cfg.settings.STARROCKS_HOST = "127.0.0.1"
     cfg.settings.STARROCKS_FE_MYSQL_PORT = ports["starrocks-fe"]
+    cfg.settings.STARROCKS_ARROW_FLIGHT_PORT = ports["starrocks-fe-arrow"]
     cfg.settings.STARROCKS_ROOT_USER = "root"
     cfg.settings.STARROCKS_ROOT_PASSWORD = ""
     cfg.settings.REDIS_URL = f"redis://127.0.0.1:{ports['redis']}/0"

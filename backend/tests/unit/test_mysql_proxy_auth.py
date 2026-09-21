@@ -313,6 +313,24 @@ class TestRelayAgainstAFakeEngine:
             await open_starrocks_login(host="127.0.0.1", port=port, timeout=1.0)
 
 
+class TestInternalUserBoundary:
+    @pytest.mark.parametrize("username", ["root", "ROOT", "Root"])
+    async def test_root_is_rejected_before_the_login_is_relayed(self, username):
+        login = StarRocksLogin(
+            scramble=bytes(20),
+            plugin=NATIVE_PLUGIN_NAME,
+            capabilities=0,
+            reader=None,  # type: ignore[arg-type]
+            writer=None,  # type: ignore[arg-type]
+        )
+
+        with pytest.raises(AuthenticationError) as excinfo:
+            await login.finish(username=username, auth_response=b"z" * 20)
+
+        assert excinfo.value.code == 1045
+        assert excinfo.value.message == f"Access denied for user '{username}'"
+
+
 class TestStarRocksLoginLifecycle:
     def test_login_dataclass_carries_the_challenge(self):
         async def _noop() -> None:

@@ -140,48 +140,41 @@ class TestMLEngineLoaderResolvesTheStageConnection:
         monkeypatch.setattr(svc, "_connect", fake_connect)
         return svc
 
-    async def test_loader_returns_provider_value_not_inline(
-        self, monkeypatch, referenced_provider
-    ):
-        """The stage's ``secret_ref`` is fetched; the inline placeholder is not used."""
-        rows = [("stage1", "db", "sch", "production", "db/sch/stage1")]
-        svc = self._service_with_rows(monkeypatch, rows)
+    async def test_loader_returns_provider_value_not_inline(self, monkeypatch, referenced_provider):
+        """ML delegates to the one query-stage loader instead of duplicating secrets."""
+        from app.modules.ml_engine.service import MLEngineService
+        from app.modules.query.service import query_service
+
+        expected = object()
+        calls = []
+
+        async def shared_loader(database_name, schema_name):
+            calls.append((database_name, schema_name))
+            return expected
+
+        monkeypatch.setattr(query_service, "_load_stage_configs", shared_loader)
+        svc = MLEngineService()
 
         configs = await svc._load_stage_configs(None)
 
-        assert referenced_provider.calls == [REF], "provider was not contacted"
-        assert configs["stage1"].access_key == ACCESS_KEY
-        assert configs["stage1"].secret_key == SECRET_KEY
-        assert configs["stage1"].storage_connection == "production"
+        assert configs is expected
+        assert calls == [(None, None)]
+        assert referenced_provider.calls == []
 
     async def test_loader_fails_closed_on_provider_error(self, monkeypatch):
         """A provider failure raises; it never falls back to inline values."""
-        provider = FakeProvider(error=RuntimeError("AccessDenied"))
-        real = injector.get_storage_connection
+        from app.modules.ml_engine.service import MLEngineService
+        from app.modules.query.service import query_service
 
-        monkeypatch.setattr(
-            injector,
-            "get_storage_connection",
-            lambda name: replace(real(name), secret_ref=REF),
-        )
-        monkeypatch.setattr(
-            injector,
-            "resolve_secret_reference",
-            lambda ref: secrets_module.resolve_secret_reference(
-                ref, providers={"aws": provider}, use_cache=False
-            ),
-        )
+        async def shared_loader(database_name, schema_name):
+            del database_name, schema_name
+            raise SecretResolutionError("secret provider unavailable")
 
-        rows = [("stage1", "db", "sch", "production", "db/sch/stage1")]
-        svc = self._service_with_rows(monkeypatch, rows)
+        monkeypatch.setattr(query_service, "_load_stage_configs", shared_loader)
+        svc = MLEngineService()
 
         with pytest.raises(SecretResolutionError):
             await svc._load_stage_configs(None)
-
-        # The inline value (the real reference connection's own access_key) must
-        # not have been substituted.
-        inline = get_storage_connection("production").access_key
-        assert inline not in {ACCESS_KEY, INLINE_ACCESS}
 
 
 # ── NOVA-66: /query/explain ─────────────────────────────────────────────────
@@ -299,9 +292,7 @@ class TestStageFileOpsUseTheStageConnection:
                 return ("BACKUP_ACCESS", "BACKUP_SECRET")
             return (INLINE_ACCESS, INLINE_SECRET)
 
-        monkeypatch.setattr(
-            "app.modules.stages.service.resolve_storage_credentials", fake_resolve
-        )
+        monkeypatch.setattr("app.modules.stages.service.resolve_storage_credentials", fake_resolve)
         monkeypatch.setattr(
             "app.modules.stages.service.boto3.client",
             lambda *a, **kw: {"client": True},
@@ -326,9 +317,7 @@ class TestStageFileOpsUseTheStageConnection:
         def explode(name=None):
             raise SecretResolutionError("provider down")
 
-        monkeypatch.setattr(
-            "app.modules.stages.service.resolve_storage_credentials", explode
-        )
+        monkeypatch.setattr("app.modules.stages.service.resolve_storage_credentials", explode)
         monkeypatch.setattr(
             "app.modules.stages.service.boto3.client",
             lambda *a, **kw: {"client": True},
@@ -459,9 +448,7 @@ class TestPrepareStageSqlNeverInjectsTheWorkspaceDefault:
         assert called == [], "fallback contacted a connection with no reference"
         assert "aws.s3.access_key" not in prepared.engine_sql
 
-    async def test_multi_stage_statement_does_not_cross_contaminate(
-        self, monkeypatch
-    ):
+    async def test_multi_stage_statement_does_not_cross_contaminate(self, monkeypatch):
         """Two stages on different connections: no stage's creds reach another."""
         from app.modules.query import sql_pipeline
 
@@ -480,12 +467,18 @@ class TestPrepareStageSqlNeverInjectsTheWorkspaceDefault:
 
         configs = {
             "a": StorageConfig(
-                storage_type="s3", endpoint="http://minio:9000", bucket="b",
-                base_prefix="db/sch/a", storage_connection="backup",
+                storage_type="s3",
+                endpoint="http://minio:9000",
+                bucket="b",
+                base_prefix="db/sch/a",
+                storage_connection="backup",
             ),
             "b": StorageConfig(
-                storage_type="s3", endpoint="http://minio:9000", bucket="b",
-                base_prefix="db/sch/b", storage_connection="production",
+                storage_type="s3",
+                endpoint="http://minio:9000",
+                bucket="b",
+                base_prefix="db/sch/b",
+                storage_connection="production",
             ),
         }
         prepared = await sql_pipeline.prepare_stage_sql(

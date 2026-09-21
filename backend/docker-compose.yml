@@ -5,11 +5,14 @@ services:
     ports:
       - "9030:9030"    # MySQL protocol
       - "8030:8030"    # HTTP (web UI)
+      - "9408:9408"    # Arrow Flight SQL
       - "9010:9010"    # FE internal
     environment:
       - FE_QUERY_PORT=9030
+      - JAVA_TOOL_OPTIONS=--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED
     volumes:
       - sr-fe-meta:/opt/starrocks/fe/meta
+      - ../docker/fe.conf:/opt/starrocks/fe/conf/fe.conf:ro
     healthcheck:
       test: ["CMD", "mysql", "-h", "127.0.0.1", "-P", "9030", "-u", "root", "-e", "SELECT 1"]
       interval: 5s
@@ -28,6 +31,7 @@ services:
       - FE_ADDRESS=starrocks-fe:9010
     volumes:
       - sr-be-storage:/opt/starrocks/be/storage
+      - ../docker/be.conf:/opt/starrocks/be/conf/be.conf:ro
     networks:
       - nova
 

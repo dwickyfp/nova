@@ -117,6 +117,11 @@ classification happens, because the engine skips them too.
 Nova has one source of truth for credentials: StarRocks. The proxy does not add
 a second, and it never sees a password.
 
+The StarRocks `root` identity is internal-only and is never published through
+Nova's client-facing MySQL endpoint. Nova rejects `root` (case-insensitively)
+before relaying the authentication response upstream; regular users continue
+to be authenticated by StarRocks.
+
 It reads StarRocks' own `HandshakeV10`, presents that scramble to the client as
 its own, and forwards the client's response back on the same upstream socket.
 StarRocks — the only holder of the password hash — decides. A fresh upstream

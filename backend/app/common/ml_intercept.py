@@ -47,12 +47,44 @@ def rewrite_ml_predict_sql(sql: str, match: re.Match) -> tuple[str, str, list[st
     # Parse feature args (split by comma, respect parentheses)
     features = _split_args(feature_args_str)
 
-    # Replace ml_predict(...) with a placeholder column
-    # We'll replace the entire ml_predict(...) call with NULL as ml_prediction
-    # and add the feature columns to the SELECT
-    inner_sql = sql[: match.start()] + "NULL AS __ml_prediction__" + sql[match.end() :]
+    # Execute a dedicated feature query, then append vectorized predictions in
+    # Nova. Keeping the original FROM/WHERE/GROUP/ORDER tail delegates all data
+    # processing to StarRocks while ensuring no scalar UDF or per-row HTTP call
+    # remains in the active path.
+    from_index = _top_level_from(sql, match.end())
+    if from_index < 0:
+        raise ValueError("ML_PREDICT requires a FROM clause")
+    inner_sql = "SELECT " + ", ".join(features) + " " + sql[from_index:]
 
     return alias, inner_sql, features
+
+
+def _top_level_from(sql: str, start: int) -> int:
+    depth = 0
+    quote: str | None = None
+    index = start
+    while index < len(sql):
+        char = sql[index]
+        if quote:
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0 and sql[index : index + 4].upper() == "FROM":
+            before = sql[index - 1] if index else " "
+            after = sql[index + 4] if index + 4 < len(sql) else " "
+            if not (before.isalnum() or before == "_") and not (
+                after.isalnum() or after == "_"
+            ):
+                return index
+        index += 1
+    return -1
 
 
 def _split_args(args_str: str) -> list[str]:

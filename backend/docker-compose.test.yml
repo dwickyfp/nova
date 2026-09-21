@@ -18,7 +18,9 @@ services:
     command:
       - /bin/bash
       - -c
-      - /opt/starrocks/fe/bin/start_fe.sh --host_type IP --logconsole
+      - |
+        printf '\narrow_flight_port = 9408\n' >> /opt/starrocks/fe/conf/fe.conf
+        /opt/starrocks/fe/bin/start_fe.sh --host_type IP --logconsole
     ports:
       # Host ports are overridable so two checkouts (a local run and a
       # concurrent QA run) can each bring up a stack without colliding on a
@@ -29,9 +31,11 @@ services:
       # so CI and any single-stack run are unchanged.
       - "${NOVA_TEST_FE_MYSQL_PORT:-29030}:9030"   # MySQL protocol (test port)
       - "${NOVA_TEST_FE_HTTP_PORT:-28030}:8030"    # HTTP
+      - "${NOVA_TEST_FE_ARROW_PORT:-29408}:9408"   # Arrow Flight SQL
     environment:
       - FE_QUERY_PORT=9030
       - AWS_EC2_METADATA_DISABLED=true
+      - JAVA_TOOL_OPTIONS=--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED
     healthcheck:
       # Proves the FE is a live leader, not merely that it accepts a socket.
       # `SELECT 1` can answer before election completes and would give a flaky
@@ -65,6 +69,7 @@ services:
       - -c
       - |
         set -e
+        printf '\narrow_flight_port = 9419\n' >> /opt/starrocks/be/conf/be.conf
         /opt/starrocks/be/bin/start_be.sh --logconsole &
         BE_IP="$$(hostname -i | awk '{print $$1}')"
         for i in $$(seq 1 60); do

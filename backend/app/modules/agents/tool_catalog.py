@@ -64,6 +64,35 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             },
         },
     ),
+    "ml_execute": (
+        "Run bounded, deterministic ML over a caller-authorized SQL feature query.",
+        {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "enum": [
+                        "classification",
+                        "regression",
+                        "forecast",
+                        "anomaly_detection",
+                        "clustering",
+                    ],
+                },
+                "input_sql": {"type": "string"},
+                "feature_columns": {"type": "array", "items": {"type": "string"}},
+                "target": {"type": "string"},
+                "timestamp": {"type": "string"},
+                "series": {"type": "string"},
+                "horizon": {"type": "integer", "minimum": 1},
+                "mode": {"type": "string", "enum": ["interactive", "balanced", "best"]},
+                "persist": {"type": "boolean"},
+                "model_name": {"type": "string"},
+                "parameters": {"type": "object"},
+            },
+            "required": ["task", "input_sql"],
+        },
+    ),
     "load_skill": (
         "Load the full playbook for one Nova SQL skill before answering a task it covers.",
         {
@@ -114,6 +143,7 @@ AGENT_BUNDLEABLE_TOOLS = (
     "semantic_query",
     "semantic_search",
     "data_to_chart",
+    "ml_execute",
 )
 
 

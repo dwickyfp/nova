@@ -29,6 +29,7 @@ KNOWN_TOOLS = frozenset(
         "semantic_query",
         "semantic_search",
         "data_to_chart",
+        "ml_execute",
     }
 )
 
@@ -79,6 +80,11 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
             registry.register(data_to_chart_tool)
         except ImportError:  # pragma: no cover - stage ordering only
             pass
+
+    if "ml_execute" in selected:
+        from app.modules.agents.tools.ml_execute import ml_execute_tool
+
+        registry.register(ml_execute_tool)
 
     return registry
 

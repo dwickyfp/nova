@@ -25,6 +25,7 @@ AgentToolName = Literal[
     "semantic_query",
     "semantic_search",
     "data_to_chart",
+    "ml_execute",
 ]
 
 #: HITL policy. ``auto_read_only`` runs read-only tools without a prompt;

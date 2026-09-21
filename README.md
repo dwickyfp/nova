@@ -123,14 +123,15 @@ No viable statement for input 'CREATE ML_MODEL'
 | `CREATE ML_MODEL ... AS SELECT ...` | SQL Workspace, Query API | Intercepts the DDL, runs Python ML training, stores metadata and model versions in `NOVA_SYSTEM` |
 | `@stage.path.file` | SQL Workspace, Query API | Resolves the stage, detects file format, injects credentials, rewrites to StarRocks `FILES(...)` |
 | `AI_COMPLETE`, `AI_SENTIMENT`, `AI_CLASSIFY`, etc. | SQL Workspace after AI functions are registered | Nova manages StarRocks global UDFs and provider aliases |
-| `ML_PREDICT` / prediction APIs | ML API, optionally SQL UDF when configured | Uses registered model aliases and stored model versions |
+| `ML_PREDICT` / prediction APIs | SQL Workspace, Query API, ML API | Resolves a scoped alias, loads a checksummed artifact, and predicts one vectorized batch |
 
 ### 1. Train ML from the SQL Workspace
 
-Nova v1 supports classical `REGRESSION` and `CLASSIFICATION` models from
-worksheet SQL. The training query must return the target column and numeric
-feature columns. The training data is read using the logged-in StarRocks user,
-so normal StarRocks RBAC still applies.
+Nova supports `REGRESSION`, `CLASSIFICATION`, `FORECAST`,
+`ANOMALY_DETECTION`, and `CLUSTERING` from worksheet SQL. Numeric,
+categorical, boolean, and datetime features share a serialized preprocessing
+pipeline. Training data is streamed as bounded Arrow batches using the
+logged-in StarRocks user, so normal StarRocks RBAC still applies.
 
 Use database context `NOVA_EXAMPLE` for the seeded demo data.
 
@@ -169,9 +170,12 @@ Supported clauses:
 
 | Clause | Required | Example | Notes |
 |---|---:|---|---|
-| `TYPE` | Yes | `TYPE = REGRESSION` | `REGRESSION` or `CLASSIFICATION` |
-| `TARGET` | Yes | `TARGET = total_amount` | Must be present in the `SELECT` output |
-| `ALGORITHM` | No | `ALGORITHM = random_forest` | `auto`, `linear`, `logistic`, `decision_tree`, `random_forest`, `gradient_boost`, `knn`, `svm` |
+| `TYPE` | Yes | `TYPE = REGRESSION` | `CLASSIFICATION`, `REGRESSION`, `FORECAST`, `ANOMALY_DETECTION`, or `CLUSTERING` |
+| `TARGET` | Task-dependent | `TARGET = total_amount` | Required for supervised and forecast tasks; omitted for normal anomaly/clustering runs |
+| `ALGORITHM` | No | `ALGORITHM = auto` | `auto` uses FLAML for tabular tasks and bounded native candidate selection for other tasks |
+| `MODE` | No | `MODE = BALANCED` | `INTERACTIVE`, `BALANCED`, or `BEST` resource/search budget |
+| `TIMESTAMP` / `HORIZON` | Forecast | `TIMESTAMP = date HORIZON = 30` | Chronological forecasting contract |
+| `SERIES` / `FREQUENCY` | No | `SERIES = store_id FREQUENCY = 'D'` | Multi-series key and optional frequency override |
 | `TEST_SIZE` | No | `TEST_SIZE = 0.2` | Use `0` for tiny demo datasets |
 | `FEATURES` | No | `FEATURES = (order_id, customer_id)` | Defaults to all columns except target |
 | `HYPERPARAMETERS` | No | `HYPERPARAMETERS = JSON '{"n_estimators": 50}'` | Must be a JSON object |
@@ -203,8 +207,8 @@ ORDER BY v.created_at DESC;
 
 ### 2. Use trained ML models
 
-The reliable v1 path for prediction is the ML API. First create an alias for a
-model version:
+Prediction is available through the ML API and Nova-intercepted SQL. First
+create an owner/database-scoped alias for a model version:
 
 ```bash
 export NOVA_TOKEN="$(
@@ -254,9 +258,13 @@ curl -X POST http://localhost:8000/api/v1/ml/predict/batch \
   }'
 ```
 
-`ML_PREDICT(...)` exists as a Nova-managed UDF surface, but deployments may
-return a helper message until the runtime UDF is configured. Use the API path
-above for guaranteed v1 predictions.
+`ML_PREDICT(...)` in the SQL Workspace and Query API executes as one bounded,
+vectorized Nova batch; it does not make one HTTP request per row. The old Java
+scalar HTTP UDF remains a compatibility path only for direct engine clients.
+
+For ephemeral runs, promotion, resource controls, artifact/version semantics,
+and the complete architecture, see
+[`docs/28-native-ml-runtime.md`](docs/28-native-ml-runtime.md).
 
 ### 3. Query staged files with `@stage`
 
@@ -606,7 +614,7 @@ partial implementation say so explicitly.
 
 ### Phase 6 — Advanced Features 🔶
 - [x] AI Provider management (OpenAI, Anthropic, openai-compatible) — `backend/app/modules/ai_ml/router.py`, UI `frontend/src/features/ai-providers/`
-- [x] ML model registry (classification, regression; 8 algorithms) — `backend/app/modules/ml_engine/service.py`, tables `NOVA_SYSTEM.ML_MODELS` / `ML_MODEL_VERSIONS` / `ML_MODEL_ALIASES` (`docker/init-nova.sql:204-234`). **Note:** `forecast` and `anomaly_detection` are accepted as `model_type` values (`backend/app/modules/ml_engine/schemas.py:15-21`) and trained with the regression/classification estimator families respectively; a dedicated time-series forecaster (ARIMA/ETS) is not yet implemented, so `ML_FORECAST(...)` from `docs/19-machine-learning.md` still has no backend
+- [x] Native ML runtime (FLAML classification/regression, StatsForecast, PyOD anomaly detection, clustering, ephemeral runs, object-store artifacts, versioned registry, vectorized inference) — `backend/app/modules/ml_engine/`, `docs/28-native-ml-runtime.md`
 - [x] AI SQL functions (AI_COMPLETE, AI_SENTIMENT, AI_SUMMARIZE, AI_TRANSLATE, …) — `backend/app/modules/llm_functions/service.py:34-64`, registered as StarRocks UDFs (`service.py:372-377`)
 - [x] External catalogs (Hive + Iceberg, GA-only) — backend module implemented and registered (`backend/app/modules/external_catalogs/service.py:124-177` builds `CREATE` / `ALTER` / `DROP`; `router.py:40-131` exposes CRUD + external-table listing; mounted at `backend/app/main.py:179`, schema ensured at `:70-72`), frontend at `frontend/src/features/external-catalogs/`, tests at `backend/tests/unit/test_external_catalogs.py` + `backend/tests/integration/test_external_catalogs_l3.py`. Paimon / JDBC / Delta Lake are **not** implemented — `CatalogType` accepts only `hive\|iceberg` (`.../external_catalogs/schemas.py:20-24`)
 - [ ] Dashboards (charts, widgets, auto-refresh) — `backend/app/modules/dashboards/` is an empty stub; tables only (`NOVA_SYSTEM.CONFIG_DASHBOARDS`, `CONFIG_DASHBOARD_WIDGETS`, `docker/init-nova.sql:152-163`)

@@ -67,6 +67,11 @@ SERVER_STATUS_AUTOCOMMIT = 1 << 1
 #: StarRocks' own ER_ACCESS_DENIED_ERROR.
 ER_ACCESS_DENIED_ERROR = 1045
 
+# StarRocks keeps ``root`` for internal engine administration. Nova must never
+# publish that identity through its client-facing MySQL endpoint, even when the
+# credentials would otherwise be accepted by StarRocks.
+_INTERNAL_ONLY_USERS = frozenset({"root"})
+
 
 class AuthenticationError(Exception):
     """The client could not be authenticated. Carries a client-safe message."""
@@ -119,9 +124,13 @@ class StarRocksLogin:
         uses.
 
         Raises:
-            AuthenticationError: StarRocks refused the login.
+            AuthenticationError: Nova blocks the user or StarRocks refuses the
+                login.
         """
         del database
+        if username.casefold() in _INTERNAL_ONLY_USERS:
+            raise AuthenticationError(f"Access denied for user '{username}'")
+
         payload = _build_handshake_response(username, auth_response, None)
         self.writer.write(length_header(payload) + b"\x01" + payload)
         await self.writer.drain()

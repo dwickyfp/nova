@@ -19,16 +19,31 @@ _CREATE_ML_MODEL_PATTERN = re.compile(
 #: Keeping the set here — rather than a permissive identifier capture — is what
 #: still rejects `TYPE = BANANA` with a useful message.
 _TYPE_PATTERN = re.compile(
-    r"\bTYPE\s*=\s*(?P<value>CLASSIFICATION|REGRESSION|FORECAST|ANOMALY_DETECTION)\b",
+    r"\bTYPE\s*=\s*(?P<value>CLASSIFICATION|REGRESSION|FORECAST|ANOMALY_DETECTION|CLUSTERING)\b",
     re.IGNORECASE,
 )
 _TARGET_PATTERN = re.compile(
-    r"\bTARGET\s*=\s*(?P<value>`[^`]+`|[A-Za-z_][A-Za-z0-9_$]*)",
+    r"\bTARGET\s*=\s*(?P<value>`[^`]+`|'[^']+'|[A-Za-z_][A-Za-z0-9_$]*)",
     re.IGNORECASE,
 )
 _ALGORITHM_PATTERN = re.compile(
-    r"\bALGORITHM\s*=\s*(?P<value>auto|linear|logistic|decision_tree|random_forest|gradient_boost|knn|svm)\b",
+    r"\bALGORITHM\s*=\s*(?P<value>[A-Za-z_][A-Za-z0-9_]*)\b",
     re.IGNORECASE,
+)
+_TIMESTAMP_PATTERN = re.compile(
+    r"\bTIMESTAMP\s*=\s*(?P<value>`[^`]+`|'[^']+'|[A-Za-z_][A-Za-z0-9_$]*)",
+    re.IGNORECASE,
+)
+_SERIES_PATTERN = re.compile(
+    r"\bSERIES\s*=\s*(?P<value>`[^`]+`|'[^']+'|[A-Za-z_][A-Za-z0-9_$]*)",
+    re.IGNORECASE,
+)
+_HORIZON_PATTERN = re.compile(r"\bHORIZON\s*=\s*(?P<value>\d+)", re.IGNORECASE)
+_FREQUENCY_PATTERN = re.compile(
+    r"\bFREQUENCY\s*=\s*'(?P<value>[^']+)'", re.IGNORECASE
+)
+_MODE_PATTERN = re.compile(
+    r"\bMODE\s*=\s*(?P<value>INTERACTIVE|BALANCED|BEST)\b", re.IGNORECASE
 )
 _TEST_SIZE_PATTERN = re.compile(
     r"\bTEST_SIZE\s*=\s*(?P<value>0(?:\.\d+)?|1(?:\.0+)?)\b",
@@ -50,12 +65,17 @@ class CreateMLModelStatement:
 
     model_name: str
     model_type: str
-    target_column: str
+    target_column: str | None
     training_sql: str
     algorithm: str = "auto"
     test_size: float = 0.2
     feature_columns: list[str] | None = None
     hyperparameters: dict[str, Any] | None = None
+    timestamp_column: str | None = None
+    series_column: str | None = None
+    horizon: int | None = None
+    frequency: str | None = None
+    mode: str = "balanced"
 
 
 def is_create_ml_model(sql: str) -> bool:
@@ -80,8 +100,8 @@ def parse_create_ml_model(sql: str) -> CreateMLModelStatement:
     if not match:
         raise ValueError(
             "Invalid CREATE ML_MODEL syntax. Expected: CREATE ML_MODEL name "
-            "TYPE = CLASSIFICATION|REGRESSION|FORECAST|ANOMALY_DETECTION "
-            "TARGET = target AS SELECT ..."
+            "TYPE = CLASSIFICATION|REGRESSION|FORECAST|ANOMALY_DETECTION|CLUSTERING "
+            "AS SELECT ..."
         )
 
     body = match.group("body")
@@ -90,15 +110,21 @@ def parse_create_ml_model(sql: str) -> CreateMLModelStatement:
     if not type_match:
         raise ValueError(
             "CREATE ML_MODEL requires TYPE = CLASSIFICATION, REGRESSION, "
-            "FORECAST, or ANOMALY_DETECTION"
+            "FORECAST, ANOMALY_DETECTION, or CLUSTERING"
         )
-    if not target_match:
-        raise ValueError("CREATE ML_MODEL requires TARGET = target_column")
+    model_type = type_match.group("value").lower()
+    if model_type in {"classification", "regression", "forecast"} and not target_match:
+        raise ValueError(f"CREATE ML_MODEL TYPE={model_type.upper()} requires TARGET")
 
     algorithm_match = _ALGORITHM_PATTERN.search(body)
     test_size_match = _TEST_SIZE_PATTERN.search(body)
     features_match = _FEATURES_PATTERN.search(body)
     hyperparameters_match = _HYPERPARAMETERS_PATTERN.search(body)
+    timestamp_match = _TIMESTAMP_PATTERN.search(body)
+    series_match = _SERIES_PATTERN.search(body)
+    horizon_match = _HORIZON_PATTERN.search(body)
+    frequency_match = _FREQUENCY_PATTERN.search(body)
+    mode_match = _MODE_PATTERN.search(body)
 
     test_size = float(test_size_match.group("value")) if test_size_match else 0.2
     if not 0 <= test_size < 1:
@@ -117,13 +143,24 @@ def parse_create_ml_model(sql: str) -> CreateMLModelStatement:
 
     return CreateMLModelStatement(
         model_name=_unquote_identifier(match.group("model_name")),
-        model_type=type_match.group("value").lower(),
-        target_column=_unquote_identifier(target_match.group("value")),
+        model_type=model_type,
+        target_column=(
+            _unquote_identifier(target_match.group("value")) if target_match else None
+        ),
         training_sql=match.group("training_sql").strip(),
         algorithm=(algorithm_match.group("value").lower() if algorithm_match else "auto"),
         test_size=test_size,
         feature_columns=_parse_features(features_match.group("value")) if features_match else None,
         hyperparameters=hyperparameters,
+        timestamp_column=(
+            _unquote_identifier(timestamp_match.group("value")) if timestamp_match else None
+        ),
+        series_column=(
+            _unquote_identifier(series_match.group("value")) if series_match else None
+        ),
+        horizon=int(horizon_match.group("value")) if horizon_match else None,
+        frequency=frequency_match.group("value") if frequency_match else None,
+        mode=mode_match.group("value").lower() if mode_match else "balanced",
     )
 
 
@@ -136,6 +173,8 @@ def _parse_features(raw: str) -> list[str]:
 
 def _unquote_identifier(value: str) -> str:
     value = value.strip()
-    if value.startswith("`") and value.endswith("`"):
+    if (value.startswith("`") and value.endswith("`")) or (
+        value.startswith("'") and value.endswith("'")
+    ):
         return value[1:-1]
     return value

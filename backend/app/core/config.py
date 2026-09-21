@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     STARROCKS_HOST: str = "localhost"
     STARROCKS_FE_MYSQL_PORT: int = 9030
     STARROCKS_HTTP_PORT: int = 8030
+    STARROCKS_ARROW_FLIGHT_PORT: int = 9408
     STARROCKS_ROOT_USER: str = "root"
     STARROCKS_ROOT_PASSWORD: str = ""
 
@@ -136,6 +137,25 @@ class Settings(BaseSettings):
     #: Comma-separated peer addresses allowed to reach internal endpoints in
     #: addition to loopback. Empty means loopback only.
     NOVA_INTERNAL_TRUSTED_PROXY: str = ""
+
+    # --- ML execution ---
+    ML_ARROW_ENABLED: bool = True
+    ML_ARROW_BATCH_SIZE: int = 65536
+    ML_MYSQL_BATCH_SIZE: int = 4096
+    ML_INTERACTIVE_TIMEOUT_SECONDS: float = 10.0
+    ML_BALANCED_TIMEOUT_SECONDS: float = 60.0
+    ML_BEST_TIMEOUT_SECONDS: float = 300.0
+    ML_MAX_INTERACTIVE_ROWS: int = 500_000
+    ML_MAX_INTERACTIVE_BYTES: int = 512 * 1024 * 1024
+    ML_MAX_CONCURRENCY: int = 2
+    ML_WORKER_PROCESSES: int = 2
+    ML_ARTIFACT_STORAGE_CONNECTION: str = "production"
+    ML_ARTIFACT_PREFIX: str = "nova/ml-artifacts"
+    ML_MODEL_CACHE_MAX_MODELS: int = 32
+    ML_MODEL_CACHE_MAX_BYTES: int = 1024 * 1024 * 1024
+    ML_MODEL_CACHE_TTL_SECONDS: int = 900
+    ML_EPHEMERAL_TTL_SECONDS: int = 1800
+    ML_RANDOM_SEED: int = 42
 
     # --- MinIO / S3 (default storage) ---
     S3_ENDPOINT: str = "http://localhost:9000"
