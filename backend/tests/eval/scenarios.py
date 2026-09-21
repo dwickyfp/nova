@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 
 from app.modules.assistant.context import ContextManager
+from app.modules.assistant.state import AssistantMessage
 from tests.benchmark.harness import text_frame, tool_call_frame
 from tests.eval.harness import (
     EvalTool,
@@ -417,6 +418,81 @@ def scenario_tool_detail_is_sent_and_recorded() -> Scenario:
     )
 
 
+def scenario_observability_spans_are_recorded() -> Scenario:
+    """Provider/tool timing and the tool-owned semantic snapshot survive replay."""
+    semantic = {
+        "kind": "semantic_context",
+        "semantic_model": {"id": "m1", "name": "sales", "ossie_version": "0.1.1"},
+        "question": "revenue by category",
+        "datasets": [{"name": "orders", "source": "NOVA_DEMO.orders"}],
+        "metrics": ["revenue"],
+        "generated_sql": "SELECT category, SUM(total) FROM NOVA_DEMO.orders GROUP BY category",
+        "validation_warnings": [],
+    }
+    return Scenario(
+        name="observability_spans_are_recorded",
+        script=[
+            tool_call_frame(
+                "semantic-1",
+                name="semantic_query",
+                arguments={"question": "revenue by category"},
+            ),
+            text_frame("Revenue is highest in Electronics."),
+        ],
+        tools=[
+            EvalTool(
+                "semantic_query",
+                classification="read_only",
+                summary="4 rows",
+                trace_detail=semantic,
+            )
+        ],
+        read_only_grant=True,
+        checks=[
+            check("provider span has timing", _provider_span_has_timing),
+            check("tool span has timing", _tool_span_has_timing),
+            check("every process span has timing", _all_process_spans_have_timing),
+            check("semantic snapshot persisted", _semantic_snapshot_persisted),
+            check("finished normally", finished_with("stop")),
+        ],
+    )
+
+
+def _provider_span_has_timing(result) -> bool | str:
+    spans = [step for step in result.steps if step.get("kind") == "provider"]
+    if spans and all("step_id" in step and "duration_ms" in step for step in spans):
+        return True
+    return f"provider spans missing timing: {spans}"
+
+
+def _tool_span_has_timing(result) -> bool | str:
+    span = next((step for step in result.steps if step.get("kind") == "tool"), None)
+    if span and "step_id" in span and "duration_ms" in span:
+        return True
+    return f"tool span missing timing: {span}"
+
+
+def _all_process_spans_have_timing(result) -> bool | str:
+    process_kinds = {"reasoning", "provider", "tool", "answer", "context"}
+    spans = [step for step in result.steps if step.get("kind") in process_kinds]
+    missing = [
+        step
+        for step in spans
+        if "step_id" not in step or "started_offset_ms" not in step or "duration_ms" not in step
+    ]
+    if spans and not missing:
+        return True
+    return f"process spans missing timing: {missing or spans}"
+
+
+def _semantic_snapshot_persisted(result) -> bool | str:
+    span = next((step for step in result.steps if step.get("kind") == "tool"), {})
+    detail = span.get("trace_detail") or {}
+    if detail.get("kind") == "semantic_context" and detail.get("generated_sql"):
+        return True
+    return f"semantic trace missing: {detail}"
+
+
 def scenario_no_grant_prompts_every_call() -> Scenario:
     """Without a grant, even a read-only call prompts."""
     return Scenario(
@@ -485,6 +561,76 @@ def scenario_artifact_can_precede_later_text() -> Scenario:
             check("layout marker never reaches the user", _marker_is_hidden),
         ],
     )
+
+
+def scenario_follow_up_chart_reuses_previous_table() -> Scenario:
+    """A chart follow-up receives the latest table from the same thread.
+
+    Every turn has a fresh request context. The harness must bridge the recent,
+    persisted table into that context or ``data_to_chart`` sees no data even
+    though the grid is visible directly above the user's follow-up.
+    """
+    chart_tool = EvalTool(
+        "data_to_chart",
+        classification="read_only",
+        description="build a chart from recent data",
+        parameters={
+            "type": "object",
+            "properties": {"intent": {"type": "string"}},
+        },
+        summary="chart built",
+        chart={"chart_spec": '{"mark":"bar"}'},
+    )
+    prior_table = {
+        "kind": "table",
+        "title": "Revenue by category",
+        "columns": ["category", "total_revenue"],
+        "rows": [["Electronics", 154291000], ["Audio", 35895000]],
+    }
+    return Scenario(
+        name="follow_up_chart_reuses_previous_table",
+        content="buat bar chart nya",
+        history_messages=[
+            AssistantMessage(message_id="u-prior", role="user", content="revenue per category"),
+            AssistantMessage(
+                message_id="a-prior",
+                role="assistant",
+                content="Electronics leads.",
+                steps=[prior_table],
+            ),
+        ],
+        script=[
+            tool_call_frame(
+                "c-chart",
+                name="data_to_chart",
+                arguments={"intent": "revenue by category as a bar chart"},
+            ),
+            text_frame("Here is the bar chart."),
+        ],
+        tools=[chart_tool],
+        read_only_grant=True,
+        checks=[
+            check("chart tool ran", used_tool("data_to_chart")),
+            check(
+                "previous table restored before charting",
+                lambda _result: _chart_tool_received_prior_table(chart_tool),
+            ),
+            check("finished normally", finished_with("stop")),
+        ],
+    )
+
+
+def _chart_tool_received_prior_table(tool: EvalTool) -> bool | str:
+    if not tool.last_results:
+        return "chart tool did not capture a context result"
+    restored = tool.last_results[0] or {}
+    if restored.get("columns") != ["category", "total_revenue"]:
+        return f"wrong columns restored: {restored.get('columns')!r}"
+    if restored.get("rows") != [["Electronics", 154291000], ["Audio", 35895000]]:
+        return f"wrong rows restored: {restored.get('rows')!r}"
+    if restored.get("source") != "previous_turn":
+        return f"missing previous-turn provenance: {restored!r}"
+    return True
 
 
 def scenario_generated_sql_is_visible_during_tool_run() -> Scenario:
@@ -650,6 +796,7 @@ def all_scenarios() -> list[Scenario]:
         scenario_prompted_call_is_announced_as_pending(),
         scenario_trace_is_recorded_for_replay(),
         scenario_tool_detail_is_sent_and_recorded(),
+        scenario_observability_spans_are_recorded(),
         scenario_no_grant_prompts_every_call(),
         scenario_iteration_cap(),
         scenario_time_budget(),
@@ -659,6 +806,7 @@ def all_scenarios() -> list[Scenario]:
         scenario_context_overflow_stops_cleanly(),
         scenario_text_precedes_result_artifact(),
         scenario_artifact_can_precede_later_text(),
+        scenario_follow_up_chart_reuses_previous_table(),
         scenario_generated_sql_is_visible_during_tool_run(),
         scenario_multiple_tool_calls_are_serialized(),
     ]

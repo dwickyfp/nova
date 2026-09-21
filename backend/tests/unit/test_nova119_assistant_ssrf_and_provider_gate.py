@@ -112,9 +112,7 @@ async def test_assistant_refuses_private_endpoint_without_calling_out(endpoint, 
         called = True
         raise AssertionError("a guarded client was constructed for a blocked endpoint")
 
-    monkeypatch.setattr(
-        "app.modules.assistant.provider.guarded_async_client", tracking_client
-    )
+    monkeypatch.setattr("app.modules.assistant.provider.guarded_async_client", tracking_client)
 
     client = AssistantProviderClient(timeout_seconds=1.0)
     with pytest.raises(AssistantProviderError) as exc:
@@ -144,9 +142,7 @@ async def test_assistant_refuses_redirect_to_private_address(monkeypatch):
     _public_dns(monkeypatch)
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            302, headers={"location": "http://169.254.169.254/latest/meta-data"}
-        )
+        return httpx.Response(302, headers={"location": "http://169.254.169.254/latest/meta-data"})
 
     monkeypatch.setattr(
         "app.modules.assistant.provider.guarded_async_client", _mock_guarded_client(handler)
@@ -197,6 +193,69 @@ async def test_assistant_public_endpoint_still_succeeds(monkeypatch):
     assert seen["auth"] == "Bearer sk-test"
 
 
+async def test_assistant_retries_a_transient_dns_failure(monkeypatch):
+    """A public provider is not mislabeled private after one DNS miss."""
+    _public_dns(monkeypatch)
+    real_validate = resolve_and_validate_url
+    validations = 0
+
+    def flaky_validate(url: str):
+        nonlocal validations
+        validations += 1
+        if validations == 1:
+            raise BlockedEndpointError("Endpoint host could not be resolved", retryable=True)
+        return real_validate(url)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+        )
+
+    monkeypatch.setattr("app.modules.assistant.provider.resolve_and_validate_url", flaky_validate)
+    monkeypatch.setattr(
+        "app.modules.assistant.provider.guarded_async_client", _mock_guarded_client(handler)
+    )
+
+    client = AssistantProviderClient(max_attempts=3, retry_base_seconds=0)
+    message = await client.complete(
+        messages=[{"role": "user", "content": "hi"}],
+        provider=_config("https://api.example.com/v1/chat/completions"),
+    )
+
+    assert message["content"] == "ok"
+    assert validations == 2
+
+
+async def test_assistant_reports_persistent_dns_failure_accurately(monkeypatch):
+    validations = 0
+    client_constructed = False
+
+    def unresolved(_url: str):
+        nonlocal validations
+        validations += 1
+        raise BlockedEndpointError("Endpoint host could not be resolved", retryable=True)
+
+    def tracking_client(*args, **kwargs):
+        nonlocal client_constructed
+        client_constructed = True
+        raise AssertionError("request transport constructed after unresolved DNS")
+
+    monkeypatch.setattr("app.modules.assistant.provider.resolve_and_validate_url", unresolved)
+    monkeypatch.setattr("app.modules.assistant.provider.guarded_async_client", tracking_client)
+
+    client = AssistantProviderClient(max_attempts=3, retry_base_seconds=0)
+    with pytest.raises(AssistantProviderError) as exc:
+        await client.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            provider=_config("https://api.example.com/v1/chat/completions"),
+        )
+
+    assert validations == 3
+    assert client_constructed is False
+    assert "could not be resolved" in str(exc.value)
+    assert "public http" not in str(exc.value)
+
+
 async def test_assistant_retries_transient_provider_status(monkeypatch):
     _public_dns(monkeypatch)
     attempts = 0
@@ -214,9 +273,7 @@ async def test_assistant_retries_transient_provider_status(monkeypatch):
         "app.modules.assistant.provider.guarded_async_client", _mock_guarded_client(handler)
     )
 
-    client = AssistantProviderClient(
-        timeout_seconds=1.0, max_attempts=2, retry_base_seconds=0
-    )
+    client = AssistantProviderClient(timeout_seconds=1.0, max_attempts=2, retry_base_seconds=0)
     message = await client.complete(
         messages=[{"role": "user", "content": "hi"}],
         provider=_config("https://api.example.com/v1/chat/completions"),
@@ -248,9 +305,7 @@ async def test_assistant_stream_retries_only_before_visible_delta(monkeypatch):
         "app.modules.assistant.provider.guarded_async_client", _mock_guarded_client(handler)
     )
 
-    client = AssistantProviderClient(
-        timeout_seconds=1.0, max_attempts=2, retry_base_seconds=0
-    )
+    client = AssistantProviderClient(timeout_seconds=1.0, max_attempts=2, retry_base_seconds=0)
     events = [
         event
         async for event in client.stream(
@@ -426,9 +481,7 @@ class TestProviderEndpointValidatedAtStoreTime:
     @pytest.mark.parametrize("endpoint", PRIVATE_ENDPOINTS)
     def test_admin_private_endpoint_on_create_is_400(self, app, spy, endpoint):
         with _as(app, ADMIN_USER) as client:
-            resp = client.post(
-                f"{PREFIX}/providers", json={**CREATE_BODY, "endpoint": endpoint}
-            )
+            resp = client.post(f"{PREFIX}/providers", json={**CREATE_BODY, "endpoint": endpoint})
         assert resp.status_code == 400, resp.text
         assert "not allowed" in resp.json()["detail"]
         assert spy.create_calls == [], "a private endpoint was persisted"
@@ -472,9 +525,7 @@ class TestProviderWriteRoutesUseTheSharedRoleSet:
         from app.modules.ai_ml.router import router
 
         route = next(
-            r
-            for r in router.routes
-            if r.path == path and method.upper() in (r.methods or set())
+            r for r in router.routes if r.path == path and method.upper() in (r.methods or set())
         )
         assert "require_role.<locals>._check" in _dependency_names(route.dependant)
 

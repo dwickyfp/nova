@@ -147,7 +147,7 @@ export function MonitoringHealth() {
   };
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col gap-6 overflow-y-auto">
+    <div className="relative flex flex-col gap-6">
       {isFetching && !isLoading ? <RefreshBanner label="Refreshing" /> : null}
       <PageHeader
         title="Production Health"

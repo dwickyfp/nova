@@ -109,6 +109,7 @@ class EvalTool:
         table: dict[str, Any] | None = None,
         chart: dict[str, Any] | None = None,
         citations: list[dict[str, Any]] | None = None,
+        trace_detail: dict[str, Any] | None = None,
         progress: list[dict[str, Any]] | None = None,
     ) -> None:
         self.name = name
@@ -125,14 +126,17 @@ class EvalTool:
         self.table = table
         self.chart = chart
         self.citations = citations
+        self.trace_detail = trace_detail
         self.progress = progress or []
         self.runs: list[ToolInvocation] = []
+        self.last_results: list[dict[str, Any] | None] = []
 
     def preview(self, invocation: ToolInvocation) -> str:
         return str(invocation.arguments.get("sql", "SELECT 1"))
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         self.runs.append(invocation)
+        self.last_results.append(getattr(context, "last_result", None))
         for item in self.progress:
             report_tool_progress(
                 context,
@@ -149,6 +153,7 @@ class EvalTool:
                 table=self.table,
                 chart=self.chart,
                 citations=self.citations,
+                trace_detail=self.trace_detail,
             )
         return ToolOutcome(ok=False, summary="", error=self.error or "eval failure")
 
@@ -178,6 +183,7 @@ class Scenario:
     resolve_consent: Callable[[ToolInvocation, str], Awaitable[bool | None]] | None = None
     history_turns: int = 0
     history_chars: int = 0
+    history_messages: list[AssistantMessage] = field(default_factory=list)
     system_prompt: str = "eval system prompt"
     context_manager: ContextManager | None = None
     max_iterations: int = 8
@@ -228,6 +234,7 @@ async def run_scenario(scenario: Scenario) -> TurnResult:
         thread.messages.append(
             AssistantMessage(message_id=f"a{i}", role="assistant", content=f"answer {i} {pad}")
         )
+    thread.messages.extend(scenario.history_messages)
     thread.consent.always_allow_read_only = scenario.read_only_grant
     thread.messages.append(
         AssistantMessage(message_id="cur", role="user", content=scenario.content)

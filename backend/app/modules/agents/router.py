@@ -65,6 +65,7 @@ from app.modules.assistant.schemas import (
     ThreadCreateRequest,
     ThreadDetailResponse,
     ThreadListResponse,
+    ThreadUpdateRequest,
     ThreadView,
 )
 from app.modules.assistant.service import (
@@ -193,18 +194,68 @@ def _message_view(row: dict) -> MessageView:
 #: enough to scan in a sidebar without wrapping.
 _TITLE_MAX = 80
 
+#: Title generation is a chat-completions call against the agent's provider; the
+#: prompt below is combined with the user's first question as the sole message.
+CREATE_THREAD_TITLE_PROMPT = """You are a chat title generation expert.
+
+Critical rules:
+- Generate a concise title based on the first user message
+- Title must be under 80 characters (absolutely no more than 80 characters)
+- Summarize only the core content clearly
+- Do not use quotes, colons, or special characters
+- Use the same language as the user's message"""
+
 
 def _thread_title(question: str) -> str:
-    """A conversation title from the question that started it.
+    """A bounded one-line title, used when no model call is available.
 
-    The user's own words, collapsed to one line and bounded. No model call and
-    no invented summary: a title that paraphrases can be wrong, and the question
-    is already the most accurate label the thread has.
+    The user's own words, collapsed to one line and bounded. This is the honest
+    fallback: the question is already the most accurate label the thread has.
     """
     collapsed = " ".join(question.split())
     if len(collapsed) <= _TITLE_MAX:
         return collapsed
     return collapsed[: _TITLE_MAX - 1].rstrip() + "\u2026"
+
+
+def _clean_title(raw: str, question: str) -> str:
+    """Normalize a model-generated title and bound it to the sidebar width.
+
+    Strips wrapping quotes and trailing punctuation the prompt forbids, collapses
+    whitespace, and falls back to the deterministic question title when the model
+    returned nothing usable.
+    """
+    title = " ".join((raw or "").split())
+    title = title.strip("\"'`")
+    title = title.rstrip(" .:;,-")
+    if not title:
+        return _thread_title(question)
+    if len(title) > _TITLE_MAX:
+        title = title[: _TITLE_MAX - 1].rstrip() + "\u2026"
+    return title
+
+
+async def _generate_thread_title(
+    question: str, *, provider_id: str | None, model: str | None
+) -> str:
+    """Ask the agent's model for a concise title, falling back to the question.
+
+    Title generation is best-effort: a provider failure or an unusable reply must
+    never fail the turn, so every error path returns the deterministic title.
+    """
+    try:
+        config = await assistant_provider.resolve(provider_id=provider_id, model=model)
+        message = await assistant_provider.complete(
+            messages=[
+                {"role": "system", "content": CREATE_THREAD_TITLE_PROMPT},
+                {"role": "user", "content": question},
+            ],
+            provider=config,
+        )
+    except Exception:  # noqa: BLE001 - a title is not worth failing a turn
+        logger.warning("Could not generate the thread title")
+        return _thread_title(question)
+    return _clean_title(message.get("content") or "", question)
 
 
 def _text_from_frame(frame: str) -> str:
@@ -465,6 +516,29 @@ async def delete_agent_thread(
     return None
 
 
+@router.put("/{agent_id}/threads/{thread_id}", response_model=ThreadView)
+async def rename_agent_thread(
+    agent_id: str,
+    thread_id: str,
+    body: ThreadUpdateRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Rename a conversation. The generated title is a summary, not a name the
+    user chose, so a title they can edit is the one that will actually be
+    findable the next time they look for it."""
+    await _require_agent(agent_id, user["username"])
+    await _require_agent_thread(thread_id, agent_id, user["username"])
+    if body.title is None:
+        thread = await _require_agent_thread(thread_id, agent_id, user["username"])
+        return _thread_view(thread)
+    renamed = await assistant_repository.rename_thread(
+        thread_id, body.title, user_name=user["username"]
+    )
+    if renamed is None:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    return _thread_view(renamed)
+
+
 @router.post("/{agent_id}/threads/{thread_id}/messages")
 async def send_agent_message(
     agent_id: str,
@@ -521,12 +595,18 @@ async def send_agent_message(
     )
 
     # The first question names the conversation. A thread created as "New chat"
-    # and never renamed is unfindable in a history list, and the question is the
-    # only honest title available: it is what the user actually asked.
+    # and never renamed is unfindable in a history list. The agent's model
+    # summarizes the question into a concise title; if the call is unavailable,
+    # the bounded question itself is the honest fallback.
     if not any(row["role"] == "user" for row in history):
         try:
+            title = await _generate_thread_title(
+                body.content,
+                provider_id=agent.get("model_provider_id"),
+                model=agent.get("model_name"),
+            )
             await assistant_repository.rename_thread(
-                thread_id, _thread_title(body.content), user_name=user_name
+                thread_id, title, user_name=user_name
             )
         except Exception:  # noqa: BLE001 - a title is not worth failing a turn
             logger.warning("Could not set the thread title")

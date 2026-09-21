@@ -56,7 +56,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         },
     ),
     "data_to_chart": (
-        "Build a Vega-Lite chart from the data already fetched in this turn.",
+        "Build a Vega-Lite chart from the latest data already fetched in this conversation.",
         {
             "type": "object",
             "properties": {
@@ -65,8 +65,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         },
     ),
     "load_skill": (
-        "Load the full playbook for one Nova SQL skill before answering a task it "
-        "covers.",
+        "Load the full playbook for one Nova SQL skill before answering a task it covers.",
         {
             "type": "object",
             "properties": {

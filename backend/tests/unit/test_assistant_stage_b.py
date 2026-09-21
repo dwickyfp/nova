@@ -24,7 +24,7 @@ from app.modules.assistant import events
 from app.modules.assistant.consent import ConsentBroker, ConsentConflictError
 from app.modules.assistant.provider import AssistantProviderClient, AssistantProviderError
 from app.modules.assistant.schemas import ToolCallView
-from app.modules.assistant.service import AssistantLoop, LoopContext
+from app.modules.assistant.service import AssistantLoop, LoopContext, _latest_thread_result
 from app.modules.assistant.state import (
     AssistantMessage,
     AssistantThread,
@@ -129,9 +129,7 @@ def _tool_call_statuses(frames: list[str]) -> list[str]:
     status is what says whether the call is waiting on the user. ``pending``
     means a prompt is open.
     """
-    return [
-        _frame_data(f).get("status") for f in frames if _frame_event(f) == "tool_call"
-    ]
+    return [_frame_data(f).get("status") for f in frames if _frame_event(f) == "tool_call"]
 
 
 # ── Event contract ───────────────────────────────────────────────────────────
@@ -141,9 +139,7 @@ def test_event_names_and_shapes_are_frozen():
     assert _frame_event(events.text_delta("hi")) == "text_delta"
     assert _frame_data(events.text_delta("hi")) == {"text": "hi"}
 
-    view = ToolCallView(
-        tool_call_id="c1", tool_name="query_execute", sql_preview="SELECT 1"
-    )
+    view = ToolCallView(tool_call_id="c1", tool_name="query_execute", sql_preview="SELECT 1")
     assert _frame_event(events.tool_call(view)) == "tool_call"
     assert _frame_data(events.tool_call(view))["status"] == "pending"
 
@@ -484,9 +480,7 @@ async def test_router_stored_user_message_is_not_duplicated_to_the_provider():
     loop = AssistantLoop(provider=provider, registry=ToolRegistry())
     thread = _thread()
     # What send_message does before invoking the loop.
-    thread.messages.append(
-        AssistantMessage(message_id="u1", role="user", content="SELECT 1")
-    )
+    thread.messages.append(AssistantMessage(message_id="u1", role="user", content="SELECT 1"))
 
     await _collect(
         loop.run(
@@ -514,9 +508,7 @@ async def test_two_turns_do_not_duplicate_or_lose_user_messages():
     thread = _thread()
 
     # Turn 1
-    thread.messages.append(
-        AssistantMessage(message_id="u1", role="user", content="one")
-    )
+    thread.messages.append(AssistantMessage(message_id="u1", role="user", content="one"))
     await _collect(
         loop.run(
             thread=thread,
@@ -525,14 +517,10 @@ async def test_two_turns_do_not_duplicate_or_lose_user_messages():
             resolve_consent=lambda inv, cls: _allow(),
         )
     )
-    thread.messages.append(
-        AssistantMessage(message_id="a1", role="assistant", content="first")
-    )
+    thread.messages.append(AssistantMessage(message_id="a1", role="assistant", content="first"))
 
     # Turn 2
-    thread.messages.append(
-        AssistantMessage(message_id="u2", role="user", content="two")
-    )
+    thread.messages.append(AssistantMessage(message_id="u2", role="user", content="two"))
     await _collect(
         loop.run(
             thread=thread,
@@ -551,18 +539,54 @@ async def test_build_messages_keeps_a_genuine_repeat_question():
     """Two identical questions in a row are two turns, not one duplicated."""
     loop = AssistantLoop(provider=FakeProvider([]), registry=ToolRegistry())
     thread = _thread()
-    thread.messages.append(
-        AssistantMessage(message_id="u1", role="user", content="same")
-    )
-    thread.messages.append(
-        AssistantMessage(message_id="a1", role="assistant", content="answer")
-    )
-    thread.messages.append(
-        AssistantMessage(message_id="u2", role="user", content="same")
-    )
+    thread.messages.append(AssistantMessage(message_id="u1", role="user", content="same"))
+    thread.messages.append(AssistantMessage(message_id="a1", role="assistant", content="answer"))
+    thread.messages.append(AssistantMessage(message_id="u2", role="user", content="same"))
     messages = loop._build_messages(thread, "same")
     user_entries = [m["content"] for m in messages if m["role"] == "user"]
     assert user_entries == ["same", "same"]
+
+
+def test_latest_thread_result_is_bounded_and_uses_newest_table():
+    thread = _thread()
+    thread.messages.extend(
+        [
+            AssistantMessage(
+                message_id="old",
+                role="assistant",
+                steps=[
+                    {
+                        "kind": "table",
+                        "title": "Old result",
+                        "columns": ["old"],
+                        "rows": [[1]],
+                    }
+                ],
+            ),
+            AssistantMessage(
+                message_id="new",
+                role="assistant",
+                steps=[
+                    {
+                        "kind": "table",
+                        "title": "Revenue",
+                        "columns": ["category", "revenue"],
+                        "rows": [["Electronics", 10], ["Audio", 5]],
+                    }
+                ],
+            ),
+            AssistantMessage(message_id="current", role="user", content="chart that"),
+        ]
+    )
+
+    restored = _latest_thread_result(thread)
+
+    assert restored == {
+        "title": "Revenue",
+        "columns": ["category", "revenue"],
+        "rows": [["Electronics", 10], ["Audio", 5]],
+        "source": "previous_turn",
+    }
 
 
 async def test_loop_stops_at_the_iteration_cap():
@@ -701,8 +725,7 @@ async def test_denied_tool_call_is_surfaced_and_not_rerun():
     )
     assert any(_frame_event(f) == "tool_call" for f in frames)
     assert any(
-        _frame_event(f) == "tool_status" and _frame_data(f)["status"] == "denied"
-        for f in frames
+        _frame_event(f) == "tool_status" and _frame_data(f)["status"] == "denied" for f in frames
     )
     assert tool.invocations == []
 
@@ -760,12 +783,8 @@ async def test_provider_resolve_skips_providers_without_a_readable_key(monkeypat
     monkeypatch.setattr(
         "app.modules.assistant.provider.ai_service.list_providers", fake_list_providers
     )
-    monkeypatch.setattr(
-        "app.modules.assistant.provider.ai_service.get_provider_api_key", fake_key
-    )
-    monkeypatch.setattr(
-        "app.modules.assistant.provider.ai_service.list_models", fake_models
-    )
+    monkeypatch.setattr("app.modules.assistant.provider.ai_service.get_provider_api_key", fake_key)
+    monkeypatch.setattr("app.modules.assistant.provider.ai_service.list_models", fake_models)
 
     config = await client.resolve()
     assert config.provider_id == "p2"
@@ -807,9 +826,7 @@ async def test_provider_resolve_honours_the_selected_model(monkeypatch):
             {"id": "m2", "name": "model-y", "is_active": True},
         ]
 
-    monkeypatch.setattr(
-        "app.modules.assistant.provider.ai_service.list_providers", providers
-    )
+    monkeypatch.setattr("app.modules.assistant.provider.ai_service.list_providers", providers)
     monkeypatch.setattr("app.modules.assistant.provider.ai_service.get_provider_api_key", key)
     monkeypatch.setattr("app.modules.assistant.provider.ai_service.list_models", models)
 
@@ -837,9 +854,7 @@ async def test_provider_resolve_rejects_an_unregistered_model(monkeypatch):
     async def models(provider_id):
         return [{"id": "m1", "name": "model-x", "is_active": True}]
 
-    monkeypatch.setattr(
-        "app.modules.assistant.provider.ai_service.list_providers", providers
-    )
+    monkeypatch.setattr("app.modules.assistant.provider.ai_service.list_providers", providers)
     monkeypatch.setattr("app.modules.assistant.provider.ai_service.get_provider_api_key", key)
     monkeypatch.setattr("app.modules.assistant.provider.ai_service.list_models", models)
 
@@ -861,9 +876,7 @@ async def test_provider_resolve_rejects_an_unknown_provider(monkeypatch):
             }
         ]
 
-    monkeypatch.setattr(
-        "app.modules.assistant.provider.ai_service.list_providers", providers
-    )
+    monkeypatch.setattr("app.modules.assistant.provider.ai_service.list_providers", providers)
     with pytest.raises(AssistantProviderError):
         await client.resolve(provider_id="does-not-exist")
 

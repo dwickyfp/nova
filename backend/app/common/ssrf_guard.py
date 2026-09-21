@@ -62,9 +62,13 @@ class BlockedEndpointError(ValueError):
     block, never the resolved address or other internal detail.
     """
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, retryable: bool = False) -> None:
         super().__init__(reason)
         self.reason = reason
+        # DNS can fail transiently. Callers may retry this condition, but must
+        # still fail closed if resolution never succeeds. Policy failures such
+        # as a private, loopback, or malformed endpoint are never retryable.
+        self.retryable = retryable
 
 
 @dataclass(frozen=True)
@@ -114,9 +118,7 @@ def _resolve_host(host: str, port: int) -> tuple[IPAddress, ...]:
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except (socket.gaierror, UnicodeError, OSError) as exc:
-        raise BlockedEndpointError(
-            "Endpoint host could not be resolved"
-        ) from exc
+        raise BlockedEndpointError("Endpoint host could not be resolved", retryable=True) from exc
 
     addresses: list[IPAddress] = []
     for info in infos:
@@ -127,7 +129,7 @@ def _resolve_host(host: str, port: int) -> tuple[IPAddress, ...]:
             raise BlockedEndpointError("Endpoint host resolved to an invalid address") from exc
 
     if not addresses:
-        raise BlockedEndpointError("Endpoint host could not be resolved")
+        raise BlockedEndpointError("Endpoint host could not be resolved", retryable=True)
     return tuple(addresses)
 
 

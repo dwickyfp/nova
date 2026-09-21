@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyEvent, visibleContent, type TranscriptTurn } from "./studio-chat";
+import { applyEvent, type TranscriptTurn } from "./studio-chat";
+import { visibleContent } from "./turn-content-order";
 import type { AssistantEvent } from "@/features/assistant/types";
 
 /**
@@ -291,6 +292,22 @@ describe("studio transcript reducer", () => {
       { type: "done", message_id: "m", finish_reason: "cancelled" },
     ]);
     expect(turn.state).toBe("cancelled");
+  });
+
+  it("gives every rail row a unique id across a multi-iteration run", () => {
+    // The loop re-announces `act` after each observation. The first act settles
+    // when `observe` arrives, so the second act is a new row and must not reuse
+    // the settled row's id — duplicate keys make React drop or duplicate rows.
+    const turn = run([
+      thinking("plan", "Understanding the request", "done"),
+      thinking("act", "Reasoning about the next step"),
+      thinking("observe", "Reading the result", "done"),
+      thinking("act", "Reasoning about the next step"),
+      thinking("observe", "Reading the result", "done"),
+    ]);
+    const ids = turn.steps.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.filter((id) => id.startsWith("think-act"))).toHaveLength(2);
   });
 
   it("ignores lifecycle events it does not render", () => {

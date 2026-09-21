@@ -137,7 +137,8 @@ _TOOL_DESCRIPTIONS = {
         "are filtered, not ranked."
     ),
     "data_to_chart": (
-        "data_to_chart(intent) — build a chart from the data you already fetched " "in this turn."
+        "data_to_chart(intent) — build a chart from the latest data already fetched "
+        "in this conversation, including the preceding turn's table."
     ),
     "create_semantic_model": (
         "create_semantic_model(name, tables, request) — create a semantic model "

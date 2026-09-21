@@ -137,6 +137,11 @@ export const agentsApi = {
     api.delete<void>(
       `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
     ),
+  renameThread: (agentId: string, threadId: string, title: string) =>
+    api.put<AgentThread>(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
+      { title },
+    ),
   decideToolCall: (
     agentId: string,
     toolCallId: string,
@@ -282,6 +287,42 @@ export type StudioCapabilities = {
   }[];
 };
 
+export type StudioArtifact = {
+  artifact_id: string;
+  title: string;
+  artifact_type: "chart" | "table";
+  agent_id: string | null;
+  thread_id: string | null;
+  database_name: string | null;
+  schema_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StudioArtifactDetail = StudioArtifact & {
+  sql_text: string;
+  chart_spec: Record<string, unknown> | null;
+};
+
+export type StudioArtifactCreate = {
+  title: string;
+  artifact_type: "chart" | "table";
+  sql_text: string;
+  database_name?: string | null;
+  schema_name?: string | null;
+  chart_spec?: Record<string, unknown> | null;
+  agent_id?: string | null;
+  thread_id?: string | null;
+};
+
+export type StudioArtifactRefresh = {
+  artifact: StudioArtifactDetail;
+  columns: string[];
+  rows: (string | number | null)[][];
+  row_count: number;
+  elapsed_ms: number;
+};
+
 export const toolsApi = {
   list: () => api.get<{ tools: Tool[]; count: number }>("/agents/tools"),
   create: (body: { name: string; description?: string; source?: string }) =>
@@ -327,6 +368,22 @@ export const studioApi = {
     api.patch<StudioPreferences>("/agents/studio/settings", body),
   capabilities: () =>
     api.get<StudioCapabilities>("/agents/studio/capabilities"),
+  listArtifacts: () =>
+    api.get<{ artifacts: StudioArtifact[]; count: number }>(
+      "/agents/studio/artifacts",
+    ),
+  createArtifact: (body: StudioArtifactCreate) =>
+    api.post<StudioArtifactDetail>("/agents/studio/artifacts", body),
+  getArtifact: (id: string) =>
+    api.get<StudioArtifactDetail>(
+      `/agents/studio/artifacts/${encodeURIComponent(id)}`,
+    ),
+  refreshArtifact: (id: string) =>
+    api.post<StudioArtifactRefresh>(
+      `/agents/studio/artifacts/${encodeURIComponent(id)}/refresh`,
+    ),
+  deleteArtifact: (id: string) =>
+    api.delete<void>(`/agents/studio/artifacts/${encodeURIComponent(id)}`),
 };
 
 // ── Skill Registry ─────────────────────────────────────────────
@@ -420,9 +477,28 @@ export type SessionRow = {
 
 /** One step in an assistant turn's trace, as recorded by the loop. */
 export type TraceStep =
-  | { kind: "reasoning"; phase: string; text: string }
+  | {
+      kind: "reasoning";
+      phase: string;
+      text: string;
+      status?: "running" | "done" | "failed";
+      step_id?: string;
+      started_offset_ms?: number;
+      duration_ms?: number;
+    }
+  | {
+      /** One provider request. It exposes timing and purpose, never hidden CoT. */
+      kind: "provider";
+      step_id?: string;
+      purpose: "planning" | "response";
+      status: "running" | "done" | "failed";
+      started_offset_ms?: number;
+      duration_ms?: number;
+      error?: string;
+    }
   | {
       kind: "tool";
+      step_id?: string;
       tool_call_id?: string;
       name: string;
       preview: string;
@@ -433,8 +509,23 @@ export type TraceStep =
       detail?: string;
       stage?: string;
       status_text?: string;
+      started_offset_ms?: number;
+      duration_ms?: number;
+      progress?: {
+        stage: string;
+        text: string;
+        at_offset_ms?: number;
+        duration_ms?: number;
+      }[];
+      /** Tool-specific, bounded, credential-free observability payload. */
+      trace_detail?: Record<string, unknown>;
     }
-  | { kind: "answer" }
+  | {
+      kind: "answer";
+      step_id?: string;
+      started_offset_ms?: number;
+      duration_ms?: number;
+    }
   | {
       kind: "text";
       content_index: number;
@@ -467,7 +558,14 @@ export type TraceStep =
       citations: { title?: string; source?: string; snippet?: string }[];
     }
   /** A context-management note (NOVA-124). */
-  | { kind: "context"; dropped_turns?: number; cleared_tool_results?: number };
+  | {
+      kind: "context";
+      step_id?: string;
+      dropped_turns?: number;
+      cleared_tool_results?: number;
+      started_offset_ms?: number;
+      duration_ms?: number;
+    };
 
 export type ThreadTurn = {
   message_id: string;

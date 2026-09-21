@@ -1,6 +1,6 @@
-@import 'tailwindcss';
-@import 'tw-animate-css';
-@import './theme.css';
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./theme.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -24,7 +24,7 @@
 
   /* Cursor pointer for buttons */
   button:not(:disabled),
-  [role='button']:not(:disabled) {
+  [role="button"]:not(:disabled) {
     cursor: pointer;
   }
 
@@ -89,18 +89,20 @@ input:-webkit-autofill:active {
 }
 
 .minimal-scrollbar:hover {
-  scrollbar-color: color-mix(in oklab, var(--border) 85%, transparent) transparent;
+  scrollbar-color: color-mix(in oklab, var(--border) 85%, transparent)
+    transparent;
 }
 
 .minimal-scrollbar:hover::-webkit-scrollbar-thumb {
   background-color: color-mix(in oklab, var(--border) 85%, transparent);
 }
 
-.minimal-scrollbar[data-scrolling='true'] {
-  scrollbar-color: color-mix(in oklab, var(--border) 92%, transparent) transparent;
+.minimal-scrollbar[data-scrolling="true"] {
+  scrollbar-color: color-mix(in oklab, var(--border) 92%, transparent)
+    transparent;
 }
 
-.minimal-scrollbar[data-scrolling='true']::-webkit-scrollbar-thumb {
+.minimal-scrollbar[data-scrolling="true"]::-webkit-scrollbar-thumb {
   background-color: color-mix(in oklab, var(--border) 92%, transparent);
 }
 
@@ -112,10 +114,10 @@ input:-webkit-autofill:active {
 .CollapsibleContent {
   overflow: hidden;
 }
-.CollapsibleContent[data-state='open'] {
+.CollapsibleContent[data-state="open"] {
   animation: slideDown 200ms cubic-bezier(0.32, 0.72, 0, 1);
 }
-.CollapsibleContent[data-state='closed'] {
+.CollapsibleContent[data-state="closed"] {
   animation: slideUp 160ms ease-in;
 }
 
@@ -248,6 +250,103 @@ input:-webkit-autofill:active {
   animation: nova-chat-in 0.22s ease-out both;
 }
 
+/* Observability keeps three equally useful panes visible at once. Compact the
+   replay through local typography and spacing instead of CSS zoom: zoom changes
+   ScrollArea layout metrics and can create a large empty band above the panes. */
+@media (min-width: 64rem) {
+  .nova-observability-preview {
+    font-size: 0.75rem;
+    line-height: 1.125rem;
+  }
+
+  .nova-observability-preview .nova-chat-item,
+  .nova-observability-preview button,
+  .nova-observability-preview input,
+  .nova-observability-preview h3,
+  .nova-observability-preview p,
+  .nova-observability-preview table {
+    font-size: 0.75rem;
+    line-height: 1.125rem;
+  }
+
+  .nova-observability-preview [data-testid="process-rail-toggle"] {
+    min-height: 2rem;
+    padding-block: 0.25rem;
+  }
+
+  .nova-observability-preview th,
+  .nova-observability-preview td {
+    padding: 0.25rem 0.5rem;
+  }
+
+  .nova-trace-pane {
+    flex-direction: row;
+    flex-basis: 0;
+    flex-grow: 1;
+    min-width: 20rem;
+    overflow: hidden;
+    transition:
+      flex-grow 200ms ease-out,
+      flex-basis 200ms ease-out,
+      min-width 200ms ease-out;
+  }
+
+  .nova-trace-pane[data-collapsed="true"] {
+    flex-basis: 2.75rem;
+    flex-grow: 0;
+    min-width: 2.75rem;
+  }
+
+  .nova-trace-pane-rail {
+    width: 0;
+    opacity: 0;
+    visibility: hidden;
+    border-right-color: transparent;
+    transition:
+      width 180ms ease-out,
+      opacity 120ms ease-out,
+      visibility 0s linear 180ms,
+      border-color 120ms ease-out;
+  }
+
+  .nova-trace-pane[data-collapsed="true"] .nova-trace-pane-rail {
+    width: 2.75rem;
+    opacity: 1;
+    visibility: visible;
+    border-right-color: var(--border);
+    transition:
+      width 200ms ease-out,
+      opacity 120ms ease-out 60ms,
+      visibility 0s,
+      border-color 120ms ease-out 60ms;
+  }
+
+  .nova-trace-pane-content {
+    min-width: 0;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      opacity 140ms ease-out 50ms,
+      visibility 0s;
+  }
+
+  .nova-trace-pane[data-collapsed="true"] .nova-trace-pane-content {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 100ms ease-out,
+      visibility 0s linear 100ms;
+  }
+}
+
+@media (min-width: 64rem) and (prefers-reduced-motion: reduce) {
+  .nova-trace-pane,
+  .nova-trace-pane-rail,
+  .nova-trace-pane-content {
+    transition: none;
+  }
+}
+
 @keyframes nova-chat-in {
   from {
     opacity: 0;
@@ -282,8 +381,8 @@ input:-webkit-autofill:active {
   .nova-rail-body {
     animation: none;
   }
-  .CollapsibleContent[data-state='open'],
-  .CollapsibleContent[data-state='closed'] {
+  .CollapsibleContent[data-state="open"],
+  .CollapsibleContent[data-state="closed"] {
     animation: none;
   }
 }

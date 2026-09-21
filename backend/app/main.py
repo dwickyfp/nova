@@ -123,9 +123,11 @@ async def lifespan(app: FastAPI):
     # Best-effort in the same way: without it the routes answer 500 rather than
     # taking the whole web service down at boot.
     try:
+        from app.modules.agents.artifact_repository import artifact_repository
         from app.modules.agents.repository import agent_repository
 
         await agent_repository.ensure_schema()
+        await artifact_repository.ensure_schema()
     except Exception as e:
         logger.warning("Could not ensure Agent Studio schema: %s", e)
 

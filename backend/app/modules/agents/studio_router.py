@@ -7,6 +7,9 @@ Studio's Settings/Capabilities.
   GET    /studio/settings                 → identity + preferences
   PATCH  /studio/settings                 → update preferences
   GET    /studio/capabilities             → agents, skills, tools for the sidebar
+  GET    /studio/artifacts                → saved query-backed views
+  POST   /studio/artifacts                → save a chart/table definition
+  POST   /studio/artifacts/{id}/refresh   → rerun its SQL with current RBAC
   GET    /tools                           → list tools (builtin seeded + MCP)
   POST   /tools                           → register a tool by hand
   PATCH  /tools/{tool_id}                 → enable/disable
@@ -30,8 +33,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
 from app.modules.agents import mcp_client, observability, tool_catalog
+from app.modules.agents.artifact_repository import artifact_repository
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.schemas import (
     AccessCheckItem,
@@ -55,6 +60,11 @@ from app.modules.agents.schemas import (
 )
 from app.modules.agents.studio_schemas import (
     AccessCheckRequest,
+    ArtifactCreateRequest,
+    ArtifactListResponse,
+    ArtifactRefreshResponse,
+    ArtifactSummary,
+    ArtifactView,
     RoleListResponse,
     SessionListResponse,
     SessionView,
@@ -66,6 +76,7 @@ from app.modules.agents.studio_schemas import (
     UsageSummary,
 )
 from app.modules.agents.studio_service import studio_service
+from app.modules.query.service import query_service
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +128,120 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
             for t in tools
         ],
     )
+
+
+# ── Query-backed artifacts ───────────────────────────────────
+
+
+def _current_role(user: dict) -> str | None:
+    """Use only a role granted to the current authenticated session."""
+    granted = user.get("roles") or []
+    active = user.get("active_role")
+    if active and active in granted:
+        return active
+    return granted[0] if granted else None
+
+
+async def _artifact_or_404(artifact_id: str, owner_name: str) -> dict:
+    artifact = await artifact_repository.get(artifact_id, owner_name=owner_name)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return artifact
+
+
+@router.get(
+    "/studio/artifacts",
+    response_model=ArtifactListResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def list_artifacts(user: dict = Depends(get_current_user)):
+    rows = await artifact_repository.list(owner_name=user["username"])
+    artifacts = [ArtifactSummary(**row) for row in rows]
+    return ArtifactListResponse(artifacts=artifacts, count=len(artifacts))
+
+
+@router.post(
+    "/studio/artifacts",
+    response_model=ArtifactView,
+    response_class=SanitizingJSONResponse,
+    status_code=201,
+)
+async def create_artifact(
+    body: ArtifactCreateRequest,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        artifact = await artifact_repository.create(
+            owner_name=user["username"],
+            title=body.title.strip(),
+            artifact_type=body.artifact_type,
+            sql_text=body.sql_text,
+            database_name=body.database_name,
+            schema_name=body.schema_name,
+            chart_spec=body.chart_spec,
+            agent_id=body.agent_id,
+            thread_id=body.thread_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ArtifactView(**artifact)
+
+
+@router.get(
+    "/studio/artifacts/{artifact_id}",
+    response_model=ArtifactView,
+    response_class=SanitizingJSONResponse,
+)
+async def get_artifact(artifact_id: str, user: dict = Depends(get_current_user)):
+    artifact = await _artifact_or_404(artifact_id, user["username"])
+    return ArtifactView(**artifact)
+
+
+@router.post(
+    "/studio/artifacts/{artifact_id}/refresh",
+    response_model=ArtifactRefreshResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def refresh_artifact(
+    artifact_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Re-run the saved statement under the caller's current DB permissions."""
+    artifact = await _artifact_or_404(artifact_id, user["username"])
+    results = await query_service.execute_statements(
+        sql=artifact["sql_text"],
+        username=user["username"],
+        encrypted_password=user["encrypted_password"],
+        database=artifact["database_name"],
+        schema=artifact["schema_name"],
+        role=_current_role(user),
+        max_rows=500,
+        session_id=user["session_id"],
+        confirm_destructive=False,
+    )
+    result = results[0]
+    if not result.success:
+        raise HTTPException(
+            status_code=422,
+            detail=result.error or "The artifact query could not be refreshed.",
+        )
+    return ArtifactRefreshResponse(
+        artifact=ArtifactView(**artifact),
+        columns=result.columns,
+        rows=result.rows,
+        row_count=result.row_count,
+        elapsed_ms=result.elapsed_ms,
+    )
+
+
+@router.delete("/studio/artifacts/{artifact_id}", status_code=204)
+async def delete_artifact(
+    artifact_id: str,
+    user: dict = Depends(get_current_user),
+):
+    await _artifact_or_404(artifact_id, user["username"])
+    await artifact_repository.delete(artifact_id, owner_name=user["username"])
+    return None
 
 
 # ── Tools Registry ─────────────────────────────────────────────
@@ -172,9 +297,7 @@ async def delete_tool(tool_id: str, user: dict = Depends(get_current_user)):
             detail="Builtin tools cannot be deleted; disable them instead.",
         )
     # A tool with no delete method: disable it. Kept simple and safe.
-    await agent_repository.set_tool_enabled(
-        tool_id, owner_name=user["username"], enabled=False
-    )
+    await agent_repository.set_tool_enabled(tool_id, owner_name=user["username"], enabled=False)
     return None
 
 
@@ -223,9 +346,7 @@ async def update_mcp_server(
 
 @router.delete("/mcp-servers/{server_id}", status_code=204)
 async def delete_mcp_server(server_id: str, user: dict = Depends(get_current_user)):
-    if not await agent_repository.delete_mcp_server(
-        server_id, owner_name=user["username"]
-    ):
+    if not await agent_repository.delete_mcp_server(server_id, owner_name=user["username"]):
         raise HTTPException(status_code=404, detail="MCP server not found")
     return None
 
@@ -265,9 +386,7 @@ async def discover_mcp_server(
     await agent_repository.update_mcp_server(
         server_id, owner_name=owner, fields={"last_status": "connected"}
     )
-    return McpDiscoverResponse(
-        ok=True, status="connected", tools_discovered=len(discovered)
-    )
+    return McpDiscoverResponse(ok=True, status="connected", tools_discovered=len(discovered))
 
 
 # ── Available roles (for the Access dropdown) ──────────────────
@@ -300,13 +419,9 @@ async def list_available_roles(user: dict = Depends(get_current_user)):
 
 
 @router.get("/{agent_id}/access", response_model=AgentRoleListResponse)
-async def list_agent_access(
-    agent_id: str, user: dict = Depends(get_current_user)
-):
+async def list_agent_access(agent_id: str, user: dict = Depends(get_current_user)):
     await _require_agent(agent_id, user["username"])
-    roles = await agent_repository.list_agent_roles(
-        agent_id, owner_name=user["username"]
-    )
+    roles = await agent_repository.list_agent_roles(agent_id, owner_name=user["username"])
     views = [AgentRoleView(**r) for r in roles]
     return AgentRoleListResponse(roles=views, count=len(views))
 
@@ -421,9 +536,7 @@ async def update_custom_tool(
 
 @router.delete("/custom-tools/{tool_id}", status_code=204)
 async def delete_custom_tool(tool_id: str, user: dict = Depends(get_current_user)):
-    if not await agent_repository.delete_custom_tool(
-        tool_id, owner_name=user["username"]
-    ):
+    if not await agent_repository.delete_custom_tool(tool_id, owner_name=user["username"]):
         raise HTTPException(status_code=404, detail="Custom tool not found")
     return None
 
@@ -432,9 +545,7 @@ async def delete_custom_tool(tool_id: str, user: dict = Depends(get_current_user
 
 
 @router.get("/{agent_id}/observability/usage", response_model=UsageSummary)
-async def agent_usage(
-    agent_id: str, days: int = 7, user: dict = Depends(get_current_user)
-):
+async def agent_usage(agent_id: str, days: int = 7, user: dict = Depends(get_current_user)):
     await _require_agent(agent_id, user["username"])
     data = await observability.usage_summary(
         owner_name=user["username"], agent_id=agent_id, days=_clamp_days(days)
@@ -443,9 +554,7 @@ async def agent_usage(
 
 
 @router.get("/{agent_id}/observability/sessions", response_model=SessionListResponse)
-async def agent_sessions(
-    agent_id: str, limit: int = 100, user: dict = Depends(get_current_user)
-):
+async def agent_sessions(agent_id: str, limit: int = 100, user: dict = Depends(get_current_user)):
     await _require_agent(agent_id, user["username"])
     sessions = await observability.list_sessions(
         owner_name=user["username"], agent_id=agent_id, limit=min(max(limit, 1), 500)
@@ -457,13 +566,9 @@ async def agent_sessions(
     "/{agent_id}/observability/sessions/{thread_id}",
     response_model=ThreadTraceResponse,
 )
-async def agent_thread_trace(
-    agent_id: str, thread_id: str, user: dict = Depends(get_current_user)
-):
+async def agent_thread_trace(agent_id: str, thread_id: str, user: dict = Depends(get_current_user)):
     await _require_agent(agent_id, user["username"])
-    trace = await observability.thread_trace(
-        owner_name=user["username"], thread_id=thread_id
-    )
+    trace = await observability.thread_trace(owner_name=user["username"], thread_id=thread_id)
     if trace is None:
         raise HTTPException(status_code=404, detail="Thread not found")
     return ThreadTraceResponse(**trace)

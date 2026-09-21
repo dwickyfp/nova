@@ -1,5 +1,13 @@
 import { memo, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Bookmark, Download, Search } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Bookmark,
+  Check,
+  Download,
+  Loader2,
+  Search,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,8 +36,14 @@ import { ChartBlock as VegaChart } from "@/features/agents/chart-block";
 
 export const ResultTable = memo(function ResultTable({
   block,
+  onSave,
+  saving = false,
+  saved = false,
 }: {
   block: TableBlock;
+  onSave?: () => void;
+  saving?: boolean;
+  saved?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{
@@ -95,6 +109,33 @@ export const ResultTable = memo(function ResultTable({
     <div className="nova-chat-item overflow-hidden rounded-xl border bg-card">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h3>
+        {onSave ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                aria-label={saved ? "Artifact saved" : "Save table as artifact"}
+                disabled={saving || saved}
+                onClick={onSave}
+              >
+                {saving ? (
+                  <Loader2
+                    aria-hidden="true"
+                    className="size-3.5 animate-spin"
+                  />
+                ) : saved ? (
+                  <Check aria-hidden="true" className="size-3.5" />
+                ) : (
+                  <Bookmark aria-hidden="true" className="size-3.5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{saved ? "Saved" : "Save artifact"}</TooltipContent>
+          </Tooltip>
+        ) : null}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -247,27 +288,19 @@ function slug(text: string): string {
 
 export const ResultChart = memo(function ResultChart({
   block,
+  onSave,
+  saving = false,
+  saved = false,
 }: {
   block: ChartBlock;
+  onSave?: () => void;
+  saving?: boolean;
+  saved?: boolean;
 }) {
-  const [saved, setSaved] = useState(false);
   // The tool writes the chart's title into the spec from the user's intent.
   // The card reads it back for its header and removes it from the embedded
   // chart, so the title appears once instead of twice.
   const { title, body } = splitChartTitle(block.chart_spec);
-
-  const saveToWorkspace = async () => {
-    // The clipboard is the only honest destination Studio has today: there is no
-    // workspace artifact write route yet, so this copies the spec rather than
-    // pretending to persist it. TODO: point at the workspace API when it lands.
-    try {
-      await navigator.clipboard.writeText(block.chart_spec);
-      setSaved(true);
-      window.setTimeout(() => setSaved(false), 1500);
-    } catch {
-      setSaved(false);
-    }
-  };
 
   return (
     <div className="nova-chat-item overflow-hidden rounded-xl border bg-card">
@@ -275,21 +308,33 @@ export const ResultChart = memo(function ResultChart({
         <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
           {title ?? "Chart"}
         </h3>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              aria-label="Copy the chart specification"
-              onClick={() => void saveToWorkspace()}
-            >
-              <Bookmark aria-hidden="true" className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{saved ? "Spec copied" : "Copy spec"}</TooltipContent>
-        </Tooltip>
+        {onSave ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                aria-label={saved ? "Artifact saved" : "Save chart as artifact"}
+                disabled={saving || saved}
+                onClick={onSave}
+              >
+                {saving ? (
+                  <Loader2
+                    aria-hidden="true"
+                    className="size-3.5 animate-spin"
+                  />
+                ) : saved ? (
+                  <Check aria-hidden="true" className="size-3.5" />
+                ) : (
+                  <Bookmark aria-hidden="true" className="size-3.5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{saved ? "Saved" : "Save artifact"}</TooltipContent>
+          </Tooltip>
+        ) : null}
       </div>
       <div className="p-3">
         <VegaChart spec={body} />

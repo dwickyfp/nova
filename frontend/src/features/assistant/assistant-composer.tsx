@@ -63,7 +63,7 @@ export function AssistantComposer({
   };
 
   return (
-    <div className="p-3">
+    <div className="px-3 pt-3 pb-6">
       {disabled ? (
         <p className="mb-2 text-xs text-muted-foreground">
           The assistant backend is not connected yet. This panel is read-only
@@ -173,6 +173,9 @@ export function AssistantComposer({
           )}
         </div>
       </div>
+      <p className="mt-2 text-left text-xs text-muted-foreground">
+        AI can make mistakes
+      </p>
     </div>
   );
 }

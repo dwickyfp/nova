@@ -1,12 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ArrowUp,
   ChevronDown,
   Paperclip,
   RefreshCcw,
   Square,
-  Workflow,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { Markdown } from "@/features/assistant/markdown";
 import type {
   AssistantEvent,
   ChartBlock as ChartBlockType,
@@ -34,10 +33,11 @@ import {
   type Agent,
   type AgentMessage,
 } from "@/features/agents/api";
-import { TextShimmer } from "./text-shimmer";
 import { ProcessRail, StopNotice, type RailStep } from "./thought-turn";
-import { CitationList, ResultChart, ResultTable } from "./result-cards";
 import { ConsentCard } from "./consent-card";
+import { TurnContent } from "./turn-content";
+import { findArtifactSql, type SavableContent } from "./artifact-source";
+import { splitChartTitle } from "./result-cards";
 
 /** A tool call with the id this conversation uses to resolve it. */
 type PendingCall = ToolCallView & { tool_call_id: string };
@@ -165,6 +165,10 @@ export function StudioChat({
   const [loadingThread, setLoadingThread] = useState(false);
   const [extended, setExtended] = useState(false);
   const [deepenTarget, setDeepenTarget] = useState<string | null>(null);
+  const [savingContentId, setSavingContentId] = useState<string | null>(null);
+  const [savedContentIds, setSavedContentIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const abortRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -173,6 +177,11 @@ export function StudioChat({
   const queuedEventsRef = useRef<
     Array<{ turnId: string; event: AssistantEvent }>
   >([]);
+  // New chat clears local state before the router necessarily removes the old
+  // thread from the URL. Remember that one stale id so it cannot be reloaded.
+  const staleThreadAfterNewChatRef = useRef<string | null>(null);
+  const activeThreadIdRef = useRef(activeThreadId);
+  activeThreadIdRef.current = activeThreadId;
   const eventFrameRef = useRef<number | null>(null);
 
   // Providers may send one SSE frame per token. Committing React state for
@@ -232,6 +241,8 @@ export function StudioChat({
     setTurns([]);
     setInput("");
     setDeepenTarget(null);
+    setSavingContentId(null);
+    setSavedContentIds(new Set());
   }, [agent?.agent_id, discardQueuedEvents]);
 
   /**
@@ -242,7 +253,13 @@ export function StudioChat({
    * appends to the same thread, because the loop replays its full history.
    */
   useEffect(() => {
-    if (!agent || !activeThreadId || activeThreadId === threadId) return;
+    if (!activeThreadId) {
+      staleThreadAfterNewChatRef.current = null;
+      return;
+    }
+    if (activeThreadId === staleThreadAfterNewChatRef.current) return;
+    staleThreadAfterNewChatRef.current = null;
+    if (!agent || activeThreadId === threadId) return;
     let cancelled = false;
     setLoadingThread(true);
     abortRef.current?.abort();
@@ -255,6 +272,8 @@ export function StudioChat({
         setThreadId(activeThreadId);
         setTurns(replayThread(detail.messages));
         setDeepenTarget(null);
+        setSavingContentId(null);
+        setSavedContentIds(new Set());
       })
       .catch(() => {
         // A thread that cannot be read leaves the current view untouched: a
@@ -276,6 +295,7 @@ export function StudioChat({
   // The sidebar's "New" control: drop to a fresh conversation.
   useEffect(() => {
     if (newChatNonce === 0) return;
+    staleThreadAfterNewChatRef.current = activeThreadIdRef.current;
     abortRef.current?.abort();
     discardQueuedEvents();
     followOutputRef.current = true;
@@ -283,6 +303,8 @@ export function StudioChat({
     setTurns([]);
     setInput("");
     setDeepenTarget(null);
+    setSavingContentId(null);
+    setSavedContentIds(new Set());
   }, [discardQueuedEvents, newChatNonce]);
 
   // Follow the newest content, but only while the user is already at the
@@ -326,7 +348,12 @@ export function StudioChat({
       if (threadId) return threadId;
       // A thread the URL selected may still be loading. Sending into it must
       // continue that conversation, not silently start a second one.
-      if (activeThreadId) return activeThreadId;
+      if (
+        activeThreadId &&
+        activeThreadId !== staleThreadAfterNewChatRef.current
+      ) {
+        return activeThreadId;
+      }
       // The first question names the conversation, so the history list is
       // readable from the moment it appears. The backend keeps it in step on
       // the first turn; this only avoids a placeholder flashing first.
@@ -538,6 +565,61 @@ export function StudioChat({
     }
   };
 
+  const saveArtifact = useCallback(
+    async (turn: TranscriptTurn, item: SavableContent) => {
+      if (!agent || savingContentId) return;
+      const sql = findArtifactSql(turns, turn.id, item);
+      if (!sql) {
+        toast.error("This result has no reusable SQL to save.");
+        return;
+      }
+
+      let chartSpec: Record<string, unknown> | null = null;
+      let title =
+        item.type === "table"
+          ? item.block.title?.trim() || turn.question.trim()
+          : turn.question.trim();
+      if (item.type === "chart") {
+        const chartTitle = splitChartTitle(item.block.chart_spec).title;
+        title = chartTitle || turn.question.trim() || "Saved chart";
+        try {
+          chartSpec = JSON.parse(item.block.chart_spec) as Record<
+            string,
+            unknown
+          >;
+        } catch {
+          toast.error("This chart specification cannot be saved.");
+          return;
+        }
+      }
+      title = title.slice(0, 256) || "Saved result";
+
+      setSavingContentId(item.id);
+      try {
+        await studioApi.createArtifact({
+          title,
+          artifact_type: item.type,
+          sql_text: sql,
+          database_name: agent.database_name,
+          schema_name: agent.schema_name,
+          chart_spec: chartSpec,
+          agent_id: agent.agent_id,
+          thread_id: threadId ?? activeThreadId,
+        });
+        setSavedContentIds((current) => new Set(current).add(item.id));
+        await queryClient.invalidateQueries({
+          queryKey: ["studio", "artifacts"],
+        });
+        toast.success("Artifact saved");
+      } catch (error) {
+        toast.error((error as Error).message || "Artifact could not be saved.");
+      } finally {
+        setSavingContentId(null);
+      }
+    },
+    [activeThreadId, agent, queryClient, savingContentId, threadId, turns],
+  );
+
   // Whether an answer offers a reconsider pass is a preference, not a
   // per-message control; it is set in Settings and read here.
   useEffect(() => {
@@ -586,6 +668,9 @@ export function StudioChat({
                   deepening={deepenTarget === turn.id}
                   onDeepen={deepen}
                   onDecide={decide}
+                  onSaveArtifact={saveArtifact}
+                  savingContentId={savingContentId}
+                  savedContentIds={savedContentIds}
                 />
               ))}
             </div>
@@ -619,6 +704,9 @@ const TurnView = memo(function TurnView({
   deepening,
   onDeepen,
   onDecide,
+  onSaveArtifact,
+  savingContentId,
+  savedContentIds,
 }: {
   turn: TranscriptTurn;
   agent: Agent;
@@ -630,9 +718,11 @@ const TurnView = memo(function TurnView({
     call: PendingCall,
     decision: "allow_once" | "allow_session" | "deny",
   ) => Promise<void>;
+  onSaveArtifact: (turn: TranscriptTurn, item: SavableContent) => Promise<void>;
+  savingContentId: string | null;
+  savedContentIds: ReadonlySet<string>;
 }) {
   const running = turn.state === "streaming";
-  const ordered = useMemo(() => visibleContent(turn.content), [turn.content]);
   const runContext = useMemo(
     () => ({ database: agent.database_name ?? undefined }),
     [agent.database_name],
@@ -668,39 +758,14 @@ const TurnView = memo(function TurnView({
         />
       ) : null}
 
-      {ordered.length ? (
-        <div className="flex flex-col gap-3" data-testid="ordered-response">
-          {ordered.map((item, itemIndex) => {
-            if (item.type === "text") {
-              return (
-                <div key={item.id} className="nova-chat-item min-w-0 text-sm">
-                  <Markdown runContext={runContext}>
-                    {item.text}
-                  </Markdown>
-                  {running &&
-                  !item.complete &&
-                  itemIndex === ordered.length - 1 ? (
-                    <TextShimmer className="mt-1">Writing</TextShimmer>
-                  ) : null}
-                </div>
-              );
-            }
-            if (item.type === "table") {
-              return <ResultTable key={item.id} block={item.block} />;
-            }
-            if (item.type === "chart") {
-              return <ResultChart key={item.id} block={item.block} />;
-            }
-            return <CitationList key={item.id} citations={[item.block]} />;
-          })}
-        </div>
-      ) : turn.answer ? (
-        <div className="nova-chat-item min-w-0 text-sm">
-          <Markdown runContext={runContext}>
-            {turn.answer}
-          </Markdown>
-        </div>
-      ) : null}
+      <TurnContent
+        turn={turn}
+        runContext={runContext}
+        running={running}
+        onSaveArtifact={(item) => void onSaveArtifact(turn, item)}
+        savingContentId={savingContentId}
+        savedContentIds={savedContentIds}
+      />
 
       {turn.error ? (
         <div
@@ -760,9 +825,8 @@ function AgentPicker({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex min-w-0 items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="flex h-7 min-w-0 items-center gap-1 rounded-full border border-border bg-background px-2.5 text-xs text-foreground shadow-xs transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
-          <Workflow aria-hidden="true" className="size-3.5 shrink-0" />
           <span className="truncate">{agent?.name ?? "Select an agent"}</span>
           <ChevronDown aria-hidden="true" className="size-3 shrink-0" />
         </button>
@@ -863,7 +927,7 @@ const Composer = ({
 }) => {
   return (
     <div className="mx-auto w-full max-w-3xl">
-      <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-muted/60 shadow-sm backdrop-blur transition-colors focus-within:border-ring focus-within:bg-muted">
+      <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-colors focus-within:border-ring">
         <textarea
           ref={ref}
           value={value}
@@ -983,7 +1047,7 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
       switch (step.kind) {
         case "reasoning":
           open.steps.push({
-            id: `think-${step.phase}`,
+            id: uniqueStepId(open.steps, `think-${step.phase}`),
             kind: "thinking",
             label: step.phase,
             text: step.text,
@@ -1020,6 +1084,7 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
               step.content_id ||
               `${open.id}-table-${open.blocks.tables.length}`;
             const block = {
+              tool_call_id: step.tool_call_id,
               title: step.title,
               columns: step.columns,
               rows: step.rows,
@@ -1104,23 +1169,31 @@ function patchTurn(
  * side of the ordering barrier: a table at index 1 waits for text at index 0,
  * while a table intentionally authored at index 0 appears immediately.
  */
-export function visibleContent(content: OrderedContent[]): OrderedContent[] {
-  const ordered = [...content].sort((a, b) => a.index - b.index);
-  const visible: OrderedContent[] = [];
-  let expected = 0;
-  for (const item of ordered) {
-    if (item.index !== expected) break;
-    visible.push(item);
-    expected += 1;
-    if (!item.complete) break;
-  }
-  return visible;
-}
-
 let blockSeq = 0;
 function nextBlockId(): string {
   blockSeq += 1;
   return `block-${blockSeq}`;
+}
+
+/**
+ * A rail-step id that no step in `steps` already holds.
+ *
+ * Two rows must never share a key: React would treat them as one and drop or
+ * duplicate a row, and a settled `act` followed by a later `act` is a real
+ * sequence, not a repeat. The base id is used when free, so the common single
+ * occurrence keeps its stable, readable name; a suffix is appended only on a
+ * collision.
+ */
+function uniqueStepId(steps: RailStep[], base: string): string {
+  const taken = new Set(steps.map((step) => step.id));
+  if (!taken.has(base)) return base;
+  let suffix = steps.length;
+  let candidate = `${base}-${suffix}`;
+  while (taken.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}-${suffix}`;
+  }
+  return candidate;
 }
 
 function nextLegacyArtifactIndex(content: OrderedContent[]): number {
@@ -1191,12 +1264,7 @@ export function applyEvent(
         }
         const id =
           existing === -1
-            ? turn.steps.some(
-                (step) =>
-                  step.kind === "thinking" && step.label === event.phase,
-              )
-              ? `think-${event.phase}-${turn.steps.length}`
-              : `think-${event.phase}`
+            ? uniqueStepId(turn.steps, `think-${event.phase}`)
             : turn.steps[existing].id;
         const row: RailStep = {
           id,

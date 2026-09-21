@@ -7,6 +7,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { SelectedModel } from "./assistant-provider";
@@ -242,6 +247,32 @@ function AssistantHeader({
       <h2 className="min-w-0 flex-1 truncate text-sm font-medium">
         {title ?? "Nove"}
       </h2>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="grid size-9 shrink-0 place-items-center text-success-strong"
+            aria-label="Enterprise data protection"
+          >
+            <ShieldCheck aria-hidden="true" className="size-4" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent
+          arrowClassName="!bg-background !fill-background border-r border-b"
+          className="border bg-background text-foreground"
+        >
+          <div className="text-sm">
+            <a
+              href="https://docs.starrocks.io"
+              target="_blank"
+              rel="noreferrer"
+              className="block font-medium text-primary underline underline-offset-2"
+            >
+              Enterprise data protection
+            </a>
+            <p>applies to this chat.</p>
+          </div>
+        </TooltipContent>
+      </Tooltip>
       {onNewChat ? (
         <Button
           type="button"

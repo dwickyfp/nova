@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { splitChartTitle } from "./result-cards";
+import { createElement } from "react";
+import { describe, expect, it, vi } from "vitest";
+import { render } from "vitest-browser-react";
+import { userEvent } from "vitest/browser";
+import { ResultTable, splitChartTitle } from "./result-cards";
 
 /**
  * The result-card title plumbing.
@@ -42,5 +45,22 @@ describe("splitChartTitle", () => {
     const { title, body } = splitChartTitle("not json");
     expect(title).toBeUndefined();
     expect(body).toBe("not json");
+  });
+});
+
+describe("artifact actions", () => {
+  it("offers a real save action for result tables", async () => {
+    const onSave = vi.fn();
+    const screen = await render(
+      createElement(ResultTable, {
+        block: { title: "Revenue", columns: ["total"], rows: [[42]] },
+        onSave,
+      }),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save table as artifact" }),
+    );
+    expect(onSave).toHaveBeenCalledOnce();
   });
 });

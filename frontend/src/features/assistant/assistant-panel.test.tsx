@@ -108,6 +108,26 @@ describe("AssistantPanel", () => {
     }
   });
 
+  it("gives every header action the same visual slot", async () => {
+    const { getByRole } = await render(
+      <AssistantPanel
+        open
+        onOpenChange={() => {}}
+        onNewChat={() => {}}
+      />,
+    );
+    const newChat = getByRole("button", { name: "New chat" }).element();
+    const close = getByRole("button", { name: "Close assistant" }).element();
+    const protection = close.parentElement?.querySelector<HTMLElement>(
+      '[aria-label="Enterprise data protection"]',
+    );
+
+    expect(protection).not.toBeNull();
+    expect(protection?.classList.contains("size-9")).toBe(true);
+    expect(newChat.classList.contains("size-9")).toBe(true);
+    expect(close.classList.contains("size-9")).toBe(true);
+  });
+
   it("greets the signed-in user in the empty state", async () => {
     const { getByText } = await render(
       <AssistantPanel open onOpenChange={() => {}} userName="Dwicky" />,

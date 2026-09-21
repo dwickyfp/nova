@@ -268,6 +268,49 @@ function renderStudioWithLateThread() {
   );
 }
 
+/**
+ * Reproduces the router race behind New chat. The chat reset is synchronous,
+ * while the search param can still expose the previous thread for one or more
+ * renders. That stale prop must not reopen the conversation we just left.
+ */
+function renderStudioWithStaleThreadAfterNewChat() {
+  mockFetch("read_only", false);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  function Harness() {
+    const [threadId, setThreadId] = useState<string | null>("t-past");
+    const [newChatNonce, setNewChatNonce] = useState(0);
+    return (
+      <>
+        <button type="button" onClick={() => setNewChatNonce((value) => value + 1)}>
+          Start fresh
+        </button>
+        <StudioChat
+          agent={AGENT}
+          agents={[AGENT]}
+          onSelectAgent={() => {}}
+          currentRole="ACCOUNTADMIN"
+          activeThreadId={threadId}
+          onThreadChange={setThreadId}
+          newChatNonce={newChatNonce}
+        />
+      </>
+    );
+  }
+
+  return render(
+    <StrictMode>
+      <QueryClientProvider client={client}>
+        <div className="flex h-svh">
+          <Harness />
+        </div>
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+}
+
 describe("studio transcript click-through", () => {
   it("shows the personalized Nova welcome without a chat header", async () => {
     renderStudio();
@@ -281,6 +324,24 @@ describe("studio transcript click-through", () => {
     await expect
       .element(page.getByText("Nova Studio", { exact: true }))
       .not.toBeInTheDocument();
+  });
+
+  it("uses a white composer and a bordered text-only agent badge", async () => {
+    renderStudio();
+    await expect
+      .element(page.getByPlaceholder("Ask a question about your data"))
+      .toBeVisible();
+
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      'textarea[placeholder="Ask a question about your data"]',
+    );
+    expect(textarea?.parentElement?.classList.contains("bg-card")).toBe(true);
+
+    const agentButton = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Revenue Analyst"),
+    );
+    expect(agentButton?.classList.contains("border")).toBe(true);
+    expect(agentButton?.querySelector(".lucide-workflow")).toBeNull();
   });
 
   it("renders the process rail and the answer, and opens a step", async () => {
@@ -385,11 +446,13 @@ describe("studio transcript click-through", () => {
     await toolStep.click();
     await expect.element(page.getByText("1 row returned")).toBeVisible();
 
-    // A reasoning step opens too: every step answers "what did this do".
+    // A short factual step has no duplicate disclosure. Only tool evidence or
+    // genuinely additional narration is expandable.
     const planStep = page.getByRole("button", {
       name: /Understanding the request and choosing a skill/,
     });
     await expect.element(planStep).toBeVisible();
+    await expect.element(planStep).toBeDisabled();
   });
 
   it("offers a reconsider pass that streams as a labelled continuation", async () => {
@@ -453,5 +516,38 @@ describe("studio transcript click-through", () => {
     await expect
       .element(page.getByText("Opening the conversation"))
       .not.toBeInTheDocument();
+  });
+
+  it("does not reopen the previous thread while New chat waits for the URL", async () => {
+    renderStudioWithStaleThreadAfterNewChat();
+    await expect
+      .element(page.getByText(/Omzet tertinggi ada di/))
+      .toBeVisible();
+
+    await page.getByRole("button", { name: "Start fresh" }).click();
+
+    await expect
+      .element(page.getByText("What insights can I help with?"))
+      .toBeVisible();
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    await expect
+      .element(page.getByText(/Omzet tertinggi ada di/))
+      .not.toBeInTheDocument();
+
+    await page
+      .getByRole("button", { name: "Top SKUs last quarter" })
+      .click();
+
+    const messageUrls = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.map(([input]) => String(input))
+      .filter((url) => url.includes("/messages"));
+    expect(messageUrls.some((url) => url.includes("/threads/t1/messages"))).toBe(
+      true,
+    );
+    expect(
+      messageUrls.some((url) => url.includes("/threads/t-past/messages")),
+    ).toBe(false);
+    await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
   });
 });
