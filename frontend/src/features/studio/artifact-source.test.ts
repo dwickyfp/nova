@@ -96,8 +96,8 @@ describe("artifact SQL presentation", () => {
     );
 
     expect(formatted).toContain("SELECT");
-    expect(formatted).toContain("\nFROM orders AS o");
-    expect(formatted).toContain("\nJOIN customers AS c");
+    expect(formatted).toContain("\nFROM\n  orders o");
+    expect(formatted).toContain("\n  JOIN customers c");
     expect(formatted).toContain("\nGROUP BY");
     expect(formatted).toContain("\nORDER BY");
   });

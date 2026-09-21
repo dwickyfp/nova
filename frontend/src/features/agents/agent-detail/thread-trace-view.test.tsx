@@ -219,10 +219,12 @@ describe("ThreadTraceView", () => {
     await vi.waitFor(() => {
       expect(conversationViewport?.scrollTop ?? 0).toBeGreaterThan(0);
     });
-    const viewportBounds = conversationViewport!.getBoundingClientRect();
-    const turnBounds = secondConversationTurn!.getBoundingClientRect();
-    expect(turnBounds.top).toBeLessThan(viewportBounds.bottom);
-    expect(turnBounds.bottom).toBeGreaterThan(viewportBounds.top);
+    await vi.waitFor(() => {
+      const viewportBounds = conversationViewport!.getBoundingClientRect();
+      const turnBounds = secondConversationTurn!.getBoundingClientRect();
+      expect(turnBounds.top).toBeLessThan(viewportBounds.bottom);
+      expect(turnBounds.bottom).toBeGreaterThan(viewportBounds.top);
+    });
     await expect
       .element(
         screen
