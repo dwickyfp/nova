@@ -285,6 +285,20 @@ def engine_reachable():
 class TestAcceptanceCriteria:
     """The seven criteria from the task, exercised through the real CLI."""
 
+    def test_root_is_internal_only(self, proxy_server, engine_reachable):
+        """The passwordless engine root must never be published on port 4406."""
+        _, port = proxy_server
+        result = _run_mysql(
+            ["-e", "SELECT 1"],
+            host=CLIENT_HOST,
+            port=port,
+            user="root",
+            password="",
+        )
+
+        assert result.returncode != 0, result.output
+        assert "Access denied for user 'root'" in result.output
+
     def test_ac1_select_returns_a_value(self, proxy_server, engine_reachable):
         """AC 1 — login succeeds and a trivial query returns its row.
 

@@ -12,10 +12,13 @@ real-StarRocks proof of the ``@stage`` rewrite belongs at L3 and is a separate
 suite.
 """
 
+import pyarrow as pa
 import pytest
 
 from app.common.sql_guard import _POPULATED_CREDENTIAL, _normalized_value
 from app.core.exceptions import ForbiddenSQLError
+from app.modules.ml_engine.artifacts.store import MemoryArtifactStore
+from app.modules.ml_engine.execution.job_runner import InlineJobRunner
 from app.modules.ml_engine.service import MLEngineService
 
 ACCESS_KEY = "AKIA_TRAINING_ACCESS"
@@ -104,9 +107,7 @@ class TestTrainingSqlIsGuarded:
 
     async def test_blocked_statement_never_reaches_the_engine(self, service, monkeypatch):
         cursor = RecordingCursor()
-        monkeypatch.setattr(
-            service, "_connect", lambda: _async_return(_conn_with(cursor))
-        )
+        monkeypatch.setattr(service, "_connect", lambda: _async_return(_conn_with(cursor)))
 
         with pytest.raises(ForbiddenSQLError):
             await service._prepare_user_sql(
@@ -199,20 +200,33 @@ class TestNoCredentialMaterialEscapes:
         """
         captured: dict[str, str] = {}
 
-        class CapturingCursor(RecordingCursor):
-            async def execute(self, sql, params=None):
-                self.executed.append(sql)
-                if "INSERT INTO NOVA_SYSTEM.ML_MODELS" in sql and params:
-                    # training_sql is the 7th bound parameter, per the INSERT.
-                    captured["training_sql"] = params[6]
-                return 1
+        class Source:
+            async def stream(self, sql, security):
+                del security
+                assert "FILES(" in sql
+                yield pa.record_batch(
+                    [pa.array(range(30)), pa.array([float(i % 2) for i in range(30)])],
+                    names=["age", "churned"],
+                )
 
-            async def fetchone(self):
-                return (1,)
+        class Repository:
+            async def reserve_version(self, spec, *, feature_columns):
+                del feature_columns
+                captured["training_sql"] = spec.input_sql
+                return "model-1", 1
 
-        cursor = CapturingCursor()
+            async def register_version(self, **kwargs):
+                return None
 
-        svc = MLEngineService()
+            async def record_run(self, **kwargs):
+                return None
+
+        svc = MLEngineService(
+            data_source=Source(),
+            job_runner=InlineJobRunner(),
+            artifact_store=MemoryArtifactStore(),
+            repository=Repository(),
+        )
         monkeypatch.setattr(
             "app.modules.query.sql_pipeline.get_credential_params",
             lambda *a, **kw: {
@@ -225,21 +239,6 @@ class TestNoCredentialMaterialEscapes:
             return _stage_configs()
 
         monkeypatch.setattr(MLEngineService, "_load_stage_configs", stage_configs)
-
-        async def fake_fetch(**kwargs):
-            # 30 rows so the training maths has enough data; feature `age`,
-            # target `churned`.
-            rows = [{"age": float(i), "churned": float(i % 2)} for i in range(30)]
-            return rows, ["age", "churned"]
-
-        monkeypatch.setattr(
-            MLEngineService, "_fetch_training_data_as_system", staticmethod(fake_fetch)
-        )
-
-        async def fake_connect():
-            return _conn_with(cursor)
-
-        monkeypatch.setattr(svc, "_connect", fake_connect)
 
         await svc.train_model(
             model_name="m",
@@ -259,7 +258,9 @@ class TestNoCredentialMaterialEscapes:
         # of them may reach the row that is persisted.
         assert STAGE_ACCESS_KEY not in stored
         assert STAGE_SECRET_KEY not in stored
-        assert "FILES(" in stored
+        # Registry metadata keeps Nova's credential-free logical syntax; the
+        # translated FILES() statement is execution-only.
+        assert "@stage1.data.csv" in stored
         assert _no_populated_credential(stored)
 
 

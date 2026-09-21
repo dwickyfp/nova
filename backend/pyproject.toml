@@ -22,6 +22,13 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "joblib>=1.5.3",
     "numpy>=2.4.6",
+    "pyarrow>=19.0.0",
+    "adbc-driver-flightsql>=1.5.0",
+    "adbc-driver-manager>=1.5.0",
+    "flaml[automl]>=2.3.6",
+    "statsforecast>=2.0.1",
+    "pyod>=2.0.5",
+    "pandas>=2.2.3",
     "antlr4-python3-runtime==4.13.2",
 ]
 

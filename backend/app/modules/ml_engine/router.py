@@ -20,6 +20,8 @@ from app.modules.ml_engine.schemas import (
     BatchPredictRequest,
     BatchPredictResponse,
     DeleteModelResponse,
+    MLExecuteRequest,
+    MLExecuteResponse,
     ModelAliasCreate,
     ModelAliasListResponse,
     ModelAliasResponse,
@@ -27,10 +29,15 @@ from app.modules.ml_engine.schemas import (
     ModelListResponse,
     PredictRequest,
     PredictResponse,
+    PromoteRunRequest,
     TrainModelRequest,
     TrainModelResponse,
+    VersionPredictRequest,
+    VersionPredictResponse,
 )
 from app.modules.ml_engine.service import ml_engine_service
+from app.modules.ml_engine.spec import MLExecutionSpec, MLMode, MLSecurityContext, MLTask
+from app.modules.query.sql_pipeline import redact_for_output
 
 router = APIRouter()
 
@@ -82,12 +89,20 @@ async def train_model(
             username=user["username"],
             password=password,
             role=user.get("active_role"),
+            timestamp_column=req.timestamp_column,
+            series_column=req.series_column,
+            horizon=req.horizon,
+            frequency=req.frequency,
+            mode=req.mode,
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=redact_for_output(str(e))) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Training failed: {e}") from e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Training failed: {redact_for_output(str(e))}",
+        ) from e
 
 
 # ── Prediction ────────────────────────────────────────────────
@@ -100,12 +115,35 @@ async def predict(
 ):
     """Run a single prediction using a trained model."""
     try:
-        result = await ml_engine_service.predict(req.model_alias, req.features)
+        result = await ml_engine_service.predict(
+            req.model_alias,
+            req.features,
+            owner_name=user["username"],
+            database_name=req.database_name,
+        )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=404, detail=redact_for_output(str(e))) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}") from e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Prediction failed: {redact_for_output(str(e))}",
+        ) from e
+
+
+@router.post("/predict/version", response_model=VersionPredictResponse)
+async def predict_version(req: VersionPredictRequest, user: dict = require_user):
+    """Run one explicit immutable version for reproducible inference."""
+    try:
+        return await ml_engine_service.predict_version(
+            req.model_id,
+            req.version,
+            req.features,
+            owner_name=user["username"],
+            database_name=req.database_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
 
 
 @router.post("/predict/batch", response_model=BatchPredictResponse)
@@ -131,9 +169,12 @@ async def batch_predict(
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=404, detail=redact_for_output(str(e))) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch prediction failed: {e}") from e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Batch prediction failed: {redact_for_output(str(e))}",
+        ) from e
 
 
 # ── Model Management ──────────────────────────────────────────
@@ -141,20 +182,26 @@ async def batch_predict(
 
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(
+    database_name: str | None = None,
     user: dict = require_user,
 ):
     """List all trained models."""
-    models = await ml_engine_service.list_models()
+    models = await ml_engine_service.list_models(
+        owner_name=user["username"], database_name=database_name
+    )
     return {"models": models, "count": len(models)}
 
 
 @router.get("/models/{model_id}", response_model=ModelDetailResponse)
 async def get_model(
     model_id: str,
+    database_name: str | None = None,
     user: dict = require_user,
 ):
     """Get model detail with all versions."""
-    result = await ml_engine_service.get_model(model_id)
+    result = await ml_engine_service.get_model(
+        model_id, owner_name=user["username"], database_name=database_name
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Model not found")
     return result
@@ -163,10 +210,16 @@ async def get_model(
 @router.delete("/models/{model_id}", response_model=DeleteModelResponse)
 async def delete_model(
     model_id: str,
+    database_name: str | None = None,
     user: dict = require_user,
 ):
     """Delete a model and all its versions."""
-    return await ml_engine_service.delete_model(model_id)
+    try:
+        return await ml_engine_service.delete_model(
+            model_id, owner_name=user["username"], database_name=database_name
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
 
 
 # ── Aliases ───────────────────────────────────────────────────
@@ -174,10 +227,13 @@ async def delete_model(
 
 @router.get("/aliases", response_model=ModelAliasListResponse)
 async def list_aliases(
+    database_name: str | None = None,
     user: dict = require_user,
 ):
     """List all model aliases."""
-    aliases = await ml_engine_service.list_aliases()
+    aliases = await ml_engine_service.list_aliases(
+        owner_name=user["username"], database_name=database_name
+    )
     return {"aliases": aliases, "count": len(aliases)}
 
 
@@ -188,15 +244,81 @@ async def create_alias(
 ):
     """Create or update a model alias."""
     try:
-        return await ml_engine_service.create_alias(req.alias_name, req.model_id, req.version)
+        return await ml_engine_service.create_alias(
+            req.alias_name,
+            req.model_id,
+            req.version,
+            owner_name=user["username"],
+            database_name=req.database_name,
+        )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=redact_for_output(str(e))) from e
 
 
 @router.delete("/aliases/{alias_name}")
 async def delete_alias(
     alias_name: str,
+    database_name: str | None = None,
     user: dict = require_user,
 ):
     """Delete a model alias."""
-    return await ml_engine_service.delete_alias(alias_name)
+    return await ml_engine_service.delete_alias(
+        alias_name, owner_name=user["username"], database_name=database_name
+    )
+
+
+@router.post("/execute", response_model=MLExecuteResponse)
+async def execute_ml(req: MLExecuteRequest, user: dict = require_user):
+    """Execute deterministic persistent or ephemeral ML as the requesting user."""
+    password = _caller_credentials(user)
+    try:
+        result = await ml_engine_service.execute(
+            MLExecutionSpec(
+                task=MLTask(req.task),
+                input_sql=req.input_sql,
+                security=MLSecurityContext(
+                    username=user["username"],
+                    password=password,
+                    database=req.database_name,
+                    schema=req.schema_name,
+                    role=user.get("active_role"),
+                ),
+                mode=MLMode(req.mode),
+                persist=req.persist,
+                model_name=req.model_name,
+                algorithm=req.algorithm,
+                feature_columns=tuple(req.feature_columns or ()),
+                target_column=req.target_column,
+                timestamp_column=req.timestamp_column,
+                series_column=req.series_column,
+                row_identifier=req.row_identifier,
+                horizon=req.horizon,
+                frequency=req.frequency,
+                metric=req.metric,
+                parameters=req.parameters,
+            )
+        )
+        return result.__dict__
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
+
+
+@router.post("/runs/{run_id}/promote", response_model=MLExecuteResponse)
+async def promote_run(
+    run_id: str,
+    req: PromoteRunRequest,
+    user: dict = require_user,
+):
+    """Promote a live ephemeral run without retraining."""
+    result = await ml_engine_service.promote(
+        run_id,
+        model_name=req.model_name,
+        security=MLSecurityContext(
+            username=user["username"],
+            password=_caller_credentials(user),
+            database=req.database_name,
+            schema=req.schema_name,
+            role=user.get("active_role"),
+        ),
+    )
+    return result.__dict__

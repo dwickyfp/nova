@@ -1,0 +1,143 @@
+"""``ml_execute``: deterministic, user-scoped on-the-fly ML for Nova agents."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.core.security import decrypt_password
+from app.modules.assistant.schemas import ToolClassification
+from app.modules.assistant.tools import ToolInvocation, ToolOutcome, report_tool_progress
+from app.modules.ml_engine.service import ml_engine_service
+from app.modules.ml_engine.spec import MLExecutionSpec, MLMode, MLSecurityContext, MLTask
+from app.modules.query.sql_pipeline import redact_for_output
+
+
+class MLExecuteTool:
+    name = "ml_execute"
+    description = (
+        "Run classification, regression, forecasting, anomaly detection, or clustering "
+        "with Nova's bounded ML runtime. Use persist=false for on-the-fly analysis."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {
+            "task": {
+                "type": "string",
+                "enum": [
+                    "classification",
+                    "regression",
+                    "forecast",
+                    "anomaly_detection",
+                    "clustering",
+                ],
+            },
+            "input_sql": {"type": "string"},
+            "feature_columns": {"type": "array", "items": {"type": "string"}},
+            "target": {"type": "string"},
+            "timestamp": {"type": "string"},
+            "series": {"type": "string"},
+            "row_identifier": {"type": "string"},
+            "horizon": {"type": "integer", "minimum": 1},
+            "frequency": {"type": "string"},
+            "mode": {"type": "string", "enum": ["interactive", "balanced", "best"]},
+            "persist": {"type": "boolean", "default": False},
+            "model_name": {"type": "string"},
+            "parameters": {"type": "object"},
+        },
+        "required": ["task", "input_sql"],
+    }
+    requires_consent = True
+
+    def __init__(self) -> None:
+        self._classification: ToolClassification = "read_only"
+
+    @property
+    def classification(self) -> ToolClassification:
+        return self._classification
+
+    def preview(self, invocation: ToolInvocation) -> str:
+        persist = bool(invocation.arguments.get("persist", False))
+        self._classification = "destructive" if persist else "read_only"
+        task = invocation.arguments.get("task", "ml")
+        mode = invocation.arguments.get("mode", "interactive")
+        return f"ml_execute: {task} ({mode}, {'persistent' if persist else 'ephemeral'})"
+
+    async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
+        arguments = invocation.arguments
+        user = getattr(context, "user", None) or {}
+        username = user.get("username")
+        encrypted_password = user.get("encrypted_password")
+        if not username or not encrypted_password:
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error="No user connection is available for this ML execution.",
+            )
+        try:
+            password = decrypt_password(encrypted_password)
+        except (TypeError, ValueError, KeyError) as exc:
+            return ToolOutcome(
+                ok=False, summary="", error=f"User connection is unavailable: {type(exc).__name__}"
+            )
+        report_tool_progress(context, stage="ml_extracting", text="Reading ML features")
+        try:
+            result = await ml_engine_service.execute(
+                MLExecutionSpec(
+                    task=MLTask(str(arguments.get("task"))),
+                    input_sql=str(arguments.get("input_sql") or ""),
+                    security=MLSecurityContext(
+                        username=username,
+                        password=password,
+                        database=getattr(context, "database", None),
+                        schema=getattr(context, "schema_name", None),
+                        role=user.get("active_role"),
+                    ),
+                    mode=MLMode(str(arguments.get("mode") or "interactive")),
+                    persist=bool(arguments.get("persist", False)),
+                    model_name=arguments.get("model_name"),
+                    feature_columns=tuple(arguments.get("feature_columns") or ()),
+                    target_column=arguments.get("target"),
+                    timestamp_column=arguments.get("timestamp"),
+                    series_column=arguments.get("series"),
+                    row_identifier=arguments.get("row_identifier"),
+                    horizon=arguments.get("horizon"),
+                    frequency=arguments.get("frequency"),
+                    parameters=dict(arguments.get("parameters") or {}),
+                )
+            )
+        except Exception as exc:
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error=(f"ML execution failed: {type(exc).__name__}: {redact_for_output(str(exc))}"),
+            )
+        report_tool_progress(context, stage="ml_completed", text="ML execution completed")
+        table = None
+        if result.results:
+            columns = list(result.results[0])
+            table = {
+                "title": f"{result.task} results",
+                "columns": columns,
+                "rows": [[row.get(column) for column in columns] for row in result.results[:1000]],
+            }
+        return ToolOutcome(
+            ok=True,
+            summary=(
+                f"{result.task} completed with {result.selected_algorithm}; "
+                f"{result.training_rows} rows processed (run {result.run_id})"
+            ),
+            table=table,
+            trace_detail={
+                "kind": "ml_execution",
+                "run_id": result.run_id,
+                "task": result.task,
+                "mode": result.mode,
+                "engine": result.selected_engine,
+                "algorithm": result.selected_algorithm,
+                "training_rows": result.training_rows,
+                "cache_hit": result.cache_hit,
+            },
+        )
+
+
+ml_execute_tool = MLExecuteTool()

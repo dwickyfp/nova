@@ -17,6 +17,7 @@
 #
 # Access:
 #   StarRocks FE:    http://localhost:8030
+#   Arrow Flight:   grpc://localhost:9408
 #   StarRocks BE:    http://localhost:8040
 #   MinIO Console:   http://localhost:9001  (see MINIO_ROOT_USER / MINIO_ROOT_PASSWORD)
 #   MinIO API:       http://localhost:9000
@@ -126,12 +127,14 @@ services:
       - "8030:8030"   # HTTP API
       - "9020:9020"   # FE edit log port
       - "9030:9030"   # MySQL protocol (for backend dev)
+      - "9408:9408"   # Arrow Flight SQL
     environment:
       TZ: ${TZ:-Asia/Jakarta}
       HOST_TYPE: FQDN
       ENV_TYPE: docker_compose_deploy
       ENABLE_DEBUG_SOCKET: "false"
-      JAVA_OPTS: "-Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+      JAVA_OPTS: "-Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED"
+      JAVA_TOOL_OPTIONS: "--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED"
     ulimits:
       nproc:
         soft: 65535

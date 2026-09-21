@@ -1,50 +1,49 @@
-"""ML Engine service — train, predict, and manage classical ML models.
+"""Nova ML orchestrator: columnar extraction, worker execution, and registry lifecycle."""
 
-Models are trained using data fetched from StarRocks SQL queries.
-Trained model binaries are stored in NOVA_SYSTEM.ML_MODEL_VERSIONS.model_binary
-(base64-encoded joblib pickle). Predictions can run via API or SQL UDF.
+from __future__ import annotations
 
-Tables:
-  NOVA_SYSTEM.ML_MODELS          — model metadata
-  NOVA_SYSTEM.ML_MODEL_VERSIONS  — versioned model binaries + metrics
-  NOVA_SYSTEM.ML_MODEL_ALIASES   — alias → (model_id, version) mapping
-"""
-
-import base64
-import io
+import asyncio
+import contextlib
 import json
 import logging
-from contextlib import suppress
+import re
+import time
+from dataclasses import replace
+from datetime import datetime
+from typing import Any
 from uuid import uuid4
 
-import asyncmy
 import asyncmy.cursors
-import joblib
-import numpy as np
-from sklearn.ensemble import (
-    GradientBoostingClassifier,
-    GradientBoostingRegressor,
-    RandomForestClassifier,
-    RandomForestRegressor,
-)
-from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    mean_absolute_error,
-    mean_squared_error,
-    r2_score,
-)
-from sklearn.model_selection import train_test_split
-from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-from sklearn.svm import SVC, SVR
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+import pyarrow as pa
 
-from app.common.identifiers import check_identifier
-from app.core.config import get_storage_connection, settings, to_docker_endpoint
-from app.core.database import db
-from app.modules.query.dialect.injector import resolve_storage_credentials
-from app.modules.query.dialect.translator import StorageConfig
+from app.core.config import settings
+from app.modules.ml_engine.artifacts.serializer import serialize_bundle
+from app.modules.ml_engine.artifacts.store import ArtifactStore, ObjectArtifactStore
+from app.modules.ml_engine.data.datasource import TrainingDataSource, collect_bounded
+from app.modules.ml_engine.data.mysql_fallback import (
+    ExistingConnectionBatchDataSource,
+    PreferredDataSource,
+)
+from app.modules.ml_engine.engines.anomaly import train_anomaly
+from app.modules.ml_engine.engines.clustering import train_clustering
+from app.modules.ml_engine.engines.forecast import train_forecast
+from app.modules.ml_engine.engines.tabular import train_tabular
+from app.modules.ml_engine.ephemeral.cache import EphemeralEntry, EphemeralRunCache
+from app.modules.ml_engine.ephemeral.fingerprint import execution_fingerprint
+from app.modules.ml_engine.execution.budgets import budget_for
+from app.modules.ml_engine.execution.job_runner import MLJobRunner
+from app.modules.ml_engine.registry.repository import (
+    ModelRegistryRepository,
+    model_registry_repository,
+)
+from app.modules.ml_engine.runtime.model_runtime import ModelRuntime
+from app.modules.ml_engine.spec import (
+    MLExecutionSpec,
+    MLMode,
+    MLRunResult,
+    MLSecurityContext,
+    MLTask,
+)
 from app.modules.query.sql_pipeline import (
     guard_user_statement,
     prepare_stage_sql,
@@ -53,100 +52,256 @@ from app.modules.query.sql_pipeline import (
 
 logger = logging.getLogger(__name__)
 
-# ── Algorithm registry ────────────────────────────────────────
 
-ALGORITHMS = {
-    "classification": {
-        "linear": LogisticRegression,
-        "logistic": LogisticRegression,
-        "decision_tree": DecisionTreeClassifier,
-        "random_forest": RandomForestClassifier,
-        "gradient_boost": GradientBoostingClassifier,
-        "knn": KNeighborsClassifier,
-        "svm": SVC,
-    },
-    "regression": {
-        "linear": LinearRegression,
-        "decision_tree": DecisionTreeRegressor,
-        "random_forest": RandomForestRegressor,
-        "gradient_boost": GradientBoostingRegressor,
-        "knn": KNeighborsRegressor,
-        "svm": SVR,
-    },
-    # `FORECAST` and `ANOMALY_DETECTION` are Nova model types documented in
-    # `docs/19-machine-learning.md:184,322` and `AGENTS.md:245`. Forecasting a
-    # continuous target and scoring it for anomalies are, under the surface,
-    # regression and classification over an existing feature set — the same
-    # estimators below are the correct primitive, so the types reuse them rather
-    # than failing as "not supported". The declared type is stored truthfully on
-    # the model row, so a later dedicated forecaster (e.g. an ARIMA/ETS backend)
-    # can be swapped in behind the same `model_type` without a migration.
-    "forecast": {
-        "linear": LinearRegression,
-        "decision_tree": DecisionTreeRegressor,
-        "random_forest": RandomForestRegressor,
-        "gradient_boost": GradientBoostingRegressor,
-        "knn": KNeighborsRegressor,
-        "svm": SVR,
-    },
-    "anomaly_detection": {
-        "linear": LogisticRegression,
-        "logistic": LogisticRegression,
-        "decision_tree": DecisionTreeClassifier,
-        "random_forest": RandomForestClassifier,
-        "gradient_boost": GradientBoostingClassifier,
-        "knn": KNeighborsClassifier,
-        "svm": SVC,
-    },
-}
-
-#: Model types whose metrics are regression metrics. Everything else is scored
-#: as classification. `forecast` predicts a continuous value, so it is
-#: regression-shaped for evaluation even though it is a distinct Nova type.
-_REGRESSION_LIKE_TYPES = frozenset({"regression", "forecast"})
-
-
-def _pick_algorithm(model_type: str, algorithm: str, n_rows: int) -> str:
-    """Auto-select algorithm based on problem type and data size."""
-    if algorithm != "auto":
-        return algorithm
-    # Branch on the estimator family the type resolves to, not on the type name:
-    # `anomaly_detection` is classification-shaped (it reuses the classifiers)
-    # and `forecast` is regression-shaped, so keying off the name alone would
-    # hand `anomaly_detection` a regressor.
-    if model_type in _REGRESSION_LIKE_TYPES:
-        if n_rows < 1000:
-            return "linear"
-        elif n_rows < 10000:
-            return "random_forest"
-        else:
-            return "gradient_boost"
-    if n_rows < 1000:
-        return "decision_tree"
-    elif n_rows < 10000:
-        return "random_forest"
-    else:
-        return "gradient_boost"
+def _train_worker(table: pa.Table, spec: MLExecutionSpec):
+    """Picklable worker entry point; no credentials or database handles cross it."""
+    if spec.task in {MLTask.CLASSIFICATION, MLTask.REGRESSION}:
+        return train_tabular(table, spec)
+    if spec.task is MLTask.FORECAST:
+        return train_forecast(table, spec)
+    if spec.task is MLTask.ANOMALY_DETECTION:
+        return train_anomaly(table, spec)
+    if spec.task is MLTask.CLUSTERING:
+        return train_clustering(table, spec)
+    raise ValueError(f"Unsupported ML task: {spec.task}")
 
 
 class MLEngineService:
-    """Train, predict, and manage classical ML models."""
+    """One bounded orchestration path for SQL DDL, HTTP, SQL prediction, and agents."""
 
-    # ── DB helpers ──────────────────────────────────────────────
-
-    @staticmethod
-    async def _connect() -> asyncmy.Connection:
-        """Open a root-level connection to StarRocks."""
-        return await asyncmy.connect(
-            host=settings.STARROCKS_HOST,
-            port=settings.STARROCKS_FE_MYSQL_PORT,
-            user=settings.STARROCKS_ROOT_USER,
-            password=settings.STARROCKS_ROOT_PASSWORD,
-            autocommit=True,
-            connect_timeout=10,
+    def __init__(
+        self,
+        *,
+        data_source: TrainingDataSource | None = None,
+        job_runner: MLJobRunner | None = None,
+        artifact_store: ArtifactStore | None = None,
+        repository: ModelRegistryRepository | None = None,
+        runtime: ModelRuntime | None = None,
+        ephemeral_cache: EphemeralRunCache | None = None,
+    ) -> None:
+        self.data_source = data_source or PreferredDataSource()
+        self.job_runner = job_runner or MLJobRunner()
+        self.artifact_store = artifact_store or ObjectArtifactStore()
+        self.repository = repository or model_registry_repository
+        self.runtime = runtime or ModelRuntime(
+            repository=self.repository, store=self.artifact_store
+        )
+        self.ephemeral_cache = ephemeral_cache or EphemeralRunCache(
+            settings.ML_EPHEMERAL_TTL_SECONDS
         )
 
-    # ── Training ────────────────────────────────────────────────
+    async def execute(self, spec: MLExecutionSpec) -> MLRunResult:
+        spec.validate()
+        budget = spec.budget or budget_for(spec.mode)
+        spec = replace(spec, budget=budget)
+        fingerprint = execution_fingerprint(spec)
+        reusable = bool(spec.parameters.get("data_freshness_token"))
+        if not spec.persist and reusable:
+            cached = self.ephemeral_cache.by_fingerprint(spec.security.scope_key, fingerprint)
+            if cached is not None:
+                return self._result_from_entry(cached, spec, cache_hit=True)
+
+        run_id = str(uuid4())
+        started = time.perf_counter()
+        telemetry: dict[str, Any] = {
+            "run_id": run_id,
+            "task": spec.task.value,
+            "mode": spec.mode.value,
+            "user_scope": spec.security.scope_key,
+            "cache_hit": False,
+        }
+        model_id = None
+        version = None
+        artifact_uri = None
+        version_registered = False
+        try:
+            engine_sql = await self._prepare_user_sql(spec.input_sql, spec.security)
+            extracted = await collect_bounded(self.data_source, engine_sql, spec.security, budget)
+            telemetry.update(
+                {
+                    "rows_read": extracted.metrics.rows_read,
+                    "bytes_read": extracted.metrics.bytes_read,
+                    "arrow_batches_read": extracted.metrics.batches_read,
+                    "extraction_duration_ms": extracted.metrics.duration_ms,
+                    "transport": extracted.metrics.transport,
+                }
+            )
+            worker_spec = replace(
+                spec,
+                security=MLSecurityContext(username="ml-worker", password=""),
+                input_sql="[prepared by orchestrator]",
+            )
+            training_started = time.perf_counter()
+            output = await self.job_runner.run(
+                _train_worker,
+                extracted.table,
+                worker_spec,
+                timeout_seconds=budget.timeout_seconds,
+            )
+            telemetry["training_duration_ms"] = round(
+                (time.perf_counter() - training_started) * 1000, 3
+            )
+            telemetry.update(
+                {
+                    "selected_engine": output.engine,
+                    "selected_algorithm": output.algorithm,
+                    "validation_metric": output.metrics.get("validation_score")
+                    or output.metrics.get("validation_mae")
+                    or output.metrics.get("silhouette"),
+                }
+            )
+            payload, checksum = serialize_bundle(output.bundle)
+            telemetry["artifact_size"] = len(payload)
+            if spec.persist:
+                model_id, version = await self.repository.reserve_version(
+                    replace(spec, input_sql=redact_for_output(spec.input_sql)),
+                    feature_columns=output.feature_columns,
+                )
+                artifact_uri = await asyncio.to_thread(
+                    self.artifact_store.put,
+                    self._artifact_key(spec, model_id, version),
+                    payload,
+                )
+                await self.repository.register_version(
+                    model_id=model_id,
+                    version=version,
+                    spec=spec,
+                    output=output,
+                    artifact_uri=artifact_uri,
+                    artifact_sha256=checksum,
+                    artifact_size=len(payload),
+                    training_duration_ms=int(telemetry["training_duration_ms"]),
+                )
+                version_registered = True
+            else:
+                self.ephemeral_cache.put(
+                    EphemeralEntry(
+                        run_id=run_id,
+                        fingerprint=fingerprint,
+                        scope_key=spec.security.scope_key,
+                        output=output,
+                        artifact_payload=payload,
+                        artifact_sha256=checksum,
+                        expires_at=time.monotonic() + settings.ML_EPHEMERAL_TTL_SECONDS,
+                    )
+                )
+            telemetry["total_duration_ms"] = round((time.perf_counter() - started) * 1000, 3)
+            await self._record_run_best_effort(
+                run_id=run_id,
+                spec=spec,
+                status="succeeded",
+                fingerprint=fingerprint,
+                telemetry=telemetry,
+                model_id=model_id,
+                version=version,
+                artifact_uri=artifact_uri,
+            )
+            return MLRunResult(
+                run_id=run_id,
+                task=spec.task.value,
+                mode=spec.mode.value,
+                status="succeeded",
+                selected_engine=output.engine,
+                selected_algorithm=output.algorithm,
+                training_rows=output.training_rows,
+                feature_columns=output.feature_columns,
+                metrics=output.metrics,
+                results=output.results,
+                model_id=model_id,
+                version=version,
+                artifact_uri=artifact_uri,
+                telemetry=telemetry,
+                message=(
+                    f"Model version {version} registered"
+                    if spec.persist
+                    else "Ephemeral ML run completed"
+                ),
+            )
+        except Exception as exc:
+            if spec.persist and not version_registered and model_id and version:
+                await self._abort_persistence_best_effort(
+                    model_id=model_id,
+                    version=version,
+                    artifact_uri=artifact_uri,
+                )
+            telemetry["total_duration_ms"] = round((time.perf_counter() - started) * 1000, 3)
+            telemetry["error_class"] = type(exc).__name__
+            await self._record_run_best_effort(
+                run_id=run_id,
+                spec=spec,
+                status="failed",
+                fingerprint=fingerprint,
+                telemetry=telemetry,
+                error=exc,
+            )
+            raise
+
+    async def promote(
+        self,
+        run_id: str,
+        *,
+        model_name: str,
+        security: MLSecurityContext,
+    ) -> MLRunResult:
+        entry = self.ephemeral_cache.by_run(run_id, security.scope_key)
+        if entry is None:
+            raise ValueError("Ephemeral ML run was not found, expired, or belongs to another scope")
+        output = entry.output
+        spec = MLExecutionSpec(
+            task=MLTask(output.bundle["task"]),
+            input_sql="[promoted ephemeral run]",
+            security=security,
+            persist=True,
+            model_name=model_name,
+            feature_columns=tuple(output.feature_columns),
+            target_column=output.bundle.get("target_column"),
+        )
+        model_id = None
+        version = None
+        artifact_uri = None
+        try:
+            model_id, version = await self.repository.reserve_version(
+                spec, feature_columns=output.feature_columns
+            )
+            artifact_uri = await asyncio.to_thread(
+                self.artifact_store.put,
+                self._artifact_key(spec, model_id, version),
+                entry.artifact_payload,
+            )
+            await self.repository.register_version(
+                model_id=model_id,
+                version=version,
+                spec=spec,
+                output=output,
+                artifact_uri=artifact_uri,
+                artifact_sha256=entry.artifact_sha256,
+                artifact_size=len(entry.artifact_payload),
+                training_duration_ms=0,
+            )
+        except Exception:
+            if model_id and version:
+                await self._abort_persistence_best_effort(
+                    model_id=model_id,
+                    version=version,
+                    artifact_uri=artifact_uri,
+                )
+            raise
+        return MLRunResult(
+            run_id=run_id,
+            task=spec.task.value,
+            mode=spec.mode.value,
+            status="promoted",
+            selected_engine=output.engine,
+            selected_algorithm=output.algorithm,
+            training_rows=output.training_rows,
+            feature_columns=output.feature_columns,
+            metrics=output.metrics,
+            results=output.results,
+            model_id=model_id,
+            version=version,
+            artifact_uri=artifact_uri,
+            message=f"Promoted without retraining as {model_name} version {version}",
+        )
 
     async def train_model(
         self,
@@ -154,7 +309,7 @@ class MLEngineService:
         model_type: str,
         algorithm: str,
         training_sql: str,
-        target_column: str,
+        target_column: str | None,
         feature_columns: list[str] | None,
         hyperparameters: dict | None,
         test_size: float,
@@ -164,306 +319,100 @@ class MLEngineService:
         password: str | None = None,
         role: str | None = None,
         as_system: bool = False,
-    ) -> dict:
-        """Train a model from SQL query data.
-
-        1. Execute training_sql in StarRocks to fetch data
-        2. Train sklearn model on the data
-        3. Evaluate on test split
-        4. Serialize model to base64, store in ML_MODEL_VERSIONS
-
-        The caller's ``training_sql`` runs as the caller by default. Every
-        HTTP-facing caller must supply ``username``/``password`` (plus ``role``)
-        so StarRocks RBAC stays authoritative; a missing identity fails closed
-        rather than silently falling back to the root connection (NOVA-104).
-        The root/system path is reachable only when a caller passes
-        ``as_system=True`` explicitly, which is reserved for internal flows
-        that genuinely have no user session.
-        """
-        # 1. Fetch training data from StarRocks. Worksheet-triggered training
-        # uses the logged-in user's connection so StarRocks RBAC remains authoritative.
-        #
-        # The statement is prepared first — guard, @stage translation, credential
-        # injection — so it reaches the engine in the same shape a worksheet
-        # statement would. ``engine_sql`` carries injected credentials and must
-        # not be logged or persisted; ``training_sql`` below is the redacted form
-        # and is what is stored in NOVA_SYSTEM.ML_MODELS.
-        engine_sql = await self._prepare_user_sql(
-            sql=training_sql,
-            database_name=database_name,
-            what="training",
-        )
-        stored_training_sql = self._redacted_user_sql(engine_sql)
-
+        timestamp_column: str | None = None,
+        series_column: str | None = None,
+        horizon: int | None = None,
+        frequency: str | None = None,
+        mode: str = "balanced",
+    ) -> dict[str, Any]:
+        del created_by
         if as_system:
-            rows, columns = await self._fetch_training_data_as_system(
-                database_name=database_name,
-                training_sql=engine_sql,
+            username = settings.STARROCKS_ROOT_USER
+            password = settings.STARROCKS_ROOT_PASSWORD
+        if username is None or password is None:
+            raise ValueError("Training requires caller credentials")
+        parameters = dict(hyperparameters or {})
+        parameters.setdefault("test_size", test_size)
+        result = await self.execute(
+            MLExecutionSpec(
+                task=MLTask(model_type),
+                input_sql=training_sql,
+                security=MLSecurityContext(
+                    username=username,
+                    password=password,
+                    database=database_name,
+                    role=role,
+                ),
+                mode=MLMode(mode),
+                persist=True,
+                model_name=model_name,
+                algorithm=algorithm,
+                feature_columns=tuple(feature_columns or ()),
+                target_column=target_column,
+                timestamp_column=timestamp_column,
+                series_column=series_column,
+                horizon=horizon,
+                frequency=frequency,
+                parameters=parameters,
             )
-        else:
-            if username is None or password is None:
-                raise ValueError(
-                    "Training requires caller credentials; the root connection is "
-                    "only reachable from an explicit internal caller (as_system=True)"
-                )
-            rows, columns = await self._fetch_training_data_as_user(
-                username=username,
-                password=password,
-                role=role,
-                database_name=database_name,
-                training_sql=engine_sql,
-            )
-
-        if not rows:
-            raise ValueError("Training SQL returned no rows")
-
-        n_rows = len(rows)
-        logger.info("Training data: %d rows, %d columns", n_rows, len(columns))
-
-        # 2. Determine feature columns
-        if not feature_columns:
-            feature_columns = [c for c in columns if c != target_column]
-
-        if target_column not in columns:
-            raise ValueError(f"Target column '{target_column}' not found in query results")
-
-        # 3. Prepare X (features) and y (target)
-        X = []
-        y = []
-        for row in rows:
-            feature_vals = []
-            skip = False
-            for col in feature_columns:
-                val = row.get(col)
-                if val is None:
-                    skip = True
-                    break
-                feature_vals.append(float(val) if not isinstance(val, (int, float)) else val)
-            if skip:
-                continue
-            target_val = row.get(target_column)
-            if target_val is None:
-                continue
-            X.append(feature_vals)
-            y.append(target_val)
-
-        if len(X) < 10:
-            raise ValueError(f"Not enough valid rows for training: {len(X)}. Need at least 10.")
-
-        X = np.array(X, dtype=float)
-        y = np.array(y)
-
-        # Encode string labels for classification-shaped problems. `forecast`
-        # predicts a continuous target, so a string target is an error there;
-        # only the classification family (classification, anomaly_detection)
-        # labels-encodes. `anomaly_detection` shares the classifier estimators,
-        # so it must be included here or a string label would reach sklearn raw.
-        is_regression_like = model_type in _REGRESSION_LIKE_TYPES
-        label_encoder = None
-        if not is_regression_like and y.dtype == object:
-            from sklearn.preprocessing import LabelEncoder
-            label_encoder = LabelEncoder()
-            y = label_encoder.fit_transform(y)
-
-        logger.info("Prepared data: X=%s, y=%s, algorithm=%s", X.shape, y.shape, algorithm)
-
-        # 4. Pick algorithm
-        chosen_algo = _pick_algorithm(model_type, algorithm, len(X))
-        algo_classes = ALGORITHMS.get(model_type, {})
-        if chosen_algo not in algo_classes:
-            raise ValueError(f"Algorithm '{chosen_algo}' not supported for {model_type}")
-
-        # 5. Train/test split
-        if test_size > 0 and len(X) >= 20:
-            X_train, X_test, y_train, y_test = train_test_split(
-                X,
-                y,
-                test_size=test_size,
-                random_state=42,
-                stratify=y if not is_regression_like else None,
-            )
-        else:
-            X_train, X_test, y_train, y_test = X, X, y, y
-
-        # 6. Create and train model
-        model_class = algo_classes[chosen_algo]
-        model_kwargs = hyperparameters or {}
-        model = model_class(**model_kwargs)
-        model.fit(X_train, y_train)
-
-        # 7. Evaluate
-        y_pred = model.predict(X_test)
-        metrics = {}
-        if not is_regression_like:
-            metrics["accuracy"] = float(accuracy_score(y_test, y_pred))
-            if label_encoder:
-                target_names = [str(c) for c in label_encoder.classes_]
-                report = classification_report(
-                    y_test, y_pred, target_names=target_names, output_dict=True, zero_division=0
-                )
-            else:
-                report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
-            metrics["classification_report"] = report
-        else:  # regression-shaped: regression, forecast
-            metrics["mse"] = float(mean_squared_error(y_test, y_pred))
-            metrics["rmse"] = float(np.sqrt(metrics["mse"]))
-            metrics["mae"] = float(mean_absolute_error(y_test, y_pred))
-            metrics["r2"] = float(r2_score(y_test, y_pred))
-
-        logger.info("Model trained: %s, metrics=%s", chosen_algo, metrics)
-
-        # 8. Serialize model (include label_encoder if used)
-        model_bundle = {
-            "model": model,
-            "feature_columns": feature_columns,
-            "target_column": target_column,
-        }
-        if label_encoder:
-            model_bundle["label_encoder"] = label_encoder
-        buf = io.BytesIO()
-        joblib.dump(model_bundle, buf)
-        model_binary = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-        # 9. Store in database
-        model_id = str(uuid4())
-        hyperparams_json = json.dumps(hyperparameters or {})
-        features_json = json.dumps(feature_columns)
-        metrics_json = json.dumps(metrics)
-
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                # Insert model metadata
-                await cur.execute(
-                    """INSERT INTO NOVA_SYSTEM.ML_MODELS
-                       (model_id, model_type, model_name, target_column, feature_columns,
-                        hyperparameters, training_sql, database_name, created_at, created_by,
-                        updated_at)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, NOW())""",
-                    (
-                        model_id,
-                        model_type,
-                        model_name,
-                        target_column,
-                        features_json,
-                        hyperparams_json,
-                        stored_training_sql,
-                        database_name,
-                        created_by,
-                    ),
-                )
-
-                # Get next version number
-                await cur.execute(
-                    """
-                    SELECT COALESCE(MAX(version), 0) + 1
-                    FROM NOVA_SYSTEM.ML_MODEL_VERSIONS
-                    WHERE model_id = %s
-                    """,
-                    (model_id,),
-                )
-                version_row = await cur.fetchone()
-                version = version_row[0] if version_row else 1
-
-                # Insert model version with binary
-                await cur.execute(
-                    """INSERT INTO NOVA_SYSTEM.ML_MODEL_VERSIONS
-                       (model_id, version, status, training_rows, metrics, model_binary,
-                        created_at, created_by)
-                       VALUES (%s, %s, 'active', %s, %s, %s, NOW(), %s)""",
-                    (model_id, version, len(X), metrics_json, model_binary, created_by),
-                )
-        finally:
-            conn.close()
-
+        )
         return {
-            "model_id": model_id,
+            "model_id": result.model_id,
             "model_name": model_name,
             "model_type": model_type,
-            "algorithm": chosen_algo,
-            "version": version,
-            "status": "active",
-            "training_rows": len(X),
-            "feature_columns": feature_columns,
-            "metrics": metrics,
-            "message": f"Model trained successfully with {chosen_algo}",
+            "algorithm": result.selected_algorithm,
+            "version": result.version,
+            "status": result.status,
+            "training_rows": result.training_rows,
+            "feature_columns": result.feature_columns,
+            "metrics": result.metrics,
+            "message": result.message,
         }
 
-    # ── Prediction ──────────────────────────────────────────────
-
-    async def predict(self, model_alias: str, features: dict) -> dict:
-        """Run prediction using a model identified by alias."""
-        # 1. Resolve alias to model_id + version
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    """SELECT a.model_id, a.version, m.model_name, m.model_type
-                       FROM NOVA_SYSTEM.ML_MODEL_ALIASES a
-                       JOIN NOVA_SYSTEM.ML_MODELS m ON a.model_id = m.model_id
-                       WHERE a.alias_name = %s""",
-                    (model_alias,),
-                )
-                alias_row = await cur.fetchone()
-                if not alias_row:
-                    raise ValueError(f"Model alias '{model_alias}' not found")
-
-                # Fetch model binary
-                await cur.execute(
-                    """SELECT model_binary FROM NOVA_SYSTEM.ML_MODEL_VERSIONS
-                       WHERE model_id = %s AND version = %s""",
-                    (alias_row["model_id"], alias_row["version"]),
-                )
-                version_row = await cur.fetchone()
-                if not version_row:
-                    raise ValueError(f"Model version {alias_row['version']} not found")
-        finally:
-            conn.close()
-
-        # 2. Deserialize model
-        model_binary_data = base64.b64decode(version_row["model_binary"])
-        model_bundle = joblib.load(io.BytesIO(model_binary_data))
-        model = model_bundle["model"]
-        feature_columns = model_bundle["feature_columns"]
-        label_encoder = model_bundle.get("label_encoder")
-
-        # 3. Build feature vector in correct order
-        feature_vector = []
-        for col in feature_columns:
-            if col not in features:
-                raise ValueError(f"Missing feature column: {col}")
-            feature_vector.append(float(features[col]))
-
-        # 4. Predict
-        X = np.array([feature_vector], dtype=float)
-        prediction = model.predict(X)[0]
-
-        # Decode label if classification with encoder
-        if label_encoder is not None:
-            prediction = label_encoder.inverse_transform([prediction])[0]
-
-        # Get probability for classification
-        probability = None
-        if hasattr(model, "predict_proba"):
-            try:
-                proba = model.predict_proba(X)[0]
-                classes = (
-                    label_encoder.inverse_transform(model.classes_)
-                    if label_encoder is not None
-                    else model.classes_
-                )
-                probability = {str(c): float(p) for c, p in zip(classes, proba, strict=False)}
-            except Exception:
-                pass
-
+    async def predict(
+        self,
+        model_alias: str,
+        features: dict,
+        *,
+        owner_name: str = "root",
+        database_name: str | None = None,
+    ) -> dict[str, Any]:
+        metadata, predictions, probabilities = await self.runtime.predict_alias(
+            model_alias,
+            pa.Table.from_pylist([features]),
+            owner_name=owner_name,
+            database_name=database_name,
+        )
         return {
             "model_alias": model_alias,
-            "model_name": alias_row["model_name"],
-            "prediction": (
-                prediction if not isinstance(prediction, np.generic) else prediction.item()
-            ),
-            "probability": probability,
-            "model_version": alias_row["version"],
+            "model_name": metadata["model_name"],
+            "prediction": predictions[0],
+            "probability": probabilities[0] if probabilities else None,
+            "model_version": metadata["version"],
+        }
+
+    async def predict_version(
+        self,
+        model_id: str,
+        version: int,
+        features: dict,
+        *,
+        owner_name: str,
+        database_name: str | None,
+    ) -> dict[str, Any]:
+        metadata, predictions, probabilities = await self.runtime.predict_version(
+            model_id,
+            version,
+            pa.Table.from_pylist([features]),
+            owner_name=owner_name,
+            database_name=database_name,
+        )
+        return {
+            "model_id": model_id,
+            "model_name": metadata["model_name"],
+            "prediction": predictions[0],
+            "probability": probabilities[0] if probabilities else None,
+            "model_version": version,
         }
 
     async def batch_predict(
@@ -475,545 +424,304 @@ class MLEngineService:
         password: str | None = None,
         role: str | None = None,
         as_system: bool = False,
-    ) -> dict:
-        """Run batch predictions using features from a SQL query.
-
-        ``prediction_sql`` is caller-supplied and runs **as the caller**. Every
-        HTTP-facing caller must supply ``username``/``password`` (plus ``role``)
-        so StarRocks RBAC stays authoritative; without them the call fails
-        closed instead of silently executing the statement on the root
-        connection, which is a full RBAC bypass (NOVA-118, same class as
-        NOVA-104). The root path is opt-in only, for internal flows that
-        genuinely have no user session.
-
-        Root ``_connect()`` is still used, deliberately, but only to read Nova's
-        own model/alias metadata — never to run caller SQL.
-        """
-        # 0. Prepare the caller's SQL before anything touches the engine.
-        # `prediction_sql` is user-supplied, so it takes the same four steps as
-        # training: guard, @stage translation, credential injection, redaction.
-        # The returned statement carries injected credentials and must not be
-        # logged or returned; `engine_sql` is consumed only by `cur.execute`.
-        engine_sql = await self._prepare_user_sql(
-            sql=prediction_sql,
-            database_name=database_name,
-            what="prediction",
+        connection: Any | None = None,
+    ) -> dict[str, Any]:
+        # Guard SQL at the outer boundary even if caller credentials are
+        # missing, so malformed requests cannot obscure a forbidden statement.
+        security = MLSecurityContext(
+            username=username or "",
+            password=password or "",
+            database=database_name,
+            role=role,
         )
-
-        # 1. Resolve alias and load model. Root is correct here: this is Nova's
-        # own metadata, not caller data.
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    """SELECT a.model_id, a.version, m.model_name, m.model_type
-                       FROM NOVA_SYSTEM.ML_MODEL_ALIASES a
-                       JOIN NOVA_SYSTEM.ML_MODELS m ON a.model_id = m.model_id
-                       WHERE a.alias_name = %s""",
-                    (model_alias,),
-                )
-                alias_row = await cur.fetchone()
-                if not alias_row:
-                    raise ValueError(f"Model alias '{model_alias}' not found")
-
-                await cur.execute(
-                    """SELECT model_binary FROM NOVA_SYSTEM.ML_MODEL_VERSIONS
-                       WHERE model_id = %s AND version = %s""",
-                    (alias_row["model_id"], alias_row["version"]),
-                )
-                version_row = await cur.fetchone()
-                if not version_row:
-                    raise ValueError("Model version not found")
-        finally:
-            conn.close()
-
-        # 2. Fetch prediction data. The caller's statement runs on the caller's
-        # connection, exactly as training data does; only an explicit internal
-        # opt-in may reach the root connection.
+        engine_sql = await self._prepare_user_sql(prediction_sql, security)
         if as_system:
-            rows, _columns = await self._fetch_prediction_data_as_system(
-                database_name=database_name,
-                prediction_sql=engine_sql,
-            )
-        else:
-            if username is None or password is None:
-                raise ValueError(
-                    "Batch prediction requires the caller's credentials; the root "
-                    "connection is only reachable from an explicit internal caller "
-                    "(as_system=True)"
-                )
-            rows, _columns = await self._execute_user_sql(
-                username=username,
-                password=password,
-                role=role,
-                database_name=database_name,
-                sql=engine_sql,
-            )
-
-        if not rows:
-            return {
-                "model_alias": model_alias,
-                "model_name": alias_row["model_name"],
-                "predictions": [],
-                "total_rows": 0,
-            }
-
-        # 3. Deserialize model
-        model_binary_data = base64.b64decode(version_row["model_binary"])
-        model_bundle = joblib.load(io.BytesIO(model_binary_data))
-        model = model_bundle["model"]
-        feature_columns = model_bundle["feature_columns"]
-        label_encoder = model_bundle.get("label_encoder")
-
-        # 4. Batch predict
-        X = []
-        valid_rows = []
-        for row in rows:
-            feature_vals = []
-            skip = False
-            for col in feature_columns:
-                val = row.get(col)
-                if val is None:
-                    skip = True
-                    break
-                feature_vals.append(float(val) if not isinstance(val, (int, float)) else val)
-            if skip:
-                continue
-            X.append(feature_vals)
-            valid_rows.append(row)
-
-        predictions = []
-        if X:
-            X_array = np.array(X, dtype=float)
-            preds = model.predict(X_array)
-            if label_encoder is not None:
-                preds = label_encoder.inverse_transform(preds)
-
-            for row, pred in zip(valid_rows, preds, strict=False):
-                pred_val = pred if not isinstance(pred, np.generic) else pred.item()
-                result = dict(row)
-                result["prediction"] = pred_val
-                predictions.append(result)
-
+            username = settings.STARROCKS_ROOT_USER
+            password = settings.STARROCKS_ROOT_PASSWORD
+        if username is None or (password is None and connection is None):
+            raise ValueError("Batch prediction requires caller credentials")
+        security = MLSecurityContext(
+            username=username, password=password or "", database=database_name, role=role
+        )
+        dataset = await collect_bounded(
+            (
+                ExistingConnectionBatchDataSource(connection)
+                if connection is not None
+                else self.data_source
+            ),
+            engine_sql,
+            security,
+            budget_for(MLMode.INTERACTIVE),
+        )
+        metadata, predictions, _ = await self.runtime.predict_alias(
+            model_alias,
+            dataset.table,
+            owner_name=username,
+            database_name=database_name,
+        )
+        rows = dataset.table.to_pylist()
+        for row, prediction in zip(rows, predictions, strict=False):
+            row["prediction"] = prediction
         return {
             "model_alias": model_alias,
-            "model_name": alias_row["model_name"],
-            "predictions": predictions,
-            "total_rows": len(predictions),
+            "model_name": metadata["model_name"],
+            "predictions": rows,
+            "total_rows": len(rows),
         }
 
-    # ── Model Management ────────────────────────────────────────
+    async def create_alias(
+        self,
+        alias_name: str,
+        model_id: str,
+        version: int,
+        *,
+        owner_name: str = "root",
+        database_name: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.repository.set_alias(
+            alias_name,
+            model_id,
+            version,
+            owner_name=owner_name,
+            database_name=database_name,
+        )
 
-    async def list_models(self) -> list[dict]:
-        """List all models with latest version info."""
-        conn = await self._connect()
+    async def _prepare_user_sql(
+        self,
+        sql: str,
+        security: MLSecurityContext | None = None,
+        *,
+        database_name: str | None = None,
+        what: str | None = None,
+    ) -> str:
+        del what
+        guard_user_statement(sql)
+        security = security or MLSecurityContext(username="", password="", database=database_name)
+        if security.schema is None:
+            stage_configs = await self._load_stage_configs(security.database)
+        else:
+            stage_configs = await self._load_stage_configs(
+                security.database, schema_name=security.schema
+            )
+        prepared = await prepare_stage_sql(sql, stage_configs=stage_configs)
+        return prepared.engine_sql
+
+    async def _load_stage_configs(
+        self,
+        database_name: str | None,
+        schema_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Compatibility seam for SQL translation tests and extensions."""
+        from app.modules.query.service import query_service
+
+        return await query_service._load_stage_configs(database_name, schema_name)
+
+    @staticmethod
+    def _redacted_user_sql(sql: str) -> str:
+        """Return the only SQL representation allowed in metadata and logs."""
+        return redact_for_output(sql)
+
+    async def _record_run_best_effort(self, **kwargs: Any) -> None:
         try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    """SELECT m.model_id, m.model_name, m.model_type, m.target_column,
-                              m.feature_columns, m.hyperparameters, m.training_sql,
-                              m.database_name, m.created_at, m.created_by,
-                              v.version as latest_version, v.status as latest_status,
-                              v.metrics as latest_metrics, v.training_rows
-                       FROM NOVA_SYSTEM.ML_MODELS m
-                       LEFT JOIN NOVA_SYSTEM.ML_MODEL_VERSIONS v
-                         ON m.model_id = v.model_id
-                         AND v.version = (
-                             SELECT MAX(version) FROM NOVA_SYSTEM.ML_MODEL_VERSIONS
-                             WHERE model_id = m.model_id
-                         )
-                       ORDER BY m.created_at DESC"""
+            await self.repository.record_run(**kwargs)
+        except Exception:
+            logger.warning("Could not persist ML run telemetry", exc_info=True)
+
+    async def _abort_persistence_best_effort(
+        self,
+        *,
+        model_id: str,
+        version: int,
+        artifact_uri: str | None,
+    ) -> None:
+        try:
+            await self.repository.abort_version(model_id, version)
+        except Exception:
+            logger.warning("Could not roll back ML version reservation", exc_info=True)
+        if artifact_uri:
+            try:
+                await asyncio.to_thread(self.artifact_store.delete, artifact_uri)
+            except Exception:
+                logger.warning("Could not remove partial ML artifact", exc_info=True)
+
+    async def _connect(self):
+        """Compatibility hook for callers that extend registry operations."""
+        return await self.repository._connect()
+
+    @staticmethod
+    def _artifact_key(spec: MLExecutionSpec, model_id: str, version: int) -> str:
+        safe_scope = re.sub(r"[^A-Za-z0-9_.-]", "_", spec.security.scope_key)
+        return (
+            f"{settings.ML_ARTIFACT_PREFIX.strip('/')}/{safe_scope}/"
+            f"{model_id}/v{version}/model.joblib"
+        )
+
+    @staticmethod
+    def _result_from_entry(
+        entry: EphemeralEntry, spec: MLExecutionSpec, *, cache_hit: bool
+    ) -> MLRunResult:
+        output = entry.output
+        return MLRunResult(
+            run_id=entry.run_id,
+            task=spec.task.value,
+            mode=spec.mode.value,
+            status="succeeded",
+            selected_engine=output.engine,
+            selected_algorithm=output.algorithm,
+            training_rows=output.training_rows,
+            feature_columns=output.feature_columns,
+            metrics=output.metrics,
+            results=output.results,
+            cache_hit=cache_hit,
+            telemetry={"cache_hit": cache_hit},
+            message="Reused a fresh equivalent ephemeral run",
+        )
+
+    async def list_models(
+        self, *, owner_name: str, database_name: str | None = None
+    ) -> list[dict[str, Any]]:
+        conn = await self.repository._connect()
+        try:
+            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT m.*, v.version AS latest_version, v.status AS latest_status, "
+                    "v.metrics AS latest_metrics, v.training_rows, v.algorithm AS algorithm "
+                    "FROM NOVA_SYSTEM.ML_MODELS m LEFT JOIN NOVA_SYSTEM.ML_MODEL_VERSIONS v "
+                    "ON m.model_id=v.model_id AND v.version=m.current_version "
+                    "WHERE m.created_by=%s "
+                    + (
+                        "AND COALESCE(m.database_name, '')=COALESCE(%s, '') "
+                        if database_name is not None
+                        else ""
+                    )
+                    + "ORDER BY m.updated_at DESC",
+                    (owner_name, database_name) if database_name is not None else (owner_name,),
                 )
-                rows = await cur.fetchall()
+                rows = await cursor.fetchall()
         finally:
             conn.close()
+        return [self._deserialize_metadata(row) for row in rows]
 
-        return [self._deserialize_model(row) for row in rows]
-
-    async def get_model(self, model_id: str) -> dict | None:
-        """Get model detail with all versions."""
-        conn = await self._connect()
+    async def get_model(
+        self,
+        model_id: str,
+        *,
+        owner_name: str,
+        database_name: str | None = None,
+    ) -> dict[str, Any] | None:
+        models = [
+            item
+            for item in await self.list_models(
+                owner_name=owner_name, database_name=database_name
+            )
+            if item["model_id"] == model_id
+        ]
+        if not models:
+            return None
+        conn = await self.repository._connect()
         try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    """SELECT * FROM NOVA_SYSTEM.ML_MODELS WHERE model_id = %s""",
+            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT version,status,training_rows,metrics,artifact_uri,artifact_size,"
+                    "framework,algorithm,created_at,created_by FROM "
+                    "NOVA_SYSTEM.ML_MODEL_VERSIONS WHERE model_id=%s ORDER BY version DESC",
                     (model_id,),
                 )
-                model_row = await cur.fetchone()
-                if not model_row:
-                    return None
-
-                await cur.execute(
-                    """SELECT version, status, training_rows, metrics, created_at, created_by
-                       FROM NOVA_SYSTEM.ML_MODEL_VERSIONS
-                       WHERE model_id = %s ORDER BY version DESC""",
-                    (model_id,),
-                )
-                version_rows = await cur.fetchall()
+                versions = [self._deserialize_metadata(row) for row in await cursor.fetchall()]
         finally:
             conn.close()
+        return {"model": models[0], "versions": versions}
 
-        model = self._deserialize_model(model_row)
-        versions = []
-        for v in version_rows:
-            v_dict = dict(v)
-            if v_dict.get("metrics") and isinstance(v_dict["metrics"], str):
-                with suppress(json.JSONDecodeError, TypeError):
-                    v_dict["metrics"] = json.loads(v_dict["metrics"])
-            if v_dict.get("created_at"):
-                v_dict["created_at"] = str(v_dict["created_at"])
-            versions.append(v_dict)
-
-        return {"model": model, "versions": versions}
-
-    async def delete_model(self, model_id: str) -> dict:
-        """Delete a model and all its versions."""
-        conn = await self._connect()
+    async def delete_model(
+        self,
+        model_id: str,
+        *,
+        owner_name: str,
+        database_name: str | None = None,
+    ) -> dict[str, Any]:
+        detail = await self.get_model(
+            model_id, owner_name=owner_name, database_name=database_name
+        )
+        if detail is None:
+            raise ValueError("Model not found in this scope")
+        artifact_uris = [
+            version.get("artifact_uri")
+            for version in detail["versions"]
+            if version.get("artifact_uri")
+        ]
+        conn = await self.repository._connect()
         try:
-            async with conn.cursor() as cur:
-                # Delete aliases
-                await cur.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_MODEL_ALIASES WHERE model_id = %s",
-                    (model_id,),
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "DELETE FROM NOVA_SYSTEM.ML_MODEL_ALIASES WHERE model_id=%s", (model_id,)
                 )
-                # Delete versions
-                await cur.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_MODEL_VERSIONS WHERE model_id = %s",
-                    (model_id,),
+                await cursor.execute(
+                    "DELETE FROM NOVA_SYSTEM.ML_MODEL_VERSIONS WHERE model_id=%s", (model_id,)
                 )
-                # Delete model
-                await cur.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_MODELS WHERE model_id = %s",
-                    (model_id,),
+                await cursor.execute(
+                    "DELETE FROM NOVA_SYSTEM.ML_MODELS WHERE model_id=%s", (model_id,)
                 )
         finally:
             conn.close()
-
+        for artifact_uri in artifact_uris:
+            try:
+                await asyncio.to_thread(self.artifact_store.delete, artifact_uri)
+            except Exception:
+                logger.warning(
+                    "Unable to delete model artifact for model %s",
+                    model_id,
+                    exc_info=True,
+                )
+        self.runtime.cache.invalidate()
         return {"model_id": model_id, "deleted": True, "message": "Model deleted"}
 
-    # ── Aliases ─────────────────────────────────────────────────
-
-    async def list_aliases(self) -> list[dict]:
-        """List all model aliases."""
-        conn = await self._connect()
+    async def list_aliases(
+        self, *, owner_name: str = "root", database_name: str | None = None
+    ) -> list[dict[str, Any]]:
+        conn = await self.repository._connect()
         try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    """SELECT a.alias_name, a.model_id, a.version, a.created_at,
-                              m.model_name
-                       FROM NOVA_SYSTEM.ML_MODEL_ALIASES a
-                       LEFT JOIN NOVA_SYSTEM.ML_MODELS m ON a.model_id = m.model_id
-                       ORDER BY a.alias_name"""
+            async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT a.alias_name,a.model_id,a.version,a.created_at,m.model_name "
+                    "FROM NOVA_SYSTEM.ML_MODEL_ALIASES a LEFT JOIN NOVA_SYSTEM.ML_MODELS m "
+                    "ON m.model_id=a.model_id WHERE a.owner_name=%s AND a.database_name=%s "
+                    "ORDER BY a.alias_name",
+                    (owner_name, database_name or ""),
                 )
-                rows = await cur.fetchall()
+                return [self._deserialize_metadata(row) for row in await cursor.fetchall()]
         finally:
             conn.close()
 
-        result = []
-        for r in rows:
-            d = dict(r)
-            if d.get("created_at"):
-                d["created_at"] = str(d["created_at"])
-            result.append(d)
-        return result
-
-    async def create_alias(self, alias_name: str, model_id: str, version: int) -> dict:
-        """Create or update a model alias."""
-        conn = await self._connect()
+    async def delete_alias(
+        self,
+        alias_name: str,
+        *,
+        owner_name: str = "root",
+        database_name: str | None = None,
+    ) -> dict[str, Any]:
+        conn = await self.repository._connect()
         try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                # Upsert alias (StarRocks supports PRIMARY KEY upsert)
-                await cur.execute(
-                    """INSERT INTO NOVA_SYSTEM.ML_MODEL_ALIASES
-                       (alias_name, model_id, version, created_at, updated_at)
-                       VALUES (%s, %s, %s, NOW(), NOW())""",
-                    (alias_name, model_id, version),
-                )
-
-                await cur.execute(
-                    """SELECT a.alias_name, a.model_id, a.version, a.created_at, m.model_name
-                       FROM NOVA_SYSTEM.ML_MODEL_ALIASES a
-                       LEFT JOIN NOVA_SYSTEM.ML_MODELS m ON a.model_id = m.model_id
-                       WHERE a.alias_name = %s""",
-                    (alias_name,),
-                )
-                row = await cur.fetchone()
-        finally:
-            conn.close()
-
-        if not row:
-            raise ValueError("Failed to create alias")
-        d = dict(row)
-        if d.get("created_at"):
-            d["created_at"] = str(d["created_at"])
-        return d
-
-    async def delete_alias(self, alias_name: str) -> dict:
-        """Delete a model alias."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "DELETE FROM NOVA_SYSTEM.ML_MODEL_ALIASES WHERE alias_name = %s",
-                    (alias_name,),
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "DELETE FROM NOVA_SYSTEM.ML_MODEL_ALIASES WHERE alias_name=%s "
+                    "AND owner_name=%s AND database_name=%s",
+                    (alias_name, owner_name, database_name or ""),
                 )
         finally:
             conn.close()
         return {"alias_name": alias_name, "deleted": True}
 
-    # ── Helpers ─────────────────────────────────────────────────
-
-    async def _prepare_user_sql(
-        self,
-        *,
-        sql: str,
-        database_name: str | None,
-        what: str,
-    ) -> str:
-        """Put user-supplied SQL through the same pipeline as the worksheet.
-
-        Both ML entry points that run caller-supplied SQL — training data and
-        batch prediction — execute it on a connection carrying real storage
-        credentials, so both need the identical four steps ``query.service``
-        applies: guard, ``@stage`` translation, credential injection,
-        redaction. Neither had any of them: a user could run arbitrary SQL
-        unguarded, and an ``@stage`` reference reached the engine untranslated
-        (``NOVA-28``; recorded at ``README.md:553``).
-
-        One helper rather than two near-copies: the second copy is where the
-        paths would drift, and drift on a credential-bearing pipeline is a
-        leak.
-
-        RBAC is not weakened by preparing here: the stage-config read is
-        configuration, and the translated statement is executed on the *user's*
-        connection in the training case, so StarRocks still decides what the
-        query may reach.
-
-        **Nothing credential-bearing escapes.** The returned statement is what
-        the engine receives and does carry injected credentials; callers must
-        never log, persist, or return it. Use :meth:`_redacted_user_sql` for
-        anything that leaves the process. ``what`` names the statement in the
-        debug line so an operator can tell which path prepared it.
-
-        Raises:
-            ForbiddenSQLError: if the guard blocks the statement.
-            ValueError: if an ``@stage`` reference cannot be translated.
-        """
-        # 1. Guard, exactly as the worksheet does. These are SELECTs, but the
-        # guard is about what the *user* can reach, not what the endpoint
-        # expects — and `CREATE ML_MODEL` routes a user-supplied `training_sql`
-        # here too, so the surface is not only the /train endpoint.
-        guard_user_statement(sql)
-
-        # 2. Resolve stage configs (system read; RBAC is enforced by StarRocks
-        # on the translated statement).
-        stage_configs = await self._load_stage_configs(database_name)
-
-        # 3. Translate + inject. A statement with no @stage reference passes
-        # through unchanged (and credential-free).
-        prepared = await prepare_stage_sql(sql, stage_configs=stage_configs)
-
-        # The engine needs the credential-bearing form; everything else in this
-        # class logs and persists the redacted one instead.
-        logger.debug("Prepared %s SQL for execution: %s", what, prepared.redacted_sql)
-        return prepared.engine_sql
-
     @staticmethod
-    def _redacted_user_sql(engine_sql: str) -> str:
-        """The form of ``engine_sql`` that may be logged or persisted.
-
-        Exists so call sites do not have to remember which of the two forms
-        ``_prepare_user_sql`` produces is the safe one. Redaction is
-        value-only, so the statement still documents what ran.
-        """
-        return redact_for_output(engine_sql)
-
-    async def _load_stage_configs(self, database_name: str | None) -> dict[str, StorageConfig]:
-        """Load stage configs for the training SQL's ``@stage`` translation.
-
-        Read on the **system** connection, deliberately. Stage *definition*
-        (name → bucket/prefix/connection) is configuration, not user-scoped
-        data, and the control that matters is enforced where it belongs: the
-        translated ``FILES()`` statement is executed on the user's connection,
-        so StarRocks still grants or denies the read. Reading the config on the
-        system connection cannot widen what the statement can reach.
-
-        (``query.service._load_stage_configs`` is also system-read for the same
-        reason; it takes ``database``/``schema`` as a *filter*, not as a
-        privilege boundary.)
-
-        A failure to *read* the rows returns no configs rather than raising: an
-        unresolvable stage then surfaces as a translation error naming the
-        stage, which is a better message than a driver traceback. Credential
-        resolution is different and deliberately **does** raise: a stage whose
-        ``secret_ref`` cannot be resolved must fail closed, never fall back to
-        another principal (NOVA-65).
-        """
-        sql = (
-            "SELECT name, database_name, schema_name, storage_connection, base_prefix "
-            "FROM NOVA_SYSTEM.CONFIG_STAGES"
-        )
-        params: list[str] = []
-        if database_name:
-            sql += " WHERE database_name = %s"
-            params.append(database_name)
-
-        try:
-            async with await self._connect() as conn, conn.cursor() as cur:
-                await cur.execute(sql, tuple(params) or None)
-                rows = list(await cur.fetchall())
-        except Exception:
-            logger.warning("Could not load stage configs for training SQL", exc_info=True)
-            return {}
-
-        configs: dict[str, StorageConfig] = {}
-        for row in rows:
-            name, db_name, schema_name, storage_conn, base_prefix = row[:5]
-            conn = get_storage_connection(storage_conn)
-            resolved_prefix = (base_prefix or "").strip("/")
-            if not resolved_prefix:
-                resolved_prefix = f"{db_name}/{schema_name}/{name}"
-            # Resolve the stage's *own* connection, exactly as the worksheet
-            # loader does. Using conn.access_key/secret_key here ignored
-            # secret_ref entirely, so an ML @stage query authenticated with the
-            # inline placeholder values and never contacted the provider
-            # (NOVA-65). Fail-closed: a broken reference raises
-            # SecretResolutionError rather than falling back.
-            access_key, secret_key = resolve_storage_credentials(storage_conn)
-            configs[name] = StorageConfig(
-                storage_type=conn.type,
-                endpoint=to_docker_endpoint(conn.endpoint),
-                bucket=conn.bucket,
-                base_prefix=resolved_prefix,
-                access_key=access_key,
-                secret_key=secret_key,
-                region=conn.region or "us-east-1",
-                storage_connection=storage_conn,
-            )
-        return configs
-
-    @staticmethod
-    async def _execute_user_sql(
-        *,
-        username: str,
-        password: str,
-        role: str | None,
-        database_name: str | None,
-        sql: str,
-    ) -> tuple[list[dict], list[str]]:
-        """Run ``sql`` on the caller's own StarRocks connection.
-
-        The single place an ML path hands caller-supplied SQL to the engine
-        "as the caller": the per-request connection carries the caller's
-        identity, and an ``active_role`` is activated with ``SET ROLE`` before
-        the statement runs. StarRocks RBAC therefore decides what the statement
-        may read or write — the same control the worksheet honors.
-
-        Both entry points that execute caller SQL — training data and batch
-        prediction — go through here, so neither can drift back onto the root
-        connection without a test failing (NOVA-104, NOVA-118).
-        """
-        async with (
-            db.user_conn(
-                username=username,
-                password=password,
-                database=database_name,
-            ) as conn,
-            conn.cursor(asyncmy.cursors.DictCursor) as cur,
-        ):
-            if role:
-                await cur.execute(
-                    f"SET ROLE {check_identifier(role, field='role')}"
-                )
-            await cur.execute(sql)
-            rows = await cur.fetchall()
-            columns = (
-                [desc[0] for desc in cur.description]
-                if cur.description
-                else (list(rows[0].keys()) if rows else [])
-            )
-        return list(rows), columns
-
-    @staticmethod
-    async def _fetch_training_data_as_user(
-        *,
-        username: str,
-        password: str,
-        role: str | None,
-        database_name: str | None,
-        training_sql: str,
-    ) -> tuple[list[dict], list[str]]:
-        return await MLEngineService._execute_user_sql(
-            username=username,
-            password=password,
-            role=role,
-            database_name=database_name,
-            sql=training_sql,
-        )
-
-    async def _fetch_training_data_as_system(
-        self,
-        *,
-        database_name: str | None,
-        training_sql: str,
-    ) -> tuple[list[dict], list[str]]:
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                if database_name:
-                    await cur.execute(f"USE {database_name}")
-                await cur.execute(training_sql)
-                rows = await cur.fetchall()
-                columns = (
-                    [desc[0] for desc in cur.description]
-                    if cur.description
-                    else (list(rows[0].keys()) if rows else [])
-                )
-        finally:
-            conn.close()
-        return list(rows), columns
-
-    async def _fetch_prediction_data_as_system(
-        self,
-        *,
-        database_name: str | None,
-        prediction_sql: str,
-    ) -> tuple[list[dict], list[str]]:
-        """System-connection fallback for an explicit internal caller.
-
-        Reachable only via ``as_system=True``, mirroring
-        :meth:`_fetch_training_data_as_system`. No HTTP path passes the flag, so
-        a request can never land here by omitting credentials (NOVA-118).
-        """
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                if database_name:
-                    await cur.execute(f"USE {database_name}")
-                await cur.execute(prediction_sql)
-                rows = await cur.fetchall()
-                columns = (
-                    [desc[0] for desc in cur.description]
-                    if cur.description
-                    else (list(rows[0].keys()) if rows else [])
-                )
-        finally:
-            conn.close()
-        return list(rows), columns
-
-    @staticmethod
-    def _deserialize_model(row: dict) -> dict:
-        """Deserialize a model row, parsing JSON fields."""
+    def _deserialize_metadata(row: dict) -> dict[str, Any]:
         result = dict(row)
-        for field in ("feature_columns", "hyperparameters", "latest_metrics"):
-            val = result.get(field)
-            if val and isinstance(val, str):
-                with suppress(json.JSONDecodeError, TypeError):
-                    result[field] = json.loads(val)
-        if result.get("created_at"):
-            result["created_at"] = str(result["created_at"])
+        for field in ("feature_columns", "hyperparameters", "metrics", "latest_metrics"):
+            if isinstance(result.get(field), str):
+                with contextlib.suppress(json.JSONDecodeError):
+                    result[field] = json.loads(result[field])
+        for key, value in list(result.items()):
+            if isinstance(value, datetime):
+                result[key] = value.isoformat()
         return result
 
 
-# Singleton
 ml_engine_service = MLEngineService()

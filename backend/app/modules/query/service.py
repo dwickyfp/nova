@@ -18,6 +18,7 @@ import time
 import asyncmy
 
 from app.common.audit import write_audit_log
+from app.common.ml_intercept import detect_ml_predict, rewrite_ml_predict_sql
 from app.common.sql_guard import (
     CredentialsRedactionError,
     is_destructive_sql,
@@ -293,6 +294,22 @@ class QueryService:
                 session_id=session_id,
                 file_id=file_id,
                 schema=schema,
+            )
+
+        ml_predict_match = detect_ml_predict(normalized_sql)
+        if ml_predict_match:
+            return await self._execute_ml_predict(
+                sql=sql,
+                normalized_sql=normalized_sql,
+                match=ml_predict_match,
+                username=username,
+                encrypted_password=encrypted_password,
+                database=database,
+                role=role,
+                session_id=session_id,
+                file_id=file_id,
+                schema=schema,
+                connection=connection,
             )
 
         # Nova `CREATE TASK` is a Nova statement, not an engine one: it is
@@ -731,6 +748,11 @@ class QueryService:
                 username=username,
                 password=password,
                 role=role,
+                timestamp_column=statement.timestamp_column,
+                series_column=statement.series_column,
+                horizon=statement.horizon,
+                frequency=statement.frequency,
+                mode=statement.mode,
             )
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             columns = [
@@ -793,6 +815,85 @@ class QueryService:
                 rewritten_sql=normalized_sql,
                 error_message=str(exc),
                 duration_ms=int(elapsed_ms),
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+            raise
+
+    async def _execute_ml_predict(
+        self,
+        *,
+        sql: str,
+        normalized_sql: str,
+        match: re.Match,
+        username: str,
+        encrypted_password: str,
+        database: str | None,
+        role: str | None,
+        session_id: str | None,
+        file_id: str | None,
+        schema: str | None,
+        connection: asyncmy.Connection | None,
+    ) -> QueryResult:
+        """Execute Nova ``ML_PREDICT`` as one columnar, vectorized batch."""
+        start = time.monotonic()
+        alias, feature_sql, _ = rewrite_ml_predict_sql(normalized_sql, match)
+        password = "" if connection is not None else decrypt_password(encrypted_password)
+        from app.modules.ml_engine.service import ml_engine_service
+
+        try:
+            predicted = await ml_engine_service.batch_predict(
+                model_alias=alias,
+                prediction_sql=feature_sql,
+                database_name=database,
+                username=username,
+                password=password,
+                role=role,
+                connection=connection,
+            )
+            records = predicted["predictions"]
+            columns = list(records[0]) if records else ["prediction"]
+            rows = [[record.get(column) for column in columns] for record in records]
+            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="ml_predict_batch",
+                object_type="ml_model",
+                object_name=alias,
+                status="SUCCESS",
+                sql_text=sql,
+                rewritten_sql=feature_sql,
+                duration_ms=int(elapsed_ms),
+                rows_affected=len(rows),
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+            return QueryResult(
+                columns=columns,
+                rows=rows,
+                row_count=len(rows),
+                elapsed_ms=elapsed_ms,
+                original_sql=sql,
+                executed_sql=feature_sql,
+                warnings=["ML_PREDICT executed as one vectorized Nova batch"],
+            )
+        except Exception as exc:
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="ml_predict_batch",
+                object_type="ml_model",
+                object_name=alias,
+                status="ERROR",
+                sql_text=sql,
+                rewritten_sql=feature_sql,
+                error_message=_redact_error_message(str(exc)),
+                duration_ms=int((time.monotonic() - start) * 1000),
                 session_id=session_id,
                 file_id=file_id,
                 database_name=database,

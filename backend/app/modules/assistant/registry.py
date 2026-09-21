@@ -34,12 +34,14 @@ def build_registry() -> ToolRegistry:
     A factory (rather than only the process-wide instance) so tests get an
     isolated registry.
     """
+    from app.modules.agents.tools.ml_execute import ml_execute_tool
     from app.modules.assistant.tools.load_skill import load_skill_tool
     from app.modules.assistant.tools.query_execute import query_execute_tool
 
     registry = ToolRegistry()
     registry.register(load_skill_tool)
     registry.register(query_execute_tool)
+    registry.register(ml_execute_tool)
 
     # Agent Studio authoring tools (Phase 12). Nove can draft a semantic model or
     # an agent from a request. Both are write tools: classified ``destructive``

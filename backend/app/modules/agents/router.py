@@ -88,6 +88,7 @@ KNOWN_TOOLS = {
     "semantic_query",
     "semantic_search",
     "data_to_chart",
+    "ml_execute",
 }
 
 

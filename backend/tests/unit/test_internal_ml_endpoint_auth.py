@@ -68,7 +68,8 @@ def predict_app(monkeypatch):
     from app.modules.ml_engine import service as service_module
     from app.modules.ml_engine.router import router as ml_router
 
-    async def fake_predict(model_alias, features):
+    async def fake_predict(model_alias, features, **scope):
+        del scope
         return {**PREDICTION, "model_alias": model_alias}
 
     monkeypatch.setattr(settings, "NOVA_INTERNAL_TOKEN", SECRET)
@@ -188,9 +189,7 @@ class TestTrustedCallerIsAccepted:
                 "encrypted_password": "enc",
             }
 
-        predict_app.dependency_overrides[
-            deps_module.get_current_user
-        ] = fake_current_user
+        predict_app.dependency_overrides[deps_module.get_current_user] = fake_current_user
         with _client(predict_app) as client:
             resp = client.post(ML_PREDICT, json=REQUEST_BODY)
 

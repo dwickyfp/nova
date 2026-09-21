@@ -29,6 +29,7 @@ _ALLOWED_TOOLS = {
     "semantic_query",
     "semantic_search",
     "data_to_chart",
+    "ml_execute",
 }
 
 _PARAMETERS = {
@@ -62,7 +63,7 @@ _PARAMETERS = {
             "items": {"type": "string"},
             "description": (
                 "Tools to bundle. Valid: load_skill, semantic_query, "
-                "semantic_search, query_execute, data_to_chart."
+                "semantic_search, query_execute, data_to_chart, ml_execute."
             ),
         },
         "sample_questions": {
