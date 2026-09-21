@@ -9,8 +9,6 @@ import { StudioSidebar, type StudioView } from "./studio-sidebar";
 import { StudioAccountMenu } from "./studio-account-menu";
 import { StudioArtifacts } from "./studio-artifacts";
 import { StudioCapabilities } from "./studio-capabilities";
-import { StudioSettingsDialog } from "./studio-settings";
-import type { StudioSettings } from "@/features/agents/api";
 
 /**
  * Nova Studio app shell — a full-page standalone surface.
@@ -38,7 +36,6 @@ export function StudioApp() {
 
   const [agentId, setAgentId] = useState<string | null>(null);
   const [view, setView] = useState<StudioView>(search.view ?? "chat");
-  const [settingsOpen, setSettingsOpen] = useState(false);
   // The open thread lives in the URL, not in component state: a refresh has to
   // come back to the same conversation, and losing it made the transcript (and
   // its thinking) look like it had vanished.
@@ -105,16 +102,6 @@ export function StudioApp() {
     threadsQuery.isSuccess,
   ]);
 
-  const updateSettings = useMutation({
-    mutationFn: (patch: Partial<StudioSettings["preferences"]>) =>
-      studioApi.updateSettings(patch),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["studio", "settings"] });
-      toast.success("Settings saved");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   const selectAgent = (id: string) => {
     setAgentId(id);
     setNewChatNonce(0);
@@ -126,7 +113,6 @@ export function StudioApp() {
 
   const selectThread = (id: string) => {
     setView("chat");
-    setFreshChat(false);
     navigate({
       to: "/studio",
       search: { agent: agentId ?? undefined, thread: id },
@@ -145,16 +131,45 @@ export function StudioApp() {
     });
   };
 
+  const removeThread = useMutation({
+    mutationFn: (threadId: string) =>
+      agentsApi.deleteThread(agentId as string, threadId),
+    onSuccess: (_result, threadId) => {
+      queryClient.invalidateQueries({
+        queryKey: ["agents", "threads", agentId],
+      });
+      // Deleting the open conversation leaves the URL pointing at a thread that
+      // no longer exists. Close it rather than render a dead transcript.
+      if (threadId === activeThreadId) startNewChat();
+      toast.success("Conversation deleted");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const renameThread = useMutation({
+    mutationFn: ({ threadId, title }: { threadId: string; title: string }) =>
+      agentsApi.renameThread(agentId as string, threadId, title),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["agents", "threads", agentId],
+      });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <StudioSidebar
         view={view}
         onView={setView}
-        onOpenSettings={() => setSettingsOpen(true)}
         threads={threads}
         activeThreadId={activeThreadId}
         onOpenThread={selectThread}
         onNewChat={startNewChat}
+        onDeleteThread={(threadId) => removeThread.mutate(threadId)}
+        onRenameThread={(threadId, title) =>
+          renameThread.mutate({ threadId, title })
+        }
         threadsLoading={threadsQuery.isLoading}
         open={sidebarOpen}
         onToggle={toggleSidebar}
@@ -184,11 +199,10 @@ export function StudioApp() {
             }
             activeThreadId={activeThreadId}
             onThreadChange={(id) => {
-              // A real id means the first message created a thread. A null id
-              // comes from the header's New chat action and must keep the
-              // auto-open guard enabled, or the latest thread immediately
-              // reappears and makes the button look broken.
-              setFreshChat(id === null);
+              // Keep the guard enabled until navigation has committed the new
+              // thread id. Clearing it here briefly exposes an empty URL to the
+              // auto-open effect, which can replace the new chat with history.
+              if (id === null) setFreshChat(true);
               // A thread created by the first message joins the URL, so a
               // refresh before the next message still returns here.
               navigate({
@@ -207,14 +221,6 @@ export function StudioApp() {
           <StudioCapabilities onSelectAgent={selectAgent} />
         )}
       </main>
-
-      <StudioSettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        settings={settingsQuery.data}
-        onSave={(patch) => updateSettings.mutate(patch)}
-        saving={updateSettings.isPending}
-      />
     </div>
   );
 }

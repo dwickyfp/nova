@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -49,6 +50,14 @@ DEFAULT_TIME_BUDGET_SECONDS = 60.0
 #: iteration budget doing it. Two allows a legitimate re-run after new
 #: information without permitting a loop.
 MAX_CALLS_PER_TOOL = 2
+
+# Only the latest small working set may seed a follow-up transform. The table
+# itself is already capped when it is persisted, and this second bound prevents
+# a malformed/legacy trace from turning context restoration into an unbounded
+# copy. One result is enough for references such as "chart that".
+_RESULT_LOOKBACK_MESSAGES = 12
+_RESTORED_RESULT_MAX_COLUMNS = 50
+_RESTORED_RESULT_MAX_ROWS = 200
 
 # A standalone marker in the model's final prose consumes the next structured
 # artifact produced by tools.  It is an authoring control, never shown to the
@@ -125,6 +134,9 @@ class LoopContext:
     context_stats: dict[str, Any] | None = None
     #: Stable identity shared by every SSE event in this turn.
     run_id: str | None = None
+    #: Monotonic origin for relative trace timings. Persisted steps store only
+    #: offsets/durations, never a process clock value.
+    trace_started_at: float | None = None
     #: Request-local callback installed only while a tool is executing. Tools
     #: use it to report factual lifecycle states (generated SQL, executing,
     #: completed). It is never persisted or sent to the model.
@@ -233,9 +245,18 @@ class AssistantLoop:
                 messages.append({"role": "user", "content": f"[tool result] {message.content}"})
         messages.append({"role": "user", "content": user_content})
 
+        curation_started_offset_ms = _trace_now_ms(context) if context is not None else 0.0
+        curation_started = time.perf_counter()
         curated = self._context_manager.curate(messages)
         if context is not None:
             context.context_stats = curated.stats.as_dict()
+            context.context_stats.update(
+                {
+                    "step_id": str(uuid4()),
+                    "started_offset_ms": curation_started_offset_ms,
+                    "duration_ms": round((time.perf_counter() - curation_started) * 1000, 3),
+                }
+            )
         return curated.messages
 
     async def run(
@@ -259,6 +280,9 @@ class AssistantLoop:
         selector); when omitted the provider's first active model is used.
         """
         context.run_id = str(uuid4())
+        context.trace_started_at = time.perf_counter()
+        if context.last_result is None:
+            context.last_result = _latest_thread_result(thread)
         events.begin_run(context.run_id)
         deadline = asyncio.get_running_loop().time() + self._time_budget
         messages = self._build_messages(thread, user_content, context)
@@ -341,6 +365,7 @@ class AssistantLoop:
             # answer). The final assembled message drives the branch below.
             message: dict[str, Any] | None = None
             buffered_text: list[str] = []
+            provider_step: dict[str, Any] | None = None
             if deferred_calls:
                 message = {
                     "role": "assistant",
@@ -348,6 +373,14 @@ class AssistantLoop:
                     "tool_calls": [deferred_calls.pop(0)],
                 }
             else:
+                provider_step = _record_step(
+                    context,
+                    {
+                        "kind": "provider",
+                        "purpose": "planning",
+                        "status": "running",
+                    },
+                )
                 try:
                     async for kind, payload in self._provider.stream(
                         messages=messages,
@@ -359,12 +392,19 @@ class AssistantLoop:
                         else:
                             message = payload
                 except Exception as exc:  # noqa: BLE001
+                    _finish_step(context, provider_step, "failed", str(exc))
                     logger.warning("Assistant provider call failed: %s", type(exc).__name__)
                     yield events.error("provider_error", str(exc))
                     yield events.done(str(uuid4()), finish_reason="error")
                     return
 
             if message is None:
+                _finish_step(
+                    context,
+                    provider_step,
+                    "failed",
+                    "The AI provider returned an empty stream.",
+                )
                 yield events.error("provider_error", "The AI provider returned an empty stream.")
                 yield events.done(str(uuid4()), finish_reason="error")
                 return
@@ -374,6 +414,9 @@ class AssistantLoop:
             _accumulate_usage(context, message)
 
             tool_calls = message.get("tool_calls") or []
+            if provider_step is not None:
+                provider_step["purpose"] = "planning" if tool_calls else "response"
+                _finish_step(context, provider_step, "done", None)
             if len(tool_calls) > 1:
                 deferred_calls.extend(tool_calls[1:])
                 tool_calls = tool_calls[:1]
@@ -546,12 +589,14 @@ class AssistantLoop:
                 while not tool_task.done():
                     if cancelled():
                         tool_task.cancel()
+                        _finish_tool_step(context, "cancelled", None)
                         yield events.tool_status(invocation.tool_call_id, "cancelled")
                         yield events.done(str(uuid4()), finish_reason="cancelled")
                         return
                     remaining = deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
                         tool_task.cancel()
+                        _finish_tool_step(context, "failed", "time budget exceeded")
                         yield events.error(
                             "timeout", "The assistant turn exceeded its time budget."
                         )
@@ -572,6 +617,8 @@ class AssistantLoop:
                     yield _tool_progress_frame(context, invocation, progress_queue.get_nowait())
             finally:
                 context.tool_progress_sink = None
+            if outcome.trace_detail:
+                _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail)
             # The observe phase is where the model reads a tool result back. For
             # a skill load there is nothing to observe; a query result is.
             if invocation.tool_name != "load_skill":
@@ -749,6 +796,22 @@ def _tool_progress_frame(
         if step.get("kind") == "tool" and step.get("tool_call_id") == invocation.tool_call_id:
             step["stage"] = stage
             step["status_text"] = text
+            progress_items = step.setdefault("progress", [])
+            if isinstance(progress_items, list):
+                now_ms = _trace_now_ms(context)
+                if progress_items:
+                    previous = progress_items[-1]
+                    previous_started = previous.get("at_offset_ms")
+                    if isinstance(previous_started, int | float):
+                        previous["duration_ms"] = max(0, round(now_ms - previous_started, 3))
+                progress_items.append(
+                    {
+                        "stage": stage,
+                        "text": text,
+                        "at_offset_ms": now_ms,
+                        "duration_ms": 0.0,
+                    }
+                )
             if preview is not None:
                 step["preview"] = preview
             break
@@ -974,6 +1037,45 @@ def _history_artifact_context(steps: list[dict] | None) -> str:
     return "\n".join(lines)[:2500]
 
 
+def _latest_thread_result(thread: AssistantThread) -> dict[str, Any] | None:
+    """Restore one recent persisted table for a follow-up transform.
+
+    A new turn gets a new :class:`LoopContext`, so its in-memory ``last_result``
+    slot would otherwise forget the table the user can still see immediately
+    above it. Scan only the recent working set and restore only the newest table
+    artifact. The rows were value-redacted before persistence; the strict
+    column/row caps keep this bridge bounded even for a legacy trace.
+
+    A query in the new turn overwrites this slot, so "chart that" uses prior
+    data while "query X, then chart it" uses the newly retrieved result.
+    """
+    for message in reversed(thread.messages[-_RESULT_LOOKBACK_MESSAGES:]):
+        if message.role != "assistant":
+            continue
+        for step in reversed(message.steps or []):
+            if step.get("kind") != "table":
+                continue
+            raw_columns = step.get("columns")
+            raw_rows = step.get("rows")
+            if not isinstance(raw_columns, list) or not raw_columns:
+                continue
+            columns = [str(column) for column in raw_columns[:_RESTORED_RESULT_MAX_COLUMNS]]
+            rows: list[list[Any]] = []
+            if isinstance(raw_rows, list):
+                for raw_row in raw_rows[:_RESTORED_RESULT_MAX_ROWS]:
+                    if isinstance(raw_row, (list, tuple)):
+                        rows.append(list(raw_row[: len(columns)]))
+                    elif isinstance(raw_row, dict):
+                        rows.append([raw_row.get(column) for column in columns])
+            return {
+                "title": str(step.get("title") or "query result"),
+                "columns": columns,
+                "rows": rows,
+                "source": "previous_turn",
+            }
+    return None
+
+
 def _summarise_narration(text: str) -> str:
     collapsed = " ".join(text.split())
     if len(collapsed) <= _NARRATION_MAX_CHARS:
@@ -1012,6 +1114,18 @@ def _finish_tool_step(context: Any, status: str, error: str | None) -> None:
     for step in reversed(steps):
         if step.get("kind") == "tool" and step.get("status") == "running":
             step["status"] = status
+            started = step.get("started_offset_ms")
+            if isinstance(started, int | float):
+                finished_offset_ms = _trace_now_ms(context)
+                step["duration_ms"] = max(0, round(finished_offset_ms - started, 3))
+                progress = step.get("progress")
+                if isinstance(progress, list) and progress:
+                    last_progress = progress[-1]
+                    progress_started = last_progress.get("at_offset_ms")
+                    if isinstance(progress_started, int | float):
+                        last_progress["duration_ms"] = max(
+                            0, round(finished_offset_ms - progress_started, 3)
+                        )
             if error:
                 step["error"] = error
             return
@@ -1024,11 +1138,35 @@ def _thinking_step(context: Any, phase: str, text: str, status: str = "running")
     have to come from one place: the same call that emits the frame appends the
     step. Keeping them apart is how a rebuilt transcript drifts from the live one.
     """
-    _record_step(context, {"kind": "reasoning", "phase": phase, "text": text})
+    steps = getattr(context, "steps", None)
+    active: dict[str, Any] | None = None
+    if isinstance(steps, list):
+        active = next(
+            (
+                step
+                for step in reversed(steps)
+                if step.get("kind") == "reasoning" and step.get("status") == "running"
+            ),
+            None,
+        )
+    if active is not None:
+        if active.get("phase") == phase and status != "running":
+            active["text"] = text
+        _finish_step(context, active, "done", None)
+    if status == "running" or active is None or active.get("phase") != phase:
+        _record_step(
+            context,
+            {
+                "kind": "reasoning",
+                "phase": phase,
+                "text": text,
+                "status": status,
+            },
+        )
     return events.thinking(phase, text, status=status)
 
 
-def _record_step(context: Any, step: dict[str, Any]) -> None:
+def _record_step(context: Any, step: dict[str, Any]) -> dict[str, Any] | None:
     """Append one trace step to the turn.
 
     The trace is Nova's own narration of what the loop did, not model
@@ -1037,10 +1175,44 @@ def _record_step(context: Any, step: dict[str, Any]) -> None:
     caller. Best-effort: a context without the slot is left untouched.
     """
     if not hasattr(context, "steps"):
-        return
+        return None
     if context.steps is None:
         context.steps = []
+    step.setdefault("step_id", str(uuid4()))
+    step.setdefault("started_offset_ms", _trace_now_ms(context))
+    if step.get("status") != "running":
+        step.setdefault("duration_ms", 0.0)
     context.steps.append(step)
+    return step
+
+
+def _trace_now_ms(context: Any) -> float:
+    """Milliseconds since the turn began, using a monotonic process clock."""
+    origin = getattr(context, "trace_started_at", None)
+    if not isinstance(origin, int | float):
+        origin = time.perf_counter()
+        try:
+            context.trace_started_at = origin
+        except Exception:  # pragma: no cover - an immutable test double
+            return 0.0
+    return max(0.0, (time.perf_counter() - origin) * 1000)
+
+
+def _finish_step(
+    context: Any,
+    step: dict[str, Any] | None,
+    status: str,
+    error: str | None,
+) -> None:
+    """Close a provider/tool span without depending on list position."""
+    if not step:
+        return
+    step["status"] = status
+    started = step.get("started_offset_ms")
+    if isinstance(started, int | float):
+        step["duration_ms"] = max(0, round(_trace_now_ms(context) - started, 3))
+    if error:
+        step["error"] = error
 
 
 def _tool_detail(tool_name: str, outcome: Any) -> str:
@@ -1064,6 +1236,17 @@ def _attach_tool_detail(context: Any, tool_call_id: str, detail: str) -> None:
     for step in reversed(steps):
         if step.get("kind") == "tool" and step.get("name"):
             step["detail"] = detail
+            return
+
+
+def _attach_tool_trace(context: Any, tool_call_id: str, trace_detail: dict[str, Any]) -> None:
+    """Attach a bounded, tool-owned observability payload to its call step."""
+    steps = getattr(context, "steps", None)
+    if not isinstance(steps, list):
+        return
+    for step in reversed(steps):
+        if step.get("kind") == "tool" and step.get("tool_call_id") == tool_call_id:
+            step["trace_detail"] = trace_detail
             return
 
 

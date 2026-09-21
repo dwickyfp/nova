@@ -229,7 +229,15 @@ function ProcessStepRow({ step, last }: { step: RailStep; last: boolean }) {
   // statement it ran, the result it saw, the note it left) belongs behind one
   // click, not scattered across different affordances per step kind.
   const [open, setOpen] = useState(false);
-  const hasDetail = Boolean(step.preview || step.body || step.detail);
+  const body =
+    step.body?.trim() && step.body.trim() !== step.text.trim()
+      ? step.body
+      : undefined;
+  const detail =
+    step.detail?.trim() && step.detail.trim() !== step.text.trim()
+      ? step.detail
+      : undefined;
+  const hasDetail = Boolean(step.preview || body || detail);
 
   // SQL is evidence, not a hidden implementation detail. When a running tool
   // publishes its generated statement, open that row once so the query is
@@ -298,8 +306,8 @@ function ProcessStepRow({ step, last }: { step: RailStep; last: boolean }) {
         <CollapsibleContent className="CollapsibleContent">
           <div className="mt-1.5 ml-6 space-y-2">
             {step.preview ? <SqlDisclosure preview={step.preview} /> : null}
-            {step.detail ? <ReasoningBody text={step.detail} /> : null}
-            {step.body ? <ReasoningBody text={step.body} /> : null}
+            {detail ? <ReasoningBody text={detail} /> : null}
+            {body ? <ReasoningBody text={body} /> : null}
           </div>
         </CollapsibleContent>
       ) : null}

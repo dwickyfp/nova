@@ -52,6 +52,8 @@ export type PlanStep = {
 
 /** A structured result grid emitted by a tool (Phase 12). Rows are redacted. */
 export type TableBlock = {
+  /** The query-producing tool, used to preserve artifact provenance. */
+  tool_call_id?: string;
   title?: string;
   columns: string[];
   rows: (string | number | null)[][];

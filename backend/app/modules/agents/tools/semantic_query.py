@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from app.common.sql_guard import redact_sql_credentials
@@ -129,6 +130,7 @@ class SemanticQueryTool:
                 error="The agent's semantic model defines no datasets.",
             )
 
+        generation_started = time.perf_counter()
         report_tool_progress(
             context,
             stage="generating_sql",
@@ -137,7 +139,23 @@ class SemanticQueryTool:
         try:
             generated = await self._generate_sql(definition, question, context)
         except AssistantProviderError as exc:
-            return ToolOutcome(ok=False, summary="", error=str(exc))
+            generation_duration_ms = (time.perf_counter() - generation_started) * 1000
+            trace = _semantic_trace(
+                semantic_model,
+                question=question,
+                generated_sql="",
+                confidence=None,
+                generation_duration_ms=generation_duration_ms,
+                execution_duration_ms=None,
+            )
+            trace["error"] = "The semantic SQL generator failed."
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error=str(exc),
+                trace_detail=trace,
+            )
+        generation_duration_ms = (time.perf_counter() - generation_started) * 1000
 
         sql = (generated.get("sql") or "").strip()
         explanation = (generated.get("explanation") or "").strip()
@@ -154,6 +172,14 @@ class SemanticQueryTool:
                 summary=(
                     "The semantic model cannot answer this question. "
                     + (explanation or "No matching metric or dimension is defined.")
+                ),
+                trace_detail=_semantic_trace(
+                    semantic_model,
+                    question=question,
+                    generated_sql="",
+                    confidence=confidence,
+                    generation_duration_ms=generation_duration_ms,
+                    execution_duration_ms=None,
                 ),
             )
 
@@ -178,15 +204,39 @@ class SemanticQueryTool:
 
         statements = split_sql_statements(sql)
         if not statements:
-            return ToolOutcome(ok=False, summary="", error="The model produced no SQL.")
+            trace = _semantic_trace(
+                semantic_model,
+                question=question,
+                generated_sql=safe_sql,
+                confidence=confidence,
+                generation_duration_ms=generation_duration_ms,
+                execution_duration_ms=None,
+            )
+            trace["error"] = "The model produced no SQL."
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error="The model produced no SQL.",
+                trace_detail=trace,
+            )
         classification, decisions = policy.classify_statements(statements)
         if classification != "read_only":
             offending = next((d for d in decisions if not d.allowed), None)
             reason = offending.reason if offending else "The generated SQL is not read-only."
+            trace = _semantic_trace(
+                semantic_model,
+                question=question,
+                generated_sql=safe_sql,
+                confidence=confidence,
+                generation_duration_ms=generation_duration_ms,
+                execution_duration_ms=None,
+            )
+            trace["error"] = f"The generated query was refused: {reason}"
             return ToolOutcome(
                 ok=False,
                 summary="",
                 error=f"The generated query was refused: {reason}",
+                trace_detail=trace,
             )
 
         from app.modules.query.service import query_service
@@ -197,6 +247,7 @@ class SemanticQueryTool:
             text="Running the generated query",
             sql_preview=safe_sql,
         )
+        execution_started = time.perf_counter()
         try:
             results = await query_service.execute_statements(
                 sql=sql,
@@ -212,18 +263,40 @@ class SemanticQueryTool:
             )
         except Exception as exc:  # noqa: BLE001 - surfaced as a tool failure
             logger.warning("semantic_query execution failed: %s", type(exc).__name__)
+            execution_duration_ms = (time.perf_counter() - execution_started) * 1000
+            trace = _semantic_trace(
+                semantic_model,
+                question=question,
+                generated_sql=safe_sql,
+                confidence=confidence,
+                generation_duration_ms=generation_duration_ms,
+                execution_duration_ms=execution_duration_ms,
+            )
+            trace["error"] = "The generated query failed to run."
             return ToolOutcome(
                 ok=False,
                 summary="",
                 error="The generated query failed to run.",
+                trace_detail=trace,
             )
+        execution_duration_ms = (time.perf_counter() - execution_started) * 1000
 
         failed = next((r for r in results if r.error), None)
         if failed is not None:
+            trace = _semantic_trace(
+                semantic_model,
+                question=question,
+                generated_sql=safe_sql,
+                confidence=confidence,
+                generation_duration_ms=generation_duration_ms,
+                execution_duration_ms=execution_duration_ms,
+            )
+            trace["error"] = "The generated query failed to run."
             return ToolOutcome(
                 ok=False,
                 summary="",
                 error="The generated query failed to run.",
+                trace_detail=trace,
             )
 
         table = _table_payload(results, title=question)
@@ -253,6 +326,14 @@ class SemanticQueryTool:
                 results=results,
             ),
             table=table,
+            trace_detail=_semantic_trace(
+                semantic_model,
+                question=question,
+                generated_sql=safe_sql,
+                confidence=confidence,
+                generation_duration_ms=generation_duration_ms,
+                execution_duration_ms=execution_duration_ms,
+            ),
         )
 
     async def _resolve_model(self, context: Any) -> dict[str, Any] | None:
@@ -393,3 +474,54 @@ def _context_value(context: Any, name: str) -> Any:
 
 #: Process-wide instance, registered by ``app.modules.agents.registry``.
 semantic_query_tool = SemanticQueryTool()
+
+
+def _semantic_trace(
+    model: dict[str, Any],
+    *,
+    question: str,
+    generated_sql: str,
+    confidence: Any,
+    generation_duration_ms: float,
+    execution_duration_ms: float | None,
+) -> dict[str, Any]:
+    """Bounded metadata snapshot for the Observability semantic inspector.
+
+    The snapshot deliberately excludes rows, field expressions, instructions,
+    and credentials. It records the model identity and physical sources that
+    actually grounded this call, so editing the semantic model later cannot
+    rewrite the historical trace.
+    """
+    definition = model.get("definition") or {}
+    datasets = [
+        {
+            "name": str(dataset.get("name") or ""),
+            "source": str(dataset.get("source") or ""),
+        }
+        for dataset in (definition.get("datasets") or [])[:50]
+        if isinstance(dataset, dict)
+    ]
+    metrics = [
+        str(metric.get("name"))
+        for metric in (definition.get("metrics") or [])[:100]
+        if isinstance(metric, dict) and metric.get("name")
+    ]
+    payload: dict[str, Any] = {
+        "kind": "semantic_context",
+        "semantic_model": {
+            "id": str(model.get("semantic_model_id") or ""),
+            "name": str(model.get("name") or definition.get("name") or ""),
+            "ossie_version": str(model.get("ossie_version") or definition.get("version") or ""),
+        },
+        "question": question[:2000],
+        "datasets": datasets,
+        "metrics": metrics,
+        "generated_sql": generated_sql,
+        "confidence": confidence if isinstance(confidence, int | float) else None,
+        "validation_warnings": [],
+        "generation_duration_ms": round(generation_duration_ms, 3),
+        "execution_duration_ms": (
+            round(execution_duration_ms, 3) if execution_duration_ms is not None else None
+        ),
+    }
+    return payload

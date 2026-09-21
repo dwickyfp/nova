@@ -45,6 +45,11 @@ class ToolOutcome:
     table: dict[str, Any] | None = None
     chart: dict[str, Any] | None = None
     citations: list[dict[str, Any]] | None = None
+    #: Bounded, credential-free observability metadata owned by the tool. The
+    #: loop stores it on the matching tool step but never sends it to the model.
+    #: Semantic query uses this for the model/dataset/SQL snapshot shown in the
+    #: trace inspector. It must not contain result rows or credentials.
+    trace_detail: dict[str, Any] | None = None
 
 
 def report_tool_progress(

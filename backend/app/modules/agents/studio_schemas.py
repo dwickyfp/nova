@@ -8,7 +8,7 @@ warehouses they can pick, and their Studio preferences.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -63,7 +63,54 @@ class StudioCapabilities(BaseModel):
     tools: list[dict] = Field(default_factory=list)
 
 
+# ── Query-backed artifacts ───────────────────────────────────
+
+ArtifactType = Literal["chart", "table"]
+
+
+class ArtifactCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=256)
+    artifact_type: ArtifactType
+    sql_text: str = Field(min_length=1, max_length=200_000)
+    database_name: str | None = Field(default=None, max_length=128)
+    schema_name: str | None = Field(default=None, max_length=128)
+    chart_spec: dict[str, Any] | None = None
+    agent_id: str | None = Field(default=None, max_length=64)
+    thread_id: str | None = Field(default=None, max_length=64)
+
+
+class ArtifactSummary(BaseModel):
+    artifact_id: str
+    title: str
+    artifact_type: ArtifactType
+    agent_id: str | None = None
+    thread_id: str | None = None
+    database_name: str | None = None
+    schema_name: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ArtifactView(ArtifactSummary):
+    sql_text: str
+    chart_spec: dict[str, Any] | None = None
+
+
+class ArtifactListResponse(BaseModel):
+    artifacts: list[ArtifactSummary] = Field(default_factory=list)
+    count: int = 0
+
+
+class ArtifactRefreshResponse(BaseModel):
+    artifact: ArtifactView
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[Any]] = Field(default_factory=list)
+    row_count: int = 0
+    elapsed_ms: float = 0.0
+
+
 # ── Observability ──────────────────────────────────────────────
+
 
 class UsageSeriesPoint(BaseModel):
     date: str

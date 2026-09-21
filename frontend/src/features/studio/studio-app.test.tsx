@@ -43,7 +43,6 @@ vi.mock("@/features/agents/api", () => ({
       identity: { active_role: null },
       preferences: {},
     })),
-    updateSettings: vi.fn(),
   },
 }));
 
@@ -59,6 +58,9 @@ vi.mock("./studio-chat", () => ({
       <span>{agent?.name ?? "No agent"}</span>
       <button type="button" onClick={() => onThreadChange(null)}>
         Header new chat
+      </button>
+      <button type="button" onClick={() => onThreadChange("thread-2")}>
+        Sample creates thread
       </button>
     </div>
   ),
@@ -89,7 +91,6 @@ vi.mock("./studio-artifacts", () => ({
   StudioArtifacts: () => <div>Artifacts view</div>,
 }));
 vi.mock("./studio-capabilities", () => ({ StudioCapabilities: () => null }));
-vi.mock("./studio-settings", () => ({ StudioSettingsDialog: () => null }));
 
 function renderStudio() {
   return render(
@@ -143,7 +144,9 @@ describe("StudioApp thread routing", () => {
       mocks.search = options.search;
     });
 
-    await userEvent.click(screen.getByRole("button", { name: "Header new chat" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Header new chat" }),
+    );
 
     expect(mocks.navigate).toHaveBeenCalledTimes(1);
     expect(mocks.navigate).toHaveBeenCalledWith({
@@ -154,15 +157,21 @@ describe("StudioApp thread routing", () => {
     // Force a parent render after the URL lost its thread. If freshChat were
     // reset to false, the auto-open effect would navigate straight back to the
     // newest history item and this count would become two.
-    await userEvent.click(screen.getByRole("button", { name: "Open artifacts" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open artifacts" }),
+    );
     await new Promise((resolve) => window.setTimeout(resolve, 50));
     expect(mocks.navigate).toHaveBeenCalledTimes(1);
   });
 
   it("returns to chat and starts fresh from the sidebar action", async () => {
     const screen = await renderStudio();
-    await userEvent.click(screen.getByRole("button", { name: "Open artifacts" }));
-    await expect.element(screen.getByText("Artifacts view")).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open artifacts" }),
+    );
+    await expect
+      .element(screen.getByText("Artifacts view"))
+      .toBeInTheDocument();
 
     mocks.navigate.mockClear();
     await userEvent.click(
@@ -175,6 +184,31 @@ describe("StudioApp thread routing", () => {
     expect(mocks.navigate).toHaveBeenCalledWith({
       to: "/studio",
       search: { agent: "a1" },
+      replace: true,
+    });
+  });
+
+  it("does not auto-open history while a sample question creates its thread", async () => {
+    const screen = await renderStudio();
+    mocks.navigate.mockImplementation((options) => {
+      if (!options.search.thread) mocks.search = options.search;
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Sidebar new chat" }),
+    );
+    mocks.navigate.mockClear();
+    mocks.navigate.mockImplementation(() => {});
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Sample creates thread" }),
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+
+    expect(mocks.navigate).toHaveBeenCalledTimes(1);
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: "/studio",
+      search: { agent: "a1", thread: "thread-2" },
       replace: true,
     });
   });

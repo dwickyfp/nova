@@ -367,7 +367,7 @@ export function MonitoringQueryCost() {
   /* ---- render ---- */
 
   return (
-    <div className='minimal-scrollbar flex h-full min-h-0 flex-col gap-6 overflow-y-auto'>
+    <div className='flex flex-col gap-6'>
       <PageHeader
         title='Query Cost'
         description='Analyze query resource consumption and cost breakdown.'

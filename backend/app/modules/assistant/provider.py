@@ -176,22 +176,46 @@ class AssistantProviderClient:
             "Content-Type": "application/json",
         }
 
-    def _validate_endpoint(self, config: ProviderConfig) -> None:
+    @staticmethod
+    def _endpoint_error(exc: BlockedEndpointError) -> AssistantProviderError:
+        if exc.retryable:
+            return AssistantProviderError(
+                "AI provider hostname could not be resolved. Check DNS and retry."
+            )
+        return AssistantProviderError(
+            "AI provider endpoint is not allowed: it must be a public http(s) URL"
+        )
+
+    async def _validate_endpoint(self, config: ProviderConfig) -> None:
         # The endpoint is a stored config value, not a literal the caller
         # controls, so it is validated here before the request as well as at
         # write time. The guard's transport re-checks every redirect hop, so a
         # provider that redirects to a private address is refused too. Same seam
         # as ``ai_ml.service.test_connection`` (NOVA-107/NOVA-119).
-        try:
-            resolve_and_validate_url(config.endpoint)
-        except BlockedEndpointError:
-            logger.warning(
-                "Blocked assistant call to a non-public provider endpoint (provider=%s)",
-                config.provider_id,
-            )
-            raise AssistantProviderError(
-                "AI provider endpoint is not allowed: it must be a public http(s) URL"
-            ) from None
+        for attempt in range(self._max_attempts):
+            try:
+                resolve_and_validate_url(config.endpoint)
+                return
+            except BlockedEndpointError as exc:
+                if exc.retryable and attempt + 1 < self._max_attempts:
+                    logger.info(
+                        "Retrying assistant provider DNS resolution (provider=%s attempt=%s)",
+                        config.provider_id,
+                        attempt + 2,
+                    )
+                    await self._backoff(attempt)
+                    continue
+                if exc.retryable:
+                    logger.warning(
+                        "Assistant provider hostname could not be resolved (provider=%s)",
+                        config.provider_id,
+                    )
+                else:
+                    logger.warning(
+                        "Blocked assistant call to a non-public provider endpoint (provider=%s)",
+                        config.provider_id,
+                    )
+                raise self._endpoint_error(exc) from None
 
     def _raise_for_status(self, response: httpx.Response, config: ProviderConfig) -> None:
         if response.status_code >= 400:
@@ -202,9 +226,7 @@ class AssistantProviderClient:
                 response.status_code,
                 config.provider_id,
             )
-            raise AssistantProviderError(
-                f"AI provider returned HTTP {response.status_code}"
-            )
+            raise AssistantProviderError(f"AI provider returned HTTP {response.status_code}")
 
     async def _backoff(self, attempt: int, response: httpx.Response | None = None) -> None:
         """Bound retry delay without exposing provider response content."""
@@ -232,7 +254,7 @@ class AssistantProviderClient:
         """
         config = provider or await self.resolve()
         body = self._request_body(config, messages, tools)
-        self._validate_endpoint(config)
+        await self._validate_endpoint(config)
 
         response: httpx.Response | None = None
         for attempt in range(self._max_attempts):
@@ -241,20 +263,20 @@ class AssistantProviderClient:
                     response = await client.post(
                         config.endpoint, headers=self._headers(config), json=body
                     )
-            except BlockedEndpointError:
+            except BlockedEndpointError as exc:
                 # A redirect hop was refused by the guarded transport.
+                if exc.retryable and attempt + 1 < self._max_attempts:
+                    await self._backoff(attempt)
+                    continue
                 logger.warning(
-                    "Blocked assistant call redirect to a non-public address (provider=%s)",
+                    "Blocked assistant call redirect or resolution (provider=%s)",
                     config.provider_id,
                 )
-                raise AssistantProviderError(
-                    "AI provider endpoint is not allowed: it must be a public http(s) URL"
-                ) from None
+                raise self._endpoint_error(exc) from None
             except httpx.HTTPError as exc:
                 if attempt + 1 < self._max_attempts:
                     logger.info(
-                        "Retrying assistant provider transport failure "
-                        "(provider=%s attempt=%s)",
+                        "Retrying assistant provider transport failure (provider=%s attempt=%s)",
                         config.provider_id,
                         attempt + 2,
                     )
@@ -265,10 +287,7 @@ class AssistantProviderClient:
                     f"AI provider request failed: {type(exc).__name__}"
                 ) from exc
 
-            if (
-                response.status_code in _RETRYABLE_STATUS_CODES
-                and attempt + 1 < self._max_attempts
-            ):
+            if response.status_code in _RETRYABLE_STATUS_CODES and attempt + 1 < self._max_attempts:
                 logger.info(
                     "Retrying assistant provider HTTP %s (provider=%s attempt=%s)",
                     response.status_code,
@@ -324,7 +343,7 @@ class AssistantProviderClient:
         # Observability has nothing to total. Providers that ignore the option
         # simply send no usage, which the accumulator tolerates.
         body["stream_options"] = {"include_usage": True}
-        self._validate_endpoint(config)
+        await self._validate_endpoint(config)
 
         for attempt in range(self._max_attempts):
             accumulator = StreamAccumulator()
@@ -355,14 +374,15 @@ class AssistantProviderClient:
                         if text:
                             emitted_delta = True
                             yield ("delta", text)
-            except BlockedEndpointError:
+            except BlockedEndpointError as exc:
+                if exc.retryable and not emitted_delta and attempt + 1 < self._max_attempts:
+                    await self._backoff(attempt, response)
+                    continue
                 logger.warning(
-                    "Blocked assistant call redirect to a non-public address (provider=%s)",
+                    "Blocked assistant call redirect or resolution (provider=%s)",
                     config.provider_id,
                 )
-                raise AssistantProviderError(
-                    "AI provider endpoint is not allowed: it must be a public http(s) URL"
-                ) from None
+                raise self._endpoint_error(exc) from None
             except httpx.HTTPError as exc:
                 # Retrying after a visible delta would duplicate user-visible
                 # text. Fail that run and let the caller persist the partial

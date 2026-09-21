@@ -112,6 +112,8 @@ def test_studio_router_literal_paths_are_registered_before_agent_dynamic() -> No
     assert "/tools" in studio_paths
     assert "/mcp-servers" in studio_paths
     assert "/studio/settings" in studio_paths
+    assert "/studio/artifacts" in studio_paths
+    assert "/studio/artifacts/{artifact_id}/refresh" in studio_paths
 
     agent_paths = {r.path for r in agent_router.routes}
     assert "/{agent_id}" in agent_paths
@@ -179,3 +181,185 @@ def test_thread_title_is_truncated_with_an_ellipsis() -> None:
     title = _thread_title("x" * 500)
     assert len(title) == _TITLE_MAX
     assert title.endswith("\u2026")
+
+
+def test_clean_title_strips_quotes_and_punctuation() -> None:
+    from app.modules.agents.router import _clean_title
+
+    assert _clean_title('"Revenue by category"', "q") == "Revenue by category"
+    assert _clean_title("Monthly active users.", "q") == "Monthly active users"
+
+
+def test_clean_title_falls_back_to_the_question_when_empty() -> None:
+    from app.modules.agents.router import _clean_title
+
+    assert _clean_title("   ", "  Show\n revenue ") == "Show revenue"
+    assert _clean_title("", "Show revenue") == "Show revenue"
+
+
+def test_clean_title_is_bounded_to_the_sidebar_width() -> None:
+    from app.modules.agents.router import _TITLE_MAX, _clean_title
+
+    title = _clean_title("y" * 500, "q")
+    assert len(title) == _TITLE_MAX
+    assert title.endswith("\u2026")
+
+
+def test_generate_thread_title_uses_the_prompt_and_question(monkeypatch) -> None:
+    import asyncio
+
+    from app.modules.agents import router as agents_router
+
+    captured: dict = {}
+
+    class _Provider:
+        async def resolve(self, *, provider_id=None, model=None):
+            captured["resolved"] = (provider_id, model)
+            return object()
+
+        async def complete(self, *, messages, provider=None):
+            captured["messages"] = messages
+            return {"content": '  "Revenue by category"  '}
+
+    monkeypatch.setattr(agents_router, "assistant_provider", _Provider())
+
+    title = asyncio.run(
+        agents_router._generate_thread_title(
+            "Show revenue by category", provider_id="p1", model="m1"
+        )
+    )
+
+    assert title == "Revenue by category"
+    assert captured["resolved"] == ("p1", "m1")
+    messages = captured["messages"]
+    assert messages[0]["role"] == "system"
+    assert agents_router.CREATE_THREAD_TITLE_PROMPT in messages[0]["content"]
+    assert messages[1] == {"role": "user", "content": "Show revenue by category"}
+
+
+def test_generate_thread_title_falls_back_on_provider_error(monkeypatch) -> None:
+    import asyncio
+
+    from app.modules.agents import router as agents_router
+
+    class _Provider:
+        async def resolve(self, *, provider_id=None, model=None):
+            raise RuntimeError("no provider")
+
+    monkeypatch.setattr(agents_router, "assistant_provider", _Provider())
+
+    title = asyncio.run(
+        agents_router._generate_thread_title("Show revenue", provider_id=None, model=None)
+    )
+    assert title == "Show revenue"
+
+
+# ── thread rename endpoint ───────────────────────────────────────────────────
+
+
+def _rename_client(monkeypatch):
+    from datetime import UTC, datetime
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.core import deps as deps_module
+    from app.modules.agents import router as agents_router
+    from app.modules.agents.router import router as agent_routes
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    agents = {"a1": {"agent_id": "a1", "owner_name": "alice", "name": "A"}}
+    threads = {
+        "alice-thread": {
+            "thread_id": "alice-thread",
+            "user_name": "alice",
+            "title": "Old",
+            "workspace_file_id": None,
+            "agent_id": "a1",
+            "created_at": now,
+            "updated_at": now,
+            "message_count": 0,
+        },
+        "bob-thread": {
+            "thread_id": "bob-thread",
+            "user_name": "bob",
+            "title": "Bob's",
+            "workspace_file_id": None,
+            "agent_id": "a1",
+            "created_at": now,
+            "updated_at": now,
+            "message_count": 0,
+        },
+    }
+
+    class _Agents:
+        async def get_agent(self, agent_id, *, owner_name):
+            row = agents.get(agent_id)
+            return row if row and row["owner_name"] == owner_name else None
+
+    class _Threads:
+        async def get_thread(self, thread_id, *, user_name):
+            row = threads.get(thread_id)
+            return row if row and row["user_name"] == user_name else None
+
+        async def rename_thread(self, thread_id, title, *, user_name):
+            row = await self.get_thread(thread_id, user_name=user_name)
+            if row is None:
+                return None
+            row["title"] = title
+            return row
+
+    class _Store:
+        def register(self, **kwargs):
+            return None
+
+        def remove(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setattr(agents_router, "agent_repository", _Agents(), raising=True)
+    monkeypatch.setattr(agents_router, "assistant_repository", _Threads(), raising=True)
+    monkeypatch.setattr(agents_router, "thread_store", _Store(), raising=True)
+
+    app = FastAPI()
+    app.include_router(agent_routes, prefix="/api/v1/agents")
+
+    current = {"username": "alice"}
+
+    async def fake_current_user():
+        return {
+            "username": current["username"],
+            "session_id": "sess-1",
+            "roles": [],
+            "active_role": None,
+            "encrypted_password": "",
+        }
+
+    app.dependency_overrides[deps_module.get_current_user] = fake_current_user
+    return TestClient(app, raise_server_exceptions=False), current, threads
+
+
+def test_rename_thread_updates_the_owners_conversation(monkeypatch) -> None:
+    client, _current, threads = _rename_client(monkeypatch)
+
+    response = client.put("/api/v1/agents/a1/threads/alice-thread", json={"title": "Revenue check"})
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Revenue check"
+    assert threads["alice-thread"]["title"] == "Revenue check"
+
+
+def test_rename_thread_answers_404_for_another_users_thread(monkeypatch) -> None:
+    client, _current, threads = _rename_client(monkeypatch)
+
+    response = client.put("/api/v1/agents/a1/threads/bob-thread", json={"title": "Hijacked"})
+
+    assert response.status_code == 404
+    assert threads["bob-thread"]["title"] == "Bob's"
+
+
+def test_rename_thread_rejects_a_blank_title(monkeypatch) -> None:
+    client, _current, _threads = _rename_client(monkeypatch)
+
+    response = client.put("/api/v1/agents/a1/threads/alice-thread", json={"title": ""})
+
+    assert response.status_code == 422
