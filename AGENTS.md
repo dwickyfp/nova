@@ -178,6 +178,34 @@ CREATE TABLE NOVA_SYSTEM.CONFIG.STAGES (...) PRIMARY KEY(id)
 CREATE TABLE NOVA_SYSTEM.AUDIT.LOG (...) PRIMARY KEY(log_id);
 ```
 
+### 8. Agentic Harness (Assistant + Agent Studio)
+
+**Rule:** The agent loop is one bounded engine. Agent Studio **composes** it; it does
+not fork it. Any change to loop control flow goes in `app/modules/assistant/` and is
+covered by `tests/eval/`, not just unit tests.
+
+```
+app/modules/assistant/     ← the engine (loop, provider, consent, tools, context)
+app/modules/agents/        ← config layer: registry + prompt + semantic grounding
+tests/eval/                ← behaviour gate: scripted trajectories, no provider key
+tests/benchmark/           ← overhead gate: fake provider + fake tool
+```
+
+- **Context is finite.** Never replay an unbounded transcript. `ContextManager`
+  (`app/modules/assistant/context.py`) clears old tool results, drops the oldest
+  turns into a bounded note, and pins the system prompt plus the recent window.
+  An over-budget turn stops with `context_overflow`, never a provider error.
+- **Bounds are mandatory.** Iteration cap, wall-clock budget, per-tool cap, and a
+  per-agent context token budget (`budget_tokens`). A new tool inherits consent
+  (fail-closed) and must be added to `tool_catalog.py` to be selectable.
+- **Behaviour is tested by trajectory, not wall-clock.** A new tool, guard, or
+  termination path gets an `tests/eval/` scenario asserting tool selection,
+  consent, redaction, and the finish reason. Run
+  `uv run python -m tests.eval.report` for the scorecard.
+
+See `docs/benchmarks/nova-124-agentic-harness.md` for the design, findings, and
+measured cost.
+
 ---
 
 ## Coding Conventions
@@ -389,6 +417,8 @@ NOVA_SYSTEM
 | Hardcode heights in CSS | Use flex-1 + min-h-0 |
 | Use overflow-x-scroll | Use overflow-x-auto |
 | Write Java/Spring Boot | Python only (FastAPI) |
+| Replay the full transcript unbounded | Curate with `ContextManager` (NOVA-124) |
+| Test the agent loop only by wall-clock | Add a scenario to `tests/eval/` for behaviour |
 
 **Build-tooling carve-out (NOVA-17, 2026-09-17):** the row above governs **application code**. A Java toolchain is permitted **at build/CI time only** for parser generation — currently `antlr-4.13.2`, used to regenerate Nova's SQL parser from `StarRocks.g4`/`StarRocksLex.g4`. The rule that matters is unchanged: **no JVM in the runtime or request path**, and the generated parser is committed as Python. See the Decision Log in `README.md`.
 

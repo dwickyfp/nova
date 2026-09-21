@@ -686,7 +686,14 @@ async def test_read_only_call_is_covered_by_an_allow_session_grant():
             resolve_consent=resolver,
         )
     )
-    assert "tool_call" not in [_frame_event(f) for f in frames]
+    # Announced so the panel can show the statement, but never `pending`: the
+    # grant covered it, so no card was raised.
+    statuses = [
+        _frame_data(f).get("status")
+        for f in frames
+        if _frame_event(f) == "tool_call"
+    ]
+    assert statuses == ["running"]
     assert asked == []
 
 

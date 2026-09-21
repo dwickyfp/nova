@@ -1,14 +1,14 @@
-import { useCallback, useRef } from 'react'
-import { createThread } from './thread-client'
-import type { TurnContext } from './stream-client'
-import { useAssistantConversation } from './use-assistant-conversation'
+import { useCallback, useRef } from "react";
+import { createThread } from "./thread-client";
+import type { TurnContext } from "./stream-client";
+import { useAssistantConversation } from "./use-assistant-conversation";
 
 export type WorkspaceAssistantOptions = {
   /** The file the assistant conversation is bound to; null when none is open. */
-  fileId: string | null
-  context: TurnContext
-  onError?: (message: string) => void
-}
+  fileId: string | null;
+  context: TurnContext;
+  onError?: (message: string) => void;
+};
 
 /**
  * Binds the assistant to the workspace: one conversation per open file, created
@@ -19,17 +19,26 @@ export type WorkspaceAssistantOptions = {
  * This is the seam `WorkspacesPage` calls; keeping it here (rather than inline
  * in the page) is what makes the wiring testable.
  */
-export function useWorkspaceAssistant({ fileId, context, onError }: WorkspaceAssistantOptions) {
-  const threadsRef = useRef<Record<string, string>>({})
+export function useWorkspaceAssistant({
+  fileId,
+  context,
+  onError,
+}: WorkspaceAssistantOptions) {
+  const threadsRef = useRef<Record<string, string>>({});
 
   const ensureThread = useCallback(async () => {
-    if (!fileId) return null
-    const existing = threadsRef.current[fileId]
-    if (existing) return existing
-    const thread = await createThread(fileId)
-    threadsRef.current[fileId] = thread.thread_id
-    return thread.thread_id
-  }, [fileId])
+    if (!fileId) return null;
+    const existing = threadsRef.current[fileId];
+    if (existing) return existing;
+    const thread = await createThread(fileId);
+    threadsRef.current[fileId] = thread.thread_id;
+    return thread.thread_id;
+  }, [fileId]);
 
-  return useAssistantConversation({ ensureThread, context, bindingKey: fileId, onError })
+  return useAssistantConversation({
+    ensureThread,
+    context,
+    bindingKey: fileId,
+    onError,
+  });
 }

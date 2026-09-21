@@ -11,18 +11,27 @@ Endpoints:
 """
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 
-from app.core.deps import get_current_user
+from app.common.audit import write_audit_log
+from app.common.identifiers import InvalidIdentifierError, check_identifier
+from app.core.deps import get_current_user, get_user_connection
 
+from .schemas import CreateDatabaseRequest
 from .service import explorer_service
 
 router = APIRouter()
 log = logging.getLogger(__name__)
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+UserConnection = Annotated[Any, Depends(get_user_connection)]
+
+#: The only catalog Nova creates databases in. StarRocks' ``default_catalog`` is
+#: the internal, writable catalog; every other catalog is external (Hive,
+#: Iceberg, …) and its databases are managed by that system, not by Nova.
+INTERNAL_CATALOG = "default_catalog"
 
 
 # ── Catalogs ───────────────────────────────────────────────────
@@ -34,6 +43,84 @@ async def list_catalogs(
 ):
     """List all catalogs with their databases."""
     return await explorer_service.get_catalogs()
+
+
+@router.post("/catalogs/{catalog}/databases")
+async def create_database(
+    catalog: str,
+    body: CreateDatabaseRequest,
+    user: CurrentUser,
+    conn: UserConnection,
+):
+    """Create a database on the internal catalog, on the caller's connection.
+
+    DDL runs as the caller, so StarRocks RBAC decides who may create a database
+    (Nova needs no separate permission model). The catalog is restricted to the
+    internal ``default_catalog``: an external catalog's databases are provisioned
+    by that system, and Nova would only surface a confusing engine error.
+    """
+    if catalog != INTERNAL_CATALOG:
+        raise HTTPException(
+            status_code=400,
+            detail=f"cannot create a database in external catalog '{catalog}'",
+        )
+
+    try:
+        name = check_identifier(body.name, field="database name")
+    except InvalidIdentifierError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    ddl = f"CREATE DATABASE `{name}`"
+    try:
+        async with conn.cursor() as cur:
+            await cur.execute(ddl)
+    except Exception as exc:  # noqa: BLE001 - surfaced as a 400 with the engine message
+        await _audit_create_database(
+            user=user,
+            name=name,
+            catalog=catalog,
+            status="ERROR",
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await _audit_create_database(
+        user=user,
+        name=name,
+        catalog=catalog,
+        status="SUCCESS",
+    )
+    return {"success": True, "name": name}
+
+
+async def _audit_create_database(
+    *,
+    user: dict,
+    name: str,
+    catalog: str,
+    status: str,
+    error_message: str | None = None,
+) -> None:
+    """Audit one create-database attempt. Best-effort: never fail the request.
+
+    The audit sink is the system pool, a different connection from the one the
+    DDL ran on; a failure to write it must not turn a successful create into an
+    error the caller cannot explain.
+    """
+    try:
+        await write_audit_log(
+            event_type="DDL",
+            user_name=user["username"],
+            action="CREATE",
+            object_type="DATABASE",
+            object_name=name,
+            status=status,
+            error_message=error_message,
+            database_name=name if catalog == INTERNAL_CATALOG else None,
+            session_id=user.get("session_id"),
+        )
+    except Exception:  # noqa: BLE001 - audit is best-effort
+        log.exception("Could not write create-database audit entry")
 
 
 # ── Database objects ───────────────────────────────────────────

@@ -10,10 +10,20 @@ type BaseNavItem = {
 type NavLink = BaseNavItem & {
   url: LinkProps['to'] | (string & {})
   items?: never
+  /**
+   * Open the URL in a new browser tab instead of routing in place. Used for a
+   * full-page surface that is meant to sit alongside the console (Nova Studio),
+   * so the console keeps its current page.
+   */
+  newTab?: boolean
 }
 
 type NavCollapsible = BaseNavItem & {
-  items: (BaseNavItem & { url: LinkProps['to'] | (string & {}) })[]
+  items: (BaseNavItem & {
+    url: LinkProps['to'] | (string & {})
+    /** See ``NavLink.newTab``. */
+    newTab?: boolean
+  })[]
   url?: never
 }
 

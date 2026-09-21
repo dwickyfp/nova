@@ -30,6 +30,7 @@ from app.core.database import db
 from app.modules.task_orchestration.consumer import GraphRunConsumer
 from app.modules.task_orchestration.credentials import SessionCredentialProvider
 from app.modules.task_orchestration.execution import DelegateExecutor
+from app.modules.task_orchestration.process_health import WorkerProcessHeartbeat
 from app.modules.task_orchestration.reconciler import Reconciler
 from app.modules.task_orchestration.repository import (
     task_orchestration_repository as repository,
@@ -75,9 +76,17 @@ async def _run() -> None:
             signal.signal(signal_number, lambda *_: _request_stop())
 
     service = build_worker_service(client)
+    heartbeat = WorkerProcessHeartbeat(client)
+    heartbeat_task = asyncio.create_task(
+        heartbeat.run(stop_event), name="nova-worker-process-heartbeat"
+    )
     try:
         await service.run_forever(stop_event)
     finally:
+        stop_event.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
+        await heartbeat.close()
         await client.aclose()
         await db.close_system_pool()
 

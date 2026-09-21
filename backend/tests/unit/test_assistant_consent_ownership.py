@@ -128,13 +128,9 @@ def app_and_broker(monkeypatch):
     # Route the module's singleton broker through a per-test instance so tests
     # cannot leak pending entries into each other.
     broker = ConsentBroker()
-    monkeypatch.setattr(
-        "app.modules.assistant.router.consent_broker", broker, raising=True
-    )
+    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
     repo = _FakeRepo()
-    monkeypatch.setattr(
-        "app.modules.assistant.router.assistant_repository", repo, raising=True
-    )
+    monkeypatch.setattr("app.modules.assistant.router.assistant_repository", repo, raising=True)
 
     app.dependency_overrides[deps_module.get_current_user] = fake_current_user
     thread_store.clear()
@@ -213,13 +209,9 @@ def _clean_thread_store():
 async def test_owner_can_resolve_their_own_pending_call(monkeypatch):
     """Owner path (same loop as the broker) resolves and marks approved."""
     broker = ConsentBroker()
-    monkeypatch.setattr(
-        "app.modules.assistant.router.consent_broker", broker, raising=True
-    )
+    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
     thread = thread_store.create(user_name="alice", title="A")
-    future = broker.open(
-        "victim-call", thread_id=thread.thread_id, user_name="alice"
-    )
+    future = broker.open("victim-call", thread_id=thread.thread_id, user_name="alice")
 
     response = await resolve_tool_call(
         "victim-call",
@@ -236,13 +228,9 @@ async def test_foreign_user_gets_404_and_cannot_resolve_same_loop(monkeypatch):
     from fastapi import HTTPException
 
     broker = ConsentBroker()
-    monkeypatch.setattr(
-        "app.modules.assistant.router.consent_broker", broker, raising=True
-    )
+    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
     thread = thread_store.create(user_name="alice", title="A")
-    future = broker.open(
-        "victim-call", thread_id=thread.thread_id, user_name="alice"
-    )
+    future = broker.open("victim-call", thread_id=thread.thread_id, user_name="alice")
 
     with pytest.raises(HTTPException) as exc:
         await resolve_tool_call(
@@ -293,14 +281,10 @@ def test_unknown_tool_call_id_is_404(app_and_broker):
 async def test_owner_sets_the_grant_on_their_own_conversation_only(monkeypatch):
     """``allow_session`` sets the read-only grant on the owner's thread only."""
     broker = ConsentBroker()
-    monkeypatch.setattr(
-        "app.modules.assistant.router.consent_broker", broker, raising=True
-    )
+    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
     alice_thread = thread_store.create(user_name="alice", title="A")
     bob_thread = thread_store.create(user_name="bob", title="B")
-    broker.open(
-        "victim-call", thread_id=alice_thread.thread_id, user_name="alice"
-    )
+    broker.open("victim-call", thread_id=alice_thread.thread_id, user_name="alice")
 
     response = await resolve_tool_call(
         "victim-call",
@@ -323,9 +307,7 @@ async def test_owner_sets_the_grant_on_their_own_conversation_only(monkeypatch):
 
 async def test_allow_session_on_a_read_only_call_sets_the_grant(monkeypatch):
     broker = ConsentBroker()
-    monkeypatch.setattr(
-        "app.modules.assistant.router.consent_broker", broker, raising=True
-    )
+    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
     thread = thread_store.create(user_name="alice", title="A")
     broker.open(
         "call-1",
@@ -345,17 +327,44 @@ async def test_allow_session_on_a_read_only_call_sets_the_grant(monkeypatch):
     assert thread.consent.always_allow_read_only is True
 
 
+async def test_agent_studio_allow_session_sets_the_same_read_only_grant(monkeypatch):
+    """Agent Studio must not downgrade its Allow session button to Allow once."""
+    from app.modules.agents import router as agent_router
+
+    broker = ConsentBroker()
+    monkeypatch.setattr(agent_router, "consent_broker", broker, raising=True)
+
+    async def _agent(_agent_id: str, _user_name: str) -> dict:
+        return {"agent_id": "agent-1"}
+
+    monkeypatch.setattr(agent_router, "_require_agent", _agent, raising=True)
+    thread = thread_store.create(user_name="alice", title="A")
+    broker.open(
+        "agent-call-1",
+        thread_id=thread.thread_id,
+        user_name="alice",
+        classification="read_only",
+    )
+
+    response = await agent_router.resolve_agent_tool_call(
+        "agent-1",
+        "agent-call-1",
+        ConsentDecisionRequest(decision="allow_session"),
+        user={"username": "alice"},
+    )
+
+    assert response.grant_active is True
+    assert response.status == "approved"
+    assert thread.consent.always_allow_read_only is True
+
+
 @pytest.mark.parametrize("classification", ["destructive", "denied"])
-async def test_allow_session_on_a_non_read_only_call_is_rejected(
-    monkeypatch, classification
-):
+async def test_allow_session_on_a_non_read_only_call_is_rejected(monkeypatch, classification):
     """The grant is not set, and the pending call is left for a valid decision."""
     from fastapi import HTTPException
 
     broker = ConsentBroker()
-    monkeypatch.setattr(
-        "app.modules.assistant.router.consent_broker", broker, raising=True
-    )
+    monkeypatch.setattr("app.modules.assistant.router.consent_broker", broker, raising=True)
     thread = thread_store.create(user_name="alice", title="A")
     broker.open(
         "call-1",
@@ -390,9 +399,7 @@ def test_allow_session_on_a_non_read_only_call_is_400_over_http(app_and_broker):
     """Same gate at the HTTP boundary the defect was reported on."""
     client, broker, current, repo = app_and_broker
     thread = _seed_thread(repo, user_name="alice")
-    _open_pending_classification_sync(
-        broker, "call-1", thread.thread_id, "alice", "destructive"
-    )
+    _open_pending_classification_sync(broker, "call-1", thread.thread_id, "alice", "destructive")
 
     current["username"] = "alice"
     resp = client.post(
@@ -512,8 +519,7 @@ def test_set_grant_does_not_reset_a_grant_on_another_thread(app_and_broker):
 
     assert resp.status_code == 200
     assert (
-        thread_store.get(other.thread_id, user_name="alice").consent.always_allow_read_only
-        is True
+        thread_store.get(other.thread_id, user_name="alice").consent.always_allow_read_only is True
     )
 
 

@@ -30,11 +30,71 @@ class ToolOutcome:
 
     ``summary`` is what the panel shows (row/affected count or a status line).
     It must never carry rows or credential-shaped values.
+
+    ``table`` / ``chart`` / ``citations`` are optional **structured** payloads
+    the loop turns into ``table`` / ``chart`` / ``citation`` SSE frames, so the
+    chat can render data instead of only prose. They are redacted by the tool
+    before they are set; the loop does not inspect them. ``table`` is
+    ``{"title", "columns", "rows"}``; ``chart`` is ``{"chart_spec"}`` where
+    ``chart_spec`` is a Vega-Lite v5 JSON string.
     """
 
     ok: bool
     summary: str
     error: str | None = None
+    table: dict[str, Any] | None = None
+    chart: dict[str, Any] | None = None
+    citations: list[dict[str, Any]] | None = None
+
+
+def report_tool_progress(
+    context: Any,
+    *,
+    stage: str,
+    text: str,
+    sql_preview: str | None = None,
+) -> None:
+    """Publish one observable tool lifecycle update to the running loop.
+
+    The context owns a request-local queue installed by ``AssistantLoop``.  A
+    tool that runs outside that loop simply has no sink, which keeps direct unit
+    tests and non-streaming callers compatible.  Values crossing this boundary
+    must already be redacted; in particular, raw credential-bearing SQL must
+    never be passed as ``sql_preview``.
+    """
+    sink = getattr(context, "tool_progress_sink", None)
+    if not callable(sink):
+        return
+    sink(
+        {
+            "stage": stage,
+            "text": text,
+            "sql_preview": sql_preview,
+        }
+    )
+
+
+def record_provider_usage(context: Any, message: dict[str, Any]) -> None:
+    """Add usage from a nested tool model call to the turn total.
+
+    SQL generation and chart composition are model calls too. Counting only the
+    outer orchestration loop would under-report the real cost of an agent turn.
+    Missing or malformed provider usage remains an honest unknown rather than a
+    fabricated zero.
+    """
+    usage = message.get("usage")
+    if not isinstance(usage, dict):
+        return
+    current = getattr(context, "usage", None) or {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = usage.get(key)
+        if isinstance(value, int):
+            current[key] = current.get(key, 0) + value
+    context.usage = current
 
 
 class AssistantTool(Protocol):
@@ -56,9 +116,7 @@ class AssistantTool(Protocol):
 
     def preview(self, invocation: ToolInvocation) -> str: ...
 
-    async def run(
-        self, invocation: ToolInvocation, context: Any
-    ) -> ToolOutcome: ...
+    async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome: ...
 
 
 def requires_consent(tool: AssistantTool) -> bool:

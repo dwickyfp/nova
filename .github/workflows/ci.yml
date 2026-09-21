@@ -147,6 +147,14 @@ jobs:
             --cov=app --cov-branch --cov-report=term-missing \
             --cov-report=xml:coverage.xml
 
+      # Agentic-harness behaviour gate (NOVA-124). Deterministic and offline: a
+      # scripted provider stands in for the model, so no provider key is needed.
+      # Kept separate from the unit run so a harness-behaviour regression is
+      # named in the job list rather than hidden inside the unit count.
+      - name: Agent harness eval
+        working-directory: backend
+        run: uv run python -m tests.eval.report
+
       # Threshold is report-only in this first gate: the denominator is now
       # correct (include=app/**), the baseline is measured, but the floor is not
       # yet enforced. Flipping `--cov-fail-under` on is a follow-up once the

@@ -1,24 +1,28 @@
-import { api, apiBase, authHeaders } from '@/lib/api-client'
-import { parseAssistantEvent, readSseFrames } from './events'
-import type { AssistantEvent, ConsentDecision, ConsentDecisionPayload } from './types'
+import { api, apiBase, authHeaders } from "@/lib/api-client";
+import { parseAssistantEvent, readSseFrames } from "./events";
+import type {
+  AssistantEvent,
+  ConsentDecision,
+  ConsentDecisionPayload,
+} from "./types";
 
 export type StreamTurnOptions = {
-  signal?: AbortSignal
-  onEvent: (event: AssistantEvent) => void
-}
+  signal?: AbortSignal;
+  onEvent: (event: AssistantEvent) => void;
+};
 
 /** Active worksheet context the assistant reasons against for one turn. */
 export type TurnContext = {
-  database?: string | null
-  schema?: string | null
-  role?: string | null
+  database?: string | null;
+  schema?: string | null;
+  role?: string | null;
   /**
    * Model (and its provider) pinned for this turn by the panel's selector.
    * Omitted lets the backend use the provider's first active model.
    */
-  model?: string | null
-  providerId?: string | null
-}
+  model?: string | null;
+  providerId?: string | null;
+};
 
 /**
  * Opens one assistant turn and drives the caller's reducer with typed events.
@@ -34,13 +38,24 @@ export type TurnContext = {
 export async function streamAssistantTurn(
   threadId: string,
   content: string,
-  { signal, onEvent, database, schema, role, model, providerId }: StreamTurnOptions & TurnContext
+  {
+    signal,
+    onEvent,
+    database,
+    schema,
+    role,
+    model,
+    providerId,
+  }: StreamTurnOptions & TurnContext,
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/assistant/threads/${encodeURIComponent(threadId)}/messages`,
     {
-      method: 'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
+      method: "POST",
+      headers: authHeaders({
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      }),
       body: JSON.stringify({
         content,
         database,
@@ -50,44 +65,55 @@ export async function streamAssistantTurn(
         provider_id: providerId,
       }),
       signal,
-    }
-  )
+    },
+  );
 
   if (response.status === 401) {
-    throw new Error('Session expired')
+    throw new Error("Session expired");
   }
   if (!response.ok) {
     const detail = await response
       .json()
       .then((body: { detail?: string }) => body.detail)
-      .catch(() => undefined)
-    throw new Error(detail || 'The assistant request failed')
+      .catch(() => undefined);
+    throw new Error(detail || "The assistant request failed");
   }
   if (!response.body) {
-    throw new Error('The assistant returned an empty stream')
+    throw new Error("The assistant returned an empty stream");
   }
 
+  let activeRun: string | undefined;
+  let lastSequence = -1;
   for await (const frame of readSseFrames(response.body)) {
-    const event = parseAssistantEvent(frame.event, frame.data)
-    if (event) onEvent(event)
+    const event = parseAssistantEvent(frame.event, frame.data);
+    if (!event) continue;
+    if (event.run_id && event.run_id !== activeRun) {
+      activeRun = event.run_id;
+      lastSequence = -1;
+    }
+    if (event.sequence !== undefined) {
+      if (event.sequence <= lastSequence) continue;
+      lastSequence = event.sequence;
+    }
+    onEvent(event);
   }
 }
 
 /** Maps the card's two-part intent to the frozen wire enum (spec §6.1). */
 export function toConsentPayload(
   decision: ConsentDecision,
-  alwaysAllow: boolean
+  alwaysAllow: boolean,
 ): ConsentDecisionPayload {
-  if (decision === 'deny') return 'deny'
-  return alwaysAllow ? 'allow_session' : 'allow_once'
+  if (decision === "deny") return "deny";
+  return alwaysAllow ? "allow_session" : "allow_once";
 }
 
 export type ConsentDecisionResponse = {
-  tool_call_id: string
-  status: string
+  tool_call_id: string;
+  status: string;
   /** True only when this decision set the conversation's read-only grant. */
-  grant_active: boolean
-}
+  grant_active: boolean;
+};
 
 /**
  * Consent is a separate HTTP call, not a frame on the stream (§4, §6). The
@@ -101,10 +127,10 @@ export type ConsentDecisionResponse = {
 export async function decideToolCall(
   toolCallId: string,
   decision: ConsentDecision,
-  alwaysAllow = false
+  alwaysAllow = false,
 ): Promise<ConsentDecisionResponse> {
   return api.post<ConsentDecisionResponse>(
     `/assistant/tool-calls/${encodeURIComponent(toolCallId)}/decision`,
-    { decision: toConsentPayload(decision, alwaysAllow) }
-  )
+    { decision: toConsentPayload(decision, alwaysAllow) },
+  );
 }

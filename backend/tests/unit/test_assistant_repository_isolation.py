@@ -70,6 +70,85 @@ async def test_list_messages_filters_by_thread_and_user(recording):
     assert params == ["t1", "alice"]
 
 
+async def test_list_messages_returns_the_trace_and_usage(monkeypatch):
+    """A reopened thread must carry the turn's steps and token counts.
+
+    ``list_messages`` used to select text only, which is why a reload showed the
+    answers and silently dropped the process that produced them.
+    """
+    step = {"kind": "reasoning", "phase": "act", "text": "Reasoning"}
+    db = _RecordingDB(
+        select_rows=[
+            [
+                "m1",
+                "assistant",
+                "There are 42 orders.",
+                "2026-01-01 00:00:00",
+                "gpt-4o",
+                120,
+                30,
+                150,
+                [step],
+            ]
+        ]
+    )
+    monkeypatch.setattr(repo_module, "db", db)
+
+    rows = await AssistantRepository().list_messages("t1", user_name="alice")
+
+    assert rows[0]["steps"] == [step]
+    assert rows[0]["total_tokens"] == 150
+    assert rows[0]["model_name"] == "gpt-4o"
+
+
+async def test_list_messages_tolerates_a_string_steps_column(monkeypatch):
+    """The driver may hand back a JSON column as text; it must still decode."""
+    db = _RecordingDB(
+        select_rows=[
+            [
+                "m1",
+                "assistant",
+                "ok",
+                "2026-01-01 00:00:00",
+                None,
+                None,
+                None,
+                None,
+                '[{"kind":"answer"}]',
+            ]
+        ]
+    )
+    monkeypatch.setattr(repo_module, "db", db)
+
+    rows = await AssistantRepository().list_messages("t1", user_name="alice")
+
+    assert rows[0]["steps"] == [{"kind": "answer"}]
+
+
+async def test_list_messages_tolerates_a_malformed_steps_column(monkeypatch):
+    """A conversation must open even if its stored trace is unreadable."""
+    db = _RecordingDB(
+        select_rows=[
+            [
+                "m1",
+                "assistant",
+                "ok",
+                "2026-01-01 00:00:00",
+                None,
+                None,
+                None,
+                None,
+                "{not json",
+            ]
+        ]
+    )
+    monkeypatch.setattr(repo_module, "db", db)
+
+    rows = await AssistantRepository().list_messages("t1", user_name="alice")
+
+    assert rows[0]["steps"] == []
+
+
 async def test_delete_thread_scopes_both_tables_to_the_owner(recording):
     repo = AssistantRepository()
     await repo.delete_thread("t1", user_name="alice")

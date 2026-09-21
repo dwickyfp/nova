@@ -37,6 +37,9 @@ class AssistantMessage:
     role: MessageRole
     content: str = ""
     tool_call: ToolCallView | None = None
+    #: Redacted trace and ordered artifacts from a persisted assistant turn.
+    #: The context builder folds a bounded summary into follow-up turns.
+    steps: list[dict] = field(default_factory=list)
     created_at: datetime = field(default_factory=_now)
 
 

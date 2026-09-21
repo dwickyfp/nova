@@ -40,6 +40,23 @@ def build_registry() -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(load_skill_tool)
     registry.register(query_execute_tool)
+
+    # Agent Studio authoring tools (Phase 12). Nove can draft a semantic model or
+    # an agent from a request. Both are write tools: classified ``destructive``
+    # so they always require explicit approval and are never auto-approved by the
+    # read-only grant. Imported lazily so a deployment without the agents module
+    # still builds the base registry.
+    try:
+        from app.modules.agents.tools.create_agent import create_agent_tool
+        from app.modules.agents.tools.create_semantic_model import (
+            create_semantic_model_tool,
+        )
+
+        registry.register(create_semantic_model_tool)
+        registry.register(create_agent_tool)
+    except ImportError:  # pragma: no cover - module always present in this tree
+        pass
+
     return registry
 
 

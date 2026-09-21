@@ -617,6 +617,8 @@ export function WorkspacesPage() {
   const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({})
   const [openTabIds, setOpenTabIds] = useState<string[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
+  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
   const [expandedWorkspacePaths, setExpandedWorkspacePaths] = useState<Record<string, boolean>>({ '': true })
   const [expandedDatabases, setExpandedDatabases] = useState<Record<string, boolean>>({})
   const [expandedSchemas, setExpandedSchemas] = useState<Record<string, boolean>>({})
@@ -1386,6 +1388,19 @@ export function WorkspacesPage() {
     }
   }
 
+  function reorderTabs(fromId: string, toId: string) {
+    if (fromId === toId) return
+    setOpenTabIds((prev) => {
+      const fromIndex = prev.indexOf(fromId)
+      const toIndex = prev.indexOf(toId)
+      if (fromIndex === -1 || toIndex === -1) return prev
+      const next = [...prev]
+      next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, fromId)
+      return next
+    })
+  }
+
   function startResultsResize(event: ReactMouseEvent<HTMLButtonElement>) {
     event.preventDefault()
     dragRef.current = {
@@ -1569,8 +1584,33 @@ export function WorkspacesPage() {
                 if (!tab) return null
                 const isActive = activeTabId === id
                 const isRenaming = renamingTabId === id
+                const isDragging = draggingTabId === id
+                const isDragOver = dragOverTabId === id && draggingTabId !== id
                 return (
-                  <div key={id} className='group relative flex min-w-[120px] max-w-[260px] items-center'>
+                  <div
+                    key={id}
+                    onDragOver={(event) => {
+                      if (!draggingTabId || draggingTabId === id) return
+                      event.preventDefault()
+                      event.dataTransfer.dropEffect = 'move'
+                      setDragOverTabId(id)
+                    }}
+                    onDragLeave={() => {
+                      setDragOverTabId((current) => (current === id ? null : current))
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      if (draggingTabId) reorderTabs(draggingTabId, id)
+                      setDraggingTabId(null)
+                      setDragOverTabId(null)
+                    }}
+                    className={cn(
+                      'group relative flex min-w-[120px] max-w-[260px] items-center transition-opacity',
+                      isDragging && 'opacity-40',
+                      isDragOver &&
+                        'before:absolute before:inset-y-1 before:-left-px before:z-30 before:w-0.5 before:rounded-full before:bg-primary'
+                    )}
+                  >
                     {isRenaming ? (
                       <Input
                         autoFocus
@@ -1596,9 +1636,19 @@ export function WorkspacesPage() {
                     ) : (
                       <button
                         type='button'
+                        draggable={!isRenaming}
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = 'move'
+                          event.dataTransfer.setData('text/plain', id)
+                          setDraggingTabId(id)
+                        }}
+                        onDragEnd={() => {
+                          setDraggingTabId(null)
+                          setDragOverTabId(null)
+                        }}
                         onClick={() => activateTab(id)}
                         className={cn(
-                          'flex flex-1 items-center gap-2 rounded-t-md py-1.5 pr-14 pl-3 text-sm transition-colors',
+                          'flex flex-1 cursor-grab items-center gap-2 rounded-t-md py-1.5 pr-14 pl-3 text-sm transition-colors active:cursor-grabbing',
                           isActive
                             ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
                             : 'border-b border-b-border bg-muted/40 text-muted-foreground hover:bg-muted/60'

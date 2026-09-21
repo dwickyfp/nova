@@ -122,6 +122,18 @@ def _frame_data(frame: str) -> dict:
     return {}
 
 
+def _tool_call_statuses(frames: list[str]) -> list[str]:
+    """The ``status`` of every ``tool_call`` frame, in order.
+
+    The frame is always emitted so the panel gets the redacted SQL preview; its
+    status is what says whether the call is waiting on the user. ``pending``
+    means a prompt is open.
+    """
+    return [
+        _frame_data(f).get("status") for f in frames if _frame_event(f) == "tool_call"
+    ]
+
+
 # ── Event contract ───────────────────────────────────────────────────────────
 
 
@@ -143,9 +155,20 @@ def test_event_names_and_shapes_are_frozen():
 
     assert _frame_event(events.done("m1")) == "done"
     assert _frame_data(events.done("m1"))["finish_reason"] == "stop"
+    # A provider that reported no usage sends no field, not a zero.
+    assert "usage" not in _frame_data(events.done("m1"))
+    assert _frame_data(events.done("m1", usage={"total_tokens": 42}))["usage"] == {
+        "total_tokens": 42
+    }
 
     assert _frame_event(events.error("x", "y")) == "error"
     assert _frame_data(events.error("x", "y")) == {"code": "x", "message": "y"}
+
+    assert _frame_event(events.tool_detail("c1", "the skill body")) == "tool_detail"
+    assert _frame_data(events.tool_detail("c1", "the skill body")) == {
+        "tool_call_id": "c1",
+        "text": "the skill body",
+    }
 
     assert _frame_event(events.thinking("act", "step")) == "thinking"
     assert _frame_data(events.thinking("act", "step")) == {
@@ -297,9 +320,10 @@ async def test_a_no_consent_tool_runs_without_prompting_while_a_query_still_prom
         )
     )
 
-    # A pure tool never reaches the consent resolver and never emits a card.
+    # A pure tool never reaches the consent resolver, so its announcement is
+    # never `pending`: no card is raised.
     assert asked == []
-    assert not any(_frame_event(f) == "tool_call" for f in frames)
+    assert _tool_call_statuses(frames) == ["running"]
 
     # The same loop *does* prompt for a query tool.
     provider2 = FakeProvider(
@@ -339,7 +363,7 @@ async def test_a_no_consent_tool_runs_without_prompting_while_a_query_still_prom
         )
     )
     assert asked2 == ["query_execute"]
-    assert any(_frame_event(f) == "tool_call" for f in frames2)
+    assert _tool_call_statuses(frames2) == ["pending"]
 
 
 async def test_default_requires_consent_is_true():
@@ -618,8 +642,9 @@ async def test_read_only_grant_skips_the_approval_prompt():
             resolve_consent=resolver,
         )
     )
-    # No tool_call frame (auto-approved), but the tool ran.
-    assert "tool_call" not in [_frame_event(f) for f in frames]
+    # The call is announced (so the panel can show its SQL) but never `pending`:
+    # the grant covered it, so no approval card was raised. The tool ran.
+    assert _tool_call_statuses(frames) == ["running"]
     assert asked == []
 
 

@@ -30,7 +30,12 @@ from typing import Any
 from app.common.audit import write_audit_log
 from app.common.sql_guard import redact_sql_credentials
 from app.modules.assistant.schemas import ToolClassification
-from app.modules.assistant.tools import ToolInvocation, ToolOutcome, policy
+from app.modules.assistant.tools import (
+    ToolInvocation,
+    ToolOutcome,
+    policy,
+    report_tool_progress,
+)
 from app.modules.assistant.tools.redaction import redact_rows
 
 logger = logging.getLogger(__name__)
@@ -152,10 +157,18 @@ class QueryExecuteTool:
         classification, decisions = policy.classify_statements(statements)
         self._classification = classification
 
+        safe_sql = _safe_redact(sql)
+        report_tool_progress(
+            context,
+            stage="validating_sql",
+            text="Validating the query",
+            sql_preview=safe_sql,
+        )
+
         if classification != "read_only":
             offending = next((d for d in decisions if not d.allowed), None)
             reason = offending.reason if offending else "The statement is not read-only."
-            redacted_sql = _safe_redact(sql)
+            redacted_sql = safe_sql
             await self._audit(
                 context=context,
                 username=username,
@@ -169,6 +182,12 @@ class QueryExecuteTool:
 
         from app.modules.query.service import query_service
 
+        report_tool_progress(
+            context,
+            stage="executing_sql",
+            text="Running the query",
+            sql_preview=safe_sql,
+        )
         try:
             results = await query_service.execute_statements(
                 sql=sql,
@@ -252,7 +271,23 @@ class QueryExecuteTool:
         )
 
         summary = "\n".join(rendered)
-        return ToolOutcome(ok=True, summary=summary)
+        report_tool_progress(
+            context,
+            stage="query_completed",
+            text=f"Retrieved {total_rows} row{'s' if total_rows != 1 else ''}",
+            sql_preview=safe_sql,
+        )
+        # Expose the first tabular result to Agent Studio's ``data_to_chart`` in
+        # the same turn. Redacted at the source, like everything else that can
+        # leave this tool. A context without the slot is left untouched.
+        _expose_last_result(context, results)
+        # The grid the user reads has to come from here too: without it a plain
+        # assistant answer that ran SQL has no table at all, only prose.
+        return ToolOutcome(
+            ok=True,
+            summary=summary,
+            table=_table_from_results(results),
+        )
 
     async def _audit(
         self,
@@ -292,6 +327,51 @@ class QueryExecuteTool:
             logger.exception("Could not write the assistant_tool audit row")
 
 
+def _table_from_results(results: list[Any]) -> dict[str, Any] | None:
+    """Build the ``table`` content block for a plain SQL answer.
+
+    The rows are redacted with the shared value-level redactor, so a
+    credential-shaped cell never reaches the grid. ``title`` is left empty on
+    purpose: a redacted statement is not a title, and the panel falls back to a
+    neutral header rather than printing a mangled query.
+    """
+    from app.modules.assistant.tools.redaction import redact_rows
+
+    for result in results:
+        columns = list(getattr(result, "columns", []) or [])
+        rows = list(getattr(result, "rows", []) or [])
+        if not columns:
+            continue
+        safe_rows = redact_rows(columns, rows)
+        return {
+            "title": "",
+            "columns": columns,
+            "rows": [list(r) for r in safe_rows[:200]],
+        }
+    return None
+
+
+def _expose_last_result(context: Any, results: list[Any]) -> None:
+    """Record the first tabular result on the turn context, value-redacted.
+
+    Used by Agent Studio's ``data_to_chart``. Best-effort: a context without the
+    attribute is a no-op, so the plain assistant path is unaffected.
+    """
+    if not hasattr(context, "last_result"):
+        return
+    for result in results:
+        columns = list(getattr(result, "columns", []) or [])
+        rows = list(getattr(result, "rows", []) or [])
+        if not columns:
+            continue
+        context.last_result = {
+            "title": "",
+            "columns": columns,
+            "rows": redact_rows(columns, rows),
+        }
+        return
+
+
 def _render_result(result: Any) -> str:
     """Render one ``QueryResult`` as bounded, value-redacted text.
 
@@ -318,9 +398,7 @@ def _render_result(result: Any) -> str:
     used = 0
     truncated = False
     for row in safe_rows:
-        bounded_row = [
-            _bounded_cell(cell) for cell in row
-        ]
+        bounded_row = [_bounded_cell(cell) for cell in row]
         serialized = json.dumps(bounded_row, default=str)
         if used + len(serialized) > ASSISTANT_MAX_PREVIEW_CHARS:
             truncated = True
@@ -415,9 +493,7 @@ def _engine_error_text(error: Exception) -> str:
 
 def _is_privilege_error(message: str) -> bool:
     lowered = message.lower()
-    return "5203" in lowered or any(
-        marker in lowered for marker in _ENGINE_DENIED_MARKERS
-    )
+    return "5203" in lowered or any(marker in lowered for marker in _ENGINE_DENIED_MARKERS)
 
 
 #: Process-wide instance, registered by ``app.modules.assistant.registry``.

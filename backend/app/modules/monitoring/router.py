@@ -11,6 +11,7 @@ Endpoints under /api/v1/monitoring:
   GET  /cost/history           → paginated query cost history
   GET  /cost/aggregation       → time-bucketed cost aggregation (chart)
   GET  /metrics/fe             → FE metrics summary
+  GET  /runtime-health         → Redis, scheduler, and worker liveness
   GET  /loads                  → paginated data load history
   GET  /loads/stats            → load stats summary
   GET  /alerts                 → production alert rules evaluated live
@@ -26,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.deps import require_role
+from app.modules.monitoring.runtime_health import RuntimeHealthResponse
 from app.modules.monitoring.service import monitoring_service
 from app.modules.users.router import ADMIN_ROLES as ADMIN_ROLES
 
@@ -259,6 +261,14 @@ async def get_fe_metrics(
     """Key FE metrics from information_schema.fe_metrics."""
     result = await monitoring_service.get_fe_metrics_summary()
     return MetricsResponse(metrics=result)
+
+
+@router.get("/runtime-health", response_model=RuntimeHealthResponse)
+async def get_runtime_health(
+    user: dict = require_read,
+) -> RuntimeHealthResponse:
+    """Live health of Redis and Nova's standalone orchestration processes."""
+    return await monitoring_service.get_runtime_health()
 
 
 # ── Data Loads ───────────────────────────────────────────────────────

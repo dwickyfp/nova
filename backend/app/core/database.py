@@ -1,12 +1,44 @@
 """StarRocks connection factory — system pool + per-request user connections."""
 
+import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import asyncmy
 import asyncmy.cursors
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+#: Session timezone pinned on every connection when ``NOVA_TIMEZONE`` is unset.
+#: Matches ``init-nova.sql``'s ``SET GLOBAL time_zone``.
+DEFAULT_TIMEZONE = "Asia/Jakarta"
+
+
+def configured_timezone() -> str:
+    """The session timezone Nova pins, read from config at call time.
+
+    Whitespace is trimmed; an empty value falls back to
+    :data:`DEFAULT_TIMEZONE`, so a deployment that clears the variable still gets
+    a deterministic zone rather than the engine's global.
+    """
+    value = str(getattr(settings, "NOVA_TIMEZONE", "") or "").strip()
+    return value or DEFAULT_TIMEZONE
+
+
+def _quote(value: str) -> str:
+    """Single-quote a SQL string literal, escaping embedded quotes.
+
+    The timezone is operator-controlled config, but a stray quote must not break
+    (or truncate) the session statement.
+    """
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _timezone_init_command() -> str:
+    """The ``init_command`` every connection is opened with."""
+    return f"SET time_zone = {_quote(configured_timezone())}"
 
 
 class StarRocksConnectionFactory:
@@ -15,6 +47,10 @@ class StarRocksConnectionFactory:
     Two connection modes:
     - System pool: admin connection for metadata/system queries (SHOW, DESCRIBE, etc.)
     - User connections: per-request, no pool, RBAC-respecting
+
+    Every connection is opened with ``init_command`` pinning its session
+    ``time_zone`` to :func:`configured_timezone`, so ``NOW()`` and naive DATETIME
+    round-trips are stable across the pool and per-request connections alike.
     """
 
     def __init__(self):
@@ -31,6 +67,7 @@ class StarRocksConnectionFactory:
             maxsize=10,
             autocommit=True,
             connect_timeout=10,
+            init_command=_timezone_init_command(),
         )
 
     async def close_system_pool(self) -> None:
@@ -39,6 +76,19 @@ class StarRocksConnectionFactory:
             self._system_pool.close()
             await self._system_pool.wait_closed()
             self._system_pool = None
+
+    async def apply_global_time_zone(self) -> None:
+        """Best-effort ``SET GLOBAL time_zone`` at startup.
+
+        The per-session pin is the real guarantee; this only aligns the engine's
+        global so tools that read ``@@time_zone`` agree. A missing privilege (or
+        any other failure) is logged and swallowed rather than aborting startup.
+        """
+        sql = f"SET GLOBAL time_zone = {_quote(configured_timezone())}"
+        try:
+            await self.execute_system(sql)
+        except Exception as exc:  # noqa: BLE001 - advisory; sessions are already pinned
+            logger.warning("Could not set GLOBAL time_zone (advisory): %s", type(exc).__name__)
 
     @asynccontextmanager
     async def system_conn(self) -> AsyncGenerator[asyncmy.Connection, None]:
@@ -77,6 +127,7 @@ class StarRocksConnectionFactory:
             autocommit=True,
             connect_timeout=10,
             read_timeout=300,
+            init_command=_timezone_init_command(),
         )
         try:
             yield conn
@@ -92,18 +143,20 @@ class StarRocksConnectionFactory:
             {"columns": [...], "rows": [...], "row_count": N} for SELECT
             {"columns": [], "rows": [], "affected": N} for DDL/DML
         """
-        async with self.system_conn() as conn:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(sql, params)
-                if cur.description:
-                    columns = [desc[0] for desc in cur.description]
-                    rows = await cur.fetchall()
-                    return {
-                        "columns": columns,
-                        "rows": [list(r.values()) for r in rows],
-                        "row_count": len(rows),
-                    }
-                return {"columns": [], "rows": [], "affected": cur.rowcount}
+        async with (
+            self.system_conn() as conn,
+            conn.cursor(asyncmy.cursors.DictCursor) as cur,
+        ):
+            await cur.execute(sql, params)
+            if cur.description:
+                columns = [desc[0] for desc in cur.description]
+                rows = await cur.fetchall()
+                return {
+                    "columns": columns,
+                    "rows": [list(r.values()) for r in rows],
+                    "row_count": len(rows),
+                }
+            return {"columns": [], "rows": [], "affected": cur.rowcount}
 
 
 # Singleton — initialized in main.py lifespan

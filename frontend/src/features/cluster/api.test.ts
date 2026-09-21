@@ -4,6 +4,7 @@ import {
   countAlive,
   fetchFeMetrics,
   fetchNodes,
+  fetchRuntimeHealth,
   hasAnyMetric,
   metricValue,
   parseNodeRows,
@@ -35,6 +36,13 @@ describe('cluster monitor API', () => {
     expect(fetchMock.mock.calls[0][1]?.method ?? 'GET').toBe('GET')
   })
 
+  it('fetches Redis, scheduler, and worker health from the monitoring endpoint', async () => {
+    await fetchRuntimeHealth()
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/monitoring/runtime-health')
+    expect(fetchMock.mock.calls[0][1]?.method ?? 'GET').toBe('GET')
+  })
+
   it('runs SHOW FRONTENDS through the query endpoint', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
@@ -49,7 +57,7 @@ describe('cluster monitor API', () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/query/execute')
     expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).sql).toBe(
-      'SHOW FRONTENDS'
+      'SHOW FRONTENDS',
     )
     expect(nodes).toHaveLength(1)
     expect(nodes[0].host).toBe('fe0')
@@ -68,7 +76,7 @@ describe('cluster monitor API', () => {
     await fetchNodes('backends')
 
     expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).sql).toBe(
-      'SHOW BACKENDS'
+      'SHOW BACKENDS',
     )
   })
 
@@ -90,7 +98,7 @@ describe('node row mapping', () => {
   it('maps columns by name, not position', () => {
     const rows = parseNodeRows(
       ['LastHeartbeat', 'Alive', 'Host', 'HttpPort'],
-      [['2026-01-01T00:00:00', 'true', '10.0.0.1', '8030']]
+      [['2026-01-01T00:00:00', 'true', '10.0.0.1', '8030']],
     )
 
     expect(rows[0].host).toBe('10.0.0.1')
@@ -118,7 +126,7 @@ describe('node row mapping', () => {
         ['a', 'true'],
         ['b', 'false'],
         ['c', 'true'],
-      ]
+      ],
     )
 
     expect(countAlive(nodes)).toEqual({ alive: 2, total: 3 })

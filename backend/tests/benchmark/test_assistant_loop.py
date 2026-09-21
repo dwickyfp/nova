@@ -235,6 +235,51 @@ async def _deny(_inv, _cls) -> bool:
     return False
 
 
+# ── context management (NOVA-124) ────────────────────────────────────────────
+
+
+async def test_benchmark_context_curation_overhead():
+    """The added cost of curating a transcript, above assembling it.
+
+    Two cases on the same 50-turn transcript: a budget so large curation is a
+    no-op walk, and the default budget where it must drop turns. The difference
+    is the price of the context-management feature; it must stay negligible next
+    to the provider and engine round-trips it protects.
+    """
+    from app.modules.assistant.context import ContextManager
+
+    def build(manager: ContextManager):
+        loop = AssistantLoop(
+            provider=ScriptedProvider([text_frame("x")]),
+            registry=ToolRegistry(),
+            system_prompt="bench system prompt",
+            context_manager=manager,
+        )
+        history = thread(history_turns=50)
+
+        async def _run() -> int:
+            return len(loop._build_messages(history, "current turn"))
+
+        return _run
+
+    noop = await measure(build(ContextManager(token_budget=10_000_000)), iterations=1000)
+    _print("context_curate_noop_history_50", noop)
+    _assert_measured(noop)
+
+    active = await measure(build(ContextManager(token_budget=2_000)), iterations=1000)
+    _print("context_curate_active_history_50", active)
+    _assert_measured(active)
+    # The active case must actually have pruned; assert the path is exercised by
+    # checking a fresh call's stats rather than timing it.
+    manager = ContextManager(token_budget=2_000)
+    transcript = [{"role": "system", "content": "s"}]
+    for i in range(50):
+        transcript.append({"role": "user", "content": f"q{i} " + "x" * 200})
+        transcript.append({"role": "assistant", "content": f"a{i} " + "y" * 200})
+    stats = manager.curate(transcript).stats
+    assert stats.dropped_turns > 0
+
+
 # ── output helper ─────────────────────────────────────────────────────────────
 
 

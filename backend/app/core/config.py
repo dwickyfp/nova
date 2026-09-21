@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     STARROCKS_ROOT_USER: str = "root"
     STARROCKS_ROOT_PASSWORD: str = ""
 
+    #: The session timezone Nova pins on every StarRocks connection, so ``NOW()``
+    #: and naive DATETIME round-trips agree regardless of the engine's global.
+    #: ``init-nova.sql`` sets the matching global. Empty or whitespace falls back
+    #: to ``Asia/Jakarta`` (``database.DEFAULT_TIMEZONE``).
+    NOVA_TIMEZONE: str = "Asia/Jakarta"
+
     # --- MySQL protocol proxy ---
     # Values mirror the ``proxy:`` block in docker/nova.yaml; the defaults here
     # are what the embedded lifespan uses when nothing overrides them.
@@ -76,6 +82,11 @@ class Settings(BaseSettings):
     #: abandons and re-evaluates it.
     WORKER_HEARTBEAT_TIMEOUT_SECONDS: int = 120
     WORKER_RECONCILE_INTERVAL_SECONDS: float = 30.0
+    #: Process-level heartbeat used by the Cluster Monitor. This is separate
+    #: from task-run heartbeats: an idle worker must still be observable.
+    WORKER_REGISTRY_KEY: str = "nova:workers:heartbeats"
+    WORKER_PROCESS_HEARTBEAT_INTERVAL_SECONDS: float = 10.0
+    WORKER_PROCESS_STALE_SECONDS: int = 30
     #: How many graph runs a worker reads from the stream per drain.
     WORKER_STREAM_BATCH_SIZE: int = 10
     #: Nova's default for the engine's ``max_task_consecutive_fail_count`` (10).

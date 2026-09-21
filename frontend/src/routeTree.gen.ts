@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as StudioRouteImport } from './routes/studio'
 import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedActiveQueryRouteImport } from './routes/_authenticated/active-query'
@@ -18,6 +19,11 @@ import { Route as AuthenticatedMigrationRouteImport } from './routes/_authentica
 import { Route as AuthenticatedMonitoringRouteRouteImport } from './routes/_authenticated/monitoring/route'
 import { Route as AuthenticatedQueryCostRouteImport } from './routes/_authenticated/query-cost'
 import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authenticated/query-history'
+import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenticated/agents/index'
+import { Route as AuthenticatedAgentsAgentIdRouteImport } from './routes/_authenticated/agents/$agentId'
+import { Route as AuthenticatedAgentsSkillsRouteImport } from './routes/_authenticated/agents/skills'
+import { Route as AuthenticatedAgentsStudioRouteImport } from './routes/_authenticated/agents/studio'
+import { Route as AuthenticatedAgentsToolsRouteImport } from './routes/_authenticated/agents/tools'
 import { Route as AuthenticatedAiProvidersIndexRouteImport } from './routes/_authenticated/ai-providers/index'
 import { Route as AuthenticatedExternalCatalogsIndexRouteImport } from './routes/_authenticated/external-catalogs/index'
 import { Route as AuthenticatedFunctionsIndexRouteImport } from './routes/_authenticated/functions/index'
@@ -38,9 +44,16 @@ import { Route as AuthenticatedTasksGraphIdRouteImport } from './routes/_authent
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedUsersUsernameRouteImport } from './routes/_authenticated/users/$username'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
+import { Route as AuthenticatedAgentsSemanticIndexRouteImport } from './routes/_authenticated/agents/semantic/index'
+import { Route as AuthenticatedAgentsSemanticBuilderRouteImport } from './routes/_authenticated/agents/semantic/builder'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudioRoute = StudioRouteImport.update({
+  id: '/studio',
+  path: '/studio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const authSignInRoute = authSignInRouteImport.update({
@@ -85,6 +98,36 @@ const AuthenticatedQueryHistoryRoute =
   AuthenticatedQueryHistoryRouteImport.update({
     id: '/query-history',
     path: '/query-history',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAgentsIndexRoute =
+  AuthenticatedAgentsIndexRouteImport.update({
+    id: '/agents/',
+    path: '/agents/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAgentsAgentIdRoute =
+  AuthenticatedAgentsAgentIdRouteImport.update({
+    id: '/agents/$agentId',
+    path: '/agents/$agentId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAgentsSkillsRoute =
+  AuthenticatedAgentsSkillsRouteImport.update({
+    id: '/agents/skills',
+    path: '/agents/skills',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAgentsStudioRoute =
+  AuthenticatedAgentsStudioRouteImport.update({
+    id: '/agents/studio',
+    path: '/agents/studio',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAgentsToolsRoute =
+  AuthenticatedAgentsToolsRouteImport.update({
+    id: '/agents/tools',
+    path: '/agents/tools',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAiProvidersIndexRoute =
@@ -203,9 +246,22 @@ const AuthenticatedWorkspacesIndexRoute =
     path: '/workspaces/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAgentsSemanticIndexRoute =
+  AuthenticatedAgentsSemanticIndexRouteImport.update({
+    id: '/agents/semantic/',
+    path: '/agents/semantic/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAgentsSemanticBuilderRoute =
+  AuthenticatedAgentsSemanticBuilderRouteImport.update({
+    id: '/agents/semantic/builder',
+    path: '/agents/semantic/builder',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
+  '/studio': typeof StudioRoute
   '/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/sign-in': typeof authSignInRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
@@ -213,6 +269,10 @@ export interface FileRoutesByFullPath {
   '/migration': typeof AuthenticatedMigrationRoute
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
+  '/agents/$agentId': typeof AuthenticatedAgentsAgentIdRoute
+  '/agents/skills': typeof AuthenticatedAgentsSkillsRoute
+  '/agents/studio': typeof AuthenticatedAgentsStudioRoute
+  '/agents/tools': typeof AuthenticatedAgentsToolsRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
   '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
@@ -222,6 +282,7 @@ export interface FileRoutesByFullPath {
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
+  '/agents/': typeof AuthenticatedAgentsIndexRoute
   '/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
   '/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
   '/functions/': typeof AuthenticatedFunctionsIndexRoute
@@ -233,8 +294,11 @@ export interface FileRoutesByFullPath {
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/agents/semantic/builder': typeof AuthenticatedAgentsSemanticBuilderRoute
+  '/agents/semantic/': typeof AuthenticatedAgentsSemanticIndexRoute
 }
 export interface FileRoutesByTo {
+  '/studio': typeof StudioRoute
   '/sign-in': typeof authSignInRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
@@ -242,6 +306,10 @@ export interface FileRoutesByTo {
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
   '/': typeof AuthenticatedIndexRoute
+  '/agents/$agentId': typeof AuthenticatedAgentsAgentIdRoute
+  '/agents/skills': typeof AuthenticatedAgentsSkillsRoute
+  '/agents/studio': typeof AuthenticatedAgentsStudioRoute
+  '/agents/tools': typeof AuthenticatedAgentsToolsRoute
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
   '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
@@ -251,6 +319,7 @@ export interface FileRoutesByTo {
   '/roles/$name': typeof AuthenticatedRolesNameRoute
   '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
+  '/agents': typeof AuthenticatedAgentsIndexRoute
   '/ai-providers': typeof AuthenticatedAiProvidersIndexRoute
   '/external-catalogs': typeof AuthenticatedExternalCatalogsIndexRoute
   '/functions': typeof AuthenticatedFunctionsIndexRoute
@@ -262,10 +331,13 @@ export interface FileRoutesByTo {
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
+  '/agents/semantic/builder': typeof AuthenticatedAgentsSemanticBuilderRoute
+  '/agents/semantic': typeof AuthenticatedAgentsSemanticIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/studio': typeof StudioRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRouteRouteWithChildren
   '/(auth)/sign-in': typeof authSignInRoute
   '/_authenticated/active-query': typeof AuthenticatedActiveQueryRoute
@@ -274,6 +346,10 @@ export interface FileRoutesById {
   '/_authenticated/query-cost': typeof AuthenticatedQueryCostRoute
   '/_authenticated/query-history': typeof AuthenticatedQueryHistoryRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/agents/$agentId': typeof AuthenticatedAgentsAgentIdRoute
+  '/_authenticated/agents/skills': typeof AuthenticatedAgentsSkillsRoute
+  '/_authenticated/agents/studio': typeof AuthenticatedAgentsStudioRoute
+  '/_authenticated/agents/tools': typeof AuthenticatedAgentsToolsRoute
   '/_authenticated/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/_authenticated/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
   '/_authenticated/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
@@ -283,6 +359,7 @@ export interface FileRoutesById {
   '/_authenticated/roles/$name': typeof AuthenticatedRolesNameRoute
   '/_authenticated/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/_authenticated/users/$username': typeof AuthenticatedUsersUsernameRoute
+  '/_authenticated/agents/': typeof AuthenticatedAgentsIndexRoute
   '/_authenticated/ai-providers/': typeof AuthenticatedAiProvidersIndexRoute
   '/_authenticated/external-catalogs/': typeof AuthenticatedExternalCatalogsIndexRoute
   '/_authenticated/functions/': typeof AuthenticatedFunctionsIndexRoute
@@ -294,11 +371,14 @@ export interface FileRoutesById {
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/_authenticated/agents/semantic/builder': typeof AuthenticatedAgentsSemanticBuilderRoute
+  '/_authenticated/agents/semantic/': typeof AuthenticatedAgentsSemanticIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/studio'
     | '/monitoring'
     | '/sign-in'
     | '/active-query'
@@ -306,6 +386,10 @@ export interface FileRouteTypes {
     | '/migration'
     | '/query-cost'
     | '/query-history'
+    | '/agents/$agentId'
+    | '/agents/skills'
+    | '/agents/studio'
+    | '/agents/tools'
     | '/monitoring/active'
     | '/monitoring/audit'
     | '/monitoring/cluster'
@@ -315,6 +399,7 @@ export interface FileRouteTypes {
     | '/roles/$name'
     | '/tasks/$graphId'
     | '/users/$username'
+    | '/agents/'
     | '/ai-providers/'
     | '/external-catalogs/'
     | '/functions/'
@@ -326,8 +411,11 @@ export interface FileRouteTypes {
     | '/tasks/'
     | '/users/'
     | '/workspaces/'
+    | '/agents/semantic/builder'
+    | '/agents/semantic/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/studio'
     | '/sign-in'
     | '/active-query'
     | '/database-explorer'
@@ -335,6 +423,10 @@ export interface FileRouteTypes {
     | '/query-cost'
     | '/query-history'
     | '/'
+    | '/agents/$agentId'
+    | '/agents/skills'
+    | '/agents/studio'
+    | '/agents/tools'
     | '/monitoring/active'
     | '/monitoring/audit'
     | '/monitoring/cluster'
@@ -344,6 +436,7 @@ export interface FileRouteTypes {
     | '/roles/$name'
     | '/tasks/$graphId'
     | '/users/$username'
+    | '/agents'
     | '/ai-providers'
     | '/external-catalogs'
     | '/functions'
@@ -355,9 +448,12 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/users'
     | '/workspaces'
+    | '/agents/semantic/builder'
+    | '/agents/semantic'
   id:
     | '__root__'
     | '/_authenticated'
+    | '/studio'
     | '/_authenticated/monitoring'
     | '/(auth)/sign-in'
     | '/_authenticated/active-query'
@@ -366,6 +462,10 @@ export interface FileRouteTypes {
     | '/_authenticated/query-cost'
     | '/_authenticated/query-history'
     | '/_authenticated/'
+    | '/_authenticated/agents/$agentId'
+    | '/_authenticated/agents/skills'
+    | '/_authenticated/agents/studio'
+    | '/_authenticated/agents/tools'
     | '/_authenticated/monitoring/active'
     | '/_authenticated/monitoring/audit'
     | '/_authenticated/monitoring/cluster'
@@ -375,6 +475,7 @@ export interface FileRouteTypes {
     | '/_authenticated/roles/$name'
     | '/_authenticated/tasks/$graphId'
     | '/_authenticated/users/$username'
+    | '/_authenticated/agents/'
     | '/_authenticated/ai-providers/'
     | '/_authenticated/external-catalogs/'
     | '/_authenticated/functions/'
@@ -386,10 +487,13 @@ export interface FileRouteTypes {
     | '/_authenticated/tasks/'
     | '/_authenticated/users/'
     | '/_authenticated/workspaces/'
+    | '/_authenticated/agents/semantic/builder'
+    | '/_authenticated/agents/semantic/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  StudioRoute: typeof StudioRoute
   authSignInRoute: typeof authSignInRoute
 }
 
@@ -400,6 +504,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/studio': {
+      id: '/studio'
+      path: '/studio'
+      fullPath: '/studio'
+      preLoaderRoute: typeof StudioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(auth)/sign-in': {
@@ -456,6 +567,41 @@ declare module '@tanstack/react-router' {
       path: '/query-history'
       fullPath: '/query-history'
       preLoaderRoute: typeof AuthenticatedQueryHistoryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/agents/': {
+      id: '/_authenticated/agents/'
+      path: '/agents'
+      fullPath: '/agents/'
+      preLoaderRoute: typeof AuthenticatedAgentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/agents/$agentId': {
+      id: '/_authenticated/agents/$agentId'
+      path: '/agents/$agentId'
+      fullPath: '/agents/$agentId'
+      preLoaderRoute: typeof AuthenticatedAgentsAgentIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/agents/skills': {
+      id: '/_authenticated/agents/skills'
+      path: '/agents/skills'
+      fullPath: '/agents/skills'
+      preLoaderRoute: typeof AuthenticatedAgentsSkillsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/agents/studio': {
+      id: '/_authenticated/agents/studio'
+      path: '/agents/studio'
+      fullPath: '/agents/studio'
+      preLoaderRoute: typeof AuthenticatedAgentsStudioRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/agents/tools': {
+      id: '/_authenticated/agents/tools'
+      path: '/agents/tools'
+      fullPath: '/agents/tools'
+      preLoaderRoute: typeof AuthenticatedAgentsToolsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/ai-providers/': {
@@ -598,6 +744,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/agents/semantic/': {
+      id: '/_authenticated/agents/semantic/'
+      path: '/agents/semantic'
+      fullPath: '/agents/semantic/'
+      preLoaderRoute: typeof AuthenticatedAgentsSemanticIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/agents/semantic/builder': {
+      id: '/_authenticated/agents/semantic/builder'
+      path: '/agents/semantic/builder'
+      fullPath: '/agents/semantic/builder'
+      preLoaderRoute: typeof AuthenticatedAgentsSemanticBuilderRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -635,9 +795,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedQueryCostRoute: typeof AuthenticatedQueryCostRoute
   AuthenticatedQueryHistoryRoute: typeof AuthenticatedQueryHistoryRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAgentsAgentIdRoute: typeof AuthenticatedAgentsAgentIdRoute
+  AuthenticatedAgentsSkillsRoute: typeof AuthenticatedAgentsSkillsRoute
+  AuthenticatedAgentsStudioRoute: typeof AuthenticatedAgentsStudioRoute
+  AuthenticatedAgentsToolsRoute: typeof AuthenticatedAgentsToolsRoute
   AuthenticatedRolesNameRoute: typeof AuthenticatedRolesNameRoute
   AuthenticatedTasksGraphIdRoute: typeof AuthenticatedTasksGraphIdRoute
   AuthenticatedUsersUsernameRoute: typeof AuthenticatedUsersUsernameRoute
+  AuthenticatedAgentsIndexRoute: typeof AuthenticatedAgentsIndexRoute
   AuthenticatedAiProvidersIndexRoute: typeof AuthenticatedAiProvidersIndexRoute
   AuthenticatedExternalCatalogsIndexRoute: typeof AuthenticatedExternalCatalogsIndexRoute
   AuthenticatedFunctionsIndexRoute: typeof AuthenticatedFunctionsIndexRoute
@@ -648,6 +813,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
+  AuthenticatedAgentsSemanticBuilderRoute: typeof AuthenticatedAgentsSemanticBuilderRoute
+  AuthenticatedAgentsSemanticIndexRoute: typeof AuthenticatedAgentsSemanticIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -659,9 +826,14 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedQueryCostRoute: AuthenticatedQueryCostRoute,
   AuthenticatedQueryHistoryRoute: AuthenticatedQueryHistoryRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAgentsAgentIdRoute: AuthenticatedAgentsAgentIdRoute,
+  AuthenticatedAgentsSkillsRoute: AuthenticatedAgentsSkillsRoute,
+  AuthenticatedAgentsStudioRoute: AuthenticatedAgentsStudioRoute,
+  AuthenticatedAgentsToolsRoute: AuthenticatedAgentsToolsRoute,
   AuthenticatedRolesNameRoute: AuthenticatedRolesNameRoute,
   AuthenticatedTasksGraphIdRoute: AuthenticatedTasksGraphIdRoute,
   AuthenticatedUsersUsernameRoute: AuthenticatedUsersUsernameRoute,
+  AuthenticatedAgentsIndexRoute: AuthenticatedAgentsIndexRoute,
   AuthenticatedAiProvidersIndexRoute: AuthenticatedAiProvidersIndexRoute,
   AuthenticatedExternalCatalogsIndexRoute:
     AuthenticatedExternalCatalogsIndexRoute,
@@ -673,6 +845,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
+  AuthenticatedAgentsSemanticBuilderRoute:
+    AuthenticatedAgentsSemanticBuilderRoute,
+  AuthenticatedAgentsSemanticIndexRoute: AuthenticatedAgentsSemanticIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -680,6 +855,7 @@ const AuthenticatedRouteRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  StudioRoute: StudioRoute,
   authSignInRoute: authSignInRoute,
 }
 export const routeTree = rootRouteImport

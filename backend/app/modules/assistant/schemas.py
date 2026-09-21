@@ -51,12 +51,22 @@ class MessageView(BaseModel):
     content: str = ""
     tool_call: ToolCallView | None = None
     created_at: datetime
+    #: The assistant turn's recorded trace, so a reopened conversation can
+    #: rebuild its process view. Redacted by the loop before it is stored; an
+    #: empty list on a user turn or a turn that recorded nothing.
+    steps: list[dict] = Field(default_factory=list)
+    #: Provider token report for the assistant turn, if it reported one.
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    model_name: str | None = None
 
 
 class ThreadView(BaseModel):
     thread_id: str
     title: str
     workspace_file_id: str | None = None
+    agent_id: str | None = None
     created_at: datetime
     updated_at: datetime
     message_count: int = 0

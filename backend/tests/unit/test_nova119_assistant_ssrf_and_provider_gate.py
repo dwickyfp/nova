@@ -170,7 +170,15 @@ async def test_assistant_public_endpoint_still_succeeds(monkeypatch):
         seen["url"] = str(request.url)
         seen["auth"] = request.headers.get("authorization")
         return httpx.Response(
-            200, json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+            200,
+            json={
+                "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 2,
+                    "total_tokens": 5,
+                },
+            },
         )
 
     monkeypatch.setattr(
@@ -184,8 +192,76 @@ async def test_assistant_public_endpoint_still_succeeds(monkeypatch):
     )
 
     assert message["content"] == "ok"
+    assert message["usage"]["total_tokens"] == 5
     assert seen["url"] == "https://api.example.com/v1/chat/completions"
     assert seen["auth"] == "Bearer sk-test"
+
+
+async def test_assistant_retries_transient_provider_status(monkeypatch):
+    _public_dns(monkeypatch)
+    attempts = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503, headers={"retry-after": "0"})
+        return httpx.Response(
+            200, json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+        )
+
+    monkeypatch.setattr(
+        "app.modules.assistant.provider.guarded_async_client", _mock_guarded_client(handler)
+    )
+
+    client = AssistantProviderClient(
+        timeout_seconds=1.0, max_attempts=2, retry_base_seconds=0
+    )
+    message = await client.complete(
+        messages=[{"role": "user", "content": "hi"}],
+        provider=_config("https://api.example.com/v1/chat/completions"),
+    )
+
+    assert message["content"] == "ok"
+    assert attempts == 2
+
+
+async def test_assistant_stream_retries_only_before_visible_delta(monkeypatch):
+    _public_dns(monkeypatch)
+    attempts = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(429, headers={"retry-after": "0"})
+        return httpx.Response(
+            200,
+            content=(
+                'data: {"choices":[{"delta":{"content":"ok"},'
+                '"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+            ),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    monkeypatch.setattr(
+        "app.modules.assistant.provider.guarded_async_client", _mock_guarded_client(handler)
+    )
+
+    client = AssistantProviderClient(
+        timeout_seconds=1.0, max_attempts=2, retry_base_seconds=0
+    )
+    events = [
+        event
+        async for event in client.stream(
+            messages=[{"role": "user", "content": "hi"}],
+            provider=_config("https://api.example.com/v1/chat/completions"),
+        )
+    ]
+
+    assert events[0] == ("delta", "ok")
+    assert events[-1][0] == "message"
+    assert attempts == 2
 
 
 async def test_assistant_provider_now_uses_the_shared_guard():
@@ -273,9 +349,21 @@ def spy(monkeypatch) -> _SpyAIService:
 
 
 @pytest.fixture
-def app() -> FastAPI:
+def app(monkeypatch) -> FastAPI:
     from app.core.exceptions import register_exception_handlers
     from app.modules.ai_ml.router import router
+
+    # Keep the public-control cases deterministic. Some local DNS resolvers
+    # rewrite reserved example domains to a private sink address, which would
+    # make the SSRF guard correctly reject what this test intends as public.
+    original_getaddrinfo = socket.getaddrinfo
+
+    def stable_getaddrinfo(host, port, *args, **kwargs):
+        if host in {"api.example.com", "api.openai.com"}:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (PUBLIC_IP, port))]
+        return original_getaddrinfo(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", stable_getaddrinfo)
 
     application = FastAPI()
     register_exception_handlers(application)

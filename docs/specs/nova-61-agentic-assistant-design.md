@@ -215,12 +215,21 @@ consumes them.
 |---|---|---|
 | `text_delta` | `{ "text": "..." }` | assistant text increment |
 | `tool_call` | `ToolCallView` with `status:"pending"`, `sql_preview` **redacted**, `classification` | the model proposed a tool call; the stream pauses for consent |
+| `tool_progress` | `{ "tool_call_id", "stage", "text", "sql_preview"? }` | observable tool lifecycle; never hidden chain-of-thought |
 | `tool_status` | `{ "tool_call_id", "status" }` — one of `approved/denied/running/done/failed/cancelled` | consent resolved or execution progressed |
+| `content_block_done` | `{ "content_index", "content_id" }` | closes an ordered response block |
 | `done` | `{ "message_id", "finish_reason" }` | the turn completed normally |
 | `error` | `{ "code", "message" }` — message already redacted upstream | the turn failed |
 | `ping` | `{}` | keep-alive during a long provider call |
 
 Rules:
+
+- Every frame in a turn carries one `run_id` and a monotonic `sequence`.
+- Response content carries `content_index` and `content_id`. A higher index
+  waits until every lower index exists and is closed. Arrival time never
+  overrides authored order.
+- Generated SQL is emitted only after credential redaction, before execution
+  completes, through `tool_progress`.
 
 - The stream pauses at `tool_call` pending consent. Consent arrives on a
   separate HTTP call (§6, `POST /api/v1/assistant/tool-calls/{tool_call_id}/decision`);
