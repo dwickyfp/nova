@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Bot,
   MessageSquarePlus,
   PanelRightClose,
   ShieldCheck,
@@ -240,9 +239,11 @@ function AssistantHeader({
     // Deliberately borderless: the header floats over the panel so the surface
     // reads as one continuous sheet rather than a framed card.
     <div className="flex items-center gap-2 px-3 py-2">
-      <Bot
+      <img
+        src="/images/nova-mark.svg"
+        alt=""
         aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground"
+        className="size-4 shrink-0"
       />
       <h2 className="min-w-0 flex-1 truncate text-sm font-medium">
         {title ?? "Nove"}

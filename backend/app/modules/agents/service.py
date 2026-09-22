@@ -1,9 +1,9 @@
 """Agent Studio service — compose an agent into a runnable assistant loop.
 
 This module is the seam between the Phase 12 configuration (agents, semantic
-models, skills) and the Phase 10 bounded loop. It does not modify the loop: it
-builds the two things the loop takes as input — a tool registry and a system
-prompt — from an agent's configuration, then hands off.
+models, skills) and the bounded intelligence loop. It builds the structural tool
+registry and compact compiled context from agent configuration; the loop then
+applies per-turn routing and gating.
 
 The semantic-model grounding is injected into the tools' context (later stages),
 not into the prompt as free text, so the model reasons over structured metadata.
@@ -17,6 +17,7 @@ from typing import Any
 from app.modules.agents.prompt import build_system_prompt
 from app.modules.agents.registry import add_custom_tools, build_registry
 from app.modules.agents.repository import agent_repository
+from app.modules.assistant.intelligence import SkillDefinition
 from app.modules.assistant.skill_registry import skill_library
 from app.modules.assistant.tools import ToolRegistry
 
@@ -52,11 +53,9 @@ class AgentService:
     ) -> tuple[ToolRegistry, str, int, int | None]:
         """Return ``(registry, system_prompt, time_budget_seconds, token_budget)``.
 
-        The skill catalog is the *default* library plus any of the agent's
-        selected skills. User-defined skills (the ``CONFIG_AGENT_SKILLS`` table)
-        are merged in a later stage (N12-G1); for now the catalog is the packaged
-        library, and a selected-but-absent skill is reported as a warning rather
-        than failing the turn.
+        Default skills are loaded into trusted task-procedure context here.
+        Discoverable skills stay out of the prompt until ``SkillRouter`` selects
+        one for a turn. The global catalog is never dumped into model context.
 
         ``token_budget`` is the agent's context-window budget (NOVA-124), or
         ``None`` when the agent leaves it unset so the loop default applies. It
@@ -67,19 +66,72 @@ class AgentService:
         registry = build_registry(agent)
         await add_custom_tools(registry, agent)
 
-        catalog = skill_library.catalog_prompt()
         requested_skills = [s for s in (agent.get("default_skills") or []) if s]
+        discoverable_skills = [
+            s for s in (agent.get("discoverable_skills") or []) if s
+        ]
+        # Every ML-capable agent gets the trusted ML procedure on demand. It is
+        # discoverable rather than default, so non-ML turns pay no prompt cost.
+        if (
+            "ml_execute" in registry.names()
+            and "native-ml" not in requested_skills
+            and "native-ml" not in discoverable_skills
+        ):
+            discoverable_skills.append("native-ml")
+        skill_bodies: list[str] = []
+        configured_names = set(requested_skills) | set(discoverable_skills)
+        owner_name = str(agent.get("owner_name") or "")
+        stored_skills = (
+            await agent_repository.list_skills(owner_name=owner_name)
+            if configured_names and owner_name
+            else []
+        )
+        user_skills = {str(skill["name"]): skill for skill in stored_skills}
+        for name in configured_names:
+            platform = skill_library.get(name)
+            if platform is not None:
+                registry.skill_definitions[name] = SkillDefinition(
+                    name=name,
+                    summary=platform.summary,
+                    triggers=platform.triggers,
+                    body=platform.body,
+                    trust_level="platform_skill",
+                )
+                continue
+            user_skill = user_skills.get(name)
+            if user_skill is not None:
+                registry.skill_definitions[name] = SkillDefinition(
+                    name=name,
+                    summary=str(user_skill.get("description") or ""),
+                    triggers=tuple(
+                        word.lower()
+                        for word in str(user_skill.get("description") or name).split()
+                    ),
+                    body=str(user_skill.get("body") or ""),
+                    trust_level="user_skill",
+                )
         if requested_skills:
-            known = set(skill_library.names())
-            missing = [s for s in requested_skills if s not in known]
+            missing = [s for s in requested_skills if s not in registry.skill_definitions]
             if missing:
                 logger.warning(
                     "Agent %s selects unknown skill(s): %s",
                     agent.get("agent_id"),
                     ", ".join(missing),
                 )
+            skill_bodies = [
+                registry.skill_definitions[name].prompt_body()
+                for name in requested_skills
+                if name in registry.skill_definitions
+            ]
 
-        system_prompt = build_system_prompt(agent, skill_catalog=catalog)
+        registry.default_skills = tuple(requested_skills)
+        registry.discoverable_skills = tuple(discoverable_skills)
+
+        system_prompt = build_system_prompt(
+            agent,
+            skill_bodies=skill_bodies,
+            actual_tools=registry.names(),
+        )
         budget = _clamp_budget(agent.get("budget_seconds"))
         token_budget = _clamp_token_budget(agent.get("budget_tokens"))
         return registry, system_prompt, budget, token_budget

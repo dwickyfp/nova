@@ -11,9 +11,9 @@ Endpoints under ``/api/v1/agents``:
   GET    /agents/semantic-models/{model_id}       → detail
   DELETE /agents/semantic-models/{model_id}       → delete
   POST   /agents/semantic-models/validate         → validate without saving
-  GET    /agents/skills                           → list user skills
+  GET    /agents/skills                           → list built-in + user skills
   POST   /agents/skills                           → create a SKILL.md-compatible skill
-  DELETE /agents/skills/{skill_id}                → delete a skill
+  DELETE /agents/skills/{skill_id}                → delete a user skill
 
 Every route requires ``get_current_user`` and is scoped to the caller. An
 unknown or foreign id answers **404**, never 403, so existence does not leak.
@@ -36,22 +36,34 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.core.deps import get_current_user
+from app.modules.agents.instructions import (
+    InstructionCompilationError,
+    compile_agent_instructions,
+)
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.schemas import (
     AgentCreateRequest,
     AgentListResponse,
     AgentUpdateRequest,
     AgentView,
+    SemanticLintResponse,
+    SemanticLintView,
     SemanticModelCreateRequest,
     SemanticModelListResponse,
     SemanticModelView,
+    SemanticPreviewRequest,
+    SemanticPreviewResponse,
     SemanticValidateRequest,
     SemanticValidateResponse,
     SkillCreateRequest,
     SkillListResponse,
     SkillView,
+    VerifiedQueryCreateRequest,
+    VerifiedQueryListResponse,
+    VerifiedQueryView,
 )
 from app.modules.agents.service import agent_service
+from app.modules.agents.skill_catalog import is_builtin_skill_id, merge_skill_rows
 from app.modules.assistant import events
 from app.modules.assistant.consent import consent_broker
 from app.modules.assistant.context import ContextManager
@@ -106,7 +118,9 @@ def _unknown_tools(tools: list) -> list[str]:
 
 
 def _agent_view(row: dict) -> AgentView:
-    return AgentView(**row)
+    # Harness strategy is platform-owned. Older rows may contain an explicit
+    # mode, but Studio now exposes one stable automatic contract.
+    return AgentView(**{**row, "harness_mode": "auto"})
 
 
 def _semantic_view(row: dict) -> SemanticModelView:
@@ -294,11 +308,23 @@ async def create_agent(
     user: dict = Depends(get_current_user),
 ):
     fields = body.model_dump()
+    # Keep accepting legacy clients that send a mode, but never persist a
+    # user-selected strategy. Provider capabilities and turn risk decide it.
+    fields["harness_mode"] = "auto"
     unknown = _unknown_tools(fields.get("default_tools", []))
     if unknown:
         raise HTTPException(
             status_code=422, detail=f"Unknown tool(s): {', '.join(sorted(unknown))}"
         )
+    try:
+        fields["compiled_instructions"] = compile_agent_instructions(
+            response=fields.get("instructions_response", ""),
+            orchestration=fields.get("instructions_orchestration", ""),
+            description=fields.get("description", ""),
+            response_style=fields.get("response_style"),
+        ).as_dict()
+    except InstructionCompilationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     created = await agent_repository.create_agent(owner_name=user["username"], fields=fields)
     return _agent_view(created)
 
@@ -329,6 +355,12 @@ async def create_semantic_model(
         parsed = parse_ossie(body.definition)
     except OssieParseError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.runtime import validate_semantic_model_ir
+
+    ir_validation = validate_semantic_model_ir(SemanticModelIR.from_ossie(parsed.as_dict()))
+    if not ir_validation.valid:
+        raise HTTPException(status_code=422, detail="; ".join(ir_validation.errors))
     created = await agent_repository.create_semantic_model(
         owner_name=user["username"],
         fields={
@@ -353,6 +385,16 @@ async def validate_semantic_model(
     from app.modules.agents.semantic.ossie import parse_ossie
 
     result = parse_ossie(body.definition, raise_on_error=False)
+    if result.valid:
+        from app.modules.agents.semantic.ir import SemanticModelIR
+        from app.modules.agents.semantic.runtime import validate_semantic_model_ir
+
+        ir_validation = validate_semantic_model_ir(
+            SemanticModelIR.from_ossie(result.as_dict())
+        )
+        result.errors.extend(ir_validation.errors)
+        result.warnings.extend(ir_validation.warnings)
+        result.valid = result.valid and ir_validation.valid
     return SemanticValidateResponse(
         valid=result.valid,
         ossie_version=result.version,
@@ -362,6 +404,146 @@ async def validate_semantic_model(
         metric_count=result.metric_count,
         relationship_count=result.relationship_count,
     )
+
+
+@router.post(
+    "/semantic-models/{model_id}/preview",
+    response_model=SemanticPreviewResponse,
+)
+async def preview_semantic_question(
+    model_id: str,
+    body: SemanticPreviewRequest,
+    user: dict = Depends(get_current_user),
+):
+    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
+    if model is None:
+        raise HTTPException(status_code=404, detail="Semantic model not found")
+    from app.modules.agents.semantic.compiler import SemanticCompiler
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.planning import SemanticPlanner
+
+    semantic_ir = SemanticModelIR.from_ossie(model.get("definition") or {})
+    planned = SemanticPlanner().plan(semantic_ir, body.question)
+    if planned.plan is None:
+        raise HTTPException(
+            status_code=422,
+            detail=planned.clarification or "The semantic question is ambiguous.",
+        )
+    try:
+        compiled = SemanticCompiler().compile(semantic_ir, planned.plan)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return SemanticPreviewResponse(
+        semantic_model_id=model_id,
+        model_fingerprint=semantic_ir.fingerprint,
+        semantic_plan=planned.plan.as_dict(),
+        generated_sql=compiled.sql,
+        confidence={
+            "score": planned.confidence.score,
+            "level": planned.confidence.level,
+            "signals": planned.confidence.signals,
+            "unresolved": list(planned.confidence.unresolved),
+        },
+        relationship_path=list(compiled.relationship_path),
+        warnings=list(compiled.warnings),
+    )
+
+
+@router.get(
+    "/semantic-models/{model_id}/lint",
+    response_model=SemanticLintResponse,
+)
+async def lint_semantic_model(
+    model_id: str,
+    user: dict = Depends(get_current_user),
+):
+    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
+    if model is None:
+        raise HTTPException(status_code=404, detail="Semantic model not found")
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.runtime import (
+        lint_semantic_model as lint_model,
+    )
+    from app.modules.agents.semantic.runtime import (
+        semantic_quality,
+        validate_semantic_model_ir,
+    )
+
+    semantic_ir = SemanticModelIR.from_ossie(model.get("definition") or {})
+    validation = validate_semantic_model_ir(semantic_ir)
+    findings = lint_model(semantic_ir)
+    verified = await agent_repository.list_verified_queries(
+        model_id, owner_name=user["username"]
+    )
+    return SemanticLintResponse(
+        semantic_model_id=model_id,
+        model_fingerprint=semantic_ir.fingerprint,
+        valid=validation.valid,
+        errors=list(validation.errors),
+        findings=[SemanticLintView(**item.__dict__) for item in findings],
+        quality=semantic_quality(semantic_ir, verified_query_count=len(verified)),
+    )
+
+
+@router.post(
+    "/semantic-models/{model_id}/verified-queries",
+    response_model=VerifiedQueryView,
+    status_code=201,
+)
+async def create_verified_query(
+    model_id: str,
+    body: VerifiedQueryCreateRequest,
+    user: dict = Depends(get_current_user),
+):
+    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
+    if model is None:
+        raise HTTPException(status_code=404, detail="Semantic model not found")
+    from app.common.sql_guard import split_sql_statements
+    from app.modules.agents.semantic.compiler import SemanticCompiler
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.planning import SemanticPlan
+    from app.modules.assistant.skills import contains_credential_shape
+    from app.modules.assistant.tools import policy
+
+    try:
+        semantic_ir = SemanticModelIR.from_ossie(model.get("definition") or {})
+        plan = SemanticPlan.from_dict(body.semantic_plan)
+        SemanticCompiler().compile(semantic_ir, plan)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    statements = split_sql_statements(body.verified_sql)
+    if contains_credential_shape(body.verified_sql):
+        raise HTTPException(status_code=422, detail="Verified SQL cannot contain credentials.")
+    classification, decisions = policy.classify_statements(statements)
+    if classification != "read_only" or len(statements) != 1 or len(decisions) != 1:
+        raise HTTPException(status_code=422, detail="Verified SQL must be one read-only query.")
+    created = await agent_repository.create_verified_query(
+        owner_name=user["username"],
+        fields={
+            **body.model_dump(),
+            "semantic_model_id": model_id,
+            "model_fingerprint": semantic_ir.fingerprint,
+        },
+    )
+    return VerifiedQueryView(**created)
+
+
+@router.get(
+    "/semantic-models/{model_id}/verified-queries",
+    response_model=VerifiedQueryListResponse,
+)
+async def list_verified_queries(
+    model_id: str,
+    user: dict = Depends(get_current_user),
+):
+    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
+    if model is None:
+        raise HTTPException(status_code=404, detail="Semantic model not found")
+    rows = await agent_repository.list_verified_queries(
+        model_id, owner_name=user["username"]
+    )
+    views = [VerifiedQueryView(**row) for row in rows]
+    return VerifiedQueryListResponse(queries=views, count=len(views))
 
 
 @router.get("/semantic-models/{model_id}", response_model=SemanticModelView)
@@ -385,7 +567,7 @@ async def delete_semantic_model(model_id: str, user: dict = Depends(get_current_
 @router.get("/skills", response_model=SkillListResponse)
 async def list_skills(user: dict = Depends(get_current_user)):
     skills = await agent_repository.list_skills(owner_name=user["username"])
-    views = [_skill_view(s) for s in skills]
+    views = [_skill_view(s) for s in merge_skill_rows(skills)]
     return SkillListResponse(skills=views, count=len(views))
 
 
@@ -394,7 +576,14 @@ async def create_skill(
     body: SkillCreateRequest,
     user: dict = Depends(get_current_user),
 ):
+    from app.modules.assistant.skill_registry import skill_library
     from app.modules.assistant.skills import contains_credential_shape
+
+    if skill_library.get(body.name) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="That name is reserved by a built-in skill.",
+        )
 
     if contains_credential_shape(body.body):
         raise HTTPException(
@@ -408,6 +597,8 @@ async def create_skill(
 
 @router.delete("/skills/{skill_id}", status_code=204)
 async def delete_skill(skill_id: str, user: dict = Depends(get_current_user)):
+    if is_builtin_skill_id(skill_id):
+        raise HTTPException(status_code=409, detail="Built-in skills are read-only.")
     if not await agent_repository.delete_skill(skill_id, owner_name=user["username"]):
         raise HTTPException(status_code=404, detail="Skill not found")
     return None
@@ -433,13 +624,30 @@ async def update_agent(
     body: AgentUpdateRequest,
     user: dict = Depends(get_current_user),
 ):
-    await _require_agent(agent_id, user["username"])
+    existing = await _require_agent(agent_id, user["username"])
     fields = body.model_dump(exclude_unset=True)
+    fields["harness_mode"] = "auto"
     unknown = _unknown_tools(fields.get("default_tools", []))
     if unknown:
         raise HTTPException(
             status_code=422, detail=f"Unknown tool(s): {', '.join(sorted(unknown))}"
         )
+    if {
+        "instructions_response",
+        "instructions_orchestration",
+        "description",
+        "response_style",
+    } & fields.keys():
+        merged = {**existing, **fields}
+        try:
+            fields["compiled_instructions"] = compile_agent_instructions(
+                response=merged.get("instructions_response", ""),
+                orchestration=merged.get("instructions_orchestration", ""),
+                description=merged.get("description", ""),
+                response_style=merged.get("response_style"),
+            ).as_dict()
+        except InstructionCompilationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     updated = await agent_repository.update_agent(
         agent_id, owner_name=user["username"], fields=fields
     )
@@ -626,6 +834,7 @@ async def send_agent_message(
         semantic_model_ids=agent.get("semantic_model_ids") or [],
         model_provider_id=agent.get("model_provider_id"),
         model_name=agent.get("model_name"),
+        harness_mode="auto",
         instructions=system_prompt,
     )
 

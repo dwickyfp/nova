@@ -24,6 +24,15 @@ def service(monkeypatch):
     async def roles(username, password):
         return ["public"]
 
+    async def security(username, password):
+        return {
+            "roles": ["public"],
+            "assigned_roles": ["public"],
+            "default_role": "public",
+            "active_role": "public",
+            "security_context_version": 1,
+        }
+
     async def no_setup():
         return True
 
@@ -35,11 +44,10 @@ def service(monkeypatch):
 
     monkeypatch.setattr(svc, "verify_credentials", ok_credentials)
     monkeypatch.setattr(svc, "get_user_roles", roles)
+    monkeypatch.setattr(svc, "_resolve_security_state", security)
     monkeypatch.setattr(service_module, "is_setup_complete", no_setup)
     monkeypatch.setattr(service_module, "write_audit_log", noop_audit)
-    monkeypatch.setattr(
-        service_module.session_store, "create", session_create, raising=False
-    )
+    monkeypatch.setattr(service_module.session_store, "create", session_create, raising=False)
     monkeypatch.setattr(service_module, "encrypt_password", lambda _: "enc")
     monkeypatch.setattr(service_module, "create_access_token", lambda u, s: "tok")
     return svc

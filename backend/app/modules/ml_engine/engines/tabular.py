@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pyarrow as pa
 from sklearn.model_selection import train_test_split
@@ -52,6 +54,22 @@ def train_tabular(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     )
     budget = spec.budget
     assert budget is not None
+    estimator_parameters = spec.parameters.get("estimator_parameters")
+    if estimator_parameters is None:
+        # Compatibility for early MLExecutionSpec callers. Runtime controls are
+        # removed; every remaining key is treated as an estimator parameter.
+        estimator_parameters = {
+            key: value
+            for key, value in spec.parameters.items()
+            if key not in {"test_size", "data_freshness_token"}
+        }
+    if not isinstance(estimator_parameters, dict):
+        raise ValueError("estimator_parameters must be an object")
+    if spec.algorithm == "auto" and estimator_parameters:
+        raise ValueError(
+            "Estimator hyperparameters require an explicit ALGORITHM; auto search "
+            "does not silently override or ignore them"
+        )
     selection = AutoMLRouter(random_seed=settings.ML_RANDOM_SEED).select(
         task=spec.task,
         mode=spec.mode,
@@ -62,19 +80,29 @@ def train_tabular(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         timeout_seconds=budget.timeout_seconds,
         algorithm=spec.algorithm,
         metric=spec.metric,
-        parameters=spec.parameters.get("estimator_parameters"),
+        parameters=estimator_parameters,
     )
     predicted = selection.estimator.predict(X_valid)
-    metrics = evaluate_predictions(spec.task, y_valid, predicted)
+    metrics: dict[str, Any] = evaluate_predictions(spec.task, y_valid, predicted)
+    metric_name = selection.metric
+    metric_value = metrics.get(metric_name)
     metrics.update(
         {
             "selected_estimator": selection.name,
             "selection_metric": selection.metric,
-            "validation_score": selection.score,
+            "metric_name": metric_name,
+            "metric_value": metric_value,
+            "higher_is_better": True,
+            "loss_name": "flaml_validation_loss" if selection.backend == "flaml" else None,
+            "loss_value": selection.loss_value,
+            # Compatibility field, now always a directly computed metric rather
+            # than the invalid universal ``1 - loss`` transformation.
+            "validation_score": metric_value,
             "candidates_evaluated": selection.candidates_evaluated,
             "search_duration_seconds": round(selection.duration_seconds, 6),
             "hyperparameters": selection.hyperparameters,
             "feature_metadata": serialize_profiles(preprocessor.profiles),
+            "arrow_to_pandas_seconds": preprocessor.arrow_to_pandas_seconds,
         }
     )
     bundle = {

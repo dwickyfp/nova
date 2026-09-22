@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.common.responses import SanitizingJSONResponse
@@ -12,7 +12,10 @@ from app.common.sql_guard import (
     is_unscoped_mutation,
 )
 from app.core.deps import get_current_user
+from app.modules.access_control.security_context import SecurityContext, SecurityContextError
+from app.modules.auth.service import auth_service
 from app.modules.query.service import query_service
+from app.proxy.session import parse_role_statement
 
 router = APIRouter()
 
@@ -29,7 +32,7 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 __all__ = ["SanitizingJSONResponse", "router"]
 
 
-def _resolve_active_role(user: dict) -> str | None:
+def _resolve_active_role(user: dict) -> str:
     """Return the role the engine must activate for this request.
 
     The session's ``active_role`` (set at login and changed through
@@ -40,15 +43,13 @@ def _resolve_active_role(user: dict) -> str | None:
     while executing under another (the bottom-left switcher versus the
     workspace tab picker).
 
-    Falls back to the first granted role for older sessions that predate
-    ``active_role``. The value is re-checked against the granted set so a
-    corrupted or forged session cannot elevate.
+    Older or corrupted sessions without an explicit role fail closed. Role
+    ordering is never an authorization policy.
     """
-    granted = user.get("roles") or []
-    active = user.get("active_role")
-    if active and active in granted:
-        return active
-    return granted[0] if granted else None
+    try:
+        return SecurityContext.from_session(user).active_role
+    except SecurityContextError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 class QueryRequest(BaseModel):
@@ -106,6 +107,26 @@ async def execute_query(
     Stops on first error — returns results collected so far plus an error result.
     Always returns a list (single statement → list with one element).
     """
+    try:
+        requested_role = parse_role_statement(req.sql)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if requested_role is not None:
+        target = user.get("default_role") if requested_role.upper() == "DEFAULT" else requested_role
+        if not target:
+            raise HTTPException(status_code=403, detail="No explicit default role is configured")
+        switched = await auth_service.switch_role(user["session_id"], target)
+        return [
+            QueryResponse(
+                success=True,
+                columns=["CURRENT_ROLE()", "SECURITY_CONTEXT_VERSION"],
+                rows=[[switched["active_role"], switched["security_context_version"]]],
+                row_count=1,
+                original_sql=req.sql,
+                executed_sql="",
+            )
+        ]
+
     results = await query_service.execute_statements(
         sql=req.sql,
         username=user["username"],

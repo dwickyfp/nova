@@ -111,8 +111,8 @@ def execute_client(monkeypatch):
         return {
             "username": "analyst",
             "session_id": "sess-success-contract",
-            "roles": [],
-            "active_role": None,
+            "roles": ["analyst"],
+            "active_role": "analyst",
             "encrypted_password": "enc",
         }
 
@@ -184,9 +184,7 @@ class TestMultiStatementIsScoredPerStatement:
 
         engine.execute_as_user = execute_as_user
 
-        payload = client.post(
-            EXECUTE_ENDPOINT, json={"sql": f"{SELECT_SQL}; {BAD_SQL}"}
-        ).json()
+        payload = client.post(EXECUTE_ENDPOINT, json={"sql": f"{SELECT_SQL}; {BAD_SQL}"}).json()
 
         assert [item["success"] for item in payload] == [True, False]
         assert payload[0]["error"] is None

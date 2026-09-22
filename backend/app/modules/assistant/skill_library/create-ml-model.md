@@ -1,39 +1,48 @@
 ---
 name: create-ml-model
 title: Train an ML model with CREATE ML_MODEL
-summary: Author a valid Nova CREATE ML_MODEL statement that the Python ML engine intercepts and trains.
-triggers: create ml_model, train model, classification, regression, machine learning, ml model, train, latih model
-source: docs/sql_docs/03-ml-model-ddl.md
+summary: Author a valid persistent CREATE ML_MODEL worksheet statement for Nova's native ML runtime.
+triggers: create, ml_model, ddl, worksheet, train, latih
+source: docs/28-native-ml-runtime.md
 ---
 
 # Skill: create-ml-model
 
-Author a `CREATE ML_MODEL` statement. Nova **intercepts** it in Python and trains
-a scikit-learn model; it is **never** sent to StarRocks in this form. There is no
-engine equivalent.
+Author a `CREATE ML_MODEL` worksheet statement. Nova intercepts the statement
+and runs its bounded native ML runtime; the DDL is not sent to StarRocks as-is.
+Do not claim that a drafted statement has trained a model.
 
 ## Grammar
 
 ```
 CREATE ML_MODEL <model_name>
-  TYPE = CLASSIFICATION | REGRESSION
-  TARGET = <target_column>
-  [ALGORITHM = auto | linear | logistic | decision_tree | random_forest
-             | gradient_boost | knn | svm]
+  TYPE = CLASSIFICATION | REGRESSION | FORECAST
+       | ANOMALY_DETECTION | CLUSTERING
+  [TARGET = <target_column>]
+  [TIMESTAMP = <timestamp_column>]
+  [SERIES = <series_column>]
+  [HORIZON = <positive_integer>]
+  [FREQUENCY = '<frequency>']
+  [MODE = INTERACTIVE | BALANCED | BEST]
+  [ALGORITHM = <supported_algorithm>]
   [TEST_SIZE = <0 ≤ x < 1>]
   [FEATURES = (<col>, <col>, …)]
   [HYPERPARAMETERS = JSON '{"n_estimators": 100}']
   AS SELECT …
 ```
 
-- `TYPE` and `TARGET` are **required**; everything else is optional.
+- `TYPE` is always required.
+- Classification, regression, and forecast require `TARGET`.
+- Forecast also requires `TIMESTAMP` and `HORIZON`; `SERIES` and `FREQUENCY`
+  are optional.
+- Anomaly detection and clustering are unsupervised and do not require
+  `TARGET`.
 - The training query must start with `SELECT`.
 - `TEST_SIZE` default `0.2`; must satisfy `0 ≤ x < 1`.
 - `HYPERPARAMETERS` must be a JSON **object**.
 - `FEATURES` must list at least one column.
-- Algorithm support: classification = logistic, decision_tree, random_forest,
-  gradient_boost, knn, svm; regression = linear, decision_tree, random_forest,
-  gradient_boost, knn, svm. `auto` picks by row count.
+- Estimator hyperparameters for classification or regression require an
+  explicit algorithm; they cannot be combined with `ALGORITHM = auto`.
 
 ## Minimal template
 
@@ -44,17 +53,18 @@ CREATE ML_MODEL <name>
   AS SELECT <feature_cols...>, <target_column> FROM <db>.<table>
 ```
 
-## Full template
+## Forecast template
 
 ```sql
-CREATE ML_MODEL `revenue_model`
-  TYPE = REGRESSION
+CREATE ML_MODEL `revenue_forecast`
+  TYPE = FORECAST
   TARGET = `revenue`
-  FEATURES = (`visits`, spend)
-  ALGORITHM = random_forest
-  TEST_SIZE = 0.25
-  HYPERPARAMETERS = JSON '{"n_estimators": 100}'
-  AS SELECT visits, spend, revenue FROM fact_sales
+  TIMESTAMP = `sale_date`
+  SERIES = `store_id`
+  HORIZON = 30
+  FREQUENCY = 'D'
+  MODE = BALANCED
+  AS SELECT sale_date, store_id, revenue FROM analytics.daily_revenue
 ```
 
 ## Training from a stage file
@@ -69,16 +79,20 @@ CREATE ML_MODEL sentiment_model
   AS SELECT review_text, label FROM @reviews.training.csv
 ```
 
-## Output and storage
+## Result and lifecycle
 
 - Response columns: `model_id, model_name, model_type, algorithm, version,
   status, training_rows, feature_columns, metrics`.
-- Metadata is stored in `NOVA_SYSTEM.ML_MODELS` and `NOVA_SYSTEM.ML_MODEL_VERSIONS`
-  (`training_sql` is the redacted form).
+- Persistence reserves a `TRAINING` version, promotes a checksummed artifact,
+  and then marks the version `READY`. A failed run must not replace the previous
+  ready version.
+- Use `ML_PREDICT` for classification or regression inference. Use the
+  table-style `ML_FORECAST` statement for persisted forecast inference.
 
 ## Caveats
 
-- Training needs at least 10 valid rows; the target column must exist in the
-  result set — otherwise training fails with a clear error.
+- Classification and regression need at least 10 valid target rows. Forecast
+  needs at least `max(10, horizon + 2)` observations per series. Anomaly
+  detection needs 10 rows; clustering needs 6.
 - You author and explain the statement; the user runs it in a worksheet. Do not
   claim the model is trained until they run it.

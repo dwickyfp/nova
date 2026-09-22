@@ -44,7 +44,7 @@ translates the query into StarRocks SQL, and records the action in the audit log
 | **Fast analytics** | StarRocks-powered real-time OLAP and interactive SQL |
 | **Unified workspace** | SQL worksheet, catalog exploration, data management, and monitoring |
 | **Stage-native files** | Storage-agnostic file access through the sacred `@stage` syntax |
-| **Native security** | StarRocks users and grants remain the source of truth |
+| **Centralized security** | StarRocks authenticates users and marks one active role; Apache Ranger alone authorizes objects, row filters, and masks |
 | **Credential isolation** | Storage and user credentials never appear in UI state, API responses, logs, or system tables |
 | **MySQL compatibility** | Connect existing MySQL clients through Nova's protocol proxy |
 | **Built-in intelligence** | ML workflows and SQL-native AI functions such as `AI_COMPLETE` and `AI_SENTIMENT` |
@@ -131,7 +131,8 @@ Nova supports `REGRESSION`, `CLASSIFICATION`, `FORECAST`,
 `ANOMALY_DETECTION`, and `CLUSTERING` from worksheet SQL. Numeric,
 categorical, boolean, and datetime features share a serialized preprocessing
 pipeline. Training data is streamed as bounded Arrow batches using the
-logged-in StarRocks user, so normal StarRocks RBAC still applies.
+logged-in StarRocks user and explicit active role, so Ranger applies the same
+permissions, row filters, and masks used by every other query surface.
 
 Use database context `NOVA_EXAMPLE` for the seeded demo data.
 
@@ -395,13 +396,17 @@ flowchart LR
 ```bash
 cd docker
 cp .env.example .env
-docker compose -f docker-compose-engine.yml up -d
+docker compose -f docker-compose-engine.yml -f docker-compose.dev.yml up -d
 ```
+
+The development override publishes StarRocks SQL only on
+`127.0.0.1:29030`, allowing the host-side backend to reach the engine. The
+primary Compose stack does not publish the native SQL port.
 
 Verify the infrastructure:
 
 ```bash
-docker compose -f docker-compose-engine.yml ps
+docker compose -f docker-compose-engine.yml -f docker-compose.dev.yml ps
 curl http://localhost:8030/api/health
 ```
 
@@ -433,7 +438,7 @@ Open [http://localhost:5173](http://localhost:5173).
 ### 4. Connect directly to StarRocks
 
 ```bash
-mysql -h 127.0.0.1 -P 9030 -u nova_admin -p
+mysql -h 127.0.0.1 -P 29030 -u nova_admin -p
 ```
 
 The development password is `nova`. Change it after the first login.
@@ -449,7 +454,7 @@ The development password is `nova`. Change it after the first login.
 | Nova API | `localhost:8000` | FastAPI backend |
 | Nova MySQL Proxy | `localhost:4406` | Nova-aware MySQL protocol |
 | StarRocks FE HTTP | `localhost:8030` | Engine API and health |
-| StarRocks MySQL | `localhost:9030` | Direct development connection |
+| StarRocks MySQL | `127.0.0.1:29030` | Direct development connection; dev override only |
 | StarRocks BE HTTP | `localhost:8040` | Backend node API |
 | Object Storage API | `localhost:9000` | Local stage storage |
 | Object Storage Console | `localhost:9001` | Local storage administration |
@@ -490,9 +495,9 @@ nova/
 
 The [`docs/`](docs/) directory contains the detailed product specification:
 
-- **27 feature modules** covering SQL, stages, governance, ML, dashboards,
+- **29 feature modules** covering SQL, stages, governance, ML, dashboards,
   cluster operations, backup, indexes, and data sharing.
-- **7 architecture documents** for the SQL dialect, storage providers,
+- **8 architecture documents** for the SQL dialect, storage providers,
   backend, frontend, system database, and MySQL proxy.
 - **Gap analysis** tracking parity targets and remaining platform work.
 
@@ -502,8 +507,10 @@ Start with:
 - [SQL worksheet](docs/02-sql-worksheet.md)
 - [Stage manager](docs/04-stage-manager.md)
 - [Machine learning](docs/19-machine-learning.md)
+- [Ranger access control](docs/29-ranger-access-control.md)
 - [SQL dialect architecture](docs/arch-01-sql-dialect-engine.md)
 - [Backend architecture](docs/arch-03-backend-architecture.md)
+- [Ranger authorization architecture](docs/arch-08-ranger-authorization.md)
 
 ## Development checks
 
@@ -554,10 +561,9 @@ incrementally.
 > ("Project Structure") describes the backend layout as `app/core/`, `app/db/`,
 > `app/models/`, `app/schemas/`, `app/services/`, `app/sql_dialect/`,
 > `app/storage/`, `app/proxy/`, `app/api/v1/endpoints/`. The repository does not
-> use that layout: only `app/core/` and `app/common/` exist as shared packages,
-> and all domain code lives in `app/modules/<domain>/` (routers, services,
-> schemas colocated per module, registered in `app/main.py`). `app/proxy/` does
-> not exist at all — see Phase 8. `AGENTS.md` and this README have not been
+> use that layout: shared code lives in `app/core/`, `app/common/`, and
+> `app/integrations/`; domain code lives in `app/modules/<domain>/`, and the
+> MySQL gateway lives in `app/proxy/`. `AGENTS.md` and this README have not been
 > reconciled; treat `app/modules/` as the real layout until `AGENTS.md` is
 > updated.
 
@@ -568,7 +574,7 @@ partial implementation say so explicitly.
 ## Roadmap
 
 ### Phase 1 — Foundation & Auth ✅
-- [x] Docker infrastructure (StarRocks FE/BE, MinIO, Redis) — `docker/docker-compose-engine.yml` (starrocks/fe-ubuntu:4.1.4, be-ubuntu:4.1.4, minio, redis:7-alpine). **Engine pin bumped 4.1.1 → 4.1.4 (NOVA-51, commit `4a9848e`)**; see the migration note in `HOW_TO_RUN.md` for the Parquet `isAdjustedToUTC=false` timestamp behaviour change
+- [x] Docker infrastructure (patched StarRocks FE 4.1.4, BE 4.1.4, Ranger 2.9.0, MinIO, Redis, Nova backend/proxy) — `docker/docker-compose-engine.yml`. The Ranger profile preserves Nova's verified 4.1.4 engine baseline and exact commit; see `docs/29-ranger-access-control.md`.
 - [x] FastAPI modular monolith with asyncmy driver — `backend/app/main.py`, `backend/app/core/database.py:6` (`import asyncmy`)
 - [x] JWT + Redis session management — `backend/app/core/redis.py`, `backend/app/modules/auth/service.py`
 - [x] StarRocks-native authentication (first-login setup wizard) — `backend/app/modules/auth/{router,service}.py`; the frontend implements this as a **setup form inside sign-in**, not a separate wizard route (`frontend/src/features/auth/sign-in/components/user-auth-form.tsx:29,88,147`)
@@ -818,6 +824,15 @@ reported `skipped` with an explicit reason.
 ## Decision Log
 
 Durable decisions with their reason, trade-off, and the trigger that reopens them. Newest first.
+
+### Runtime-owned agent and semantic intelligence — 2026-09-22
+
+| Decision | Reason | Trade-off accepted | Reopen trigger |
+|---|---|---|---|
+| **Provider models emit bounded actions and SemanticPlans; Nova owns routing, joins, SQL compilation, validation, recovery, and evidence** | Tool availability, authorization, graph traversal, grain, fanout, additivity, and factual grounding are deterministic platform responsibilities. Moving them out of prompts improves weaker-model portability and prevents model-invented joins or facts | Ambiguous natural-language concept selection may still need one constrained provider call or a clarification | A deterministic rule demonstrably reduces semantic accuracy, or a new provider protocol requires an adapter capability |
+| **Ossie remains the external semantic format and compiles to versioned Nova Semantic IR** | Existing models stay portable while the runtime gains facts/dimensions/metrics, grain, additivity, relationship paths, named filters, literals, and VQRs | Old models without cardinality can no longer execute unsafe cross-dataset metrics until metadata is supplied | Ossie adopts equivalent executable semantics that make an internal normalization layer redundant |
+| **Default skills are injected procedures; discoverable skills are retrieved per turn; no global catalog is sent** | A catalog is not a procedure and duplicate catalog injection wasted context while advertising capabilities that might not exist | A discoverable skill with no lexical match is not visible to the action model | Skill retrieval gains a higher-quality authorized index or an admin explicitly pins the skill as a default |
+| **Verified queries and semantic workload telemetry are version-bound and review-only** | Known-good plans should guide weak models, while model changes must invalidate stale SQL and workload suggestions must not mutate governed definitions | Revalidation and adoption are explicit operations | Nova gains an authorized semantic deployment workflow with transactional revalidation |
 
 ### Global assistant panel (NOVA-139) — 2026-09-19
 

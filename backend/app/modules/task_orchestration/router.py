@@ -167,9 +167,7 @@ class _GraphAccess:
         )
         return [task] if task else []
 
-    def _task_by_name(
-        self, name: str, scope: tuple[str, ...]
-    ) -> dict[str, Any] | None:
+    def _task_by_name(self, name: str, scope: tuple[str, ...]) -> dict[str, Any] | None:
         """Resolve an edge endpoint to its task row.
 
         An edge stores a **bare** task name, but the task row is scoped. The
@@ -260,9 +258,7 @@ async def list_tasks(
                 ),
                 schedule_expr=task.get("schedule_expr"),
                 timezone=task.get("timezone"),
-                overlap_policy=_narrow(
-                    task.get("overlap_policy"), _OVERLAP_POLICIES, "skip"
-                ),
+                overlap_policy=_narrow(task.get("overlap_policy"), _OVERLAP_POLICIES, "skip"),
                 created_by=task.get("created_by"),
                 graph_id=graph_id,
                 created_at=task.get("created_at"),
@@ -316,9 +312,7 @@ async def list_graphs(user: dict = current_user) -> schemas.GraphListResponse:
 
 
 @router.get("/graphs/{graph_id}", response_model=schemas.GraphDetailResponse)
-async def get_graph(
-    graph_id: str, user: dict = current_user
-) -> schemas.GraphDetailResponse:
+async def get_graph(graph_id: str, user: dict = current_user) -> schemas.GraphDetailResponse:
     """A graph's definition: every node (including finalizers) and every edge."""
     access = _GraphAccess(_repository, user)
     graph_tasks = await access.require(graph_id)
@@ -337,9 +331,7 @@ async def get_graph(
             ),
             schedule_expr=task.get("schedule_expr"),
             timezone=task.get("timezone"),
-            overlap_policy=_narrow(
-                task.get("overlap_policy"), _OVERLAP_POLICIES, "skip"
-            ),
+            overlap_policy=_narrow(task.get("overlap_policy"), _OVERLAP_POLICIES, "skip"),
             when_expr=task.get("when_expr"),
             created_by=task.get("created_by"),
             is_finalizer=str(task["name"]) in finalizers,
@@ -386,9 +378,7 @@ async def list_graph_runs(
     await access.require(graph_id)
     total = await _repository.count_graph_runs(graph_id)
     runs = await _repository.list_graph_runs_page(graph_id, limit=limit, offset=offset)
-    return schemas.GraphRunListResponse(
-        runs=[_run_response(run) for run in runs], count=total
-    )
+    return schemas.GraphRunListResponse(runs=[_run_response(run) for run in runs], count=total)
 
 
 @router.get("/runs/{graph_run_id}", response_model=schemas.GraphRunDetailResponse)

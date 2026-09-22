@@ -97,9 +97,7 @@ class GraphRunWorker:
         """
         graph_run = await self._repository.get_graph_run(job.graph_run_id)
         if graph_run is None:
-            logger.warning(
-                "graph run %s not found; the stream job is stale", job.graph_run_id
-            )
+            logger.warning("graph run %s not found; the stream job is stale", job.graph_run_id)
             return None
         # ``NOVA_SYSTEM`` is the source of truth: the graph id comes from the
         # persisted row, not the stream payload, which is transport only.
@@ -163,9 +161,9 @@ class GraphRunWorker:
         by_id = {task["id"]: task for task in tasks}
         by_name = {task["name"]: task for task in tasks}
 
-        edge_names = {
-            str(edge["parent_task"]) for edge in edges
-        } | {str(edge["child_task"]) for edge in edges}
+        edge_names = {str(edge["parent_task"]) for edge in edges} | {
+            str(edge["child_task"]) for edge in edges
+        }
         node_names = [name for name in by_name if name in edge_names]
         if not node_names:
             # A standalone task is a one-node graph; its graph id is its own
@@ -220,17 +218,13 @@ class GraphRunWorker:
             finalize_ready, finalize_skipped = finalizers_ready(graph, states)
 
             if finalize_ready:
-                claimed = await self._execute_ready(
-                    job, graph, finalize_ready, by_name, rows
-                )
+                claimed = await self._execute_ready(job, graph, finalize_ready, by_name, rows)
                 if not claimed:
                     return GraphState.RUNNING
                 continue
 
             if finalize_skipped:
-                recorded = await self._persist_skips(
-                    job, finalize_skipped, by_name, rows
-                )
+                recorded = await self._persist_skips(job, finalize_skipped, by_name, rows)
                 if recorded:
                     continue
 
@@ -255,10 +249,7 @@ class GraphRunWorker:
         node_names: list[str],
         by_name: dict[str, dict[str, Any]],
     ) -> tuple[dict[str, NodeState], dict[str, dict[str, Any]]]:
-        rows = {
-            row["task_id"]: row
-            for row in await self._repository.list_node_runs(graph_run_id)
-        }
+        rows = {row["task_id"]: row for row in await self._repository.list_node_runs(graph_run_id)}
         states: dict[str, NodeState] = {}
         for name in node_names:
             task = by_name.get(name)
@@ -289,9 +280,7 @@ class GraphRunWorker:
                 continue
             row = existing.get(task["id"])
             if row is None:
-                row = await self._repository.create_task_run_once(
-                    job.graph_run_id, task["id"]
-                )
+                row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
             moved = await self._repository.transition_task_run(
                 row["id"],
                 [NodeState.PENDING.value, NodeState.ABANDONED.value],
@@ -299,9 +288,7 @@ class GraphRunWorker:
             )
             if moved:
                 changed = True
-                await self._audit(
-                    job, task, task.get("created_by"), NodeState.SKIPPED.value, None
-                )
+                await self._audit(job, task, task.get("created_by"), NodeState.SKIPPED.value, None)
         return changed
 
     async def _execute_ready(
@@ -329,9 +316,7 @@ class GraphRunWorker:
             task = by_name[name]
             row = existing.get(task["id"])
             if row is None:
-                row = await self._repository.create_task_run_once(
-                    job.graph_run_id, task["id"]
-                )
+                row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
             current = _to_node_state(str(row["state"] or "pending"))
             if current not in _RUNNABLE:
                 # Another delivery already handled this node, or a live worker
@@ -350,16 +335,12 @@ class GraphRunWorker:
         )
         return True
 
-    async def _when_then_execute(
-        self, job: GraphRunJob, task: dict[str, Any], run_id: str
-    ) -> None:
+    async def _when_then_execute(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> None:
         """Evaluate ``WHEN`` then execute, as one schedulable unit."""
         if await self._when_allows(job, task, run_id):
             await self._execute_one(job, task, run_id)
 
-    async def _when_allows(
-        self, job: GraphRunJob, task: dict[str, Any], run_id: str
-    ) -> bool:
+    async def _when_allows(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> bool:
         """Evaluate the node's ``WHEN``. False skips the node (and descendants).
 
         The expression is evaluated on the owner's connection through the same
@@ -374,25 +355,20 @@ class GraphRunWorker:
             name=task["name"],
             body=task.get("definition") or "",
             database=task.get("database_name"),
+            active_role=task.get("owner_role"),
         )
         try:
-            allowed = await self._executor.evaluate_when(
-                expression, spec=spec, owner=owner
-            )
+            allowed = await self._executor.evaluate_when(expression, spec=spec, owner=owner)
         except Exception as exc:  # noqa: BLE001 - an error is a failure, not a skip
             message = _safe_message(exc)
-            await self._finalize(
-                job, task, run_id, owner, NodeState.FAILED, error=message
-            )
+            await self._finalize(job, task, run_id, owner, NodeState.FAILED, error=message)
             return False
         if allowed:
             return True
         await self._finalize(job, task, run_id, owner, NodeState.SKIPPED)
         return False
 
-    async def _execute_one(
-        self, job: GraphRunJob, task: dict[str, Any], run_id: str
-    ) -> None:
+    async def _execute_one(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> None:
         owner = task.get("created_by")
         if not owner:
             await self._finalize(
@@ -414,6 +390,7 @@ class GraphRunWorker:
             name=task["name"],
             body=body,
             database=task.get("database_name"),
+            active_role=task.get("owner_role"),
         )
 
         async def heartbeat() -> None:
@@ -506,9 +483,7 @@ class GraphRunWorker:
             state.value,
         )
         if moved:
-            logger.info(
-                "graph run %s settled as %s", job.graph_run_id, state.value
-            )
+            logger.info("graph run %s settled as %s", job.graph_run_id, state.value)
             await write_audit_log(
                 event_type="task_graph_run",
                 user_name="nova-worker",
@@ -555,8 +530,7 @@ def _finalizers_waiting(
     """
     decided = set(ready) | set(skipped)
     return any(
-        states.get(name, NodeState.PENDING) not in TERMINAL_NODE_STATES
-        and name not in decided
+        states.get(name, NodeState.PENDING) not in TERMINAL_NODE_STATES and name not in decided
         for name in graph.finalizer_nodes
     )
 

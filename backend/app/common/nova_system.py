@@ -6,6 +6,8 @@ The init-nova.sql creates tables with flat naming:
 All persistent state lives in StarRocks NOVA_SYSTEM — no SQLite, no PostgreSQL.
 """
 
+from asyncmy.errors import ProgrammingError
+
 from app.core.database import db
 
 WORKSPACE_ENTRIES_DDL = """
@@ -142,6 +144,46 @@ DISTRIBUTED BY HASH(run_id) BUCKETS 4
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
+RANGER_CONTROL_PLANE_DDL = (
+    """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SECURITY_ROLE_PROJECTIONS (
+    role_name VARCHAR(128) NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    marker_exists BOOLEAN NOT NULL DEFAULT "false",
+    ranger_exists BOOLEAN NOT NULL DEFAULT "false",
+    message VARCHAR(2048),
+    updated_at DATETIME NOT NULL
+) PRIMARY KEY(role_name)
+DISTRIBUTED BY HASH(role_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+""",
+    """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SECURITY_POLICIES (
+    policy_name VARCHAR(512) NOT NULL,
+    ranger_id BIGINT,
+    ranger_guid VARCHAR(128),
+    state VARCHAR(32) NOT NULL,
+    desired_hash TEXT,
+    updated_at DATETIME NOT NULL
+) PRIMARY KEY(policy_name)
+DISTRIBUTED BY HASH(policy_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+""",
+    """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_DATA_SCOPE_ASSIGNMENTS (
+    assignment_id VARCHAR(128) NOT NULL,
+    principal VARCHAR(128) NOT NULL,
+    role_name VARCHAR(128) NOT NULL,
+    dimension_key VARCHAR(128) NOT NULL,
+    scope_values_json TEXT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    updated_at DATETIME NOT NULL
+) PRIMARY KEY(assignment_id)
+DISTRIBUTED BY HASH(assignment_id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+""",
+)
+
 ML_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("ML_MODELS", "current_version", 'INT DEFAULT "0"'),
     ("ML_MODEL_VERSIONS", "artifact_uri", "VARCHAR(2048)"),
@@ -153,6 +195,10 @@ ML_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("ML_MODEL_VERSIONS", "algorithm", "VARCHAR(128)"),
     ("ML_MODEL_VERSIONS", "feature_schema", "TEXT"),
     ("ML_MODEL_VERSIONS", "training_duration_ms", "BIGINT"),
+    ("ML_MODEL_VERSIONS", "reservation_token", "VARCHAR(64)"),
+    ("ML_MODEL_VERSIONS", "ready_at", "DATETIME"),
+    ("ML_MODEL_VERSIONS", "failed_at", "DATETIME"),
+    ("ML_MODEL_VERSIONS", "failure_reason", "TEXT"),
 )
 
 ML_ALIAS_PK_DDL = """
@@ -205,6 +251,10 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_VERSIONS_PK (
     algorithm VARCHAR(128),
     feature_schema TEXT,
     training_duration_ms BIGINT,
+    reservation_token VARCHAR(64),
+    ready_at DATETIME,
+    failed_at DATETIME,
+    failure_reason TEXT,
     model_binary TEXT,
     created_at DATETIME NOT NULL,
     created_by VARCHAR(128)
@@ -229,7 +279,7 @@ TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # after ``max_task_consecutive_fail_count`` consecutive failures but does
     # not expose the count, so Nova keeps its own to detect the threshold
     # (NOVA-37 AC #3). Reset to 0 on a successful run.
-    ("CONFIG_TASKS", "consecutive_fail_count", "INT DEFAULT \"0\""),
+    ("CONFIG_TASKS", "consecutive_fail_count", 'INT DEFAULT "0"'),
     # Tasks are scoped to a database.schema like a stage (CONFIG_STAGES). The
     # column was added after the table shipped, so an existing install needs the
     # additive migration; existing rows default to NULL and are treated as the
@@ -270,9 +320,15 @@ async def migrate_task_orchestration_columns() -> None:
     for table, column, column_type in TASK_ORCHESTRATION_COLUMN_MIGRATIONS:
         if await _column_exists(table, column):
             continue
-        await db.execute_system(
-            f"ALTER TABLE NOVA_SYSTEM.{table} ADD COLUMN {column} {column_type}"
-        )
+        try:
+            await db.execute_system(
+                f"ALTER TABLE NOVA_SYSTEM.{table} ADD COLUMN {column} {column_type}"
+            )
+        except ProgrammingError:
+            # Web, scheduler, and worker initialize concurrently in development.
+            # Another process may add the column after our existence check.
+            if not await _column_exists(table, column):
+                raise
 
 
 async def migrate_ml_metadata() -> None:
@@ -289,12 +345,12 @@ async def migrate_ml_metadata() -> None:
             "INSERT INTO NOVA_SYSTEM.ML_MODEL_VERSIONS_PK "
             "SELECT model_id,version,status,training_rows,metrics,artifact_uri,"
             "artifact_sha256,artifact_size,task,framework,framework_version,algorithm,"
-            "feature_schema,training_duration_ms,model_binary,created_at,created_by "
+            "feature_schema,training_duration_ms,NULL,NULL,NULL,NULL,model_binary,"
+            "created_at,created_by "
             "FROM NOVA_SYSTEM.ML_MODEL_VERSIONS"
         )
         await db.execute_system(
-            "ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS "
-            "RENAME ML_MODEL_VERSIONS_LEGACY"
+            "ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS RENAME ML_MODEL_VERSIONS_LEGACY"
         )
         await db.execute_system(
             "ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS_PK RENAME ML_MODEL_VERSIONS"
@@ -307,16 +363,13 @@ async def migrate_ml_metadata() -> None:
             "m.hyperparameters,m.training_sql,m.database_name,m.schema_name,m.created_at,"
             "m.created_by,GREATEST(COALESCE(m.current_version,0),"
             "COALESCE(v.latest_version,0)),m.updated_at FROM NOVA_SYSTEM.ML_MODELS m "
-            "LEFT JOIN (SELECT model_id,MAX(version) AS latest_version "
+            "LEFT JOIN (SELECT model_id,"
+            "MAX(CASE WHEN status='READY' THEN version ELSE 0 END) AS latest_version "
             "FROM NOVA_SYSTEM.ML_MODEL_VERSIONS GROUP BY model_id) v "
             "ON m.model_id=v.model_id"
         )
-        await db.execute_system(
-            "ALTER TABLE NOVA_SYSTEM.ML_MODELS RENAME ML_MODELS_LEGACY"
-        )
-        await db.execute_system(
-            "ALTER TABLE NOVA_SYSTEM.ML_MODELS_PK RENAME ML_MODELS"
-        )
+        await db.execute_system("ALTER TABLE NOVA_SYSTEM.ML_MODELS RENAME ML_MODELS_LEGACY")
+        await db.execute_system("ALTER TABLE NOVA_SYSTEM.ML_MODELS_PK RENAME ML_MODELS")
     if await _column_exists("ML_MODEL_ALIASES", "owner_name"):
         return
     await db.execute_system(ML_ALIAS_PK_DDL)
@@ -328,9 +381,7 @@ async def migrate_ml_metadata() -> None:
     await db.execute_system(
         "ALTER TABLE NOVA_SYSTEM.ML_MODEL_ALIASES RENAME ML_MODEL_ALIASES_LEGACY"
     )
-    await db.execute_system(
-        "ALTER TABLE NOVA_SYSTEM.ML_MODEL_ALIASES_PK RENAME ML_MODEL_ALIASES"
-    )
+    await db.execute_system("ALTER TABLE NOVA_SYSTEM.ML_MODEL_ALIASES_PK RENAME ML_MODEL_ALIASES")
 
 
 async def init_task_orchestration() -> None:
@@ -353,6 +404,8 @@ async def init_nova_system() -> None:
     try:
         await db.execute_system(WORKSPACE_ENTRIES_DDL)
         await db.execute_system(WORKSPACE_FILE_VERSIONS_DDL)
+        for ddl in RANGER_CONTROL_PLANE_DDL:
+            await db.execute_system(ddl)
         await migrate_ml_metadata()
         result = await db.execute_system(
             "SELECT pref_value FROM NOVA_SYSTEM.CONFIG_USER_PREFERENCES "

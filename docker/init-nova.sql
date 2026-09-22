@@ -13,7 +13,9 @@ SET GLOBAL exec_mem_limit = 2147483648;
 SET GLOBAL enable_spill = true;
 SET GLOBAL spill_mode = "auto";
 SET GLOBAL enable_materialized_view_rewrite = true;
-SET GLOBAL activate_all_roles_on_login = true;
+-- Strict Ranger mode requires one explicit role. Activating every assigned role
+-- would let Ranger resolve a union of unrelated authorization contexts.
+SET GLOBAL activate_all_roles_on_login = false;
 SET GLOBAL query_queue_concurrency_limit = 100;
 SET GLOBAL query_queue_max_queued_queries = 1000;
 SET GLOBAL query_queue_pending_timeout_second = 300;
@@ -21,6 +23,7 @@ SET GLOBAL query_queue_pending_timeout_second = 300;
 -- ── Create ACCOUNTADMIN role (IMMUTABLE — never drop/revoke) ──
 -- This is the SUPER USER role — maximum privileges, cannot be restricted
 CREATE ROLE IF NOT EXISTS ACCOUNTADMIN;
+CREATE ROLE IF NOT EXISTS SECURITYADMIN;
 
 -- Object-level privileges (ALL databases, tables, views, etc.)
 GRANT ALL ON CATALOG default_catalog TO ROLE ACCOUNTADMIN WITH GRANT OPTION;
@@ -60,6 +63,7 @@ GRANT SECURITY ON SYSTEM TO ROLE ACCOUNTADMIN;
 -- Default password: nova (must be changed on first login)
 CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY '!1password';
 GRANT ACCOUNTADMIN TO USER 'nova_admin'@'%';
+SET DEFAULT ROLE ACCOUNTADMIN TO 'nova_admin'@'%';
 
 -- ── Create NOVA_SYSTEM database ──
 CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM;
@@ -351,6 +355,10 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_VERSIONS (
   algorithm VARCHAR(128),
   feature_schema TEXT,
   training_duration_ms BIGINT,
+  reservation_token VARCHAR(64),
+  ready_at DATETIME,
+  failed_at DATETIME,
+  failure_reason TEXT,
   model_binary TEXT,
   created_at   DATETIME NOT NULL,
   created_by   VARCHAR(128)
@@ -416,7 +424,11 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (
   rewritten_sql TEXT,
   file_id       VARCHAR(64),
   database_name VARCHAR(128),
-  schema_name   VARCHAR(128)
+  schema_name   VARCHAR(128),
+  active_role   VARCHAR(128),
+  security_context_version BIGINT,
+  decision      VARCHAR(32),
+  ranger_policy_ids VARCHAR(2048)
 ) DUPLICATE KEY(log_id, query_id, event_type, event_time)
 PARTITION BY RANGE(event_time) (
   PARTITION p202601 VALUES LESS THAN ("2026-02-01"),
@@ -868,8 +880,8 @@ DROP GLOBAL FUNCTION IF EXISTS ML_PREDICT(STRING, STRING);
 CREATE GLOBAL FUNCTION ML_PREDICT(model_alias STRING, features_json STRING)
 RETURNS CONCAT('Use POST /api/v1/ml/predict with {"model_alias":"', model_alias, '","features":', features_json, '} to get prediction');
 
--- Grant USAGE to all roles with all signature variants
--- (STRING, VARCHAR, VARCHAR(65533)) so UDFs behave like native built-ins
+/* Native object grants are intentionally disabled in strict Ranger mode.
+   Ranger policies are the sole authority for global-function usage.
 GRANT USAGE ON GLOBAL FUNCTION AI_COMPLETE(STRING) TO ROLE root;
 GRANT USAGE ON GLOBAL FUNCTION AI_COMPLETE(STRING) TO ROLE db_admin;
 GRANT USAGE ON GLOBAL FUNCTION AI_COMPLETE(STRING) TO ROLE cluster_admin;
@@ -990,5 +1002,50 @@ GRANT USAGE ON GLOBAL FUNCTION ML_PREDICT(VARCHAR(65533), VARCHAR(65533)) TO ROL
 GRANT USAGE ON GLOBAL FUNCTION ML_PREDICT(VARCHAR(65533), VARCHAR(65533)) TO ROLE cluster_admin;
 GRANT USAGE ON GLOBAL FUNCTION ML_PREDICT(VARCHAR(65533), VARCHAR(65533)) TO ROLE user_admin;
 GRANT USAGE ON GLOBAL FUNCTION ML_PREDICT(VARCHAR(65533), VARCHAR(65533)) TO ROLE ACCOUNTADMIN;
+*/
 
-SELECT 'Nova built-in AI/ML UDFs registered and granted!' AS status;
+SELECT 'Nova built-in AI/ML UDFs registered; access is managed by Ranger.' AS status;
+
+-- ── Ranger acceptance fixture (local development only) ─────────────
+-- These roles have no native object grants. They exist only as session markers;
+-- Ranger policies bootstrapped by docker/ranger/bootstrap.py authorize data.
+CREATE ROLE IF NOT EXISTS marketing;
+CREATE ROLE IF NOT EXISTS finance;
+CREATE ROLE IF NOT EXISTS regional_manager;
+
+CREATE USER IF NOT EXISTS 'alice' IDENTIFIED BY 'NovaAlice2026!';
+CREATE USER IF NOT EXISTS 'bob' IDENTIFIED BY 'NovaBob2026!';
+GRANT marketing TO USER 'alice'@'%';
+GRANT finance TO USER 'alice'@'%';
+GRANT regional_manager TO USER 'alice'@'%';
+GRANT marketing TO USER 'bob'@'%';
+SET DEFAULT ROLE marketing TO 'alice'@'%';
+SET DEFAULT ROLE marketing TO 'bob'@'%';
+
+CREATE DATABASE IF NOT EXISTS analytics;
+CREATE TABLE IF NOT EXISTS analytics.sales (
+  id BIGINT NOT NULL,
+  city VARCHAR(64) NOT NULL,
+  amount DECIMAL(18, 2) NOT NULL
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS analytics.customers (
+  id BIGINT NOT NULL,
+  city VARCHAR(64) NOT NULL,
+  phone VARCHAR(64) NOT NULL
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+INSERT INTO analytics.sales VALUES
+  (1, 'Jakarta', 100),
+  (2, 'Bandung', 200),
+  (3, 'Jakarta', 300),
+  (4, 'Bandung', 400);
+INSERT INTO analytics.customers VALUES
+  (1, 'Jakarta', '+62-811-0001'),
+  (2, 'Bandung', '+62-811-0002');
+
+SELECT 'Nova Ranger acceptance fixture created!' AS status;

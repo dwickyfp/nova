@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from app.modules.assistant.skills import contains_credential_shape
 
@@ -276,6 +276,10 @@ def _normalise(document: dict) -> dict[str, Any]:
                 "description": dataset.get("description", ""),
                 "primary_key": dataset.get("primary_key") or [],
                 "unique_keys": dataset.get("unique_keys") or [],
+                "grain": dataset.get("grain") or {
+                    "keys": dataset.get("primary_key") or []
+                },
+                "synonyms": dataset.get("synonyms") or [],
                 "ai_context": dataset.get("ai_context"),
                 "fields": [_normalise_field(f) for f in dataset.get("fields") or []],
             }
@@ -290,6 +294,8 @@ def _normalise(document: dict) -> dict[str, Any]:
                 "to": rel.get("to"),
                 "from_columns": rel.get("from_columns") or [],
                 "to_columns": rel.get("to_columns") or [],
+                "cardinality": rel.get("cardinality") or "unknown",
+                "preferred": bool(rel.get("preferred", False)),
                 "ai_context": rel.get("ai_context"),
             }
         )
@@ -302,6 +308,19 @@ def _normalise(document: dict) -> dict[str, Any]:
                 "expression": _expression_text(metric.get("expression")),
                 "description": metric.get("description", ""),
                 "datatype": metric.get("datatype"),
+                "base_dataset": metric.get("base_dataset"),
+                "grain": metric.get("grain") or {},
+                "additivity": metric.get("additivity") or "additive",
+                "default_time_dimension": metric.get("default_time_dimension"),
+                "allowed_dimensions": metric.get("allowed_dimensions") or [],
+                "synonyms": metric.get("synonyms") or [],
+                "format": metric.get("format"),
+                "currency": metric.get("currency"),
+                "unit": metric.get("unit"),
+                "dependencies": metric.get("dependencies") or [],
+                "filters": metric.get("filters") or [],
+                "visibility": metric.get("visibility") or "public",
+                "preferred_relationship_path": metric.get("preferred_relationship_path") or [],
                 "ai_context": metric.get("ai_context"),
             }
         )
@@ -313,6 +332,24 @@ def _normalise(document: dict) -> dict[str, Any]:
         "datasets": datasets,
         "relationships": relationships,
         "metrics": metrics,
+        "named_filters": [
+            {
+                "name": item.get("name"),
+                "expression": item.get("expression"),
+                "dataset": item.get("dataset"),
+                "description": item.get("description", ""),
+                "synonyms": item.get("synonyms") or [],
+                "ai_context": item.get("ai_context"),
+            }
+            for item in document.get("named_filters") or []
+            if isinstance(item, dict)
+        ],
+        "question_routing_instructions": document.get(
+            "question_routing_instructions", ""
+        ),
+        "query_generation_instructions": document.get(
+            "query_generation_instructions", ""
+        ),
     }
 
 
@@ -323,6 +360,10 @@ def _normalise_field(field: dict) -> dict[str, Any]:
         "description": field.get("description", ""),
         "datatype": field.get("datatype"),
         "dimension": field.get("dimension"),
+        "kind": field.get("kind"),
+        "synonyms": field.get("synonyms") or [],
+        "sample_values": field.get("sample_values") or [],
+        "search_strategy": field.get("search_strategy"),
         "ai_context": field.get("ai_context"),
     }
 

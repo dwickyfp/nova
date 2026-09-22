@@ -71,9 +71,7 @@ def deterministic_run_id(graph_id: str, due_at: datetime, root_task: str = "") -
     graph may have several scheduled roots; excluding it would make two distinct
     roots due at the same instant collide on one run.
     """
-    return str(
-        uuid5(NAMESPACE_URL, f"nova:graph_run:{graph_id}:{root_task}:{due_at.isoformat()}")
-    )
+    return str(uuid5(NAMESPACE_URL, f"nova:graph_run:{graph_id}:{root_task}:{due_at.isoformat()}"))
 
 
 @dataclass(frozen=True)
@@ -140,9 +138,7 @@ async def resolve_engine_timezone(repository: TaskOrchestrationRepository) -> st
         resolve_timezone(detected)
         return detected
 
-    logger.warning(
-        "engine reported no session timezone; falling back to UTC for schedule anchors"
-    )
+    logger.warning("engine reported no session timezone; falling back to UTC for schedule anchors")
     return "UTC"
 
 
@@ -180,17 +176,13 @@ def build_graphs(tasks: list[dict[str, Any]], edges: list[dict[str, Any]]) -> di
     for graph_id, graph_edges in by_graph.items():
         bucket = scope_from_graph_id(graph_id)
         endpoints = referenced.setdefault(bucket, set())
-        endpoints.update(
-            endpoint for edge in graph_edges for endpoint in (edge.parent, edge.child)
-        )
+        endpoints.update(endpoint for edge in graph_edges for endpoint in (edge.parent, edge.child))
 
     graphs: dict[str, Graph] = {}
     for graph_id, graph_edges in by_graph.items():
         names = [
             name
-            for name in {
-                endpoint for edge in graph_edges for endpoint in (edge.parent, edge.child)
-            }
+            for name in {endpoint for edge in graph_edges for endpoint in (edge.parent, edge.child)}
         ]
         graphs[graph_id] = Graph.from_edges(names, graph_edges)
 

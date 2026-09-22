@@ -20,10 +20,8 @@ Plus regressions from QA on PR #83: every `_SOURCE_DOCS` doc must be retrievable
 
 from __future__ import annotations
 
-from app.modules.assistant.service import (
-    _DEFAULT_SYSTEM_PROMPT,
-    AssistantLoop,
-)
+from app.modules.assistant.registry import build_registry
+from app.modules.assistant.service import _DEFAULT_SYSTEM_PROMPT, AssistantLoop, LoopContext
 from app.modules.assistant.skill_registry import skill_library
 from app.modules.assistant.skills import (
     _SOURCE_DOCS,
@@ -36,6 +34,7 @@ from app.modules.assistant.skills import (
     contains_credential_shape,
     default_skill,
 )
+from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
 
 # ── AC #4: no credential shape in a skill-built request ──────────────────────
@@ -144,13 +143,13 @@ def test_metadata_reports_revision_budget_and_document_count():
 # ── AC #7 (assembly portion): the loop keeps its contract ────────────────────
 
 
-def test_default_injection_uses_the_assembled_skill_plus_the_skill_catalog():
+def test_default_injection_uses_the_assembled_skill_without_global_catalog():
     loop = AssistantLoop(provider=_NullProvider(), registry=ToolRegistry())
-    # The assembled skill (T-E1) is the base prompt; the curated skill catalog is
-    # appended so the model knows what it may load.
+    # The assembled default procedure is the base prompt. Discoverable skills
+    # are selected per turn; the global catalog is never dumped into context.
     assert loop._system_prompt.startswith(DEFAULT_SKILL_PROMPT)
-    assert "Available skills" in loop._system_prompt
-    assert "`create-table`" in loop._system_prompt
+    assert "Available skills" not in loop._system_prompt
+    assert "`create-table`" not in loop._system_prompt
 
 
 def test_explicit_system_prompt_still_wins_as_the_base():
@@ -238,6 +237,43 @@ def test_writing_style_skill_is_loadable():
     excerpt = skill_library.load("writing-style")
     assert excerpt.startswith("[nova-skill")
     assert excerpt.rstrip().endswith("[end nova-skill]")
+
+
+def test_native_ml_skill_is_packaged_and_covers_the_runtime_contract():
+    skill = skill_library.get("native-ml")
+    assert skill is not None
+    assert not contains_credential_shape(skill.body)
+    for contract_term in (
+        "classification",
+        "regression",
+        "forecast",
+        "anomaly_detection",
+        "clustering",
+        "ml_execute",
+        "ML_PREDICT",
+        "ML_FORECAST",
+        "persist=false",
+        "persist=true",
+    ):
+        assert contract_term in skill.body
+
+
+def test_nove_selects_native_ml_without_a_global_skill_catalog():
+    registry = build_registry()
+    assert registry.discoverable_skills == ("native-ml",)
+    assert registry.skill_definitions["native-ml"].trust_level == "platform_skill"
+
+    loop = AssistantLoop(provider=_NullProvider(), registry=registry)
+    context = LoopContext(user_name="alice")
+    messages = loop._build_messages(
+        AssistantThread(thread_id="t", user_name="alice", title="t"),
+        "Forecast revenue for the next 30 days",
+        context,
+    )
+
+    assert context.selected_skills == ["native-ml"]
+    assert '<PLATFORM_SKILL name="native-ml">' in messages[1]["content"]
+    assert "Available skills" not in messages[0]["content"]
 
 
 def test_excerpts_are_delimited_as_data():

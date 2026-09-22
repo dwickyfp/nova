@@ -70,8 +70,9 @@ DEFAULT_TOOL_RESULT_TTL_MESSAGES = 6
 #: called" and re-run it.
 _CLEARED_TOOL_RESULT = "[tool result cleared to save context; the call already ran]"
 
-#: Prefix the loop uses to fold a stored tool result into a user message
-#: (``service._build_messages``). Context management recognises the same prefix.
+#: Legacy prefix used by messages persisted before native tool-role support.
+#: New turns never create this shape; recognising it permits safe compaction of
+#: old threads without replaying the text as current user authority.
 _TOOL_RESULT_PREFIX = "[tool result]"
 
 #: A dropped-turn note is bounded so pruning cannot itself overflow the budget.
@@ -109,14 +110,14 @@ def estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
 def _is_tool_result(message: dict[str, Any]) -> bool:
     """True when a message is a folded tool result from a previous turn.
 
-    The loop folds a stored tool message into ``role: user`` text prefixed with
-    ``[tool result]`` (``service._build_messages``). Within a live turn the loop
-    appends the same prefix. Both shapes are recognised so clearing works on the
-    replayed history the manager actually sees.
+    Native turns use ``role: tool``. The user-role prefix is recognised only for
+    backward compatibility with persisted pre-migration threads.
     """
-    if message.get("role") != "user":
-        return False
-    return str(message.get("content") or "").startswith(_TOOL_RESULT_PREFIX)
+    if message.get("role") == "tool":
+        return True
+    return message.get("role") == "user" and str(message.get("content") or "").startswith(
+        _TOOL_RESULT_PREFIX
+    )
 
 
 @dataclass
@@ -233,7 +234,7 @@ class ContextManager:
 
         curated = list(head)
         if summary is not None:
-            curated.append({"role": "user", "content": summary})
+            curated.append({"role": "system", "content": summary})
         curated.extend(mutable)
         curated.extend(pinned)
 

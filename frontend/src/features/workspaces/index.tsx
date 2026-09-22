@@ -11,13 +11,13 @@ import {
   useMemo,
   useRef,
   useState,
-} from 'react'
-import { createPortal } from 'react-dom'
-import { getRouteApi } from '@tanstack/react-router'
-import { toast } from 'sonner'
-import { format as formatSql } from 'sql-formatter'
-import Editor, { type Monaco } from '@monaco-editor/react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+} from "react";
+import { createPortal } from "react-dom";
+import { getRouteApi } from "@tanstack/react-router";
+import { toast } from "sonner";
+import { format as formatSql } from "sql-formatter";
+import Editor, { type Monaco } from "@monaco-editor/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
   Braces,
@@ -44,8 +44,8 @@ import {
   Type,
   UserRoundCog,
   X,
-} from 'lucide-react'
-import * as XLSX from 'xlsx'
+} from "lucide-react";
+import * as XLSX from "xlsx";
 import {
   Area,
   AreaChart,
@@ -61,21 +61,21 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts'
-import { api } from '@/lib/api-client'
-import { cn } from '@/lib/utils'
-import { useAuthStore } from '@/stores/auth-store'
-import { Header } from '@/components/layout/header'
-import { useAssistant } from '@/features/assistant'
-import type { TurnContext } from '@/features/assistant'
-import { createThread } from '@/features/assistant/thread-client'
+} from "recharts";
+import { api } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
+import { Header } from "@/components/layout/header";
+import { useAssistant } from "@/features/assistant";
+import type { TurnContext } from "@/features/assistant";
+import { createThread } from "@/features/assistant/thread-client";
 import {
   applyHunks,
   buildRewriteHunks,
   type AttachedQuery,
   type ProposedRewrite,
-} from '@/features/assistant/query-attach'
-import { DatabaseSchemaSelector } from './database-schema-selector'
+} from "@/features/assistant/query-attach";
+import { DatabaseSchemaSelector } from "./database-schema-selector";
 import {
   type CompletionResponse,
   buildStageCompletionPath,
@@ -87,13 +87,13 @@ import {
   getStageCompletionReplacementRange,
   getStageCompletionSortText,
   shouldTriggerStageSuggestions,
-} from './stage-completion'
-import { useTheme } from '@/context/theme-provider'
-import { readToken } from '@/lib/read-token'
-import { applyNovaSqlTheme } from './monaco-theme'
-import { FileHistoryDialog } from './file-history-dialog'
-import { ExplainTreeView } from './explain-tree'
-import { QueryHistory } from './query-history'
+} from "./stage-completion";
+import { useTheme } from "@/context/theme-provider";
+import { readToken } from "@/lib/read-token";
+import { applyNovaSqlTheme } from "./monaco-theme";
+import { FileHistoryDialog } from "./file-history-dialog";
+import { ExplainTreeView } from "./explain-tree";
+import { QueryHistory } from "./query-history";
 import type {
   HistoryResponse,
   QueryContextResponse,
@@ -104,36 +104,55 @@ import type {
   WorkspaceFileResponse,
   WorkspaceTabState,
   WorkspaceTreeResponse,
-} from './types'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Switch } from '@/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { SidebarMenu, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubItem } from '@/components/ui/sidebar'
+} from "./types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+} from "@/components/ui/sidebar";
 
-type MonacoEditorInstance = Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0]
+type MonacoEditorInstance = Parameters<
+  NonNullable<ComponentProps<typeof Editor>["onMount"]>
+>[0];
 
-const workspacesRoute = getRouteApi('/_authenticated/workspaces/')
+const workspacesRoute = getRouteApi("/_authenticated/workspaces/");
 
-let activeSqlEditorInstance: MonacoEditorInstance | null = null
-let activeSqlSelection: import('monaco-editor').Selection | null = null
+let activeSqlEditorInstance: MonacoEditorInstance | null = null;
+let activeSqlSelection: import("monaco-editor").Selection | null = null;
 
 function getSqlForExecution(fallbackSql: string) {
-  const editor = activeSqlEditorInstance
-  const liveSelection = editor?.getSelection()
+  const editor = activeSqlEditorInstance;
+  const liveSelection = editor?.getSelection();
   const selection =
     liveSelection && !liveSelection.isEmpty()
       ? liveSelection
       : activeSqlSelection && !activeSqlSelection.isEmpty()
         ? activeSqlSelection
-        : null
+        : null;
   const selectedSql =
-    editor && selection ? (editor.getModel()?.getValueInRange(selection).trim() ?? '') : ''
+    editor && selection
+      ? (editor.getModel()?.getValueInRange(selection).trim() ?? "")
+      : "";
 
-  return selectedSql || fallbackSql.trim()
+  return selectedSql || fallbackSql.trim();
 }
 
 /**
@@ -146,507 +165,527 @@ function getSqlForExecution(fallbackSql: string) {
  * loaded from history, where `original_sql` may have been rewritten.
  */
 function explainPlanFromResult(result: QueryResponse): string | null {
-  if (!result.success || !result.rows.length) return null
-  const firstKeyword = result.original_sql.trim().split(/\s+/, 1)[0]?.toUpperCase()
+  if (!result.success || !result.rows.length) return null;
+  const firstKeyword = result.original_sql
+    .trim()
+    .split(/\s+/, 1)[0]
+    ?.toUpperCase();
   const looksLikePlan =
-    firstKeyword === 'EXPLAIN' ||
-    (result.columns.length === 1 && /explain/i.test(result.columns[0] ?? ''))
-  if (!looksLikePlan) return null
-  return result.rows.map((row) => String(row[0] ?? '')).join('\n')
+    firstKeyword === "EXPLAIN" ||
+    (result.columns.length === 1 && /explain/i.test(result.columns[0] ?? ""));
+  if (!looksLikePlan) return null;
+  return result.rows.map((row) => String(row[0] ?? "")).join("\n");
 }
 
 const SQL_KEYWORDS = [
   // Core DQL
-  'SELECT',
-  'FROM',
-  'WHERE',
-  'AND',
-  'OR',
-  'NOT',
-  'IN',
-  'NOT IN',
-  'BETWEEN',
-  'LIKE',
-  'IS NULL',
-  'IS NOT NULL',
-  'AS',
-  'DISTINCT',
-  'ALL',
-  'ANY',
-  'EXISTS',
-  'CASE',
-  'WHEN',
-  'THEN',
-  'ELSE',
-  'END',
-  'CAST',
-  'COALESCE',
-  'NULLIF',
-  'IF',
-  'IFNULL',
+  "SELECT",
+  "FROM",
+  "WHERE",
+  "AND",
+  "OR",
+  "NOT",
+  "IN",
+  "NOT IN",
+  "BETWEEN",
+  "LIKE",
+  "IS NULL",
+  "IS NOT NULL",
+  "AS",
+  "DISTINCT",
+  "ALL",
+  "ANY",
+  "EXISTS",
+  "CASE",
+  "WHEN",
+  "THEN",
+  "ELSE",
+  "END",
+  "CAST",
+  "COALESCE",
+  "NULLIF",
+  "IF",
+  "IFNULL",
   // Joins
-  'JOIN',
-  'INNER JOIN',
-  'LEFT JOIN',
-  'RIGHT JOIN',
-  'FULL OUTER JOIN',
-  'CROSS JOIN',
-  'ON',
-  'USING',
+  "JOIN",
+  "INNER JOIN",
+  "LEFT JOIN",
+  "RIGHT JOIN",
+  "FULL OUTER JOIN",
+  "CROSS JOIN",
+  "ON",
+  "USING",
   // Aggregation & Grouping
-  'GROUP BY',
-  'HAVING',
-  'ORDER BY',
-  'ASC',
-  'DESC',
-  'LIMIT',
-  'OFFSET',
-  'WITH ROLLUP',
-  'WITH',
+  "GROUP BY",
+  "HAVING",
+  "ORDER BY",
+  "ASC",
+  "DESC",
+  "LIMIT",
+  "OFFSET",
+  "WITH ROLLUP",
+  "WITH",
   // Set Operations
-  'UNION',
-  'UNION ALL',
-  'INTERSECT',
-  'EXCEPT',
-  'MINUS',
+  "UNION",
+  "UNION ALL",
+  "INTERSECT",
+  "EXCEPT",
+  "MINUS",
   // Subquery
-  'LATERAL',
-  'TABLESAMPLE',
+  "LATERAL",
+  "TABLESAMPLE",
   // Window Functions
-  'OVER',
-  'PARTITION BY',
-  'ROWS',
-  'RANGE',
-  'UNBOUNDED PRECEDING',
-  'UNBOUNDED FOLLOWING',
-  'CURRENT ROW',
+  "OVER",
+  "PARTITION BY",
+  "ROWS",
+  "RANGE",
+  "UNBOUNDED PRECEDING",
+  "UNBOUNDED FOLLOWING",
+  "CURRENT ROW",
   // DML
-  'INSERT INTO',
-  'INSERT INTO ... VALUES',
-  'INSERT INTO ... SELECT',
-  'UPDATE',
-  'DELETE FROM',
-  'DELETE',
-  'MERGE INTO',
-  'VALUES',
-  'SET',
-  'ON DUPLICATE KEY UPDATE',
-  'ON CONFLICT DO UPDATE',
-  'ON CONFLICT DO NOTHING',
+  "INSERT INTO",
+  "INSERT INTO ... VALUES",
+  "INSERT INTO ... SELECT",
+  "UPDATE",
+  "DELETE FROM",
+  "DELETE",
+  "MERGE INTO",
+  "VALUES",
+  "SET",
+  "ON DUPLICATE KEY UPDATE",
+  "ON CONFLICT DO UPDATE",
+  "ON CONFLICT DO NOTHING",
   // DDL
-  'CREATE TABLE',
-  'CREATE VIEW',
-  'CREATE MATERIALIZED VIEW',
-  'CREATE INDEX',
-  'CREATE DATABASE',
-  'CREATE FUNCTION',
-  'CREATE EXTERNAL TABLE',
-  'CREATE ROUTINE LOAD',
-  'CREATE PIPE',
-  'CREATE RESOURCE',
-  'CREATE STORAGE VOLUME',
-  'ALTER TABLE',
-  'ALTER VIEW',
-  'ALTER DATABASE',
-  'DROP TABLE',
-  'DROP VIEW',
-  'DROP DATABASE',
-  'DROP INDEX',
-  'DROP MATERIALIZED VIEW',
-  'DROP FUNCTION',
-  'TRUNCATE TABLE',
-  'RENAME TABLE',
-  'ADD COLUMN',
-  'DROP COLUMN',
-  'MODIFY COLUMN',
+  "CREATE TABLE",
+  "CREATE VIEW",
+  "CREATE MATERIALIZED VIEW",
+  "CREATE INDEX",
+  "CREATE DATABASE",
+  "CREATE FUNCTION",
+  "CREATE EXTERNAL TABLE",
+  "CREATE ROUTINE LOAD",
+  "CREATE PIPE",
+  "CREATE RESOURCE",
+  "CREATE STORAGE VOLUME",
+  "ALTER TABLE",
+  "ALTER VIEW",
+  "ALTER DATABASE",
+  "DROP TABLE",
+  "DROP VIEW",
+  "DROP DATABASE",
+  "DROP INDEX",
+  "DROP MATERIALIZED VIEW",
+  "DROP FUNCTION",
+  "TRUNCATE TABLE",
+  "RENAME TABLE",
+  "ADD COLUMN",
+  "DROP COLUMN",
+  "MODIFY COLUMN",
   // Transaction & Session
-  'BEGIN',
-  'COMMIT',
-  'ROLLBACK',
-  'SAVEPOINT',
-  'SET VARIABLE',
-  'SET PROPERTY',
-  'SET CATALOG',
+  "BEGIN",
+  "COMMIT",
+  "ROLLBACK",
+  "SAVEPOINT",
+  "SET VARIABLE",
+  "SET PROPERTY",
+  "SET CATALOG",
   // Data Loading
-  'LOAD LABEL',
-  'CANCEL LOAD',
-  'SHOW LOAD',
-  'STREAM LOAD',
-  'BROKER LOAD',
-  'ROUTINE LOAD',
-  'SHOW STREAM LOAD',
-  'CANCEL STREAM LOAD',
+  "LOAD LABEL",
+  "CANCEL LOAD",
+  "SHOW LOAD",
+  "STREAM LOAD",
+  "BROKER LOAD",
+  "ROUTINE LOAD",
+  "SHOW STREAM LOAD",
+  "CANCEL STREAM LOAD",
   // Engine-specific
-  'SHOW DATABASES',
-  'SHOW TABLES',
-  'SHOW COLUMNS',
-  'SHOW CREATE TABLE',
-  'SHOW PROCESSLIST',
-  'SHOW VARIABLES',
-  'SHOW BACKENDS',
-  'SHOW FRONTENDS',
-  'SHOW BROKER',
-  'SHOW RESOURCES',
-  'SHOW ROUTINE LOAD',
-  'SHOW MATERIALIZED VIEWS',
-  'SHOW PARTITIONS',
-  'SHOW TABLET',
-  'SHOW SNAPSHOT',
-  'SHOW CATALOGS',
-  'DESC',
-  'DESCRIBE',
-  'EXPLAIN',
-  'EXPLAIN VERBOSE',
-  'EXPLAIN COSTS',
-  'EXPLAIN ANALYZE',
-  'ANALYZE TABLE',
-  'ANALYZE PROFILE',
-  'KILL QUERY',
-  'KILL CONNECTION',
-  'GRANT',
-  'REVOKE',
-  'CREATE USER',
-  'DROP USER',
-  'ALTER USER',
-  'CREATE ROLE',
-  'DROP ROLE',
-  'GRANT ROLE',
-  'SHOW GRANTS',
-  'SHOW ROLES',
-  'ADMIN',
-  'ADMIN SET',
-  'ADMIN SHOW',
-  'REFRESH',
-  'REFRESH MATERIALIZED VIEW',
-  'SUBMIT',
-  'CANCEL',
-  'RECOVER',
-  'INSTALL',
-  'UNINSTALL',
-  'SHOW PLUGINS',
+  "SHOW DATABASES",
+  "SHOW TABLES",
+  "SHOW COLUMNS",
+  "SHOW CREATE TABLE",
+  "SHOW PROCESSLIST",
+  "SHOW VARIABLES",
+  "SHOW BACKENDS",
+  "SHOW FRONTENDS",
+  "SHOW BROKER",
+  "SHOW RESOURCES",
+  "SHOW ROUTINE LOAD",
+  "SHOW MATERIALIZED VIEWS",
+  "SHOW PARTITIONS",
+  "SHOW TABLET",
+  "SHOW SNAPSHOT",
+  "SHOW CATALOGS",
+  "DESC",
+  "DESCRIBE",
+  "EXPLAIN",
+  "EXPLAIN VERBOSE",
+  "EXPLAIN COSTS",
+  "EXPLAIN ANALYZE",
+  "ANALYZE TABLE",
+  "ANALYZE PROFILE",
+  "KILL QUERY",
+  "KILL CONNECTION",
+  "GRANT",
+  "REVOKE",
+  "CREATE USER",
+  "DROP USER",
+  "ALTER USER",
+  "CREATE ROLE",
+  "DROP ROLE",
+  "GRANT ROLE",
+  "SHOW GRANTS",
+  "SHOW ROLES",
+  "ADMIN",
+  "ADMIN SET",
+  "ADMIN SHOW",
+  "REFRESH",
+  "REFRESH MATERIALIZED VIEW",
+  "SUBMIT",
+  "CANCEL",
+  "RECOVER",
+  "INSTALL",
+  "UNINSTALL",
+  "SHOW PLUGINS",
   // Aggregate Functions
-  'COUNT',
-  'SUM',
-  'AVG',
-  'MIN',
-  'MAX',
-  'COUNT(DISTINCT',
-  'APPROX_COUNT_DISTINCT',
-  'NDV',
-  'GROUP_CONCAT',
-  'BITMAP_UNION',
-  'BITMAP_INTERSECT',
-  'HLL_UNION',
-  'HLL_CARDINALITY',
-  'PERCENTILE_APPROX',
-  'VARIANCE',
-  'VAR_SAMP',
-  'VAR_POP',
-  'STDDEV',
-  'STDDEV_SAMP',
-  'STDDEV_POP',
-  'ANY_VALUE',
-  'BIT_AND',
-  'BIT_OR',
-  'BIT_XOR',
+  "COUNT",
+  "SUM",
+  "AVG",
+  "MIN",
+  "MAX",
+  "COUNT(DISTINCT",
+  "APPROX_COUNT_DISTINCT",
+  "NDV",
+  "GROUP_CONCAT",
+  "BITMAP_UNION",
+  "BITMAP_INTERSECT",
+  "HLL_UNION",
+  "HLL_CARDINALITY",
+  "PERCENTILE_APPROX",
+  "VARIANCE",
+  "VAR_SAMP",
+  "VAR_POP",
+  "STDDEV",
+  "STDDEV_SAMP",
+  "STDDEV_POP",
+  "ANY_VALUE",
+  "BIT_AND",
+  "BIT_OR",
+  "BIT_XOR",
   // String Functions
-  'CONCAT',
-  'CONCAT_WS',
-  'LENGTH',
-  'CHAR_LENGTH',
-  'LOWER',
-  'UPPER',
-  'LCASE',
-  'UCASE',
-  'LTRIM',
-  'RTRIM',
-  'TRIM',
-  'LPAD',
-  'RPAD',
-  'SUBSTR',
-  'SUBSTRING',
-  'LEFT',
-  'RIGHT',
-  'REPLACE',
-  'REVERSE',
-  'REPEAT',
-  'SPACE',
-  'LOCATE',
-  'INSTR',
-  'POSITION',
-  'HEX',
-  'UNHEX',
-  'ENCODE',
-  'DECODE',
-  'SPLIT',
-  'SPLIT_PART',
-  'REGEXP_REPLACE',
-  'REGEXP_EXTRACT',
-  'STR_TO_MAP',
-  'PARSE_URL',
-  'URL_ENCODE',
-  'URL_DECODE',
-  'CHAR',
-  'ASCII',
-  'FROM_BASE64',
-  'TO_BASE64',
-  'MONEY_FORMAT',
-  'FORMAT',
+  "CONCAT",
+  "CONCAT_WS",
+  "LENGTH",
+  "CHAR_LENGTH",
+  "LOWER",
+  "UPPER",
+  "LCASE",
+  "UCASE",
+  "LTRIM",
+  "RTRIM",
+  "TRIM",
+  "LPAD",
+  "RPAD",
+  "SUBSTR",
+  "SUBSTRING",
+  "LEFT",
+  "RIGHT",
+  "REPLACE",
+  "REVERSE",
+  "REPEAT",
+  "SPACE",
+  "LOCATE",
+  "INSTR",
+  "POSITION",
+  "HEX",
+  "UNHEX",
+  "ENCODE",
+  "DECODE",
+  "SPLIT",
+  "SPLIT_PART",
+  "REGEXP_REPLACE",
+  "REGEXP_EXTRACT",
+  "STR_TO_MAP",
+  "PARSE_URL",
+  "URL_ENCODE",
+  "URL_DECODE",
+  "CHAR",
+  "ASCII",
+  "FROM_BASE64",
+  "TO_BASE64",
+  "MONEY_FORMAT",
+  "FORMAT",
   // Date/Time Functions
-  'NOW',
-  'CURDATE',
-  'CURTIME',
-  'CURRENT_DATE',
-  'CURRENT_TIME',
-  'CURRENT_TIMESTAMP',
-  'DATE',
-  'DATETIME',
-  'TIMESTAMP',
-  'DATE_ADD',
-  'DATE_SUB',
-  'DATE_DIFF',
-  'DATEDIFF',
-  'DATE_FORMAT',
-  'DATE_TRUNC',
-  'DATE_SLICE',
-  'YEAR',
-  'MONTH',
-  'DAY',
-  'HOUR',
-  'MINUTE',
-  'SECOND',
-  'WEEK',
-  'WEEKDAY',
-  'DAYOFWEEK',
-  'DAYOFYEAR',
-  'QUARTER',
-  'FROM_UNIXTIME',
-  'UNIX_TIMESTAMP',
-  'TO_DATE',
-  'STR_TO_DATE',
-  'TIME_TO_SEC',
-  'SEC_TO_TIME',
-  'MONTHS_ADD',
-  'MONTHS_SUB',
-  'YEARS_ADD',
-  'YEARS_SUB',
-  'HOURS_ADD',
-  'HOURS_SUB',
-  'MINUTES_ADD',
-  'MINUTES_SUB',
-  'SECONDS_ADD',
-  'SECONDS_SUB',
-  'MILLISECONDS_ADD',
-  'LAST_DAY',
-  'NEXT_DAY',
-  'TIME_SLICE',
-  'NOW',
-  'UTC_TIMESTAMP',
+  "NOW",
+  "CURDATE",
+  "CURTIME",
+  "CURRENT_DATE",
+  "CURRENT_TIME",
+  "CURRENT_TIMESTAMP",
+  "DATE",
+  "DATETIME",
+  "TIMESTAMP",
+  "DATE_ADD",
+  "DATE_SUB",
+  "DATE_DIFF",
+  "DATEDIFF",
+  "DATE_FORMAT",
+  "DATE_TRUNC",
+  "DATE_SLICE",
+  "YEAR",
+  "MONTH",
+  "DAY",
+  "HOUR",
+  "MINUTE",
+  "SECOND",
+  "WEEK",
+  "WEEKDAY",
+  "DAYOFWEEK",
+  "DAYOFYEAR",
+  "QUARTER",
+  "FROM_UNIXTIME",
+  "UNIX_TIMESTAMP",
+  "TO_DATE",
+  "STR_TO_DATE",
+  "TIME_TO_SEC",
+  "SEC_TO_TIME",
+  "MONTHS_ADD",
+  "MONTHS_SUB",
+  "YEARS_ADD",
+  "YEARS_SUB",
+  "HOURS_ADD",
+  "HOURS_SUB",
+  "MINUTES_ADD",
+  "MINUTES_SUB",
+  "SECONDS_ADD",
+  "SECONDS_SUB",
+  "MILLISECONDS_ADD",
+  "LAST_DAY",
+  "NEXT_DAY",
+  "TIME_SLICE",
+  "NOW",
+  "UTC_TIMESTAMP",
   // Math Functions
-  'ABS',
-  'CEIL',
-  'CEILING',
-  'FLOOR',
-  'ROUND',
-  'TRUNCATE',
-  'MOD',
-  'POWER',
-  'POW',
-  'SQRT',
-  'EXP',
-  'LN',
-  'LOG',
-  'LOG2',
-  'LOG10',
-  'SIGN',
-  'PI',
-  'E',
-  'RAND',
-  'RANDOM',
-  'SIN',
-  'COS',
-  'TAN',
-  'ASIN',
-  'ACOS',
-  'ATAN',
-  'ATAN2',
-  'DEGREES',
-  'RADIANS',
-  'COT',
-  'CONV',
-  'BIN',
-  'GREATEST',
-  'LEAST',
-  'WIDTH_BUCKET',
-  'Pmod',
+  "ABS",
+  "CEIL",
+  "CEILING",
+  "FLOOR",
+  "ROUND",
+  "TRUNCATE",
+  "MOD",
+  "POWER",
+  "POW",
+  "SQRT",
+  "EXP",
+  "LN",
+  "LOG",
+  "LOG2",
+  "LOG10",
+  "SIGN",
+  "PI",
+  "E",
+  "RAND",
+  "RANDOM",
+  "SIN",
+  "COS",
+  "TAN",
+  "ASIN",
+  "ACOS",
+  "ATAN",
+  "ATAN2",
+  "DEGREES",
+  "RADIANS",
+  "COT",
+  "CONV",
+  "BIN",
+  "GREATEST",
+  "LEAST",
+  "WIDTH_BUCKET",
+  "Pmod",
   // Conditional Functions
-  'CASE WHEN',
-  'IF',
-  'IFNULL',
-  'NULLIF',
-  'COALESCE',
-  'NVL',
-  'NVL2',
-  'DECODE',
+  "CASE WHEN",
+  "IF",
+  "IFNULL",
+  "NULLIF",
+  "COALESCE",
+  "NVL",
+  "NVL2",
+  "DECODE",
   // JSON Functions
-  'JSON_OBJECT',
-  'JSON_ARRAY',
-  'JSON_EXTRACT',
-  'JSON_QUERY',
-  'JSON_VALUE',
-  'JSON_SET',
-  'JSON_REPLACE',
-  'JSON_REMOVE',
-  'JSON_INSERT',
-  'JSON_KEYS',
-  'JSON_TYPE',
-  'GET_JSON_STRING',
-  'GET_JSON_INT',
-  'GET_JSON_DOUBLE',
-  'JSON_EACH',
-  'PARSE_JSON',
-  'TO_JSON',
+  "JSON_OBJECT",
+  "JSON_ARRAY",
+  "JSON_EXTRACT",
+  "JSON_QUERY",
+  "JSON_VALUE",
+  "JSON_SET",
+  "JSON_REPLACE",
+  "JSON_REMOVE",
+  "JSON_INSERT",
+  "JSON_KEYS",
+  "JSON_TYPE",
+  "GET_JSON_STRING",
+  "GET_JSON_INT",
+  "GET_JSON_DOUBLE",
+  "JSON_EACH",
+  "PARSE_JSON",
+  "TO_JSON",
   // Array Functions
-  'ARRAY',
-  'ARRAY_AGG',
-  'ARRAY_CONCAT',
-  'ARRAY_CONTAINS',
-  'ARRAY_LENGTH',
-  'ARRAY_SLICE',
-  'ARRAY_DISTINCT',
-  'ARRAY_SORT',
-  'ARRAY_JOIN',
-  'ARRAY_MAX',
-  'ARRAY_MIN',
-  'ARRAY_SUM',
-  'ARRAY_AVG',
-  'ARRAY_POSITION',
-  'ARRAY_REMOVE',
-  'ARRAY_MAP',
-  'ARRAY_FILTER',
-  'ARRAY_GENERATE',
-  'ARRAY_TO_STRING',
-  'ARRAYS_OVERLAP',
-  'ARRAYS_INTERSECT',
-  'CARDINALITY',
+  "ARRAY",
+  "ARRAY_AGG",
+  "ARRAY_CONCAT",
+  "ARRAY_CONTAINS",
+  "ARRAY_LENGTH",
+  "ARRAY_SLICE",
+  "ARRAY_DISTINCT",
+  "ARRAY_SORT",
+  "ARRAY_JOIN",
+  "ARRAY_MAX",
+  "ARRAY_MIN",
+  "ARRAY_SUM",
+  "ARRAY_AVG",
+  "ARRAY_POSITION",
+  "ARRAY_REMOVE",
+  "ARRAY_MAP",
+  "ARRAY_FILTER",
+  "ARRAY_GENERATE",
+  "ARRAY_TO_STRING",
+  "ARRAYS_OVERLAP",
+  "ARRAYS_INTERSECT",
+  "CARDINALITY",
   // Map Functions
-  'MAP',
-  'MAP_KEYS',
-  'MAP_VALUES',
-  'MAP_CONCAT',
-  'MAP_FROM_ARRAYS',
-  'ELEMENT_AT',
+  "MAP",
+  "MAP_KEYS",
+  "MAP_VALUES",
+  "MAP_CONCAT",
+  "MAP_FROM_ARRAYS",
+  "ELEMENT_AT",
   // Window Functions (named)
-  'ROW_NUMBER',
-  'RANK',
-  'DENSE_RANK',
-  'NTILE',
-  'LAG',
-  'LEAD',
-  'FIRST_VALUE',
-  'LAST_VALUE',
-  'NTH_VALUE',
-  'CUME_DIST',
-  'PERCENT_RANK',
+  "ROW_NUMBER",
+  "RANK",
+  "DENSE_RANK",
+  "NTILE",
+  "LAG",
+  "LEAD",
+  "FIRST_VALUE",
+  "LAST_VALUE",
+  "NTH_VALUE",
+  "CUME_DIST",
+  "PERCENT_RANK",
   // Bitmap Functions
-  'BITMAP_EMPTY',
-  'BITMAP_HASH',
-  'BITMAP_HAS',
-  'BITMAP_COUNT',
-  'BITMAP_OR',
-  'BITMAP_AND',
-  'BITMAP_XOR',
-  'BITMAP_NOT',
-  'BITMAP_AGG',
-  'TO_BITMAP',
-  'BITMAP_FROM_STRING',
-  'BITMAP_TO_STRING',
-  'BITMAP_FROM_BINARY',
-  'BITMAP_TO_BINARY',
-  'BITMAP_FROM_ARRAY',
-  'BITMAP_TO_ARRAY',
-  'SUB_BITMAP',
-  'BITMAP_MAX',
-  'BITMAP_MIN',
-  'BITMAP_ANDNOT',
-  'BITMAP_SUBSET_LIMIT',
-  'BITMAP_SUBSET_IN_RANGE',
-  'BITMAP_REMOVE',
+  "BITMAP_EMPTY",
+  "BITMAP_HASH",
+  "BITMAP_HAS",
+  "BITMAP_COUNT",
+  "BITMAP_OR",
+  "BITMAP_AND",
+  "BITMAP_XOR",
+  "BITMAP_NOT",
+  "BITMAP_AGG",
+  "TO_BITMAP",
+  "BITMAP_FROM_STRING",
+  "BITMAP_TO_STRING",
+  "BITMAP_FROM_BINARY",
+  "BITMAP_TO_BINARY",
+  "BITMAP_FROM_ARRAY",
+  "BITMAP_TO_ARRAY",
+  "SUB_BITMAP",
+  "BITMAP_MAX",
+  "BITMAP_MIN",
+  "BITMAP_ANDNOT",
+  "BITMAP_SUBSET_LIMIT",
+  "BITMAP_SUBSET_IN_RANGE",
+  "BITMAP_REMOVE",
   // HLL Functions
-  'HLL_EMPTY',
-  'HLL_HASH',
-  'HLL_UNION_AGG',
-  'HLL_RAW_AGG',
-  'HLL_MERGE',
+  "HLL_EMPTY",
+  "HLL_HASH",
+  "HLL_UNION_AGG",
+  "HLL_RAW_AGG",
+  "HLL_MERGE",
   // Hash Functions
-  'MD5',
-  'MD5SUM',
-  'MURMUR_HASH3_32',
-  'MURMUR_HASH3_64',
-  'XXHASH_32',
-  'XXHASH_64',
-  'SHA2',
-  'SHA',
+  "MD5",
+  "MD5SUM",
+  "MURMUR_HASH3_32",
+  "MURMUR_HASH3_64",
+  "XXHASH_32",
+  "XXHASH_64",
+  "SHA2",
+  "SHA",
   // Utility
-  'SLEEP',
-  'UUID',
-  'LAST_QUERY_ID',
-  'CONNECTION_ID',
-  'DATABASE',
-  'SCHEMA',
-  'VERSION',
-  'CURRENT_USER',
-  'SESSION_USER',
-  'USER',
+  "SLEEP",
+  "UUID",
+  "LAST_QUERY_ID",
+  "CONNECTION_ID",
+  "DATABASE",
+  "SCHEMA",
+  "VERSION",
+  "CURRENT_USER",
+  "SESSION_USER",
+  "USER",
   // Table Function
-  'UNNEST',
-  'GENERATE',
-  'FILES',
+  "UNNEST",
+  "GENERATE",
+  "FILES",
   // ML / AI functions
-  'ML_PREDICT',
-  'AI_COMPLETE',
-]
+  "ML_PREDICT",
+  "AI_COMPLETE",
+];
 
 export function WorkspacesPage() {
-  const queryClient = useQueryClient()
-  const search = workspacesRoute.useSearch()
-  const [sidebarTab, setSidebarTab] = useState<'workspaces' | 'databases'>('workspaces')
-  const [secondaryCollapsed, setSecondaryCollapsed] = useState(false)
-  const [workspaceSearch, setWorkspaceSearch] = useState('')
-  const [databaseSearch, setDatabaseSearch] = useState('')
-  const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({})
-  const [openTabIds, setOpenTabIds] = useState<string[]>([])
-  const [activeTabId, setActiveTabId] = useState<string | null>(null)
-  const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
-  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
-  const [expandedWorkspacePaths, setExpandedWorkspacePaths] = useState<Record<string, boolean>>({ '': true })
-  const [expandedDatabases, setExpandedDatabases] = useState<Record<string, boolean>>({})
-  const [expandedSchemas, setExpandedSchemas] = useState<Record<string, boolean>>({})
-  const [schemasByDatabase, setSchemasByDatabase] = useState<Record<string, Array<{ name: string }>>>({})
-  const [resultsHeight, setResultsHeight] = useState(350)
-  const [resultsCollapsed, setResultsCollapsed] = useState(false)
-  const [resultsTab, setResultsTab] = useState<'results' | 'history' | 'chart'>('results')
-  const [isResizingResults, setIsResizingResults] = useState(false)
-  const [historyFilter, setHistoryFilter] = useState<'file' | 'all'>('file')
-  const [queryResults, setQueryResults] = useState<QueryResponse[] | null>(() => {
-    try {
-      const cached = sessionStorage.getItem('nova:last-query-results')
-      if (cached) return JSON.parse(cached) as QueryResponse[]
-      // Backward compat: try old single-result key
-      const old = sessionStorage.getItem('nova:last-query-result')
-      if (old) {
-        const r = JSON.parse(old) as QueryResponse
-        sessionStorage.removeItem('nova:last-query-result')
-        sessionStorage.setItem('nova:last-query-results', JSON.stringify([r]))
-        return [r]
+  const queryClient = useQueryClient();
+  const search = workspacesRoute.useSearch();
+  const [sidebarTab, setSidebarTab] = useState<"workspaces" | "databases">(
+    "workspaces",
+  );
+  const [secondaryCollapsed, setSecondaryCollapsed] = useState(false);
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
+  const [databaseSearch, setDatabaseSearch] = useState("");
+  const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({});
+  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
+  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
+  const [expandedWorkspacePaths, setExpandedWorkspacePaths] = useState<
+    Record<string, boolean>
+  >({ "": true });
+  const [expandedDatabases, setExpandedDatabases] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedSchemas, setExpandedSchemas] = useState<
+    Record<string, boolean>
+  >({});
+  const [schemasByDatabase, setSchemasByDatabase] = useState<
+    Record<string, Array<{ name: string }>>
+  >({});
+  const [resultsHeight, setResultsHeight] = useState(350);
+  const [resultsCollapsed, setResultsCollapsed] = useState(false);
+  const [resultsTab, setResultsTab] = useState<"results" | "history" | "chart">(
+    "results",
+  );
+  const [isResizingResults, setIsResizingResults] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<"file" | "all">("file");
+  const [queryResults, setQueryResults] = useState<QueryResponse[] | null>(
+    () => {
+      try {
+        const cached = sessionStorage.getItem("nova:last-query-results");
+        if (cached) return JSON.parse(cached) as QueryResponse[];
+        // Backward compat: try old single-result key
+        const old = sessionStorage.getItem("nova:last-query-result");
+        if (old) {
+          const r = JSON.parse(old) as QueryResponse;
+          sessionStorage.removeItem("nova:last-query-result");
+          sessionStorage.setItem(
+            "nova:last-query-results",
+            JSON.stringify([r]),
+          );
+          return [r];
+        }
+        return null;
+      } catch {
+        return null;
       }
-      return null
-    } catch {
-      return null
-    }
-  })
-  const [activeResultIdx, setActiveResultIdx] = useState(0)
-  const activeResult = queryResults?.[activeResultIdx] ?? null
+    },
+  );
+  const [activeResultIdx, setActiveResultIdx] = useState(0);
+  const activeResult = queryResults?.[activeResultIdx] ?? null;
   /**
    * The Explain tab used to be a separate surface fed by a dedicated endpoint.
    * It is now folded into Results: an EXPLAIN run returns its plan as ordinary
@@ -654,37 +693,34 @@ export function WorkspacesPage() {
    * statement the engine actually received (`original_sql`), not the editor
    * buffer, so re-running history entries behaves the same way.
    */
-  const activeExplainPlan = activeResult ? explainPlanFromResult(activeResult) : null
-  const [running, setRunning] = useState(false)
-  const [elapsedMs, setElapsedMs] = useState(0)
-  const abortRef = useRef<AbortController | null>(null)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const [historyOpen, setHistoryOpen] = useState(false)
+  const activeExplainPlan = activeResult
+    ? explainPlanFromResult(activeResult)
+    : null;
+  const [running, setRunning] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
 
-  const activeTab = activeTabId ? tabs[activeTabId] : null
-  // The bottom-left switcher is the single source of truth for the active role.
-  // Everything the workspace does — execution, schema listing, completions —
+  const activeTab = activeTabId ? tabs[activeTabId] : null;
+  // The authenticated session is the single source of truth for the active role.
+  // Everything the workspace does, including execution and schema discovery,
   // must run under this role, otherwise the UI can show one role while the
   // engine runs under another. Tab state keeps a role field for persistence and
   // read-only display, but it is always this value.
   //
-  // Both selectors are separate, unconditional hook calls: combining them with
-  // `??` chained onto a second `useAuthStore(...)` call would skip that second
-  // hook whenever `activeRole` is set, changing the hook count between renders
-  // ("change in the order of Hooks"). The fallback is resolved outside the hooks.
-  const activeRole = useAuthStore((state) => state.auth.user?.activeRole)
-  const firstRole = useAuthStore((state) => state.auth.user?.roles[0])
-  const sessionRole = activeRole ?? firstRole ?? ''
-  const deferredWorkspaceSearch = useDeferredValue(workspaceSearch)
-  const deferredDatabaseSearch = useDeferredValue(databaseSearch)
-  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
-  const saveTimerRef = useRef<number | null>(null)
-  const stateSaveTimerRef = useRef<number | null>(null)
-  const editorContentRef = useRef('')
-  const pendingRevealRef = useRef<{ tabId: string; sql: string } | null>(null)
+  const activeRole = useAuthStore((state) => state.auth.user?.activeRole);
+  const sessionRole = activeRole ?? "";
+  const deferredWorkspaceSearch = useDeferredValue(workspaceSearch);
+  const deferredDatabaseSearch = useDeferredValue(databaseSearch);
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+  const stateSaveTimerRef = useRef<number | null>(null);
+  const editorContentRef = useRef("");
+  const pendingRevealRef = useRef<{ tabId: string; sql: string } | null>(null);
 
   const {
     open: assistantOpen,
@@ -694,16 +730,16 @@ export function WorkspacesPage() {
     proposedRewrite,
     setProposedRewrite,
     collapsedToPersist,
-  } = useAssistant()
-  const threadsRef = useRef<Record<string, string>>({})
+  } = useAssistant();
+  const threadsRef = useRef<Record<string, string>>({});
   const ensureThread = useCallback(async () => {
-    if (!activeTabId) return null
-    const existing = threadsRef.current[activeTabId]
-    if (existing) return existing
-    const thread = await createThread(activeTabId)
-    threadsRef.current[activeTabId] = thread.thread_id
-    return thread.thread_id
-  }, [activeTabId])
+    if (!activeTabId) return null;
+    const existing = threadsRef.current[activeTabId];
+    if (existing) return existing;
+    const thread = await createThread(activeTabId);
+    threadsRef.current[activeTabId] = thread.thread_id;
+    return thread.thread_id;
+  }, [activeTabId]);
 
   const assistantContext = useMemo<TurnContext>(
     () => ({
@@ -711,10 +747,13 @@ export function WorkspacesPage() {
       schema: activeTab?.schema ?? null,
       role: sessionRole || null,
     }),
-    [activeTab?.database, activeTab?.schema, sessionRole]
-  )
+    [activeTab?.database, activeTab?.schema, sessionRole],
+  );
 
-  const assistantOnError = useCallback((message: string) => toast.error(message), [])
+  const assistantOnError = useCallback(
+    (message: string) => toast.error(message),
+    [],
+  );
 
   /**
    * Turns the assistant's proposed SQL into line hunks against the tab the
@@ -723,31 +762,39 @@ export function WorkspacesPage() {
    * If the referenced tab is gone the proposal is dropped.
    */
   const assistantOnProposedRewrite = useCallback(
-    ({ attachment, sql, messageId }: { attachment: AttachedQuery; sql: string; messageId: string }) => {
-      const sourceTab = tabs[attachment.tabId]
-      if (!sourceTab) return
-      const before = sourceTab.content
+    ({
+      attachment,
+      sql,
+      messageId,
+    }: {
+      attachment: AttachedQuery;
+      sql: string;
+      messageId: string;
+    }) => {
+      const sourceTab = tabs[attachment.tabId];
+      if (!sourceTab) return;
+      const before = sourceTab.content;
       setProposedRewrite({
         attachmentId: attachment.id,
         tabId: attachment.tabId,
         sql,
         hunks: buildRewriteHunks(before, sql),
         sourceMessageId: messageId,
-      })
+      });
     },
-    [tabs, setProposedRewrite]
-  )
+    [tabs, setProposedRewrite],
+  );
 
   // The global panel owns open/closed and the conversation; the workspace
   // supplies only the per-file binding (thread + active tab context). With no
   // file open the binding is cleared so the provider's global conversation
   // applies, instead of the workspace claiming the global key and inheriting a
   // closed file's transcript.
-  const activeTabTitle = activeTab?.title
+  const activeTabTitle = activeTab?.title;
   useEffect(() => {
     if (!activeTabId) {
-      setBinding(null)
-      return
+      setBinding(null);
+      return;
     }
     setBinding({
       key: activeTabId,
@@ -756,8 +803,8 @@ export function WorkspacesPage() {
       onError: assistantOnError,
       onProposedRewrite: assistantOnProposedRewrite,
       title: activeTabTitle,
-    })
-    return () => setBinding(null)
+    });
+    return () => setBinding(null);
   }, [
     activeTabId,
     activeTabTitle,
@@ -766,215 +813,241 @@ export function WorkspacesPage() {
     assistantOnError,
     assistantOnProposedRewrite,
     setBinding,
-  ])
+  ]);
 
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
-    queryKey: ['workspace-tree'],
-    queryFn: () => api.get<WorkspaceTreeResponse>('/workspaces/tree'),
-  })
+    queryKey: ["workspace-tree"],
+    queryFn: () => api.get<WorkspaceTreeResponse>("/workspaces/tree"),
+  });
 
   const queryContextQuery = useQuery<QueryContextResponse>({
-    queryKey: ['query-context'],
-    queryFn: () => api.get<QueryContextResponse>('/query/context'),
-  })
+    queryKey: ["query-context"],
+    queryFn: () => api.get<QueryContextResponse>("/query/context"),
+  });
 
   const databasesQuery = useQuery<{ databases: Array<{ name: string }> }>({
-    queryKey: ['object-databases'],
-    queryFn: () => api.get<{ databases: Array<{ name: string }> }>('/objects/databases'),
-  })
+    queryKey: ["object-databases"],
+    queryFn: () =>
+      api.get<{ databases: Array<{ name: string }> }>("/objects/databases"),
+  });
 
   const historyQuery = useQuery<HistoryResponse>({
-    queryKey: ['query-history', historyFilter === 'file' ? activeTabId : 'all'],
+    queryKey: ["query-history", historyFilter === "file" ? activeTabId : "all"],
     queryFn: () =>
       api.get<HistoryResponse>(
-        `/query/history?limit=50${historyFilter === 'file' && activeTabId ? `&file_id=${encodeURIComponent(activeTabId)}` : ''}`
+        `/query/history?limit=50${historyFilter === "file" && activeTabId ? `&file_id=${encodeURIComponent(activeTabId)}` : ""}`,
       ),
-    enabled: resultsTab === 'history',
-    refetchInterval: resultsTab === 'history' ? 5000 : false,
-  })
+    enabled: resultsTab === "history",
+    refetchInterval: resultsTab === "history" ? 5000 : false,
+  });
 
   useEffect(() => {
-    const tree = workspaceTreeQuery.data
-    const context = queryContextQuery.data
-    if (!tree || !context) return
-    setSecondaryCollapsed(tree.sidebar_collapsed)
-    setOpenTabIds((prev) => (prev.length ? prev : tree.open_tabs))
-    setActiveTabId((prev) => prev ?? tree.active_tab ?? tree.open_tabs[0] ?? null)
+    const tree = workspaceTreeQuery.data;
+    const context = queryContextQuery.data;
+    if (!tree || !context) return;
+    setSecondaryCollapsed(tree.sidebar_collapsed);
+    setOpenTabIds((prev) => (prev.length ? prev : tree.open_tabs));
+    setActiveTabId(
+      (prev) => prev ?? tree.active_tab ?? tree.open_tabs[0] ?? null,
+    );
 
-    if (!tree.open_tabs.length) return
+    if (!tree.open_tabs.length) return;
     setTabs((prev) => {
-      if (Object.keys(prev).length) return prev
-      const next = { ...prev }
+      if (Object.keys(prev).length) return prev;
+      const next = { ...prev };
       for (const id of tree.open_tabs) {
-        const entry = tree.entries.find((item) => item.id === id)
-        if (!entry) continue
+        const entry = tree.entries.find((item) => item.id === id);
+        if (!entry) continue;
         next[id] = {
           id,
           title: entry.name,
-          content: '',
-          savedContent: '',
-          database: tree.defaults.database ?? context.defaults.database ?? context.databases[0] ?? '',
-          schema: tree.defaults.schema ?? context.defaults.schema ?? context.schemas[0] ?? 'default',
-          role: sessionRole || tree.defaults.role || context.defaults.role || context.roles[0] || '',
+          content: "",
+          savedContent: "",
+          database:
+            tree.defaults.database ??
+            context.defaults.database ??
+            context.databases[0] ??
+            "",
+          schema:
+            tree.defaults.schema ??
+            context.defaults.schema ??
+            context.schemas[0] ??
+            "default",
+          role: sessionRole,
           loaded: false,
-        }
+        };
       }
-      return next
-    })
-  }, [queryContextQuery.data, workspaceTreeQuery.data])
+      return next;
+    });
+  }, [queryContextQuery.data, workspaceTreeQuery.data]);
 
   useEffect(() => {
-    if (!activeTabId) return
-    const tab = tabs[activeTabId]
-    if (!tab || tab.loaded) return
-    void openTab(activeTabId)
-  }, [activeTabId, tabs])
+    if (!activeTabId) return;
+    const tab = tabs[activeTabId];
+    if (!tab || tab.loaded) return;
+    void openTab(activeTabId);
+  }, [activeTabId, tabs]);
 
   // Deep links from Home's Recent work: `?file=<id>` opens that worksheet and
   // `?q=<sql>` selects the matching statement so the user lands on the query,
   // not just the file. Runs once per distinct link; the pending reveal is
   // consumed after the editor mounts the file content.
   useEffect(() => {
-    if (!(workspaceTreeQuery.data && queryContextQuery.data)) return
-    const fileId = search.file
-    if (!fileId) return
-    setOpenTabIds((prev) => (prev.includes(fileId) ? prev : [...prev, fileId]))
-    setActiveTabId(fileId)
+    if (!(workspaceTreeQuery.data && queryContextQuery.data)) return;
+    const fileId = search.file;
+    if (!fileId) return;
+    setOpenTabIds((prev) => (prev.includes(fileId) ? prev : [...prev, fileId]));
+    setActiveTabId(fileId);
     if (search.q) {
-      pendingRevealRef.current = { tabId: fileId, sql: search.q }
+      pendingRevealRef.current = { tabId: fileId, sql: search.q };
     }
-  }, [search.file, search.q, workspaceTreeQuery.data, queryContextQuery.data])
+  }, [search.file, search.q, workspaceTreeQuery.data, queryContextQuery.data]);
 
   useEffect(() => {
-    const pending = pendingRevealRef.current
-    if (!pending) return
-    if (activeTabId !== pending.tabId) return
-    const tab = tabs[pending.tabId]
-    if (!tab?.loaded) return
-    pendingRevealRef.current = null
-    const sql = pending.sql
+    const pending = pendingRevealRef.current;
+    if (!pending) return;
+    if (activeTabId !== pending.tabId) return;
+    const tab = tabs[pending.tabId];
+    if (!tab?.loaded) return;
+    pendingRevealRef.current = null;
+    const sql = pending.sql;
     const frame = window.requestAnimationFrame(() => {
-      revealSqlSelection(tab.content, sql)
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [activeTabId, tabs])
+      revealSqlSelection(tab.content, sql);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTabId, tabs]);
 
   // Pre-load schemas when active tab's database changes
   useEffect(() => {
-    if (!activeTab?.database || schemasByDatabase[activeTab.database]) return
+    if (!activeTab?.database || schemasByDatabase[activeTab.database]) return;
     void api
       .get<SchemaResponse>(
-        `/objects/databases/${encodeURIComponent(activeTab.database)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ''}`
+        `/objects/databases/${encodeURIComponent(activeTab.database)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ""}`,
       )
       .then((response) => {
         setSchemasByDatabase((prev) => ({
           ...prev,
           [activeTab.database]: response.schemas,
-        }))
+        }));
       })
-      .catch(() => {})
-  }, [activeTab?.database, sessionRole])
+      .catch(() => {});
+  }, [activeTab?.database, sessionRole]);
 
   useEffect(() => {
-    if (!activeTab) return
-    if (!activeTab.loaded || activeTab.content === activeTab.savedContent) return
+    if (!activeTab) return;
+    if (!activeTab.loaded || activeTab.content === activeTab.savedContent)
+      return;
     if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current)
+      window.clearTimeout(saveTimerRef.current);
     }
     saveTimerRef.current = window.setTimeout(() => {
-      void saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, sessionRole)
-        .catch(() => {})
-    }, 700)
+      void saveFile(
+        activeTab.id,
+        activeTab.content,
+        activeTab.database,
+        activeTab.schema,
+        sessionRole,
+      ).catch(() => {});
+    }, 700);
     return () => {
       if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current)
+        window.clearTimeout(saveTimerRef.current);
       }
-    }
-  }, [activeTab])
+    };
+  }, [activeTab]);
 
   // Persist last query result to sessionStorage for page refresh recovery
   useEffect(() => {
     if (queryResults) {
       try {
-        sessionStorage.setItem('nova:last-query-results', JSON.stringify(queryResults))
+        sessionStorage.setItem(
+          "nova:last-query-results",
+          JSON.stringify(queryResults),
+        );
       } catch {
         // Ignore quota errors for large result sets
       }
     }
-  }, [queryResults])
+  }, [queryResults]);
 
   useEffect(() => {
     const onMouseMove = (event: MouseEvent) => {
-      if (!dragRef.current) return
-      const delta = dragRef.current.startY - event.clientY
-      setResultsHeight(Math.max(180, dragRef.current.startHeight + delta))
-    }
+      if (!dragRef.current) return;
+      const delta = dragRef.current.startY - event.clientY;
+      setResultsHeight(Math.max(180, dragRef.current.startHeight + delta));
+    };
     const onMouseUp = () => {
-      dragRef.current = null
-      setIsResizingResults(false)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup', onMouseUp)
+      dragRef.current = null;
+      setIsResizingResults(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
     return () => {
-      window.removeEventListener('mousemove', onMouseMove)
-      window.removeEventListener('mouseup', onMouseUp)
-    }
-  }, [])
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (!activeTab) return
+      if (!activeTab) return;
       if (activeTab.loaded && activeTab.content !== activeTab.savedContent) {
-        void saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, sessionRole)
+        void saveFile(
+          activeTab.id,
+          activeTab.content,
+          activeTab.database,
+          activeTab.schema,
+          sessionRole,
+        );
       }
-    }
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [activeTab, sessionRole])
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [activeTab, sessionRole]);
 
   const filteredEntries = useMemo(() => {
-    const entries = workspaceTreeQuery.data?.entries ?? []
-    if (!deferredWorkspaceSearch) return entries
-    const query = deferredWorkspaceSearch.toLowerCase()
-    const matchedPaths = new Set<string>()
+    const entries = workspaceTreeQuery.data?.entries ?? [];
+    if (!deferredWorkspaceSearch) return entries;
+    const query = deferredWorkspaceSearch.toLowerCase();
+    const matchedPaths = new Set<string>();
     for (const entry of entries) {
-      if (!entry.path.toLowerCase().includes(query)) continue
-      matchedPaths.add(entry.path)
-      let currentParent = entry.parent_path
+      if (!entry.path.toLowerCase().includes(query)) continue;
+      matchedPaths.add(entry.path);
+      let currentParent = entry.parent_path;
       while (currentParent) {
-        matchedPaths.add(currentParent)
-        const parentEntry = entries.find((item) => item.path === currentParent)
-        currentParent = parentEntry?.parent_path ?? ''
+        matchedPaths.add(currentParent);
+        const parentEntry = entries.find((item) => item.path === currentParent);
+        currentParent = parentEntry?.parent_path ?? "";
       }
     }
-    return entries.filter((entry) => matchedPaths.has(entry.path))
-  }, [deferredWorkspaceSearch, workspaceTreeQuery.data?.entries])
+    return entries.filter((entry) => matchedPaths.has(entry.path));
+  }, [deferredWorkspaceSearch, workspaceTreeQuery.data?.entries]);
 
   const filteredDatabases = useMemo(() => {
-    const databases = databasesQuery.data?.databases ?? []
-    if (!deferredDatabaseSearch) return databases
-    const query = deferredDatabaseSearch.toLowerCase()
-    return databases.filter((db) => db.name.toLowerCase().includes(query))
-  }, [databasesQuery.data?.databases, deferredDatabaseSearch])
+    const databases = databasesQuery.data?.databases ?? [];
+    if (!deferredDatabaseSearch) return databases;
+    const query = deferredDatabaseSearch.toLowerCase();
+    return databases.filter((db) => db.name.toLowerCase().includes(query));
+  }, [databasesQuery.data?.databases, deferredDatabaseSearch]);
 
   const saveStateMutation = useMutation({
     mutationFn: (state: {
-      open_tabs: string[]
-      active_tab: string | null
-      sidebar_collapsed: boolean
-      assistant_collapsed: boolean
-      last_database: string | null
-      last_schema: string | null
-      last_role: string | null
-    }) => api.put<{ success: boolean }>('/workspaces/state', state),
-  })
+      open_tabs: string[];
+      active_tab: string | null;
+      sidebar_collapsed: boolean;
+      assistant_collapsed: boolean;
+      last_database: string | null;
+      last_schema: string | null;
+      last_role: string | null;
+    }) => api.put<{ success: boolean }>("/workspaces/state", state),
+  });
 
   useEffect(() => {
-    if (!workspaceTreeQuery.data || !queryContextQuery.data) return
+    if (!workspaceTreeQuery.data || !queryContextQuery.data) return;
     if (stateSaveTimerRef.current) {
-      window.clearTimeout(stateSaveTimerRef.current)
+      window.clearTimeout(stateSaveTimerRef.current);
     }
     stateSaveTimerRef.current = window.setTimeout(() => {
       void saveStateMutation.mutateAsync({
@@ -985,13 +1058,13 @@ export function WorkspacesPage() {
         last_database: activeTab?.database ?? null,
         last_schema: activeTab?.schema ?? null,
         last_role: sessionRole || null,
-      })
-    }, 300)
+      });
+    }, 300);
     return () => {
       if (stateSaveTimerRef.current) {
-        window.clearTimeout(stateSaveTimerRef.current)
+        window.clearTimeout(stateSaveTimerRef.current);
       }
-    }
+    };
   }, [
     activeTab?.database,
     activeTab?.schema,
@@ -1003,13 +1076,15 @@ export function WorkspacesPage() {
     secondaryCollapsed,
     sessionRole,
     workspaceTreeQuery.data,
-  ])
+  ]);
 
   async function openTab(id: string) {
-    const file = await api.get<WorkspaceFileResponse>(`/workspaces/files/${id}`)
-    const context = queryContextQuery.data
-    const defaults = workspaceTreeQuery.data?.defaults
-    editorContentRef.current = file.content
+    const file = await api.get<WorkspaceFileResponse>(
+      `/workspaces/files/${id}`,
+    );
+    const context = queryContextQuery.data;
+    const defaults = workspaceTreeQuery.data?.defaults;
+    editorContentRef.current = file.content;
     setTabs((prev) => ({
       ...prev,
       [id]: {
@@ -1017,21 +1092,39 @@ export function WorkspacesPage() {
         title: file.entry.name,
         content: file.content,
         savedContent: file.content,
-        database: prev[id]?.database ?? defaults?.database ?? context?.defaults.database ?? context?.databases[0] ?? '',
-        schema: prev[id]?.schema ?? defaults?.schema ?? context?.defaults.schema ?? 'default',
-        role: sessionRole || prev[id]?.role || defaults?.role || context?.defaults.role || context?.roles[0] || '',
+        database:
+          prev[id]?.database ??
+          defaults?.database ??
+          context?.defaults.database ??
+          context?.databases[0] ??
+          "",
+        schema:
+          prev[id]?.schema ??
+          defaults?.schema ??
+          context?.defaults.schema ??
+          "default",
+        role: sessionRole,
         loaded: true,
       },
-    }))
+    }));
   }
 
-  async function saveFile(id: string, content: string, database: string, schema: string, role: string) {
-    const response = await api.put<WorkspaceFileResponse>(`/workspaces/files/${id}`, {
-      content,
-      database,
-      schema,
-      role,
-    })
+  async function saveFile(
+    id: string,
+    content: string,
+    database: string,
+    schema: string,
+    role: string,
+  ) {
+    const response = await api.put<WorkspaceFileResponse>(
+      `/workspaces/files/${id}`,
+      {
+        content,
+        database,
+        schema,
+        role,
+      },
+    );
     setTabs((prev) => ({
       ...prev,
       [id]: {
@@ -1039,134 +1132,149 @@ export function WorkspacesPage() {
         title: response.entry.name,
         savedContent: content,
       },
-    }))
-    await queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
+    }));
+    await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
   }
 
   function generateUniqueFileName(): string {
-    const existingNames = new Set(Object.values(tabs).map((t) => t.title.toLowerCase()))
-    const base = 'Untitled'
-    const first = `${base}.sql`
-    if (!existingNames.has(first.toLowerCase())) return first
-    let i = 2
-    while (existingNames.has(`${base}-${i}.sql`.toLowerCase())) i++
-    return `${base}-${i}.sql`
+    const existingNames = new Set(
+      Object.values(tabs).map((t) => t.title.toLowerCase()),
+    );
+    const base = "Untitled";
+    const first = `${base}.sql`;
+    if (!existingNames.has(first.toLowerCase())) return first;
+    let i = 2;
+    while (existingNames.has(`${base}-${i}.sql`.toLowerCase())) i++;
+    return `${base}-${i}.sql`;
   }
 
   async function createNewFile() {
-    const fileName = generateUniqueFileName()
+    const fileName = generateUniqueFileName();
     try {
-      const response = await api.post<WorkspaceFileResponse>('/workspaces/files', {
-        name: fileName,
-        parent_path: '',
-        content: '',
-      })
-      await queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
+      const response = await api.post<WorkspaceFileResponse>(
+        "/workspaces/files",
+        {
+          name: fileName,
+          parent_path: "",
+          content: "",
+        },
+      );
+      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
       startTransition(() => {
-        setOpenTabIds((prev) => [...new Set([...prev, response.entry.id])])
-        setActiveTabId(response.entry.id)
+        setOpenTabIds((prev) => [...new Set([...prev, response.entry.id])]);
+        setActiveTabId(response.entry.id);
         setTabs((prev) => ({
           ...prev,
           [response.entry.id]: {
             id: response.entry.id,
             title: response.entry.name,
-            content: '',
-            savedContent: '',
+            content: "",
+            savedContent: "",
             database:
               activeTab?.database ??
               queryContextQuery.data?.defaults.database ??
               queryContextQuery.data?.databases[0] ??
-              '',
-            schema: activeTab?.schema ?? queryContextQuery.data?.defaults.schema ?? 'default',
-            role: sessionRole || queryContextQuery.data?.defaults.role || queryContextQuery.data?.roles[0] || '',
+              "",
+            schema:
+              activeTab?.schema ??
+              queryContextQuery.data?.defaults.schema ??
+              "default",
+            role: sessionRole,
             loaded: true,
           },
-        }))
-      })
+        }));
+      });
     } catch (error) {
       // Surface the backend's classified reason (e.g. storage unavailable)
       // instead of swallowing it — see NOVA-137.
-      toast.error(error instanceof Error ? error.message : 'Failed to create file.')
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create file.",
+      );
     }
   }
 
   async function renameEntry(entry: WorkspaceEntry) {
-    const name = window.prompt('Rename entry', entry.name)
-    if (!name || name === entry.name) return
-    await api.post<{ entry: WorkspaceEntry }>('/workspaces/rename', {
+    const name = window.prompt("Rename entry", entry.name);
+    if (!name || name === entry.name) return;
+    await api.post<{ entry: WorkspaceEntry }>("/workspaces/rename", {
       id: entry.id,
       name,
       parent_path: entry.parent_path,
-    })
-    await queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
+    });
+    await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
   }
 
   async function deleteEntry(entry: WorkspaceEntry) {
-    if (!window.confirm(`Delete ${entry.name}?`)) return
-    await api.delete<{ success: boolean }>(`/workspaces/files/${entry.id}`)
-    setOpenTabIds((prev) => prev.filter((id) => id !== entry.id))
+    if (!window.confirm(`Delete ${entry.name}?`)) return;
+    await api.delete<{ success: boolean }>(`/workspaces/files/${entry.id}`);
+    setOpenTabIds((prev) => prev.filter((id) => id !== entry.id));
     if (activeTabId === entry.id) {
-      setActiveTabId((prev) => openTabIds.find((id) => id !== prev) ?? null)
+      setActiveTabId((prev) => openTabIds.find((id) => id !== prev) ?? null);
     }
-    await queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
+    await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
   }
 
   async function renameTabFile(tabId: string, newName: string) {
-    const trimmed = newName.trim()
-    if (!trimmed) return
-    const tab = tabs[tabId]
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const tab = tabs[tabId];
     if (!tab || trimmed === tab.title) {
-      setRenamingTabId(null)
-      return
+      setRenamingTabId(null);
+      return;
     }
     // Check uniqueness among open tabs
     const existingNames = Object.entries(tabs)
       .filter(([id]) => id !== tabId)
-      .map(([, t]) => t.title.toLowerCase())
+      .map(([, t]) => t.title.toLowerCase());
     if (existingNames.includes(trimmed.toLowerCase())) {
-      toast.error(`A file named "${trimmed}" already exists.`)
-      return
+      toast.error(`A file named "${trimmed}" already exists.`);
+      return;
     }
     try {
-      await api.post('/workspaces/rename', {
+      await api.post("/workspaces/rename", {
         id: tabId,
         name: trimmed,
-        parent_path: '',
-      })
+        parent_path: "",
+      });
       setTabs((prev) => ({
         ...prev,
         [tabId]: { ...prev[tabId], title: trimmed },
-      }))
-      await queryClient.invalidateQueries({ queryKey: ['workspace-tree'] })
+      }));
+      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
     } catch {
-      toast.error('Failed to rename file.')
+      toast.error("Failed to rename file.");
     } finally {
-      setRenamingTabId(null)
+      setRenamingTabId(null);
     }
   }
 
   async function runQuery(confirmDestructive = false, sqlOverride?: string) {
-    if (!activeTab) return
+    if (!activeTab) return;
     const sql =
       sqlOverride?.trim() ||
-      getSqlForExecution(editorContentRef.current || activeTab.content)
-    if (!sql) return
+      getSqlForExecution(editorContentRef.current || activeTab.content);
+    if (!sql) return;
     if (!confirmDestructive && isDestructiveSql(sql)) {
-      const ok = window.confirm('This query looks destructive. Do you want to run it?')
-      if (!ok) return
-      return runQuery(true, sql)
+      const ok = window.confirm(
+        "This query looks destructive. Do you want to run it?",
+      );
+      if (!ok) return;
+      return runQuery(true, sql);
     }
-    setRunning(true)
-    setQueryResults(null)
-    setActiveResultIdx(0)
-    setElapsedMs(0)
-    const controller = new AbortController()
-    abortRef.current = controller
-    const startTime = Date.now()
-    timerRef.current = setInterval(() => setElapsedMs(Date.now() - startTime), 100)
+    setRunning(true);
+    setQueryResults(null);
+    setActiveResultIdx(0);
+    setElapsedMs(0);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const startTime = Date.now();
+    timerRef.current = setInterval(
+      () => setElapsedMs(Date.now() - startTime),
+      100,
+    );
     try {
       const response = await api.post<QueryResponse[]>(
-        '/query/execute',
+        "/query/execute",
         {
           sql,
           database: activeTab.database || null,
@@ -1175,15 +1283,21 @@ export function WorkspacesPage() {
           file_id: activeTab.id,
           confirm_destructive: confirmDestructive,
         },
-        controller.signal
-      )
-      setQueryResults(response)
-      void queryClient.invalidateQueries({ queryKey: ['query-history'] })
+        controller.signal,
+      );
+      setQueryResults(response);
+      void queryClient.invalidateQueries({ queryKey: ["query-history"] });
       if (activeTab.content !== activeTab.savedContent) {
-        await saveFile(activeTab.id, activeTab.content, activeTab.database, activeTab.schema, sessionRole)
+        await saveFile(
+          activeTab.id,
+          activeTab.content,
+          activeTab.database,
+          activeTab.schema,
+          sessionRole,
+        );
       }
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (error instanceof DOMException && error.name === "AbortError") {
         setQueryResults([
           {
             success: false,
@@ -1193,12 +1307,14 @@ export function WorkspacesPage() {
             affected_rows: 0,
             elapsed_ms: Date.now() - startTime,
             original_sql: sql,
-            executed_sql: '',
-            warnings: [`Query cancelled after ${((Date.now() - startTime) / 1000).toFixed(1)}s`],
+            executed_sql: "",
+            warnings: [
+              `Query cancelled after ${((Date.now() - startTime) / 1000).toFixed(1)}s`,
+            ],
             destructive: false,
             needs_confirmation: false,
           },
-        ])
+        ]);
       } else {
         setQueryResults([
           {
@@ -1209,18 +1325,18 @@ export function WorkspacesPage() {
             affected_rows: 0,
             elapsed_ms: 0,
             original_sql: sql,
-            executed_sql: '',
-            warnings: [error instanceof Error ? error.message : 'Query failed'],
+            executed_sql: "",
+            warnings: [error instanceof Error ? error.message : "Query failed"],
             destructive: false,
             needs_confirmation: false,
           },
-        ])
+        ]);
       }
-      void queryClient.invalidateQueries({ queryKey: ['query-history'] })
+      void queryClient.invalidateQueries({ queryKey: ["query-history"] });
     } finally {
-      if (timerRef.current) clearInterval(timerRef.current)
-      abortRef.current = null
-      setRunning(false)
+      if (timerRef.current) clearInterval(timerRef.current);
+      abortRef.current = null;
+      setRunning(false);
     }
   }
 
@@ -1231,58 +1347,58 @@ export function WorkspacesPage() {
    * whitespace differences between the audited SQL and the saved file.
    */
   function revealSqlSelection(content: string, sql: string) {
-    const editor = activeSqlEditorInstance
-    const model = editor?.getModel()
-    if (!editor || !model) return
-    const needle = sql.trim()
-    if (!needle) return
+    const editor = activeSqlEditorInstance;
+    const model = editor?.getModel();
+    if (!editor || !model) return;
+    const needle = sql.trim();
+    if (!needle) return;
 
-    const haystack = content
-    let matchIndex = haystack.indexOf(needle)
-    let matchLength = needle.length
+    const haystack = content;
+    let matchIndex = haystack.indexOf(needle);
+    let matchLength = needle.length;
 
     if (matchIndex === -1) {
       // Whitespace-tolerant fallback: walk the source once, emitting the same
       // single-space collapse the needle uses, while remembering where each
       // emitted character came from. The first original index whose collapsed
       // stream matches the needle marks the selection start.
-      const collapsedNeedle = needle.replace(/\s+/g, ' ')
-      const positions: number[] = []
-      let collapsedHaystack = ''
+      const collapsedNeedle = needle.replace(/\s+/g, " ");
+      const positions: number[] = [];
+      let collapsedHaystack = "";
       for (let i = 0; i < haystack.length; i += 1) {
-        const char = haystack[i]
+        const char = haystack[i];
         if (/\s/.test(char)) {
-          if (collapsedHaystack.endsWith(' ')) continue
-          collapsedHaystack += ' '
+          if (collapsedHaystack.endsWith(" ")) continue;
+          collapsedHaystack += " ";
         } else {
-          collapsedHaystack += char
+          collapsedHaystack += char;
         }
-        positions.push(i)
+        positions.push(i);
       }
-      const collapsedIndex = collapsedHaystack.indexOf(collapsedNeedle)
-      if (collapsedIndex === -1) return
-      const startIndex = positions[collapsedIndex]
-      const endIndex = positions[collapsedIndex + collapsedNeedle.length - 1]
-      if (startIndex === undefined || endIndex === undefined) return
-      matchIndex = startIndex
-      matchLength = endIndex - startIndex + 1
+      const collapsedIndex = collapsedHaystack.indexOf(collapsedNeedle);
+      if (collapsedIndex === -1) return;
+      const startIndex = positions[collapsedIndex];
+      const endIndex = positions[collapsedIndex + collapsedNeedle.length - 1];
+      if (startIndex === undefined || endIndex === undefined) return;
+      matchIndex = startIndex;
+      matchLength = endIndex - startIndex + 1;
     }
 
-    const start = model.getPositionAt(matchIndex)
-    const end = model.getPositionAt(matchIndex + matchLength)
+    const start = model.getPositionAt(matchIndex);
+    const end = model.getPositionAt(matchIndex + matchLength);
     editor.setSelection({
       startLineNumber: start.lineNumber,
       startColumn: start.column,
       endLineNumber: end.lineNumber,
       endColumn: end.column,
-    })
+    });
     editor.revealRangeInCenter({
       startLineNumber: start.lineNumber,
       startColumn: start.column,
       endLineNumber: end.lineNumber,
       endColumn: end.column,
-    })
-    editor.focus()
+    });
+    editor.focus();
   }
 
   /**
@@ -1291,19 +1407,23 @@ export function WorkspacesPage() {
    * so the rewrite diff can locate it later.
    */
   function attachEditorSelectionToAssistant() {
-    if (!activeTab) return
-    const editor = activeSqlEditorInstance
-    const model = editor?.getModel()
-    const selection = editor?.getSelection()
-    if (!editor || !model || !selection) return
-    const selectedSql = selection.isEmpty() ? '' : model.getValueInRange(selection)
-    const sql = (selectedSql || editor.getValue()).trim()
+    if (!activeTab) return;
+    const editor = activeSqlEditorInstance;
+    const model = editor?.getModel();
+    const selection = editor?.getSelection();
+    if (!editor || !model || !selection) return;
+    const selectedSql = selection.isEmpty()
+      ? ""
+      : model.getValueInRange(selection);
+    const sql = (selectedSql || editor.getValue()).trim();
     if (!sql) {
-      toast.error('Select a query to attach first')
-      return
+      toast.error("Select a query to attach first");
+      return;
     }
-    const startLine = selection.isEmpty() ? 1 : selection.startLineNumber
-    const endLine = selection.isEmpty() ? model.getLineCount() : selection.endLineNumber
+    const startLine = selection.isEmpty() ? 1 : selection.startLineNumber;
+    const endLine = selection.isEmpty()
+      ? model.getLineCount()
+      : selection.endLineNumber;
     attachQuery({
       sql,
       tabId: activeTab.id,
@@ -1313,148 +1433,176 @@ export function WorkspacesPage() {
       role: sessionRole || null,
       startLine,
       endLine,
-    })
-    if (!assistantOpen) toggleAssistant()
-    toast.success('Query attached to Nove')
+    });
+    if (!assistantOpen) toggleAssistant();
+    toast.success("Query attached to Nove");
   }
 
   /** Replaces the target tab's content with the proposed SQL and saves it. */
   async function approveProposedRewrite() {
-    const rewrite = proposedRewrite
-    if (!rewrite) return
-    const tab = tabs[rewrite.tabId]
+    const rewrite = proposedRewrite;
+    if (!rewrite) return;
+    const tab = tabs[rewrite.tabId];
     if (!tab) {
-      setProposedRewrite(null)
-      return
+      setProposedRewrite(null);
+      return;
     }
-    const nextContent = applyHunks(tab.content, rewrite.hunks)
-    editorContentRef.current = nextContent
+    const nextContent = applyHunks(tab.content, rewrite.hunks);
+    editorContentRef.current = nextContent;
     setTabs((prev) => ({
       ...prev,
       [rewrite.tabId]: { ...prev[rewrite.tabId], content: nextContent },
-    }))
-    setProposedRewrite(null)
-    await saveFile(rewrite.tabId, nextContent, tab.database, tab.schema, sessionRole)
-    toast.success('Rewrite applied')
+    }));
+    setProposedRewrite(null);
+    await saveFile(
+      rewrite.tabId,
+      nextContent,
+      tab.database,
+      tab.schema,
+      sessionRole,
+    );
+    toast.success("Rewrite applied");
   }
 
   function denyProposedRewrite() {
-    setProposedRewrite(null)
+    setProposedRewrite(null);
   }
 
-  async function flushTabSave(tabId: string | null) {    if (!tabId) return
-    const tab = tabs[tabId]
-    if (!tab || !tab.loaded || tab.content === tab.savedContent) return
-    await saveFile(tab.id, tab.content, tab.database, tab.schema, sessionRole)
+  async function flushTabSave(tabId: string | null) {
+    if (!tabId) return;
+    const tab = tabs[tabId];
+    if (!tab || !tab.loaded || tab.content === tab.savedContent) return;
+    await saveFile(tab.id, tab.content, tab.database, tab.schema, sessionRole);
   }
 
   function exportToExcel() {
-    if (!queryResults?.length) return
-    const workbook = XLSX.utils.book_new()
-    const baseName = activeTab?.title?.replace(/\.sql$/i, '') ?? 'Query Results'
+    if (!queryResults?.length) return;
+    const workbook = XLSX.utils.book_new();
+    const baseName =
+      activeTab?.title?.replace(/\.sql$/i, "") ?? "Query Results";
     queryResults.forEach((qr, idx) => {
-      if (!qr.columns.length) return
+      if (!qr.columns.length) return;
       const data = qr.rows.map((row) => {
-        const obj: Record<string, unknown> = {}
+        const obj: Record<string, unknown> = {};
         qr.columns.forEach((col, i) => {
-          obj[col] = row[i]
-        })
-        return obj
-      })
-      const worksheet = XLSX.utils.json_to_sheet(data)
-      const sheetName = queryResults.length === 1 ? baseName.slice(0, 31) : `Result ${idx + 1}`
-      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
-    })
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
-    XLSX.writeFile(workbook, `${baseName}_${timestamp}.xlsx`)
+          obj[col] = row[i];
+        });
+        return obj;
+      });
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      const sheetName =
+        queryResults.length === 1 ? baseName.slice(0, 31) : `Result ${idx + 1}`;
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    });
+    const timestamp = new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[:T]/g, "-");
+    XLSX.writeFile(workbook, `${baseName}_${timestamp}.xlsx`);
   }
 
   function activateTab(nextTabId: string) {
-    void flushTabSave(activeTabId)
-    setActiveTabId(nextTabId)
+    void flushTabSave(activeTabId);
+    setActiveTabId(nextTabId);
   }
 
   function closeTab(id: string) {
-    void flushTabSave(id)
-    setOpenTabIds((prev) => prev.filter((tabId) => tabId !== id))
+    void flushTabSave(id);
+    setOpenTabIds((prev) => prev.filter((tabId) => tabId !== id));
     setTabs((prev) => {
-      const next = { ...prev }
-      delete next[id]
-      return next
-    })
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     if (activeTabId === id) {
-      const nextId = openTabIds.find((tabId) => tabId !== id) ?? null
-      setActiveTabId(nextId)
+      const nextId = openTabIds.find((tabId) => tabId !== id) ?? null;
+      setActiveTabId(nextId);
     }
   }
 
   function reorderTabs(fromId: string, toId: string) {
-    if (fromId === toId) return
+    if (fromId === toId) return;
     setOpenTabIds((prev) => {
-      const fromIndex = prev.indexOf(fromId)
-      const toIndex = prev.indexOf(toId)
-      if (fromIndex === -1 || toIndex === -1) return prev
-      const next = [...prev]
-      next.splice(fromIndex, 1)
-      next.splice(toIndex, 0, fromId)
-      return next
-    })
+      const fromIndex = prev.indexOf(fromId);
+      const toIndex = prev.indexOf(toId);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+      const next = [...prev];
+      next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, fromId);
+      return next;
+    });
   }
 
   function startResultsResize(event: ReactMouseEvent<HTMLButtonElement>) {
-    event.preventDefault()
+    event.preventDefault();
     dragRef.current = {
       startY: event.clientY,
       startHeight: resultsHeight,
-    }
-    setIsResizingResults(true)
-    document.body.style.cursor = 'row-resize'
-    document.body.style.userSelect = 'none'
+    };
+    setIsResizingResults(true);
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
   }
 
   return (
-    <div data-layout='fixed' className='flex h-full min-h-0 flex-col'>
+    <div data-layout="fixed" className="flex h-full min-h-0 flex-col">
       <Header fixed>
-        <div className='flex min-w-0 flex-1 items-center gap-3'>
-          <div className='min-w-0'>
-            <h1 className='truncate text-lg font-semibold'>Workspaces</h1>
-            <p className='text-sm text-muted-foreground'>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold">Workspaces</h1>
+            <p className="text-sm text-muted-foreground">
               SQL workspace with per-tab context, object browsing, and results.
             </p>
           </div>
         </div>
       </Header>
 
-      <div className='flex min-h-0 flex-1 overflow-hidden border-t'>
-        <aside className={cn('border-r bg-muted/20 transition-all duration-200', secondaryCollapsed ? 'w-14' : 'w-80')}>
-          <div className='flex h-full min-h-0 flex-col'>
-            <div className='border-b px-3 py-3'>
-              <div className='flex items-center justify-between gap-2'>
+      <div className="flex min-h-0 flex-1 overflow-hidden border-t">
+        <aside
+          className={cn(
+            "border-r bg-muted/20 transition-all duration-200",
+            secondaryCollapsed ? "w-14" : "w-80",
+          )}
+        >
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="border-b px-3 py-3">
+              <div className="flex items-center justify-between gap-2">
                 {!secondaryCollapsed && (
                   <Tabs
                     value={sidebarTab}
-                    onValueChange={(value) => setSidebarTab(value as 'workspaces' | 'databases')}
-                    className='w-full'
+                    onValueChange={(value) =>
+                      setSidebarTab(value as "workspaces" | "databases")
+                    }
+                    className="w-full"
                   >
-                    <TabsList className='grid w-full grid-cols-2'>
-                      <TabsTrigger value='workspaces'>Workspaces</TabsTrigger>
-                      <TabsTrigger value='databases'>Databases</TabsTrigger>
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
+                      <TabsTrigger value="databases">Databases</TabsTrigger>
                     </TabsList>
                   </Tabs>
                 )}
-                <Button variant='outline' size='icon' onClick={() => setSecondaryCollapsed((prev) => !prev)}>
-                  <ChevronRight className={cn('size-4 transition-transform', !secondaryCollapsed && 'rotate-180')} />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setSecondaryCollapsed((prev) => !prev)}
+                >
+                  <ChevronRight
+                    className={cn(
+                      "size-4 transition-transform",
+                      !secondaryCollapsed && "rotate-180",
+                    )}
+                  />
                 </Button>
               </div>
-              {!secondaryCollapsed && sidebarTab === 'workspaces' && (
-                <div className='mt-3'>
+              {!secondaryCollapsed && sidebarTab === "workspaces" && (
+                <div className="mt-3">
                   <Button
-                    size='sm'
-                    variant='outline'
-                    className='w-full justify-center gap-2'
+                    size="sm"
+                    variant="outline"
+                    className="w-full justify-center gap-2"
                     onClick={() => void createNewFile()}
                   >
-                    <Plus className='size-4' />
+                    <Plus className="size-4" />
                     New File
                   </Button>
                 </div>
@@ -1463,51 +1611,64 @@ export function WorkspacesPage() {
 
             {!secondaryCollapsed && (
               <>
-                <div className='border-b px-3 py-3'>
-                  <div className='flex items-center gap-1.5'>
-                    <div className='relative flex-1'>
-                      <Search className='absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground' />
+                <div className="border-b px-3 py-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative flex-1">
+                      <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
-                        value={sidebarTab === 'workspaces' ? workspaceSearch : databaseSearch}
+                        value={
+                          sidebarTab === "workspaces"
+                            ? workspaceSearch
+                            : databaseSearch
+                        }
                         onChange={(event) =>
-                          sidebarTab === 'workspaces'
+                          sidebarTab === "workspaces"
                             ? setWorkspaceSearch(event.target.value)
                             : setDatabaseSearch(event.target.value)
                         }
-                        placeholder={sidebarTab === 'workspaces' ? 'Search files' : 'Search databases'}
-                        className='pl-9'
+                        placeholder={
+                          sidebarTab === "workspaces"
+                            ? "Search files"
+                            : "Search databases"
+                        }
+                        className="pl-9"
                       />
                     </div>
                     <button
-                      type='button'
-                      className='shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
-                      title='Refresh'
+                      type="button"
+                      className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      title="Refresh"
                       onClick={() => {
-                        setRefreshing(true)
-                        setTimeout(() => setRefreshing(false), 1000)
-                        if (sidebarTab === 'workspaces') {
+                        setRefreshing(true);
+                        setTimeout(() => setRefreshing(false), 1000);
+                        if (sidebarTab === "workspaces") {
                           void queryClient.invalidateQueries({
-                            queryKey: ['workspace-tree'],
-                          })
+                            queryKey: ["workspace-tree"],
+                          });
                         } else {
                           void queryClient.invalidateQueries({
-                            queryKey: ['object-databases'],
-                          })
+                            queryKey: ["object-databases"],
+                          });
                           void queryClient.invalidateQueries({
-                            queryKey: ['db-schemas'],
-                          })
+                            queryKey: ["db-schemas"],
+                          });
                           void queryClient.invalidateQueries({
-                            queryKey: ['schema-tree'],
-                          })
+                            queryKey: ["schema-tree"],
+                          });
                         }
                       }}
                     >
-                      <RefreshCw className={cn('size-3.5 transition-transform', refreshing && 'animate-spin')} />
+                      <RefreshCw
+                        className={cn(
+                          "size-3.5 transition-transform",
+                          refreshing && "animate-spin",
+                        )}
+                      />
                     </button>
                   </div>
                 </div>
-                <ScrollArea className='min-h-0 flex-1'>
-                  {sidebarTab === 'workspaces' ? (
+                <ScrollArea className="min-h-0 flex-1">
+                  {sidebarTab === "workspaces" ? (
                     <WorkspaceTree
                       entries={filteredEntries}
                       activeEntryId={activeTabId}
@@ -1519,9 +1680,11 @@ export function WorkspacesPage() {
                         }))
                       }
                       onOpen={(entry) => {
-                        if (entry.entry_type !== 'file') return
-                        setOpenTabIds((prev) => [...new Set([...prev, entry.id])])
-                        activateTab(entry.id)
+                        if (entry.entry_type !== "file") return;
+                        setOpenTabIds((prev) => [
+                          ...new Set([...prev, entry.id]),
+                        ]);
+                        activateTab(entry.id);
                         setTabs((prev) => ({
                           ...prev,
                           [entry.id]:
@@ -1529,22 +1692,21 @@ export function WorkspacesPage() {
                             ({
                               id: entry.id,
                               title: entry.name,
-                              content: '',
-                              savedContent: '',
+                              content: "",
+                              savedContent: "",
                               database:
                                 activeTab?.database ??
                                 queryContextQuery.data?.defaults.database ??
                                 queryContextQuery.data?.databases[0] ??
-                                '',
-                              schema: activeTab?.schema ?? queryContextQuery.data?.defaults.schema ?? 'default',
-                              role:
-                                sessionRole ||
-                                queryContextQuery.data?.defaults.role ||
-                                queryContextQuery.data?.roles[0] ||
-                                '',
+                                "",
+                              schema:
+                                activeTab?.schema ??
+                                queryContextQuery.data?.defaults.schema ??
+                                "default",
+                              role: sessionRole,
                               loaded: false,
                             } satisfies WorkspaceTabState),
-                        }))
+                        }));
                       }}
                       onRename={renameEntry}
                       onDelete={deleteEntry}
@@ -1566,7 +1728,11 @@ export function WorkspacesPage() {
                           [key]: !prev[key],
                         }))
                       }
-                      role={sessionRole || queryContextQuery.data?.defaults.role || undefined}
+                      role={
+                        sessionRole ||
+                        queryContextQuery.data?.defaults.role ||
+                        undefined
+                      }
                       setSchemasByDatabase={setSchemasByDatabase}
                     />
                   )}
@@ -1576,39 +1742,41 @@ export function WorkspacesPage() {
           </div>
         </aside>
 
-        <section className='flex min-h-0 min-w-0 flex-1 flex-col bg-background'>
-          <div className='flex items-end border-b border-border px-2 pt-2'>
-            <div className='flex min-w-0 flex-1 items-end gap-0'>
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+          <div className="flex items-end border-b border-border px-2 pt-2">
+            <div className="flex min-w-0 flex-1 items-end gap-0">
               {openTabIds.map((id) => {
-                const tab = tabs[id]
-                if (!tab) return null
-                const isActive = activeTabId === id
-                const isRenaming = renamingTabId === id
-                const isDragging = draggingTabId === id
-                const isDragOver = dragOverTabId === id && draggingTabId !== id
+                const tab = tabs[id];
+                if (!tab) return null;
+                const isActive = activeTabId === id;
+                const isRenaming = renamingTabId === id;
+                const isDragging = draggingTabId === id;
+                const isDragOver = dragOverTabId === id && draggingTabId !== id;
                 return (
                   <div
                     key={id}
                     onDragOver={(event) => {
-                      if (!draggingTabId || draggingTabId === id) return
-                      event.preventDefault()
-                      event.dataTransfer.dropEffect = 'move'
-                      setDragOverTabId(id)
+                      if (!draggingTabId || draggingTabId === id) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setDragOverTabId(id);
                     }}
                     onDragLeave={() => {
-                      setDragOverTabId((current) => (current === id ? null : current))
+                      setDragOverTabId((current) =>
+                        current === id ? null : current,
+                      );
                     }}
                     onDrop={(event) => {
-                      event.preventDefault()
-                      if (draggingTabId) reorderTabs(draggingTabId, id)
-                      setDraggingTabId(null)
-                      setDragOverTabId(null)
+                      event.preventDefault();
+                      if (draggingTabId) reorderTabs(draggingTabId, id);
+                      setDraggingTabId(null);
+                      setDragOverTabId(null);
                     }}
                     className={cn(
-                      'group relative flex min-w-[120px] max-w-[260px] items-center transition-opacity',
-                      isDragging && 'opacity-40',
+                      "group relative flex min-w-[120px] max-w-[260px] items-center transition-opacity",
+                      isDragging && "opacity-40",
                       isDragOver &&
-                        'before:absolute before:inset-y-1 before:-left-px before:z-30 before:w-0.5 before:rounded-full before:bg-primary'
+                        "before:absolute before:inset-y-1 before:-left-px before:z-30 before:w-0.5 before:rounded-full before:bg-primary",
                     )}
                   >
                     {isRenaming ? (
@@ -1617,130 +1785,144 @@ export function WorkspacesPage() {
                         value={renameValue}
                         onChange={(e) => setRenameValue(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') void renameTabFile(id, renameValue)
-                          if (e.key === 'Escape') setRenamingTabId(null)
+                          if (e.key === "Enter")
+                            void renameTabFile(id, renameValue);
+                          if (e.key === "Escape") setRenamingTabId(null);
                         }}
                         onBlur={() => void renameTabFile(id, renameValue)}
                         onFocus={(e) => {
-                          const dotIdx = renameValue.lastIndexOf('.')
-                          e.target.setSelectionRange(0, dotIdx > 0 ? dotIdx : renameValue.length)
+                          const dotIdx = renameValue.lastIndexOf(".");
+                          e.target.setSelectionRange(
+                            0,
+                            dotIdx > 0 ? dotIdx : renameValue.length,
+                          );
                         }}
                         className={cn(
-                          'mx-1.5 h-6 flex-1 rounded border py-0 pl-2 pr-1 text-xs shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0',
+                          "mx-1.5 h-6 flex-1 rounded border py-0 pl-2 pr-1 text-xs shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
                           isActive
-                            ? 'z-10 -mb-px border-border bg-background text-primary'
-                            : 'border-border bg-muted/40 text-foreground'
+                            ? "z-10 -mb-px border-border bg-background text-primary"
+                            : "border-border bg-muted/40 text-foreground",
                         )}
                         onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
                       <button
-                        type='button'
+                        type="button"
                         draggable={!isRenaming}
                         onDragStart={(event) => {
-                          event.dataTransfer.effectAllowed = 'move'
-                          event.dataTransfer.setData('text/plain', id)
-                          setDraggingTabId(id)
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", id);
+                          setDraggingTabId(id);
                         }}
                         onDragEnd={() => {
-                          setDraggingTabId(null)
-                          setDragOverTabId(null)
+                          setDraggingTabId(null);
+                          setDragOverTabId(null);
                         }}
                         onClick={() => activateTab(id)}
                         className={cn(
-                          'flex flex-1 cursor-grab items-center gap-2 rounded-t-md py-1.5 pr-14 pl-3 text-sm transition-colors active:cursor-grabbing',
+                          "flex flex-1 cursor-grab items-center gap-2 rounded-t-md py-1.5 pr-14 pl-3 text-sm transition-colors active:cursor-grabbing",
                           isActive
-                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
-                            : 'border-b border-b-border bg-muted/40 text-muted-foreground hover:bg-muted/60'
+                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
+                            : "border-b border-b-border bg-muted/40 text-muted-foreground hover:bg-muted/60",
                         )}
                       >
-                        <span className='truncate'>{tab.title}</span>
+                        <span className="truncate">{tab.title}</span>
                       </button>
                     )}
                     {/* 3-dot menu + close — hidden when renaming */}
                     {!isRenaming && (
                       <div
                         className={cn(
-                          'absolute right-1 z-20 flex items-center gap-0.5 rounded-sm transition-opacity',
-                          isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                          "absolute right-1 z-20 flex items-center gap-0.5 rounded-sm transition-opacity",
+                          isActive
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100",
                         )}
                       >
                         <TabMenuButton
                           onRename={() => {
-                            setRenameValue(tab.title)
-                            setRenamingTabId(id)
+                            setRenameValue(tab.title);
+                            setRenamingTabId(id);
                           }}
                           onDownload={() => {
                             const blob = new Blob([tab.content], {
-                              type: 'text/sql',
-                            })
-                            const url = URL.createObjectURL(blob)
-                            const a = document.createElement('a')
-                            a.href = url
-                            a.download = tab.title.endsWith('.sql') ? tab.title : `${tab.title}.sql`
-                            a.click()
-                            URL.revokeObjectURL(url)
+                              type: "text/sql",
+                            });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = tab.title.endsWith(".sql")
+                              ? tab.title
+                              : `${tab.title}.sql`;
+                            a.click();
+                            URL.revokeObjectURL(url);
                           }}
                           onClose={() => closeTab(id)}
                         />
                         <X
-                          className='size-3.5 shrink-0 cursor-pointer rounded-sm p-0.5 hover:bg-muted-foreground/20'
+                          className="size-3.5 shrink-0 cursor-pointer rounded-sm p-0.5 hover:bg-muted-foreground/20"
                           onClick={(event) => {
-                            event.stopPropagation()
-                            closeTab(id)
+                            event.stopPropagation();
+                            closeTab(id);
                           }}
                         />
                       </div>
                     )}
                   </div>
-                )
+                );
               })}
               <button
-                type='button'
-                className='mb-0.5 ml-0.5 shrink-0 rounded-t-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
-                title='New file'
+                type="button"
+                className="mb-0.5 ml-0.5 shrink-0 rounded-t-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title="New file"
                 onClick={() => void createNewFile()}
               >
-                <Plus className='size-3.5' />
+                <Plus className="size-3.5" />
               </button>
             </div>
           </div>
 
           {activeTab ? (
             <>
-              <div className='flex flex-wrap items-center gap-3 px-4 py-3'>
+              <div className="flex flex-wrap items-center gap-3 px-4 py-3">
                 {running ? (
-                  <Button size='sm' variant='destructive' onClick={() => abortRef.current?.abort()}>
-                    <Square className='size-4' />
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => abortRef.current?.abort()}
+                  >
+                    <Square className="size-4" />
                     Cancel {(elapsedMs / 1000).toFixed(1)}s
                   </Button>
                 ) : (
-                  <Button size='sm' onClick={() => runQuery()}>
-                    <Play className='size-4' />
+                  <Button size="sm" onClick={() => runQuery()}>
+                    <Play className="size-4" />
                     Run
                   </Button>
                 )}
                 <Button
-                  size='sm'
-                  variant='outline'
-                  title='Format SQL (Ctrl+Shift+F)'
+                  size="sm"
+                  variant="outline"
+                  title="Format SQL (Ctrl+Shift+F)"
                   onClick={() => {
-                    activeSqlEditorInstance?.getAction('editor.action.formatDocument')?.run()
+                    activeSqlEditorInstance
+                      ?.getAction("editor.action.formatDocument")
+                      ?.run();
                   }}
                 >
-                  <Braces className='size-4' />
+                  <Braces className="size-4" />
                   Format
                 </Button>
                 <Button
-                  size='sm'
-                  variant='outline'
-                  title='Version history'
+                  size="sm"
+                  variant="outline"
+                  title="Version history"
                   onClick={() => setHistoryOpen(true)}
                 >
-                  <History className='size-4' />
+                  <History className="size-4" />
                   History
                 </Button>
-                <div className='flex flex-1 flex-wrap items-center justify-end gap-2'>
+                <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
                   {/*
                     Read-only mirror of the session role. The active role is
                     chosen in the bottom-left account menu (Switch Role) and is
@@ -1749,33 +1931,37 @@ export function WorkspacesPage() {
                     role while queries ran as another.
                   */}
                   <span
-                    className='flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground'
-                    title='Active role — switch it from the account menu (bottom-left)'
+                    className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground"
+                    title="Active role — switch it from the account menu (bottom-left)"
                   >
-                    <UserRoundCog className='size-3.5' />
-                    {sessionRole || 'No role'}
+                    <UserRoundCog className="size-3.5" />
+                    {sessionRole || "No role"}
                   </span>
                   <DatabaseSchemaSelector
                     databases={queryContextQuery.data?.databases ?? []}
                     selectedDatabase={activeTab.database}
-                    schemas={activeTab.database ? (schemasByDatabase[activeTab.database] ?? []) : []}
+                    schemas={
+                      activeTab.database
+                        ? (schemasByDatabase[activeTab.database] ?? [])
+                        : []
+                    }
                     selectedSchema={activeTab.schema}
                     onSelectDatabase={async (value) => {
                       const schemas = await api.get<SchemaResponse>(
-                        `/objects/databases/${encodeURIComponent(value)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ''}`
-                      )
+                        `/objects/databases/${encodeURIComponent(value)}/schemas${sessionRole ? `?role=${encodeURIComponent(sessionRole)}` : ""}`,
+                      );
                       setSchemasByDatabase((prev) => ({
                         ...prev,
                         [value]: schemas.schemas,
-                      }))
+                      }));
                       setTabs((prev) => ({
                         ...prev,
                         [activeTab.id]: {
                           ...prev[activeTab.id],
                           database: value,
-                          schema: schemas.schemas[0]?.name ?? 'default',
+                          schema: schemas.schemas[0]?.name ?? "default",
                         },
-                      }))
+                      }));
                     }}
                     onSelectSchema={(value) =>
                       setTabs((prev) => ({
@@ -1790,8 +1976,8 @@ export function WorkspacesPage() {
                 </div>
               </div>
 
-              <div className='grid min-h-0 flex-1 grid-rows-[1fr_auto] overflow-hidden'>
-                <div className='min-h-0 overflow-hidden pt-3'>
+              <div className="grid min-h-0 flex-1 grid-rows-[1fr_auto] overflow-hidden">
+                <div className="min-h-0 overflow-hidden pt-3">
                   <MonacoSqlEditor
                     key={activeTab.id}
                     value={activeTab.content}
@@ -1799,15 +1985,15 @@ export function WorkspacesPage() {
                     schema={activeTab.schema}
                     role={sessionRole}
                     onChange={(value) => {
-                      const content = value ?? ''
-                      editorContentRef.current = content
+                      const content = value ?? "";
+                      editorContentRef.current = content;
                       setTabs((prev) => ({
                         ...prev,
                         [activeTab.id]: {
                           ...prev[activeTab.id],
                           content,
                         },
-                      }))
+                      }));
                     }}
                     onRun={() => runQuery()}
                     onAttachSelection={attachEditorSelectionToAssistant}
@@ -1828,158 +2014,170 @@ export function WorkspacesPage() {
                     } satisfies CSSProperties
                   }
                   className={cn(
-                    'mx-4 mt-2 flex shrink-0 flex-col overflow-hidden rounded-t-xl border bg-background',
-                    isResizingResults ? 'transition-none' : 'transition-[height] duration-200 ease-in-out'
+                    "mx-4 mt-2 flex shrink-0 flex-col overflow-hidden rounded-t-xl border bg-background",
+                    isResizingResults
+                      ? "transition-none"
+                      : "transition-[height] duration-200 ease-in-out",
                   )}
                 >
                   {!resultsCollapsed && (
                     <button
-                      type='button'
-                      aria-label='Resize results panel'
-                      className='group flex h-3 w-full shrink-0 cursor-row-resize items-center justify-center bg-muted/15 hover:bg-muted/30'
+                      type="button"
+                      aria-label="Resize results panel"
+                      className="group flex h-3 w-full shrink-0 cursor-row-resize items-center justify-center bg-muted/15 hover:bg-muted/30"
                       onMouseDown={startResultsResize}
                     >
-                      <span className='h-1 w-16 rounded-full bg-border transition-colors group-hover:bg-muted-foreground/40' />
+                      <span className="h-1 w-16 rounded-full bg-border transition-colors group-hover:bg-muted-foreground/40" />
                     </button>
                   )}
-                  <div className='flex items-end border-b border-border px-2 pt-1'>
+                  <div className="flex items-end border-b border-border px-2 pt-1">
                     <button
-                      type='button'
-                      className='mb-1.5 mr-1 rounded p-0.5 hover:bg-muted'
+                      type="button"
+                      className="mb-1.5 mr-1 rounded p-0.5 hover:bg-muted"
                       onClick={() => setResultsCollapsed((prev) => !prev)}
                     >
-                      <ChevronDown className={cn('size-3.5 transition-transform', resultsCollapsed && '-rotate-90')} />
-                    </button>
-                    <div className='flex items-end gap-0'>
-                      <button
-                        type='button'
-                        onClick={() => setResultsTab('results')}
+                      <ChevronDown
                         className={cn(
-                          'flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors',
-                          resultsTab === 'results'
-                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
-                            : 'border-b border-b-border text-muted-foreground hover:bg-muted/50'
+                          "size-3.5 transition-transform",
+                          resultsCollapsed && "-rotate-90",
+                        )}
+                      />
+                    </button>
+                    <div className="flex items-end gap-0">
+                      <button
+                        type="button"
+                        onClick={() => setResultsTab("results")}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors",
+                          resultsTab === "results"
+                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
+                            : "border-b border-b-border text-muted-foreground hover:bg-muted/50",
                         )}
                       >
                         Results
                         {activeExplainPlan !== null && (
-                          <span className='rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary'>
+                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
                             Explain
                           </span>
                         )}
                         {queryResults && queryResults.length > 0 && (
-                          <span className='text-muted-foreground'>
-                            {queryResults.reduce((s, r) => s + r.row_count, 0)}r •{' '}
-                            {queryResults.reduce((s, r) => s + r.elapsed_ms, 0).toFixed(0)}
+                          <span className="text-muted-foreground">
+                            {queryResults.reduce((s, r) => s + r.row_count, 0)}r
+                            •{" "}
+                            {queryResults
+                              .reduce((s, r) => s + r.elapsed_ms, 0)
+                              .toFixed(0)}
                             ms
                           </span>
                         )}
                       </button>
                       <button
-                        type='button'
-                        onClick={() => setResultsTab('history')}
+                        type="button"
+                        onClick={() => setResultsTab("history")}
                         className={cn(
-                          'flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors',
-                          resultsTab === 'history'
-                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
-                            : 'border-b border-b-border text-muted-foreground hover:bg-muted/50'
+                          "flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors",
+                          resultsTab === "history"
+                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
+                            : "border-b border-b-border text-muted-foreground hover:bg-muted/50",
                         )}
                       >
-                        <Clock className='size-3' />
+                        <Clock className="size-3" />
                         History
                       </button>
                       <button
-                        type='button'
-                        onClick={() => setResultsTab('chart')}
+                        type="button"
+                        onClick={() => setResultsTab("chart")}
                         className={cn(
-                          'flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors',
-                          resultsTab === 'chart'
-                            ? 'z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary'
-                            : 'border-b border-b-border text-muted-foreground hover:bg-muted/50'
+                          "flex items-center gap-1.5 rounded-t-md px-3 py-1 text-xs transition-colors",
+                          resultsTab === "chart"
+                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
+                            : "border-b border-b-border text-muted-foreground hover:bg-muted/50",
                         )}
                       >
-                        <BarChart3 className='size-3' />
+                        <BarChart3 className="size-3" />
                         Chart
                       </button>
                     </div>
                     {!resultsCollapsed && (
-                      <div className='ml-auto mb-1 flex items-center gap-1'>
-                        {resultsTab === 'results' && activeResult?.columns.length ? (
+                      <div className="ml-auto mb-1 flex items-center gap-1">
+                        {resultsTab === "results" &&
+                        activeResult?.columns.length ? (
                           <Button
-                            type='button'
-                            size='sm'
-                            variant='ghost'
-                            className='h-6 gap-1.5 px-2 text-xs'
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 gap-1.5 px-2 text-xs"
                             onClick={exportToExcel}
                           >
-                            <Download className='size-3' />
+                            <Download className="size-3" />
                             Export
                           </Button>
                         ) : null}
-                        {resultsTab === 'history' && (
-                          <div className='flex items-center gap-1 text-xs'>
+                        {resultsTab === "history" && (
+                          <div className="flex items-center gap-1 text-xs">
                             <button
-                              type='button'
+                              type="button"
                               className={cn(
-                                'rounded-md px-2.5 py-0.5 transition-colors',
-                                historyFilter === 'file'
-                                  ? 'bg-primary text-primary-foreground'
-                                  : 'text-muted-foreground hover:bg-muted'
+                                "rounded-md px-2.5 py-0.5 transition-colors",
+                                historyFilter === "file"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground hover:bg-muted",
                               )}
-                              onClick={() => setHistoryFilter('file')}
+                              onClick={() => setHistoryFilter("file")}
                             >
                               Current file
                             </button>
                             <button
-                              type='button'
+                              type="button"
                               className={cn(
-                                'rounded-md px-2.5 py-0.5 transition-colors',
-                                historyFilter === 'all'
-                                  ? 'bg-primary text-primary-foreground'
-                                  : 'text-muted-foreground hover:bg-muted'
+                                "rounded-md px-2.5 py-0.5 transition-colors",
+                                historyFilter === "all"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground hover:bg-muted",
                               )}
-                              onClick={() => setHistoryFilter('all')}
+                              onClick={() => setHistoryFilter("all")}
                             >
                               All files
                             </button>
                           </div>
                         )}
                         <Button
-                          type='button'
-                          size='icon'
-                          variant='ghost'
-                          className='size-6'
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="size-6"
                           onMouseDown={startResultsResize}
                         >
-                          <GripHorizontal className='size-3.5' />
+                          <GripHorizontal className="size-3.5" />
                         </Button>
                       </div>
                     )}
                   </div>
-                  {!resultsCollapsed && resultsTab === 'results' && (
-                    <div className='flex min-h-0 flex-1 flex-col'>
+                  {!resultsCollapsed && resultsTab === "results" && (
+                    <div className="flex min-h-0 flex-1 flex-col">
                       {/* Multi-result sub-tabs */}
                       {queryResults && queryResults.length > 1 && (
-                        <div className='flex items-center gap-0.5 border-b border-border px-2 py-1'>
+                        <div className="flex items-center gap-0.5 border-b border-border px-2 py-1">
                           {queryResults.map((_, idx) => (
                             <button
                               key={idx}
-                              type='button'
+                              type="button"
                               onClick={() => setActiveResultIdx(idx)}
                               className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
                                 activeResultIdx === idx
-                                  ? 'bg-primary/10 text-primary'
-                                  : 'text-muted-foreground hover:bg-muted/50'
+                                  ? "bg-primary/10 text-primary"
+                                  : "text-muted-foreground hover:bg-muted/50"
                               }`}
                             >
-                              {!queryResults[idx].success ? '⚠ ' : ''}Result {idx + 1}
+                              {!queryResults[idx].success ? "⚠ " : ""}Result{" "}
+                              {idx + 1}
                             </button>
                           ))}
                         </div>
                       )}
-                      <div className='min-h-0 flex-1 overflow-auto'>
+                      <div className="min-h-0 flex-1 overflow-auto">
                         {activeExplainPlan !== null ? (
-                          <div className='p-3'>
+                          <div className="p-3">
                             <ExplainTreeView planText={activeExplainPlan} />
                           </div>
                         ) : (
@@ -1988,41 +2186,43 @@ export function WorkspacesPage() {
                       </div>
                     </div>
                   )}
-                  {!resultsCollapsed && resultsTab === 'history' && (
+                  {!resultsCollapsed && resultsTab === "history" && (
                     <QueryHistory
                       items={historyQuery.data?.items ?? []}
                       loading={historyQuery.isLoading}
                       onLoadSql={(sql) => {
-                        if (!activeTab) return
-                        editorContentRef.current = sql
+                        if (!activeTab) return;
+                        editorContentRef.current = sql;
                         setTabs((prev) => ({
                           ...prev,
                           [activeTab.id]: {
                             ...prev[activeTab.id],
                             content: sql,
                           },
-                        }))
+                        }));
                       }}
                       onReRun={(sql) => {
-                        if (!activeTab) return
-                        editorContentRef.current = sql
+                        if (!activeTab) return;
+                        editorContentRef.current = sql;
                         setTabs((prev) => ({
                           ...prev,
                           [activeTab.id]: {
                             ...prev[activeTab.id],
                             content: sql,
                           },
-                        }))
-                        void runQuery(false, sql)
+                        }));
+                        void runQuery(false, sql);
                       }}
                     />
                   )}
-                  {!resultsCollapsed && resultsTab === 'chart' && <ChartVisualization queryResult={activeResult} />}
+                  {!resultsCollapsed && resultsTab === "chart" && (
+                    <ChartVisualization queryResult={activeResult} />
+                  )}
                 </div>
               </div>
             </>
           ) : (
-            <div className='flex flex-1 items-center justify-center text-muted-foreground'>
+            <div className="flex flex-1 items-center justify-center text-muted-foreground">
               Open or create a SQL file to start querying.
             </div>
           )}
@@ -2032,10 +2232,10 @@ export function WorkspacesPage() {
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         entryId={activeTab?.id ?? null}
-        fileName={activeTab?.title ?? ''}
+        fileName={activeTab?.title ?? ""}
       />
     </div>
-  )
+  );
 }
 
 function WorkspaceTree({
@@ -2047,21 +2247,30 @@ function WorkspaceTree({
   onRename,
   onDelete,
 }: {
-  entries: WorkspaceEntry[]
-  activeEntryId: string | null
-  expandedPaths: Record<string, boolean>
-  onTogglePath: (path: string) => void
-  onOpen: (entry: WorkspaceEntry) => void
-  onRename: (entry: WorkspaceEntry) => void
-  onDelete: (entry: WorkspaceEntry) => void
+  entries: WorkspaceEntry[];
+  activeEntryId: string | null;
+  expandedPaths: Record<string, boolean>;
+  onTogglePath: (path: string) => void;
+  onOpen: (entry: WorkspaceEntry) => void;
+  onRename: (entry: WorkspaceEntry) => void;
+  onDelete: (entry: WorkspaceEntry) => void;
 }) {
   return (
-    <div className='px-2 py-3'>
+    <div className="px-2 py-3">
       <SidebarMenu>
-        {renderWorkspaceEntries('', entries, activeEntryId, expandedPaths, onTogglePath, onOpen, onRename, onDelete)}
+        {renderWorkspaceEntries(
+          "",
+          entries,
+          activeEntryId,
+          expandedPaths,
+          onTogglePath,
+          onOpen,
+          onRename,
+          onDelete,
+        )}
       </SidebarMenu>
     </div>
-  )
+  );
 }
 
 function renderWorkspaceEntries(
@@ -2072,29 +2281,47 @@ function renderWorkspaceEntries(
   onTogglePath: (path: string) => void,
   onOpen: (entry: WorkspaceEntry) => void,
   onRename: (entry: WorkspaceEntry) => void,
-  onDelete: (entry: WorkspaceEntry) => void
+  onDelete: (entry: WorkspaceEntry) => void,
 ): React.ReactNode {
   return entries
     .filter((entry) => entry.parent_path === parentPath)
-    .sort((a, b) => (a.entry_type === b.entry_type ? a.name.localeCompare(b.name) : a.entry_type === 'folder' ? -1 : 1))
+    .sort((a, b) =>
+      a.entry_type === b.entry_type
+        ? a.name.localeCompare(b.name)
+        : a.entry_type === "folder"
+          ? -1
+          : 1,
+    )
     .map((entry) => {
-      const isFolder = entry.entry_type === 'folder'
-      const isOpen = expandedPaths[entry.path] ?? false
+      const isFolder = entry.entry_type === "folder";
+      const isOpen = expandedPaths[entry.path] ?? false;
 
       if (isFolder) {
         return (
-          <Collapsible key={entry.id} open={isOpen} onOpenChange={() => onTogglePath(entry.path)}>
+          <Collapsible
+            key={entry.id}
+            open={isOpen}
+            onOpenChange={() => onTogglePath(entry.path)}
+          >
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
                 <button
-                  type='button'
-                  className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted'
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
                 >
                   <ChevronRight
-                    className={cn('size-4 shrink-0 transition-transform duration-200', isOpen && 'rotate-90')}
+                    className={cn(
+                      "size-4 shrink-0 transition-transform duration-200",
+                      isOpen && "rotate-90",
+                    )}
                   />
-                  <Folder className={cn('size-4 shrink-0 text-primary', isOpen && 'text-primary/80')} />
-                  <span className='truncate'>{entry.name}</span>
+                  <Folder
+                    className={cn(
+                      "size-4 shrink-0 text-primary",
+                      isOpen && "text-primary/80",
+                    )}
+                  />
+                  <span className="truncate">{entry.name}</span>
                 </button>
               </CollapsibleTrigger>
               <CollapsibleContent>
@@ -2107,33 +2334,39 @@ function renderWorkspaceEntries(
                     onTogglePath,
                     onOpen,
                     onRename,
-                    onDelete
+                    onDelete,
                   )}
                 </SidebarMenuSub>
               </CollapsibleContent>
             </SidebarMenuItem>
           </Collapsible>
-        )
+        );
       }
 
       return (
         <SidebarMenuItem key={entry.id}>
           <button
-            type='button'
+            type="button"
             className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted',
-              entry.id === activeEntryId && 'bg-primary/10 font-medium text-primary'
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
+              entry.id === activeEntryId &&
+                "bg-primary/10 font-medium text-primary",
             )}
             onClick={() => onOpen(entry)}
           >
             <FileCode
-              className={cn('size-4 shrink-0', entry.id === activeEntryId ? 'text-primary' : 'text-muted-foreground')}
+              className={cn(
+                "size-4 shrink-0",
+                entry.id === activeEntryId
+                  ? "text-primary"
+                  : "text-muted-foreground",
+              )}
             />
-            <span className='truncate'>{entry.name}</span>
+            <span className="truncate">{entry.name}</span>
           </button>
         </SidebarMenuItem>
-      )
-    })
+      );
+    });
 }
 
 function TabMenuButton({
@@ -2141,74 +2374,75 @@ function TabMenuButton({
   onDownload,
   onClose,
 }: {
-  onRename: () => void
-  onDownload: () => void
-  onClose: () => void
+  onRename: () => void;
+  onDownload: () => void;
+  onClose: () => void;
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return
+    if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
 
   return (
-    <div ref={ref} className='relative'>
+    <div ref={ref} className="relative">
       <button
-        type='button'
-        className='rounded-sm p-0.5 hover:bg-muted-foreground/20'
+        type="button"
+        className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
         onClick={(e) => {
-          e.stopPropagation()
-          setOpen(!open)
+          e.stopPropagation();
+          setOpen(!open);
         }}
       >
-        <MoreHorizontal className='size-3.5' />
+        <MoreHorizontal className="size-3.5" />
       </button>
       {open && (
-        <div className='absolute right-0 top-full z-50 mt-1 w-36 rounded-md border bg-popover py-1 shadow-md'>
+        <div className="absolute right-0 top-full z-50 mt-1 w-36 rounded-md border bg-popover py-1 shadow-md">
           <button
-            type='button'
-            className='flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted'
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted"
             onClick={(e) => {
-              e.stopPropagation()
-              onRename()
-              setOpen(false)
+              e.stopPropagation();
+              onRename();
+              setOpen(false);
             }}
           >
-            <Pencil className='size-3.5' /> Rename
+            <Pencil className="size-3.5" /> Rename
           </button>
           <button
-            type='button'
-            className='flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted'
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted"
             onClick={(e) => {
-              e.stopPropagation()
-              onDownload()
-              setOpen(false)
+              e.stopPropagation();
+              onDownload();
+              setOpen(false);
             }}
           >
-            <Download className='size-3.5' /> Download SQL
+            <Download className="size-3.5" /> Download SQL
           </button>
-          <div className='my-1 border-t' />
+          <div className="my-1 border-t" />
           <button
-            type='button'
-            className='flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted'
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted"
             onClick={(e) => {
-              e.stopPropagation()
-              onClose()
-              setOpen(false)
+              e.stopPropagation();
+              onClose();
+              setOpen(false);
             }}
           >
-            <X className='size-3.5' /> Close
+            <X className="size-3.5" /> Close
           </button>
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function DatabaseExplorer({
@@ -2220,16 +2454,18 @@ function DatabaseExplorer({
   role,
   setSchemasByDatabase,
 }: {
-  databases: Array<{ name: string }>
-  expandedDatabases: Record<string, boolean>
-  expandedSchemas: Record<string, boolean>
-  onToggleDatabase: (name: string) => void
-  onToggleSchema: (key: string) => void
-  role?: string
-  setSchemasByDatabase: Dispatch<SetStateAction<Record<string, Array<{ name: string }>>>>
+  databases: Array<{ name: string }>;
+  expandedDatabases: Record<string, boolean>;
+  expandedSchemas: Record<string, boolean>;
+  onToggleDatabase: (name: string) => void;
+  onToggleSchema: (key: string) => void;
+  role?: string;
+  setSchemasByDatabase: Dispatch<
+    SetStateAction<Record<string, Array<{ name: string }>>>
+  >;
 }) {
   return (
-    <div className='px-2 py-3'>
+    <div className="px-2 py-3">
       <SidebarMenu>
         {databases.map((database) => (
           <DatabaseNode
@@ -2245,7 +2481,7 @@ function DatabaseExplorer({
         ))}
       </SidebarMenu>
     </div>
-  )
+  );
 }
 
 function DatabaseNode({
@@ -2257,45 +2493,53 @@ function DatabaseNode({
   role,
   setSchemasByDatabase,
 }: {
-  database: string
-  expanded: boolean
-  expandedSchemas: Record<string, boolean>
-  onToggleDatabase: (name: string) => void
-  onToggleSchema: (key: string) => void
-  role?: string
-  setSchemasByDatabase: Dispatch<SetStateAction<Record<string, Array<{ name: string }>>>>
+  database: string;
+  expanded: boolean;
+  expandedSchemas: Record<string, boolean>;
+  onToggleDatabase: (name: string) => void;
+  onToggleSchema: (key: string) => void;
+  role?: string;
+  setSchemasByDatabase: Dispatch<
+    SetStateAction<Record<string, Array<{ name: string }>>>
+  >;
 }) {
   const schemasQuery = useQuery<SchemaResponse>({
-    queryKey: ['db-schemas', database, role],
+    queryKey: ["db-schemas", database, role],
     queryFn: () =>
       api.get<SchemaResponse>(
-        `/objects/databases/${encodeURIComponent(database)}/schemas${role ? `?role=${encodeURIComponent(role)}` : ''}`
+        `/objects/databases/${encodeURIComponent(database)}/schemas${role ? `?role=${encodeURIComponent(role)}` : ""}`,
       ),
     enabled: expanded,
-  })
+  });
 
   useEffect(() => {
     if (schemasQuery.data) {
       setSchemasByDatabase((prev) => ({
         ...prev,
         [database]: schemasQuery.data.schemas,
-      }))
+      }));
     }
-  }, [database, schemasQuery.data, setSchemasByDatabase])
+  }, [database, schemasQuery.data, setSchemasByDatabase]);
 
   return (
-    <Collapsible open={expanded} onOpenChange={() => onToggleDatabase(database)}>
+    <Collapsible
+      open={expanded}
+      onOpenChange={() => onToggleDatabase(database)}
+    >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
           <button
-            type='button'
-            className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted'
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
           >
             <ChevronRight
-              className={cn('size-4 shrink-0 transition-transform duration-200', expanded && 'rotate-90')}
+              className={cn(
+                "size-4 shrink-0 transition-transform duration-200",
+                expanded && "rotate-90",
+              )}
             />
-            <Database className='size-4 shrink-0 text-primary' />
-            <span className='truncate font-medium'>{database}</span>
+            <Database className="size-4 shrink-0 text-primary" />
+            <span className="truncate font-medium">{database}</span>
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -2305,7 +2549,9 @@ function DatabaseNode({
                 key={`${database}:${schema.name}`}
                 database={database}
                 schema={schema.name}
-                expanded={expandedSchemas[`${database}:${schema.name}`] ?? false}
+                expanded={
+                  expandedSchemas[`${database}:${schema.name}`] ?? false
+                }
                 onToggleSchema={onToggleSchema}
                 role={role}
               />
@@ -2314,7 +2560,7 @@ function DatabaseNode({
         </CollapsibleContent>
       </SidebarMenuItem>
     </Collapsible>
-  )
+  );
 }
 
 function SchemaNode({
@@ -2324,55 +2570,73 @@ function SchemaNode({
   onToggleSchema,
   role,
 }: {
-  database: string
-  schema: string
-  expanded: boolean
-  onToggleSchema: (key: string) => void
-  role?: string
+  database: string;
+  schema: string;
+  expanded: boolean;
+  onToggleSchema: (key: string) => void;
+  role?: string;
 }) {
-  const schemaKey = `${database}:${schema}`
+  const schemaKey = `${database}:${schema}`;
   const treeQuery = useQuery<SchemaTreeResponse>({
-    queryKey: ['schema-tree', database, schema, role],
+    queryKey: ["schema-tree", database, schema, role],
     queryFn: () =>
       api.get<SchemaTreeResponse>(
-        `/objects/databases/${encodeURIComponent(database)}/schemas/${encodeURIComponent(schema)}/tree${role ? `?role=${encodeURIComponent(role)}` : ''}`
+        `/objects/databases/${encodeURIComponent(database)}/schemas/${encodeURIComponent(schema)}/tree${role ? `?role=${encodeURIComponent(role)}` : ""}`,
       ),
     enabled: expanded,
-  })
+  });
 
   return (
     <Collapsible open={expanded} onOpenChange={() => onToggleSchema(schemaKey)}>
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
           <button
-            type='button'
-            className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted'
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
           >
             <ChevronRight
-              className={cn('size-4 shrink-0 transition-transform duration-200', expanded && 'rotate-90')}
+              className={cn(
+                "size-4 shrink-0 transition-transform duration-200",
+                expanded && "rotate-90",
+              )}
             />
-            <Folder className='size-4 shrink-0 text-muted-foreground' />
-            <span className='truncate'>{schema}</span>
+            <Folder className="size-4 shrink-0 text-muted-foreground" />
+            <span className="truncate">{schema}</span>
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
           {treeQuery.data && (
-            <SidebarMenuSub className='space-y-2 py-1'>
-              <ObjectGroup title='Tables' items={treeQuery.data.tables} database={database} schema={schema} />
-              <ObjectGroup title='Views' items={treeQuery.data.views} database={database} schema={schema} />
+            <SidebarMenuSub className="space-y-2 py-1">
               <ObjectGroup
-                title='Materialized Views'
+                title="Tables"
+                items={treeQuery.data.tables}
+                database={database}
+                schema={schema}
+              />
+              <ObjectGroup
+                title="Views"
+                items={treeQuery.data.views}
+                database={database}
+                schema={schema}
+              />
+              <ObjectGroup
+                title="Materialized Views"
                 items={treeQuery.data.materialized_views}
                 database={database}
                 schema={schema}
               />
-              <ObjectGroup title='Stages' items={treeQuery.data.stages} database={database} schema={schema} />
+              <ObjectGroup
+                title="Stages"
+                items={treeQuery.data.stages}
+                database={database}
+                schema={schema}
+              />
             </SidebarMenuSub>
           )}
         </CollapsibleContent>
       </SidebarMenuItem>
     </Collapsible>
-  )
+  );
 }
 
 function ObjectGroup({
@@ -2381,181 +2645,227 @@ function ObjectGroup({
   database,
   schema,
 }: {
-  title: string
-  items: Array<{ name: string }>
-  database: string
-  schema: string
+  title: string;
+  items: Array<{ name: string }>;
+  database: string;
+  schema: string;
 }) {
-  if (!items.length) return null
-  const isTables = title === 'Tables'
+  if (!items.length) return null;
+  const isTables = title === "Tables";
   return (
     <div>
-      <div className='px-2 py-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase'>{title}</div>
-      <div className='space-y-0.5'>
+      <div className="px-2 py-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {title}
+      </div>
+      <div className="space-y-0.5">
         {items.map((item) => (
           <SidebarMenuSubItem key={item.name}>
             {isTables ? (
-              <TableItemWithPopover name={item.name} database={database} schema={schema} />
+              <TableItemWithPopover
+                name={item.name}
+                database={database}
+                schema={schema}
+              />
             ) : (
               <button
-                type='button'
-                className='flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted'
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted"
               >
-                <span className='size-3.5 shrink-0 rounded-sm bg-muted-foreground/20' />
-                <span className='truncate'>{item.name}</span>
+                <span className="size-3.5 shrink-0 rounded-sm bg-muted-foreground/20" />
+                <span className="truncate">{item.name}</span>
               </button>
             )}
           </SidebarMenuSubItem>
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 type ColumnInfo = {
-  name: string
-  type: string
-  null: string
-  key: string
-  default: string | null
-  extra: string
-}
+  name: string;
+  type: string;
+  null: string;
+  key: string;
+  default: string | null;
+  extra: string;
+};
 
-function TableItemWithPopover({ name, database, schema }: { name: string; database: string; schema: string }) {
-  const [hovered, setHovered] = useState(false)
-  const [rect, setRect] = useState<DOMRect | null>(null)
-  const btnRef = useRef<HTMLButtonElement>(null)
+function TableItemWithPopover({
+  name,
+  database,
+  schema,
+}: {
+  name: string;
+  database: string;
+  schema: string;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const columnsQuery = useQuery<{ columns: ColumnInfo[]; count: number }>({
-    queryKey: ['table-columns', database, schema, name],
+    queryKey: ["table-columns", database, schema, name],
     queryFn: () =>
       api.get<{ columns: ColumnInfo[]; count: number }>(
-        `/objects/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(name)}/columns`
+        `/objects/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(name)}/columns`,
       ),
     enabled: hovered,
     staleTime: 60_000,
-  })
+  });
 
   function typeIcon(type: string) {
-    const t = type.toUpperCase()
-    if (/INT|BIGINT|SMALLINT|TINYINT|FLOAT|DOUBLE|DECIMAL|NUMERIC|NUMBER/.test(t))
-      return <Hash className='size-3 shrink-0 text-info-strong' />
-    if (/DATE|TIME|TIMESTAMP/.test(t)) return <Clock className='size-3 shrink-0 text-success-strong' />
+    const t = type.toUpperCase();
+    if (
+      /INT|BIGINT|SMALLINT|TINYINT|FLOAT|DOUBLE|DECIMAL|NUMERIC|NUMBER/.test(t)
+    )
+      return <Hash className="size-3 shrink-0 text-info-strong" />;
+    if (/DATE|TIME|TIMESTAMP/.test(t))
+      return <Clock className="size-3 shrink-0 text-success-strong" />;
     if (/BOOL/.test(t))
       return (
-        <span className='flex size-3 shrink-0 items-center justify-center text-[9px] font-bold text-warning-strong'>B</span>
-      )
-    return <Type className='size-3 shrink-0 text-primary' />
+        <span className="flex size-3 shrink-0 items-center justify-center text-[9px] font-bold text-warning-strong">
+          B
+        </span>
+      );
+    return <Type className="size-3 shrink-0 text-primary" />;
   }
 
   return (
     <div
       onMouseEnter={() => {
-        setHovered(true)
-        if (btnRef.current) setRect(btnRef.current.getBoundingClientRect())
+        setHovered(true);
+        if (btnRef.current) setRect(btnRef.current.getBoundingClientRect());
       }}
       onMouseLeave={() => setHovered(false)}
     >
       <button
         ref={btnRef}
-        type='button'
-        className='flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted'
+        type="button"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted"
       >
-        <Table2 className='size-3.5 shrink-0 text-primary' />
-        <span className='truncate'>{name}</span>
+        <Table2 className="size-3.5 shrink-0 text-primary" />
+        <span className="truncate">{name}</span>
       </button>
       {hovered &&
         rect &&
         createPortal(
           <div
-            className='fixed z-[9999] w-64 rounded-md border bg-popover p-0 shadow-lg'
+            className="fixed z-[9999] w-64 rounded-md border bg-popover p-0 shadow-lg"
             style={{ left: rect.right + 8, top: rect.top }}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
           >
-            <div className='border-b px-3 py-1.5 text-xs font-medium text-muted-foreground'>
-              <FileCode className='mr-1.5 inline size-3' />
+            <div className="border-b px-3 py-1.5 text-xs font-medium text-muted-foreground">
+              <FileCode className="mr-1.5 inline size-3" />
               {name}
               {columnsQuery.data && (
-                <span className='ml-1 text-muted-foreground/60'>• {columnsQuery.data.count} columns</span>
+                <span className="ml-1 text-muted-foreground/60">
+                  • {columnsQuery.data.count} columns
+                </span>
               )}
             </div>
-            <div className='max-h-[240px] overflow-auto py-1'>
+            <div className="max-h-[240px] overflow-auto py-1">
               {columnsQuery.isLoading && (
-                <div className='px-3 py-2 text-xs text-muted-foreground'>Loading columns…</div>
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  Loading columns…
+                </div>
               )}
               {columnsQuery.data?.columns.map((col) => (
-                <div key={col.name} className='flex items-center gap-2 px-3 py-1 text-xs'>
+                <div
+                  key={col.name}
+                  className="flex items-center gap-2 px-3 py-1 text-xs"
+                >
                   {typeIcon(col.type)}
-                  <span className='flex-1 truncate font-medium'>{col.name}</span>
-                  <span className='shrink-0 text-muted-foreground'>{col.type}</span>
+                  <span className="flex-1 truncate font-medium">
+                    {col.name}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {col.type}
+                  </span>
                 </div>
               ))}
-              {columnsQuery.isError && <div className='px-3 py-2 text-xs text-destructive'>Failed to load columns</div>}
+              {columnsQuery.isError && (
+                <div className="px-3 py-2 text-xs text-destructive">
+                  Failed to load columns
+                </div>
+              )}
             </div>
           </div>,
-          document.body
+          document.body,
         )}
     </div>
-  )
+  );
 }
 
 function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(100)
-  const [sortCol, setSortCol] = useState<number | null>(null)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [ctxMenu, setCtxMenu] = useState<{
-    x: number
-    y: number
-    rowIdx: number
-    colIdx: number
-  } | null>(null)
+    x: number;
+    y: number;
+    rowIdx: number;
+    colIdx: number;
+  } | null>(null);
 
   // Close context menu on click outside
   useEffect(() => {
-    if (!ctxMenu) return
-    const close = () => setCtxMenu(null)
-    window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
-  }, [ctxMenu])
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [ctxMenu]);
 
   function copyToClipboard(text: string) {
-    navigator.clipboard.writeText(text)
-    toast.success('Copied to clipboard')
+    navigator.clipboard.writeText(text);
+    toast.success("Copied to clipboard");
   }
 
-  function handleCellContext(e: React.MouseEvent, rowIdx: number, colIdx: number) {
-    e.preventDefault()
-    e.stopPropagation()
-    setCtxMenu({ x: e.clientX, y: e.clientY, rowIdx, colIdx })
+  function handleCellContext(
+    e: React.MouseEvent,
+    rowIdx: number,
+    colIdx: number,
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY, rowIdx, colIdx });
   }
 
   // Reset pagination on new results
-  const prevRowCount = useRef(0)
+  const prevRowCount = useRef(0);
   useEffect(() => {
     if (queryResult && queryResult.row_count !== prevRowCount.current) {
-      setPage(1)
-      setSortCol(null)
-      prevRowCount.current = queryResult.row_count
+      setPage(1);
+      setSortCol(null);
+      prevRowCount.current = queryResult.row_count;
     }
-  }, [queryResult])
+  }, [queryResult]);
 
   if (!queryResult) {
-    return <div className='p-4 text-sm text-muted-foreground'>Run a query to inspect table output here.</div>
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        Run a query to inspect table output here.
+      </div>
+    );
   }
 
   if (queryResult.warnings?.length && !queryResult.columns.length) {
     return (
-      <div className='p-4 text-sm text-destructive'>
+      <div className="p-4 text-sm text-destructive">
         {queryResult.warnings.map((w, i) => (
           <div key={i}>{w}</div>
         ))}
       </div>
-    )
+    );
   }
 
   if (!queryResult.columns.length) {
-    return <div className='p-4 text-sm'>Query completed. Affected rows: {queryResult.affected_rows}</div>
+    return (
+      <div className="p-4 text-sm">
+        Query completed. Affected rows: {queryResult.affected_rows}
+      </div>
+    );
   }
 
   // Sort rows
@@ -2563,93 +2873,105 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
     sortCol !== null
       ? [...queryResult.rows].sort((a, b) => {
           const av = a[sortCol],
-            bv = b[sortCol]
-          if (av === null && bv === null) return 0
-          if (av === null) return 1
-          if (bv === null) return -1
-          const cmp = av < bv ? -1 : av > bv ? 1 : 0
-          return sortDir === 'asc' ? cmp : -cmp
+            bv = b[sortCol];
+          if (av === null && bv === null) return 0;
+          if (av === null) return 1;
+          if (bv === null) return -1;
+          const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+          return sortDir === "asc" ? cmp : -cmp;
         })
-      : queryResult.rows
+      : queryResult.rows;
 
   // Paginate
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize))
-  const startIdx = (page - 1) * pageSize
-  const pageRows = sortedRows.slice(startIdx, startIdx + pageSize)
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  const startIdx = (page - 1) * pageSize;
+  const pageRows = sortedRows.slice(startIdx, startIdx + pageSize);
 
   // Warnings indicator (shown alongside data, not replacing it)
   const warningsBanner = queryResult.warnings?.length ? (
-    <div className='border-b border-border bg-warning/10 px-4 py-2 text-xs text-warning-strong'>
+    <div className="border-b border-border bg-warning/10 px-4 py-2 text-xs text-warning-strong">
       {queryResult.warnings.map((w, i) => (
         <div key={i}>{w}</div>
       ))}
     </div>
-  ) : null
+  ) : null;
 
   function handleSort(colIdx: number) {
     if (sortCol === colIdx) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
-      setSortCol(colIdx)
-      setSortDir('asc')
+      setSortCol(colIdx);
+      setSortDir("asc");
     }
-    setPage(1)
+    setPage(1);
   }
 
   return (
-    <div className='flex h-full flex-col'>
+    <div className="flex h-full flex-col">
       {warningsBanner}
-      <div className='min-h-0 flex-1 overflow-auto'>
-        <table className='w-full border-separate border-spacing-0 text-sm'>
-          <thead className='sticky top-0 z-10 bg-background'>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full border-separate border-spacing-0 text-sm">
+          <thead className="sticky top-0 z-10 bg-background">
             <tr>
-              <th className='w-10 border-b border-r border-border px-1 py-1.5 text-center text-xs text-muted-foreground font-normal'>
+              <th className="w-10 border-b border-r border-border px-1 py-1.5 text-center text-xs text-muted-foreground font-normal">
                 #
               </th>
               {queryResult.columns.map((column, colIndex) => {
-                const sample = queryResult.rows[0]?.[colIndex]
+                const sample = queryResult.rows[0]?.[colIndex];
                 const typeIcon =
-                  typeof sample === 'number'
-                    ? '#'
-                    : typeof sample === 'boolean'
-                      ? '⊙'
-                      : typeof sample === 'string'
+                  typeof sample === "number"
+                    ? "#"
+                    : typeof sample === "boolean"
+                      ? "⊙"
+                      : typeof sample === "string"
                         ? String(sample).match(/^\d{4}-\d{2}-\d{2}/)
-                          ? '◷'
+                          ? "◷"
                           : String(sample).match(/^[\d.,]+$/)
-                            ? '#'
-                            : 'A'
+                            ? "#"
+                            : "A"
                         : sample === null
-                          ? '∅'
-                          : '?'
-                const isSorted = sortCol === colIndex
+                          ? "∅"
+                          : "?";
+                const isSorted = sortCol === colIndex;
                 return (
                   <th
                     key={column}
-                    className='cursor-pointer select-none border-b border-r border-border px-2 py-1.5 text-left font-normal whitespace-nowrap hover:bg-muted/50'
+                    className="cursor-pointer select-none border-b border-r border-border px-2 py-1.5 text-left font-normal whitespace-nowrap hover:bg-muted/50"
                     onClick={() => handleSort(colIndex)}
                   >
-                    <span className='mr-1 text-muted-foreground'>{typeIcon}</span>
+                    <span className="mr-1 text-muted-foreground">
+                      {typeIcon}
+                    </span>
                     {column}
-                    {isSorted && <span className='ml-1 text-primary'>{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    {isSorted && (
+                      <span className="ml-1 text-primary">
+                        {sortDir === "asc" ? "↑" : "↓"}
+                      </span>
+                    )}
                   </th>
-                )
+                );
               })}
             </tr>
           </thead>
           <tbody>
             {pageRows.map((row, rowIndex) => (
-              <tr key={rowIndex} className='hover:bg-muted/30'>
-                <td className='border-b border-r border-border px-1 py-1 text-center text-xs text-muted-foreground'>
+              <tr key={rowIndex} className="hover:bg-muted/30">
+                <td className="border-b border-r border-border px-1 py-1 text-center text-xs text-muted-foreground">
                   {startIdx + rowIndex + 1}
                 </td>
                 {row.map((cell, cellIndex) => (
                   <td
                     key={`${rowIndex}-${cellIndex}`}
-                    className='border-b border-r border-border px-2 py-1 whitespace-nowrap'
-                    onContextMenu={(e) => handleCellContext(e, startIdx + rowIndex, cellIndex)}
+                    className="border-b border-r border-border px-2 py-1 whitespace-nowrap"
+                    onContextMenu={(e) =>
+                      handleCellContext(e, startIdx + rowIndex, cellIndex)
+                    }
                   >
-                    {cell === null ? <span className='text-muted-foreground italic'>NULL</span> : String(cell)}
+                    {cell === null ? (
+                      <span className="text-muted-foreground italic">NULL</span>
+                    ) : (
+                      String(cell)
+                    )}
                   </td>
                 ))}
               </tr>
@@ -2658,14 +2980,15 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
         </table>
       </div>
       {/* Pagination footer */}
-      <div className='flex items-center justify-between border-t border-border px-3 py-1.5 text-xs text-muted-foreground'>
+      <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
         <span>
-          Rows {startIdx + 1}–{Math.min(startIdx + pageSize, sortedRows.length)} of {sortedRows.length}
+          Rows {startIdx + 1}–{Math.min(startIdx + pageSize, sortedRows.length)}{" "}
+          of {sortedRows.length}
         </span>
-        <div className='flex items-center gap-2'>
+        <div className="flex items-center gap-2">
           <button
-            type='button'
-            className='rounded px-1.5 py-0.5 hover:bg-muted disabled:opacity-40'
+            type="button"
+            className="rounded px-1.5 py-0.5 hover:bg-muted disabled:opacity-40"
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
@@ -2675,19 +2998,19 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
             Page {page} of {totalPages}
           </span>
           <button
-            type='button'
-            className='rounded px-1.5 py-0.5 hover:bg-muted disabled:opacity-40'
+            type="button"
+            className="rounded px-1.5 py-0.5 hover:bg-muted disabled:opacity-40"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
             Next ▶
           </button>
           <select
-            className='rounded border border-border bg-background px-1.5 py-0.5 text-xs'
+            className="rounded border border-border bg-background px-1.5 py-0.5 text-xs"
             value={pageSize}
             onChange={(e) => {
-              setPageSize(Number(e.target.value))
-              setPage(1)
+              setPageSize(Number(e.target.value));
+              setPage(1);
             }}
           >
             <option value={25}>25 / page</option>
@@ -2701,69 +3024,79 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
       {ctxMenu &&
         queryResult &&
         (() => {
-          const { rowIdx, colIdx, x, y } = ctxMenu
-          const allRows = sortedRows
-          const cellVal = allRows[rowIdx]?.[colIdx]
-          const row = allRows[rowIdx]
-          const col = allRows.map((r) => r[colIdx])
-          const colName = queryResult.columns[colIdx]
+          const { rowIdx, colIdx, x, y } = ctxMenu;
+          const allRows = sortedRows;
+          const cellVal = allRows[rowIdx]?.[colIdx];
+          const row = allRows[rowIdx];
+          const col = allRows.map((r) => r[colIdx]);
+          const colName = queryResult.columns[colIdx];
           return (
             <div
-              className='fixed z-[9999] min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-lg'
+              className="fixed z-[9999] min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-lg"
               style={{ left: x, top: y }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className='mb-1 truncate border-b border-border px-2 py-1 text-[11px] text-muted-foreground'>
+              <div className="mb-1 truncate border-b border-border px-2 py-1 text-[11px] text-muted-foreground">
                 {colName} — Row {rowIdx + 1}
               </div>
               <button
-                type='button'
-                className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+                type="button"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
                 onClick={() => {
-                  copyToClipboard(cellVal === null ? 'NULL' : String(cellVal))
-                  setCtxMenu(null)
+                  copyToClipboard(cellVal === null ? "NULL" : String(cellVal));
+                  setCtxMenu(null);
                 }}
               >
-                <Copy className='size-3.5' /> Copy cell value
+                <Copy className="size-3.5" /> Copy cell value
               </button>
               <button
-                type='button'
-                className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+                type="button"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
                 onClick={() => {
-                  copyToClipboard(row.map((c) => (c === null ? 'NULL' : String(c))).join('\t'))
-                  setCtxMenu(null)
+                  copyToClipboard(
+                    row
+                      .map((c) => (c === null ? "NULL" : String(c)))
+                      .join("\t"),
+                  );
+                  setCtxMenu(null);
                 }}
               >
-                <Copy className='size-3.5' /> Copy row (TSV)
+                <Copy className="size-3.5" /> Copy row (TSV)
               </button>
               <button
-                type='button'
-                className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+                type="button"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
                 onClick={() => {
-                  copyToClipboard(col.map((c) => (c === null ? 'NULL' : String(c))).join('\n'))
-                  setCtxMenu(null)
+                  copyToClipboard(
+                    col
+                      .map((c) => (c === null ? "NULL" : String(c)))
+                      .join("\n"),
+                  );
+                  setCtxMenu(null);
                 }}
               >
-                <Copy className='size-3.5' /> Copy column ({colName})
+                <Copy className="size-3.5" /> Copy column ({colName})
               </button>
-              <div className='my-1 border-t border-border' />
+              <div className="my-1 border-t border-border" />
               <button
-                type='button'
-                className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent'
+                type="button"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
                 onClick={() => {
-                  const header = queryResult.columns.join('\t')
-                  const body = allRows.map((r) => r.map((c) => (c === null ? '' : String(c))).join('\t'))
-                  copyToClipboard([header, ...body].join('\n'))
-                  setCtxMenu(null)
+                  const header = queryResult.columns.join("\t");
+                  const body = allRows.map((r) =>
+                    r.map((c) => (c === null ? "" : String(c))).join("\t"),
+                  );
+                  copyToClipboard([header, ...body].join("\n"));
+                  setCtxMenu(null);
                 }}
               >
-                <Copy className='size-3.5' /> Copy all (CSV)
+                <Copy className="size-3.5" /> Copy all (CSV)
               </button>
             </div>
-          )
+          );
         })()}
     </div>
-  )
+  );
 }
 
 // ── Chart Visualization ─────────────────────────────────────────────
@@ -2771,370 +3104,423 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
 // Literal calls keep each read inside the gate's A2 exemption.
 function readSeriesPalette() {
   return [
-    readToken('--chart-4', '#4f7ee8'),
-    readToken('--chart-2', '#14a89a'),
-    readToken('--chart-3', '#e89b17'),
-    readToken('--chart-1', '#f05a47'),
-    readToken('--chart-6', '#a78bfa'),
-    readToken('--chart-7', '#f472b6'),
-    readToken('--chart-8', '#38bdf8'),
-    readToken('--chart-9', '#34d399'),
-  ]
+    readToken("--chart-4", "#4f7ee8"),
+    readToken("--chart-2", "#14a89a"),
+    readToken("--chart-3", "#e89b17"),
+    readToken("--chart-1", "#f05a47"),
+    readToken("--chart-6", "#a78bfa"),
+    readToken("--chart-7", "#f472b6"),
+    readToken("--chart-8", "#38bdf8"),
+    readToken("--chart-9", "#34d399"),
+  ];
 }
 
 function readTonePalette() {
   return [
-    readToken('--chart-tone-1', '#5b8def'),
-    readToken('--chart-tone-2', '#76a0ef'),
-    readToken('--chart-tone-3', '#90b4f2'),
-    readToken('--chart-tone-4', '#aac7f5'),
-    readToken('--chart-tone-5', '#c4daf8'),
-    readToken('--chart-tone-6', '#deedfb'),
-  ]
+    readToken("--chart-tone-1", "#5b8def"),
+    readToken("--chart-tone-2", "#76a0ef"),
+    readToken("--chart-tone-3", "#90b4f2"),
+    readToken("--chart-tone-4", "#aac7f5"),
+    readToken("--chart-tone-5", "#c4daf8"),
+    readToken("--chart-tone-6", "#deedfb"),
+  ];
 }
-const CHART_EMPTY_OPTION = '__none__'
+const CHART_EMPTY_OPTION = "__none__";
 const CHART_TYPE_OPTIONS = [
-  { value: 'bar', label: 'Bar chart' },
-  { value: 'stacked-bar', label: 'Stacked bar chart' },
-  { value: 'line', label: 'Line chart' },
-  { value: 'area', label: 'Area chart' },
-  { value: 'pie', label: 'Pie chart' },
-] as const
+  { value: "bar", label: "Bar chart" },
+  { value: "stacked-bar", label: "Stacked bar chart" },
+  { value: "line", label: "Line chart" },
+  { value: "area", label: "Area chart" },
+  { value: "pie", label: "Pie chart" },
+] as const;
 const AGGREGATE_OPTIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'count', label: 'Count' },
-  { value: 'min', label: 'Min' },
-  { value: 'max', label: 'Max' },
-  { value: 'sum', label: 'Sum' },
-  { value: 'median', label: 'Median' },
-  { value: 'average', label: 'Average' },
-] as const
+  { value: "none", label: "None" },
+  { value: "count", label: "Count" },
+  { value: "min", label: "Min" },
+  { value: "max", label: "Max" },
+  { value: "sum", label: "Sum" },
+  { value: "median", label: "Median" },
+  { value: "average", label: "Average" },
+] as const;
 const SORT_OPTIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'x-asc', label: 'X ascending' },
-  { value: 'x-desc', label: 'X descending' },
-  { value: 'y-desc', label: 'Y descending' },
-  { value: 'y-asc', label: 'Y ascending' },
-] as const
+  { value: "none", label: "None" },
+  { value: "x-asc", label: "X ascending" },
+  { value: "x-desc", label: "X descending" },
+  { value: "y-desc", label: "Y descending" },
+  { value: "y-asc", label: "Y ascending" },
+] as const;
 const COLOR_OPTIONS = [
-  { value: 'palette', label: 'Palette' },
-  { value: 'single', label: 'Single tone' },
-] as const
+  { value: "palette", label: "Palette" },
+  { value: "single", label: "Single tone" },
+] as const;
 
-type ColumnType = 'number' | 'date' | 'text' | 'boolean' | 'null'
-type ChartType = (typeof CHART_TYPE_OPTIONS)[number]['value']
-type AggregateType = (typeof AGGREGATE_OPTIONS)[number]['value']
-type SortMode = (typeof SORT_OPTIONS)[number]['value']
-type ColorMode = (typeof COLOR_OPTIONS)[number]['value']
-type ChartRecord = Record<string, string | number | boolean | null>
+type ColumnType = "number" | "date" | "text" | "boolean" | "null";
+type ChartType = (typeof CHART_TYPE_OPTIONS)[number]["value"];
+type AggregateType = (typeof AGGREGATE_OPTIONS)[number]["value"];
+type SortMode = (typeof SORT_OPTIONS)[number]["value"];
+type ColorMode = (typeof COLOR_OPTIONS)[number]["value"];
+type ChartRecord = Record<string, string | number | boolean | null>;
 type ChartSeries = {
-  key: string
-  label: string
-  color: string
-}
+  key: string;
+  label: string;
+  color: string;
+};
 
-function inferColumnType(rows: QueryResponse['rows'], colIndex: number): ColumnType {
+function inferColumnType(
+  rows: QueryResponse["rows"],
+  colIndex: number,
+): ColumnType {
   for (let i = 0; i < Math.min(rows.length, 20); i++) {
-    const val = rows[i]?.[colIndex]
-    if (val === null || val === undefined) continue
-    if (typeof val === 'number') return 'number'
-    if (typeof val === 'boolean') return 'boolean'
-    if (typeof val === 'string') {
-      if (/^\d{4}-\d{2}-\d{2}/.test(val)) return 'date'
-      if (/^[\d.,]+$/.test(val)) return 'number'
-      return 'text'
+    const val = rows[i]?.[colIndex];
+    if (val === null || val === undefined) continue;
+    if (typeof val === "number") return "number";
+    if (typeof val === "boolean") return "boolean";
+    if (typeof val === "string") {
+      if (/^\d{4}-\d{2}-\d{2}/.test(val)) return "date";
+      if (/^[\d.,]+$/.test(val)) return "number";
+      return "text";
     }
   }
-  return 'null'
+  return "null";
 }
 
 function parseNumericValue(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const normalized = value.replace(/,/g, '').trim()
-    if (!normalized) return null
-    const parsed = Number(normalized)
-    return Number.isFinite(parsed) ? parsed : null
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const normalized = value.replace(/,/g, "").trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
   }
-  return null
+  return null;
 }
 
 function formatChartLabel(value: unknown) {
-  if (value === null || value === undefined || value === '') return 'Unknown'
-  return String(value)
+  if (value === null || value === undefined || value === "") return "Unknown";
+  return String(value);
 }
 
 function summarizeValues(values: number[], aggregate: AggregateType) {
-  if (values.length === 0) return 0
+  if (values.length === 0) return 0;
 
   switch (aggregate) {
-    case 'count':
-      return values.length
-    case 'min':
-      return Math.min(...values)
-    case 'max':
-      return Math.max(...values)
-    case 'average':
-      return values.reduce((sum, value) => sum + value, 0) / values.length
-    case 'median': {
-      const sorted = [...values].sort((a, b) => a - b)
-      const midpoint = Math.floor(sorted.length / 2)
-      return sorted.length % 2 === 0 ? (sorted[midpoint - 1] + sorted[midpoint]) / 2 : sorted[midpoint]
+    case "count":
+      return values.length;
+    case "min":
+      return Math.min(...values);
+    case "max":
+      return Math.max(...values);
+    case "average":
+      return values.reduce((sum, value) => sum + value, 0) / values.length;
+    case "median": {
+      const sorted = [...values].sort((a, b) => a - b);
+      const midpoint = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0
+        ? (sorted[midpoint - 1] + sorted[midpoint]) / 2
+        : sorted[midpoint];
     }
-    case 'sum':
+    case "sum":
     default:
-      return values.reduce((sum, value) => sum + value, 0)
+      return values.reduce((sum, value) => sum + value, 0);
   }
 }
 
 function formatNumberCompact(value: number) {
-  return new Intl.NumberFormat('en-US', {
-    notation: Math.abs(value) >= 1000 ? 'compact' : 'standard',
+  return new Intl.NumberFormat("en-US", {
+    notation: Math.abs(value) >= 1000 ? "compact" : "standard",
     maximumFractionDigits: 2,
-  }).format(value)
+  }).format(value);
 }
 
 function getSeriesColors(colorMode: ColorMode, count: number) {
-  const palette = colorMode === 'single' ? readTonePalette() : readSeriesPalette()
+  const palette =
+    colorMode === "single" ? readTonePalette() : readSeriesPalette();
 
   return Array.from(
     { length: count },
-    (_, index) => palette[index % palette.length]
-  )
+    (_, index) => palette[index % palette.length],
+  );
 }
 
 function compareChartValues(
   left: string | number | boolean | null | undefined,
-  right: string | number | boolean | null | undefined
+  right: string | number | boolean | null | undefined,
 ) {
-  const leftNumber = parseNumericValue(left)
-  const rightNumber = parseNumericValue(right)
+  const leftNumber = parseNumericValue(left);
+  const rightNumber = parseNumericValue(right);
 
-  if (leftNumber != null && rightNumber != null) return leftNumber - rightNumber
+  if (leftNumber != null && rightNumber != null)
+    return leftNumber - rightNumber;
 
-  return formatChartLabel(left).localeCompare(formatChartLabel(right))
+  return formatChartLabel(left).localeCompare(formatChartLabel(right));
 }
 
 function formatAxisTick(value: unknown, maxLength: number = 18) {
-  const label = formatChartLabel(value)
-  return label.length > maxLength ? `${label.slice(0, maxLength)}...` : label
+  const label = formatChartLabel(value);
+  return label.length > maxLength ? `${label.slice(0, maxLength)}...` : label;
 }
 
-function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null }) {
-  const { resolvedTheme } = useTheme()
+function ChartVisualization({
+  queryResult,
+}: {
+  queryResult: QueryResponse | null;
+}) {
+  const { resolvedTheme } = useTheme();
   // Re-read whenever the theme flips: tokens resolve to different values. Declared
   // with the other hooks, above the empty-result early return, so the hook order
   // is identical whether or not the current result has rows.
   const chartTheme = useMemo(
     () => ({
-      mutedForeground: readToken('--muted-foreground', '#5c6e87'),
-      border: readToken('--border', '#e0e5ec'),
-      popover: readToken('--popover', '#ffffff'),
-      foreground: readToken('--foreground', '#1e293b'),
-      background: readToken('--background', '#ffffff'),
+      mutedForeground: readToken("--muted-foreground", "#5c6e87"),
+      border: readToken("--border", "#e0e5ec"),
+      popover: readToken("--popover", "#ffffff"),
+      foreground: readToken("--foreground", "#1e293b"),
+      background: readToken("--background", "#ffffff"),
     }),
-    [resolvedTheme]
-  )
-  const [builderCollapsed, setBuilderCollapsed] = useState(false)
-  const [chartType, setChartType] = useState<ChartType>('bar')
-  const [xCol, setXCol] = useState('')
-  const [yCols, setYCols] = useState<string[]>([])
-  const [aggregate, setAggregate] = useState<AggregateType>('none')
-  const [groupBy, setGroupBy] = useState('')
-  const [sortMode, setSortMode] = useState<SortMode>('none')
-  const [colorMode, setColorMode] = useState<ColorMode>('palette')
-  const [showXAxisLabel, setShowXAxisLabel] = useState(true)
-  const [showYAxisLabel, setShowYAxisLabel] = useState(true)
-  const [xAxisLabel, setXAxisLabel] = useState('')
-  const [yAxisLabel, setYAxisLabel] = useState('')
+    [resolvedTheme],
+  );
+  const [builderCollapsed, setBuilderCollapsed] = useState(false);
+  const [chartType, setChartType] = useState<ChartType>("bar");
+  const [xCol, setXCol] = useState("");
+  const [yCols, setYCols] = useState<string[]>([]);
+  const [aggregate, setAggregate] = useState<AggregateType>("none");
+  const [groupBy, setGroupBy] = useState("");
+  const [sortMode, setSortMode] = useState<SortMode>("none");
+  const [colorMode, setColorMode] = useState<ColorMode>("palette");
+  const [showXAxisLabel, setShowXAxisLabel] = useState(true);
+  const [showYAxisLabel, setShowYAxisLabel] = useState(true);
+  const [xAxisLabel, setXAxisLabel] = useState("");
+  const [yAxisLabel, setYAxisLabel] = useState("");
 
   const columnTypes = useMemo(() => {
-    if (!queryResult?.columns.length) return []
-    return queryResult.columns.map((_, i) => inferColumnType(queryResult.rows, i))
-  }, [queryResult])
+    if (!queryResult?.columns.length) return [];
+    return queryResult.columns.map((_, i) =>
+      inferColumnType(queryResult.rows, i),
+    );
+  }, [queryResult]);
 
   const rawRecords = useMemo<ChartRecord[]>(() => {
-    if (!queryResult) return []
+    if (!queryResult) return [];
 
     return queryResult.rows.map((row) => {
-      const record: ChartRecord = {}
+      const record: ChartRecord = {};
       queryResult.columns.forEach((column, index) => {
-        const rawValue = row[index]
-        const columnType = columnTypes[index]
+        const rawValue = row[index];
+        const columnType = columnTypes[index];
 
-        if (columnType === 'number') {
-          record[column] = parseNumericValue(rawValue)
+        if (columnType === "number") {
+          record[column] = parseNumericValue(rawValue);
         } else {
-          record[column] = rawValue
+          record[column] = rawValue;
         }
-      })
-      return record
-    })
-  }, [columnTypes, queryResult])
+      });
+      return record;
+    });
+  }, [columnTypes, queryResult]);
 
   const xCandidates = useMemo(
-    () => queryResult?.columns.filter((_, index) => columnTypes[index] !== 'null') ?? [],
-    [columnTypes, queryResult]
-  )
+    () =>
+      queryResult?.columns.filter(
+        (_, index) => columnTypes[index] !== "null",
+      ) ?? [],
+    [columnTypes, queryResult],
+  );
 
   const numericCandidates = useMemo(
-    () => queryResult?.columns.filter((_, index) => columnTypes[index] === 'number') ?? [],
-    [columnTypes, queryResult]
-  )
+    () =>
+      queryResult?.columns.filter(
+        (_, index) => columnTypes[index] === "number",
+      ) ?? [],
+    [columnTypes, queryResult],
+  );
 
   // Auto-detect best chart config on new results
   useEffect(() => {
-    if (!queryResult?.columns.length) return
+    if (!queryResult?.columns.length) return;
 
-    const textColumns = queryResult.columns.filter((_, index) => columnTypes[index] === 'text')
-    const dateColumns = queryResult.columns.filter((_, index) => columnTypes[index] === 'date')
-    const numberColumns = queryResult.columns.filter((_, index) => columnTypes[index] === 'number')
+    const textColumns = queryResult.columns.filter(
+      (_, index) => columnTypes[index] === "text",
+    );
+    const dateColumns = queryResult.columns.filter(
+      (_, index) => columnTypes[index] === "date",
+    );
+    const numberColumns = queryResult.columns.filter(
+      (_, index) => columnTypes[index] === "number",
+    );
 
     const nextXColumn =
       dateColumns[0] ??
       textColumns[0] ??
       queryResult.columns.find((column) => !numberColumns.includes(column)) ??
       queryResult.columns[0] ??
-      ''
+      "";
 
     const nextYColumns =
       numberColumns.length > 0
         ? numberColumns.slice(0, dateColumns.length > 0 ? 2 : 3)
-        : queryResult.columns.slice(1, 2)
+        : queryResult.columns.slice(1, 2);
 
     if (dateColumns.length >= 1 && numberColumns.length >= 1) {
-      setChartType('line')
+      setChartType("line");
     } else if (numberColumns.length >= 1) {
-      setChartType('bar')
+      setChartType("bar");
     } else {
-      setChartType('pie')
+      setChartType("pie");
     }
 
-    setXCol(nextXColumn)
-    setYCols(nextYColumns)
-    setAggregate('none')
-    setGroupBy('')
-    setSortMode('none')
-    setColorMode('palette')
-    setShowXAxisLabel(true)
-    setShowYAxisLabel(true)
-    setXAxisLabel(nextXColumn)
-    setYAxisLabel(nextYColumns[0] ?? '')
-  }, [columnTypes, queryResult])
+    setXCol(nextXColumn);
+    setYCols(nextYColumns);
+    setAggregate("none");
+    setGroupBy("");
+    setSortMode("none");
+    setColorMode("palette");
+    setShowXAxisLabel(true);
+    setShowYAxisLabel(true);
+    setXAxisLabel(nextXColumn);
+    setYAxisLabel(nextYColumns[0] ?? "");
+  }, [columnTypes, queryResult]);
 
   useEffect(() => {
-    if (chartType === 'pie' && yCols.length > 1) {
-      setYCols((current) => current.slice(0, 1))
+    if (chartType === "pie" && yCols.length > 1) {
+      setYCols((current) => current.slice(0, 1));
     }
-  }, [chartType, yCols])
+  }, [chartType, yCols]);
 
   useEffect(() => {
     if (groupBy && groupBy === xCol) {
-      setGroupBy('')
+      setGroupBy("");
     }
-  }, [groupBy, xCol])
+  }, [groupBy, xCol]);
 
   const effectiveYColumns = useMemo(() => {
-    if (numericCandidates.length === 0) return []
+    if (numericCandidates.length === 0) return [];
 
     const normalized = yCols.filter(
-      (column, index) => column && numericCandidates.includes(column) && yCols.indexOf(column) === index
-    )
+      (column, index) =>
+        column &&
+        numericCandidates.includes(column) &&
+        yCols.indexOf(column) === index,
+    );
 
-    return chartType === 'pie' ? normalized.slice(0, 1) : normalized
-  }, [chartType, numericCandidates, yCols])
+    return chartType === "pie" ? normalized.slice(0, 1) : normalized;
+  }, [chartType, numericCandidates, yCols]);
 
   const activeAggregate = useMemo<AggregateType>(() => {
-    if (aggregate !== 'none') return aggregate
-    if (chartType === 'pie') return 'sum'
-    if (groupBy) return 'sum'
-    return 'none'
-  }, [aggregate, chartType, groupBy])
+    if (aggregate !== "none") return aggregate;
+    if (chartType === "pie") return "sum";
+    if (groupBy) return "sum";
+    return "none";
+  }, [aggregate, chartType, groupBy]);
 
   const chartModel = useMemo(() => {
     if (!queryResult || !xCol) {
       return {
         data: [] as Array<Record<string, string | number>>,
         series: [] as ChartSeries[],
-        emptyReason: 'Select an X-axis and at least one numeric metric to build the chart.',
-      }
+        emptyReason:
+          "Select an X-axis and at least one numeric metric to build the chart.",
+      };
     }
 
     if (numericCandidates.length === 0) {
       return {
         data: [] as Array<Record<string, string | number>>,
         series: [] as ChartSeries[],
-        emptyReason: 'This result set has no numeric columns that can be visualized.',
-      }
+        emptyReason:
+          "This result set has no numeric columns that can be visualized.",
+      };
     }
 
-    if (effectiveYColumns.length === 0 && activeAggregate !== 'count') {
+    if (effectiveYColumns.length === 0 && activeAggregate !== "count") {
       return {
         data: [] as Array<Record<string, string | number>>,
         series: [] as ChartSeries[],
-        emptyReason: 'Pick at least one numeric Y-axis column to render the chart.',
-      }
+        emptyReason:
+          "Pick at least one numeric Y-axis column to render the chart.",
+      };
     }
 
     const sortData = (rows: Array<Record<string, string | number>>) => {
-      if (sortMode === 'none') return rows
+      if (sortMode === "none") return rows;
 
-      const primarySeriesKey = Object.keys(rows[0] ?? {}).filter((key) => key !== xCol)
+      const primarySeriesKey = Object.keys(rows[0] ?? {}).filter(
+        (key) => key !== xCol,
+      );
 
       return [...rows].sort((left, right) => {
-        if (sortMode === 'x-asc') return compareChartValues(left[xCol], right[xCol])
-        if (sortMode === 'x-desc') return compareChartValues(right[xCol], left[xCol])
+        if (sortMode === "x-asc")
+          return compareChartValues(left[xCol], right[xCol]);
+        if (sortMode === "x-desc")
+          return compareChartValues(right[xCol], left[xCol]);
 
-        const leftTotal = primarySeriesKey.reduce((sum, key) => sum + (parseNumericValue(left[key]) ?? 0), 0)
-        const rightTotal = primarySeriesKey.reduce((sum, key) => sum + (parseNumericValue(right[key]) ?? 0), 0)
+        const leftTotal = primarySeriesKey.reduce(
+          (sum, key) => sum + (parseNumericValue(left[key]) ?? 0),
+          0,
+        );
+        const rightTotal = primarySeriesKey.reduce(
+          (sum, key) => sum + (parseNumericValue(right[key]) ?? 0),
+          0,
+        );
 
-        return sortMode === 'y-asc' ? leftTotal - rightTotal : rightTotal - leftTotal
-      })
-    }
+        return sortMode === "y-asc"
+          ? leftTotal - rightTotal
+          : rightTotal - leftTotal;
+      });
+    };
 
     if (groupBy) {
-      const primaryMetric = effectiveYColumns[0]
+      const primaryMetric = effectiveYColumns[0];
       if (!primaryMetric) {
         return {
           data: [] as Array<Record<string, string | number>>,
           series: [] as ChartSeries[],
-          emptyReason: 'Grouped charts need one numeric Y-axis metric.',
-        }
+          emptyReason: "Grouped charts need one numeric Y-axis metric.",
+        };
       }
 
-      const groupValues = Array.from(new Set(rawRecords.map((record) => formatChartLabel(record[groupBy])))).slice(0, 8)
+      const groupValues = Array.from(
+        new Set(rawRecords.map((record) => formatChartLabel(record[groupBy]))),
+      ).slice(0, 8);
 
-      const bucketMap = new Map<string, Record<string, number[]>>()
+      const bucketMap = new Map<string, Record<string, number[]>>();
       rawRecords.forEach((record) => {
-        const xValue = formatChartLabel(record[xCol])
-        const groupValue = formatChartLabel(record[groupBy])
-        if (!groupValues.includes(groupValue)) return
+        const xValue = formatChartLabel(record[xCol]);
+        const groupValue = formatChartLabel(record[groupBy]);
+        if (!groupValues.includes(groupValue)) return;
 
-        const metricValue = parseNumericValue(record[primaryMetric])
-        if (metricValue == null && activeAggregate !== 'count') return
+        const metricValue = parseNumericValue(record[primaryMetric]);
+        if (metricValue == null && activeAggregate !== "count") return;
 
-        const bucketKey = `${xValue}:::${groupValue}`
-        const existing = bucketMap.get(bucketKey) ?? {}
-        existing[groupValue] = [...(existing[groupValue] ?? []), metricValue ?? 0]
-        bucketMap.set(bucketKey, existing)
-      })
+        const bucketKey = `${xValue}:::${groupValue}`;
+        const existing = bucketMap.get(bucketKey) ?? {};
+        existing[groupValue] = [
+          ...(existing[groupValue] ?? []),
+          metricValue ?? 0,
+        ];
+        bucketMap.set(bucketKey, existing);
+      });
 
-      const xValues = Array.from(new Set(rawRecords.map((record) => formatChartLabel(record[xCol]))))
+      const xValues = Array.from(
+        new Set(rawRecords.map((record) => formatChartLabel(record[xCol]))),
+      );
 
-      const seriesColors = getSeriesColors(colorMode, groupValues.length)
+      const seriesColors = getSeriesColors(colorMode, groupValues.length);
       const data = sortData(
         xValues.map((xValue) => {
-          const row: Record<string, string | number> = { [xCol]: xValue }
+          const row: Record<string, string | number> = { [xCol]: xValue };
 
           groupValues.forEach((groupValue) => {
-            const bucket = bucketMap.get(`${xValue}:::${groupValue}`)
-            const values = bucket?.[groupValue] ?? []
-            row[groupValue] = activeAggregate === 'count' ? values.length : summarizeValues(values, activeAggregate)
-          })
+            const bucket = bucketMap.get(`${xValue}:::${groupValue}`);
+            const values = bucket?.[groupValue] ?? [];
+            row[groupValue] =
+              activeAggregate === "count"
+                ? values.length
+                : summarizeValues(values, activeAggregate);
+          });
 
-          return row
-        })
-      )
+          return row;
+        }),
+      );
 
       return {
         data,
@@ -3143,79 +3529,88 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
           label: groupValue,
           color: seriesColors[index],
         })),
-        emptyReason: '',
-      }
+        emptyReason: "",
+      };
     }
 
-    if (activeAggregate !== 'none' || chartType === 'pie') {
+    if (activeAggregate !== "none" || chartType === "pie") {
       const groupedRows = new Map<
         string,
         {
-          xLabel: string
-          metrics: Record<string, number[]>
+          xLabel: string;
+          metrics: Record<string, number[]>;
         }
-      >()
+      >();
 
       rawRecords.forEach((record) => {
-        const xValue = formatChartLabel(record[xCol])
+        const xValue = formatChartLabel(record[xCol]);
         const bucket = groupedRows.get(xValue) ?? {
           xLabel: xValue,
           metrics: {},
-        }
+        };
 
-        if (activeAggregate === 'count') {
-          bucket.metrics.__count__ = [...(bucket.metrics.__count__ ?? []), 1]
+        if (activeAggregate === "count") {
+          bucket.metrics.__count__ = [...(bucket.metrics.__count__ ?? []), 1];
         } else {
           effectiveYColumns.forEach((column) => {
-            const numericValue = parseNumericValue(record[column])
-            if (numericValue == null) return
-            bucket.metrics[column] = [...(bucket.metrics[column] ?? []), numericValue]
-          })
+            const numericValue = parseNumericValue(record[column]);
+            if (numericValue == null) return;
+            bucket.metrics[column] = [
+              ...(bucket.metrics[column] ?? []),
+              numericValue,
+            ];
+          });
         }
 
-        groupedRows.set(xValue, bucket)
-      })
+        groupedRows.set(xValue, bucket);
+      });
 
-      const seriesKeys = activeAggregate === 'count' ? ['__count__'] : effectiveYColumns
-      const seriesColors = getSeriesColors(colorMode, seriesKeys.length)
+      const seriesKeys =
+        activeAggregate === "count" ? ["__count__"] : effectiveYColumns;
+      const seriesColors = getSeriesColors(colorMode, seriesKeys.length);
       const data = sortData(
         Array.from(groupedRows.values()).map((bucket) => {
-          const row: Record<string, string | number> = { [xCol]: bucket.xLabel }
+          const row: Record<string, string | number> = {
+            [xCol]: bucket.xLabel,
+          };
 
           seriesKeys.forEach((key) => {
-            const values = bucket.metrics[key] ?? []
-            row[key] = activeAggregate === 'count' ? values.length : summarizeValues(values, activeAggregate)
-          })
+            const values = bucket.metrics[key] ?? [];
+            row[key] =
+              activeAggregate === "count"
+                ? values.length
+                : summarizeValues(values, activeAggregate);
+          });
 
-          return row
-        })
-      )
+          return row;
+        }),
+      );
 
       return {
         data,
         series: seriesKeys.map((key, index) => ({
           key,
-          label: key === '__count__' ? 'Count' : key,
+          label: key === "__count__" ? "Count" : key,
           color: seriesColors[index],
         })),
-        emptyReason: '',
-      }
+        emptyReason: "",
+      };
     }
 
-    const seriesColors = getSeriesColors(colorMode, effectiveYColumns.length)
+    const seriesColors = getSeriesColors(colorMode, effectiveYColumns.length);
     const data = sortData(
       rawRecords.map((record) => {
         const row: Record<string, string | number> = {
           [xCol]: formatChartLabel(record[xCol]),
-        }
+        };
 
         effectiveYColumns.forEach((column) => {
-          row[column] = parseNumericValue(record[column]) ?? 0
-        })
+          row[column] = parseNumericValue(record[column]) ?? 0;
+        });
 
-        return row
-      })
-    )
+        return row;
+      }),
+    );
 
     return {
       data,
@@ -3224,8 +3619,8 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
         label: column,
         color: seriesColors[index],
       })),
-      emptyReason: '',
-    }
+      emptyReason: "",
+    };
   }, [
     activeAggregate,
     colorMode,
@@ -3238,92 +3633,112 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
     sortMode,
     xCol,
     chartType,
-  ])
+  ]);
 
   if (!queryResult?.columns.length || !queryResult.rows.length) {
     return (
-      <div className='flex h-full items-center justify-center p-4 text-sm text-muted-foreground'>
+      <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
         Run a query with results to visualize as a chart.
       </div>
-    )
+    );
   }
 
-  const availableMetricOptions = numericCandidates
+  const availableMetricOptions = numericCandidates;
   const canAddMetric =
-    chartType !== 'pie' &&
+    chartType !== "pie" &&
     !groupBy &&
-    availableMetricOptions.some((column) => !effectiveYColumns.includes(column)) &&
-    effectiveYColumns.length < 4
-  const chartTitle = CHART_TYPE_OPTIONS.find((option) => option.value === chartType)?.label ?? 'Chart'
-  const hasChartData = chartModel.data.length > 0 && chartModel.series.length > 0
+    availableMetricOptions.some(
+      (column) => !effectiveYColumns.includes(column),
+    ) &&
+    effectiveYColumns.length < 4;
+  const chartTitle =
+    CHART_TYPE_OPTIONS.find((option) => option.value === chartType)?.label ??
+    "Chart";
+  const hasChartData =
+    chartModel.data.length > 0 && chartModel.series.length > 0;
   const axisTickStyle = {
     fontSize: 11,
     fill: chartTheme.mutedForeground,
-  }
+  };
   const axisLineStyle = {
     stroke: chartTheme.border,
-  }
-  const gridStroke = chartTheme.border
+  };
+  const gridStroke = chartTheme.border;
   const tooltipContentStyle = {
     backgroundColor: chartTheme.popover,
     border: `1px solid ${chartTheme.border}`,
     borderRadius: 12,
     color: chartTheme.foreground,
     fontSize: 12,
-    boxShadow: 'var(--inset-shadow)',
-  }
+    boxShadow: "var(--inset-shadow)",
+  };
   const tooltipLabelStyle = {
     color: chartTheme.foreground,
     fontWeight: 600,
-  }
+  };
   const tooltipItemStyle = {
     color: chartTheme.mutedForeground,
-  }
+  };
   const hoverCursorStyle = {
     fill: chartTheme.border,
-  }
+  };
 
   return (
-    <div className='flex h-full min-h-0 flex-col lg:flex-row'>
+    <div className="flex h-full min-h-0 flex-col lg:flex-row">
       <div
         className={cn(
-          'relative border-b border-border bg-background transition-[width] duration-200 lg:border-b-0 lg:border-r',
-          builderCollapsed ? 'lg:w-14' : 'lg:w-[320px]'
+          "relative border-b border-border bg-background transition-[width] duration-200 lg:border-b-0 lg:border-r",
+          builderCollapsed ? "lg:w-14" : "lg:w-[320px]",
         )}
       >
         <button
-          type='button'
-          aria-label={builderCollapsed ? 'Open chart builder' : 'Collapse chart builder'}
-          className='absolute right-2 top-2 z-10 inline-flex size-8 items-center justify-center rounded-md border border-border bg-background/90 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground'
+          type="button"
+          aria-label={
+            builderCollapsed ? "Open chart builder" : "Collapse chart builder"
+          }
+          className="absolute right-2 top-2 z-10 inline-flex size-8 items-center justify-center rounded-md border border-border bg-background/90 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
           onClick={() => setBuilderCollapsed((current) => !current)}
         >
-          <ChevronLeft className={cn('size-4 transition-transform', builderCollapsed && 'rotate-180')} />
+          <ChevronLeft
+            className={cn(
+              "size-4 transition-transform",
+              builderCollapsed && "rotate-180",
+            )}
+          />
         </button>
 
         {builderCollapsed ? (
-          <div className='flex h-full min-h-0 flex-col items-center justify-start gap-3 px-2 py-12'>
-            <div className='flex size-9 items-center justify-center rounded-lg border border-border bg-muted/20'>
-              <BarChart3 className='size-4 text-primary' />
+          <div className="flex h-full min-h-0 flex-col items-center justify-start gap-3 px-2 py-12">
+            <div className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted/20">
+              <BarChart3 className="size-4 text-primary" />
             </div>
-            <div className='-rotate-180 text-[11px] font-medium tracking-[0.2em] text-muted-foreground [writing-mode:vertical-rl]'>
+            <div className="-rotate-180 text-[11px] font-medium tracking-[0.2em] text-muted-foreground [writing-mode:vertical-rl]">
               CHART
             </div>
           </div>
         ) : (
-          <ScrollArea className='h-full'>
-            <div className='space-y-5 p-4'>
-              <div className='space-y-1 pr-10'>
-                <h3 className='text-sm font-semibold text-foreground'>Chart Builder</h3>
-                <p className='text-xs text-muted-foreground'>
-                  Built directly from the current query result set. No additional query is executed.
+          <ScrollArea className="h-full">
+            <div className="space-y-5 p-4">
+              <div className="space-y-1 pr-10">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Chart Builder
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Built directly from the current query result set. No
+                  additional query is executed.
                 </p>
               </div>
 
-              <div className='space-y-4'>
-                <div className='space-y-2'>
-                  <label className='text-xs font-medium text-muted-foreground'>Chart type</label>
-                  <Select value={chartType} onValueChange={(value) => setChartType(value as ChartType)}>
-                    <SelectTrigger className='h-10 bg-muted/30'>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Chart type
+                  </label>
+                  <Select
+                    value={chartType}
+                    onValueChange={(value) => setChartType(value as ChartType)}
+                  >
+                    <SelectTrigger className="h-10 bg-muted/30">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -3336,13 +3751,15 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                   </Select>
                 </div>
 
-                <div className='border-t border-border pt-4'>
-                  <div className='space-y-2'>
-                    <label className='text-xs font-medium text-muted-foreground'>X-axis</label>
+                <div className="border-t border-border pt-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      X-axis
+                    </label>
                     <Select value={xCol} onValueChange={setXCol}>
-                      <SelectTrigger className='h-10 bg-muted/30'>
-                        <div className='flex min-w-0 items-center gap-2'>
-                          <Type className='size-3.5 text-muted-foreground' />
+                      <SelectTrigger className="h-10 bg-muted/30">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Type className="size-3.5 text-muted-foreground" />
                           <SelectValue />
                         </div>
                       </SelectTrigger>
@@ -3356,10 +3773,15 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                     </Select>
                   </div>
 
-                  <div className='mt-4 space-y-2'>
-                    <label className='text-xs font-medium text-muted-foreground'>Sort</label>
-                    <Select value={sortMode} onValueChange={(value) => setSortMode(value as SortMode)}>
-                      <SelectTrigger className='h-10 bg-muted/30'>
+                  <div className="mt-4 space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Sort
+                    </label>
+                    <Select
+                      value={sortMode}
+                      onValueChange={(value) => setSortMode(value as SortMode)}
+                    >
+                      <SelectTrigger className="h-10 bg-muted/30">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -3373,45 +3795,50 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                   </div>
                 </div>
 
-                <div className='border-t border-border pt-4'>
-                  <div className='flex items-center justify-between'>
-                    <label className='text-xs font-medium text-muted-foreground'>Y-axis</label>
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Y-axis
+                    </label>
                     {canAddMetric ? (
                       <Button
-                        type='button'
-                        variant='ghost'
-                        size='sm'
-                        className='h-7 px-2 text-xs'
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
                         onClick={() => {
                           const nextMetric = availableMetricOptions.find(
-                            (column) => !effectiveYColumns.includes(column)
-                          )
-                          if (!nextMetric) return
-                          setYCols((current) => [...current, nextMetric])
+                            (column) => !effectiveYColumns.includes(column),
+                          );
+                          if (!nextMetric) return;
+                          setYCols((current) => [...current, nextMetric]);
                         }}
                       >
-                        <Plus className='mr-1 size-3.5' />
+                        <Plus className="mr-1 size-3.5" />
                         Add column
                       </Button>
                     ) : null}
                   </div>
 
-                  <div className='mt-2 space-y-2'>
+                  <div className="mt-2 space-y-2">
                     {effectiveYColumns.map((column, index) => (
-                      <div key={`${column}-${index}`} className='flex items-center gap-2'>
+                      <div
+                        key={`${column}-${index}`}
+                        className="flex items-center gap-2"
+                      >
                         <Select
                           value={column}
                           onValueChange={(value) =>
                             setYCols((current) => {
-                              const next = [...current]
-                              next[index] = value
-                              return next
+                              const next = [...current];
+                              next[index] = value;
+                              return next;
                             })
                           }
                         >
-                          <SelectTrigger className='h-10 flex-1 bg-muted/30'>
-                            <div className='flex min-w-0 items-center gap-2'>
-                              <Hash className='size-3.5 text-muted-foreground' />
+                          <SelectTrigger className="h-10 flex-1 bg-muted/30">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Hash className="size-3.5 text-muted-foreground" />
                               <SelectValue />
                             </div>
                           </SelectTrigger>
@@ -3425,15 +3852,19 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                         </Select>
                         {effectiveYColumns.length > 1 ? (
                           <Button
-                            type='button'
-                            variant='ghost'
-                            size='icon'
-                            className='size-9 shrink-0'
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-9 shrink-0"
                             onClick={() =>
-                              setYCols((current) => current.filter((_, metricIndex) => metricIndex !== index))
+                              setYCols((current) =>
+                                current.filter(
+                                  (_, metricIndex) => metricIndex !== index,
+                                ),
+                              )
                             }
                           >
-                            <X className='size-3.5' />
+                            <X className="size-3.5" />
                           </Button>
                         ) : null}
                       </div>
@@ -3441,17 +3872,25 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                   </div>
 
                   {groupBy ? (
-                    <p className='mt-2 text-[11px] text-muted-foreground'>
-                      Grouped charts use the first Y-axis metric as the measure for each split series.
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      Grouped charts use the first Y-axis metric as the measure
+                      for each split series.
                     </p>
                   ) : null}
                 </div>
 
-                <div className='space-y-4 border-t border-border pt-4'>
-                  <div className='space-y-2'>
-                    <label className='text-xs font-medium text-muted-foreground'>Aggregate</label>
-                    <Select value={aggregate} onValueChange={(value) => setAggregate(value as AggregateType)}>
-                      <SelectTrigger className='h-10 bg-muted/30'>
+                <div className="space-y-4 border-t border-border pt-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Aggregate
+                    </label>
+                    <Select
+                      value={aggregate}
+                      onValueChange={(value) =>
+                        setAggregate(value as AggregateType)
+                      }
+                    >
+                      <SelectTrigger className="h-10 bg-muted/30">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -3464,13 +3903,17 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                     </Select>
                   </div>
 
-                  <div className='space-y-2'>
-                    <label className='text-xs font-medium text-muted-foreground'>Group by</label>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Group by
+                    </label>
                     <Select
                       value={groupBy || CHART_EMPTY_OPTION}
-                      onValueChange={(value) => setGroupBy(value === CHART_EMPTY_OPTION ? '' : value)}
+                      onValueChange={(value) =>
+                        setGroupBy(value === CHART_EMPTY_OPTION ? "" : value)
+                      }
                     >
-                      <SelectTrigger className='h-10 bg-muted/30'>
+                      <SelectTrigger className="h-10 bg-muted/30">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -3486,10 +3929,17 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                     </Select>
                   </div>
 
-                  <div className='space-y-2'>
-                    <label className='text-xs font-medium text-muted-foreground'>Color</label>
-                    <Select value={colorMode} onValueChange={(value) => setColorMode(value as ColorMode)}>
-                      <SelectTrigger className='h-10 bg-muted/30'>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Color
+                    </label>
+                    <Select
+                      value={colorMode}
+                      onValueChange={(value) =>
+                        setColorMode(value as ColorMode)
+                      }
+                    >
+                      <SelectTrigger className="h-10 bg-muted/30">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -3503,32 +3953,42 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                   </div>
                 </div>
 
-                <div className='space-y-4 border-t border-border pt-4'>
-                  <div className='space-y-2'>
-                    <div className='flex items-center justify-between'>
-                      <label className='text-xs font-medium text-muted-foreground'>X-axis label</label>
-                      <Switch checked={showXAxisLabel} onCheckedChange={setShowXAxisLabel} />
+                <div className="space-y-4 border-t border-border pt-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        X-axis label
+                      </label>
+                      <Switch
+                        checked={showXAxisLabel}
+                        onCheckedChange={setShowXAxisLabel}
+                      />
                     </div>
                     <Input
                       value={xAxisLabel}
                       onChange={(event) => setXAxisLabel(event.target.value)}
                       placeholder={xCol}
                       disabled={!showXAxisLabel}
-                      className='h-10'
+                      className="h-10"
                     />
                   </div>
 
-                  <div className='space-y-2'>
-                    <div className='flex items-center justify-between'>
-                      <label className='text-xs font-medium text-muted-foreground'>Y-axis label</label>
-                      <Switch checked={showYAxisLabel} onCheckedChange={setShowYAxisLabel} />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Y-axis label
+                      </label>
+                      <Switch
+                        checked={showYAxisLabel}
+                        onCheckedChange={setShowYAxisLabel}
+                      />
                     </div>
                     <Input
                       value={yAxisLabel}
                       onChange={(event) => setYAxisLabel(event.target.value)}
-                      placeholder={effectiveYColumns[0] ?? 'Value'}
+                      placeholder={effectiveYColumns[0] ?? "Value"}
                       disabled={!showYAxisLabel}
-                      className='h-10'
+                      className="h-10"
                     />
                   </div>
                 </div>
@@ -3538,41 +3998,50 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
         )}
       </div>
 
-      <div className='flex min-h-0 flex-1 flex-col bg-background'>
-        <div className='flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4'>
-          <div className='space-y-1'>
-            <div className='flex items-center gap-2'>
-              <BarChart3 className='size-4 text-primary' />
-              <h3 className='text-sm font-semibold text-foreground'>{chartTitle}</h3>
+      <div className="flex min-h-0 flex-1 flex-col bg-background">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="size-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">
+                {chartTitle}
+              </h3>
             </div>
-            <p className='text-xs text-muted-foreground'>
-              {queryResult.row_count.toLocaleString()} rows in result • {chartModel.data.length.toLocaleString()}{' '}
-              plotted groups
+            <p className="text-xs text-muted-foreground">
+              {queryResult.row_count.toLocaleString()} rows in result •{" "}
+              {chartModel.data.length.toLocaleString()} plotted groups
             </p>
           </div>
 
           {chartModel.series.length > 0 ? (
-            <div className='flex flex-wrap items-center gap-2'>
+            <div className="flex flex-wrap items-center gap-2">
               {chartModel.series.map((series) => (
                 <div
                   key={series.key}
-                  className='inline-flex items-center gap-2 rounded-full border border-border/80 bg-muted/25 px-2.5 py-1 text-[11px] text-muted-foreground'
+                  className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-muted/25 px-2.5 py-1 text-[11px] text-muted-foreground"
                 >
-                  <span className='size-2 rounded-full' style={{ backgroundColor: series.color }} />
-                  <span className='max-w-[140px] truncate'>{series.label}</span>
+                  <span
+                    className="size-2 rounded-full"
+                    style={{ backgroundColor: series.color }}
+                  />
+                  <span className="max-w-[140px] truncate">{series.label}</span>
                 </div>
               ))}
             </div>
           ) : null}
         </div>
 
-        <div className='min-h-0 flex-1 p-5'>
-          <div className='h-full rounded-xl border border-border/80 bg-muted/10 p-4'>
+        <div className="min-h-0 flex-1 p-5">
+          <div className="h-full rounded-xl border border-border/80 bg-muted/10 p-4">
             {hasChartData ? (
-              <ResponsiveContainer width='100%' height='100%'>
-                {chartType === 'line' ? (
+              <ResponsiveContainer width="100%" height="100%">
+                {chartType === "line" ? (
                   <LineChart data={chartModel.data}>
-                    <CartesianGrid stroke={gridStroke} opacity={0.7} vertical={false} />
+                    <CartesianGrid
+                      stroke={gridStroke}
+                      opacity={0.7}
+                      vertical={false}
+                    />
                     <XAxis
                       dataKey={xCol}
                       tick={axisTickStyle}
@@ -3584,7 +4053,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                         showXAxisLabel && xAxisLabel
                           ? {
                               value: xAxisLabel,
-                              position: 'insideBottom',
+                              position: "insideBottom",
                               offset: -6,
                               style: {
                                 fill: axisTickStyle.fill,
@@ -3598,14 +4067,16 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       tick={axisTickStyle}
                       axisLine={axisLineStyle}
                       tickLine={axisLineStyle}
-                      tickFormatter={(value) => formatNumberCompact(Number(value))}
+                      tickFormatter={(value) =>
+                        formatNumberCompact(Number(value))
+                      }
                       width={68}
                       label={
                         showYAxisLabel && yAxisLabel
                           ? {
                               value: yAxisLabel,
                               angle: -90,
-                              position: 'insideLeft',
+                              position: "insideLeft",
                               style: {
                                 fill: axisTickStyle.fill,
                                 fontSize: 12,
@@ -3615,7 +4086,9 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       }
                     />
                     <Tooltip
-                      formatter={(value) => formatNumberCompact(Number(value ?? 0))}
+                      formatter={(value) =>
+                        formatNumberCompact(Number(value ?? 0))
+                      }
                       contentStyle={tooltipContentStyle}
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
@@ -3627,7 +4100,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                     {chartModel.series.map((series) => (
                       <Line
                         key={series.key}
-                        type='monotone'
+                        type="monotone"
                         dataKey={series.key}
                         stroke={series.color}
                         strokeWidth={2.5}
@@ -3641,17 +4114,36 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       />
                     ))}
                   </LineChart>
-                ) : chartType === 'area' ? (
+                ) : chartType === "area" ? (
                   <AreaChart data={chartModel.data}>
                     <defs>
                       {chartModel.series.map((series) => (
-                        <linearGradient key={series.key} id={`area-gradient-${series.key}`} x1='0' y1='0' x2='0' y2='1'>
-                          <stop offset='0%' stopColor={series.color} stopOpacity={0.55} />
-                          <stop offset='100%' stopColor={series.color} stopOpacity={0.04} />
+                        <linearGradient
+                          key={series.key}
+                          id={`area-gradient-${series.key}`}
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="0%"
+                            stopColor={series.color}
+                            stopOpacity={0.55}
+                          />
+                          <stop
+                            offset="100%"
+                            stopColor={series.color}
+                            stopOpacity={0.04}
+                          />
                         </linearGradient>
                       ))}
                     </defs>
-                    <CartesianGrid stroke={gridStroke} opacity={0.7} vertical={false} />
+                    <CartesianGrid
+                      stroke={gridStroke}
+                      opacity={0.7}
+                      vertical={false}
+                    />
                     <XAxis
                       dataKey={xCol}
                       tick={axisTickStyle}
@@ -3663,7 +4155,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                         showXAxisLabel && xAxisLabel
                           ? {
                               value: xAxisLabel,
-                              position: 'insideBottom',
+                              position: "insideBottom",
                               offset: -6,
                               style: {
                                 fill: axisTickStyle.fill,
@@ -3677,14 +4169,16 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       tick={axisTickStyle}
                       axisLine={axisLineStyle}
                       tickLine={axisLineStyle}
-                      tickFormatter={(value) => formatNumberCompact(Number(value))}
+                      tickFormatter={(value) =>
+                        formatNumberCompact(Number(value))
+                      }
                       width={68}
                       label={
                         showYAxisLabel && yAxisLabel
                           ? {
                               value: yAxisLabel,
                               angle: -90,
-                              position: 'insideLeft',
+                              position: "insideLeft",
                               style: {
                                 fill: axisTickStyle.fill,
                                 fontSize: 12,
@@ -3694,7 +4188,9 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       }
                     />
                     <Tooltip
-                      formatter={(value) => formatNumberCompact(Number(value ?? 0))}
+                      formatter={(value) =>
+                        formatNumberCompact(Number(value ?? 0))
+                      }
                       contentStyle={tooltipContentStyle}
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
@@ -3706,7 +4202,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                     {chartModel.series.map((series) => (
                       <Area
                         key={series.key}
-                        type='monotone'
+                        type="monotone"
                         dataKey={series.key}
                         stroke={series.color}
                         strokeWidth={2.5}
@@ -3715,10 +4211,12 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       />
                     ))}
                   </AreaChart>
-                ) : chartType === 'pie' ? (
+                ) : chartType === "pie" ? (
                   <PieChart>
                     <Tooltip
-                      formatter={(value) => formatNumberCompact(Number(value ?? 0))}
+                      formatter={(value) =>
+                        formatNumberCompact(Number(value ?? 0))
+                      }
                       contentStyle={tooltipContentStyle}
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
@@ -3727,10 +4225,10 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       data={chartModel.data}
                       dataKey={chartModel.series[0]?.key}
                       nameKey={xCol}
-                      cx='50%'
-                      cy='50%'
-                      innerRadius='48%'
-                      outerRadius='74%'
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="48%"
+                      outerRadius="74%"
                       paddingAngle={2}
                       stroke={chartTheme.background}
                       strokeWidth={2}
@@ -3740,8 +4238,13 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                           key={`pie-cell-${index}`}
                           fill={
                             chartModel.series.length > 1
-                              ? chartModel.series[index % chartModel.series.length]?.color
-                              : getSeriesColors(colorMode, chartModel.data.length)[index]
+                              ? chartModel.series[
+                                  index % chartModel.series.length
+                                ]?.color
+                              : getSeriesColors(
+                                  colorMode,
+                                  chartModel.data.length,
+                                )[index]
                           }
                         />
                       ))}
@@ -3751,13 +4254,32 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                   <BarChart data={chartModel.data} barGap={10}>
                     <defs>
                       {chartModel.series.map((series) => (
-                        <linearGradient key={series.key} id={`bar-gradient-${series.key}`} x1='0' y1='0' x2='0' y2='1'>
-                          <stop offset='0%' stopColor={series.color} stopOpacity={0.95} />
-                          <stop offset='100%' stopColor={series.color} stopOpacity={0.75} />
+                        <linearGradient
+                          key={series.key}
+                          id={`bar-gradient-${series.key}`}
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="0%"
+                            stopColor={series.color}
+                            stopOpacity={0.95}
+                          />
+                          <stop
+                            offset="100%"
+                            stopColor={series.color}
+                            stopOpacity={0.75}
+                          />
                         </linearGradient>
                       ))}
                     </defs>
-                    <CartesianGrid stroke={gridStroke} opacity={0.7} vertical={false} />
+                    <CartesianGrid
+                      stroke={gridStroke}
+                      opacity={0.7}
+                      vertical={false}
+                    />
                     <XAxis
                       dataKey={xCol}
                       tick={axisTickStyle}
@@ -3766,13 +4288,13 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       tickFormatter={(value) => formatAxisTick(value)}
                       minTickGap={16}
                       angle={chartModel.data.length > 8 ? -90 : 0}
-                      textAnchor={chartModel.data.length > 8 ? 'end' : 'middle'}
+                      textAnchor={chartModel.data.length > 8 ? "end" : "middle"}
                       height={chartModel.data.length > 8 ? 92 : 46}
                       label={
                         showXAxisLabel && xAxisLabel
                           ? {
                               value: xAxisLabel,
-                              position: 'insideBottom',
+                              position: "insideBottom",
                               offset: chartModel.data.length > 8 ? -2 : -6,
                               style: {
                                 fill: axisTickStyle.fill,
@@ -3786,14 +4308,16 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       tick={axisTickStyle}
                       axisLine={axisLineStyle}
                       tickLine={axisLineStyle}
-                      tickFormatter={(value) => formatNumberCompact(Number(value))}
+                      tickFormatter={(value) =>
+                        formatNumberCompact(Number(value))
+                      }
                       width={68}
                       label={
                         showYAxisLabel && yAxisLabel
                           ? {
                               value: yAxisLabel,
                               angle: -90,
-                              position: 'insideLeft',
+                              position: "insideLeft",
                               style: {
                                 fill: axisTickStyle.fill,
                                 fontSize: 12,
@@ -3803,7 +4327,9 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                       }
                     />
                     <Tooltip
-                      formatter={(value) => formatNumberCompact(Number(value ?? 0))}
+                      formatter={(value) =>
+                        formatNumberCompact(Number(value ?? 0))
+                      }
                       contentStyle={tooltipContentStyle}
                       labelStyle={tooltipLabelStyle}
                       itemStyle={tooltipItemStyle}
@@ -3815,15 +4341,19 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
                         dataKey={series.key}
                         fill={`url(#bar-gradient-${series.key})`}
                         radius={[8, 8, 0, 0]}
-                        stackId={chartType === 'stacked-bar' ? 'chart-stack' : undefined}
-                        maxBarSize={chartType === 'stacked-bar' ? 44 : 56}
+                        stackId={
+                          chartType === "stacked-bar"
+                            ? "chart-stack"
+                            : undefined
+                        }
+                        maxBarSize={chartType === "stacked-bar" ? 44 : 56}
                       />
                     ))}
                   </BarChart>
                 )}
               </ResponsiveContainer>
             ) : (
-              <div className='flex h-full items-center justify-center text-sm text-muted-foreground'>
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 {chartModel.emptyReason}
               </div>
             )}
@@ -3831,7 +4361,7 @@ function ChartVisualization({ queryResult }: { queryResult: QueryResponse | null
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function MonacoSqlEditor({
@@ -3846,76 +4376,76 @@ function MonacoSqlEditor({
   onApproveRewrite,
   onDenyRewrite,
 }: {
-  value: string
-  database: string
-  schema: string
-  role: string
-  onChange: (value?: string) => void
-  onRun: () => void
-  onAttachSelection: () => void
-  proposedRewrite: ProposedRewrite | null
-  onApproveRewrite: () => void
-  onDenyRewrite: () => void
+  value: string;
+  database: string;
+  schema: string;
+  role: string;
+  onChange: (value?: string) => void;
+  onRun: () => void;
+  onAttachSelection: () => void;
+  proposedRewrite: ProposedRewrite | null;
+  onApproveRewrite: () => void;
+  onDenyRewrite: () => void;
 }) {
-  const providerRef = useRef<{ dispose(): void } | null>(null)
+  const providerRef = useRef<{ dispose(): void } | null>(null);
   const completionRequestRef = useRef<{
-    id: number
-    controller: AbortController
-  } | null>(null)
-  const onRunRef = useRef(onRun)
-  onRunRef.current = onRun
-  const onAttachSelectionRef = useRef(onAttachSelection)
-  onAttachSelectionRef.current = onAttachSelection
+    id: number;
+    controller: AbortController;
+  } | null>(null);
+  const onRunRef = useRef(onRun);
+  onRunRef.current = onRun;
+  const onAttachSelectionRef = useRef(onAttachSelection);
+  onAttachSelectionRef.current = onAttachSelection;
   // Refs for completion provider — prevents stale closure (provider registered once at mount)
-  const valueRef = useRef(value)
-  valueRef.current = value
-  const databaseRef = useRef(database)
-  databaseRef.current = database
-  const schemaRef = useRef(schema)
-  schemaRef.current = schema
-  const roleRef = useRef(role)
-  roleRef.current = role
-  const { resolvedTheme } = useTheme()
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const databaseRef = useRef(database);
+  databaseRef.current = database;
+  const schemaRef = useRef(schema);
+  schemaRef.current = schema;
+  const roleRef = useRef(role);
+  roleRef.current = role;
+  const { resolvedTheme } = useTheme();
 
   // The mounted editor + its monaco namespace, kept so the diff effect and the
   // context-menu action created at mount can reach them without a re-mount.
-  const editorRef = useRef<MonacoEditorInstance | null>(null)
-  const selectionListenerRef = useRef<{ dispose(): void } | null>(null)
-  const monacoRef = useRef<Monaco | null>(null)
+  const editorRef = useRef<MonacoEditorInstance | null>(null);
+  const selectionListenerRef = useRef<{ dispose(): void } | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
   // Flips once `onMount` has handed us the namespace, so the theme effect below
   // also runs on the first paint instead of only on later theme toggles.
-  const [monacoReady, setMonacoReady] = useState(false)
+  const [monacoReady, setMonacoReady] = useState(false);
 
   useEffect(() => {
     return () => {
-      completionRequestRef.current?.controller.abort()
-      providerRef.current?.dispose()
-      selectionListenerRef.current?.dispose()
-      selectionListenerRef.current = null
+      completionRequestRef.current?.controller.abort();
+      providerRef.current?.dispose();
+      selectionListenerRef.current?.dispose();
+      selectionListenerRef.current = null;
       if (activeSqlEditorInstance) {
-        activeSqlEditorInstance = null
-        activeSqlSelection = null
+        activeSqlEditorInstance = null;
+        activeSqlSelection = null;
       }
-    }
-  }, [])
+    };
+  }, []);
 
   useEffect(() => {
-    completionRequestRef.current?.controller.abort()
-    completionRequestRef.current = null
-  }, [database, schema])
+    completionRequestRef.current?.controller.abort();
+    completionRequestRef.current = null;
+  }, [database, schema]);
 
   // Re-define and re-select the Nova SQL theme on first mount and whenever the
   // resolved theme changes. `onMount` runs once, so without this the editor
   // keeps whatever was selected at mount and a later light/dark toggle never
   // repaints it.
   useEffect(() => {
-    const monaco = monacoRef.current
-    if (!monaco) return
+    const monaco = monacoRef.current;
+    if (!monaco) return;
     const frame = requestAnimationFrame(() => {
-      applyNovaSqlTheme(monaco, resolvedTheme === 'dark')
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [resolvedTheme, monacoReady])
+      applyNovaSqlTheme(monaco, resolvedTheme === "dark");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [resolvedTheme, monacoReady]);
 
   /**
    * Paints the proposed rewrite into the editor: replaced original lines in
@@ -3924,422 +4454,466 @@ function MonacoSqlEditor({
    * naturally produce single-line hunks, so only the changed lines light up.
    */
   useEffect(() => {
-    const editor = editorRef.current
-    const monaco = monacoRef.current
-    if (!editor || !monaco) return
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
 
-    const collection = editor.createDecorationsCollection()
+    const collection = editor.createDecorationsCollection();
     if (!proposedRewrite) {
-      collection.clear()
-      return () => collection.clear()
+      collection.clear();
+      return () => collection.clear();
     }
 
-    const decorations: import('monaco-editor').editor.IModelDeltaDecoration[] = []
+    const decorations: import("monaco-editor").editor.IModelDeltaDecoration[] =
+      [];
     for (const hunk of proposedRewrite.hunks) {
       // An insert has no original lines to mark red; its proposed lines are
       // shown in the overlay. Replace/delete light up the original range.
-      if (hunk.kind === 'insert') continue
+      if (hunk.kind === "insert") continue;
       decorations.push({
         range: new monaco.Range(hunk.startLine, 1, hunk.endLine, 1),
         options: {
           isWholeLine: true,
-          className: 'nova-rewrite-old-line',
-          linesDecorationsClassName: 'nova-rewrite-old-gutter',
+          className: "nova-rewrite-old-line",
+          linesDecorationsClassName: "nova-rewrite-old-gutter",
         },
-      })
+      });
     }
 
-    collection.set(decorations)
-    return () => collection.clear()
-  }, [proposedRewrite])
+    collection.set(decorations);
+    return () => collection.clear();
+  }, [proposedRewrite]);
 
   // Colour tokens for the diff decorations live here because Monaco injects
   // them outside the module CSS scope.
   useEffect(() => {
-    const styleId = 'nova-rewrite-diff-styles'
-    if (document.getElementById(styleId)) return
-    const style = document.createElement('style')
-    style.id = styleId
+    const styleId = "nova-rewrite-diff-styles";
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement("style");
+    style.id = styleId;
     style.textContent = `
       .nova-rewrite-old-line { background: color-mix(in srgb, var(--destructive) 14%, transparent); }
       .nova-rewrite-old-gutter { border-left: 3px solid var(--destructive); }
       .nova-rewrite-new-line { background: color-mix(in srgb, var(--info) 16%, transparent); }
       .nova-rewrite-new-gutter { border-left: 3px solid var(--info); }
-    `
-    document.head.appendChild(style)
-  }, [])
+    `;
+    document.head.appendChild(style);
+  }, []);
 
   async function provideCompletions(
     textUntilPosition: string,
-    signal?: AbortSignal
-  ): Promise<CompletionResponse['items']> {
-    const curValue = valueRef.current
-    const curDb = databaseRef.current
-    const curSchema = schemaRef.current
-    const curRole = roleRef.current
+    signal?: AbortSignal,
+  ): Promise<CompletionResponse["items"]> {
+    const curValue = valueRef.current;
+    const curDb = databaseRef.current;
+    const curSchema = schemaRef.current;
+    const curRole = roleRef.current;
 
     // @stage context is exclusive: never mix stage suggestions with SQL
     // relations, keywords, or Monaco word-based suggestions.
-    const stageContext = extractStageCompletionContext(textUntilPosition)
+    const stageContext = extractStageCompletionContext(textUntilPosition);
     if (stageContext) {
       const response = await api.get<CompletionResponse>(
         buildStageCompletionPath(curDb, stageContext),
-        signal
-      )
-      return response.items
+        signal,
+      );
+      return response.items;
     }
 
-    const relationContext = extractRelationCompletionContext(textUntilPosition)
-    if (relationContext?.type === 'database') {
+    const relationContext = extractRelationCompletionContext(textUntilPosition);
+    if (relationContext?.type === "database") {
       const [databases, objects] = await Promise.all([
         api.get<CompletionResponse>(
           `/query/completions?kind=database&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`,
-          signal
+          signal,
         ),
         api.get<CompletionResponse>(
           `/query/completions?kind=object&database=${encodeURIComponent(curDb)}&schema=${encodeURIComponent(curSchema)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`,
-          signal
+          signal,
         ),
-      ])
-      return dedupeCompletionItems([...databases.items, ...objects.items])
+      ]);
+      return dedupeCompletionItems([...databases.items, ...objects.items]);
     }
 
-    if (relationContext?.type === 'schema') {
+    if (relationContext?.type === "schema") {
       const response = await api.get<CompletionResponse>(
         `/query/completions?kind=schema&database=${encodeURIComponent(relationContext.database)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`,
-        signal
-      )
-      return response.items
+        signal,
+      );
+      return response.items;
     }
 
-    if (relationContext?.type === 'object') {
+    if (relationContext?.type === "object") {
       const response = await api.get<CompletionResponse>(
         `/query/completions?kind=object&database=${encodeURIComponent(relationContext.database)}&schema=${encodeURIComponent(relationContext.schema)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(relationContext.prefix)}`,
-        signal
-      )
-      return response.items
+        signal,
+      );
+      return response.items;
     }
 
-    const aliasMatch = textUntilPosition.match(/([A-Za-z_][\w]*)\.$/)
+    const aliasMatch = textUntilPosition.match(/([A-Za-z_][\w]*)\.$/);
     if (aliasMatch) {
-      const tableName = resolveAliasTable(curValue, aliasMatch[1])
+      const tableName = resolveAliasTable(curValue, aliasMatch[1]);
       if (tableName) {
         const response = await api.get<CompletionResponse>(
           `/query/completions?kind=column&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&table=${encodeURIComponent(tableName)}`,
-          signal
-        )
-        return response.items
+          signal,
+        );
+        return response.items;
       }
     }
 
-    const objectMatch = textUntilPosition.match(/\b(FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]*)$/i)
+    const objectMatch = textUntilPosition.match(
+      /\b(FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]*)$/i,
+    );
     if (objectMatch) {
       const response = await api.get<CompletionResponse>(
-        `/query/completions?kind=object&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(objectMatch[2] ?? '')}`,
-        signal
-      )
-      return response.items
+        `/query/completions?kind=object&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&prefix=${encodeURIComponent(objectMatch[2] ?? "")}`,
+        signal,
+      );
+      return response.items;
     }
 
     // Expression context: suggest columns from tables in FROM/JOIN scope
-    const expressionKeywords = /\b(?:SELECT|WHERE|AND|OR|ON|HAVING|GROUP\s+BY|ORDER\s+BY|SET|WHEN|THEN|ELSE)\s/i
+    const expressionKeywords =
+      /\b(?:SELECT|WHERE|AND|OR|ON|HAVING|GROUP\s+BY|ORDER\s+BY|SET|WHEN|THEN|ELSE)\s/i;
     if (expressionKeywords.test(textUntilPosition) && curDb) {
-      const tables = extractTablesInScope(curValue)
+      const tables = extractTablesInScope(curValue);
       if (tables.length > 0) {
         // Fetch columns from all in-scope tables (limit to 5 to avoid too many requests)
-        const limitedTables = tables.slice(0, 5)
-        const allColumnItems: CompletionResponse['items'] = []
+        const limitedTables = tables.slice(0, 5);
+        const allColumnItems: CompletionResponse["items"] = [];
         const fetches = limitedTables.map(async ({ tableName }) => {
           try {
             const response = await api.get<CompletionResponse>(
               `/query/completions?kind=column&database=${encodeURIComponent(curDb)}&role=${encodeURIComponent(curRole)}&table=${encodeURIComponent(tableName)}`,
-              signal
-            )
-            return response.items
+              signal,
+            );
+            return response.items;
           } catch {
-            return []
+            return [];
           }
-        })
-        const results = await Promise.all(fetches)
+        });
+        const results = await Promise.all(fetches);
         for (const items of results) {
-          allColumnItems.push(...items)
+          allColumnItems.push(...items);
         }
         // Deduplicate column labels
-        const seenCols = new Set<string>()
+        const seenCols = new Set<string>();
         const uniqueCols = allColumnItems.filter((item) => {
-          if (seenCols.has(item.label)) return false
-          seenCols.add(item.label)
-          return true
-        })
+          if (seenCols.has(item.label)) return false;
+          seenCols.add(item.label);
+          return true;
+        });
         // Merge with keyword suggestions
         const keywordItems = SQL_KEYWORDS.filter((keyword) =>
-          keyword.toLowerCase().startsWith(lastWord(textUntilPosition).toLowerCase())
-        ).map((keyword) => ({ label: keyword, type: 'keyword' }))
-        return [...uniqueCols, ...keywordItems]
+          keyword
+            .toLowerCase()
+            .startsWith(lastWord(textUntilPosition).toLowerCase()),
+        ).map((keyword) => ({ label: keyword, type: "keyword" }));
+        return [...uniqueCols, ...keywordItems];
       }
     }
 
     return SQL_KEYWORDS.filter((keyword) =>
-      keyword.toLowerCase().startsWith(lastWord(textUntilPosition).toLowerCase())
-    ).map((keyword) => ({ label: keyword, type: 'keyword' }))
+      keyword
+        .toLowerCase()
+        .startsWith(lastWord(textUntilPosition).toLowerCase()),
+    ).map((keyword) => ({ label: keyword, type: "keyword" }));
   }
 
-  function handleMount(editor: Parameters<NonNullable<ComponentProps<typeof Editor>['onMount']>>[0], monaco: Monaco) {
-    activeSqlEditorInstance = editor
-    editorRef.current = editor
-    monacoRef.current = monaco
-    setMonacoReady(true)
+  function handleMount(
+    editor: Parameters<
+      NonNullable<ComponentProps<typeof Editor>["onMount"]>
+    >[0],
+    monaco: Monaco,
+  ) {
+    activeSqlEditorInstance = editor;
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+    setMonacoReady(true);
     // Remember the last non-empty selection. Clicking the Run button blurs the
     // editor and collapses the live selection, which would otherwise make the
     // fallback in `getSqlForExecution` run the whole buffer instead of the
     // highlighted text.
-    selectionListenerRef.current?.dispose()
-    activeSqlSelection = null
-    selectionListenerRef.current = editor.onDidChangeCursorSelection((event) => {
-      activeSqlSelection = event.selection.isEmpty() ? null : event.selection
-    })
-    // Define and select the Nova SQL themes (shared with the version preview).
-    applyNovaSqlTheme(monaco, resolvedTheme === 'dark')
-
-    providerRef.current?.dispose()
-    providerRef.current = monaco.languages.registerCompletionItemProvider('sql', {
-      triggerCharacters: ['@', '.', ' '],
-      provideCompletionItems: async (
-        model: Parameters<Monaco['languages']['registerCompletionItemProvider']>[1] extends {
-          provideCompletionItems: infer T
-        }
-          ? T extends (...args: infer A) => unknown
-            ? A[0]
-            : never
-          : never,
-        position: Parameters<Monaco['languages']['registerCompletionItemProvider']>[1] extends {
-          provideCompletionItems: infer T
-        }
-          ? T extends (...args: infer A) => unknown
-            ? A[1]
-            : never
-          : never
-      ) => {
-        const textUntilPosition = model.getValueInRange({
-          startLineNumber: 1,
-          startColumn: 1,
-          endLineNumber: position.lineNumber,
-          endColumn: position.column,
-        })
-        completionRequestRef.current?.controller.abort()
-        const request = {
-          id: (completionRequestRef.current?.id ?? 0) + 1,
-          controller: new AbortController(),
-        }
-        completionRequestRef.current = request
-
-        try {
-          const items = await provideCompletions(textUntilPosition, request.controller.signal)
-          if (completionRequestRef.current?.id !== request.id) {
-            return { suggestions: [] }
-          }
-
-          const stageContext = extractStageCompletionContext(textUntilPosition)
-          const stageRange = stageContext
-            ? getStageCompletionReplacementRange(
-                position.lineNumber,
-                position.column,
-                stageContext
-              )
-            : undefined
-
-          return {
-            suggestions: items.map((item) => ({
-              label:
-                getStageCompletionKind(item) === 'file'
-                  ? {
-                      label: item.label,
-                      description: getStageFileExtension(item) ?? 'FILE',
-                    }
-                  : item.label,
-              kind:
-                item.type === 'keyword'
-                  ? monaco.languages.CompletionItemKind.Keyword
-                  : item.type === 'database'
-                    ? monaco.languages.CompletionItemKind.Module
-                    : item.type === 'schema'
-                      ? monaco.languages.CompletionItemKind.Folder
-                      : item.type === 'object'
-                        ? monaco.languages.CompletionItemKind.Field
-                        : item.type === 'column'
-                          ? monaco.languages.CompletionItemKind.Field
-                          : getStageCompletionKind(item) === 'stage'
-                            ? monaco.languages.CompletionItemKind.Module
-                            : getStageCompletionKind(item) === 'folder'
-                              ? monaco.languages.CompletionItemKind.Folder
-                              : getStageCompletionKind(item) === 'file'
-                                ? monaco.languages.CompletionItemKind.File
-                                : monaco.languages.CompletionItemKind.Variable,
-              insertText: getStageCompletionInsertText(item),
-              sortText:
-                item.type === 'stage' ||
-                item.type === 'stage_folder' ||
-                item.type === 'stage_file'
-                  ? getStageCompletionSortText(item)
-                  : undefined,
-              detail:
-                item.type === 'stage' || item.type === 'stage_folder' || item.type === 'stage_file'
-                  ? formatStageCompletionDetail(item)
-                  : item.detail,
-              range:
-                item.type === 'stage' || item.type === 'stage_folder' || item.type === 'stage_file'
-                  ? stageRange
-                  : undefined,
-              command: shouldTriggerStageSuggestions(item)
-                ? {
-                    id: 'editor.action.triggerSuggest',
-                    title: 'Show stage contents',
-                  }
-                : undefined,
-            })),
-          }
-        } catch {
-          return { suggestions: [] }
-        }
+    selectionListenerRef.current?.dispose();
+    activeSqlSelection = null;
+    selectionListenerRef.current = editor.onDidChangeCursorSelection(
+      (event) => {
+        activeSqlSelection = event.selection.isEmpty() ? null : event.selection;
       },
-    })
+    );
+    // Define and select the Nova SQL themes (shared with the version preview).
+    applyNovaSqlTheme(monaco, resolvedTheme === "dark");
+
+    providerRef.current?.dispose();
+    providerRef.current = monaco.languages.registerCompletionItemProvider(
+      "sql",
+      {
+        triggerCharacters: ["@", ".", " "],
+        provideCompletionItems: async (
+          model: Parameters<
+            Monaco["languages"]["registerCompletionItemProvider"]
+          >[1] extends {
+            provideCompletionItems: infer T;
+          }
+            ? T extends (...args: infer A) => unknown
+              ? A[0]
+              : never
+            : never,
+          position: Parameters<
+            Monaco["languages"]["registerCompletionItemProvider"]
+          >[1] extends {
+            provideCompletionItems: infer T;
+          }
+            ? T extends (...args: infer A) => unknown
+              ? A[1]
+              : never
+            : never,
+        ) => {
+          const textUntilPosition = model.getValueInRange({
+            startLineNumber: 1,
+            startColumn: 1,
+            endLineNumber: position.lineNumber,
+            endColumn: position.column,
+          });
+          completionRequestRef.current?.controller.abort();
+          const request = {
+            id: (completionRequestRef.current?.id ?? 0) + 1,
+            controller: new AbortController(),
+          };
+          completionRequestRef.current = request;
+
+          try {
+            const items = await provideCompletions(
+              textUntilPosition,
+              request.controller.signal,
+            );
+            if (completionRequestRef.current?.id !== request.id) {
+              return { suggestions: [] };
+            }
+
+            const stageContext =
+              extractStageCompletionContext(textUntilPosition);
+            const stageRange = stageContext
+              ? getStageCompletionReplacementRange(
+                  position.lineNumber,
+                  position.column,
+                  stageContext,
+                )
+              : undefined;
+
+            return {
+              suggestions: items.map((item) => ({
+                label:
+                  getStageCompletionKind(item) === "file"
+                    ? {
+                        label: item.label,
+                        description: getStageFileExtension(item) ?? "FILE",
+                      }
+                    : item.label,
+                kind:
+                  item.type === "keyword"
+                    ? monaco.languages.CompletionItemKind.Keyword
+                    : item.type === "database"
+                      ? monaco.languages.CompletionItemKind.Module
+                      : item.type === "schema"
+                        ? monaco.languages.CompletionItemKind.Folder
+                        : item.type === "object"
+                          ? monaco.languages.CompletionItemKind.Field
+                          : item.type === "column"
+                            ? monaco.languages.CompletionItemKind.Field
+                            : getStageCompletionKind(item) === "stage"
+                              ? monaco.languages.CompletionItemKind.Module
+                              : getStageCompletionKind(item) === "folder"
+                                ? monaco.languages.CompletionItemKind.Folder
+                                : getStageCompletionKind(item) === "file"
+                                  ? monaco.languages.CompletionItemKind.File
+                                  : monaco.languages.CompletionItemKind
+                                      .Variable,
+                insertText: getStageCompletionInsertText(item),
+                sortText:
+                  item.type === "stage" ||
+                  item.type === "stage_folder" ||
+                  item.type === "stage_file"
+                    ? getStageCompletionSortText(item)
+                    : undefined,
+                detail:
+                  item.type === "stage" ||
+                  item.type === "stage_folder" ||
+                  item.type === "stage_file"
+                    ? formatStageCompletionDetail(item)
+                    : item.detail,
+                range:
+                  item.type === "stage" ||
+                  item.type === "stage_folder" ||
+                  item.type === "stage_file"
+                    ? stageRange
+                    : undefined,
+                command: shouldTriggerStageSuggestions(item)
+                  ? {
+                      id: "editor.action.triggerSuggest",
+                      title: "Show stage contents",
+                    }
+                  : undefined,
+              })),
+            };
+          } catch {
+            return { suggestions: [] };
+          }
+        },
+      },
+    );
 
     // SQL Formatting — Format Document + Format Selection
     const formatOpts = {
-      language: 'mysql' as const,
-      keywordCase: 'upper' as const,
+      language: "mysql" as const,
+      keywordCase: "upper" as const,
       tabWidth: 2,
-    }
-    monaco.languages.registerDocumentFormattingEditProvider('sql', {
+    };
+    monaco.languages.registerDocumentFormattingEditProvider("sql", {
       provideDocumentFormattingEdits(model: any) {
         try {
-          const formatted = formatSql(model.getValue(), formatOpts)
-          return [{ range: model.getFullModelRange(), text: formatted }]
+          const formatted = formatSql(model.getValue(), formatOpts);
+          return [{ range: model.getFullModelRange(), text: formatted }];
         } catch {
-          return []
+          return [];
         }
       },
-    })
-    monaco.languages.registerDocumentRangeFormattingEditProvider('sql', {
+    });
+    monaco.languages.registerDocumentRangeFormattingEditProvider("sql", {
       provideDocumentRangeFormattingEdits(model: any, range: any) {
         try {
-          const text = model.getValueInRange(range)
-          const formatted = formatSql(text, formatOpts)
-          return [{ range, text: formatted }]
+          const text = model.getValueInRange(range);
+          const formatted = formatSql(text, formatOpts);
+          return [{ range, text: formatted }];
         } catch {
-          return []
+          return [];
         }
       },
-    })
+    });
     // Ctrl+Shift+F keyboard shortcut for format
     editor.addAction({
-      id: 'format-sql',
-      label: 'Format SQL',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF],
+      id: "format-sql",
+      label: "Format SQL",
+      keybindings: [
+        monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF,
+      ],
       run: (ed) => {
-        ed.getAction('editor.action.formatDocument')?.run()
+        ed.getAction("editor.action.formatDocument")?.run();
       },
-    })
+    });
 
     // "Attach to Nove" in the editor's right-click menu, in the navigation
     // group so it sits above the native clipboard entries.
     editor.addAction({
-      id: 'attach-to-nova',
-      label: 'Attach to Nove',
-      contextMenuGroupId: 'navigation',
+      id: "attach-to-nova",
+      label: "Attach to Nove",
+      contextMenuGroupId: "navigation",
       contextMenuOrder: 1,
       run: () => {
-        onAttachSelectionRef.current()
+        onAttachSelectionRef.current();
       },
-    })
+    });
 
     // Ctrl/Cmd+Enter to run query — DOM listener is more reliable than
     // Monaco's addCommand which can be swallowed by the keybinding service
-    const editorDomNode = editor.getDomNode()
+    const editorDomNode = editor.getDomNode();
     if (editorDomNode) {
       const handler = (e: KeyboardEvent) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-          e.preventDefault()
-          e.stopPropagation()
-          onRunRef.current()
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          onRunRef.current();
         }
-      }
-      editorDomNode.addEventListener('keydown', handler, true)
+      };
+      editorDomNode.addEventListener("keydown", handler, true);
     }
   }
 
   return (
-    <div className='relative h-full min-h-0'>
+    <div className="relative h-full min-h-0">
       <Editor
-        height='100%'
-        language='sql'
-        theme={resolvedTheme === 'dark' ? 'nova-dark' : 'nova-light'}
+        height="100%"
+        language="sql"
+        theme={resolvedTheme === "dark" ? "nova-dark" : "nova-light"}
         value={value}
         onChange={onChange}
         onMount={handleMount}
         options={{
           minimap: { enabled: false },
           fontSize: 12,
-          fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+          fontFamily:
+            "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
           fontLigatures: true,
-          fontWeight: '400',
+          fontWeight: "400",
           lineHeight: 20,
           automaticLayout: true,
-          wordWrap: 'on',
-          wordBasedSuggestions: 'off',
+          wordWrap: "on",
+          wordBasedSuggestions: "off",
           suggest: {
             showWords: false,
           },
           suggestOnTriggerCharacters: true,
           scrollBeyondLastLine: false,
-          renderLineHighlight: 'none',
+          renderLineHighlight: "none",
           overviewRulerBorder: false,
           hideCursorInOverviewRuler: true,
           padding: { top: 10, bottom: 12 },
         }}
       />
       {proposedRewrite ? (
-        <div className='pointer-events-none absolute inset-x-3 bottom-3 z-10'>
-          <div className='pointer-events-auto max-h-[45%] overflow-auto rounded-lg border bg-background shadow-lg'>
-            <div className='flex items-center justify-between gap-2 border-b px-3 py-2'>
-              <p className='text-xs font-medium'>Proposed rewrite from Nove</p>
-              <p className='text-xs text-muted-foreground'>
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10">
+          <div className="pointer-events-auto max-h-[45%] overflow-auto rounded-lg border bg-background shadow-lg">
+            <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+              <p className="text-xs font-medium">Proposed rewrite from Nove</p>
+              <p className="text-xs text-muted-foreground">
                 {proposedRewrite.hunks.length} change
-                {proposedRewrite.hunks.length === 1 ? '' : 's'}
+                {proposedRewrite.hunks.length === 1 ? "" : "s"}
               </p>
             </div>
-            <div className='flex flex-col gap-1.5 p-2'>
+            <div className="flex flex-col gap-1.5 p-2">
               {proposedRewrite.hunks.map((hunk, index) => (
-                <div key={`${hunk.startLine}-${index}`} className='grid grid-cols-2 gap-1.5'>
-                  <div className='min-w-0 rounded border border-destructive/30 bg-destructive/10 p-1.5'>
-                    <p className='mb-0.5 text-[0.65rem] font-medium uppercase text-destructive'>
+                <div
+                  key={`${hunk.startLine}-${index}`}
+                  className="grid grid-cols-2 gap-1.5"
+                >
+                  <div className="min-w-0 rounded border border-destructive/30 bg-destructive/10 p-1.5">
+                    <p className="mb-0.5 text-[0.65rem] font-medium uppercase text-destructive">
                       Before
                     </p>
-                    <pre className='overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem] text-muted-foreground'>
-                      {hunk.kind === 'insert'
-                        ? '(none)'
+                    <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem] text-muted-foreground">
+                      {hunk.kind === "insert"
+                        ? "(none)"
                         : value
-                            .split('\n')
+                            .split("\n")
                             .slice(hunk.startLine - 1, hunk.endLine)
-                            .join('\n')}
+                            .join("\n")}
                     </pre>
                   </div>
-                  <div className='min-w-0 rounded border border-info/40 bg-info/10 p-1.5'>
-                    <p className='mb-0.5 text-[0.65rem] font-medium uppercase text-info-strong'>
+                  <div className="min-w-0 rounded border border-info/40 bg-info/10 p-1.5">
+                    <p className="mb-0.5 text-[0.65rem] font-medium uppercase text-info-strong">
                       After
                     </p>
-                    <pre className='overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem]'>
-                      {hunk.kind === 'delete' ? '(removed)' : hunk.lines.join('\n') || '(none)'}
+                    <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[0.7rem]">
+                      {hunk.kind === "delete"
+                        ? "(removed)"
+                        : hunk.lines.join("\n") || "(none)"}
                     </pre>
                   </div>
                 </div>
               ))}
             </div>
-            <div className='flex items-center justify-end gap-2 border-t px-3 py-2'>
-              <Button type='button' size='sm' variant='outline' onClick={onDenyRewrite}>
+            <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onDenyRewrite}
+              >
                 Deny
               </Button>
-              <Button type='button' size='sm' onClick={onApproveRewrite}>
+              <Button type="button" size="sm" onClick={onApproveRewrite}>
                 Approve
               </Button>
             </div>
@@ -4347,94 +4921,103 @@ function MonacoSqlEditor({
         </div>
       ) : null}
     </div>
-  )
+  );
 }
 
-function dedupeCompletionItems(items: CompletionResponse['items']) {
-  const seen = new Set<string>()
+function dedupeCompletionItems(items: CompletionResponse["items"]) {
+  const seen = new Set<string>();
   return items.filter((item) => {
-    const key = `${item.type}:${item.label}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
+    const key = `${item.type}:${item.label}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function extractRelationCompletionContext(
-  text: string
+  text: string,
 ):
-  | { type: 'database'; prefix: string }
-  | { type: 'schema'; database: string; prefix: string }
-  | { type: 'object'; database: string; schema: string; prefix: string }
+  | { type: "database"; prefix: string }
+  | { type: "schema"; database: string; prefix: string }
+  | { type: "object"; database: string; schema: string; prefix: string }
   | null {
   const objectMatch = text.match(
-    /\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/i
-  )
+    /\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/i,
+  );
   if (objectMatch) {
     return {
-      type: 'object',
+      type: "object",
       database: objectMatch[1],
       schema: objectMatch[2],
-      prefix: objectMatch[3] ?? '',
-    }
+      prefix: objectMatch[3] ?? "",
+    };
   }
 
-  const schemaMatch = text.match(/\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/i)
+  const schemaMatch = text.match(
+    /\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/i,
+  );
   if (schemaMatch) {
     return {
-      type: 'schema',
+      type: "schema",
       database: schemaMatch[1],
-      prefix: schemaMatch[2] ?? '',
-    }
+      prefix: schemaMatch[2] ?? "",
+    };
   }
 
-  const databaseMatch = text.match(/\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]*)$/i)
+  const databaseMatch = text.match(
+    /\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([A-Za-z0-9_]*)$/i,
+  );
   if (databaseMatch) {
     return {
-      type: 'database',
-      prefix: databaseMatch[1] ?? '',
-    }
+      type: "database",
+      prefix: databaseMatch[1] ?? "",
+    };
   }
 
-  return null
+  return null;
 }
 
 function resolveAliasTable(sql: string, alias: string) {
-  const regex = /\b(?:FROM|JOIN)\s+([A-Za-z0-9_.`]+)(?:\s+(?:AS\s+)?([A-Za-z0-9_]+))?/gi
-  let match: RegExpExecArray | null = regex.exec(sql)
+  const regex =
+    /\b(?:FROM|JOIN)\s+([A-Za-z0-9_.`]+)(?:\s+(?:AS\s+)?([A-Za-z0-9_]+))?/gi;
+  let match: RegExpExecArray | null = regex.exec(sql);
   while (match) {
     if (match[2] === alias) {
-      return match[1].replace(/`/g, '').split('.').pop() ?? null
+      return match[1].replace(/`/g, "").split(".").pop() ?? null;
     }
-    match = regex.exec(sql)
+    match = regex.exec(sql);
   }
-  return null
+  return null;
 }
 
-function extractTablesInScope(sql: string): Array<{ tableName: string; alias: string | null }> {
-  const regex = /\b(?:FROM|JOIN)\s+([A-Za-z0-9_.`]+)(?:\s+(?:AS\s+)?([A-Za-z0-9_]+))?/gi
-  const tables: Array<{ tableName: string; alias: string | null }> = []
-  const seen = new Set<string>()
-  let match: RegExpExecArray | null = regex.exec(sql)
+function extractTablesInScope(
+  sql: string,
+): Array<{ tableName: string; alias: string | null }> {
+  const regex =
+    /\b(?:FROM|JOIN)\s+([A-Za-z0-9_.`]+)(?:\s+(?:AS\s+)?([A-Za-z0-9_]+))?/gi;
+  const tables: Array<{ tableName: string; alias: string | null }> = [];
+  const seen = new Set<string>();
+  let match: RegExpExecArray | null = regex.exec(sql);
   while (match) {
-    const raw = match[1].replace(/`/g, '')
-    const tableName = raw.split('.').pop() ?? raw
-    const alias = match[2] ?? null
+    const raw = match[1].replace(/`/g, "");
+    const tableName = raw.split(".").pop() ?? raw;
+    const alias = match[2] ?? null;
     if (!seen.has(tableName)) {
-      seen.add(tableName)
-      tables.push({ tableName, alias })
+      seen.add(tableName);
+      tables.push({ tableName, alias });
     }
-    match = regex.exec(sql)
+    match = regex.exec(sql);
   }
-  return tables
+  return tables;
 }
 
 function lastWord(text: string) {
-  return text.split(/\s+/).pop() ?? ''
+  return text.split(/\s+/).pop() ?? "";
 }
 
 function isDestructiveSql(sql: string) {
-  const pattern = /^\s*(DROP|TRUNCATE|ALTER\s+TABLE\s+.+\s+DROP|DELETE\s+FROM|UPDATE\s+)/i
+  const pattern =
+    /^\s*(DROP|TRUNCATE|ALTER\s+TABLE\s+.+\s+DROP|DELETE\s+FROM|UPDATE\s+)/i;
   // Check each statement in multi-statement SQL
-  return sql.split(';').some((stmt) => pattern.test(stmt))
+  return sql.split(";").some((stmt) => pattern.test(stmt));
 }

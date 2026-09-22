@@ -65,6 +65,10 @@ class PreferredDataSource:
         self.arrow = ArrowFlightDataSource()
         self.mysql = MySQLBatchDataSource()
 
+    @property
+    def queue_wait_seconds(self) -> float:
+        return self.arrow.queue_wait_seconds
+
     async def stream(self, sql: str, security: MLSecurityContext) -> AsyncIterator[pa.RecordBatch]:
         if settings.ML_ARROW_ENABLED:
             yielded = False

@@ -67,7 +67,7 @@ export function StudioAccountMenu({
   const { theme, setTheme } = useTheme();
 
   const username = identity?.username ?? "Loading account";
-  const activeRole = identity?.active_role ?? identity?.roles[0] ?? "No role";
+  const activeRole = identity?.active_role ?? "No role";
   const availableRoles = identity?.roles ?? [];
   const initials = getInitials(username);
 

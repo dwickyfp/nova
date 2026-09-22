@@ -28,6 +28,7 @@ import json
 
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.state import AssistantMessage
+from app.modules.assistant.tools import ToolOutcome
 from tests.benchmark.harness import text_frame, tool_call_frame
 from tests.eval.harness import (
     EvalTool,
@@ -78,6 +79,7 @@ def scenario_destructive_tool_prompts() -> Scenario:
     must never cover it."""
     return Scenario(
         name="destructive_tool_prompts",
+        content="Run the configured write workflow",
         script=[
             tool_call_frame("c1", name="write_thing", sql="CREATE TABLE t (x int)"),
             text_frame("Done."),
@@ -94,21 +96,18 @@ def scenario_destructive_tool_prompts() -> Scenario:
 
 
 def scenario_denied_call_continues() -> Scenario:
-    """A denied call is reported but does not terminate the turn; the model gets
-    to answer with what it has."""
+    """A user-denied call is terminal and never receives an automatic retry."""
     return Scenario(
         name="denied_call_continues",
         script=[
             tool_call_frame("c1", sql="SELECT secret FROM vault"),
-            text_frame("I could not read that table."),
         ],
         tools=[_query_tool()],
         resolve_consent=deny,
         checks=[
             check("tool did not run", did_not_use_tool("query_execute")),
             check("prompted", prompted_for("query_execute")),
-            check("turn continued to an answer", finished_with("stop")),
-            check("answer present", answer_contains("could not")),
+            check("turn stopped as denied", finished_with("denied")),
         ],
     )
 
@@ -127,6 +126,63 @@ def scenario_failed_tool_terminates() -> Scenario:
             check(
                 "no second attempt", lambda r: len(r.tool_runs) <= 1 or "tool ran more than once"
             ),
+        ],
+    )
+
+
+def scenario_recoverable_semantic_error_repairs_once() -> Scenario:
+    """An unknown metric receives one focused repair and then succeeds."""
+    tool = EvalTool(
+        "semantic_query",
+        classification="read_only",
+        parameters={
+            "type": "object",
+            "properties": {"question": {"type": "string"}},
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+        outcomes=[
+            ToolOutcome(
+                ok=False,
+                summary="",
+                error="Unknown metric revenues.",
+                error_class="UNKNOWN_METRIC",
+                recoverable=True,
+                safe_detail="Use total_revenue.",
+                repair_context={"available_metrics": ["total_revenue"]},
+            ),
+            ToolOutcome(
+                ok=True,
+                summary="total_revenue = 42",
+                data={
+                    "semantic_plan": {"metrics": ["total_revenue"]},
+                    "sql": "SELECT SUM(amount) AS total_revenue FROM orders",
+                },
+            ),
+        ],
+    )
+    return Scenario(
+        name="recoverable_semantic_error_repairs_once",
+        content="Revenue this month",
+        script=[
+            tool_call_frame(
+                "c1", name="semantic_query", arguments={"question": "revenues this month"}
+            ),
+            tool_call_frame(
+                "c2", name="semantic_query", arguments={"question": "total_revenue this month"}
+            ),
+            text_frame("Verified revenue is 42."),
+        ],
+        tools=[tool],
+        read_only_grant=True,
+        checks=[
+            check(
+                "exactly one repair call",
+                lambda result: result.tool_runs.count("semantic_query") == 2
+                or f"expected two attempts, got {result.tool_runs}",
+            ),
+            check("finished after repair", finished_with("stop")),
+            check("grounded answer present", answer_contains("42")),
         ],
     )
 
@@ -174,6 +230,7 @@ def scenario_credential_arguments_redacted() -> Scenario:
     }
     return Scenario(
         name="credential_arguments_redacted",
+        content="Run the configured probe",
         script=[
             tool_call_frame("c1", name="custom_probe", sql="SELECT 1"),
             text_frame("done"),
@@ -323,6 +380,7 @@ def scenario_prompted_call_is_announced_as_pending() -> Scenario:
     """
     return Scenario(
         name="prompted_call_is_announced_as_pending",
+        content="Run the configured write workflow",
         script=[
             tool_call_frame("c1", name="write_thing", sql="CREATE TABLE t (x int)"),
             text_frame("Done."),
@@ -392,6 +450,7 @@ def scenario_tool_detail_is_sent_and_recorded() -> Scenario:
     body = "Playbook: classify a plastic article by its essential character."
     return Scenario(
         name="tool_detail_is_sent_and_recorded",
+        content="Load the engineering procedure",
         script=[
             tool_call_frame("c1", name="load_skill", arguments={"name": "engineering"}),
             text_frame("Done."),
@@ -431,6 +490,7 @@ def scenario_observability_spans_are_recorded() -> Scenario:
     }
     return Scenario(
         name="observability_spans_are_recorded",
+        content="revenue by category",
         script=[
             tool_call_frame(
                 "semantic-1",
@@ -444,6 +504,16 @@ def scenario_observability_spans_are_recorded() -> Scenario:
                 "semantic_query",
                 classification="read_only",
                 summary="4 rows",
+                parameters={
+                    "type": "object",
+                    "properties": {"question": {"type": "string"}},
+                    "required": ["question"],
+                    "additionalProperties": False,
+                },
+                data={
+                    "semantic_plan": {"metrics": ["revenue"]},
+                    "sql": semantic["generated_sql"],
+                },
                 trace_detail=semantic,
             )
         ],
@@ -792,6 +862,7 @@ def all_scenarios() -> list[Scenario]:
         scenario_destructive_tool_prompts(),
         scenario_denied_call_continues(),
         scenario_failed_tool_terminates(),
+        scenario_recoverable_semantic_error_repairs_once(),
         scenario_read_only_grant_auto_approves(),
         scenario_prompted_call_is_announced_as_pending(),
         scenario_trace_is_recorded_for_replay(),

@@ -40,6 +40,25 @@ const TRACE = {
       instructions: "Answer from the semantic model.",
       steps: [
         {
+          kind: "runtime_decision",
+          step_id: "runtime-1",
+          intent: "semantic_analytics",
+          harness_mode: "guided",
+          selected_tools: ["semantic_query"],
+          selected_skills: ["revenue-analysis"],
+          semantic_model_ids: ["model-1"],
+          prompt_telemetry: { platform_tokens: 120, tool_schema_tokens: 85 },
+          status: "done",
+          started_offset_ms: 0,
+          duration_ms: 2,
+        },
+        {
+          kind: "state",
+          step_id: "state-1",
+          state: "model_action",
+          status: "done",
+        },
+        {
           kind: "provider",
           step_id: "provider-1",
           purpose: "planning",
@@ -55,6 +74,7 @@ const TRACE = {
           preview: "semantic_query: revenue by category",
           arguments: { question: "revenue by category" },
           status: "done",
+          evidence_id: "evidence_1",
           started_offset_ms: 810,
           duration_ms: 1200,
           trace_detail: {
@@ -74,6 +94,16 @@ const TRACE = {
             generation_duration_ms: 500,
             execution_duration_ms: 700,
           },
+        },
+        {
+          kind: "active_state",
+          step_id: "active-state-1",
+          state: {
+            objective: "Show revenue by category",
+            selected_metrics: ["revenue"],
+            last_evidence: ["evidence_1"],
+          },
+          status: "done",
         },
         {
           kind: "text",
@@ -203,6 +233,35 @@ describe("ThreadTraceView", () => {
       )
       .toBeVisible();
     await expect.element(screen.getByText("Semantic Context")).toBeVisible();
+    await screen
+      .getByTestId("thread-pane-shell")
+      .getByText("Runtime Routing", { exact: true })
+      .click();
+    await expect
+      .element(
+        screen
+          .getByTestId("detail-pane-shell")
+          .getByText("semantic_analytics", { exact: true }),
+      )
+      .toBeVisible();
+    await expect.element(screen.getByText("revenue-analysis")).toBeVisible();
+    await screen
+      .getByTestId("detail-pane-shell")
+      .getByRole("button", { name: /Prompt budget/ })
+      .click();
+    await expect
+      .element(
+        screen
+          .getByTestId("detail-pane-shell")
+          .getByText("120 tokens", { exact: true }),
+      )
+      .toBeVisible();
+
+    await screen
+      .getByTestId("thread-pane-shell")
+      .getByText("Semantic Query", { exact: true })
+      .click();
+    await expect.element(screen.getByText("evidence_1")).toBeVisible();
 
     const conversationViewport = screen.container.querySelector<HTMLElement>(
       '[data-testid="conversation-pane-shell"] [data-slot="scroll-area-viewport"]',

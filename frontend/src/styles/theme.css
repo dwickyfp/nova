@@ -275,3 +275,21 @@
 .hljs-punctuation {
   color: var(--foreground);
 }
+
+.sql-code-block {
+  --code-keyword: #4f83b3;
+  --code-string: #168174;
+  --code-number: #a26316;
+  --code-function: #356bc4;
+  --code-type: #7655b7;
+  --code-attr: #c8662d;
+}
+
+.dark .sql-code-block {
+  --code-keyword: #73a8d8;
+  --code-string: #4cc8b8;
+  --code-number: #e0a957;
+  --code-function: #82a9ef;
+  --code-type: #b29aeb;
+  --code-attr: #ee9a60;
+}

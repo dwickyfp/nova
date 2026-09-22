@@ -28,6 +28,10 @@ import logging
 from dataclasses import dataclass, field
 
 from app.common.sql_guard import redact_sql_credentials
+from app.modules.access_control.role_activation import (
+    RoleActivationError,
+    role_activation_service,
+)
 from app.modules.query.repository import QueryResult
 from app.modules.query.service import query_service
 from app.proxy.protocol import (
@@ -47,6 +51,7 @@ from app.proxy.session import (
     SessionState,
     handle_set_statement,
     is_show_databases,
+    parse_role_statement,
     parse_use_statement,
     split_statements,
     substitute_user_variables,
@@ -117,16 +122,12 @@ def _column_definition(name: str, sample_values: list) -> ColumnDefinition:
         if isinstance(value, int):
             return ColumnDefinition(name=name, type_code=TYPE_LONGLONG, charset=CHARSET_UTF8)
         if isinstance(value, decimal.Decimal):
-            return ColumnDefinition(
-                name=name, type_code=TYPE_NEWDECIMAL, charset=CHARSET_UTF8
-            )
+            return ColumnDefinition(name=name, type_code=TYPE_NEWDECIMAL, charset=CHARSET_UTF8)
         if isinstance(value, float):
             return ColumnDefinition(name=name, type_code=TYPE_DOUBLE, charset=CHARSET_UTF8)
         # datetime.datetime before datetime.date: the former is a subclass.
         if isinstance(value, datetime.datetime):
-            return ColumnDefinition(
-                name=name, type_code=TYPE_DATETIME, charset=CHARSET_UTF8
-            )
+            return ColumnDefinition(name=name, type_code=TYPE_DATETIME, charset=CHARSET_UTF8)
         if isinstance(value, datetime.date):
             return ColumnDefinition(name=name, type_code=TYPE_DATE, charset=CHARSET_UTF8)
         if isinstance(value, datetime.timedelta):
@@ -173,6 +174,20 @@ class ProxyQueryExecutor:
 
         engine_statements: list[str] = []
         for statement in statements:
+            try:
+                requested_role = parse_role_statement(statement)
+            except ValueError as exc:
+                return WireResult(error=str(exc), error_code=1064)
+            if requested_role is not None:
+                activated = await self._activate_role(
+                    requested_role,
+                    username=username,
+                    connection=connection,
+                )
+                if activated.error:
+                    return activated
+                continue
+
             use_result = self._handle_use(statement)
             if use_result is not None:
                 return use_result
@@ -189,6 +204,11 @@ class ProxyQueryExecutor:
             # value rather than a reference Nova's own parser would claim as a
             # stage (NOVA-25).
             substituted = substitute_user_variables(statement, self._session)
+            if substituted.sql.lstrip().upper().startswith(("PREPARE ", "EXECUTE ")):
+                return WireResult(
+                    error="Prepared statements are not supported by the Nova MySQL proxy",
+                    error_code=1235,
+                )
             engine_statements.append(substituted.sql)
 
         if not engine_statements:
@@ -222,6 +242,24 @@ class ProxyQueryExecutor:
             )
 
         return self._to_wire(results)
+
+    async def _activate_role(self, requested: str, *, username: str, connection) -> WireResult:
+        target = self._session.default_role if requested.upper() == "DEFAULT" else requested
+        if not target:
+            return WireResult(error="No explicit default role is configured", error_code=1045)
+        try:
+            active, assignments = await role_activation_service.activate(
+                connection,
+                principal=username,
+                requested_role=target,
+                known_default_role=self._session.default_role,
+            )
+        except RoleActivationError as exc:
+            return WireResult(error=str(exc), error_code=1045)
+        self._session.assigned_roles = assignments.assigned_roles
+        self._session.default_role = assignments.default_role
+        self._session.commit_role(active)
+        return WireResult(ok_affected=0)
 
     def _handle_use(self, statement: str) -> WireResult | None:
         database = parse_use_statement(statement)
@@ -260,14 +298,10 @@ class ProxyQueryExecutor:
             return wire
 
         first = results[0]
-        kept_rows = [
-            row for row in first.rows if row and str(row[0]) not in HIDDEN_DATABASES
-        ]
+        kept_rows = [row for row in first.rows if row and str(row[0]) not in HIDDEN_DATABASES]
         return WireResult(
             columns=[
-                ColumnDefinition(
-                    name="Database", type_code=TYPE_VAR_STRING, charset=CHARSET_UTF8
-                )
+                ColumnDefinition(name="Database", type_code=TYPE_VAR_STRING, charset=CHARSET_UTF8)
             ],
             rows=kept_rows,
         )

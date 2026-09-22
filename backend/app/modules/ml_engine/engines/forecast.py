@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pandas as pd
 import pyarrow as pa
 from statsforecast import StatsForecast
@@ -17,9 +19,17 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     for column in (timestamp, target):
         if column not in table.column_names:
             raise ValueError(f"Forecast column '{column}' is not present")
+    conversion_started = time.perf_counter()
     frame = table.to_pandas()
+    arrow_to_pandas_seconds = time.perf_counter() - conversion_started
     frame[timestamp] = pd.to_datetime(frame[timestamp], errors="coerce", utc=True)
     frame[target] = pd.to_numeric(frame[target], errors="coerce")
+    invalid_rows = int(frame[[timestamp, target]].isna().any(axis=1).sum())
+    if invalid_rows:
+        raise ValueError(
+            f"Forecast input contains {invalid_rows} row(s) with a missing/invalid "
+            "timestamp or target"
+        )
     frame = frame.dropna(subset=[timestamp, target])
     series = spec.series_column
     if series:
@@ -30,10 +40,29 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         frame["unique_id"] = "__single__"
     frame = frame.rename(columns={timestamp: "ds", target: "y"})
     frame = frame[["unique_id", "ds", "y"]].sort_values(["unique_id", "ds"])
-    if len(frame) < max(10, int(spec.horizon or 1) + 2):
-        raise InsufficientTrainingRows("Forecast requires at least horizon + 2 observations")
-    frequency = spec.frequency or _infer_frequency(frame)
     horizon = int(spec.horizon or 1)
+    minimum_required = max(10, horizon + 2)
+    sizes = frame.groupby("unique_id").size()
+    insufficient = [str(name) for name, size in sizes.items() if int(size) < minimum_required]
+    warnings: list[str] = []
+    if insufficient:
+        policy = str(spec.parameters.get("insufficient_series_policy", "reject"))
+        if policy == "drop":
+            frame = frame[~frame["unique_id"].isin(insufficient)]
+            warnings.append("Dropped insufficient series: " + ", ".join(sorted(insufficient)))
+            if frame.empty:
+                raise InsufficientTrainingRows("No forecast series has enough observations")
+        elif policy == "reject":
+            raise InsufficientTrainingRows(
+                "Forecast series require at least "
+                f"{minimum_required} observations; insufficient: " + ", ".join(sorted(insufficient))
+            )
+        else:
+            raise ValueError("insufficient_series_policy must be 'reject' or 'drop'")
+    duplicates = frame.duplicated(["unique_id", "ds"]).sum()
+    if duplicates:
+        raise ValueError(f"Forecast input contains {int(duplicates)} duplicate timestamp(s)")
+    frequency = spec.frequency or _infer_frequency(frame)
     minimum_series_rows = int(frame.groupby("unique_id").size().min())
     validation_horizon = min(horizon, max(1, minimum_series_rows // 5))
     cutoff = frame.groupby("unique_id").tail(validation_horizon).index
@@ -76,6 +105,9 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         "training_end": train["ds"].max().isoformat(),
         "validation_start": validation["ds"].min().isoformat(),
         "selected_estimator": algorithm,
+        "warnings": warnings,
+        "dropped_series": insufficient if warnings else [],
+        "arrow_to_pandas_seconds": arrow_to_pandas_seconds,
     }
     bundle = {
         "task": "forecast",

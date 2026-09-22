@@ -58,7 +58,7 @@ class StudioService:
                 username=username,
                 encrypted_password=user.get("encrypted_password", ""),
                 session_id=user.get("session_id"),
-                role=user.get("active_role") or (roles[0] if roles else None),
+                role=user.get("active_role"),
             )
             warehouses = sorted(
                 str(g.get("name")) for g in groups if g.get("name")
@@ -70,7 +70,7 @@ class StudioService:
         return StudioIdentity(
             username=username,
             roles=roles,
-            active_role=prefs.role or (roles[0] if roles else None),
+            active_role=user.get("active_role"),
             warehouses=warehouses,
             active_warehouse=prefs.warehouse or (warehouses[0] if warehouses else None),
         )

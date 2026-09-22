@@ -129,6 +129,24 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     SESSION_TTL_SECONDS: int = 3600
 
+    # --- Centralized authorization (Apache Ranger) ---
+    # Disabled only for migration/bootstrap. A production Nova deployment is
+    # expected to run with Ranger enabled and strict single-role semantics.
+    RANGER_ENABLED: bool = False
+    RANGER_ADMIN_URL: str = "http://localhost:6080"
+    RANGER_SERVICE_NAME: str = "nova_starrocks"
+    RANGER_USERNAME: str = "admin"
+    RANGER_PASSWORD: str = ""
+    RANGER_TLS_VERIFY: bool = True
+    RANGER_CONNECT_TIMEOUT_SECONDS: float = 3.0
+    RANGER_READ_TIMEOUT_SECONDS: float = 10.0
+    RANGER_MAX_RETRIES: int = 2
+    RANGER_RETRY_BACKOFF_SECONDS: float = 0.25
+    RANGER_RETRY_MAX_BACKOFF_SECONDS: float = 2.0
+    RANGER_MANAGED_POLICY_PREFIX: str = "nova-managed"
+    RANGER_STRICT_SINGLE_ACTIVE_ROLE: bool = True
+    RANGER_POLICY_PROPAGATION_SECONDS: float = 30.0
+
     # --- Internal machine-to-machine channel (/api/v1/internal/*) ---
     # Pre-shared secret for callers with no Nova session (e.g. the Java UDF
     # bridge). No default on purpose: unset means the internal endpoints fail
@@ -141,12 +159,17 @@ class Settings(BaseSettings):
     # --- ML execution ---
     ML_ARROW_ENABLED: bool = True
     ML_ARROW_BATCH_SIZE: int = 65536
+    ML_ARROW_QUEUE_DEPTH: int = 4
     ML_MYSQL_BATCH_SIZE: int = 4096
     ML_INTERACTIVE_TIMEOUT_SECONDS: float = 10.0
     ML_BALANCED_TIMEOUT_SECONDS: float = 60.0
     ML_BEST_TIMEOUT_SECONDS: float = 300.0
     ML_MAX_INTERACTIVE_ROWS: int = 500_000
     ML_MAX_INTERACTIVE_BYTES: int = 512 * 1024 * 1024
+    ML_MAX_BALANCED_ROWS: int = 2_000_000
+    ML_MAX_BALANCED_BYTES: int = 2 * 1024 * 1024 * 1024
+    ML_MAX_BEST_ROWS: int = 10_000_000
+    ML_MAX_BEST_BYTES: int = 8 * 1024 * 1024 * 1024
     ML_MAX_CONCURRENCY: int = 2
     ML_WORKER_PROCESSES: int = 2
     ML_ARTIFACT_STORAGE_CONNECTION: str = "production"
@@ -155,6 +178,9 @@ class Settings(BaseSettings):
     ML_MODEL_CACHE_MAX_BYTES: int = 1024 * 1024 * 1024
     ML_MODEL_CACHE_TTL_SECONDS: int = 900
     ML_EPHEMERAL_TTL_SECONDS: int = 1800
+    ML_EPHEMERAL_MAX_ENTRIES: int = 32
+    ML_EPHEMERAL_MAX_MEMORY_BYTES: int = 64 * 1024 * 1024
+    ML_SQL_RESULT_MAX_ROWS: int = 100_000
     ML_RANDOM_SEED: int = 42
 
     # --- MinIO / S3 (default storage) ---

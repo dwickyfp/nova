@@ -12,7 +12,12 @@ from app.common.user_flags import (
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
-from app.core.security import create_access_token, encrypt_password
+from app.core.security import create_access_token, decrypt_password, encrypt_password
+from app.modules.access_control.role_activation import (
+    RoleActivationError,
+    parse_assigned_roles,
+    role_activation_service,
+)
 from app.modules.auth.exceptions import (
     DefaultPasswordError,
     InvalidCredentialsError,
@@ -66,6 +71,37 @@ class AuthService:
         finally:
             conn.close()
 
+    async def _resolve_security_state(self, username: str, password: str) -> dict:
+        """Resolve and verify the explicit default role on a real user session."""
+        if not settings.RANGER_ENABLED:
+            # Legacy/native-RBAC deployments may grant privileges directly to
+            # users and legitimately have CURRENT_ROLE() = NONE. Do not invent
+            # a role from list ordering. Strict role activation begins when the
+            # deployment enables Ranger, which is Nova's production target.
+            roles = await self.get_user_roles(username, password)
+            return {
+                "roles": roles,
+                "assigned_roles": roles,
+                "default_role": None,
+                "active_role": None,
+                "security_context_version": 1,
+            }
+        try:
+            async with db.user_conn(username=username, password=password) as conn:
+                active_role, assignments = await role_activation_service.activate(
+                    conn, principal=username, requested_role=None
+                )
+        except RoleActivationError as exc:
+            raise InvalidCredentialsError(str(exc)) from exc
+        roles = list(assignments.assigned_roles)
+        return {
+            "roles": roles,
+            "assigned_roles": roles,
+            "default_role": assignments.default_role,
+            "active_role": active_role,
+            "security_context_version": 1,
+        }
+
     async def login(self, username: str, password: str) -> dict:
         """Full login flow.
 
@@ -86,13 +122,14 @@ class AuthService:
 
         # 3. Force setup on first login (nova_admin only)
         if not setup_done and username == "nova_admin":
-            roles = await self.get_user_roles(username, password)
+            security = await self._resolve_security_state(username, password)
             enc_password = encrypt_password(password)
             session_id = await session_store.create(
                 username,
                 enc_password,
-                roles,
-                active_role=roles[0] if roles else None,
+                security["roles"],
+                default_role=security["default_role"],
+                active_role=security["active_role"],
             )
             token = create_access_token(username, session_id)
             await write_audit_log(
@@ -109,8 +146,7 @@ class AuthService:
                 "access_token": token,
                 "token_type": "bearer",
                 "user": username,
-                "roles": roles,
-                "active_role": roles[0] if roles else None,
+                **security,
                 "message": "First login — set a new admin password",
             }
 
@@ -123,13 +159,14 @@ class AuthService:
         # session is marked so the UI routes them to the change-password screen
         # before anything else. This is the same shape as SETUP_REQUIRED above.
         if await is_must_change_password(username):
-            roles = await self.get_user_roles(username, password)
+            security = await self._resolve_security_state(username, password)
             enc_password = encrypt_password(password)
             session_id = await session_store.create(
                 username,
                 enc_password,
-                roles,
-                active_role=roles[0] if roles else None,
+                security["roles"],
+                default_role=security["default_role"],
+                active_role=security["active_role"],
             )
             token = create_access_token(username, session_id)
             await write_audit_log(
@@ -146,19 +183,19 @@ class AuthService:
                 "access_token": token,
                 "token_type": "bearer",
                 "user": username,
-                "roles": roles,
-                "active_role": roles[0] if roles else None,
+                **security,
                 "message": "Your administrator requires a password change before first use",
             }
 
         # 6. Normal authenticated session
-        roles = await self.get_user_roles(username, password)
+        security = await self._resolve_security_state(username, password)
         enc_password = encrypt_password(password)
         session_id = await session_store.create(
             username,
             enc_password,
-            roles,
-            active_role=roles[0] if roles else None,
+            security["roles"],
+            default_role=security["default_role"],
+            active_role=security["active_role"],
         )
         token = create_access_token(username, session_id)
         await write_audit_log(
@@ -176,8 +213,7 @@ class AuthService:
             "access_token": token,
             "token_type": "bearer",
             "user": username,
-            "roles": roles,
-            "active_role": roles[0] if roles else None,
+            **security,
         }
 
     async def switch_role(self, session_id: str, requested_role: str) -> dict:
@@ -185,16 +221,28 @@ class AuthService:
         if not session:
             raise InvalidCredentialsError("Session expired")
 
-        roles = session.get("roles", [])
+        roles = session.get("assigned_roles") or session.get("roles", [])
         if requested_role not in roles:
             raise InvalidCredentialsError("Role is not granted to this user")
 
-        reordered_roles = [requested_role, *[role for role in roles if role != requested_role]]
-        await session_store.set_active_role(session_id, requested_role, reordered_roles)
+        password = decrypt_password(session["encrypted_password"])
+        try:
+            async with db.user_conn(session["username"], password) as conn:
+                active_role, assignments = await role_activation_service.activate(
+                    conn,
+                    principal=session["username"],
+                    requested_role=requested_role,
+                )
+        except RoleActivationError as exc:
+            raise InvalidCredentialsError(str(exc)) from exc
+        version = await session_store.set_active_role(session_id, active_role)
 
         return {
-            "roles": reordered_roles,
-            "active_role": requested_role,
+            "roles": list(assignments.assigned_roles),
+            "assigned_roles": list(assignments.assigned_roles),
+            "default_role": assignments.default_role,
+            "active_role": active_role,
+            "security_context_version": version,
         }
 
     async def setup(
@@ -228,7 +276,13 @@ class AuthService:
             # Delete old session, create new with updated password
             roles = session["roles"]
             await session_store.delete(session_id)
-            await session_store.create("nova_admin", enc_password, roles)
+            await session_store.create(
+                "nova_admin",
+                enc_password,
+                roles,
+                default_role=session.get("default_role"),
+                active_role=session.get("active_role"),
+            )
             # Note: caller should issue new JWT with new session_id
 
         # Mark setup complete
@@ -266,39 +320,8 @@ class AuthService:
 
     @staticmethod
     def _parse_roles(grants_rows: list) -> list[str]:
-        """Parse role names from SHOW GRANTS output.
-
-        StarRocks SHOW GRANTS returns tuples:
-          ('user'@'%', None, "GRANT 'ACCOUNTADMIN' TO 'user'@'%'")
-          ('user'@'%', None, "GRANT ALL ON *.* TO ROLE analyst")
-        """
-        roles = []
-        for row in grants_rows:
-            # Extract the grant text (3rd element of tuple)
-            if isinstance(row, (tuple, list)) and len(row) >= 3:
-                grant_text = str(row[2])
-            else:
-                grant_text = str(row)
-
-            upper = grant_text.upper()
-
-            # Pattern 1: GRANT 'ROLENAME' TO 'user' — role assignment
-            if grant_text.startswith("GRANT '") and " TO '" in grant_text:
-                parts = grant_text.split("'")
-                if len(parts) >= 2:
-                    role = parts[1].strip()
-                    if role and role.upper() not in ("ALL", "SELECT", "INSERT", "UPDATE", "DELETE"):
-                        roles.append(role)
-
-            # Pattern 2: GRANT ... TO ROLE rolename — privilege grant
-            elif "TO ROLE" in upper:
-                parts = upper.split("TO ROLE")
-                if len(parts) > 1:
-                    role = parts[-1].strip().strip("'\"").strip(")").strip()
-                    if role:
-                        roles.append(role)
-
-        return roles
+        """Parse StarRocks role-marker assignments from SHOW GRANTS output."""
+        return parse_assigned_roles(grants_rows)
 
     @staticmethod
     def _escape(value: str) -> str:

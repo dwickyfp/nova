@@ -24,6 +24,10 @@ async def write_audit_log(
     file_id: str | None = None,
     database_name: str | None = None,
     schema_name: str | None = None,
+    active_role: str | None = None,
+    security_context_version: int | None = None,
+    decision: str | None = None,
+    ranger_policy_ids: str | None = None,
     query_id: str | None = None,
 ) -> str:
     """Write an audit log entry. Returns the query_id (UUID) for the entry."""
@@ -33,8 +37,10 @@ async def write_audit_log(
         INSERT INTO NOVA_SYSTEM.AUDIT_LOG
         (query_id, event_type, event_time, user_name, object_type, object_name, action,
          sql_text, status, error_message, duration_ms, rows_affected, session_id,
-         rewritten_sql, file_id, database_name, schema_name)
-        VALUES (%s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+         rewritten_sql, file_id, database_name, schema_name, active_role,
+         security_context_version, decision, ranger_policy_ids)
+        VALUES (%s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         [
             qid,
@@ -53,6 +59,10 @@ async def write_audit_log(
             file_id,
             database_name,
             schema_name,
+            active_role,
+            security_context_version,
+            decision,
+            ranger_policy_ids,
         ],
     )
     return qid

@@ -40,11 +40,22 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (
     rewritten_sql TEXT,
     file_id       VARCHAR(64),
     database_name VARCHAR(128),
-    schema_name   VARCHAR(128)
+    schema_name   VARCHAR(128),
+    active_role   VARCHAR(128),
+    security_context_version BIGINT,
+    decision      VARCHAR(32),
+    ranger_policy_ids VARCHAR(2048)
 ) PRIMARY KEY(log_id)
 DISTRIBUTED BY HASH(log_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
+
+AUDIT_LOG_MIGRATIONS = {
+    "active_role": "VARCHAR(128)",
+    "security_context_version": "BIGINT",
+    "decision": "VARCHAR(32)",
+    "ranger_policy_ids": "VARCHAR(2048)",
+}
 
 
 async def ensure_audit_log(host: str, port: int, user: str, password: str) -> None:
@@ -55,5 +66,15 @@ async def ensure_audit_log(host: str, port: int, user: str, password: str) -> No
             with contextlib.suppress(Exception):
                 await cur.execute("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
             await cur.execute(AUDIT_LOG_DDL)
+            await cur.execute(
+                "SELECT COLUMN_NAME FROM information_schema.columns "
+                "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' AND TABLE_NAME = 'AUDIT_LOG'"
+            )
+            existing = {str(row[0]).casefold() for row in await cur.fetchall()}
+            for column, data_type in AUDIT_LOG_MIGRATIONS.items():
+                if column.casefold() not in existing:
+                    await cur.execute(
+                        f"ALTER TABLE NOVA_SYSTEM.AUDIT_LOG ADD COLUMN {column} {data_type}"
+                    )
     finally:
         conn.close()

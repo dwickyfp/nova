@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
+from app.common.identifiers import check_identifier
 from app.core.config import settings
 from app.core.database import db
 from app.modules.task_orchestration.credentials import OwnerCredentialProvider
@@ -70,6 +71,7 @@ class TaskSpec:
     name: str
     body: str
     database: str | None = None
+    active_role: str | None = None
 
 
 @dataclass(frozen=True)
@@ -138,9 +140,7 @@ class DelegateExecutor:
             else settings.WORKER_TASK_POLL_INTERVAL_SECONDS
         )
         self._poll_timeout = (
-            poll_timeout
-            if poll_timeout is not None
-            else settings.WORKER_TASK_POLL_TIMEOUT_SECONDS
+            poll_timeout if poll_timeout is not None else settings.WORKER_TASK_POLL_TIMEOUT_SECONDS
         )
 
     async def evaluate_when(self, expression: str, *, spec: TaskSpec, owner: str) -> bool:
@@ -161,6 +161,7 @@ class DelegateExecutor:
             del password
             async with _dict_cursor(conn) as cur:
                 try:
+                    await self._activate_task_role(cur, spec)
                     await cur.execute(f"SELECT ({expression}) AS nova_when")
                     row = await cur.fetchone()
                 except Exception as exc:
@@ -168,9 +169,7 @@ class DelegateExecutor:
                         f"WHEN evaluation failed for {spec.name!r}: {_redact(str(exc))}"
                     ) from exc
         if not isinstance(row, dict) or "nova_when" not in row:
-            raise NodeExecutionError(
-                f"WHEN expression for {spec.name!r} did not return a value"
-            )
+            raise NodeExecutionError(f"WHEN expression for {spec.name!r} did not return a value")
         return _truthy(row["nova_when"])
 
     async def execute(
@@ -237,6 +236,8 @@ class DelegateExecutor:
             # Drop the local reference as early as possible; the connection
             # owns whatever it needs from here on.
             del password
+            async with _dict_cursor(conn) as cur:
+                await self._activate_task_role(cur, spec)
             await self._submit(conn, statement)
 
         async with db.system_conn() as observer:
@@ -251,6 +252,32 @@ class DelegateExecutor:
             )
         return result
 
+    @staticmethod
+    async def _activate_task_role(cur: Any, spec: TaskSpec) -> None:
+        if not spec.active_role:
+            if not settings.RANGER_ENABLED:
+                return
+            raise NodeExecutionError(
+                f"task {spec.name!r} has no execution role; refusing service-account fallback"
+            )
+        role = check_identifier(spec.active_role, field="role")
+        try:
+            await cur.execute(f"SET ROLE {role}")
+            await cur.execute("SELECT CURRENT_ROLE() AS current_role")
+            row = await cur.fetchone()
+        except Exception as exc:
+            raise NodeExecutionError(
+                f"task execution role {spec.active_role!r} is no longer available"
+            ) from exc
+        actual = str(row.get("current_role") if isinstance(row, dict) else row[0])
+        active = {
+            item.strip().strip("`'")
+            for item in actual.replace("[", "").replace("]", "").split(",")
+            if item.strip()
+        }
+        if active != {spec.active_role}:
+            raise NodeExecutionError("StarRocks did not confirm the stored task role")
+
     async def _submit(self, conn: NodeConnection, statement: str) -> None:
         """Execute ``SUBMIT TASK``.
 
@@ -264,9 +291,7 @@ class DelegateExecutor:
         except Exception as exc:
             raise NodeExecutionError(_redact(str(exc))) from exc
 
-    async def _latest_create_time(
-        self, conn: NodeConnection, task_name: str
-    ) -> datetime | None:
+    async def _latest_create_time(self, conn: NodeConnection, task_name: str) -> datetime | None:
         """Newest native run time for this task, before this submit.
 
         The engine's ``SUBMIT TASK`` result only echoes ``TaskName``/``Status``,
@@ -350,11 +375,7 @@ class DelegateExecutor:
         if not rows:
             return None
         newest_created = _as_datetime(rows[0].get("CREATE_TIME"))
-        if (
-            watermark is not None
-            and newest_created is not None
-            and newest_created <= watermark
-        ):
+        if watermark is not None and newest_created is not None and newest_created <= watermark:
             return None
         return _row_to_result(rows[0])
 

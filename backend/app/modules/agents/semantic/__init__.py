@@ -1,6 +1,7 @@
-"""Agent Studio semantic layer — Ossie parsing and grounding.
+"""Agent Studio semantic intelligence runtime.
 
 ``ossie`` parses and validates an Ossie document (the semantic standard,
-formerly Open Semantic Interchange). Grounding and the semantic tools build on
-the parsed metadata; nothing here touches a database or holds a credential.
+formerly Open Semantic Interchange). Nova compiles it to internal IR for
+routing, selective retrieval, planning, graph validation, and deterministic
+StarRocks SQL generation. Nothing here holds a credential.
 """

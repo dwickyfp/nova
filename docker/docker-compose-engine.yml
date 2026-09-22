@@ -1,13 +1,13 @@
 # ═══════════════════════════════════════════════════════════════════
 # Nova Engine — Docker Compose
-# StarRocks 4.1.4 + MinIO + Redis (infrastructure only)
+# Patched StarRocks 4.1.4 + Apache Ranger 2.9.0 + MinIO + Redis
 # ═══════════════════════════════════════════════════════════════════
 #
 # Services:
 #   - minio:          S3-compatible object storage (port 9000/9001)
 #   - minio-init:     Auto-creates buckets + service account
 #   - redis:          Session store + cache (port 6379)
-#   - starrocks-fe:   StarRocks Frontend (port 8030 HTTP, 9030 MySQL)
+#   - starrocks-fe:   StarRocks Frontend (8030 HTTP; 9030 stays internal)
 #   - starrocks-be:   StarRocks Backend (port 8040 HTTP)
 #   - starrocks-init: Auto-creates NOVA_SYSTEM + admin + ACCOUNTADMIN
 #
@@ -21,7 +21,7 @@
 #   StarRocks BE:    http://localhost:8040
 #   MinIO Console:   http://localhost:9001  (see MINIO_ROOT_USER / MINIO_ROOT_PASSWORD)
 #   MinIO API:       http://localhost:9000
-#   MySQL:           mysql -h localhost -P 9030 -u nova_admin -p
+#   MySQL proxy:     mysql -h localhost -P 4406 -u nova_admin -p
 #   Redis:           redis-cli -h localhost -p 6379 -a novaredis
 #
 # Auth Model:
@@ -38,9 +38,145 @@ name: docker
 
 services:
 
+  nova-backend:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    container_name: nova-backend
+    depends_on:
+      starrocks-init:
+        condition: service_completed_successfully
+      ranger-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      STARROCKS_HOST: starrocks-fe
+      STARROCKS_FE_MYSQL_PORT: 9030
+      REDIS_URL: redis://:${REDIS_PASSWORD:-novaredis}@redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ACCESS_KEY:-nova}
+      S3_SECRET_KEY: ${MINIO_SECRET_KEY:-novasecret}
+      RANGER_ENABLED: "true"
+      RANGER_ADMIN_URL: http://ranger-admin:6080
+      RANGER_SERVICE_NAME: ${RANGER_SERVICE_NAME:-nova_starrocks}
+      RANGER_USERNAME: admin
+      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_TLS_VERIFY: "false"
+      NOVA_CONFIG_PATH: /opt/nova/config/nova.yaml
+      PROXY_ENABLED: "true"
+    ports:
+      - "127.0.0.1:${NOVA_API_PORT:-8000}:8000"
+      - "${NOVA_MYSQL_PORT:-4406}:4406"
+    volumes:
+      - ./nova.yaml:/opt/nova/config/nova.yaml:ro
+    networks:
+      - nova
+
+  ranger-solr:
+    image: apache/ranger-solr:${RANGER_VERSION:-2.9.0}
+    container_name: nova-ranger-solr
+    command: solr-precreate ranger_audits /opt/solr/server/solr/configsets/ranger_audits/
+    ports:
+      - "127.0.0.1:${RANGER_SOLR_PORT:-8983}:8983"
+    volumes:
+      - ranger_solr_data:/var/solr
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8983/solr/ranger_audits/admin/ping >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks:
+      - nova
+
+  ranger-db:
+    image: apache/ranger-db:${RANGER_VERSION:-2.9.0}
+    container_name: nova-ranger-db
+    environment:
+      POSTGRES_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_DB_USER: rangeradmin
+      RANGER_DB_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+    volumes:
+      - ranger_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "su -c 'pg_isready -q' postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+    networks:
+      - nova
+
+  ranger-admin:
+    image: apache/ranger:${RANGER_VERSION:-2.9.0}
+    container_name: nova-ranger-admin
+    hostname: ranger-admin
+    depends_on:
+      ranger-db:
+        condition: service_healthy
+      ranger-solr:
+        condition: service_healthy
+    environment:
+      POSTGRES_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_DB_USER: rangeradmin
+      RANGER_DB_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+    ports:
+      - "127.0.0.1:${RANGER_ADMIN_PORT:-6080}:6080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u \"admin:$${RANGER_DB_PASSWORD}\" http://localhost:6080/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    networks:
+      - nova
+      - ranger-policy
+
+  ranger-policy-proxy:
+    build:
+      context: ..
+      dockerfile: docker/ranger/policy-proxy.Dockerfile
+    container_name: nova-ranger-policy-proxy
+    depends_on:
+      ranger-admin:
+        condition: service_healthy
+    environment:
+      RANGER_ADMIN_URL: http://ranger-admin:6080
+      RANGER_USERNAME: admin
+      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+    expose:
+      - "6081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6081/healthz', timeout=2).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ranger-policy
+
+  ranger-bootstrap:
+    build:
+      context: ..
+      dockerfile: docker/ranger/bootstrap.Dockerfile
+    container_name: nova-ranger-bootstrap
+    depends_on:
+      ranger-admin:
+        condition: service_healthy
+    environment:
+      RANGER_ADMIN_URL: http://ranger-admin:6080
+      RANGER_USERNAME: admin
+      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_SERVICE_NAME: ${RANGER_SERVICE_NAME:-nova_starrocks}
+    restart: "no"
+    networks:
+      - nova
+
   # ── MinIO (S3-compatible object storage) ──────────────────────────
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: nova-minio
     command: server /data --console-address ":9001"
     ports:
@@ -70,7 +206,7 @@ services:
 
   # ── MinIO Init (auto-create buckets + service account) ────────────
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: nova-minio-init
     depends_on:
       minio:
@@ -120,13 +256,22 @@ services:
 
   # ── StarRocks FE (Frontend — query, metadata, auth) ──────────────
   starrocks-fe:
-    image: starrocks/fe-ubuntu:4.1.4
+    build:
+      context: ..
+      dockerfile: docker/ranger/starrocks-fe.Dockerfile
+      args:
+        STARROCKS_VERSION: 4.1.4
+        STARROCKS_COMMIT: 4a9848edf03f5c936dac664b2d52527f48e72eb0
     container_name: nova-starrocks-fe
     hostname: starrocks-fe
+    depends_on:
+      ranger-bootstrap:
+        condition: service_completed_successfully
+      ranger-policy-proxy:
+        condition: service_healthy
     ports:
       - "8030:8030"   # HTTP API
       - "9020:9020"   # FE edit log port
-      - "9030:9030"   # MySQL protocol (for backend dev)
       - "9408:9408"   # Arrow Flight SQL
     environment:
       TZ: ${TZ:-Asia/Jakarta}
@@ -146,6 +291,8 @@ services:
       - fe_meta:/opt/starrocks/fe/meta
       - fe_log:/opt/starrocks/fe/log
       - ./fe.conf:/opt/starrocks/fe/conf/fe.conf:ro
+      - ./ranger/ranger-starrocks-security.xml:/opt/starrocks/fe/conf/ranger-starrocks-security.xml:ro
+      - ./ranger/ranger-starrocks-audit.xml:/opt/starrocks/fe/conf/ranger-starrocks-audit.xml:ro
     entrypoint: ["/bin/bash", "-c"]
     command: ["/opt/starrocks/fe_entrypoint.sh starrocks-fe && tail -F /opt/starrocks/fe/log/fe.log"]
     healthcheck:
@@ -156,6 +303,7 @@ services:
       start_period: 120s
     networks:
       - nova
+      - ranger-policy
 
   # ── StarRocks BE (Backend — storage, compute) ────────────────────
   starrocks-be:
@@ -215,16 +363,22 @@ services:
 
 networks:
   nova:
+  ranger-policy:
+    internal: true
 
 volumes:
+  ranger_solr_data:
+    name: docker_ranger_solr_data
+  ranger_db_data:
+    name: docker_ranger_db_data
   fe_meta:
-    name: docker_fe_meta
+    name: docker_ranger_fe_meta
   fe_log:
-    name: docker_fe_log
+    name: docker_ranger_fe_log
   be_storage:
-    name: docker_be_storage
+    name: docker_ranger_be_storage
   be_log:
-    name: docker_be_log
+    name: docker_ranger_be_log
   minio_data:
     name: docker_minio_data
   redis_data:

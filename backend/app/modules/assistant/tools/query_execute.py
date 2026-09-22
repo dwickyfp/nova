@@ -101,9 +101,10 @@ class QueryExecuteTool:
 
     name = "query_execute"
     description = (
-        "Run a single read-only SQL statement against StarRocks on the user's "
-        "own connection. Use it to inspect schemas and data. Destructive or "
-        "DDL statements are refused."
+        "Run one read-only StarRocks SELECT/SHOW/DESCRIBE/EXPLAIN on the user's "
+        "connection for explicit SQL, schema inspection, or data outside a semantic "
+        "model. Do not use for governed metrics defined by semantic_query. "
+        "Destructive and DDL statements are refused."
     )
     parameters = _TOOL_PARAMETERS
     #: Explicit: running SQL touches the user's data and always needs approval

@@ -27,7 +27,12 @@ from dataclasses import dataclass, field
 #: Role assignment, e.g. ``SET ROLE ACCOUNTADMIN`` / ``SET ROLE 'analyst'``.
 #: StarRocks spells this without an ``=``, so it needs its own rule.
 _SET_ROLE = re.compile(
-    r"^\s*SET\s+ROLE\s+(?:TO\s+)?(?P<role>[^\s=;]+)\s*$",
+    r"^\s*SET\s+ROLE\s+(?:TO\s+)?(?P<role>.+?)\s*;?\s*$",
+    re.IGNORECASE,
+)
+
+_USE_ROLE = re.compile(
+    r"^\s*USE\s+ROLE\s+(?P<role>.+?)\s*;?\s*$",
     re.IGNORECASE,
 )
 
@@ -91,11 +96,37 @@ class SessionState:
     """
 
     database: str | None = None
+    principal: str | None = None
+    assigned_roles: tuple[str, ...] = ()
+    default_role: str | None = None
     active_role: str | None = None
+    security_context_version: int = 1
     user_variables: dict[str, str] = field(default_factory=dict)
 
     def set_database(self, database: str) -> None:
         self.database = database or None
+
+    def establish_security(
+        self,
+        *,
+        principal: str,
+        assigned_roles: tuple[str, ...],
+        default_role: str,
+        active_role: str,
+    ) -> None:
+        if active_role not in assigned_roles or default_role not in assigned_roles:
+            raise ValueError("Invalid proxy security state")
+        self.principal = principal
+        self.assigned_roles = assigned_roles
+        self.default_role = default_role
+        self.active_role = active_role
+        self.security_context_version = 1
+
+    def commit_role(self, active_role: str) -> None:
+        if active_role not in self.assigned_roles:
+            raise ValueError("Role is not assigned to this connection")
+        self.active_role = active_role
+        self.security_context_version += 1
 
 
 class SetStatementResult:
@@ -130,10 +161,10 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
 
     role_match = _SET_ROLE.match(text)
     if role_match:
-        role = _strip_quotes(role_match.group("role"))
-        if role:
-            session.active_role = role
-        return SetStatementResult(True)
+        return SetStatementResult(
+            False,
+            "SET ROLE must be validated by the role activation service",
+        )
 
     assignment = _ASSIGNMENT.match(text)
     if assignment:
@@ -162,6 +193,24 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
     return SetStatementResult(False)
 
 
+def parse_role_statement(statement: str) -> str | None:
+    """Return a single requested role for SET/USE ROLE, or ``None``.
+
+    ``DEFAULT`` is returned as a token for the caller to resolve from explicit
+    session state. ALL, NONE, and role lists are rejected before any state can
+    change.
+    """
+    match = _SET_ROLE.match(statement) or _USE_ROLE.match(statement)
+    if not match:
+        return None
+    role = _strip_quotes(match.group("role").strip().rstrip(";"))
+    if not role:
+        raise ValueError("A role name is required")
+    if "," in role or role.upper() in {"ALL", "NONE"}:
+        raise ValueError("Exactly one named role must be active")
+    return role
+
+
 def _store_value(raw_value: str) -> str:
     """Normalise a ``SET`` right-hand side into the text to splice back in.
 
@@ -186,9 +235,7 @@ def _store_value(raw_value: str) -> str:
 #: accept-set matches ``_ASSIGNMENT`` — including ``$``, which is legal inside a
 #: name on both sides of the session, so ``SET @x$abc = …`` is readable as
 #: ``@x$abc`` rather than being split into ``@x`` + ``$abc``.
-_USER_VARIABLE_REFERENCE = re.compile(
-    r"(?<!@)@(?P<name>[A-Za-z_][\w$]*)"
-)
+_USER_VARIABLE_REFERENCE = re.compile(r"(?<!@)@(?P<name>[A-Za-z_][\w$]*)")
 
 
 def _parser_classifies_as_stage(statement: str, position: int) -> bool:

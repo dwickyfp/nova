@@ -196,11 +196,7 @@ class Reconciler:
         redelivery cannot mistake a dead worker's row for live progress.
         """
         stale = await self._repository.list_stale_task_runs(self._heartbeat_timeout)
-        return [
-            str(node["id"])
-            for node in stale
-            if str(node.get("graph_run_id")) == graph_run_id
-        ]
+        return [str(node["id"]) for node in stale if str(node.get("graph_run_id")) == graph_run_id]
 
     async def abandon_stale_nodes(self) -> list[dict[str, Any]]:
         """Settle ``RUNNING`` rows whose worker heartbeat lapsed — the lost trace.
@@ -335,11 +331,7 @@ class Reconciler:
             name,
             task,
             action="NODE_" + node_state.value.upper(),
-            status=(
-                "SUCCESS"
-                if node_state is NodeState.SUCCESS
-                else node_state.value.upper()
-            ),
+            status=("SUCCESS" if node_state is NodeState.SUCCESS else node_state.value.upper()),
             error=observed.error_message,
             graph_run_id=str(row.get("graph_run_id") or ""),
         )
@@ -371,10 +363,7 @@ class Reconciler:
         failure would drown the real signal (the defect NOVA-42 reports).
         """
         name = str(task["name"])
-        ceiling = (
-            report.config.max_task_consecutive_fail_count
-            or self._max_consecutive_fail_count
-        )
+        ceiling = report.config.max_task_consecutive_fail_count or self._max_consecutive_fail_count
         if ceiling <= 0:
             return
 
@@ -383,9 +372,7 @@ class Reconciler:
         engine_count = parse_consecutive_failures(observed.error_message)
         count = engine_count
         if count is None:
-            count = await self._repository.increment_consecutive_failures(
-                str(task["id"])
-            )
+            count = await self._repository.increment_consecutive_failures(str(task["id"]))
 
         paused_by_schedule = schedule_is_paused(schedule)
         if count < ceiling and not paused_by_schedule:

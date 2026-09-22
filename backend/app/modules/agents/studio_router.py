@@ -58,6 +58,7 @@ from app.modules.agents.schemas import (
     ToolToggleRequest,
     ToolView,
 )
+from app.modules.agents.skill_catalog import merge_skill_rows
 from app.modules.agents.studio_schemas import (
     AccessCheckRequest,
     ArtifactCreateRequest,
@@ -76,6 +77,7 @@ from app.modules.agents.studio_schemas import (
     UsageSummary,
 )
 from app.modules.agents.studio_service import studio_service
+from app.modules.agents.tools.custom_tool import validate_custom_tool_definition
 from app.modules.query.service import query_service
 
 logger = logging.getLogger(__name__)
@@ -107,7 +109,7 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
     """What the caller can use, for the Studio Capabilities view."""
     owner = user["username"]
     agents = await agent_repository.list_agents(owner_name=owner)
-    skills = await agent_repository.list_skills(owner_name=owner)
+    skills = merge_skill_rows(await agent_repository.list_skills(owner_name=owner))
     await _seed_builtin_tools(owner)
     tools = await agent_repository.list_tools(owner_name=owner)
     return StudioCapabilities(
@@ -116,7 +118,12 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
             for a in agents
         ],
         skills=[
-            {"name": s["name"], "description": s["description"]} for s in skills
+            {
+                "name": s["name"],
+                "description": s["description"],
+                "source": s["source"],
+            }
+            for s in skills
         ],
         tools=[
             {
@@ -139,7 +146,7 @@ def _current_role(user: dict) -> str | None:
     active = user.get("active_role")
     if active and active in granted:
         return active
-    return granted[0] if granted else None
+    return None
 
 
 async def _artifact_or_404(artifact_id: str, owner_name: str) -> dict:
@@ -464,9 +471,8 @@ async def verify_agent_access(
 ):
     """Check a role can reach everything this agent uses.
 
-    Resolves the agent's dependencies (custom function tools, the tables behind
-    its semantic model, its database) and checks each against the role's engine
-    grants via ``SHOW GRANTS``. Read-only.
+    Resolves the agent's dependencies and checks each against Nova-managed
+    Ranger policy state. Native StarRocks marker-role grants are not consulted.
     """
     from app.modules.agents.access import verify_access
 
@@ -505,8 +511,12 @@ async def create_custom_tool(
     body: CustomToolCreateRequest,
     user: dict = Depends(get_current_user),
 ):
+    fields = body.model_dump()
+    errors = validate_custom_tool_definition(fields)
+    if errors:
+        raise HTTPException(status_code=422, detail={"errors": errors})
     created = await agent_repository.create_custom_tool(
-        owner_name=user["username"], fields=body.model_dump()
+        owner_name=user["username"], fields=fields
     )
     return CustomToolView(**created)
 
@@ -525,9 +535,14 @@ async def update_custom_tool(
     body: CustomToolUpdateRequest,
     user: dict = Depends(get_current_user),
 ):
-    await _require_custom_tool(tool_id, user["username"])
+    existing = await _require_custom_tool(tool_id, user["username"])
+    changes = body.model_dump(exclude_unset=True)
+    candidate = {**existing, **changes}
+    errors = validate_custom_tool_definition(candidate)
+    if errors:
+        raise HTTPException(status_code=422, detail={"errors": errors})
     updated = await agent_repository.update_custom_tool(
-        tool_id, owner_name=user["username"], fields=body.model_dump(exclude_unset=True)
+        tool_id, owner_name=user["username"], fields=changes
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Custom tool not found")

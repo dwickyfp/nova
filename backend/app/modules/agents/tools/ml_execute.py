@@ -15,8 +15,10 @@ from app.modules.query.sql_pipeline import redact_for_output
 class MLExecuteTool:
     name = "ml_execute"
     description = (
-        "Run classification, regression, forecasting, anomaly detection, or clustering "
-        "with Nova's bounded ML runtime. Use persist=false for on-the-fly analysis."
+        "Run Nova's bounded ML runtime for forecast, classification, regression, "
+        "anomaly detection, or clustering over caller-authorized SQL features. "
+        "Do not approximate these tasks with prose or arbitrary SQL. Use persist=false "
+        "for on-the-fly analysis."
     )
     parameters = {
         "type": "object",
@@ -48,16 +50,13 @@ class MLExecuteTool:
     }
     requires_consent = True
 
-    def __init__(self) -> None:
-        self._classification: ToolClassification = "read_only"
+    classification: ToolClassification = "read_only"
 
-    @property
-    def classification(self) -> ToolClassification:
-        return self._classification
+    def classification_for(self, invocation: ToolInvocation) -> ToolClassification:
+        return "destructive" if bool(invocation.arguments.get("persist", False)) else "read_only"
 
     def preview(self, invocation: ToolInvocation) -> str:
         persist = bool(invocation.arguments.get("persist", False))
-        self._classification = "destructive" if persist else "read_only"
         task = invocation.arguments.get("task", "ml")
         mode = invocation.arguments.get("mode", "interactive")
         return f"ml_execute: {task} ({mode}, {'persistent' if persist else 'ephemeral'})"
@@ -110,6 +109,13 @@ class MLExecuteTool:
                 ok=False,
                 summary="",
                 error=(f"ML execution failed: {type(exc).__name__}: {redact_for_output(str(exc))}"),
+                error_class="ML_EXECUTION_ERROR",
+                recoverable=isinstance(exc, (TypeError, ValueError)),
+                safe_detail="Check the task-specific ML parameters and feature schema.",
+                repair_context={
+                    "task": arguments.get("task"),
+                    "required": self.parameters.get("required", []),
+                },
             )
         report_tool_progress(context, stage="ml_completed", text="ML execution completed")
         table = None
@@ -127,6 +133,23 @@ class MLExecuteTool:
                 f"{result.training_rows} rows processed (run {result.run_id})"
             ),
             table=table,
+            data={
+                "run_id": result.run_id,
+                "task": result.task,
+                "algorithm": result.selected_algorithm,
+                "training_rows": result.training_rows,
+                "results": result.results[:1000],
+            },
+            evidence={
+                "run_id": result.run_id,
+                "task": result.task,
+                "algorithm": result.selected_algorithm,
+            },
+            metadata={
+                "mode": result.mode,
+                "engine": result.selected_engine,
+                "cache_hit": result.cache_hit,
+            },
             trace_detail={
                 "kind": "ml_execution",
                 "run_id": result.run_id,

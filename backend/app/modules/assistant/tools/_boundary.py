@@ -9,7 +9,7 @@ testable with a fake tool.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.modules.assistant.schemas import ToolClassification
@@ -50,6 +50,42 @@ class ToolOutcome:
     #: Semantic query uses this for the model/dataset/SQL snapshot shown in the
     #: trace inspector. It must not contain result rows or credentials.
     trace_detail: dict[str, Any] | None = None
+    #: Canonical provider-independent envelope fields. Existing tools may omit
+    #: them; the loop fills ``tool`` and evidence metadata at the boundary.
+    tool: str | None = None
+    data: Any = None
+    evidence: dict[str, Any] | None = None
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    error_class: str | None = None
+    recoverable: bool = False
+    safe_detail: str | None = None
+    repair_context: dict[str, Any] | None = None
+
+    def envelope(self, *, tool_name: str, evidence_id: str | None = None) -> dict[str, Any]:
+        """Return the normalized result sent through a provider adapter."""
+        if self.ok:
+            evidence = dict(self.evidence or {})
+            if evidence_id:
+                evidence["evidence_id"] = evidence_id
+            return {
+                "ok": True,
+                "tool": self.tool or tool_name,
+                "data": self.data if self.data is not None else {"summary": self.summary},
+                "evidence": evidence,
+                "artifacts": self.artifacts,
+                "warnings": self.warnings,
+                "metadata": self.metadata,
+            }
+        return {
+            "ok": False,
+            "tool": self.tool or tool_name,
+            "error_class": self.error_class or "TOOL_ERROR",
+            "recoverable": self.recoverable,
+            "safe_detail": self.safe_detail or self.error or "The tool failed.",
+            "repair_context": self.repair_context or {},
+        }
 
 
 def report_tool_progress(
@@ -124,6 +160,16 @@ class AssistantTool(Protocol):
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome: ...
 
 
+def invocation_classification(
+    tool: AssistantTool, invocation: ToolInvocation
+) -> ToolClassification:
+    """Resolve security classification without shared invocation state."""
+    resolver = getattr(tool, "classification_for", None)
+    if callable(resolver):
+        return resolver(invocation)
+    return tool.classification
+
+
 def requires_consent(tool: AssistantTool) -> bool:
     """Whether ``tool`` must be approved by the user before it runs.
 
@@ -141,6 +187,9 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, AssistantTool] = {}
+        self.default_skills: tuple[str, ...] = ()
+        self.discoverable_skills: tuple[str, ...] = ()
+        self.skill_definitions: dict[str, Any] = {}
 
     def register(self, tool: AssistantTool) -> None:
         self._tools[tool.name] = tool

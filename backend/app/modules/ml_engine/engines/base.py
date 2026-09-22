@@ -19,6 +19,7 @@ class TrainingOutput:
     feature_columns: list[str]
     training_rows: int
     results: list[dict[str, Any]] = field(default_factory=list)
+    result_table: pa.Table | None = None
 
 
 class MLEngine(Protocol):

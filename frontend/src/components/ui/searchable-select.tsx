@@ -13,6 +13,9 @@ export type SearchableSelectProps = {
   onChange: (value: string) => void
   label: string
   placeholder?: string
+  emptyLabel?: string
+  allowEmpty?: boolean
+  disabled?: boolean
   icon?: React.ReactNode
   className?: string
 }
@@ -23,6 +26,9 @@ export function SearchableSelect({
   onChange,
   label,
   placeholder,
+  emptyLabel,
+  allowEmpty = true,
+  disabled = false,
   icon,
   className,
 }: SearchableSelectProps) {
@@ -46,8 +52,10 @@ export function SearchableSelect({
       <PopoverTrigger asChild>
         <button
           type='button'
+          aria-label={label}
+          disabled={disabled}
           className={cn(
-            'flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted/60',
+            'flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50',
             className,
           )}
         >
@@ -55,7 +63,7 @@ export function SearchableSelect({
             <span className='text-muted-foreground'>{icon}</span>
           )}
           <span className='truncate'>
-            {value || `All ${label}`}
+            {value || emptyLabel || `All ${label}`}
           </span>
           <ChevronDown className='ml-auto size-3.5 shrink-0 text-muted-foreground' />
         </button>
@@ -74,26 +82,26 @@ export function SearchableSelect({
           </div>
         </div>
         <div className='max-h-[240px] overflow-auto py-1'>
-          {/* "All" option */}
-          <button
-            key='__all__'
-            type='button'
-            onClick={() => {
-              onChange('')
-              setOpen(false)
-            }}
-            className={cn(
-              'flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors hover:bg-muted/50',
-              value === '' ? 'text-primary' : 'text-foreground',
-            )}
-          >
-            <span className='truncate'>All {label}</span>
-            {value === '' && (
-              <Check className='ml-auto size-3.5 shrink-0 text-primary' />
-            )}
-          </button>
+          {allowEmpty ? (
+            <button
+              key='__all__'
+              type='button'
+              onClick={() => {
+                onChange('')
+                setOpen(false)
+              }}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors hover:bg-muted/50',
+                value === '' ? 'text-primary' : 'text-foreground',
+              )}
+            >
+              <span className='truncate'>{emptyLabel || `All ${label}`}</span>
+              {value === '' && (
+                <Check className='ml-auto size-3.5 shrink-0 text-primary' />
+              )}
+            </button>
+          ) : null}
 
-          {/* Filtered options */}
           {filtered.length === 0 && (
             <div className='px-3 py-4 text-center text-xs text-muted-foreground'>
               No results

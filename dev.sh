@@ -8,8 +8,9 @@
 #   worker     nova-worker (consumes graph runs, executes nodes)
 #   frontend   Vite dev server (port 5173)
 #
-# Docker infrastructure (StarRocks, MinIO, Redis) is NOT managed here. The
-# script only verifies it is reachable, then fails fast if it is not.
+# Docker infrastructure (StarRocks, Ranger, MinIO, Redis) is NOT managed here.
+# The script verifies it is reachable through docker-compose.dev.yml and fails
+# fast with the exact startup command when it is not.
 #
 #   ./dev.sh                          start everything, follow logs
 #   ./dev.sh --no-frontend            skip the Vite dev server
@@ -19,6 +20,7 @@
 #
 # Ports are overridable when the defaults are taken:
 #   BACKEND_PORT=8000 PROXY_PORT=4406 FRONTEND_PORT=5173 ./dev.sh
+#   STARROCKS_FE_MYSQL_PORT=29030 RANGER_ADMIN_PORT=6080 ./dev.sh
 #
 # Ctrl+C stops every child process. Logs are also written to .dev-logs/.
 
@@ -75,37 +77,70 @@ fi
 # Backend reads .env relative to its cwd, so it must be started from backend/.
 [[ -f "$BACKEND_DIR/.env" ]] || die "backend/.env not found — copy backend/.env.example and fill SECRET_KEY + FERNET_KEY"
 
+# Host-side services cannot use Docker DNS. The development Compose override
+# maps StarRocks to loopback on 29030; the primary stack still keeps 9030
+# private. Explicit shell values win when a developer uses another endpoint.
+STARROCKS_HOST="${STARROCKS_HOST:-127.0.0.1}"
+STARROCKS_FE_MYSQL_PORT="${STARROCKS_FE_MYSQL_PORT:-29030}"
+RANGER_ENABLED="${RANGER_ENABLED:-true}"
+RANGER_ADMIN_URL="${RANGER_ADMIN_URL:-http://127.0.0.1:6080}"
+RANGER_ADMIN_PORT="${RANGER_ADMIN_PORT:-6080}"
+RANGER_USERNAME="${RANGER_USERNAME:-admin}"
+RANGER_TLS_VERIFY="${RANGER_TLS_VERIFY:-false}"
+
 # ── infrastructure reachability (Docker-managed, not started here) ───
-port_open() {
+tcp_open() {
+  local host="$1" port="$2"
   # bash /dev/tcp probe — no nc dependency.
-  (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1
+  (exec 3<>"/dev/tcp/$host/$port") >/dev/null 2>&1
+}
+
+port_open() {
+  tcp_open 127.0.0.1 "$1"
+}
+
+# Read one variable from a container without printing its value. This lets the
+# local backend reuse Ranger's development credential without copying it into
+# another file or exposing it in logs.
+container_env_value() {
+  local container="$1" wanted="$2" line
+  while IFS= read -r line; do
+    case "$line" in
+      "$wanted="*) printf '%s' "${line#*=}"; return 0 ;;
+    esac
+  done < <(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null)
+  return 1
 }
 
 check_infra() {
-  # Values mirror backend/.env; override with env vars if you moved ports.
-  local sr_host="${STARROCKS_HOST:-localhost}"
-  local sr_port="${STARROCKS_FE_MYSQL_PORT:-9030}"
   local redis_url="${REDIS_URL:-redis://localhost:6379/0}"
   local redis_port redis_host
   redis_port="$(echo "$redis_url" | sed -E 's#^[a-z]+://##; s#^[^@]*@##; s#^[^:]*:([0-9]+).*#\1#')"
   redis_host="$(echo "$redis_url" | sed -E 's#^[a-z]+://##; s#^[^@]*@##; s#^([^:/]+).*#\1#')"
 
   local missing=0
-  if port_open "$sr_port"; then
-    ok "StarRocks FE reachable at ${sr_host}:${sr_port}"
+  if tcp_open "$STARROCKS_HOST" "$STARROCKS_FE_MYSQL_PORT"; then
+    ok "StarRocks FE reachable at ${STARROCKS_HOST}:${STARROCKS_FE_MYSQL_PORT}"
   else
-    warn "StarRocks FE NOT reachable at ${sr_host}:${sr_port}"; missing=1
+    warn "StarRocks FE NOT reachable at ${STARROCKS_HOST}:${STARROCKS_FE_MYSQL_PORT}"; missing=1
   fi
-  if port_open "$redis_port"; then
+  if tcp_open "$redis_host" "$redis_port"; then
     ok "Redis reachable at ${redis_host}:${redis_port}"
   else
     warn "Redis NOT reachable at ${redis_host}:${redis_port}"; missing=1
   fi
+  if [[ "$RANGER_ENABLED" == "true" ]]; then
+    if port_open "$RANGER_ADMIN_PORT"; then
+      ok "Ranger Admin reachable at 127.0.0.1:${RANGER_ADMIN_PORT}"
+    else
+      warn "Ranger Admin NOT reachable at 127.0.0.1:${RANGER_ADMIN_PORT}"; missing=1
+    fi
+  fi
 
   if [[ "$missing" -eq 1 ]]; then
-    die "infrastructure is down. Start it first, then re-run ./dev.sh:
-    cd $ROOT/docker && docker compose -f docker-compose-engine.yml up -d
-  (MinIO is also part of that compose stack.)"
+    die "infrastructure is down. Start the local-development stack, then re-run ./dev.sh:
+    cd $ROOT/docker && docker compose -f docker-compose-engine.yml -f docker-compose.dev.yml up -d
+  (The development override binds StarRocks SQL to loopback only.)"
   fi
 }
 
@@ -256,16 +291,44 @@ run() {
 # ── start everything ─────────────────────────────────────────────────
 log "starting Nova dev processes..."
 
+RANGER_PASSWORD_VALUE="${RANGER_PASSWORD:-}"
+if [[ "$RANGER_ENABLED" == "true" && -z "$RANGER_PASSWORD_VALUE" ]]; then
+  RANGER_PASSWORD_VALUE="$(container_env_value nova-ranger-admin RANGER_DB_PASSWORD || true)"
+fi
+if [[ "$RANGER_ENABLED" == "true" && -z "$RANGER_PASSWORD_VALUE" ]]; then
+  die "Ranger is enabled but its development credential could not be read. Set RANGER_PASSWORD in the shell or start the Docker infrastructure first."
+fi
+
+RANGER_SERVICE_NAME_VALUE="${RANGER_SERVICE_NAME:-}"
+if [[ "$RANGER_ENABLED" == "true" && -z "$RANGER_SERVICE_NAME_VALUE" ]]; then
+  RANGER_SERVICE_NAME_VALUE="$(container_env_value nova-ranger-bootstrap RANGER_SERVICE_NAME || true)"
+  RANGER_SERVICE_NAME_VALUE="${RANGER_SERVICE_NAME_VALUE:-nova_starrocks}"
+fi
+
+BACKEND_ENV=(
+  env
+  STARROCKS_HOST="$STARROCKS_HOST"
+  STARROCKS_FE_MYSQL_PORT="$STARROCKS_FE_MYSQL_PORT"
+  RANGER_ENABLED="$RANGER_ENABLED"
+  RANGER_ADMIN_URL="$RANGER_ADMIN_URL"
+  RANGER_SERVICE_NAME="$RANGER_SERVICE_NAME_VALUE"
+  RANGER_USERNAME="$RANGER_USERNAME"
+  RANGER_PASSWORD="$RANGER_PASSWORD_VALUE"
+  RANGER_TLS_VERIFY="$RANGER_TLS_VERIFY"
+)
+
 # Backend: FastAPI with the embedded MySQL proxy (PROXY_PORT, default 4406).
 run backend "$C_BLUE" "$BACKEND_DIR" \
-  env PROXY_PORT="$PROXY_PORT" \
+  "${BACKEND_ENV[@]}" PROXY_PORT="$PROXY_PORT" \
   uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT"
 
 # Standalone task-orchestration processes. They share NOVA_SYSTEM + Redis.
 run scheduler "$C_CYAN" "$BACKEND_DIR" \
+  "${BACKEND_ENV[@]}" \
   uv run python -m app.scheduler
 
 run worker "$C_CYAN" "$BACKEND_DIR" \
+  "${BACKEND_ENV[@]}" \
   uv run python -m app.worker
 
 if [[ "$RUN_FRONTEND" -eq 1 ]]; then

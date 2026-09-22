@@ -1,38 +1,53 @@
-"""``semantic_query`` — text-to-SQL grounded on a semantic model.
+"""``semantic_query`` — deterministic semantic planning and SQL compilation.
 
-The agent gives a business question; the tool asks the LLM to produce SQL from
-the semantic model's defined metrics and dimensions, then runs that SQL through
-``QueryService`` on the requesting user's connection. It is the Nova-native
-counterpart to Cortex Analyst, without the managed service.
+The agent gives a business question. Nova selects a semantic model, retrieves a
+small semantic slice, validates a ``SemanticPlan``, resolves the relationship
+graph, checks grain/additivity/fanout, and compiles StarRocks SQL. An LLM is used
+only as a constrained SemanticPlan fallback when deterministic planning is
+ambiguous. It never supplies the SQL or join path.
 
 Non-negotiables, identical to ``query_execute``:
 
 * **Delegate-first.** The generated SQL runs on the user's connection, so
   StarRocks RBAC decides. There is no service identity.
-* **Grounded on metadata, never rows.** The prompt carries the semantic model's
-  datasets/fields/metrics and relationships, not table data.
-* **Guarded.** The LLM's SQL is run through the *same* pipeline as any user SQL:
+* **Grounded on metadata, never rows.** A small retrieved semantic slice carries
+  relevant datasets, fields, metrics, and relationships, not table data.
+* **Guarded.** Nova's compiled SQL is run through the *same* pipeline as any user SQL:
   ``QueryService`` applies the SQL guard, ``@stage`` translation, credential
   redaction, and audit. This tool does not execute the model's statement any
   other way.
-* **Read-only by construction.** A generated statement that is not read-only is
-  refused by the same per-statement policy ``query_execute`` uses, *before* the
-  engine sees it. A text-to-SQL model is not trusted to stay read-only.
-* **Bounded and honest.** A row cap applies at fetch time; the model's
-  ``confidence`` is surfaced with the result so a low-confidence answer is
-  visibly low, not silently wrong.
+* **Read-only by construction.** A compiled statement that is not read-only is
+  refused by the same per-statement policy ``query_execute`` uses before the
+  engine sees it.
+* **Bounded and honest.** A row cap applies at fetch time. Runtime confidence is
+  computed from semantic match and ambiguity signals, not model self-report.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
 from app.common.sql_guard import redact_sql_credentials
 from app.modules.agents.repository import agent_repository
-from app.modules.agents.semantic.grounding import build_semantic_messages
+from app.modules.agents.semantic.compiler import SemanticCompiler
+from app.modules.agents.semantic.ir import SemanticModelIR
+from app.modules.agents.semantic.planning import (
+    SemanticPlan,
+    SemanticPlanError,
+    SemanticPlanner,
+    validate_plan,
+)
+from app.modules.agents.semantic.runtime import (
+    SemanticCatalogRetriever,
+    SemanticModelCandidate,
+    SemanticModelRouter,
+    VerifiedQuery,
+    VerifiedQueryRetriever,
+)
 from app.modules.assistant.provider import (
     AssistantProviderClient,
     AssistantProviderError,
@@ -70,13 +85,14 @@ _SEMANTIC_QUERY_PROMPT_VERSION = "v1"
 
 
 class SemanticQueryTool:
-    """Generates SQL from a semantic model and runs it, delegate-first."""
+    """Compiles SQL from a semantic plan and runs it, delegate-first."""
 
     name = "semantic_query"
     description = (
-        "Answer a business question from the agent's semantic model. It "
-        "translates the question into SQL using defined metrics and dimensions, "
-        "then runs it read-only on your connection."
+        "Answer a governed business metric question. Nova selects the semantic "
+        "model, validates a SemanticPlan, resolves joins and grain, compiles "
+        "StarRocks SQL, and runs it read-only. Do not use for explicit SQL or "
+        "schema inspection. Returns verified rows and semantic evidence."
     )
     parameters = _PARAMETERS
     #: Read-only only; the loop may auto-approve under an auto_read_only policy.
@@ -91,6 +107,11 @@ class SemanticQueryTool:
     ) -> None:
         self.max_rows = max_rows
         self._provider = provider or AssistantProviderClient()
+        self._model_router = SemanticModelRouter()
+        self._retriever = SemanticCatalogRetriever()
+        self._planner = SemanticPlanner()
+        self._compiler = SemanticCompiler()
+        self._vqr = VerifiedQueryRetriever()
 
     def preview(self, invocation: ToolInvocation) -> str:
         question = _question_from(invocation)
@@ -111,7 +132,7 @@ class SemanticQueryTool:
                 error="No user connection is available for this tool call.",
             )
 
-        semantic_model = await self._resolve_model(context)
+        semantic_model = await self._resolve_model(context, question)
         if semantic_model is None:
             return ToolOutcome(
                 ok=False,
@@ -130,14 +151,55 @@ class SemanticQueryTool:
                 error="The agent's semantic model defines no datasets.",
             )
 
+        semantic_ir = SemanticModelIR.from_ossie(definition)
+        semantic_slice = self._retriever.retrieve(semantic_ir, question)
+        verified_hit: VerifiedQuery | None = None
+        owner = _context_value(context, "user_name")
+        model_id = str(semantic_model.get("semantic_model_id") or "")
+        if owner and model_id:
+            rows = await agent_repository.list_verified_queries(model_id, owner_name=owner)
+            entries = [
+                VerifiedQuery(
+                    verified_query_id=str(row["verified_query_id"]),
+                    semantic_model_id=model_id,
+                    model_fingerprint=str(row["model_fingerprint"]),
+                    question=str(row["question"]),
+                    semantic_plan=SemanticPlan.from_dict(row["semantic_plan"]),
+                    verified_sql=str(row["verified_sql"]),
+                    tags=tuple(row.get("tags") or []),
+                    usage_count=int(row.get("usage_count") or 0),
+                    success_count=int(row.get("success_count") or 0),
+                )
+                for row in rows
+            ]
+            hits = self._vqr.retrieve(
+                question,
+                entries,
+                model_fingerprint=semantic_ir.fingerprint,
+                limit=1,
+            )
+            if hits and _question_similarity(question, hits[0].question) >= 0.6:
+                verified_hit = hits[0]
         generation_started = time.perf_counter()
         report_tool_progress(
             context,
-            stage="generating_sql",
-            text="Generating SQL from the semantic model",
+            stage="planning_semantics",
+            text="Planning with the relevant semantic catalog slice",
         )
         try:
-            generated = await self._generate_sql(definition, question, context)
+            planned = self._planner.plan(semantic_ir, question)
+            plan = verified_hit.semantic_plan if verified_hit else planned.plan
+            if plan is None:
+                plan = await self._generate_plan(
+                    semantic_ir,
+                    semantic_slice.as_dict(),
+                    question,
+                    context,
+                )
+            errors = validate_plan(semantic_ir, plan)
+            if errors:
+                raise SemanticPlanError("; ".join(errors))
+            compiled = self._compiler.compile(semantic_ir, plan)
         except AssistantProviderError as exc:
             generation_duration_ms = (time.perf_counter() - generation_started) * 1000
             trace = _semantic_trace(
@@ -155,33 +217,38 @@ class SemanticQueryTool:
                 error=str(exc),
                 trace_detail=trace,
             )
-        generation_duration_ms = (time.perf_counter() - generation_started) * 1000
-
-        sql = (generated.get("sql") or "").strip()
-        explanation = (generated.get("explanation") or "").strip()
-        confidence = generated.get("confidence")
-
-        if not sql:
-            # The model declined because the question is not answerable from the
-            # model. That is a *successful* outcome, not a tool failure: the
-            # agent should tell the user what is missing, not surface an error
-            # that terminates the turn. Return ok=True with the explanation so
-            # the loop folds it into the answer.
+        except SemanticPlanError as exc:
+            generation_duration_ms = (time.perf_counter() - generation_started) * 1000
             return ToolOutcome(
-                ok=True,
-                summary=(
-                    "The semantic model cannot answer this question. "
-                    + (explanation or "No matching metric or dimension is defined.")
-                ),
+                ok=False,
+                summary="",
+                error="The semantic plan could not be compiled safely.",
+                error_class="INVALID_SEMANTIC_PLAN",
+                recoverable=True,
+                safe_detail=str(exc),
+                repair_context={
+                    "available_metrics": [item.name for item in semantic_ir.metrics],
+                    "available_dimensions": [
+                        field.name
+                        for dataset in semantic_ir.datasets
+                        for field in dataset.fields
+                        if field.kind.value == "dimension"
+                    ],
+                },
                 trace_detail=_semantic_trace(
                     semantic_model,
                     question=question,
                     generated_sql="",
-                    confidence=confidence,
+                    confidence=planned.confidence.score if "planned" in locals() else None,
                     generation_duration_ms=generation_duration_ms,
                     execution_duration_ms=None,
                 ),
             )
+        generation_duration_ms = (time.perf_counter() - generation_started) * 1000
+
+        sql = compiled.sql
+        explanation = "Compiled from governed semantic metrics and dimensions."
+        confidence = planned.confidence.score
 
         safe_sql = _safe_sql_preview(sql)
         report_tool_progress(
@@ -277,6 +344,11 @@ class SemanticQueryTool:
                 ok=False,
                 summary="",
                 error="The generated query failed to run.",
+                error_class="SEMANTIC_EXECUTION_ERROR",
+                recoverable=True,
+                safe_detail=(
+                    "The compiled query failed. Repair the semantic plan, not authorization."
+                ),
                 trace_detail=trace,
             )
         execution_duration_ms = (time.perf_counter() - execution_started) * 1000
@@ -296,6 +368,9 @@ class SemanticQueryTool:
                 ok=False,
                 summary="",
                 error="The generated query failed to run.",
+                error_class="SEMANTIC_EXECUTION_ERROR",
+                recoverable=True,
+                safe_detail="The compiled query failed against the current schema.",
                 trace_detail=trace,
             )
 
@@ -315,6 +390,25 @@ class SemanticQueryTool:
             text=f"Retrieved {row_count} row{'s' if row_count != 1 else ''}",
             sql_preview=safe_sql,
         )
+        try:
+            await agent_repository.record_semantic_usage(
+                owner_name=username,
+                semantic_model_id=str(semantic_model.get("semantic_model_id") or ""),
+                model_fingerprint=semantic_ir.fingerprint,
+                metrics=list(plan.metrics),
+                dimensions=list(plan.dimensions),
+                filter_shape=[
+                    {"field": item.field, "operator": item.operator} for item in plan.filters
+                ],
+                time_grain=plan.time.grain if plan.time else None,
+                execution_latency_ms=round(execution_duration_ms),
+                succeeded=True,
+                verified_query_id=(
+                    verified_hit.verified_query_id if verified_hit is not None else None
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - telemetry must not fail a query
+            logger.warning("semantic usage telemetry failed: %s", type(exc).__name__)
 
         return ToolOutcome(
             ok=True,
@@ -326,6 +420,29 @@ class SemanticQueryTool:
                 results=results,
             ),
             table=table,
+            data={
+                "semantic_plan": plan.as_dict(),
+                "sql": safe_sql,
+                "row_count": row_count,
+                "confidence": confidence,
+            },
+            evidence={
+                "semantic_model_id": semantic_model.get("semantic_model_id"),
+                "semantic_model_fingerprint": semantic_ir.fingerprint,
+                "metrics": list(plan.metrics),
+                "dimensions": list(plan.dimensions),
+            },
+            metadata={
+                "semantic_retrieval_count": (
+                    len(semantic_slice.metrics)
+                    + len(semantic_slice.dimensions)
+                    + len(semantic_slice.datasets)
+                ),
+                "relationship_path": list(compiled.relationship_path),
+                "confidence_level": planned.confidence.level,
+                "verified_query_hit": verified_hit.verified_query_id if verified_hit else None,
+            },
+            warnings=list(compiled.warnings),
             trace_detail=_semantic_trace(
                 semantic_model,
                 question=question,
@@ -336,13 +453,12 @@ class SemanticQueryTool:
             ),
         )
 
-    async def _resolve_model(self, context: Any) -> dict[str, Any] | None:
+    async def _resolve_model(self, context: Any, question: str) -> dict[str, Any] | None:
         """Load the agent's semantic model from the caller's own records.
 
-        When an agent binds more than one model, the first one that parses is
-        used; grounding each candidate and letting the model route across all of
-        them is a larger feature than v1 needs, and a single-model agent (the
-        common case) is unaffected.
+        Multiple models are scored from their names, descriptions, metrics,
+        dimensions, synonyms, and examples. A lexical tie is material ambiguity,
+        never an arbitrary first-model choice.
         """
         ids = _context_value(context, "semantic_model_ids") or []
         scalar = _context_value(context, "semantic_model_id")
@@ -351,23 +467,88 @@ class SemanticQueryTool:
         owner = _context_value(context, "user_name")
         if not ids or not owner:
             return None
+        models: list[dict[str, Any]] = []
+        candidates: list[SemanticModelCandidate] = []
         for model_id in ids:
             model = await agent_repository.get_semantic_model(model_id, owner_name=owner)
             if model and (model.get("definition") or {}).get("datasets"):
-                return model
-        return None
+                models.append(model)
+                candidates.append(
+                    SemanticModelCandidate(
+                        str(model_id), SemanticModelIR.from_ossie(model.get("definition") or {})
+                    )
+                )
+        if not models:
+            return None
+        if len(models) == 1:
+            return models[0]
+        selection = self._model_router.route(question, candidates)
+        if selection.model_id is None:
+            return None
+        return next(
+            (model for model in models if model.get("semantic_model_id") == selection.model_id),
+            None,
+        )
 
-    async def _generate_sql(
-        self, definition: dict[str, Any], question: str, context: Any
-    ) -> dict[str, Any]:
-        messages = build_semantic_messages(definition, question)
+    async def _generate_plan(
+        self,
+        model_ir: SemanticModelIR,
+        semantic_slice: dict[str, Any],
+        question: str,
+        context: Any,
+    ) -> SemanticPlan:
+        """Ask for semantic intent only. Nova remains the SQL compiler."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "metrics": {"type": "array", "items": {"type": "string"}},
+                "dimensions": {"type": "array", "items": {"type": "string"}},
+                "filters": {"type": "array", "items": {"type": "object"}},
+                "named_filters": {"type": "array", "items": {"type": "string"}},
+                "time": {"type": ["object", "null"]},
+                "order_by": {"type": "array", "items": {"type": "object"}},
+                "limit": {"type": ["integer", "null"]},
+            },
+            "required": ["metrics", "dimensions", "filters"],
+            "additionalProperties": False,
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Select semantic concepts from the supplied catalog slice. Return one JSON "
+                    "SemanticPlan. Do not write SQL, joins, tables, or columns. Use only exact "
+                    "names in the slice."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "question": question,
+                        "semantic_model": model_ir.name,
+                        "catalog": semantic_slice,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            },
+        ]
         provider_id = _context_value(context, "model_provider_id")
         model = _context_value(context, "model_name")
         config = await self._provider.resolve(provider_id=provider_id, model=model)
-        message = await self._provider.complete(messages=messages, provider=config)
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {"name": "semantic_plan", "strict": True, "schema": schema},
+        }
+        kwargs: dict[str, Any] = {"messages": messages, "provider": config}
+        if config.capabilities.supports_json_schema:
+            kwargs["response_format"] = response_format
+        message = await self._provider.complete(**kwargs)
         record_provider_usage(context, message)
         content = message.get("content") or ""
-        return _parse_model_json(content)
+        parsed = _parse_model_json(content)
+        return SemanticPlan.from_dict(parsed)
 
 
 def _parse_model_json(content: str) -> dict[str, Any]:
@@ -385,6 +566,12 @@ def _parse_model_json(content: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         return {"sql": "", "explanation": "The model returned an unexpected shape."}
     return parsed
+
+
+def _question_similarity(left: str, right: str) -> float:
+    left_words = set(re.findall(r"[a-z0-9]+", left.lower()))
+    right_words = set(re.findall(r"[a-z0-9]+", right.lower()))
+    return len(left_words & right_words) / max(len(left_words | right_words), 1)
 
 
 def _safe_sql_preview(sql: str) -> str:

@@ -108,6 +108,18 @@ describe("AssistantPanel", () => {
     }
   });
 
+  it("uses the Nova mark in the header", async () => {
+    await render(
+      <AssistantPanel open onOpenChange={() => {}} />,
+    );
+
+    const logo = document.querySelector<HTMLImageElement>(
+      'img[src="/images/nova-mark.svg"]',
+    );
+    expect(logo).not.toBeNull();
+    expect(logo?.getAttribute("aria-hidden")).toBe("true");
+  });
+
   it("gives every header action the same visual slot", async () => {
     const { getByRole } = await render(
       <AssistantPanel

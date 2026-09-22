@@ -28,6 +28,7 @@ import {
   stripBackticks,
 } from './helpers'
 import { StageFilesPanel } from './stage-files-panel'
+import { SqlCodeBlock } from './sql-code-block'
 import type {
   CatalogsResponse,
   DatabaseObjectsResponse,
@@ -242,9 +243,10 @@ export function ExplorerDetail({
             {tableDetail.properties.create_ddl && (
               <section className='rounded-2xl border border-border bg-surface-2 p-6'>
                 <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
-                <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
-                  <code>{tableDetail.properties.create_ddl}</code>
-                </pre>
+                <SqlCodeBlock
+                  source={tableDetail.properties.create_ddl}
+                  label='Table DDL'
+                />
               </section>
             )}
           </TabsContent>
@@ -708,9 +710,7 @@ export function ExplorerDetail({
           {pipeDetail.create_ddl && (
             <section className='rounded-2xl border border-border bg-surface-2 p-6'>
               <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
-              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
-                <code>{pipeDetail.create_ddl}</code>
-              </pre>
+              <SqlCodeBlock source={pipeDetail.create_ddl} label='Pipe DDL' />
             </section>
           )}
         </div>
@@ -783,9 +783,7 @@ export function ExplorerDetail({
           {viewDetail.create_ddl && (
             <section className='rounded-2xl border border-border bg-surface-2 p-6'>
               <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
-              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
-                <code>{viewDetail.create_ddl}</code>
-              </pre>
+              <SqlCodeBlock source={viewDetail.create_ddl} label='View DDL' />
             </section>
           )}
 
@@ -793,9 +791,7 @@ export function ExplorerDetail({
           {!viewDetail.create_ddl && viewDetail.definition && (
             <section className='rounded-2xl border border-border bg-surface-2 p-6'>
               <h2 className='mb-4 text-xl font-semibold'>Definition</h2>
-              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
-                <code>{viewDetail.definition}</code>
-              </pre>
+              <SqlCodeBlock source={viewDetail.definition} label='View definition' />
             </section>
           )}
         </div>
@@ -906,9 +902,7 @@ export function ExplorerDetail({
           {mvDetail.definition && (
             <section className='rounded-2xl border border-border bg-surface-2 p-6'>
               <h2 className='mb-4 text-xl font-semibold'>Definition</h2>
-              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
-                <code>{mvDetail.definition}</code>
-              </pre>
+              <SqlCodeBlock source={mvDetail.definition} label='Materialized view definition' />
             </section>
           )}
         </div>
@@ -993,9 +987,7 @@ export function ExplorerDetail({
           {fnDetail.create_ddl && (
             <section className='rounded-2xl border border-border bg-surface-2 p-6'>
               <h2 className='mb-4 text-xl font-semibold'>DDL</h2>
-              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
-                <code>{fnDetail.create_ddl}</code>
-              </pre>
+              <SqlCodeBlock source={fnDetail.create_ddl} label='Function DDL' />
             </section>
           )}
 
@@ -1003,9 +995,10 @@ export function ExplorerDetail({
           {!fnDetail.create_ddl && fnDetail.definition && (
             <section className='rounded-2xl border border-border bg-surface-2 p-6'>
               <h2 className='mb-4 text-xl font-semibold'>Definition</h2>
-              <pre className='overflow-x-auto rounded-lg bg-muted/50 p-4 text-xs leading-relaxed'>
-                <code>{fnDetail.definition}</code>
-              </pre>
+              <SqlCodeBlock
+                source={fnDetail.definition}
+                label='Function definition'
+              />
             </section>
           )}
         </div>

@@ -42,9 +42,16 @@ guardrails to respect. The model loads this when a task matches a trigger.
 export function SkillsRegistryPage() {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [draft, setDraft] = useState({ name: '', description: '', body: SKILL_TEMPLATE })
+  const [draft, setDraft] = useState({
+    name: '',
+    description: '',
+    body: SKILL_TEMPLATE,
+  })
 
-  const skillsQuery = useQuery({ queryKey: ['skills'], queryFn: () => skillsApi.list() })
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => skillsApi.list(),
+  })
 
   const create = useMutation({
     mutationFn: () =>
@@ -71,68 +78,72 @@ export function SkillsRegistryPage() {
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const customs = skillsQuery.data?.skills ?? []
+  const skills = skillsQuery.data?.skills ?? []
 
   return (
     <>
       <Header fixed />
       <Main>
-        <div className='mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-          <div className='min-w-0'>
-            <h1 className='text-2xl font-semibold tracking-tight'>Skill Registry</h1>
-            <p className='mt-1 text-sm text-muted-foreground'>
-              Playbooks an agent loads before answering a task it covers. Add one
-              as a SKILL.md document and any agent can pick it up.
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight">Skill Registry</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Playbooks an agent loads before answering a task it covers. Add one as a SKILL.md
+              document and any agent can pick it up.
             </p>
           </div>
           <Button onClick={() => setOpen(true)}>
-            <Plus className='size-4' />
+            <Plus className="size-4" />
             Add skill
           </Button>
         </div>
 
-        <ScrollArea className='min-h-0 flex-1'>
+        <ScrollArea className="min-h-0 flex-1">
           <section>
             {skillsQuery.isLoading ? (
-              <Skeleton className='h-32 w-full' />
-            ) : customs.length === 0 ? (
+              <Skeleton className="h-32 w-full" />
+            ) : skills.length === 0 ? (
               <EmptyState
                 icon={BookOpen}
-                title='No skills yet'
-                description='Add a SKILL.md playbook to teach your agents a specific task.'
+                title="No skills yet"
+                description="Add a SKILL.md playbook to teach your agents a specific task."
                 action={
                   <Button onClick={() => setOpen(true)}>
-                    <Plus className='size-4' />
+                    <Plus className="size-4" />
                     Add skill
                   </Button>
                 }
               />
             ) : (
-              <div className='grid gap-3 sm:grid-cols-2'>
-                {customs.map((skill) => (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {skills.map((skill) => (
                   <div
                     key={skill.skill_id}
-                    className='flex items-start justify-between gap-3 rounded-lg border p-4'
+                    className="flex items-start justify-between gap-3 rounded-lg border p-4"
                   >
-                    <div className='min-w-0'>
-                      <div className='flex items-center gap-2'>
-                        <span className='font-mono text-sm font-medium'>{skill.name}</span>
-                        <Badge variant='outline'>{skill.scope}</Badge>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-medium">{skill.name}</span>
+                        <Badge variant="outline">
+                          {skill.source === 'builtin' ? 'Built-in' : skill.scope}
+                        </Badge>
                       </div>
                       {skill.description ? (
-                        <p className='mt-1 line-clamp-2 text-sm text-muted-foreground'>
+                        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                           {skill.description}
                         </p>
                       ) : null}
                     </div>
-                    <Button
-                      size='icon'
-                      variant='ghost'
-                      onClick={() => remove.mutate(skill.skill_id)}
-                      aria-label={`Delete ${skill.name}`}
-                    >
-                      <Trash2 className='size-4' />
-                    </Button>
+                    {!skill.read_only ? (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => remove.mutate(skill.skill_id)}
+                        aria-label={`Delete ${skill.name}`}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -142,44 +153,44 @@ export function SkillsRegistryPage() {
       </Main>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className='max-w-2xl'>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add skill</DialogTitle>
           </DialogHeader>
-          <div className='space-y-4'>
-            <div className='grid gap-4 sm:grid-cols-2'>
-              <div className='space-y-2'>
-                <Label htmlFor='skill-name'>Name</Label>
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="skill-name">Name</Label>
                 <Input
-                  id='skill-name'
+                  id="skill-name"
                   value={draft.name}
                   onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                  placeholder='revenue-playbook'
-                  className='font-mono'
+                  placeholder="revenue-playbook"
+                  className="font-mono"
                 />
               </div>
-              <div className='space-y-2'>
-                <Label htmlFor='skill-desc'>Description</Label>
+              <div className="space-y-2">
+                <Label htmlFor="skill-desc">Description</Label>
                 <Input
-                  id='skill-desc'
+                  id="skill-desc"
                   value={draft.description}
                   onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                  placeholder='How to answer revenue questions'
+                  placeholder="How to answer revenue questions"
                 />
               </div>
             </div>
-            <div className='space-y-2'>
-              <Label htmlFor='skill-body'>SKILL.md</Label>
+            <div className="space-y-2">
+              <Label htmlFor="skill-body">SKILL.md</Label>
               <Textarea
-                id='skill-body'
+                id="skill-body"
                 value={draft.body}
                 onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))}
-                className='min-h-72 font-mono text-xs'
+                className="min-h-72 font-mono text-xs"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant='outline' onClick={() => setOpen(false)}>
+            <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button

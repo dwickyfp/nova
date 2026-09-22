@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -24,6 +25,7 @@ class FeaturePreprocessor:
     profiles: list[FeatureProfile] = field(default_factory=list)
     transformer: ColumnTransformer | None = None
     expanded_columns: list[str] = field(default_factory=list)
+    arrow_to_pandas_seconds: float = 0.0
 
     def fit_transform(self, table: pa.Table):
         self._validate_columns(table)
@@ -80,7 +82,9 @@ class FeaturePreprocessor:
             raise InferenceSchemaMismatch("Missing feature columns: " + ", ".join(missing))
 
     def _frame(self, table: pa.Table) -> pd.DataFrame:
+        started = time.perf_counter()
         frame = table.select(self.feature_columns).to_pandas()
+        self.arrow_to_pandas_seconds += time.perf_counter() - started
         datetime_names = [item.name for item in self.profiles if item.kind == "datetime"]
         for name in datetime_names:
             values = pd.to_datetime(frame.pop(name), errors="coerce", utc=True)

@@ -47,6 +47,8 @@ import { cn } from "@/lib/utils";
 type Pane = "conversation" | "thread" | "detail";
 type DetailKind =
   | "turn"
+  | "runtime"
+  | "active-state"
   | "provider"
   | "semantic"
   | "sql"
@@ -664,6 +666,12 @@ function StepDetailPane({
               </dl>
             </Panel>
           ) : null}
+          {node.detailKind === "runtime" ? (
+            <RuntimeDecisionDetail group={group} step={node.step} />
+          ) : null}
+          {node.detailKind === "active-state" ? (
+            <ActiveStateDetail step={node.step} />
+          ) : null}
           {node.detailKind === "tool" || node.detailKind === "chart" ? (
             <ToolDetail step={node.step} />
           ) : null}
@@ -848,6 +856,13 @@ function ToolDetail({ step }: { step?: TraceStep }) {
           <DetailField label="Tool">
             <span className="font-mono">{step.name}</span>
           </DetailField>
+          {step.evidence_id ? (
+            <DetailField label="Verified evidence">
+              <Badge variant="secondary" className="font-mono text-xs">
+                {step.evidence_id}
+              </Badge>
+            </DetailField>
+          ) : null}
           {step.preview ? (
             <DetailField label="Preview">
               <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 font-mono text-xs">
@@ -906,6 +921,141 @@ function ToolDetail({ step }: { step?: TraceStep }) {
       ) : null}
     </>
   );
+}
+
+function RuntimeDecisionDetail({
+  group,
+  step,
+}: {
+  group: TraceGroup;
+  step?: TraceStep;
+}) {
+  if (!step || step.kind !== "runtime_decision") return null;
+  const states = group.assistant.steps
+    .filter(
+      (item): item is Extract<TraceStep, { kind: "state" }> =>
+        item.kind === "state",
+    )
+    .map((item) => item.state);
+  return (
+    <>
+      <Panel title="Routing decision">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
+          <dt className="text-muted-foreground">Intent</dt>
+          <dd className="text-right font-mono">{step.intent}</dd>
+          <dt className="text-muted-foreground">Effective strategy</dt>
+          <dd className="text-right capitalize">{step.harness_mode}</dd>
+          <dt className="text-muted-foreground">Semantic models</dt>
+          <dd className="text-right tabular-nums">
+            {step.semantic_model_ids.length}
+          </dd>
+        </dl>
+      </Panel>
+      <StringBadges
+        title="Selected tools"
+        values={step.selected_tools}
+        empty="No tools exposed."
+      />
+      <StringBadges
+        title="Selected skills"
+        values={step.selected_skills}
+        empty="No task procedure selected."
+      />
+      <Panel title="State machine" defaultOpen={false}>
+        {states.length ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {states.map((state, index) => (
+              <span key={`${state}-${index}`} className="contents">
+                {index > 0 ? <ArrowRightSmall /> : null}
+                <Badge variant="outline" className="font-mono text-xs">
+                  {state}
+                </Badge>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <EmptyDetail>State transitions were not recorded.</EmptyDetail>
+        )}
+      </Panel>
+      <Panel title="Prompt budget" defaultOpen={false}>
+        {Object.keys(step.prompt_telemetry).length ? (
+          <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-xs">
+            {Object.entries(step.prompt_telemetry).map(([category, tokens]) => (
+              <div key={category} className="contents">
+                <dt className="text-muted-foreground">
+                  {humanizeTraceLabel(category)}
+                </dt>
+                <dd className="text-right tabular-nums">
+                  {tokens.toLocaleString()} tokens
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <EmptyDetail>Prompt categories were not recorded.</EmptyDetail>
+        )}
+      </Panel>
+    </>
+  );
+}
+
+function ActiveStateDetail({ step }: { step?: TraceStep }) {
+  if (!step || step.kind !== "active_state") return null;
+  const entries = Object.entries(step.state).filter(([, value]) => {
+    if (Array.isArray(value)) return value.length > 0;
+    if (value && typeof value === "object")
+      return Object.keys(value).length > 0;
+    return value !== null && value !== "";
+  });
+  return (
+    <Panel title="Conversation state">
+      {entries.length ? (
+        <dl className="space-y-3 text-xs">
+          {entries.map(([key, value]) => (
+            <DetailField key={key} label={humanizeTraceLabel(key)}>
+              <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 font-mono text-xs">
+                {typeof value === "string"
+                  ? value
+                  : JSON.stringify(value, null, 2)}
+              </pre>
+            </DetailField>
+          ))}
+        </dl>
+      ) : (
+        <EmptyDetail>No active constraints were retained.</EmptyDetail>
+      )}
+    </Panel>
+  );
+}
+
+function StringBadges({
+  title,
+  values,
+  empty,
+}: {
+  title: string;
+  values: string[];
+  empty: string;
+}) {
+  return (
+    <Panel title={title} defaultOpen={values.length > 0}>
+      {values.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {values.map((value) => (
+            <Badge key={value} variant="outline" className="font-mono text-xs">
+              {value}
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <EmptyDetail>{empty}</EmptyDetail>
+      )}
+    </Panel>
+  );
+}
+
+function ArrowRightSmall() {
+  return <span className="text-xs text-muted-foreground">→</span>;
 }
 
 function DetailField({
@@ -1059,6 +1209,34 @@ function buildGroup(
   for (const [stepIndex, step] of assistant.steps.entries()) {
     const baseId = stepId(step) ?? `${assistant.message_id}:step:${stepIndex}`;
     const timing = stepTiming(step);
+    if (step.kind === "runtime_decision") {
+      nodes.push({
+        id: baseId,
+        turnId: assistant.message_id,
+        label: "Runtime Routing",
+        description: `${step.intent} · ${step.harness_mode}`,
+        status: "done",
+        depth: 1,
+        detailKind: "runtime",
+        step,
+        ...timing,
+      });
+      continue;
+    }
+    if (step.kind === "active_state") {
+      nodes.push({
+        id: baseId,
+        turnId: assistant.message_id,
+        label: "Active Conversation State",
+        status: "done",
+        depth: 1,
+        detailKind: "active-state",
+        step,
+        ...timing,
+      });
+      continue;
+    }
+    if (step.kind === "state") continue;
     if (step.kind === "provider") {
       nodes.push({
         id: baseId,
@@ -1287,6 +1465,7 @@ function nodeIcon(node: TraceNode) {
   if (node.detailKind === "response") return MessageSquareText;
   if (node.detailKind === "provider") return Sparkles;
   if (node.detailKind === "context") return Clock3;
+  if (node.detailKind === "active-state") return FileJson;
   return Route;
 }
 
@@ -1324,6 +1503,11 @@ function toolLabel(name: string): string {
 }
 function toolTraceDetail(step?: TraceStep): Record<string, unknown> | null {
   return step?.kind === "tool" && step.trace_detail ? step.trace_detail : null;
+}
+function humanizeTraceLabel(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter: string) => letter.toUpperCase());
 }
 function objectValue(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)

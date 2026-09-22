@@ -14,14 +14,20 @@ import json
 import logging
 import re
 import time
+from typing import Any
 
 import asyncmy
 
 from app.common.audit import write_audit_log
-from app.common.ml_intercept import detect_ml_predict, rewrite_ml_predict_sql
+from app.common.ml_intercept import (
+    MLForecastCall,
+    MLPredictCall,
+    detect_ml_forecast,
+    detect_ml_predict,
+    rewrite_ml_predict_projection,
+)
 from app.common.sql_guard import (
     CredentialsRedactionError,
-    is_destructive_sql,
     split_sql_statements,
 )
 from app.common.user_flags import set_must_change_password
@@ -29,6 +35,8 @@ from app.core.config import get_storage_connection, settings, to_docker_endpoint
 from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
 from app.core.security import decrypt_password
+from app.modules.access_control.security_context import require_security_context
+from app.modules.access_control.statement_router import security_statement_router
 from app.modules.query.dialect.force_password_change import (
     is_force_password_change,
     parse_force_password_change,
@@ -38,10 +46,6 @@ from app.modules.query.dialect.ml_model import is_create_ml_model, parse_create_
 from app.modules.query.dialect.parser import parse_sql
 from app.modules.query.dialect.translator import StorageConfig
 from app.modules.query.repository import QueryRepository, QueryResult
-from app.modules.query.role_resolver import (
-    is_permission_error,
-    resolve_fallback_role,
-)
 from app.modules.query.sql_pipeline import (
     guard_user_statement,
     prepare_stage_sql,
@@ -255,6 +259,18 @@ class QueryService:
         # StarRocks-compatible db.table form before validation/execution.
         normalized_sql = self._normalize_default_schema_qualification(sql)
 
+        if settings.RANGER_ENABLED:
+            security = require_security_context(
+                principal=username,
+                active_role=role,
+                database=database,
+                session_id=session_id,
+            )
+            routed = await security_statement_router.route(normalized_sql, security=security)
+            if routed.handled:
+                assert routed.result is not None
+                return routed.result
+
         # 1. Guard: block dangerous SQL, per statement (shared with ml_engine).
         #
         # A refusal is an *event*, not just an exception: `DROP ROLE
@@ -296,6 +312,19 @@ class QueryService:
                 schema=schema,
             )
 
+        ml_forecast_call = detect_ml_forecast(normalized_sql)
+        if ml_forecast_call:
+            return await self._execute_ml_forecast(
+                sql=sql,
+                normalized_sql=normalized_sql,
+                call=ml_forecast_call,
+                username=username,
+                database=database,
+                session_id=session_id,
+                file_id=file_id,
+                schema=schema,
+            )
+
         ml_predict_match = detect_ml_predict(normalized_sql)
         if ml_predict_match:
             return await self._execute_ml_predict(
@@ -310,6 +339,7 @@ class QueryService:
                 file_id=file_id,
                 schema=schema,
                 connection=connection,
+                max_rows=max_rows,
             )
 
         # Nova `CREATE TASK` is a Nova statement, not an engine one: it is
@@ -321,6 +351,7 @@ class QueryService:
                 sql=sql,
                 normalized_sql=normalized_sql,
                 username=username,
+                role=role,
                 database=database,
                 session_id=session_id,
                 file_id=file_id,
@@ -362,9 +393,7 @@ class QueryService:
                 # 3b. CSV auto-detect: read file header to detect delimiter &
                 # columns. I/O, so it happens here and its result is passed into
                 # the pure preparation step.
-                csv_params, csv_column_names = await self._detect_csv_params(
-                    parsed, stage_configs
-                )
+                csv_params, csv_column_names = await self._detect_csv_params(parsed, stage_configs)
 
                 prepared = await prepare_stage_sql(
                     normalized_sql,
@@ -438,49 +467,15 @@ class QueryService:
         # repository hands back is independently safe.
         redacted_sql = redact_for_output(executed_sql)
         try:
-            try:
-                result = await self._repo.execute_as_user(
-                    sql=executed_sql,
-                    username=username,
-                    password=password,
-                    database=database,
-                    role=role,
-                    max_rows=max_rows,
-                    connected=connection,
-                )
-            except Exception as exc:
-                # Automatic role fallback: when the session's active role lacks
-                # a privilege but the user holds another granted role that has
-                # it, retry once under that role. Restricted to the
-                # connection-opening path (no injected ``connection``): the
-                # MySQL proxy owns a long-lived authenticated socket and its own
-                # role semantics, so switching roles under it would be
-                # surprising. Destructive statements are never retried — an
-                # auto-elevated DROP is exactly the action that must stay
-                # deliberate. The session and UI role are untouched; only this
-                # one execution runs under the fallback role.
-                fallback = await self._maybe_fallback_role(
-                    exc=exc,
-                    sql=sql,
-                    username=username,
-                    active_role=role,
-                    connection=connection,
-                )
-                if fallback is None:
-                    raise
-                result = await self._repo.execute_as_user(
-                    sql=executed_sql,
-                    username=username,
-                    password=password,
-                    database=database,
-                    role=fallback,
-                    max_rows=max_rows,
-                    connected=connection,
-                )
-                warnings = warnings + [
-                    f"⚑ Ran as {fallback}: the active role "
-                    f"{role or '(none)'} lacked the required privilege."
-                ]
+            result = await self._repo.execute_as_user(
+                sql=executed_sql,
+                username=username,
+                password=password,
+                database=database,
+                role=role,
+                max_rows=max_rows,
+                connected=connection,
+            )
 
             result.original_sql = sql
             result.executed_sql = redacted_sql
@@ -526,49 +521,6 @@ class QueryService:
             )
             raise
 
-    async def _maybe_fallback_role(
-        self,
-        *,
-        exc: Exception,
-        sql: str,
-        username: str,
-        active_role: str | None,
-        connection: asyncmy.Connection | None,
-    ) -> str | None:
-        """A granted role to retry under, or ``None`` to let the error stand.
-
-        Returns a role only when every guard passes: the failure is a genuine
-        privilege error, the statement is not destructive, no proxy connection
-        was injected, and the user actually holds another role with the needed
-        privilege. Resolution is best-effort — any failure to compute a
-        candidate returns ``None`` so the original engine error is what the user
-        sees, never a resolver error.
-        """
-        if connection is not None:
-            return None
-        if not is_permission_error(str(exc)):
-            return None
-        if is_destructive_sql(sql):
-            return None
-        try:
-            fallback = await resolve_fallback_role(
-                username=username,
-                sql=sql,
-                active_role=active_role,
-            )
-        except Exception:
-            logger.exception("role fallback resolution failed; keeping the original error")
-            return None
-        if fallback and fallback != active_role:
-            logger.info(
-                "auto-selected role %s for %s after %s lacked privilege",
-                fallback,
-                username,
-                active_role,
-            )
-            return fallback
-        return None
-
     async def _audit_secret_resolutions(self, *, username: str) -> None:
         """Persist the auditable *facts* of any secret reference resolved above.
 
@@ -598,9 +550,7 @@ class QueryService:
                     error_message=fact.error_type or None,
                 )
             except Exception:
-                logger.exception(
-                    "failed to audit a secret reference resolution; continuing"
-                )
+                logger.exception("failed to audit a secret reference resolution; continuing")
 
     async def _audit_engine_result(
         self,
@@ -827,7 +777,7 @@ class QueryService:
         *,
         sql: str,
         normalized_sql: str,
-        match: re.Match,
+        match: MLPredictCall,
         username: str,
         encrypted_password: str,
         database: str | None,
@@ -836,26 +786,36 @@ class QueryService:
         file_id: str | None,
         schema: str | None,
         connection: asyncmy.Connection | None,
+        max_rows: int | None,
     ) -> QueryResult:
         """Execute Nova ``ML_PREDICT`` as one columnar, vectorized batch."""
         start = time.monotonic()
-        alias, feature_sql, _ = rewrite_ml_predict_sql(normalized_sql, match)
+        rewrite = rewrite_ml_predict_projection(normalized_sql, match)
+        alias = rewrite.alias
+        feature_sql = rewrite.feature_sql
         password = "" if connection is not None else decrypt_password(encrypted_password)
         from app.modules.ml_engine.service import ml_engine_service
 
         try:
-            predicted = await ml_engine_service.batch_predict(
+            metadata, result_table = await ml_engine_service.batch_predict_projected(
                 model_alias=alias,
                 prediction_sql=feature_sql,
+                feature_source_columns=rewrite.feature_columns,
+                prediction_index=rewrite.prediction_index,
+                prediction_name=rewrite.prediction_name,
                 database_name=database,
                 username=username,
                 password=password,
                 role=role,
                 connection=connection,
+                max_rows=max_rows,
             )
-            records = predicted["predictions"]
-            columns = list(records[0]) if records else ["prediction"]
-            rows = [[record.get(column) for column in columns] for record in records]
+            del metadata
+            columns = result_table.column_names
+            rows: list[list[Any]] = []
+            for batch in result_table.to_batches(max_chunksize=4096):
+                values = [column.to_pylist() for column in batch.columns]
+                rows.extend([list(row) for row in zip(*values, strict=True)])
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             await write_audit_log(
                 event_type="query",
@@ -901,12 +861,99 @@ class QueryService:
             )
             raise
 
+    async def _execute_ml_forecast(
+        self,
+        *,
+        sql: str,
+        normalized_sql: str,
+        call: MLForecastCall,
+        username: str,
+        database: str | None,
+        session_id: str | None,
+        file_id: str | None,
+        schema: str | None,
+    ) -> QueryResult:
+        """Execute persisted forecast SQL without pretending it is row inference."""
+        start = time.monotonic()
+        from app.modules.ml_engine.service import ml_engine_service
+
+        object_name = call.model_alias or call.model_id or "forecast"
+        try:
+            if call.model_alias is not None:
+                result = await ml_engine_service.forecast_alias(
+                    call.model_alias,
+                    call.horizon,
+                    owner_name=username,
+                    database_name=database,
+                    level=call.confidence_level,
+                    series=call.series,
+                )
+            else:
+                assert call.model_id is not None and call.version is not None
+                result = await ml_engine_service.forecast_version(
+                    call.model_id,
+                    call.version,
+                    call.horizon,
+                    owner_name=username,
+                    database_name=database,
+                    level=call.confidence_level,
+                    series=call.series,
+                )
+            forecast = result["forecast"]
+            columns = ["timestamp", "series", "prediction", "lower", "upper"]
+            rows = [[row.get(column) for column in columns] for row in forecast]
+            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="ml_forecast",
+                object_type="ml_model",
+                object_name=object_name,
+                status="SUCCESS",
+                sql_text=sql,
+                rewritten_sql=normalized_sql,
+                duration_ms=int(elapsed_ms),
+                rows_affected=len(rows),
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+            return QueryResult(
+                columns=columns,
+                rows=rows,
+                row_count=len(rows),
+                elapsed_ms=elapsed_ms,
+                original_sql=sql,
+                executed_sql=normalized_sql,
+                warnings=["ML_FORECAST executed with persisted forecast semantics"],
+            )
+        except Exception as exc:
+            await write_audit_log(
+                event_type="query",
+                user_name=username,
+                action="ml_forecast",
+                object_type="ml_model",
+                object_name=object_name,
+                status="ERROR",
+                sql_text=sql,
+                rewritten_sql=normalized_sql,
+                error_message=_redact_error_message(str(exc)),
+                duration_ms=int((time.monotonic() - start) * 1000),
+                session_id=session_id,
+                file_id=file_id,
+                database_name=database,
+                schema_name=schema,
+            )
+            raise
+
     async def _execute_create_task(
         self,
         *,
         sql: str,
         normalized_sql: str,
         username: str,
+        role: str | None,
         database: str | None,
         session_id: str | None,
         file_id: str | None,
@@ -924,6 +971,8 @@ class QueryService:
         """
         start = time.monotonic()
         try:
+            if settings.RANGER_ENABLED and not role:
+                raise TaskLoweringError("CREATE TASK requires an explicit execution role")
             timezone = await task_orchestration_repository.get_engine_timezone()
             if not timezone:
                 raise TaskLoweringError(
@@ -933,7 +982,7 @@ class QueryService:
             task = parse_create_task(
                 normalized_sql, database=database, schema=schema, timezone=timezone
             )
-            persisted = await persist_lowered_task(task, created_by=username)
+            persisted = await persist_lowered_task(task, created_by=username, owner_role=role)
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             task_row = persisted.task
             edge_count = len(persisted.edges)
@@ -1289,9 +1338,7 @@ class QueryService:
                 # be reported as a redacted query error, not escape to the
                 # generic handler as an unredacted 500 (NOVA-66).
                 stage_configs = await self._load_stage_configs(database, None)
-                prepared = await prepare_stage_sql(
-                    normalized_sql, stage_configs=stage_configs
-                )
+                prepared = await prepare_stage_sql(normalized_sql, stage_configs=stage_configs)
             except (ValueError, SecretResolutionError) as e:
                 # ``normalized_sql`` is the user's own text and carries no
                 # injected credential, but it is redacted all the same so every
@@ -1335,7 +1382,9 @@ class QueryService:
         active_role: str | None = None,
     ) -> dict:
         password = decrypt_password(encrypted_password)
-        databases = await self._list_user_databases(username, password)
+        if not active_role:
+            raise ValueError("Query context requires an explicit active role")
+        databases = await self._list_user_databases(username, password, active_role)
         prefs = await db.execute_system(
             """
             SELECT pref_key, pref_value
@@ -1354,11 +1403,9 @@ class QueryService:
         # The session's active role wins over the persisted ``last_role`` pref:
         # the UI treats the bottom-left switcher as the one active role, and the
         # engine executes under exactly that role, so the context must not
-        # advertise a different one. ``last_role`` remains only as a fallback
-        # for sessions (or callers) that predate ``active_role``.
-        context_role = active_role or pref_map.get("workspace.last_role") or (
-            roles[0] if roles else None
-        )
+        # advertise a different one. Missing role state fails at the request
+        # boundary; role ordering never determines authorization.
+        context_role = active_role
         return {
             "roles": roles,
             "databases": databases,

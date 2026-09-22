@@ -39,12 +39,8 @@ _SERIES_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _HORIZON_PATTERN = re.compile(r"\bHORIZON\s*=\s*(?P<value>\d+)", re.IGNORECASE)
-_FREQUENCY_PATTERN = re.compile(
-    r"\bFREQUENCY\s*=\s*'(?P<value>[^']+)'", re.IGNORECASE
-)
-_MODE_PATTERN = re.compile(
-    r"\bMODE\s*=\s*(?P<value>INTERACTIVE|BALANCED|BEST)\b", re.IGNORECASE
-)
+_FREQUENCY_PATTERN = re.compile(r"\bFREQUENCY\s*=\s*'(?P<value>[^']+)'", re.IGNORECASE)
+_MODE_PATTERN = re.compile(r"\bMODE\s*=\s*(?P<value>INTERACTIVE|BALANCED|BEST)\b", re.IGNORECASE)
 _TEST_SIZE_PATTERN = re.compile(
     r"\bTEST_SIZE\s*=\s*(?P<value>0(?:\.\d+)?|1(?:\.0+)?)\b",
     re.IGNORECASE,
@@ -144,9 +140,7 @@ def parse_create_ml_model(sql: str) -> CreateMLModelStatement:
     return CreateMLModelStatement(
         model_name=_unquote_identifier(match.group("model_name")),
         model_type=model_type,
-        target_column=(
-            _unquote_identifier(target_match.group("value")) if target_match else None
-        ),
+        target_column=(_unquote_identifier(target_match.group("value")) if target_match else None),
         training_sql=match.group("training_sql").strip(),
         algorithm=(algorithm_match.group("value").lower() if algorithm_match else "auto"),
         test_size=test_size,
@@ -155,9 +149,7 @@ def parse_create_ml_model(sql: str) -> CreateMLModelStatement:
         timestamp_column=(
             _unquote_identifier(timestamp_match.group("value")) if timestamp_match else None
         ),
-        series_column=(
-            _unquote_identifier(series_match.group("value")) if series_match else None
-        ),
+        series_column=(_unquote_identifier(series_match.group("value")) if series_match else None),
         horizon=int(horizon_match.group("value")) if horizon_match else None,
         frequency=frequency_match.group("value") if frequency_match else None,
         mode=mode_match.group("value").lower() if mode_match else "balanced",

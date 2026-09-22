@@ -21,6 +21,7 @@ from app.core.redis import session_store
 # --- Module routers ---
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.studio_router import router as studio_router
+from app.modules.access_control.router import router as access_control_router
 from app.modules.ai_ml.router import router as ai_router
 from app.modules.assistant.router import router as assistant_router
 from app.modules.auth.router import router as auth_router
@@ -204,6 +205,11 @@ def create_app() -> FastAPI:
     app.include_router(explorer_router, prefix=f"{prefix}/explorer", tags=["explorer"])
     app.include_router(system_router, prefix=f"{prefix}/system", tags=["system"])
     app.include_router(users_router, prefix=f"{prefix}/users", tags=["users"])
+    app.include_router(
+        access_control_router,
+        prefix=f"{prefix}/access-control",
+        tags=["access-control"],
+    )
     app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["ai"])
     app.include_router(llm_fn_router, prefix=f"{prefix}/ai", tags=["ai"])
     app.include_router(ml_router, prefix=f"{prefix}/ml", tags=["ml"])

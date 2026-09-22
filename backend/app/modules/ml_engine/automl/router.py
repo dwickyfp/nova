@@ -33,6 +33,7 @@ class AutoMLSelection:
     candidates_evaluated: int
     hyperparameters: dict[str, Any]
     backend: str = "sklearn"
+    loss_value: float | None = None
 
 
 class AutoMLRouter:
@@ -72,12 +73,13 @@ class AutoMLRouter:
             return AutoMLSelection(
                 estimator=estimator,
                 name=str(metadata["selected_estimator"]),
-                score=1.0 - float(metadata["validation_loss"]),
+                score=float("nan"),
                 metric=metric or ("accuracy" if task is MLTask.CLASSIFICATION else "r2"),
                 duration_seconds=time.monotonic() - started,
                 candidates_evaluated=int(metadata["candidates_evaluated"]),
                 hyperparameters=_json_parameters(metadata["hyperparameters"]),
                 backend="flaml",
+                loss_value=float(metadata["validation_loss"]),
             )
         candidates = self._candidates(task, mode, algorithm, parameters or {})
         metric = "weighted_f1" if task is MLTask.CLASSIFICATION else "r2"

@@ -99,8 +99,8 @@ def explain_client(monkeypatch):
         return {
             "username": "analyst",
             "session_id": "sess-explain-probe",
-            "roles": [],  # deliberately non-admin
-            "active_role": None,
+            "roles": ["analyst"],  # deliberately non-admin
+            "active_role": "analyst",
             "encrypted_password": "enc",
         }
 
@@ -329,7 +329,7 @@ class TestDoubleQuotedAssignmentIsRedacted:
     def test_key_quoting_is_preserved(self):
         """Redaction stays value-only — the shape is still readable."""
         out = redact_sql_credentials('FILES("aws.s3.access_key"="PLACEHOLDER_V")')
-        assert out == 'FILES("aws.s3.access_key"=\'***\')'
+        assert out == "FILES(\"aws.s3.access_key\"='***')"
 
     def test_idempotent(self):
         once = redact_sql_credentials('FILES("aws.s3.access_key"="PLACEHOLDER_V")')
@@ -347,7 +347,7 @@ class TestDoubleQuotedAssignmentIsRedacted:
         "sql",
         [
             "FILES('aws.s3.access_key'='***')",
-            'FILES("aws.s3.access_key"=\'***\')',
+            "FILES(\"aws.s3.access_key\"='***')",
             "FILES('aws.s3.access_key'='')",
             "FILES('path'='s3://stages/x.csv', 'format'='csv')",
         ],

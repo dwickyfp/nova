@@ -11,18 +11,18 @@ and no HTTP client are needed.
 
 import pytest
 
-from app.core.deps import require_role
 from app.core.exceptions import InsufficientRoleError
+from app.core.role_gates import require_active_role
 from app.modules.users.router import ADMIN_ROLES, router
 
-ADMIN_USER = {"username": "admin", "roles": ["ACCOUNTADMIN"]}
-ANALYST_USER = {"username": "analyst", "roles": ["test_analyst"]}
-ROLELESS_USER = {"username": "nobody", "roles": []}
+ADMIN_USER = {"username": "admin", "roles": ["ACCOUNTADMIN"], "active_role": "ACCOUNTADMIN"}
+ANALYST_USER = {"username": "analyst", "roles": ["test_analyst"], "active_role": "test_analyst"}
+ROLELESS_USER = {"username": "nobody", "roles": [], "active_role": None}
 
 
 async def _run_guard(allowed_roles, user):
-    """Invoke the require_role dependency's inner check with a fake user."""
-    check = require_role(*allowed_roles)
+    """Invoke the active-role dependency's inner check with a fake user."""
+    check = require_active_role(*allowed_roles)
 
     async def fake_get_current_user():
         return user
@@ -51,7 +51,7 @@ class TestRequireRoleDependency:
 
 
 class TestEveryUsersEndpointIsGuarded:
-    """Every route on the users router must depend on require_role."""
+    """Every route must authorize the role used for control-plane execution."""
 
     def _routes(self):
         return [r for r in router.routes if hasattr(r, "dependant")]
@@ -64,11 +64,11 @@ class TestEveryUsersEndpointIsGuarded:
         [r for r in router.routes if hasattr(r, "dependant")],
         ids=lambda r: f"{sorted(r.methods)[0] if r.methods else '?'} {r.path}",
     )
-    def test_route_uses_require_role(self, route):
+    def test_route_uses_active_role(self, route):
         """A route guarded only by get_current_user would be a privilege hole."""
         dep_names = _dependency_names(route.dependant)
-        assert "require_role.<locals>._check" in dep_names, (
-            f"{route.path} is not guarded by require_role — only {dep_names}"
+        assert "require_active_role.<locals>._check" in dep_names, (
+            f"{route.path} is not guarded by require_active_role — only {dep_names}"
         )
 
     @pytest.mark.parametrize(
@@ -78,7 +78,10 @@ class TestEveryUsersEndpointIsGuarded:
     )
     def test_route_does_not_use_bare_get_current_user(self, route):
         dep_names = _dependency_names(route.dependant)
-        assert "get_current_user" not in dep_names or "require_role.<locals>._check" in dep_names
+        assert (
+            "get_current_user" not in dep_names
+            or "require_active_role.<locals>._check" in dep_names
+        )
 
 
 def _dependency_names(dependant) -> set[str]:

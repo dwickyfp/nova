@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from uuid import uuid4
 
 import boto3
 from botocore.client import Config as BotoConfig
@@ -45,7 +46,23 @@ class ObjectArtifactStore:
 
     def put(self, key: str, payload: bytes) -> str:
         normalized = key.strip("/")
-        self._client().put_object(Bucket=self._connection().bucket, Key=normalized, Body=payload)
+        temporary = f"{normalized}.upload-{uuid4().hex}"
+        client = self._client()
+        bucket = self._connection().bucket
+        try:
+            client.put_object(Bucket=bucket, Key=temporary, Body=payload)
+            stored_size = int(client.head_object(Bucket=bucket, Key=temporary)["ContentLength"])
+            if stored_size != len(payload):
+                raise OSError(
+                    f"Artifact upload size mismatch: expected {len(payload)}, got {stored_size}"
+                )
+            client.copy_object(
+                Bucket=bucket,
+                Key=normalized,
+                CopySource={"Bucket": bucket, "Key": temporary},
+            )
+        finally:
+            client.delete_object(Bucket=bucket, Key=temporary)
         return f"{self.scheme}://{self.connection_name}/{normalized}"
 
     def get(self, uri: str) -> bytes:

@@ -21,71 +21,71 @@ import {
   Settings,
   ShieldAlert,
   Wrench,
-} from 'lucide-react';
-import { type SidebarData } from '../types';
+} from "lucide-react";
+import { type SidebarData } from "../types";
 
 export const sidebarData: SidebarData = {
   navGroups: [
     {
-      title: 'General',
+      title: "General",
       items: [
         {
-          title: 'Home',
-          url: '/',
+          title: "Home",
+          url: "/",
           icon: House,
         },
       ],
     },
     {
-      title: 'Data Management',
+      title: "Data Management",
       items: [
         {
-          title: 'Workspaces',
-          url: '/workspaces',
+          title: "Workspaces",
+          url: "/workspaces",
           icon: SquareChartGantt,
         },
         {
-          title: 'Database Explorer',
-          url: '/database-explorer',
+          title: "Database Explorer",
+          url: "/database-explorer",
           icon: Database,
         },
         {
-          title: 'Tasks',
-          url: '/tasks',
+          title: "Tasks",
+          url: "/tasks",
           icon: Workflow,
         },
         {
-          title: 'AI & ML',
+          title: "AI & ML",
           icon: Brain,
           items: [
             {
-              title: 'ML Models',
-              url: '/ml-models',
+              title: "ML Models",
+              url: "/ml-models",
               icon: Brain,
             },
             {
-              title: 'Agent',
-              url: '/agents',
+              title: "Agent",
+              url: "/agents",
               icon: Bot,
             },
             {
-              title: 'Semantic',
-              url: '/agents/semantic',
+              title: "Semantic",
+              url: "/agents/semantic",
               icon: Blocks,
             },
             {
-              title: 'Skills',
-              url: '/agents/skills',
+              title: "Skills",
+              url: "/agents/skills",
               icon: BookOpen,
             },
             {
-              title: 'Tools',
-              url: '/agents/tools',
+              title: "Tools",
+              url: "/agents/tools",
               icon: Wrench,
             },
             {
-              title: 'Nova Studio',
-              url: '/studio',
+              title: "Nova Studio",
+              url: "/studio",
               icon: Sparkles,
               // A full-page standalone surface: open it in a new tab so the
               // console keeps its current page, the way Snowflake CoWork opens
@@ -97,80 +97,95 @@ export const sidebarData: SidebarData = {
       ],
     },
     {
-      title: 'Administrator',
+      title: "Access Control",
       items: [
         {
-          title: 'Users',
-          url: '/users',
+          title: "Users",
+          url: "/users",
           icon: Users,
         },
         {
-          title: 'Roles',
-          url: '/roles',
+          title: "Roles",
+          url: "/roles",
           icon: Shield,
         },
         {
-          title: 'AI Providers',
-          url: '/ai-providers',
+          title: "Data Access",
+          url: "/access-control",
+          icon: ShieldAlert,
+        },
+        {
+          title: "Audit",
+          url: "/monitoring/audit",
+          icon: Activity,
+        },
+      ],
+    },
+    {
+      title: "Administrator",
+      items: [
+        {
+          title: "AI Providers",
+          url: "/ai-providers",
           icon: Bot,
         },
         {
-          title: 'Admin Settings',
-          url: '/settings',
+          title: "Admin Settings",
+          url: "/settings",
           icon: Settings,
         },
       ],
     },
     {
-      title: 'Operations',
+      title: "Operations",
       items: [
         {
-          title: 'Migration',
-          url: '/migration',
+          title: "Migration",
+          url: "/migration",
           icon: ArrowRightLeft,
         },
         {
-          title: 'Monitoring',
+          title: "Monitoring",
           icon: Activity,
           items: [
             {
-              title: 'Query History',
-              url: '/query-history',
+              title: "Query History",
+              url: "/query-history",
               icon: Clock,
             },
             {
-              title: 'Active Queries',
-              url: '/active-query',
+              title: "Active Queries",
+              url: "/active-query",
               icon: Zap,
             },
             {
-              title: 'Audit Trail',
-              url: '/monitoring/audit',
+              title: "Audit Trail",
+              url: "/monitoring/audit",
               icon: Shield,
             },
             {
-              title: 'Tasks',
-              url: '/tasks',
+              title: "Tasks",
+              url: "/tasks",
               icon: ListTodo,
             },
             {
-              title: 'Query Cost',
-              url: '/query-cost',
+              title: "Query Cost",
+              url: "/query-cost",
               icon: TrendingUp,
             },
             {
-              title: 'Data Loads',
-              url: '/monitoring/loads',
+              title: "Data Loads",
+              url: "/monitoring/loads",
               icon: Upload,
             },
             {
-              title: 'Cluster Monitor',
-              url: '/monitoring/cluster',
+              title: "Cluster Monitor",
+              url: "/monitoring/cluster",
               icon: Server,
             },
             {
-              title: 'Production Health',
-              url: '/monitoring/health',
+              title: "Production Health",
+              url: "/monitoring/health",
               icon: ShieldAlert,
             },
           ],

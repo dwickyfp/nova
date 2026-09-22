@@ -1,13 +1,13 @@
-import { useState } from 'react'
-import { z } from 'zod'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useNavigate } from '@tanstack/react-router'
-import { Loader2, LogIn, KeyRound } from 'lucide-react'
-import { toast } from 'sonner'
-import { type AuthUser, useAuthStore } from '@/stores/auth-store'
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { useState } from "react";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useNavigate } from "@tanstack/react-router";
+import { Loader2, LogIn, KeyRound } from "lucide-react";
+import { toast } from "sonner";
+import { type AuthUser, useAuthStore } from "@/stores/auth-store";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
@@ -15,68 +15,68 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
-import { PasswordInput } from '@/components/password-input'
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/password-input";
 
 // ── Login form schema ────────────────────────────────────────
 const loginSchema = z.object({
-  username: z.string().min(1, 'Please enter your username.'),
-  password: z.string().min(1, 'Please enter your password.'),
-})
+  username: z.string().min(1, "Please enter your username."),
+  password: z.string().min(1, "Please enter your password."),
+});
 
 // ── Setup form schema ────────────────────────────────────────
 const setupSchema = z
   .object({
     newPassword: z
       .string()
-      .min(1, 'Please enter a new password.')
-      .min(6, 'Password must be at least 6 characters.'),
-    confirmPassword: z.string().min(1, 'Please confirm your password.'),
+      .min(1, "Please enter a new password.")
+      .min(6, "Password must be at least 6 characters."),
+    confirmPassword: z.string().min(1, "Please confirm your password."),
   })
   .refine((d) => d.newPassword === d.confirmPassword, {
-    message: 'Passwords do not match.',
-    path: ['confirmPassword'],
-  })
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  });
 
 // ── Helpers ──────────────────────────────────────────────────
 
 function getSafeRedirectPath(redirectTo?: string): string {
-  if (!redirectTo || redirectTo.startsWith('//')) return '/'
-  if (redirectTo.startsWith('/')) return redirectTo
+  if (!redirectTo || redirectTo.startsWith("//")) return "/";
+  if (redirectTo.startsWith("/")) return redirectTo;
   try {
-    const target = new URL(redirectTo)
-    if (target.origin !== window.location.origin) return '/'
-    return `${target.pathname}${target.search}${target.hash}`
+    const target = new URL(redirectTo);
+    if (target.origin !== window.location.origin) return "/";
+    return `${target.pathname}${target.search}${target.hash}`;
   } catch {
-    return '/'
+    return "/";
   }
 }
 
 type LoginResult = {
-  status: 'AUTHENTICATED' | 'SETUP_REQUIRED' | 'PASSWORD_CHANGE_REQUIRED'
-  access_token: string
-  user: string | AuthUser | null
-  roles?: string[]
-  active_role?: string | null
-}
+  status: "AUTHENTICATED" | "SETUP_REQUIRED" | "PASSWORD_CHANGE_REQUIRED";
+  access_token: string;
+  user: string | AuthUser | null;
+  roles?: string[];
+  active_role?: string | null;
+};
 
 function getAuthUser(result: LoginResult): AuthUser | null {
-  if (!result.user) return null
-  if (typeof result.user === 'string') {
+  if (!result.user) return null;
+  if (typeof result.user === "string") {
     return {
       username: result.user,
       roles: result.roles ?? [],
-      activeRole: result.active_role ?? result.roles?.[0] ?? null,
-    }
+      activeRole: result.active_role ?? null,
+    };
   }
-  return result.user
+  return result.user;
 }
 
 // ── Component ────────────────────────────────────────────────
 
 interface UserAuthFormProps extends React.HTMLAttributes<HTMLFormElement> {
-  redirectTo?: string
+  redirectTo?: string;
 }
 
 export function UserAuthForm({
@@ -84,175 +84,184 @@ export function UserAuthForm({
   redirectTo,
   ...props
 }: UserAuthFormProps) {
-  const [isLoading, setIsLoading] = useState(false)
-  const [setupToken, setSetupToken] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false);
+  const [setupToken, setSetupToken] = useState<string | null>(null);
   // Set when the admin required a password change: the credential is valid, but
   // the user must set a new password before entering Nova.
-  const [forcedChangeToken, setForcedChangeToken] = useState<string | null>(null)
-  const navigate = useNavigate()
-  const { auth } = useAuthStore()
+  const [forcedChangeToken, setForcedChangeToken] = useState<string | null>(
+    null,
+  );
+  const navigate = useNavigate();
+  const { auth } = useAuthStore();
 
   // ── Login form ──
   const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { username: '', password: '' },
-  })
+    defaultValues: { username: "", password: "" },
+  });
 
   // ── Setup form ──
   const setupForm = useForm<z.infer<typeof setupSchema>>({
     resolver: zodResolver(setupSchema),
-    defaultValues: { newPassword: '', confirmPassword: '' },
-  })
+    defaultValues: { newPassword: "", confirmPassword: "" },
+  });
 
   // ── Login submit ──
   async function onLoginSubmit(data: z.infer<typeof loginSchema>) {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: data.username, password: data.password }),
-      })
+      const res = await fetch("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: data.username,
+          password: data.password,
+        }),
+      });
 
       if (res.status === 401) {
-        toast.error('Invalid username or password.')
-        setIsLoading(false)
-        return
+        toast.error("Invalid username or password.");
+        setIsLoading(false);
+        return;
       }
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }))
-        toast.error(err.detail || 'Login failed.')
-        setIsLoading(false)
-        return
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        toast.error(err.detail || "Login failed.");
+        setIsLoading(false);
+        return;
       }
 
-      const result = (await res.json()) as LoginResult
+      const result = (await res.json()) as LoginResult;
 
-      if (result.status === 'SETUP_REQUIRED') {
+      if (result.status === "SETUP_REQUIRED") {
         // Switch to setup form
-        setSetupToken(result.access_token)
-        toast.info('First login — please set a new password.')
-      } else if (result.status === 'PASSWORD_CHANGE_REQUIRED') {
+        setSetupToken(result.access_token);
+        toast.info("First login — please set a new password.");
+      } else if (result.status === "PASSWORD_CHANGE_REQUIRED") {
         // The password is valid, but the administrator requires a change before
         // first use. Store the session token so the change request is authorized.
-        setForcedChangeToken(result.access_token)
-        toast.info('Please set a new password before continuing.')
-      } else if (result.status === 'AUTHENTICATED') {
-        auth.setAccessToken(result.access_token)
-        auth.setUser(getAuthUser(result))
-        navigate({ to: getSafeRedirectPath(redirectTo), replace: true })
-        toast.success(`Welcome back, ${data.username}!`)
+        setForcedChangeToken(result.access_token);
+        toast.info("Please set a new password before continuing.");
+      } else if (result.status === "AUTHENTICATED") {
+        auth.setAccessToken(result.access_token);
+        auth.setUser(getAuthUser(result));
+        navigate({ to: getSafeRedirectPath(redirectTo), replace: true });
+        toast.success(`Welcome back, ${data.username}!`);
       }
     } catch {
-      toast.error('Network error. Please try again.')
+      toast.error("Network error. Please try again.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
   // ── Setup submit ──
   async function onSetupSubmit(data: z.infer<typeof setupSchema>) {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/setup', {
-        method: 'POST',
+      const res = await fetch("/api/v1/auth/setup", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${setupToken}`,
         },
         body: JSON.stringify({
           new_password: data.newPassword,
           confirm_password: data.confirmPassword,
         }),
-      })
+      });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }))
-        toast.error(err.detail || 'Setup failed.')
-        setIsLoading(false)
-        return
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        toast.error(err.detail || "Setup failed.");
+        setIsLoading(false);
+        return;
       }
 
-      const result = await res.json()
+      const result = await res.json();
 
-      if (result.status === 'SETUP_COMPLETE') {
+      if (result.status === "SETUP_COMPLETE") {
         // Now login with the new password
-        const loginRes = await fetch('/api/v1/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const loginRes = await fetch("/api/v1/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            username: loginForm.getValues('username'),
+            username: loginForm.getValues("username"),
             password: data.newPassword,
           }),
-        })
+        });
 
         if (loginRes.ok) {
-          const loginResult = (await loginRes.json()) as LoginResult
-          auth.setAccessToken(loginResult.access_token)
-          auth.setUser(getAuthUser(loginResult))
-          navigate({ to: getSafeRedirectPath(redirectTo), replace: true })
-          toast.success('Password changed. Welcome to Nova!')
+          const loginResult = (await loginRes.json()) as LoginResult;
+          auth.setAccessToken(loginResult.access_token);
+          auth.setUser(getAuthUser(loginResult));
+          navigate({ to: getSafeRedirectPath(redirectTo), replace: true });
+          toast.success("Password changed. Welcome to Nova!");
         } else {
-          toast.error('Password changed but login failed. Please log in manually.')
-          setSetupToken(null)
+          toast.error(
+            "Password changed but login failed. Please log in manually.",
+          );
+          setSetupToken(null);
         }
       }
     } catch {
-      toast.error('Network error. Please try again.')
+      toast.error("Network error. Please try again.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
   // ── Forced password change submit ────────────────────────
   async function onForcedChangeSubmit(data: z.infer<typeof setupSchema>) {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/change-password', {
-        method: 'POST',
+      const res = await fetch("/api/v1/auth/change-password", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${forcedChangeToken}`,
         },
         body: JSON.stringify({
-          current_password: loginForm.getValues('password'),
+          current_password: loginForm.getValues("password"),
           new_password: data.newPassword,
           confirm_password: data.confirmPassword,
         }),
-      })
+      });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }))
-        toast.error(err.detail || 'Could not change the password.')
-        setIsLoading(false)
-        return
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        toast.error(err.detail || "Could not change the password.");
+        setIsLoading(false);
+        return;
       }
 
       // The change clears the flag server-side; log in with the new password so
       // the session carries the new credential.
-      const loginRes = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const loginRes = await fetch("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: loginForm.getValues('username'),
+          username: loginForm.getValues("username"),
           password: data.newPassword,
         }),
-      })
+      });
       if (loginRes.ok) {
-        const loginResult = (await loginRes.json()) as LoginResult
-        auth.setAccessToken(loginResult.access_token)
-        auth.setUser(getAuthUser(loginResult))
-        navigate({ to: getSafeRedirectPath(redirectTo), replace: true })
-        toast.success('Password changed. Welcome to Nove!')
+        const loginResult = (await loginRes.json()) as LoginResult;
+        auth.setAccessToken(loginResult.access_token);
+        auth.setUser(getAuthUser(loginResult));
+        navigate({ to: getSafeRedirectPath(redirectTo), replace: true });
+        toast.success("Password changed. Welcome to Nove!");
       } else {
-        toast.error('Password changed but login failed. Please log in manually.')
-        setForcedChangeToken(null)
+        toast.error(
+          "Password changed but login failed. Please log in manually.",
+        );
+        setForcedChangeToken(null);
       }
     } catch {
-      toast.error('Network error. Please try again.')
+      toast.error("Network error. Please try again.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
@@ -263,20 +272,20 @@ export function UserAuthForm({
         <form
           key="forced-change-form"
           onSubmit={setupForm.handleSubmit(onForcedChangeSubmit)}
-          className={cn('grid gap-3', className)}
+          className={cn("grid gap-3", className)}
           {...props}
         >
-          <div className='rounded-md bg-muted p-3 text-sm text-muted-foreground'>
+          <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
             Your administrator requires a new password before first use.
           </div>
           <FormField
             control={setupForm.control}
-            name='newPassword'
+            name="newPassword"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>New Password</FormLabel>
                 <FormControl>
-                  <PasswordInput placeholder='Enter new password' {...field} />
+                  <PasswordInput placeholder="Enter new password" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -284,24 +293,27 @@ export function UserAuthForm({
           />
           <FormField
             control={setupForm.control}
-            name='confirmPassword'
+            name="confirmPassword"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Confirm Password</FormLabel>
                 <FormControl>
-                  <PasswordInput placeholder='Confirm new password' {...field} />
+                  <PasswordInput
+                    placeholder="Confirm new password"
+                    {...field}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-          <Button className='mt-2' disabled={isLoading}>
-            {isLoading ? <Loader2 className='animate-spin' /> : <KeyRound />}
+          <Button className="mt-2" disabled={isLoading}>
+            {isLoading ? <Loader2 className="animate-spin" /> : <KeyRound />}
             Change Password & Continue
           </Button>
         </form>
       </Form>
-    )
+    );
   }
 
   // ── Render: Setup form ───────────────────────────────────
@@ -311,20 +323,24 @@ export function UserAuthForm({
         <form
           key="setup-form"
           onSubmit={setupForm.handleSubmit(onSetupSubmit)}
-          className={cn('grid gap-3', className)}
+          className={cn("grid gap-3", className)}
           {...props}
         >
-          <div className='rounded-md bg-muted p-3 text-sm text-muted-foreground'>
+          <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
             First login detected. Please set a new admin password.
           </div>
           <FormField
             control={setupForm.control}
-            name='newPassword'
+            name="newPassword"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>New Password</FormLabel>
                 <FormControl>
-                  <Input type='password' placeholder='Enter new password' {...field} />
+                  <Input
+                    type="password"
+                    placeholder="Enter new password"
+                    {...field}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -332,24 +348,28 @@ export function UserAuthForm({
           />
           <FormField
             control={setupForm.control}
-            name='confirmPassword'
+            name="confirmPassword"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Confirm Password</FormLabel>
                 <FormControl>
-                  <Input type='password' placeholder='Confirm new password' {...field} />
+                  <Input
+                    type="password"
+                    placeholder="Confirm new password"
+                    {...field}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-          <Button className='mt-2' disabled={isLoading}>
-            {isLoading ? <Loader2 className='animate-spin' /> : <KeyRound />}
+          <Button className="mt-2" disabled={isLoading}>
+            {isLoading ? <Loader2 className="animate-spin" /> : <KeyRound />}
             Set Password & Continue
           </Button>
         </form>
       </Form>
-    )
+    );
   }
 
   // ── Render: Login form ───────────────────────────────────
@@ -357,17 +377,17 @@ export function UserAuthForm({
     <Form {...loginForm}>
       <form
         onSubmit={loginForm.handleSubmit(onLoginSubmit)}
-        className={cn('grid gap-3', className)}
+        className={cn("grid gap-3", className)}
         {...props}
       >
         <FormField
           control={loginForm.control}
-          name='username'
+          name="username"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Username</FormLabel>
               <FormControl>
-                <Input placeholder='Enter your username' {...field} />
+                <Input placeholder="Enter your username" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -375,22 +395,22 @@ export function UserAuthForm({
         />
         <FormField
           control={loginForm.control}
-          name='password'
+          name="password"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <PasswordInput placeholder='********' {...field} />
+                <PasswordInput placeholder="********" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button className='mt-2' disabled={isLoading}>
-          {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
+        <Button className="mt-2" disabled={isLoading}>
+          {isLoading ? <Loader2 className="animate-spin" /> : <LogIn />}
           Sign in
         </Button>
       </form>
     </Form>
-  )
+  );
 }

@@ -185,9 +185,7 @@ def _inject_files_params(sql: str, params: dict[str, str]) -> str:
         # Per key, not per group: a partially-injected statement must gain only
         # the keys it lacks. Injecting the whole group when *some* key is
         # present would emit a duplicate parameter, which the engine rejects.
-        missing = [
-            (key, value) for key, value in params.items() if f"'{key}'" not in content
-        ]
+        missing = [(key, value) for key, value in params.items() if f"'{key}'" not in content]
         if not missing:
             return match.group(0)
         parts = [f"'{key}'='{value}'" for key, value in missing]

@@ -245,9 +245,7 @@ def finalizer_targets(edges: Iterable[dict[str, object]]) -> dict[str, str]:
     }
 
 
-def graph_from_task_rows(
-    node_names: Iterable[str], edges: Iterable[dict[str, object]]
-) -> Graph:
+def graph_from_task_rows(node_names: Iterable[str], edges: Iterable[dict[str, object]]) -> Graph:
     """Build the **dependency** graph from ``CONFIG_TASK_EDGES`` rows.
 
     Edges store task *names* (design §5), so membership is resolved by name.
@@ -310,9 +308,7 @@ def finalizers_ready(
 
     subgraph_failed = any(state in _FAILED_PARENT_STATES for state in dependency_states)
     subgraph_blocked = any(state in _BLOCKING_PARENT_STATES for state in dependency_states)
-    subgraph_complete = all(
-        state in _SATISFIED_PARENT_STATES for state in dependency_states
-    )
+    subgraph_complete = all(state in _SATISFIED_PARENT_STATES for state in dependency_states)
 
     for finalizer in sorted(graph.finalizer_nodes):
         if states.get(finalizer, NodeState.PENDING) in TERMINAL_NODE_STATES:

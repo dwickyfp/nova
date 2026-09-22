@@ -74,8 +74,7 @@ def validate_graph(graph: Graph) -> None:
     for node in graph.nodes:
         if children_count[node] > MAX_CHILDREN:
             raise GraphValidationError(
-                f"task {node!r} has {children_count[node]} children; "
-                f"the maximum is {MAX_CHILDREN}"
+                f"task {node!r} has {children_count[node]} children; the maximum is {MAX_CHILDREN}"
             )
         if parents[node] > MAX_PARENTS:
             raise GraphValidationError(

@@ -1,8 +1,8 @@
-"""Semantic grounding — turn a parsed Ossie model into a text-to-SQL prompt.
+"""Legacy semantic-model text renderer used by Studio inspection tests.
 
-This is Nova's answer to Cortex Analyst's core: given a business question and a
-semantic model, produce SQL that uses the model's **logical** names, grounded on
-the model's datasets, fields, metrics, and relationships.
+The active query path is ``SemanticPlan -> SemanticCompiler``. This module does
+not construct provider messages and cannot generate SQL. It remains as a
+backward-compatible human-readable renderer for existing APIs and tests.
 
 Grounding uses **metadata only** — never table rows. The model is told the
 datasets, their sources, the fields (with synonyms and time role), the metrics
@@ -21,33 +21,6 @@ infer and the model gets wrong without being told:
 from __future__ import annotations
 
 from typing import Any
-
-#: The instruction block prepended to every semantic prompt. Kept tight so the
-#: model spends its budget on the model metadata, not on prose.
-_SYSTEM = """You translate a business question into one read-only SQL query for a
-StarRocks warehouse, using only the semantic model below.
-
-Rules:
-- Use only the datasets, fields, and metrics defined in the model. Do not invent
-  tables or columns.
-- Reference each dataset by its logical name in your reasoning, and generate SQL
-  against the physical source shown for it.
-- Use the metric's expression for the metric, not a re-derived formula.
-- Prefer the metric's `ai_context.synonyms` when the user's wording matches one.
-- For time questions, use the fields marked as time dimensions.
-- The query must be a single statement: SELECT or WITH ... SELECT. Never write a
-  mutating statement.
-- SQL dialect is StarRocks (ANSI-compatible). Do not use vendor-specific syntax
-  the model does not define.
-
-Return your answer as a JSON object with exactly these keys:
-  "sql": the SQL query string,
-  "explanation": one or two sentences, plain language, no SQL jargon,
-  "confidence": a number from 0 to 1 for how well the question is answerable
-                from this model.
-If the question cannot be answered from the model, set "sql" to an empty string
-and explain what is missing in "explanation".
-"""
 
 
 def build_grounding_prompt(model: dict[str, Any]) -> str:
@@ -87,15 +60,6 @@ def build_grounding_prompt(model: dict[str, Any]) -> str:
             lines.append(_metric_line(metric))
 
     return "\n".join(lines)
-
-
-def build_semantic_messages(model: dict[str, Any], question: str) -> list[dict[str, str]]:
-    """The full message list for one semantic text-to-SQL call."""
-    return [
-        {"role": "system", "content": _SYSTEM},
-        {"role": "user", "content": build_grounding_prompt(model)},
-        {"role": "user", "content": f"Question: {question}"},
-    ]
 
 
 def _dataset_block(dataset: dict[str, Any]) -> str:

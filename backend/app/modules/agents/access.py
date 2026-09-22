@@ -1,8 +1,7 @@
 """Agent access verification.
 
-Given an agent and a role, this answers the question "can this role actually use
-everything this agent depends on?" It resolves the agent's dependencies and
-checks each against the role's grants.
+Given an agent and a role, this resolves the agent's dependencies and inspects
+the matching Ranger-managed authorization policies.
 
 What is resolved:
 
@@ -10,14 +9,8 @@ What is resolved:
 * **semantic models bound to the agent** → each dataset's physical ``table``;
 * **the agent's database** → ``USAGE`` on that database (needed to run queries).
 
-How it is checked: ``SHOW GRANTS TO ROLE <role>`` on the *engine*, parsed into
-grant rows, then matched by object. This is the same source of truth the engine
-enforces, so the answer reflects reality rather than Nova's own intent. The check
-is read-only and runs on the caller's connection.
-
-A role that holds ``ACCOUNTADMIN`` is reported as granted for everything: it is
-the super-user role by Nova's own rule, so a per-object check would be
-misleading.
+No native StarRocks object grant is consulted. StarRocks roles are session
+markers in full Ranger mode and would be a misleading authorization source.
 """
 
 from __future__ import annotations
@@ -30,9 +23,6 @@ from datetime import UTC, datetime
 logger = logging.getLogger(__name__)
 
 #: Roles that imply full reach regardless of per-object grants.
-_SUPERUSER_ROLES = {"ACCOUNTADMIN", "root", "OPERATE", "DB_ADMIN"}
-
-
 @dataclass
 class AccessItem:
     kind: str
@@ -168,33 +158,25 @@ async def verify_access(
     encrypted_password: str,
     session_id: str | None,
 ) -> list[AccessItem]:
-    """Check every agent dependency against ``role_name``'s grants."""
-    if role_name.upper() in _SUPERUSER_ROLES:
-        deps = await resolve_agent_dependencies(agent)
-        return [
-            AccessItem(
-                kind=kind,
-                name=name,
-                granted=True,
-                detail=f"{role_name} is a super-user role; object grants are implicit.",
-            )
-            for kind, name in deps
-        ]
+    """Check every agent dependency against Ranger-managed policy state."""
+    del encrypted_password, session_id
+    from app.modules.access_control.service import access_control_service
 
-    grants = await _show_grants(
-        username=username,
-        encrypted_password=encrypted_password,
-        role=role_name,
-        session_id=session_id,
-    )
     deps = await resolve_agent_dependencies(agent)
     items: list[AccessItem] = []
     for kind, name in deps:
-        granted = matches_object(grants, kind, name)
+        effective = await access_control_service.effective_access(
+            principal=username,
+            active_role=role_name,
+            resource=name,
+        )
+        granted = any(
+            policy.get("policyType", 0) == 0 for policy in effective["policies"]
+        )
         detail = (
-            f"{role_name} has access to {name}."
+            f"Ranger authorizes {role_name} for {name}."
             if granted
-            else f"{role_name} is not granted {kind} {name}."
+            else f"No Ranger permission authorizes {role_name} for {kind} {name}."
         )
         items.append(AccessItem(kind=kind, name=name, granted=granted, detail=detail))
     return items

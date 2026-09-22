@@ -185,15 +185,11 @@ def next_fire(
 
     if kind == "cron":
         iterator = parse_cron(schedule_expr)
-        return iterator.get_next(datetime, start_time=local_reference).astimezone(
-            ZoneInfo("UTC")
-        )
+        return iterator.get_next(datetime, start_time=local_reference).astimezone(ZoneInfo("UTC"))
 
     if kind == "interval":
         interval = parse_interval(schedule_expr)
-        return (local_reference + interval.resolve(local_reference)).astimezone(
-            ZoneInfo("UTC")
-        )
+        return (local_reference + interval.resolve(local_reference)).astimezone(ZoneInfo("UTC"))
 
     raise ScheduleError(f"unsupported schedule kind: {schedule_kind!r}")
 

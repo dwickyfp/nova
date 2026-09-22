@@ -602,7 +602,7 @@ async def test_revoked_grant_prompts_again_on_the_next_read_only_call(
         frame
         async for frame in loop.run(
             thread=thread,
-            user_content="go",
+            user_content="SELECT 1",
             context=LoopContext(user_name="alice"),
             resolve_consent=resolver,
         )

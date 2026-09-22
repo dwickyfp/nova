@@ -92,9 +92,7 @@ class LeaderLock:
         self._client = client
         self._key = key if key is not None else settings.SCHEDULER_LEADER_LOCK_KEY
         self._ttl = (
-            ttl_seconds
-            if ttl_seconds is not None
-            else settings.SCHEDULER_LEADER_LOCK_TTL_SECONDS
+            ttl_seconds if ttl_seconds is not None else settings.SCHEDULER_LEADER_LOCK_TTL_SECONDS
         )
         self._token: str | None = None
 

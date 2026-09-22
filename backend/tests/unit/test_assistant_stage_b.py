@@ -310,7 +310,7 @@ async def test_a_no_consent_tool_runs_without_prompting_while_a_query_still_prom
     frames = await _collect(
         loop.run(
             thread=_thread(),
-            user_content="go",
+            user_content="load the configured skill",
             context=LoopContext(user_name="alice"),
             resolve_consent=resolver,
         )
@@ -353,7 +353,7 @@ async def test_a_no_consent_tool_runs_without_prompting_while_a_query_still_prom
     frames2 = await _collect(
         loop2.run(
             thread=_thread(),
-            user_content="go",
+            user_content="SELECT 1",
             context=LoopContext(user_name="alice"),
             resolve_consent=resolver2,
         )
@@ -605,7 +605,7 @@ async def test_loop_stops_at_the_iteration_cap():
     frames = await _collect(
         loop.run(
             thread=_thread(),
-            user_content="go",
+            user_content="SELECT 1",
             context=LoopContext(user_name="alice"),
             resolve_consent=lambda inv, cls: _allow(),
         )
@@ -627,7 +627,7 @@ async def test_loop_enforces_time_budget(monkeypatch):
     frames = await _collect(
         loop.run(
             thread=_thread(),
-            user_content="go",
+            user_content="SELECT 1",
             context=LoopContext(user_name="alice"),
             resolve_consent=lambda inv, cls: _allow(),
         )
@@ -661,7 +661,7 @@ async def test_read_only_grant_skips_the_approval_prompt():
     frames = await _collect(
         loop.run(
             thread=thread,
-            user_content="go",
+            user_content="SELECT 1",
             context=LoopContext(user_name="alice"),
             resolve_consent=resolver,
         )
@@ -694,7 +694,7 @@ async def test_destructive_call_never_auto_approves_even_with_a_grant():
     frames = await _collect(
         loop.run(
             thread=thread,
-            user_content="go",
+            user_content="SELECT 1",
             context=LoopContext(user_name="alice"),
             resolve_consent=resolver,
         )
@@ -718,7 +718,7 @@ async def test_denied_tool_call_is_surfaced_and_not_rerun():
     frames = await _collect(
         loop.run(
             thread=_thread(),
-            user_content="go",
+            user_content="SELECT 1",
             context=LoopContext(user_name="alice"),
             resolve_consent=lambda inv, cls: _deny(),
         )
@@ -744,7 +744,7 @@ async def test_tool_failure_terminates_the_turn():
     frames = await _collect(
         loop.run(
             thread=_thread(),
-            user_content="go",
+            user_content="SELECT 1",
             context=LoopContext(user_name="alice"),
             resolve_consent=lambda inv, cls: _allow(),
         )
