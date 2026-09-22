@@ -109,8 +109,10 @@ class EvalTool:
         table: dict[str, Any] | None = None,
         chart: dict[str, Any] | None = None,
         citations: list[dict[str, Any]] | None = None,
+        data: dict[str, Any] | None = None,
         trace_detail: dict[str, Any] | None = None,
         progress: list[dict[str, Any]] | None = None,
+        outcomes: list[ToolOutcome] | None = None,
     ) -> None:
         self.name = name
         self.classification = classification
@@ -126,8 +128,10 @@ class EvalTool:
         self.table = table
         self.chart = chart
         self.citations = citations
+        self.data = data
         self.trace_detail = trace_detail
         self.progress = progress or []
+        self.outcomes = list(outcomes or [])
         self.runs: list[ToolInvocation] = []
         self.last_results: list[dict[str, Any] | None] = []
 
@@ -146,6 +150,8 @@ class EvalTool:
                     str(item["sql_preview"]) if item.get("sql_preview") is not None else None
                 ),
             )
+        if self.outcomes:
+            return self.outcomes.pop(0)
         if self.ok:
             return ToolOutcome(
                 ok=True,
@@ -153,6 +159,7 @@ class EvalTool:
                 table=self.table,
                 chart=self.chart,
                 citations=self.citations,
+                data=self.data,
                 trace_detail=self.trace_detail,
             )
         return ToolOutcome(ok=False, summary="", error=self.error or "eval failure")
@@ -177,7 +184,7 @@ class Scenario:
     name: str
     script: list[dict[str, Any]]
     checks: list[tuple[str, Callable[[TurnResult], bool | str]]] = field(default_factory=list)
-    content: str = "run the task"
+    content: str = "How many orders are there?"
     tools: list[EvalTool] = field(default_factory=list)
     read_only_grant: bool = False
     resolve_consent: Callable[[ToolInvocation, str], Awaitable[bool | None]] | None = None

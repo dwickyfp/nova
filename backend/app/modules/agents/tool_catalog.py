@@ -18,8 +18,10 @@ from typing import Any
 #: name -> (description, input_schema)
 BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
     "query_execute": (
-        "Run one read-only SQL statement (SELECT, WITH … SELECT, SHOW, DESCRIBE, "
-        "EXPLAIN) on the user's connection.",
+        "Run one read-only StarRocks SELECT/SHOW/DESCRIBE/EXPLAIN on the user's "
+        "connection for explicit SQL, schema inspection, or data outside a semantic "
+        "model. Do not use it for a governed business metric that semantic_query defines. "
+        "Returns columns, redacted rows, row count, and execution metadata.",
         {
             "type": "object",
             "properties": {
@@ -29,8 +31,9 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         },
     ),
     "semantic_query": (
-        "Answer a business question from the agent's semantic model, translating "
-        "it into SQL over defined metrics and dimensions.",
+        "Answer a governed business-metric question. Nova selects a semantic model, "
+        "validates a SemanticPlan, resolves joins and grain, compiles StarRocks SQL, "
+        "and returns verified rows. Do not use for explicit SQL or schema inspection.",
         {
             "type": "object",
             "properties": {
@@ -43,8 +46,9 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         },
     ),
     "semantic_search": (
-        "Full-text search over indexed text in the semantic model's datasets. "
-        "Results are unranked.",
+        "Resolve entity literals or discover semantic metadata through indexed text. "
+        "Use it for names such as products or customers, not for aggregating metrics. "
+        "Returns matching canonical values and citations; results are not metric totals.",
         {
             "type": "object",
             "properties": {
@@ -56,7 +60,9 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         },
     ),
     "data_to_chart": (
-        "Build a Vega-Lite chart from the latest data already fetched in this conversation.",
+        "Build a sanitized Vega-Lite chart from the latest verified table. Use only when "
+        "the user asks for a chart or a trend/comparison materially benefits from one. "
+        "Do not call it before a data result exists.",
         {
             "type": "object",
             "properties": {
@@ -65,7 +71,9 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
         },
     ),
     "ml_execute": (
-        "Run bounded, deterministic ML over a caller-authorized SQL feature query.",
+        "Run Nova's bounded ML runtime for forecast, classification, regression, anomaly "
+        "detection, or clustering over caller-authorized SQL features. Do not approximate "
+        "these tasks with prose or arbitrary SQL. Returns a verified result/artifact.",
         {
             "type": "object",
             "properties": {

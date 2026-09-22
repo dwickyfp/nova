@@ -95,8 +95,8 @@ def explain_client(monkeypatch):
         return {
             "username": "analyst",
             "session_id": "sess-explain-success-contract",
-            "roles": [],  # deliberately non-admin
-            "active_role": None,
+            "roles": ["analyst"],  # deliberately non-admin
+            "active_role": "analyst",
             "encrypted_password": "enc",
         }
 

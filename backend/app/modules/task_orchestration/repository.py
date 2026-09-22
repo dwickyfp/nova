@@ -51,9 +51,7 @@ _UPDATABLE_COLUMNS: dict[str, frozenset[str]] = {
         }
     ),
     "edge": frozenset({"parent_task", "child_task"}),
-    "graph_run": frozenset(
-        {"trigger_type", "state", "wal_marks", "heartbeat_at", "finished_at"}
-    ),
+    "graph_run": frozenset({"trigger_type", "state", "wal_marks", "heartbeat_at", "finished_at"}),
     "task_run": frozenset(
         {
             "attempt",
@@ -300,9 +298,7 @@ class TaskOrchestrationRepository:
         return await self.get_task(task_id)
 
     async def delete_task(self, task_id: str) -> bool:
-        result = await db.execute_system(
-            f"DELETE FROM {_TASKS} WHERE id = %s", [task_id]
-        )
+        result = await db.execute_system(f"DELETE FROM {_TASKS} WHERE id = %s", [task_id])
         return bool(result.get("affected"))
 
     async def increment_consecutive_failures(self, task_id: str) -> int:
@@ -439,8 +435,7 @@ class TaskOrchestrationRepository:
             return []
         placeholders = ", ".join(["%s"] * len(names))
         result = await db.execute_system(
-            f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
-            f"WHERE name IN ({placeholders}) ORDER BY name",
+            f"SELECT {_TASK_COLUMNS} FROM {_TASKS} WHERE name IN ({placeholders}) ORDER BY name",
             list(names),
         )
         return [self._to_dict(_TASK_COLUMNS, row) for row in result["rows"]]
@@ -579,9 +574,7 @@ class TaskOrchestrationRepository:
         assert created is not None
         return created
 
-    async def create_graph_run_once(
-        self, data: dict[str, Any]
-    ) -> tuple[dict[str, Any], bool]:
+    async def create_graph_run_once(self, data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         """Create-if-absent. Returns ``(row, created)``.
 
         ``created`` is authoritative: it comes from the guarded insert's own
@@ -653,9 +646,7 @@ class TaskOrchestrationRepository:
             run["wal_marks"] = self._decode_wal_marks(run["wal_marks"])
         return runs
 
-    async def update_graph_run(
-        self, run_id: str, data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    async def update_graph_run(self, run_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         payload = dict(data)
         if "wal_marks" in payload:
             payload["wal_marks"] = self._encode_wal_marks(payload["wal_marks"])
@@ -667,9 +658,7 @@ class TaskOrchestrationRepository:
         return await self.get_graph_run(run_id)
 
     async def delete_graph_run(self, run_id: str) -> bool:
-        result = await db.execute_system(
-            f"DELETE FROM {_GRAPH_RUNS} WHERE id = %s", [run_id]
-        )
+        result = await db.execute_system(f"DELETE FROM {_GRAPH_RUNS} WHERE id = %s", [run_id])
         return bool(result.get("affected"))
 
     async def list_graph_runs_by_state(
@@ -758,9 +747,7 @@ class TaskOrchestrationRepository:
         )
         return [self._to_dict(_TASK_RUN_COLUMNS, row) for row in result["rows"]]
 
-    async def update_task_run(
-        self, run_id: str, data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    async def update_task_run(self, run_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         assignments, values = _assignments("task_run", data)
         await db.execute_system(
             f"UPDATE {_TASK_RUNS} SET {assignments} WHERE id = %s",
@@ -769,14 +756,10 @@ class TaskOrchestrationRepository:
         return await self.get_task_run(run_id)
 
     async def delete_task_run(self, run_id: str) -> bool:
-        result = await db.execute_system(
-            f"DELETE FROM {_TASK_RUNS} WHERE id = %s", [run_id]
-        )
+        result = await db.execute_system(f"DELETE FROM {_TASK_RUNS} WHERE id = %s", [run_id])
         return bool(result.get("affected"))
 
-    async def list_running_task_runs(
-        self, *, limit: int = 500
-    ) -> list[dict[str, Any]]:
+    async def list_running_task_runs(self, *, limit: int = 500) -> list[dict[str, Any]]:
         """Node rows currently ``running`` across every graph run.
 
         The reconciler's work list: a node is ``running`` only because a worker
@@ -791,9 +774,7 @@ class TaskOrchestrationRepository:
         )
         return [self._to_dict(_TASK_RUN_COLUMNS, row) for row in result["rows"]]
 
-    async def get_node_run(
-        self, graph_run_id: str, task_id: str
-    ) -> dict[str, Any] | None:
+    async def get_node_run(self, graph_run_id: str, task_id: str) -> dict[str, Any] | None:
         """The latest attempt row for a node within a graph run, if any."""
         result = await db.execute_system(
             f"SELECT {_TASK_RUN_COLUMNS} FROM {_TASK_RUNS} "
@@ -811,9 +792,7 @@ class TaskOrchestrationRepository:
         latest: dict[str, dict[str, Any]] = {}
         for run in runs:
             task_id = run.get("task_id")
-            if task_id and (
-                task_id not in latest or run["attempt"] >= latest[task_id]["attempt"]
-            ):
+            if task_id and (task_id not in latest or run["attempt"] >= latest[task_id]["attempt"]):
                 latest[task_id] = run
         return list(latest.values())
 

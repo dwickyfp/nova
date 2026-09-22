@@ -37,6 +37,10 @@ from app.common.ssrf_guard import (
 )
 from app.core.exceptions import NovaException
 from app.modules.ai_ml.service import ai_service
+from app.modules.assistant.provider_capabilities import (
+    CONSERVATIVE_OPENAI_COMPATIBLE,
+    ProviderCapabilities,
+)
 from app.modules.assistant.streaming import StreamAccumulator, parse_sse_data_line
 
 logger = logging.getLogger(__name__)
@@ -63,6 +67,7 @@ class ProviderConfig:
     model: str
     endpoint: str
     api_key: str
+    capabilities: ProviderCapabilities = CONSERVATIVE_OPENAI_COMPATIBLE
 
 
 class AssistantProviderClient:
@@ -123,11 +128,35 @@ class AssistantProviderClient:
             if not api_key:
                 continue
             resolved_model = await self._resolve_model(provider["id"], model)
+            provider_params = provider.get("default_params") or {}
+            capabilities = ProviderCapabilities.from_mapping(
+                provider_params.get("capabilities")
+                if isinstance(provider_params, dict)
+                else None,
+                base=CONSERVATIVE_OPENAI_COMPATIBLE,
+            )
+            for model_record in await ai_service.list_models(provider["id"]):
+                if model_record.get("name") != resolved_model:
+                    continue
+                model_params = model_record.get("default_params") or {}
+                capabilities = ProviderCapabilities.from_mapping(
+                    model_params.get("capabilities")
+                    if isinstance(model_params, dict)
+                    else None,
+                    base=capabilities,
+                )
+                max_tokens = model_record.get("max_tokens")
+                if isinstance(max_tokens, int) and max_tokens > 0:
+                    capabilities = ProviderCapabilities.from_mapping(
+                        {"context_window": max_tokens}, base=capabilities
+                    )
+                break
             return ProviderConfig(
                 provider_id=provider["id"],
                 model=resolved_model,
                 endpoint=self._chat_endpoint(provider["endpoint"]),
                 api_key=api_key,
+                capabilities=capabilities,
             )
         if provider_id:
             raise AssistantProviderError(
@@ -163,10 +192,27 @@ class AssistantProviderClient:
         config: ProviderConfig,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
+        *,
+        tool_choice: str | dict[str, Any] | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"model": config.model, "messages": messages}
-        if tools:
+        if tools and config.capabilities.supports_tools:
+            if config.capabilities.supports_strict_tool_schema:
+                tools = [
+                    {
+                        **tool,
+                        "function": {**tool.get("function", {}), "strict": True},
+                    }
+                    for tool in tools
+                ]
             body["tools"] = tools
+            if tool_choice is not None and config.capabilities.supports_tool_choice:
+                body["tool_choice"] = tool_choice
+            if not config.capabilities.supports_parallel_tool_calls:
+                body["parallel_tool_calls"] = False
+        if response_format is not None and config.capabilities.supports_json_schema:
+            body["response_format"] = response_format
         return body
 
     @staticmethod
@@ -245,6 +291,8 @@ class AssistantProviderClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         provider: ProviderConfig | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """One non-streaming chat-completions call. Returns the assistant message.
 
@@ -253,7 +301,13 @@ class AssistantProviderClient:
         owns context construction.
         """
         config = provider or await self.resolve()
-        body = self._request_body(config, messages, tools)
+        body = self._request_body(
+            config,
+            messages,
+            tools,
+            tool_choice=tool_choice,
+            response_format=response_format,
+        )
         await self._validate_endpoint(config)
 
         response: httpx.Response | None = None
@@ -323,6 +377,7 @@ class AssistantProviderClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         provider: ProviderConfig | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> AsyncIterator[tuple[str, Any]]:
         """One streaming chat-completions call.
 
@@ -336,7 +391,7 @@ class AssistantProviderClient:
         the caller maps that to an ``error`` frame.
         """
         config = provider or await self.resolve()
-        body = self._request_body(config, messages, tools)
+        body = self._request_body(config, messages, tools, tool_choice=tool_choice)
         body["stream"] = True
         # Ask the provider to report token usage on the final chunk. Without
         # this, OpenAI-compatible streamers omit `usage` entirely, and Studio

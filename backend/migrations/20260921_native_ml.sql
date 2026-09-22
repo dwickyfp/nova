@@ -15,6 +15,10 @@ ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS ADD COLUMN framework_version VARCHAR(6
 ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS ADD COLUMN algorithm VARCHAR(128);
 ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS ADD COLUMN feature_schema TEXT;
 ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS ADD COLUMN training_duration_ms BIGINT;
+ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS ADD COLUMN reservation_token VARCHAR(64);
+ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS ADD COLUMN ready_at DATETIME;
+ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS ADD COLUMN failed_at DATETIME;
+ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS ADD COLUMN failure_reason TEXT;
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_VERSIONS_PK (
   model_id VARCHAR(64) NOT NULL,
@@ -31,6 +35,10 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_VERSIONS_PK (
   algorithm VARCHAR(128),
   feature_schema TEXT,
   training_duration_ms BIGINT,
+  reservation_token VARCHAR(64),
+  ready_at DATETIME,
+  failed_at DATETIME,
+  failure_reason TEXT,
   model_binary TEXT,
   created_at DATETIME NOT NULL,
   created_by VARCHAR(128)
@@ -41,7 +49,8 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 INSERT INTO NOVA_SYSTEM.ML_MODEL_VERSIONS_PK
 SELECT model_id,version,status,training_rows,metrics,artifact_uri,artifact_sha256,
        artifact_size,task,framework,framework_version,algorithm,feature_schema,
-       training_duration_ms,model_binary,created_at,created_by
+       training_duration_ms,reservation_token,ready_at,failed_at,failure_reason,
+       model_binary,created_at,created_by
 FROM NOVA_SYSTEM.ML_MODEL_VERSIONS;
 
 ALTER TABLE NOVA_SYSTEM.ML_MODEL_VERSIONS RENAME ML_MODEL_VERSIONS_LEGACY;
@@ -72,7 +81,7 @@ SELECT m.model_id,m.model_type,m.model_name,m.target_column,m.feature_columns,
        m.updated_at
 FROM NOVA_SYSTEM.ML_MODELS m
 LEFT JOIN (
-  SELECT model_id,MAX(version) AS latest_version
+  SELECT model_id,MAX(CASE WHEN status='READY' THEN version ELSE 0 END) AS latest_version
   FROM NOVA_SYSTEM.ML_MODEL_VERSIONS
   GROUP BY model_id
 ) v ON m.model_id=v.model_id;

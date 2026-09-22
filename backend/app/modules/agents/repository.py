@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENTS (
     tool_not_accessible        VARCHAR(16),
     default_tools              JSON,
     default_skills             JSON,
+    discoverable_skills        JSON,
+    compiled_instructions      JSON,
+    harness_mode               VARCHAR(16),
     policy                     VARCHAR(32),
     semantic_model_id          VARCHAR(64),
     semantic_model_ids         JSON,
@@ -63,6 +66,12 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 #: kept in sync with the first entry for a reader that still expects one.
 AGENTS_SEMANTIC_IDS_DDL = (
     "ALTER TABLE NOVA_SYSTEM.CONFIG_AGENTS ADD COLUMN semantic_model_ids JSON"
+)
+
+AGENT_INTELLIGENCE_COLUMNS = (
+    ("discoverable_skills", "JSON"),
+    ("compiled_instructions", "JSON"),
+    ("harness_mode", "VARCHAR(16)"),
 )
 
 #: One row per semantic model. ``definition`` is the *parsed* Ossie metadata
@@ -108,7 +117,8 @@ _AGENT_COLUMNS = (
     "avatar, color, model_provider_id, model_name, instructions_response, "
     "instructions_orchestration, response_style, sample_questions, "
     "budget_seconds, budget_tokens, tool_not_accessible, default_tools, "
-    "default_skills, policy, semantic_model_id, semantic_model_ids, visibility, "
+    "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
+    "policy, semantic_model_id, semantic_model_ids, visibility, "
     "created_at, updated_at"
 )
 
@@ -211,6 +221,45 @@ DISTRIBUTED BY HASH(tool_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
+VERIFIED_QUERIES_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SEMANTIC_VERIFIED_QUERIES (
+    verified_query_id VARCHAR(64) NOT NULL,
+    owner_name VARCHAR(128) NOT NULL,
+    semantic_model_id VARCHAR(64) NOT NULL,
+    model_fingerprint VARCHAR(64) NOT NULL,
+    question TEXT NOT NULL,
+    semantic_plan JSON NOT NULL,
+    verified_sql TEXT NOT NULL,
+    expected_result_signature VARCHAR(256),
+    verified_by VARCHAR(128) NOT NULL,
+    verified_at DATETIME NOT NULL,
+    tags JSON,
+    usage_count BIGINT NOT NULL DEFAULT "0",
+    success_count BIGINT NOT NULL DEFAULT "0"
+) PRIMARY KEY(verified_query_id)
+DISTRIBUTED BY HASH(verified_query_id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
+SEMANTIC_USAGE_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE (
+    usage_id VARCHAR(64) NOT NULL,
+    owner_name VARCHAR(128) NOT NULL,
+    semantic_model_id VARCHAR(64) NOT NULL,
+    model_fingerprint VARCHAR(64) NOT NULL,
+    metric_names JSON,
+    dimension_names JSON,
+    filter_shape JSON,
+    time_grain VARCHAR(32),
+    execution_latency_ms BIGINT,
+    scan_bytes BIGINT,
+    succeeded BOOLEAN NOT NULL,
+    created_at DATETIME NOT NULL
+) PRIMARY KEY(usage_id)
+DISTRIBUTED BY HASH(usage_id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
@@ -258,7 +307,12 @@ def _semantic_ids_from_fields(fields: dict) -> list[str]:
     elif fields.get("semantic_model_id"):
         ids = [str(fields["semantic_model_id"])]
     seen: set[str] = set()
-    return [i for i in ids if not (i in seen or seen.add(i))]
+    unique: list[str] = []
+    for item in ids:
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return unique
 
 
 def _first_semantic_id(fields: dict) -> str | None:
@@ -281,6 +335,10 @@ def _semantic_ids(scalar: str | None, stored: Any) -> list[str]:
 
 
 def _agent_row(row: list[Any]) -> dict:
+    # Compatibility for tests and rolling upgrades reading the pre-intelligence
+    # 25-column shape. New columns sit after ``default_skills``.
+    if len(row) == 25:
+        row = [*row[:19], [], {}, "auto", *row[19:]]
     (
         agent_id,
         owner,
@@ -301,6 +359,9 @@ def _agent_row(row: list[Any]) -> dict:
         tool_not_accessible,
         default_tools,
         default_skills,
+        discoverable_skills,
+        compiled_instructions,
+        harness_mode,
         policy,
         semantic_model_id,
         semantic_model_ids,
@@ -328,6 +389,9 @@ def _agent_row(row: list[Any]) -> dict:
         "tool_not_accessible": tool_not_accessible or "accept",
         "default_tools": _as_json(default_tools) or [],
         "default_skills": _as_json(default_skills) or [],
+        "discoverable_skills": _as_json(discoverable_skills) or [],
+        "compiled_instructions": _as_json(compiled_instructions) or {},
+        "harness_mode": harness_mode or "auto",
         "policy": policy or "auto_read_only",
         "semantic_model_id": semantic_model_id,
         "semantic_model_ids": _semantic_ids(semantic_model_id, semantic_model_ids),
@@ -432,12 +496,23 @@ class AgentRepository:
             message = str(exc).lower()
             if "already exists" not in message and "duplicate" not in message:
                 raise
+        for column, column_type in AGENT_INTELLIGENCE_COLUMNS:
+            try:
+                await db.execute_system(
+                    f"ALTER TABLE NOVA_SYSTEM.CONFIG_AGENTS ADD COLUMN {column} {column_type}"
+                )
+            except Exception as exc:  # noqa: BLE001 - duplicate column is benign
+                message = str(exc).lower()
+                if "already exists" not in message and "duplicate" not in message:
+                    raise
         await db.execute_system(SEMANTIC_MODELS_DDL)
         await db.execute_system(AGENT_SKILLS_DDL)
         await db.execute_system(MCP_SERVERS_DDL)
         await db.execute_system(TOOLS_DDL)
         await db.execute_system(AGENT_ROLES_DDL)
         await db.execute_system(CUSTOM_TOOLS_DDL)
+        await db.execute_system(VERIFIED_QUERIES_DDL)
+        await db.execute_system(SEMANTIC_USAGE_DDL)
 
     # ── Agents ─────────────────────────────────────────────────
 
@@ -450,10 +525,10 @@ class AgentRepository:
             "avatar, color, model_provider_id, model_name, instructions_response, "
             "instructions_orchestration, response_style, sample_questions, "
             "budget_seconds, budget_tokens, tool_not_accessible, default_tools, "
-            "default_skills, policy, semantic_model_id, semantic_model_ids, "
+            "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
+            "policy, semantic_model_id, semantic_model_ids, "
             "visibility, created_at, updated_at"
-            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-            "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            ") VALUES (" + ", ".join(["%s"] * 28) + ")",
             [
                 agent_id,
                 owner_name,
@@ -474,6 +549,9 @@ class AgentRepository:
                 fields.get("tool_not_accessible", "accept"),
                 _dump(fields.get("default_tools") or []),
                 _dump(fields.get("default_skills") or []),
+                _dump(fields.get("discoverable_skills") or []),
+                _dump(fields.get("compiled_instructions") or {}),
+                fields.get("harness_mode", "auto"),
                 fields.get("policy", "auto_read_only"),
                 _first_semantic_id(fields),
                 _dump(_semantic_ids_from_fields(fields)),
@@ -538,6 +616,7 @@ class AgentRepository:
             "budget_seconds",
             "budget_tokens",
             "tool_not_accessible",
+            "harness_mode",
             "policy",
             "visibility",
         ):
@@ -553,7 +632,13 @@ class AgentRepository:
             params.append(_dump(ids))
             assignments.append("semantic_model_id = %s")
             params.append(ids[0] if ids else None)
-        for column in ("sample_questions", "default_tools", "default_skills"):
+        for column in (
+            "sample_questions",
+            "default_tools",
+            "default_skills",
+            "discoverable_skills",
+            "compiled_instructions",
+        ):
             if column in fields:
                 assignments.append(f"{column} = %s")
                 params.append(_dump(fields[column] or []))
@@ -660,6 +745,116 @@ class AgentRepository:
             [model_id, owner_name],
         )
         return bool(result.get("affected", 0))
+
+    # ── Verified semantic queries ──────────────────────────────
+
+    async def create_verified_query(self, *, owner_name: str, fields: dict) -> dict:
+        verified_query_id = str(uuid4())
+        now = _now()
+        await db.execute_system(
+            "INSERT INTO NOVA_SYSTEM.CONFIG_SEMANTIC_VERIFIED_QUERIES ("
+            "verified_query_id, owner_name, semantic_model_id, model_fingerprint, "
+            "question, semantic_plan, verified_sql, expected_result_signature, "
+            "verified_by, verified_at, tags, usage_count, success_count"
+            ") VALUES (" + ", ".join(["%s"] * 13) + ")",
+            [
+                verified_query_id,
+                owner_name,
+                fields["semantic_model_id"],
+                fields["model_fingerprint"],
+                fields["question"],
+                _dump(fields["semantic_plan"]),
+                fields["verified_sql"],
+                fields.get("expected_result_signature"),
+                owner_name,
+                now,
+                _dump(fields.get("tags") or []),
+                0,
+                0,
+            ],
+        )
+        return {
+            "verified_query_id": verified_query_id,
+            "owner_name": owner_name,
+            **fields,
+            "verified_by": owner_name,
+            "verified_at": now,
+            "usage_count": 0,
+            "success_count": 0,
+        }
+
+    async def list_verified_queries(
+        self, semantic_model_id: str, *, owner_name: str
+    ) -> list[dict]:
+        result = await db.execute_system(
+            "SELECT verified_query_id, semantic_model_id, model_fingerprint, question, "
+            "semantic_plan, verified_sql, expected_result_signature, verified_by, "
+            "verified_at, tags, usage_count, success_count "
+            "FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VERIFIED_QUERIES "
+            "WHERE semantic_model_id = %s AND owner_name = %s ORDER BY usage_count DESC",
+            [semantic_model_id, owner_name],
+        )
+        return [
+            {
+                "verified_query_id": row[0],
+                "semantic_model_id": row[1],
+                "model_fingerprint": row[2],
+                "question": row[3],
+                "semantic_plan": _as_json(row[4]) or {},
+                "verified_sql": row[5],
+                "expected_result_signature": row[6],
+                "verified_by": row[7],
+                "verified_at": _iso(row[8]),
+                "tags": _as_json(row[9]) or [],
+                "usage_count": int(row[10] or 0),
+                "success_count": int(row[11] or 0),
+            }
+            for row in result["rows"]
+        ]
+
+    async def record_semantic_usage(
+        self,
+        *,
+        owner_name: str,
+        semantic_model_id: str,
+        model_fingerprint: str,
+        metrics: list[str],
+        dimensions: list[str],
+        filter_shape: list[dict],
+        time_grain: str | None,
+        execution_latency_ms: int | None,
+        succeeded: bool,
+        verified_query_id: str | None = None,
+    ) -> None:
+        """Persist redacted workload shape for feedback and MV recommendations."""
+        await db.execute_system(
+            "INSERT INTO NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE ("
+            "usage_id, owner_name, semantic_model_id, model_fingerprint, metric_names, "
+            "dimension_names, filter_shape, time_grain, execution_latency_ms, scan_bytes, "
+            "succeeded, created_at) VALUES (" + ", ".join(["%s"] * 12) + ")",
+            [
+                str(uuid4()),
+                owner_name,
+                semantic_model_id,
+                model_fingerprint,
+                _dump(metrics),
+                _dump(dimensions),
+                _dump(filter_shape),
+                time_grain,
+                execution_latency_ms,
+                None,
+                succeeded,
+                _now(),
+            ],
+        )
+        if verified_query_id:
+            success_increment = 1 if succeeded else 0
+            await db.execute_system(
+                "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VERIFIED_QUERIES "
+                "SET usage_count = usage_count + 1, success_count = success_count + %s "
+                "WHERE verified_query_id = %s AND owner_name = %s",
+                [success_increment, verified_query_id, owner_name],
+            )
 
     # ── User skills ────────────────────────────────────────────
 

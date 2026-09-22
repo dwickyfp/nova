@@ -104,9 +104,7 @@ class MySQLProxyServer:
         async with self._server:
             await self._server.serve_forever()
 
-    async def _on_client(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def _on_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         if len(self._connections) >= self._max_connections:
             # Refusing at accept time keeps the limit honest: the socket is
             # closed before a handshake is written, so the client sees a

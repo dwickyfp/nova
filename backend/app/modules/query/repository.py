@@ -21,6 +21,7 @@ import asyncmy.cursors
 
 from app.common.identifiers import check_identifier
 from app.common.sql_guard import redact_sql_credentials
+from app.core.config import settings
 from app.core.database import db
 from app.core.exceptions import StarRocksError
 
@@ -150,22 +151,20 @@ class QueryRepository:
         ``DATABASE()``, unqualified table names and ``SHOW TABLES`` resolved
         against it.
         """
+        if settings.RANGER_ENABLED and not role:
+            raise StarRocksError("User-data execution requires exactly one explicit active role")
         start = time.monotonic()
         if connected is not None:
             if database:
                 await connected.select_db(database)
-            return await self._execute_on(
-                connected, sql, role=role, max_rows=max_rows, start=start
-            )
+            return await self._execute_on(connected, sql, role=role, max_rows=max_rows, start=start)
         try:
             async with db.user_conn(
                 username=username,
                 password=password,
                 database=database,
             ) as conn:
-                return await self._execute_on(
-                    conn, sql, role=role, max_rows=max_rows, start=start
-                )
+                return await self._execute_on(conn, sql, role=role, max_rows=max_rows, start=start)
         except asyncmy.errors.OperationalError as e:
             raise StarRocksError(f"Connection error: {e}") from e
         except asyncmy.errors.ProgrammingError as e:
@@ -183,17 +182,13 @@ class QueryRepository:
         try:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
                 if role:
-                    await cur.execute(
-                        f"SET ROLE {check_identifier(role, field='role')}"
-                    )
+                    await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
                 await cur.execute(sql)
                 elapsed = (time.monotonic() - start) * 1000
 
                 if cur.description:
                     columns = [desc[0] for desc in cur.description]
-                    raw_rows = (
-                        await cur.fetchmany(max_rows) if max_rows else await cur.fetchall()
-                    )
+                    raw_rows = await cur.fetchmany(max_rows) if max_rows else await cur.fetchall()
                     rows = [list(r.values()) for r in raw_rows]
                     return QueryResult(
                         columns=columns,

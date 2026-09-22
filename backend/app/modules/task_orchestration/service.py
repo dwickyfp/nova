@@ -32,9 +32,7 @@ class SchedulerService:
         self._tick = tick
         self._leader_lock = leader_lock
         self._poll_interval = (
-            poll_interval
-            if poll_interval is not None
-            else settings.SCHEDULER_POLL_INTERVAL_SECONDS
+            poll_interval if poll_interval is not None else settings.SCHEDULER_POLL_INTERVAL_SECONDS
         )
 
     async def run_once(self) -> bool:

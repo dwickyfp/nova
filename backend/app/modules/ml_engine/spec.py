@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from app.core.config import settings
+
 
 class MLTask(StrEnum):
     CLASSIFICATION = "classification"
@@ -36,11 +38,31 @@ class MLSecurityContext:
     database: str | None = None
     schema: str | None = None
     role: str | None = None
+    security_context_version: int = 1
     tenant: str = "default"
+
+    def validate(self) -> None:
+        if not settings.RANGER_ENABLED:
+            return
+        if not self.username.strip() or self.username.casefold() == "root":
+            raise InvalidMLSpec("ML data access requires a non-root principal")
+        if not self.role or "," in self.role or self.role.upper() in {"ALL", "NONE", "DEFAULT"}:
+            raise InvalidMLSpec("ML data access requires exactly one active role")
+        if self.security_context_version < 1:
+            raise InvalidMLSpec("ML security context version must be positive")
 
     @property
     def scope_key(self) -> str:
-        return f"{self.tenant}:{self.username}:{self.database or ''}:{self.schema or ''}"
+        return ":".join(
+            (
+                self.tenant,
+                self.username,
+                self.role or "",
+                str(self.security_context_version),
+                self.database or "",
+                self.schema or "",
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -64,6 +86,7 @@ class MLExecutionSpec:
     budget: ExecutionBudget | None = None
 
     def validate(self) -> None:
+        self.security.validate()
         if not self.input_sql.strip():
             raise InvalidMLSpec("input_sql is required")
         if self.persist and not self.model_name:
@@ -129,3 +152,7 @@ class CorruptArtifact(MLError):
 
 class InferenceSchemaMismatch(MLError):
     code = "inference_schema_mismatch"
+
+
+class VersionReservationConflict(MLError):
+    code = "version_reservation_conflict"

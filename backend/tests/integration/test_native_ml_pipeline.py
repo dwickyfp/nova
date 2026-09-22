@@ -247,7 +247,8 @@ async def test_ephemeral_promotion_reuses_artifact_and_enforces_scope():
     )
     assert ephemeral.model_id is None
     assert registry.versions == {}
-    assert artifacts.objects == {}
+    assert len(artifacts.objects) == 1
+    assert "/ephemeral/" in next(iter(artifacts.objects))
 
     with pytest.raises(ValueError, match="belongs to another scope"):
         await service.promote(
@@ -264,7 +265,7 @@ async def test_ephemeral_promotion_reuses_artifact_and_enforces_scope():
     assert promoted.status == "promoted"
     assert promoted.version == 1
     assert runner.calls == 1
-    assert len(artifacts.objects) == 1
+    assert len(artifacts.objects) == 2
     restarted_runtime = ModelRuntime(repository=registry, store=artifacts)
     _, predictions, _ = await restarted_runtime.predict_version(
         promoted.model_id,
@@ -340,5 +341,6 @@ async def test_ephemeral_forecast_anomaly_and_clustering_flows():
     assert clustering_result.metrics["cluster_count"] >= 2
     assert len(clustering_result.results) == 40
     assert registry.versions == {}
-    assert artifacts.objects == {}
+    assert len(artifacts.objects) == 3
+    assert all("/ephemeral/" in uri for uri in artifacts.objects)
     assert runner.calls == 3

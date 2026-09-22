@@ -11,8 +11,8 @@ These tests pin the fix at the router boundary:
 
 * the role handed to the engine is ``user["active_role"]``, never the body;
 * a body ``role`` cannot elevate (it is ignored entirely);
-* a session with no ``active_role`` falls back to the first granted role;
-* a forged ``active_role`` that is not in the granted set is not honoured.
+* a session with no ``active_role`` fails closed;
+* a forged ``active_role`` that is not in the granted set fails closed.
 """
 
 import pytest
@@ -105,18 +105,20 @@ def test_body_role_cannot_request_an_ungranted_role(make_client):
     assert engine.roles == ["analyst"]
 
 
-def test_missing_active_role_falls_back_to_first_granted(make_client):
+def test_missing_active_role_fails_closed(make_client):
     client, engine = make_client(roles=["analyst", "ACCOUNTADMIN"], active_role=None)
 
-    client.post(EXECUTE_ENDPOINT, json={"sql": SELECT_SQL})
+    response = client.post(EXECUTE_ENDPOINT, json={"sql": SELECT_SQL})
 
-    assert engine.roles == ["analyst"]
+    assert response.status_code == 403
+    assert engine.roles == []
 
 
-def test_forged_active_role_not_in_grants_is_not_honoured(make_client):
-    """A session whose ``active_role`` is not granted falls back, never elevates."""
+def test_forged_active_role_not_in_grants_fails_closed(make_client):
+    """A corrupted session cannot choose another granted role by ordering."""
     client, engine = make_client(roles=["analyst"], active_role="ACCOUNTADMIN")
 
-    client.post(EXECUTE_ENDPOINT, json={"sql": SELECT_SQL})
+    response = client.post(EXECUTE_ENDPOINT, json={"sql": SELECT_SQL})
 
-    assert engine.roles == ["analyst"], "an ungranted active_role was forwarded"
+    assert response.status_code == 403
+    assert engine.roles == []

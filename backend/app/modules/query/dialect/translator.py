@@ -12,10 +12,11 @@ from app.modules.query.dialect.parser import ParsedSQL, StageReference
 @dataclass
 class StorageConfig:
     """Storage connection config from nova.yaml / stage metadata."""
-    storage_type: str       # "s3", "azure", "gcs"
-    endpoint: str           # e.g. "http://minio:9000"
-    bucket: str             # e.g. "nova-stages"
-    base_prefix: str        # e.g. "datalake/bronze/stage1"
+
+    storage_type: str  # "s3", "azure", "gcs"
+    endpoint: str  # e.g. "http://minio:9000"
+    bucket: str  # e.g. "nova-stages"
+    base_prefix: str  # e.g. "datalake/bronze/stage1"
     access_key: str = ""
     secret_key: str = ""
     region: str = "us-east-1"
@@ -32,17 +33,17 @@ def build_s3_path(config: StorageConfig, ref: StageReference) -> str:
     @stage1.data.csv with prefix 'datalake/bronze/stage1'
     → s3://bucket/datalake/bronze/stage1/data.csv
     """
-    parts = [config.base_prefix.rstrip('/')]
+    parts = [config.base_prefix.rstrip("/")]
 
     # Add directory path parts
     if ref.path_parts:
-        parts.append('/'.join(ref.path_parts))
+        parts.append("/".join(ref.path_parts))
 
     # Add file name
     if ref.file_name:
         parts.append(ref.file_name)
 
-    path = '/'.join(parts)
+    path = "/".join(parts)
     return f"s3://{config.bucket}/{path}"
 
 
@@ -155,26 +156,36 @@ def detect_format_from_filename(filename: str) -> str:
         Format string: csv, parquet, json, orc, etc.
     """
     # Handle compound extensions like .csv.gz, .parquet.snappy
-    parts = filename.lower().split('.')
+    parts = filename.lower().split(".")
 
     if len(parts) >= 3:
         # Check for compression extensions
         compression = parts[-1]
-        if compression in ('gz', 'bz2', 'snappy', 'zstd', 'lzo'):
+        if compression in ("gz", "bz2", "snappy", "zstd", "lzo"):
             return parts[-2]  # Return the actual format, not compression
 
     if len(parts) >= 2:
         ext = parts[-1]
         format_map = {
-            'csv': 'csv', 'tsv': 'csv', 'json': 'json', 'jsonl': 'json',
-            'ndjson': 'json', 'parquet': 'parquet', 'orc': 'orc',
-            'avro': 'avro', 'txt': 'csv', 'xml': 'json',
-            'xlsx': 'csv', 'xls': 'csv', 'log': 'csv', 'sql': 'csv',
+            "csv": "csv",
+            "tsv": "csv",
+            "json": "json",
+            "jsonl": "json",
+            "ndjson": "json",
+            "parquet": "parquet",
+            "orc": "orc",
+            "avro": "avro",
+            "txt": "csv",
+            "xml": "json",
+            "xlsx": "csv",
+            "xls": "csv",
+            "log": "csv",
+            "sql": "csv",
         }
         if ext in format_map:
             return format_map[ext]
         # Check second-to-last for compound extensions
-        if len(parts) >= 3 and parts[-2] in ('csv', 'tsv', 'json', 'parquet', 'orc'):
+        if len(parts) >= 3 and parts[-2] in ("csv", "tsv", "json", "parquet", "orc"):
             return parts[-2]
 
     return "csv"  # Default fallback

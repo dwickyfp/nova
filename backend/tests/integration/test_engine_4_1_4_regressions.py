@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import asyncmy
@@ -174,7 +175,13 @@ class TestParquetUtcFlagFalseIsWallClock:
 
         from app.core.config import get_storage_connection, to_docker_endpoint
 
-        connection = get_storage_connection("production")
+        minio_port = shared_stack_host_port("NOVA_TEST_MINIO_PORT", 29000)
+        connection = replace(
+            get_storage_connection("production"),
+            endpoint=f"http://127.0.0.1:{minio_port}",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+        )
         _upload_fixture(connection)
         key = f"NOVA_ANALYTICS/public/fixtures/{PARQUET_FIXTURE.name}"
         # boto3 (on the host) uses the host-side endpoint; the FILES() call

@@ -55,6 +55,7 @@ async def persist_lowered_task(
     task: LoweredTask,
     *,
     created_by: str,
+    owner_role: str | None = None,
     graph_id: str | None = None,
 ) -> PersistedTask:
     """Write ``task`` and its edges, then validate the merged graph.
@@ -86,7 +87,7 @@ async def persist_lowered_task(
             "timezone": task.timezone,
             "when_expr": task.when_expr,
             "overlap_policy": task.overlap_policy,
-            "owner_role": None,
+            "owner_role": owner_role,
         },
         created_by,
     )
@@ -160,16 +161,12 @@ async def _validate_merged_graph(
 
     component = _component(root, all_edges)
     component_edges = [
-        edge
-        for edge in all_edges
-        if edge.parent in component and edge.child in component
+        edge for edge in all_edges if edge.parent in component and edge.child in component
     ]
     validate_graph(Graph.from_edges(sorted(component), component_edges))
 
 
-def _edge_in_scope(
-    edge_graph_id: str, database_name: str | None, schema_name: str | None
-) -> bool:
+def _edge_in_scope(edge_graph_id: str, database_name: str | None, schema_name: str | None) -> bool:
     """Whether an edge belongs to the same ``database.schema`` as the task.
 
     The edge's ``graph_id`` is the qualified root name, so the scope is its

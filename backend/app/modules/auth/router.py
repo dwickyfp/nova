@@ -84,7 +84,10 @@ async def get_me(user: CurrentUser):
     return SessionInfo(
         username=user["username"],
         roles=user["roles"],
+        assigned_roles=user.get("assigned_roles", user["roles"]),
+        default_role=user.get("default_role"),
         active_role=user.get("active_role"),
+        security_context_version=user.get("security_context_version", 1),
         session_id=user["session_id"],
         must_change_password=await is_must_change_password(user["username"]),
     )
@@ -100,6 +103,9 @@ async def switch_role(
     return {
         "username": user["username"],
         "roles": result["roles"],
+        "assigned_roles": result["assigned_roles"],
+        "default_role": result["default_role"],
         "active_role": result["active_role"],
+        "security_context_version": result["security_context_version"],
         "session_id": user["session_id"],
     }

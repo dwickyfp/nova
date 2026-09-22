@@ -114,4 +114,4 @@ def inject_credentials_into_files(
             files_content = f"{files_content}, {cred_str}"
         return f"FILES({files_content})"
 
-    return re.sub(r'FILES\(([^)]+)\)', _inject, sql)
+    return re.sub(r"FILES\(([^)]+)\)", _inject, sql)

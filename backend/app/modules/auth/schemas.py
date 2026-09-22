@@ -15,7 +15,10 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     user: str | None = None
     roles: list[str] = []
+    assigned_roles: list[str] = []
+    default_role: str | None = None
     active_role: str | None = None
+    security_context_version: int = 1
     message: str | None = None
 
 
@@ -38,7 +41,10 @@ class ChangePasswordRequest(BaseModel):
 class SessionInfo(BaseModel):
     username: str
     roles: list[str]
+    assigned_roles: list[str] = []
+    default_role: str | None = None
     active_role: str | None = None
+    security_context_version: int = 1
     session_id: str
     #: True when the user must set a new password before using Nova. The UI
     #: routes them to the change-password screen on load if this is set, so a

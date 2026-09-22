@@ -26,6 +26,7 @@ EXPECTED_SKILLS = {
     "create-task",
     "create-user",
     "debug-sql",
+    "native-ml",
     "scope-boundary",
     "stage-query",
     "writing-style",
@@ -84,8 +85,7 @@ def test_skill_with_credential_shape_is_refused(tmp_path, monkeypatch):
     from app.modules.assistant import skill_registry as module
 
     (tmp_path / "leaky.md").write_text(
-        "---\nname: leaky\ntitle: T\nsummary: S\n---\n\n"
-        "aws.s3.secret_key = 'realsecretvalue'\n",
+        "---\nname: leaky\ntitle: T\nsummary: S\n---\n\naws.s3.secret_key = 'realsecretvalue'\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(module, "_SKILL_DIR", tmp_path)

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.modules.agents import mcp_client, tool_catalog
+from app.modules.agents import mcp_client, skill_catalog, tool_catalog
 from app.modules.agents.studio_schemas import StudioPreferences
 from app.modules.agents.studio_service import _bool, _choice, _str_or_none
 
@@ -37,6 +37,55 @@ def test_agent_bundleable_tools_exclude_authoring_tools() -> None:
     # ...but they are in the registry catalog (Nove uses them).
     catalog_names = {row["name"] for row in tool_catalog.builtin_rows()}
     assert {"create_agent", "create_semantic_model"} <= catalog_names
+
+
+def test_builtin_skill_catalog_is_read_only_and_reserves_platform_names() -> None:
+    builtins = skill_catalog.builtin_skill_rows()
+    native_ml = next(row for row in builtins if row["name"] == "native-ml")
+    assert native_ml["skill_id"] == "builtin:native-ml"
+    assert native_ml["source"] == "builtin"
+    assert native_ml["read_only"] is True
+    assert skill_catalog.is_builtin_skill_id(native_ml["skill_id"])
+
+    merged = skill_catalog.merge_skill_rows(
+        [
+            {"name": "native-ml", "skill_id": "shadow"},
+            {"name": "team-procedure", "skill_id": "custom"},
+        ]
+    )
+    assert sum(row["name"] == "native-ml" for row in merged) == 1
+    custom = next(row for row in merged if row["name"] == "team-procedure")
+    assert custom["source"] == "user"
+    assert custom["read_only"] is False
+
+
+@pytest.mark.asyncio
+async def test_skills_endpoint_includes_the_native_ml_builtin(monkeypatch) -> None:
+    from app.modules.agents.router import list_skills
+
+    async def list_user_skills(*, owner_name):
+        assert owner_name == "alice"
+        return []
+
+    monkeypatch.setattr(
+        "app.modules.agents.router.agent_repository.list_skills", list_user_skills
+    )
+    response = await list_skills(user={"username": "alice"})
+    native_ml = next(skill for skill in response.skills if skill.name == "native-ml")
+    assert native_ml.source == "builtin"
+    assert native_ml.read_only is True
+    assert response.count == len(response.skills)
+
+
+@pytest.mark.asyncio
+async def test_builtin_skill_cannot_be_deleted() -> None:
+    from fastapi import HTTPException
+
+    from app.modules.agents.router import delete_skill
+
+    with pytest.raises(HTTPException) as excinfo:
+        await delete_skill("builtin:native-ml", user={"username": "alice"})
+    assert excinfo.value.status_code == 409
 
 
 @pytest.mark.asyncio

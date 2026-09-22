@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   Database,
   MoreHorizontal,
@@ -8,21 +8,21 @@ import {
   SearchX,
   Shield,
   Users as UsersIcon,
-} from 'lucide-react'
-import { toast } from 'sonner'
+} from "lucide-react";
+import { toast } from "sonner";
 import {
   SimpleTablePagination,
   SimpleTableToolbar,
   SimpleTableViewport,
-} from '@/components/data-table/simple-table-controls'
-import { Header } from '@/components/layout/header'
-import { Main } from '@/components/layout/main'
-import { Search } from '@/components/search'
-import { EmptyState } from '@/components/ui/empty-state'
-import { LoadingLines } from '@/components/ui/loading-overlay'
-import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+} from "@/components/data-table/simple-table-controls";
+import { Header } from "@/components/layout/header";
+import { Main } from "@/components/layout/main";
+import { Search } from "@/components/search";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingLines } from "@/components/ui/loading-overlay";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -30,24 +30,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -55,7 +55,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet'
+} from "@/components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -63,239 +63,234 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
-import { api } from '@/lib/api-client'
-import { cn } from '@/lib/utils'
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { api } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 
-type DefaultRoleMode = 'explicit' | 'all' | 'none'
+type DefaultRoleMode = "explicit" | "all" | "none";
 type PrivilegeScope =
-  | 'SYSTEM'
-  | 'CATALOG'
-  | 'DATABASE'
-  | 'TABLE'
-  | 'VIEW'
-  | 'MATERIALIZED VIEW'
-type SelectorMode = 'specific' | 'all_databases' | 'all_in_database'
+  "SYSTEM" | "CATALOG" | "DATABASE" | "TABLE" | "VIEW" | "MATERIALIZED VIEW";
+type SelectorMode = "specific" | "all_databases" | "all_in_database";
 
 type AdminUser = {
-  username: string
-  host: string
-  identity: string
-  is_protected: boolean
-  roles: string[]
-  default_roles: string[]
-  default_role_mode: DefaultRoleMode
-  auth_plugin: string | null
-  auth_mode: string
-  password_enabled: boolean
-  last_login: string | null
-  properties: Record<string, string>
-}
+  username: string;
+  host: string;
+  identity: string;
+  is_protected: boolean;
+  roles: string[];
+  default_roles: string[];
+  default_role_mode: DefaultRoleMode;
+  auth_plugin: string | null;
+  auth_mode: string;
+  password_enabled: boolean;
+  last_login: string | null;
+  properties: Record<string, string>;
+};
 
 type RoleSummary = {
-  name: string
-  is_builtin: boolean
-  is_protected: boolean
-  is_mutable: boolean
-}
+  name: string;
+  is_builtin: boolean;
+  is_protected: boolean;
+  is_mutable: boolean;
+};
 
 type RolePrivilege = {
-  GRANTEE?: string
-  OBJECT_CATALOG?: string | null
-  OBJECT_DATABASE?: string | null
-  OBJECT_NAME?: string | null
-  OBJECT_TYPE?: string | null
-  PRIVILEGE_TYPE?: string | null
-  IS_GRANTABLE?: string | null
-}
+  GRANTEE?: string;
+  OBJECT_CATALOG?: string | null;
+  OBJECT_DATABASE?: string | null;
+  OBJECT_NAME?: string | null;
+  OBJECT_TYPE?: string | null;
+  PRIVILEGE_TYPE?: string | null;
+  IS_GRANTABLE?: string | null;
+};
 
 type RoleDetail = {
-  name: string
-  is_builtin: boolean
-  is_protected: boolean
-  is_mutable: boolean
-  privileges: RolePrivilege[]
-  grants: string[]
+  name: string;
+  is_builtin: boolean;
+  is_protected: boolean;
+  is_mutable: boolean;
+  privileges: RolePrivilege[];
+  grants: string[];
   members: {
-    users: Array<{ username: string; host: string; identity: string }>
-    nested_roles: string[]
-    parent_roles: string[]
-  }
-}
+    users: Array<{ username: string; host: string; identity: string }>;
+    nested_roles: string[];
+    parent_roles: string[];
+  };
+};
 
 type UserAuthDetail = {
-  username: string
-  host: string
-  identity: string
-  password_enabled: boolean
-  auth_plugin: string | null
-  auth_mode: string
-  plugin_user: string | null
-}
+  username: string;
+  host: string;
+  identity: string;
+  password_enabled: boolean;
+  auth_plugin: string | null;
+  auth_mode: string;
+  plugin_user: string | null;
+};
 
 type UserDefaultRolesDetail = {
-  username: string
-  host: string
-  identity: string
-  mode: DefaultRoleMode
-  roles: string[]
-}
+  username: string;
+  host: string;
+  identity: string;
+  mode: DefaultRoleMode;
+  roles: string[];
+};
 
 type UserDetail = {
-  properties: Record<string, string>
-  grants: string[]
-  authentication: UserAuthDetail
-  defaultRoles: UserDefaultRolesDetail
-}
+  properties: Record<string, string>;
+  grants: string[];
+  authentication: UserAuthDetail;
+  defaultRoles: UserDefaultRolesDetail;
+};
 
 type UserFormState = {
-  username: string
-  password: string
-  confirmPassword: string
-  host: string
-  grantedRoles: string[]
-  defaultRole: string
-  defaultRoleMode: DefaultRoleMode
-  defaultRoles: string[]
-  maxUserConnections: string
-  catalog: string
-  database: string
-  sessionProperties: string
-}
+  username: string;
+  password: string;
+  confirmPassword: string;
+  host: string;
+  grantedRoles: string[];
+  defaultRole: string;
+  defaultRoleMode: DefaultRoleMode;
+  defaultRoles: string[];
+  maxUserConnections: string;
+  catalog: string;
+  database: string;
+  sessionProperties: string;
+};
 
 type RoleActionState = {
-  mode: 'grant' | 'revoke'
-  user: AdminUser
-  role: string
-}
+  mode: "grant" | "revoke";
+  user: AdminUser;
+  role: string;
+};
 
 type RolePrivilegeFormState = {
-  scope: PrivilegeScope
-  privilege: string
-  selectorMode: SelectorMode
-  catalog: string
-  database: string
-  objectName: string
-  withGrantOption: boolean
-}
+  scope: PrivilegeScope;
+  privilege: string;
+  selectorMode: SelectorMode;
+  catalog: string;
+  database: string;
+  objectName: string;
+  withGrantOption: boolean;
+};
 
-const PAGE_SIZE = 10
+const PAGE_SIZE = 10;
 const DEFAULT_USER_FORM: UserFormState = {
-  username: '',
-  password: '',
-  confirmPassword: '',
-  host: '%',
+  username: "",
+  password: "",
+  confirmPassword: "",
+  host: "%",
   grantedRoles: [],
-  defaultRole: '',
-  defaultRoleMode: 'none',
+  defaultRole: "",
+  defaultRoleMode: "none",
   defaultRoles: [],
-  maxUserConnections: '',
-  catalog: '',
-  database: '',
-  sessionProperties: '',
-}
+  maxUserConnections: "",
+  catalog: "",
+  database: "",
+  sessionProperties: "",
+};
 const PRIVILEGE_OPTIONS: Record<PrivilegeScope, string[]> = {
   SYSTEM: [
-    'GRANT',
-    'NODE',
-    'CREATE RESOURCE',
-    'PLUGIN',
-    'FILE',
-    'BLACKLIST',
-    'OPERATE',
-    'CREATE EXTERNAL CATALOG',
-    'REPOSITORY',
-    'CREATE RESOURCE GROUP',
-    'CREATE GLOBAL FUNCTION',
-    'CREATE STORAGE VOLUME',
-    'SECURITY',
-    'ALL',
+    "GRANT",
+    "NODE",
+    "CREATE RESOURCE",
+    "PLUGIN",
+    "FILE",
+    "BLACKLIST",
+    "OPERATE",
+    "CREATE EXTERNAL CATALOG",
+    "REPOSITORY",
+    "CREATE RESOURCE GROUP",
+    "CREATE GLOBAL FUNCTION",
+    "CREATE STORAGE VOLUME",
+    "SECURITY",
+    "ALL",
   ],
-  CATALOG: ['USAGE', 'CREATE DATABASE', 'DROP', 'ALTER', 'ALL'],
+  CATALOG: ["USAGE", "CREATE DATABASE", "DROP", "ALTER", "ALL"],
   DATABASE: [
-    'ALTER',
-    'DROP',
-    'CREATE TABLE',
-    'CREATE VIEW',
-    'CREATE FUNCTION',
-    'CREATE MATERIALIZED VIEW',
-    'ALL',
+    "ALTER",
+    "DROP",
+    "CREATE TABLE",
+    "CREATE VIEW",
+    "CREATE FUNCTION",
+    "CREATE MATERIALIZED VIEW",
+    "ALL",
   ],
   TABLE: [
-    'ALTER',
-    'DROP',
-    'SELECT',
-    'INSERT',
-    'UPDATE',
-    'EXPORT',
-    'DELETE',
-    'ALL',
+    "ALTER",
+    "DROP",
+    "SELECT",
+    "INSERT",
+    "UPDATE",
+    "EXPORT",
+    "DELETE",
+    "ALL",
   ],
-  VIEW: ['SELECT', 'ALTER', 'DROP', 'ALL'],
-  'MATERIALIZED VIEW': ['SELECT', 'ALTER', 'REFRESH', 'DROP', 'ALL'],
-}
+  VIEW: ["SELECT", "ALTER", "DROP", "ALL"],
+  "MATERIALIZED VIEW": ["SELECT", "ALTER", "REFRESH", "DROP", "ALL"],
+};
 const DEFAULT_PRIVILEGE_FORM: RolePrivilegeFormState = {
-  scope: 'SYSTEM',
+  scope: "SYSTEM",
   privilege: PRIVILEGE_OPTIONS.SYSTEM[0],
-  selectorMode: 'specific',
-  catalog: '',
-  database: '',
-  objectName: '',
+  selectorMode: "specific",
+  catalog: "",
+  database: "",
+  objectName: "",
   withGrantOption: false,
-}
+};
 
 function parseSessionProperties(value: string) {
-  const sessionProperties: Record<string, string> = {}
-  const clearKeys: string[] = []
+  const sessionProperties: Record<string, string> = {};
+  const clearKeys: string[] = [];
 
-  for (const rawLine of value.split('\n')) {
-    const line = rawLine.trim()
-    if (!line) continue
-    const [keyPart, ...rest] = line.split('=')
-    const key = keyPart.trim()
-    if (!key) continue
-    const normalizedKey = key.startsWith('session.') ? key : `session.${key}`
-    const parsedValue = rest.join('=').trim()
+  for (const rawLine of value.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const [keyPart, ...rest] = line.split("=");
+    const key = keyPart.trim();
+    if (!key) continue;
+    const normalizedKey = key.startsWith("session.") ? key : `session.${key}`;
+    const parsedValue = rest.join("=").trim();
     if (parsedValue) {
-      sessionProperties[normalizedKey] = parsedValue
+      sessionProperties[normalizedKey] = parsedValue;
     } else {
-      clearKeys.push(normalizedKey)
+      clearKeys.push(normalizedKey);
     }
   }
 
-  return { sessionProperties, clearKeys }
+  return { sessionProperties, clearKeys };
 }
 
 function formatLastLogin(value: string | null) {
-  if (!value) return 'Never'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function detailGrantLabel(grantable: string | null | undefined) {
-  return String(grantable).toUpperCase() === 'YES' ? 'Grantable' : 'Granted'
+  return String(grantable).toUpperCase() === "YES" ? "Grantable" : "Granted";
 }
 
 function objectDescriptor(privilege: RolePrivilege) {
-  const scope = privilege.OBJECT_TYPE ?? 'SYSTEM'
-  if (scope === 'SYSTEM') return 'Cluster-wide'
-  if (scope === 'CATALOG') return privilege.OBJECT_CATALOG ?? 'Catalog'
-  if (scope === 'DATABASE') return privilege.OBJECT_DATABASE ?? 'All databases'
+  const scope = privilege.OBJECT_TYPE ?? "SYSTEM";
+  if (scope === "SYSTEM") return "Cluster-wide";
+  if (scope === "CATALOG") return privilege.OBJECT_CATALOG ?? "Catalog";
+  if (scope === "DATABASE") return privilege.OBJECT_DATABASE ?? "All databases";
 
-  const database = privilege.OBJECT_DATABASE
-  const objectName = privilege.OBJECT_NAME
-  if (database && objectName) return `${database}.${objectName}`
-  if (database) return `All in ${database}`
-  return 'All databases'
+  const database = privilege.OBJECT_DATABASE;
+  const objectName = privilege.OBJECT_NAME;
+  if (database && objectName) return `${database}.${objectName}`;
+  if (database) return `All in ${database}`;
+  return "All databases";
 }
 
 function InlineCheckboxList({
@@ -304,90 +299,90 @@ function InlineCheckboxList({
   onToggle,
   emptyLabel,
 }: {
-  options: string[]
-  values: string[]
-  onToggle: (value: string) => void
-  emptyLabel: string
+  options: string[];
+  values: string[];
+  onToggle: (value: string) => void;
+  emptyLabel: string;
 }) {
   if (options.length === 0) {
     return (
-      <div className='rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground'>
+      <div className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">
         {emptyLabel}
       </div>
-    )
+    );
   }
 
   return (
-    <ScrollArea className='h-36 rounded-lg border'>
-      <div className='space-y-2 p-3'>
+    <ScrollArea className="h-36 rounded-lg border">
+      <div className="space-y-2 p-3">
         {options.map((option) => {
-          const checked = values.includes(option)
+          const checked = values.includes(option);
           return (
             <label
               key={option}
-              className='flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50'
+              className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50"
             >
               <Checkbox
                 checked={checked}
                 onCheckedChange={() => onToggle(option)}
               />
-              <span className='text-sm'>{option}</span>
+              <span className="text-sm">{option}</span>
             </label>
-          )
+          );
         })}
       </div>
     </ScrollArea>
-  )
+  );
 }
 
 export function Users() {
-  const navigate = useNavigate()
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [users, setUsers] = useState<AdminUser[]>([])
-  const [roles, setRoles] = useState<RoleSummary[]>([])
-  const [databases, setDatabases] = useState<string[]>([])
-  const [searchUsers, setSearchUsers] = useState('')
-  const [userAccessFilter, setUserAccessFilter] = useState('')
-  const [usersPage, setUsersPage] = useState(1)
-  const [usersPageSize, setUsersPageSize] = useState(PAGE_SIZE)
-  const [createUserOpen, setCreateUserOpen] = useState(false)
-  const [createRoleOpen, setCreateRoleOpen] = useState(false)
-  const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
-  const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null)
-  const [deleteUserSubmitting, setDeleteUserSubmitting] = useState(false)
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [roles, setRoles] = useState<RoleSummary[]>([]);
+  const [databases, setDatabases] = useState<string[]>([]);
+  const [searchUsers, setSearchUsers] = useState("");
+  const [userAccessFilter, setUserAccessFilter] = useState("");
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersPageSize, setUsersPageSize] = useState(PAGE_SIZE);
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [createRoleOpen, setCreateRoleOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
+  const [deleteUserSubmitting, setDeleteUserSubmitting] = useState(false);
   const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(
-    null
-  )
-  const [generatedPassword, setGeneratedPassword] = useState('')
-  const [passwordResetSubmitting, setPasswordResetSubmitting] = useState(false)
+    null,
+  );
+  const [generatedPassword, setGeneratedPassword] = useState("");
+  const [passwordResetSubmitting, setPasswordResetSubmitting] = useState(false);
   const [roleActionState, setRoleActionState] =
-    useState<RoleActionState | null>(null)
-  const [roleActionSubmitting, setRoleActionSubmitting] = useState(false)
-  const [userDetail, setUserDetail] = useState<UserDetail | null>(null)
-  const [userDetailLoading] = useState(false)
-  const [userForm, setUserForm] = useState<UserFormState>(DEFAULT_USER_FORM)
-  const [userSubmitting, setUserSubmitting] = useState(false)
-  const [roleFormName, setRoleFormName] = useState('')
-  const [roleSubmitting, setRoleSubmitting] = useState(false)
-  const [editingRole, setEditingRole] = useState<RoleSummary | null>(null)
-  const [roleDetail, setRoleDetail] = useState<RoleDetail | null>(null)
-  const [roleDetailLoading] = useState(false)
+    useState<RoleActionState | null>(null);
+  const [roleActionSubmitting, setRoleActionSubmitting] = useState(false);
+  const [userDetail, setUserDetail] = useState<UserDetail | null>(null);
+  const [userDetailLoading] = useState(false);
+  const [userForm, setUserForm] = useState<UserFormState>(DEFAULT_USER_FORM);
+  const [userSubmitting, setUserSubmitting] = useState(false);
+  const [roleFormName, setRoleFormName] = useState("");
+  const [roleSubmitting, setRoleSubmitting] = useState(false);
+  const [editingRole, setEditingRole] = useState<RoleSummary | null>(null);
+  const [roleDetail, setRoleDetail] = useState<RoleDetail | null>(null);
+  const [roleDetailLoading] = useState(false);
   const [privilegeForm, setPrivilegeForm] = useState<RolePrivilegeFormState>(
-    DEFAULT_PRIVILEGE_FORM
-  )
-  const [memberUserIdentity, setMemberUserIdentity] = useState('')
-  const [memberRoleName, setMemberRoleName] = useState('')
-  const [objectOptions, setObjectOptions] = useState<string[]>([])
+    DEFAULT_PRIVILEGE_FORM,
+  );
+  const [memberUserIdentity, setMemberUserIdentity] = useState("");
+  const [memberRoleName, setMemberRoleName] = useState("");
+  const [objectOptions, setObjectOptions] = useState<string[]>([]);
 
   const visibleUsersList = useMemo(
-    () => users.filter((user) => user.username.toLowerCase() !== 'root'),
-    [users]
-  )
+    () => users.filter((user) => user.username.toLowerCase() !== "root"),
+    [users],
+  );
   const visibleRolesList = useMemo(
-    () => roles.filter((role) => role.name.toLowerCase() !== 'root'),
-    [roles]
-  )
+    () => roles.filter((role) => role.name.toLowerCase() !== "root"),
+    [roles],
+  );
 
   const userIdentities = useMemo(
     () =>
@@ -395,198 +390,198 @@ export function Users() {
         label: `${user.username}@${user.host}`,
         value: `${user.username}@@${user.host}`,
       })),
-    [visibleUsersList]
-  )
+    [visibleUsersList],
+  );
 
   async function loadBaseData(showLoader = true) {
-    if (showLoader) setLoading(true)
-    else setRefreshing(true)
+    if (showLoader) setLoading(true);
+    else setRefreshing(true);
 
     try {
       const [usersResponse, rolesResponse, databasesResponse] =
         await Promise.all([
-          api.get<{ users: AdminUser[] }>('/users'),
-          api.get<{ roles: RoleSummary[] }>('/users/roles'),
-          api.get<{ databases: string[] }>('/users/databases'),
-        ])
+          api.get<{ users: AdminUser[] }>("/users"),
+          api.get<{ roles: RoleSummary[] }>("/users/roles"),
+          api.get<{ databases: string[] }>("/users/databases"),
+        ]);
 
-      setUsers(usersResponse.users ?? [])
-      setRoles(rolesResponse.roles ?? [])
-      setDatabases(databasesResponse.databases ?? [])
+      setUsers(usersResponse.users ?? []);
+      setRoles(rolesResponse.roles ?? []);
+      setDatabases(databasesResponse.databases ?? []);
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : 'Failed to load administrator data'
-      )
+          : "Failed to load administrator data",
+      );
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      setLoading(false);
+      setRefreshing(false);
     }
   }
 
   useEffect(() => {
-    void loadBaseData(true)
-  }, [])
+    void loadBaseData(true);
+  }, []);
 
   useEffect(() => {
     if (
-      privilegeForm.scope === 'SYSTEM' ||
-      privilegeForm.scope === 'DATABASE' ||
-      privilegeForm.scope === 'CATALOG'
+      privilegeForm.scope === "SYSTEM" ||
+      privilegeForm.scope === "DATABASE" ||
+      privilegeForm.scope === "CATALOG"
     ) {
-      setObjectOptions([])
-      return
+      setObjectOptions([]);
+      return;
     }
     if (!privilegeForm.database) {
-      setObjectOptions([])
-      return
+      setObjectOptions([]);
+      return;
     }
 
-    let isCancelled = false
+    let isCancelled = false;
 
     async function loadObjects() {
       try {
-        if (privilegeForm.scope === 'TABLE') {
+        if (privilegeForm.scope === "TABLE") {
           const response = await api.get<{
-            tables: Array<{ name: string } | string>
+            tables: Array<{ name: string } | string>;
           }>(
-            `/objects/databases/${encodeURIComponent(privilegeForm.database)}/tables`
-          )
+            `/objects/databases/${encodeURIComponent(privilegeForm.database)}/tables`,
+          );
           if (!isCancelled) {
             const tables = (response.tables ?? []).map((entry) =>
-              typeof entry === 'string' ? entry : entry.name
-            )
-            setObjectOptions(tables)
+              typeof entry === "string" ? entry : entry.name,
+            );
+            setObjectOptions(tables);
           }
-          return
+          return;
         }
 
-        if (privilegeForm.scope === 'VIEW') {
+        if (privilegeForm.scope === "VIEW") {
           const response = await api.get<{
-            views: Array<{ name: string } | string>
+            views: Array<{ name: string } | string>;
           }>(
-            `/objects/databases/${encodeURIComponent(privilegeForm.database)}/views`
-          )
+            `/objects/databases/${encodeURIComponent(privilegeForm.database)}/views`,
+          );
           if (!isCancelled) {
             const views = (response.views ?? []).map((entry) =>
-              typeof entry === 'string' ? entry : entry.name
-            )
-            setObjectOptions(views)
+              typeof entry === "string" ? entry : entry.name,
+            );
+            setObjectOptions(views);
           }
-          return
+          return;
         }
 
         const response = await api.get<{
-          materialized_views: Array<{ name: string } | string>
+          materialized_views: Array<{ name: string } | string>;
         }>(
-          `/objects/databases/${encodeURIComponent(privilegeForm.database)}/objects?type=materialized_view`
-        )
+          `/objects/databases/${encodeURIComponent(privilegeForm.database)}/objects?type=materialized_view`,
+        );
         if (!isCancelled) {
           const materializedViews = (response.materialized_views ?? []).map(
-            (entry) => (typeof entry === 'string' ? entry : entry.name)
-          )
-          setObjectOptions(materializedViews)
+            (entry) => (typeof entry === "string" ? entry : entry.name),
+          );
+          setObjectOptions(materializedViews);
         }
       } catch {
-        if (!isCancelled) setObjectOptions([])
+        if (!isCancelled) setObjectOptions([]);
       }
     }
 
-    void loadObjects()
+    void loadObjects();
 
     return () => {
-      isCancelled = true
-    }
-  }, [privilegeForm.database, privilegeForm.scope])
+      isCancelled = true;
+    };
+  }, [privilegeForm.database, privilegeForm.scope]);
 
   const filteredUsers = useMemo(() => {
-    const query = searchUsers.trim().toLowerCase()
+    const query = searchUsers.trim().toLowerCase();
     return visibleUsersList.filter((user) => {
-      if (userAccessFilter === 'Protected' && !user.is_protected) return false
-      if (userAccessFilter === 'Standard' && user.is_protected) return false
-      if (!query) return true
+      if (userAccessFilter === "Protected" && !user.is_protected) return false;
+      if (userAccessFilter === "Standard" && user.is_protected) return false;
+      if (!query) return true;
       return [
         user.username,
         user.host,
         user.auth_mode,
-        user.roles.join(' '),
-        user.default_roles.join(' '),
+        user.roles.join(" "),
+        user.default_roles.join(" "),
       ]
-        .join(' ')
+        .join(" ")
         .toLowerCase()
-        .includes(query)
-    })
-  }, [searchUsers, userAccessFilter, visibleUsersList])
+        .includes(query);
+    });
+  }, [searchUsers, userAccessFilter, visibleUsersList]);
 
-  const usersPageCount = Math.ceil(filteredUsers.length / usersPageSize)
+  const usersPageCount = Math.ceil(filteredUsers.length / usersPageSize);
 
   useEffect(() => {
     setUsersPage((current) =>
-      Math.min(Math.max(current, 1), Math.max(usersPageCount, 1))
-    )
-  }, [usersPageCount])
+      Math.min(Math.max(current, 1), Math.max(usersPageCount, 1)),
+    );
+  }, [usersPageCount]);
 
   const visibleUsers = useMemo(() => {
-    const start = (usersPage - 1) * usersPageSize
-    return filteredUsers.slice(start, start + usersPageSize)
-  }, [filteredUsers, usersPage, usersPageSize])
+    const start = (usersPage - 1) * usersPageSize;
+    return filteredUsers.slice(start, start + usersPageSize);
+  }, [filteredUsers, usersPage, usersPageSize]);
 
   async function handleCreateUser() {
     if (!userForm.username.trim() || !userForm.password.trim()) {
-      toast.error('Username and password are required')
-      return
+      toast.error("Username and password are required");
+      return;
     }
     if (userForm.password !== userForm.confirmPassword) {
-      toast.error('Password confirmation does not match')
-      return
+      toast.error("Password confirmation does not match");
+      return;
     }
 
     const { sessionProperties } = parseSessionProperties(
-      userForm.sessionProperties
-    )
-    const selectedRole = userForm.defaultRole.trim()
+      userForm.sessionProperties,
+    );
+    const selectedRole = userForm.defaultRole.trim();
 
-    setUserSubmitting(true)
+    setUserSubmitting(true);
     try {
-      await api.post('/users', {
+      await api.post("/users", {
         username: userForm.username.trim(),
         password: userForm.password,
-        host: '%',
+        host: "%",
         granted_roles: selectedRole ? [selectedRole] : [],
-        default_role_mode: selectedRole ? 'explicit' : 'none',
+        default_role_mode: selectedRole ? "explicit" : "none",
         default_roles: selectedRole ? [selectedRole] : [],
         session_properties: sessionProperties,
-      })
-      toast.success('User created successfully')
-      setCreateUserOpen(false)
-      setUserForm(DEFAULT_USER_FORM)
-      await loadBaseData(false)
+      });
+      toast.success("User created successfully");
+      setCreateUserOpen(false);
+      setUserForm(DEFAULT_USER_FORM);
+      await loadBaseData(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to create user'
-      )
+        error instanceof Error ? error.message : "Failed to create user",
+      );
     } finally {
-      setUserSubmitting(false)
+      setUserSubmitting(false);
     }
   }
 
   async function handleUpdateUser() {
-    if (!editingUser) return
+    if (!editingUser) return;
 
-    const originalRoles = new Set(editingUser.roles)
-    const nextRoles = new Set(userForm.grantedRoles)
+    const originalRoles = new Set(editingUser.roles);
+    const nextRoles = new Set(userForm.grantedRoles);
     const grantedRolesAdd = [...nextRoles].filter(
-      (role) => !originalRoles.has(role)
-    )
+      (role) => !originalRoles.has(role),
+    );
     const grantedRolesRemove = [...originalRoles].filter(
-      (role) => !nextRoles.has(role)
-    )
+      (role) => !nextRoles.has(role),
+    );
     const { sessionProperties, clearKeys } = parseSessionProperties(
-      userForm.sessionProperties
-    )
+      userForm.sessionProperties,
+    );
 
-    setUserSubmitting(true)
+    setUserSubmitting(true);
     try {
       await api.put(
         `/users/${encodeURIComponent(editingUser.username)}?host=${encodeURIComponent(editingUser.host)}`,
@@ -596,7 +591,7 @@ export function Users() {
           granted_roles_remove: grantedRolesRemove,
           default_role_mode: userForm.defaultRoleMode,
           default_roles:
-            userForm.defaultRoleMode === 'explicit'
+            userForm.defaultRoleMode === "explicit"
               ? userForm.defaultRoles
               : [],
           max_user_connections: userForm.maxUserConnections
@@ -606,184 +601,184 @@ export function Users() {
           database: userForm.database,
           session_properties: sessionProperties,
           clear_properties: clearKeys,
-        }
-      )
-      toast.success('User updated successfully')
-      setEditingUser(null)
-      setUserDetail(null)
-      await loadBaseData(false)
+        },
+      );
+      toast.success("User updated successfully");
+      setEditingUser(null);
+      setUserDetail(null);
+      await loadBaseData(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to update user'
-      )
+        error instanceof Error ? error.message : "Failed to update user",
+      );
     } finally {
-      setUserSubmitting(false)
+      setUserSubmitting(false);
     }
   }
 
   async function handleDeleteUser() {
-    if (!deletingUser) return
+    if (!deletingUser) return;
 
-    setDeleteUserSubmitting(true)
+    setDeleteUserSubmitting(true);
     try {
       await api.delete(
-        `/users/${encodeURIComponent(deletingUser.username)}?host=${encodeURIComponent(deletingUser.host)}`
-      )
-      toast.success('User deleted')
-      setDeletingUser(null)
-      await loadBaseData(false)
+        `/users/${encodeURIComponent(deletingUser.username)}?host=${encodeURIComponent(deletingUser.host)}`,
+      );
+      toast.success("User deleted");
+      setDeletingUser(null);
+      await loadBaseData(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to delete user'
-      )
+        error instanceof Error ? error.message : "Failed to delete user",
+      );
     } finally {
-      setDeleteUserSubmitting(false)
+      setDeleteUserSubmitting(false);
     }
   }
 
   async function handleResetPassword() {
-    if (!resetPasswordUser) return
+    if (!resetPasswordUser) return;
 
-    setPasswordResetSubmitting(true)
+    setPasswordResetSubmitting(true);
     try {
       const response = await api.post<{
-        username: string
-        host: string
-        password: string
-        message: string
+        username: string;
+        host: string;
+        password: string;
+        message: string;
       }>(
-        `/users/${encodeURIComponent(resetPasswordUser.username)}/reset-password?host=${encodeURIComponent(resetPasswordUser.host)}`
-      )
-      setGeneratedPassword(response.password)
-      toast.success('Password reset successfully')
+        `/users/${encodeURIComponent(resetPasswordUser.username)}/reset-password?host=${encodeURIComponent(resetPasswordUser.host)}`,
+      );
+      setGeneratedPassword(response.password);
+      toast.success("Password reset successfully");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to reset password'
-      )
+        error instanceof Error ? error.message : "Failed to reset password",
+      );
     } finally {
-      setPasswordResetSubmitting(false)
+      setPasswordResetSubmitting(false);
     }
   }
 
   async function handleRoleActionSubmit() {
     if (!roleActionState || !roleActionState.role) {
-      toast.error('Select a role first')
-      return
+      toast.error("Select a role first");
+      return;
     }
 
-    setRoleActionSubmitting(true)
+    setRoleActionSubmitting(true);
     try {
-      if (roleActionState.mode === 'grant') {
+      if (roleActionState.mode === "grant") {
         await api.post(
           `/users/${encodeURIComponent(roleActionState.user.username)}/roles`,
           {
             role: roleActionState.role,
             host: roleActionState.user.host,
-          }
-        )
+          },
+        );
       } else {
         await api.delete(
-          `/users/${encodeURIComponent(roleActionState.user.username)}/roles/${encodeURIComponent(roleActionState.role)}?host=${encodeURIComponent(roleActionState.user.host)}`
-        )
+          `/users/${encodeURIComponent(roleActionState.user.username)}/roles/${encodeURIComponent(roleActionState.role)}?host=${encodeURIComponent(roleActionState.user.host)}`,
+        );
       }
 
       toast.success(
-        roleActionState.mode === 'grant'
-          ? 'Role granted successfully'
-          : 'Role revoked successfully'
-      )
-      setRoleActionState(null)
-      await loadBaseData(false)
+        roleActionState.mode === "grant"
+          ? "Role granted successfully"
+          : "Role revoked successfully",
+      );
+      setRoleActionState(null);
+      await loadBaseData(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to update role'
-      )
+        error instanceof Error ? error.message : "Failed to update role",
+      );
     } finally {
-      setRoleActionSubmitting(false)
+      setRoleActionSubmitting(false);
     }
   }
 
   async function handleCreateRole() {
     if (!roleFormName.trim()) {
-      toast.error('Role name is required')
-      return
+      toast.error("Role name is required");
+      return;
     }
 
-    setRoleSubmitting(true)
+    setRoleSubmitting(true);
     try {
-      await api.post('/users/roles', { role_name: roleFormName.trim() })
-      toast.success('Role created successfully')
-      setRoleFormName('')
-      setCreateRoleOpen(false)
-      await loadBaseData(false)
+      await api.post("/users/roles", { role_name: roleFormName.trim() });
+      toast.success("Role created successfully");
+      setRoleFormName("");
+      setCreateRoleOpen(false);
+      await loadBaseData(false);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to create role'
-      )
+        error instanceof Error ? error.message : "Failed to create role",
+      );
     } finally {
-      setRoleSubmitting(false)
+      setRoleSubmitting(false);
     }
   }
 
   async function refreshRoleDetail(roleName: string) {
     const detail = await api.get<RoleDetail>(
-      `/users/roles/${encodeURIComponent(roleName)}`
-    )
-    setRoleDetail(detail)
+      `/users/roles/${encodeURIComponent(roleName)}`,
+    );
+    setRoleDetail(detail);
   }
 
-  async function handleGrantRoleMember(memberType: 'user' | 'role') {
-    if (!editingRole) return
+  async function handleGrantRoleMember(memberType: "user" | "role") {
+    if (!editingRole) return;
 
     try {
-      if (memberType === 'user') {
+      if (memberType === "user") {
         if (!memberUserIdentity) {
-          toast.error('Select a user identity first')
-          return
+          toast.error("Select a user identity first");
+          return;
         }
-        const [username, host] = memberUserIdentity.split('@@')
+        const [username, host] = memberUserIdentity.split("@@");
         await api.post(
           `/users/roles/${encodeURIComponent(editingRole.name)}/members`,
           {
-            member_type: 'user',
+            member_type: "user",
             member_name: username,
             host,
-          }
-        )
+          },
+        );
       } else {
         if (!memberRoleName) {
-          toast.error('Select a role first')
-          return
+          toast.error("Select a role first");
+          return;
         }
         await api.post(
           `/users/roles/${encodeURIComponent(editingRole.name)}/members`,
           {
-            member_type: 'role',
+            member_type: "role",
             member_name: memberRoleName,
-          }
-        )
+          },
+        );
       }
 
-      toast.success('Role membership updated')
-      await refreshRoleDetail(editingRole.name)
-      await loadBaseData(false)
-      setMemberUserIdentity('')
-      setMemberRoleName('')
+      toast.success("Role membership updated");
+      await refreshRoleDetail(editingRole.name);
+      await loadBaseData(false);
+      setMemberUserIdentity("");
+      setMemberRoleName("");
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : 'Failed to update role membership'
-      )
+          : "Failed to update role membership",
+      );
     }
   }
 
   async function handleRevokeRoleMember(
-    memberType: 'user' | 'role',
+    memberType: "user" | "role",
     memberName: string,
-    host = '%'
+    host = "%",
   ) {
-    if (!editingRole) return
+    if (!editingRole) return;
     try {
       await api.delete(
         `/users/roles/${encodeURIComponent(editingRole.name)}/members`,
@@ -791,22 +786,22 @@ export function Users() {
           member_type: memberType,
           member_name: memberName,
           host,
-        }
-      )
-      toast.success('Role membership revoked')
-      await refreshRoleDetail(editingRole.name)
-      await loadBaseData(false)
+        },
+      );
+      toast.success("Role membership revoked");
+      await refreshRoleDetail(editingRole.name);
+      await loadBaseData(false);
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : 'Failed to revoke role membership'
-      )
+          : "Failed to revoke role membership",
+      );
     }
   }
 
   async function handleGrantPrivilege() {
-    if (!editingRole) return
+    if (!editingRole) return;
     try {
       await api.post(
         `/users/roles/${encodeURIComponent(editingRole.name)}/privileges`,
@@ -818,34 +813,34 @@ export function Users() {
           database: privilegeForm.database || null,
           object_name: privilegeForm.objectName || null,
           with_grant_option: privilegeForm.withGrantOption,
-        }
-      )
-      toast.success('Privilege granted')
-      await refreshRoleDetail(editingRole.name)
+        },
+      );
+      toast.success("Privilege granted");
+      await refreshRoleDetail(editingRole.name);
       setPrivilegeForm({
         ...DEFAULT_PRIVILEGE_FORM,
         scope: privilegeForm.scope,
         privilege: PRIVILEGE_OPTIONS[privilegeForm.scope][0],
-      })
+      });
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to grant privilege'
-      )
+        error instanceof Error ? error.message : "Failed to grant privilege",
+      );
     }
   }
 
   async function handleRevokePrivilege(privilege: RolePrivilege) {
-    if (!editingRole) return
-    const scope = (privilege.OBJECT_TYPE ?? 'SYSTEM') as PrivilegeScope
-    const objectName = privilege.OBJECT_NAME ?? ''
-    const database = privilege.OBJECT_DATABASE ?? ''
+    if (!editingRole) return;
+    const scope = (privilege.OBJECT_TYPE ?? "SYSTEM") as PrivilegeScope;
+    const objectName = privilege.OBJECT_NAME ?? "";
+    const database = privilege.OBJECT_DATABASE ?? "";
 
-    let selectorMode: SelectorMode = 'specific'
-    if (scope === 'DATABASE' && !database) selectorMode = 'all_databases'
-    if (scope !== 'SYSTEM' && scope !== 'CATALOG' && !objectName && database)
-      selectorMode = 'all_in_database'
-    if (scope !== 'SYSTEM' && scope !== 'CATALOG' && !database && !objectName)
-      selectorMode = 'all_databases'
+    let selectorMode: SelectorMode = "specific";
+    if (scope === "DATABASE" && !database) selectorMode = "all_databases";
+    if (scope !== "SYSTEM" && scope !== "CATALOG" && !objectName && database)
+      selectorMode = "all_in_database";
+    if (scope !== "SYSTEM" && scope !== "CATALOG" && !database && !objectName)
+      selectorMode = "all_databases";
 
     try {
       await api.delete(
@@ -857,68 +852,68 @@ export function Users() {
           catalog: privilege.OBJECT_CATALOG ?? null,
           database: database || null,
           object_name: objectName || null,
-        }
-      )
-      toast.success('Privilege revoked')
-      await refreshRoleDetail(editingRole.name)
+        },
+      );
+      toast.success("Privilege revoked");
+      await refreshRoleDetail(editingRole.name);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to revoke privilege'
-      )
+        error instanceof Error ? error.message : "Failed to revoke privilege",
+      );
     }
   }
 
   function toggleRoleSelection(values: string[], role: string) {
     return values.includes(role)
       ? values.filter((item) => item !== role)
-      : [...values, role]
+      : [...values, role];
   }
 
-  const roleSelectionOptions = visibleRolesList.map((role) => role.name)
+  const roleSelectionOptions = visibleRolesList.map((role) => role.name);
   const mutableRoleOptions = visibleRolesList
     .filter((role) => role.is_mutable)
-    .map((role) => role.name)
+    .map((role) => role.name);
 
   return (
     <>
       <Header fixed>
-        <Search className='me-auto' />
+        <Search className="me-auto" />
       </Header>
 
-      <Main className='flex flex-1 flex-col gap-6'>
-        <div className='flex flex-wrap items-end justify-between gap-3'>
-          <div className='space-y-1'>
-            <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-              <Shield className='size-4' />
+      <Main className="flex flex-1 flex-col gap-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Shield className="size-4" />
               Administrator
             </div>
-            <h1 className='text-2xl font-bold tracking-tight'>Users & Roles</h1>
-            <p className='max-w-3xl text-sm text-muted-foreground'>
+            <h1 className="text-2xl font-bold tracking-tight">Users & Roles</h1>
+            <p className="max-w-3xl text-sm text-muted-foreground">
               Manage identities, role memberships, default roles, and scoped
               privileges from one admin surface.
             </p>
           </div>
           <Button
-            variant='outline'
+            variant="outline"
             onClick={() => void loadBaseData(false)}
             disabled={refreshing || loading}
           >
             <RefreshCw
               className={cn(
-                'size-4',
-                (refreshing || loading) && 'animate-spin'
+                "size-4",
+                (refreshing || loading) && "animate-spin",
               )}
             />
             Refresh
           </Button>
         </div>
 
-        <div className='flex flex-1 flex-col gap-4'>
-          <div className='m-0 flex flex-col gap-4'>
-            <div className='space-y-6'>
+        <div className="flex flex-1 flex-col gap-4">
+          <div className="m-0 flex flex-col gap-4">
+            <div className="space-y-6">
               <div>
-                <h3 className='text-lg font-medium'>Users</h3>
-                <p className='text-sm text-muted-foreground'>
+                <h3 className="text-lg font-medium">Users</h3>
+                <p className="text-sm text-muted-foreground">
                   Review identities, authentication mode, role ownership, and
                   default access.
                 </p>
@@ -927,31 +922,31 @@ export function Users() {
               <SimpleTableToolbar
                 search={searchUsers}
                 onSearchChange={(value) => {
-                  setSearchUsers(value)
-                  setUsersPage(1)
+                  setSearchUsers(value);
+                  setUsersPage(1);
                 }}
-                searchPlaceholder='Search user, auth, role...'
-                resultLabel={`${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''}`}
+                searchPlaceholder="Search user, auth, role..."
+                resultLabel={`${filteredUsers.length} user${filteredUsers.length !== 1 ? "s" : ""}`}
                 filters={[
                   {
-                    label: 'Access',
+                    label: "Access",
                     value: userAccessFilter,
-                    options: ['Protected', 'Standard'],
+                    options: ["Protected", "Standard"],
                     onChange: (value) => {
-                      setUserAccessFilter(value)
-                      setUsersPage(1)
+                      setUserAccessFilter(value);
+                      setUsersPage(1);
                     },
-                    icon: <Shield className='size-3.5' />,
+                    icon: <Shield className="size-3.5" />,
                   },
                 ]}
                 actions={
                   <Button
                     onClick={() => {
-                      setUserForm(DEFAULT_USER_FORM)
-                      setCreateUserOpen(true)
+                      setUserForm(DEFAULT_USER_FORM);
+                      setCreateUserOpen(true);
                     }}
                   >
-                    <Plus className='size-4' />
+                    <Plus className="size-4" />
                     Create User
                   </Button>
                 }
@@ -959,33 +954,33 @@ export function Users() {
 
               <SimpleTableViewport>
                 {refreshing && !loading ? (
-                  <div className='pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center'>
-                    <div className='w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm'>
-                      <div className='h-1.5 w-full overflow-hidden bg-muted'>
-                        <div className='h-full w-1/3 animate-pulse rounded-full bg-primary' />
+                  <div className="pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-center">
+                    <div className="w-full max-w-xs overflow-hidden rounded-full border border-border bg-background/95 shadow-lg backdrop-blur-sm">
+                      <div className="h-1.5 w-full overflow-hidden bg-muted">
+                        <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
                       </div>
-                      <div className='px-3 py-2 text-center text-xs font-medium text-foreground'>
+                      <div className="px-3 py-2 text-center text-xs font-medium text-foreground">
                         Refreshing users...
                       </div>
                     </div>
                   </div>
                 ) : null}
-                <table className='w-full'>
+                <table className="w-full">
                   <thead>
                     <tr>
-                      <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
                         Name
                       </th>
-                      <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
                         Last Login
                       </th>
-                      <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
                         Default Role
                       </th>
-                      <th className='px-4 py-3 text-left text-xs font-medium text-muted-foreground'>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
                         Grant Roles
                       </th>
-                      <th className='px-4 py-3 text-right text-xs font-medium text-muted-foreground'>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">
                         Actions
                       </th>
                     </tr>
@@ -993,36 +988,42 @@ export function Users() {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={5} className='px-4 py-6'>
+                        <td colSpan={5} className="px-4 py-6">
                           <LoadingLines rows={5} />
                         </td>
                       </tr>
                     ) : visibleUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className='px-4 py-6'>
+                        <td colSpan={5} className="px-4 py-6">
                           <EmptyState
-                            icon={filteredUsers.length === 0 && (searchUsers || userAccessFilter)
-                              ? SearchX
-                              : UsersIcon}
+                            icon={
+                              filteredUsers.length === 0 &&
+                              (searchUsers || userAccessFilter)
+                                ? SearchX
+                                : UsersIcon
+                            }
                             title={
-                              filteredUsers.length === 0 && (searchUsers || userAccessFilter)
-                                ? 'No users match these filters'
-                                : 'No users yet'
+                              filteredUsers.length === 0 &&
+                              (searchUsers || userAccessFilter)
+                                ? "No users match these filters"
+                                : "No users yet"
                             }
                             description={
-                              filteredUsers.length === 0 && (searchUsers || userAccessFilter)
-                                ? 'Clear the search or the Protected/Standard filter to see every user.'
-                                : 'Users appear here once they are created or provisioned.'
+                              filteredUsers.length === 0 &&
+                              (searchUsers || userAccessFilter)
+                                ? "Clear the search or the Protected/Standard filter to see every user."
+                                : "Users appear here once they are created or provisioned."
                             }
                             action={
-                              filteredUsers.length === 0 && (searchUsers || userAccessFilter) ? (
+                              filteredUsers.length === 0 &&
+                              (searchUsers || userAccessFilter) ? (
                                 <Button
-                                  variant='outline'
-                                  size='sm'
+                                  variant="outline"
+                                  size="sm"
                                   onClick={() => {
-                                    setSearchUsers('')
-                                    setUserAccessFilter('')
-                                    setUsersPage(1)
+                                    setSearchUsers("");
+                                    setUserAccessFilter("");
+                                    setUsersPage(1);
                                   }}
                                 >
                                   Clear filters
@@ -1036,70 +1037,72 @@ export function Users() {
                       visibleUsers.map((user) => (
                         <tr
                           key={user.identity}
-                          className='cursor-pointer border-b border-border transition-colors hover:bg-muted/50'
+                          className="cursor-pointer border-b border-border transition-colors hover:bg-muted/50"
                           onClick={() =>
                             navigate({
-                              to: '/users/$username',
+                              to: "/users/$username",
                               params: { username: user.username },
                             })
                           }
                         >
-                          <td className='px-4 py-3 align-top'>
-                            <div className='space-y-1'>
-                              <div className='flex flex-wrap items-center gap-2'>
-                                <span className='text-sm font-medium'>
+                          <td className="px-4 py-3 align-top">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-medium">
                                   {user.username}
                                 </span>
                                 {user.is_protected ? (
-                                  <Badge className='border-destructive/25 bg-destructive/10 text-destructive'>
+                                  <Badge className="border-destructive/25 bg-destructive/10 text-destructive">
                                     Protected
                                   </Badge>
                                 ) : null}
                               </div>
                             </div>
                           </td>
-                          <td className='px-4 py-3 align-top'>
-                            <div className='text-sm'>
+                          <td className="px-4 py-3 align-top">
+                            <div className="text-sm">
                               {formatLastLogin(user.last_login)}
                             </div>
                           </td>
-                          <td className='px-4 py-3 align-top'>
-                            {user.default_roles[0] ? (
-                              <div className='flex flex-wrap gap-2'>
-                                <Badge variant='secondary'>
-                                  {user.default_roles[0]}
+                          <td className="px-4 py-3 align-top">
+                            {user.default_roles.length ? (
+                              <div className="flex flex-wrap gap-2">
+                                <Badge variant="secondary">
+                                  {user.default_roles.join(", ")}
                                 </Badge>
                                 {user.roles.length > 1 ? (
-                                  <span className='text-xs text-muted-foreground'>
+                                  <span className="text-xs text-muted-foreground">
                                     +{user.roles.length - 1} role lain
                                   </span>
                                 ) : null}
                               </div>
                             ) : (
-                              <span className='text-xs text-muted-foreground'>
+                              <span className="text-xs text-muted-foreground">
                                 None
                               </span>
                             )}
                           </td>
                           <td
-                            className='px-4 py-3 align-top'
-                            onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                            className="px-4 py-3 align-top"
+                            onClick={(event: React.MouseEvent) =>
+                              event.stopPropagation()
+                            }
                           >
                             {user.roles.length ? (
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
-                                    variant='outline'
-                                    size='sm'
-                                    className='h-8 rounded-full px-3 text-xs'
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 rounded-full px-3 text-xs"
                                   >
                                     {user.roles.length} role
-                                    {user.roles.length > 1 ? 's' : ''}
+                                    {user.roles.length > 1 ? "s" : ""}
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent
-                                  align='start'
-                                  className='w-48'
+                                  align="start"
+                                  className="w-48"
                                 >
                                   {user.roles.map((role) => (
                                     <DropdownMenuItem
@@ -1112,35 +1115,37 @@ export function Users() {
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             ) : (
-                              <span className='text-xs text-muted-foreground'>
+                              <span className="text-xs text-muted-foreground">
                                 0 role
                               </span>
                             )}
                           </td>
                           <td
-                            className='px-4 py-3 align-top'
-                            onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                            className="px-4 py-3 align-top"
+                            onClick={(event: React.MouseEvent) =>
+                              event.stopPropagation()
+                            }
                           >
-                            <div className='flex justify-end'>
+                            <div className="flex justify-end">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
-                                    variant='ghost'
-                                    size='icon'
-                                    className='h-8 w-8'
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
                                   >
-                                    <MoreHorizontal className='h-4 w-4' />
+                                    <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent
-                                  align='end'
-                                  className='w-44'
+                                  align="end"
+                                  className="w-44"
                                 >
                                   <DropdownMenuItem
                                     onSelect={(event: Event) => {
-                                      event.preventDefault()
-                                      setResetPasswordUser(user)
-                                      setGeneratedPassword('')
+                                      event.preventDefault();
+                                      setResetPasswordUser(user);
+                                      setGeneratedPassword("");
                                     }}
                                     disabled={user.is_protected}
                                   >
@@ -1148,12 +1153,12 @@ export function Users() {
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onSelect={(event: Event) => {
-                                      event.preventDefault()
+                                      event.preventDefault();
                                       setRoleActionState({
-                                        mode: 'grant',
+                                        mode: "grant",
                                         user,
-                                        role: '',
-                                      })
+                                        role: "",
+                                      });
                                     }}
                                     disabled={user.is_protected}
                                   >
@@ -1161,12 +1166,12 @@ export function Users() {
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onSelect={(event: Event) => {
-                                      event.preventDefault()
+                                      event.preventDefault();
                                       setRoleActionState({
-                                        mode: 'revoke',
+                                        mode: "revoke",
                                         user,
-                                        role: user.roles[0] ?? '',
-                                      })
+                                        role: "",
+                                      });
                                     }}
                                     disabled={
                                       user.is_protected ||
@@ -1176,10 +1181,10 @@ export function Users() {
                                     Revoke role
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
-                                    variant='destructive'
+                                    variant="destructive"
                                     onSelect={(event: Event) => {
-                                      event.preventDefault()
-                                      setDeletingUser(user)
+                                      event.preventDefault();
+                                      setDeletingUser(user);
                                     }}
                                     disabled={user.is_protected}
                                   >
@@ -1202,8 +1207,8 @@ export function Users() {
                 total={filteredUsers.length}
                 onPageChange={setUsersPage}
                 onPageSizeChange={(value) => {
-                  setUsersPageSize(value)
-                  setUsersPage(1)
+                  setUsersPageSize(value);
+                  setUsersPage(1);
                 }}
               />
             </div>
@@ -1212,35 +1217,39 @@ export function Users() {
       </Main>
 
       <Dialog open={createUserOpen} onOpenChange={setCreateUserOpen}>
-        <DialogContent className='overflow-hidden border-border bg-popover p-0 text-popover-foreground sm:max-w-2xl'>
+        <DialogContent className="overflow-hidden border-border bg-popover p-0 text-popover-foreground sm:max-w-2xl">
           <DialogHeader>
-            <div className='border-b border-border px-6 py-5 text-center'>
-              <DialogTitle className='text-xl font-semibold text-popover-foreground'>
+            <div className="border-b border-border px-6 py-5 text-center">
+              <DialogTitle className="text-xl font-semibold text-popover-foreground">
                 New user
               </DialogTitle>
-              <DialogDescription className='mt-2 text-sm text-muted-foreground'>
+              <DialogDescription className="mt-2 text-sm text-muted-foreground">
                 Create a new user
               </DialogDescription>
             </div>
           </DialogHeader>
-          <div className='px-6 py-5'>
-            <div className='grid gap-5'>
-              <div className='grid gap-4 sm:grid-cols-2'>
-                <div className='space-y-2'>
-                  <Label className='text-foreground'>User name</Label>
+          <div className="px-6 py-5">
+            <div className="grid gap-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-foreground">User name</Label>
                   <Input
                     value={userForm.username}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                    onChange={(
+                      event: React.ChangeEvent<
+                        HTMLInputElement | HTMLTextAreaElement
+                      >,
+                    ) =>
                       setUserForm((current) => ({
                         ...current,
                         username: event.target.value,
                       }))
                     }
-                    className='border-border bg-card text-popover-foreground'
+                    className="border-border bg-card text-popover-foreground"
                   />
                 </div>
-                <div className='space-y-2'>
-                  <Label className='text-foreground'>Default role</Label>
+                <div className="space-y-2">
+                  <Label className="text-foreground">Default role</Label>
                   <Select
                     value={userForm.defaultRole}
                     onValueChange={(value: string) =>
@@ -1250,8 +1259,8 @@ export function Users() {
                       }))
                     }
                   >
-                    <SelectTrigger className='w-full border-border bg-card text-popover-foreground'>
-                      <SelectValue placeholder='Select role' />
+                    <SelectTrigger className="w-full border-border bg-card text-popover-foreground">
+                      <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
                       {roleSelectionOptions.map((role) => (
@@ -1264,52 +1273,60 @@ export function Users() {
                 </div>
               </div>
 
-              <div className='grid gap-4 sm:grid-cols-2'>
-                <div className='space-y-2'>
-                  <Label className='text-foreground'>Password</Label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-foreground">Password</Label>
                   <Input
-                    type='password'
+                    type="password"
                     value={userForm.password}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                    onChange={(
+                      event: React.ChangeEvent<
+                        HTMLInputElement | HTMLTextAreaElement
+                      >,
+                    ) =>
                       setUserForm((current) => ({
                         ...current,
                         password: event.target.value,
                       }))
                     }
-                    className='border-border bg-card text-popover-foreground'
+                    className="border-border bg-card text-popover-foreground"
                   />
                 </div>
-                <div className='space-y-2'>
-                  <Label className='text-foreground'>Confirm password</Label>
+                <div className="space-y-2">
+                  <Label className="text-foreground">Confirm password</Label>
                   <Input
-                    type='password'
+                    type="password"
                     value={userForm.confirmPassword}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                    onChange={(
+                      event: React.ChangeEvent<
+                        HTMLInputElement | HTMLTextAreaElement
+                      >,
+                    ) =>
                       setUserForm((current) => ({
                         ...current,
                         confirmPassword: event.target.value,
                       }))
                     }
-                    className='border-border bg-card text-popover-foreground'
+                    className="border-border bg-card text-popover-foreground"
                   />
                 </div>
               </div>
             </div>
           </div>
-          <DialogFooter className='border-t border-border bg-popover px-6 py-4 sm:justify-end'>
+          <DialogFooter className="border-t border-border bg-popover px-6 py-4 sm:justify-end">
             <Button
-              variant='outline'
+              variant="outline"
               onClick={() => setCreateUserOpen(false)}
-              className='border-border bg-transparent hover:bg-accent hover:text-foreground'
+              className="border-border bg-transparent hover:bg-accent hover:text-foreground"
             >
               Cancel
             </Button>
             <Button
               onClick={() => void handleCreateUser()}
               disabled={userSubmitting}
-              className='bg-primary text-primary-foreground hover:bg-primary/90'
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {userSubmitting ? 'Creating...' : 'Create User'}
+              {userSubmitting ? "Creating..." : "Create User"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1319,27 +1336,29 @@ export function Users() {
         open={Boolean(resetPasswordUser)}
         onOpenChange={(open: boolean) => {
           if (!open) {
-            setResetPasswordUser(null)
-            setGeneratedPassword('')
+            setResetPasswordUser(null);
+            setGeneratedPassword("");
           }
         }}
       >
-        <DialogContent className='border-border bg-popover text-popover-foreground sm:max-w-lg'>
+        <DialogContent className="border-border bg-popover text-popover-foreground sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className='text-popover-foreground'>Reset Password</DialogTitle>
-            <DialogDescription className='text-muted-foreground'>
+            <DialogTitle className="text-popover-foreground">
+              Reset Password
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               Confirm password reset for {resetPasswordUser?.username}. A new
               password will be generated and shown once.
             </DialogDescription>
           </DialogHeader>
-          <div className='space-y-4'>
-            <div className='rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground'>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
               This action will replace the user password immediately.
             </div>
             {generatedPassword ? (
-              <div className='space-y-2'>
-                <Label className='text-foreground'>Generated password</Label>
-                <div className='rounded-lg border border-success/25 bg-success/10 px-4 py-3 font-mono text-sm text-success-strong'>
+              <div className="space-y-2">
+                <Label className="text-foreground">Generated password</Label>
+                <div className="rounded-lg border border-success/25 bg-success/10 px-4 py-3 font-mono text-sm text-success-strong">
                   {generatedPassword}
                 </div>
               </div>
@@ -1347,21 +1366,21 @@ export function Users() {
           </div>
           <DialogFooter>
             <Button
-              variant='outline'
+              variant="outline"
               onClick={() => {
-                setResetPasswordUser(null)
-                setGeneratedPassword('')
+                setResetPasswordUser(null);
+                setGeneratedPassword("");
               }}
-              className='border-border bg-transparent hover:bg-accent hover:text-foreground'
+              className="border-border bg-transparent hover:bg-accent hover:text-foreground"
             >
               Close
             </Button>
             <Button
               onClick={() => void handleResetPassword()}
               disabled={passwordResetSubmitting || Boolean(generatedPassword)}
-              className='bg-primary text-primary-foreground hover:bg-primary/90'
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {passwordResetSubmitting ? 'Resetting...' : 'Reset Password'}
+              {passwordResetSubmitting ? "Resetting..." : "Reset Password"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1370,64 +1389,64 @@ export function Users() {
       <Dialog
         open={Boolean(roleActionState)}
         onOpenChange={(open: boolean) => {
-          if (!open) setRoleActionState(null)
+          if (!open) setRoleActionState(null);
         }}
       >
-        <DialogContent className='border-border bg-popover p-0 text-popover-foreground sm:max-w-xl'>
+        <DialogContent className="border-border bg-popover p-0 text-popover-foreground sm:max-w-xl">
           <DialogHeader>
-            <div className='border-b border-border px-6 py-5 text-center'>
-              <DialogTitle className='text-xl font-semibold text-popover-foreground'>
-                {roleActionState?.mode === 'grant'
-                  ? 'Grant User a Role'
-                  : 'Revoke User Role'}
+            <div className="border-b border-border px-6 py-5 text-center">
+              <DialogTitle className="text-xl font-semibold text-popover-foreground">
+                {roleActionState?.mode === "grant"
+                  ? "Grant User a Role"
+                  : "Revoke User Role"}
               </DialogTitle>
-              <DialogDescription className='mt-2 text-sm text-muted-foreground'>
-                {roleActionState?.mode === 'grant'
-                  ? 'Grant one role at a time to the selected user.'
-                  : 'Revoke one granted role at a time from the selected user.'}
+              <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                {roleActionState?.mode === "grant"
+                  ? "Grant one role at a time to the selected user."
+                  : "Revoke one granted role at a time from the selected user."}
               </DialogDescription>
             </div>
           </DialogHeader>
-          <div className='space-y-5 px-6 py-5'>
-            <div className='space-y-2'>
-              <Label className='text-foreground'>
-                {roleActionState?.mode === 'grant'
-                  ? 'User to receive grant'
-                  : 'User to revoke'}
+          <div className="space-y-5 px-6 py-5">
+            <div className="space-y-2">
+              <Label className="text-foreground">
+                {roleActionState?.mode === "grant"
+                  ? "User to receive grant"
+                  : "User to revoke"}
               </Label>
               <Input
-                value={roleActionState ? roleActionState.user.username : ''}
+                value={roleActionState ? roleActionState.user.username : ""}
                 readOnly
-                className='border-border bg-card text-popover-foreground'
+                className="border-border bg-card text-popover-foreground"
               />
             </div>
-            <div className='space-y-2'>
-              <Label className='text-foreground'>
-                {roleActionState?.mode === 'grant'
-                  ? 'Role to grant'
-                  : 'Role to revoke'}
+            <div className="space-y-2">
+              <Label className="text-foreground">
+                {roleActionState?.mode === "grant"
+                  ? "Role to grant"
+                  : "Role to revoke"}
               </Label>
               <Select
-                value={roleActionState?.role ?? ''}
+                value={roleActionState?.role ?? ""}
                 onValueChange={(value: string) =>
                   setRoleActionState((current) =>
-                    current ? { ...current, role: value } : current
+                    current ? { ...current, role: value } : current,
                   )
                 }
               >
-                <SelectTrigger className='w-full border-border bg-card text-popover-foreground'>
+                <SelectTrigger className="w-full border-border bg-card text-popover-foreground">
                   <SelectValue
                     placeholder={
-                      roleActionState?.mode === 'grant'
-                        ? 'Select a role'
-                        : 'Select a granted role'
+                      roleActionState?.mode === "grant"
+                        ? "Select a role"
+                        : "Select a granted role"
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {(roleActionState?.mode === 'grant'
+                  {(roleActionState?.mode === "grant"
                     ? roleSelectionOptions.filter(
-                        (role) => !roleActionState.user.roles.includes(role)
+                        (role) => !roleActionState.user.roles.includes(role),
                       )
                     : (roleActionState?.user.roles ?? [])
                   ).map((role) => (
@@ -1439,26 +1458,26 @@ export function Users() {
               </Select>
             </div>
           </div>
-          <DialogFooter className='border-t border-border bg-popover px-6 py-4 sm:justify-end'>
+          <DialogFooter className="border-t border-border bg-popover px-6 py-4 sm:justify-end">
             <Button
-              variant='outline'
+              variant="outline"
               onClick={() => setRoleActionState(null)}
-              className='border-border bg-transparent hover:bg-accent hover:text-foreground'
+              className="border-border bg-transparent hover:bg-accent hover:text-foreground"
             >
               Cancel
             </Button>
             <Button
               onClick={() => void handleRoleActionSubmit()}
               disabled={roleActionSubmitting || !roleActionState?.role}
-              className='bg-primary text-primary-foreground hover:bg-primary/90'
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {roleActionSubmitting
-                ? roleActionState?.mode === 'grant'
-                  ? 'Granting...'
-                  : 'Revoking...'
-                : roleActionState?.mode === 'grant'
-                  ? 'Grant'
-                  : 'Revoke'}
+                ? roleActionState?.mode === "grant"
+                  ? "Granting..."
+                  : "Revoking..."
+                : roleActionState?.mode === "grant"
+                  ? "Grant"
+                  : "Revoke"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1468,29 +1487,29 @@ export function Users() {
         open={Boolean(deletingUser)}
         onOpenChange={(open: boolean) => {
           if (!open && !deleteUserSubmitting) {
-            setDeletingUser(null)
+            setDeletingUser(null);
           }
         }}
-        title='Delete user'
+        title="Delete user"
         desc={
           deletingUser ? (
             <>
-              This will permanently delete user{' '}
-              <span className='font-medium text-foreground'>
+              This will permanently delete user{" "}
+              <span className="font-medium text-foreground">
                 {deletingUser.username}@{deletingUser.host}
               </span>
               .
             </>
           ) : (
-            'This will permanently delete the selected user.'
+            "This will permanently delete the selected user."
           )
         }
-        confirmText={deleteUserSubmitting ? 'Deleting...' : 'Delete'}
-        cancelBtnText='Cancel'
+        confirmText={deleteUserSubmitting ? "Deleting..." : "Delete"}
+        cancelBtnText="Cancel"
         destructive
         isLoading={deleteUserSubmitting}
         handleConfirm={() => {
-          void handleDeleteUser()
+          void handleDeleteUser();
         }}
       />
 
@@ -1498,7 +1517,7 @@ export function Users() {
         open={Boolean(editingUser)}
         onOpenChange={(open: boolean) => !open && setEditingUser(null)}
       >
-        <SheetContent className='w-full sm:max-w-2xl'>
+        <SheetContent className="w-full sm:max-w-2xl">
           <SheetHeader>
             <SheetTitle>Edit User</SheetTitle>
             <SheetDescription>
@@ -1506,96 +1525,100 @@ export function Users() {
               user properties.
             </SheetDescription>
           </SheetHeader>
-          <ScrollArea className='flex-1 px-4'>
+          <ScrollArea className="flex-1 px-4">
             {editingUser ? (
-              <div className='space-y-5 pb-6'>
-                <div className='rounded-xl border bg-muted/30 p-4'>
-                  <div className='flex flex-wrap items-center gap-2'>
-                    <span className='font-semibold'>
+              <div className="space-y-5 pb-6">
+                <div className="rounded-xl border bg-muted/30 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
                       {editingUser.username}
                     </span>
-                    <Badge variant='outline'>{editingUser.identity}</Badge>
+                    <Badge variant="outline">{editingUser.identity}</Badge>
                     {editingUser.is_protected ? (
-                      <Badge className='border-destructive/25 bg-destructive/10 text-destructive'>
+                      <Badge className="border-destructive/25 bg-destructive/10 text-destructive">
                         Protected user
                       </Badge>
                     ) : null}
                   </div>
-                  <p className='mt-2 text-sm text-muted-foreground'>
+                  <p className="mt-2 text-sm text-muted-foreground">
                     Protected users are kept read only. For `root`, password
                     handling should remain external and deliberate.
                   </p>
                 </div>
 
-                <div className='grid gap-4 md:grid-cols-2'>
-                  <div className='rounded-xl border p-4'>
-                    <div className='text-sm font-medium'>Authentication</div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border p-4">
+                    <div className="text-sm font-medium">Authentication</div>
                     {userDetailLoading ? (
-                      <div className='mt-2 text-sm text-muted-foreground'>
+                      <div className="mt-2 text-sm text-muted-foreground">
                         Loading authentication...
                       </div>
                     ) : (
-                      <div className='mt-2 space-y-2 text-sm text-muted-foreground'>
+                      <div className="mt-2 space-y-2 text-sm text-muted-foreground">
                         <div>
-                          Mode:{' '}
+                          Mode:{" "}
                           {userDetail?.authentication.auth_mode ??
                             editingUser.auth_mode}
                         </div>
                         <div>
-                          Plugin:{' '}
+                          Plugin:{" "}
                           {userDetail?.authentication.auth_plugin ??
                             editingUser.auth_plugin ??
-                            'native_password'}
+                            "native_password"}
                         </div>
                         <div>
                           {(userDetail?.authentication.password_enabled ??
                           editingUser.password_enabled)
-                            ? 'Password enabled'
-                            : 'Password disabled'}
+                            ? "Password enabled"
+                            : "Password disabled"}
                         </div>
                       </div>
                     )}
                   </div>
-                  <div className='rounded-xl border p-4'>
-                    <div className='text-sm font-medium'>Granted SQL</div>
-                    <div className='mt-2 max-h-32 overflow-auto text-xs text-muted-foreground'>
+                  <div className="rounded-xl border p-4">
+                    <div className="text-sm font-medium">Granted SQL</div>
+                    <div className="mt-2 max-h-32 overflow-auto text-xs text-muted-foreground">
                       {userDetail?.grants?.length ? (
-                        <div className='space-y-2'>
+                        <div className="space-y-2">
                           {userDetail.grants.map((grant) => (
                             <div
                               key={grant}
-                              className='rounded-md bg-muted/40 px-2 py-1.5'
+                              className="rounded-md bg-muted/40 px-2 py-1.5"
                             >
                               {grant}
                             </div>
                           ))}
                         </div>
                       ) : (
-                        'No grant statements loaded'
+                        "No grant statements loaded"
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className='space-y-4'>
-                  <div className='space-y-2'>
+                <div className="space-y-4">
+                  <div className="space-y-2">
                     <Label>Reset Password</Label>
                     <Input
-                      type='password'
+                      type="password"
                       value={userForm.password}
-                      onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                      onChange={(
+                        event: React.ChangeEvent<
+                          HTMLInputElement | HTMLTextAreaElement
+                        >,
+                      ) =>
                         setUserForm((current) => ({
                           ...current,
                           password: event.target.value,
                         }))
                       }
-                      placeholder='Leave empty to keep current password'
+                      placeholder="Leave empty to keep current password"
                       disabled={editingUser.is_protected}
                     />
                   </div>
 
-                  <div className='grid gap-4 lg:grid-cols-2'>
-                    <div className='space-y-2'>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
                       <Label>Granted Roles</Label>
                       <InlineCheckboxList
                         options={roleSelectionOptions}
@@ -1605,14 +1628,14 @@ export function Users() {
                             ...current,
                             grantedRoles: toggleRoleSelection(
                               current.grantedRoles,
-                              role
+                              role,
                             ),
                           }))
                         }
-                        emptyLabel='No roles available'
+                        emptyLabel="No roles available"
                       />
                     </div>
-                    <div className='space-y-2'>
+                    <div className="space-y-2">
                       <Label>Default Role Mode</Label>
                       <Select
                         value={userForm.defaultRoleMode}
@@ -1621,21 +1644,21 @@ export function Users() {
                             ...current,
                             defaultRoleMode: value as DefaultRoleMode,
                             defaultRoles:
-                              value === 'explicit' ? current.defaultRoles : [],
+                              value === "explicit" ? current.defaultRoles : [],
                           }))
                         }
                         disabled={editingUser.is_protected}
                       >
-                        <SelectTrigger className='w-full'>
+                        <SelectTrigger className="w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value='none'>NONE</SelectItem>
-                          <SelectItem value='all'>ALL</SelectItem>
-                          <SelectItem value='explicit'>Explicit</SelectItem>
+                          <SelectItem value="none">NONE</SelectItem>
+                          <SelectItem value="all">ALL</SelectItem>
+                          <SelectItem value="explicit">Explicit</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Label className='pt-2'>Default Roles</Label>
+                      <Label className="pt-2">Default Roles</Label>
                       <InlineCheckboxList
                         options={roleSelectionOptions}
                         values={userForm.defaultRoles}
@@ -1644,22 +1667,26 @@ export function Users() {
                             ...current,
                             defaultRoles: toggleRoleSelection(
                               current.defaultRoles,
-                              role
+                              role,
                             ),
                           }))
                         }
-                        emptyLabel='No roles available'
+                        emptyLabel="No roles available"
                       />
                     </div>
                   </div>
 
-                  <div className='grid gap-4 sm:grid-cols-3'>
-                    <div className='space-y-2'>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
                       <Label>Max User Connections</Label>
                       <Input
-                        type='number'
+                        type="number"
                         value={userForm.maxUserConnections}
-                        onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                        onChange={(
+                          event: React.ChangeEvent<
+                            HTMLInputElement | HTMLTextAreaElement
+                          >,
+                        ) =>
                           setUserForm((current) => ({
                             ...current,
                             maxUserConnections: event.target.value,
@@ -1668,11 +1695,15 @@ export function Users() {
                         disabled={editingUser.is_protected}
                       />
                     </div>
-                    <div className='space-y-2'>
+                    <div className="space-y-2">
                       <Label>Catalog</Label>
                       <Input
                         value={userForm.catalog}
-                        onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                        onChange={(
+                          event: React.ChangeEvent<
+                            HTMLInputElement | HTMLTextAreaElement
+                          >,
+                        ) =>
                           setUserForm((current) => ({
                             ...current,
                             catalog: event.target.value,
@@ -1681,11 +1712,15 @@ export function Users() {
                         disabled={editingUser.is_protected}
                       />
                     </div>
-                    <div className='space-y-2'>
+                    <div className="space-y-2">
                       <Label>Database</Label>
                       <Input
                         value={userForm.database}
-                        onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                        onChange={(
+                          event: React.ChangeEvent<
+                            HTMLInputElement | HTMLTextAreaElement
+                          >,
+                        ) =>
                           setUserForm((current) => ({
                             ...current,
                             database: event.target.value,
@@ -1696,11 +1731,15 @@ export function Users() {
                     </div>
                   </div>
 
-                  <div className='space-y-2'>
+                  <div className="space-y-2">
                     <Label>Session Properties</Label>
                     <Textarea
                       value={userForm.sessionProperties}
-                      onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                      onChange={(
+                        event: React.ChangeEvent<
+                          HTMLInputElement | HTMLTextAreaElement
+                        >,
+                      ) =>
                         setUserForm((current) => ({
                           ...current,
                           sessionProperties: event.target.value,
@@ -1715,14 +1754,14 @@ export function Users() {
             ) : null}
           </ScrollArea>
           <SheetFooter>
-            <Button variant='outline' onClick={() => setEditingUser(null)}>
+            <Button variant="outline" onClick={() => setEditingUser(null)}>
               Close
             </Button>
             <Button
               onClick={() => void handleUpdateUser()}
               disabled={userSubmitting || Boolean(editingUser?.is_protected)}
             >
-              {userSubmitting ? 'Saving...' : 'Save Changes'}
+              {userSubmitting ? "Saving..." : "Save Changes"}
             </Button>
           </SheetFooter>
         </SheetContent>
@@ -1733,27 +1772,31 @@ export function Users() {
           <DialogHeader>
             <DialogTitle>Create Role</DialogTitle>
             <DialogDescription>
-              Roles are created with a single role name, then configured
-              through privileges and memberships.
+              Roles are created with a single role name, then configured through
+              privileges and memberships.
             </DialogDescription>
           </DialogHeader>
-          <div className='space-y-2'>
+          <div className="space-y-2">
             <Label>Role Name</Label>
             <Input
               value={roleFormName}
-              onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setRoleFormName(event.target.value)}
-              placeholder='analyst'
+              onChange={(
+                event: React.ChangeEvent<
+                  HTMLInputElement | HTMLTextAreaElement
+                >,
+              ) => setRoleFormName(event.target.value)}
+              placeholder="analyst"
             />
           </div>
           <DialogFooter>
-            <Button variant='outline' onClick={() => setCreateRoleOpen(false)}>
+            <Button variant="outline" onClick={() => setCreateRoleOpen(false)}>
               Cancel
             </Button>
             <Button
               onClick={() => void handleCreateRole()}
               disabled={roleSubmitting}
             >
-              {roleSubmitting ? 'Creating...' : 'Create Role'}
+              {roleSubmitting ? "Creating..." : "Create Role"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1763,7 +1806,7 @@ export function Users() {
         open={Boolean(editingRole)}
         onOpenChange={(open: boolean) => !open && setEditingRole(null)}
       >
-        <SheetContent className='w-full sm:max-w-4xl'>
+        <SheetContent className="w-full sm:max-w-4xl">
           <SheetHeader>
             <SheetTitle>Manage Role</SheetTitle>
             <SheetDescription>
@@ -1772,64 +1815,64 @@ export function Users() {
               rename workflow.
             </SheetDescription>
           </SheetHeader>
-          <ScrollArea className='flex-1 px-4'>
+          <ScrollArea className="flex-1 px-4">
             {editingRole ? (
-              <div className='space-y-5 pb-6'>
-                <div className='rounded-xl border bg-muted/30 p-4'>
-                  <div className='flex flex-wrap items-center gap-2'>
-                    <span className='font-semibold'>{editingRole.name}</span>
+              <div className="space-y-5 pb-6">
+                <div className="rounded-xl border bg-muted/30 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">{editingRole.name}</span>
                     {editingRole.is_builtin ? (
-                      <Badge className='border-warning/25 bg-warning/10 text-warning-strong'>
+                      <Badge className="border-warning/25 bg-warning/10 text-warning-strong">
                         Built-in
                       </Badge>
                     ) : null}
                     {editingRole.is_protected ? (
-                      <Badge className='border-destructive/25 bg-destructive/10 text-destructive'>
+                      <Badge className="border-destructive/25 bg-destructive/10 text-destructive">
                         Protected
                       </Badge>
                     ) : null}
                     {!editingRole.is_mutable ? (
-                      <Badge variant='outline'>Read only</Badge>
+                      <Badge variant="outline">Read only</Badge>
                     ) : null}
                   </div>
-                  <p className='mt-2 text-sm text-muted-foreground'>
+                  <p className="mt-2 text-sm text-muted-foreground">
                     Built-in roles and `ACCOUNTADMIN` stay protected. Custom
                     roles can be extended through grants and memberships.
                   </p>
                 </div>
 
                 {roleDetailLoading ? (
-                  <div className='rounded-xl border px-4 py-8 text-sm text-muted-foreground'>
+                  <div className="rounded-xl border px-4 py-8 text-sm text-muted-foreground">
                     Loading role detail...
                   </div>
                 ) : roleDetail ? (
                   <>
-                    <div className='grid gap-4 xl:grid-cols-[1.1fr_0.9fr]'>
-                      <div className='space-y-4'>
-                        <div className='rounded-xl border p-4'>
-                          <div className='flex items-center gap-2 text-sm font-medium'>
-                            <UsersIcon className='size-4' />
+                    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                      <div className="space-y-4">
+                        <div className="rounded-xl border p-4">
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <UsersIcon className="size-4" />
                             User Members
                           </div>
-                          <div className='mt-3 flex flex-wrap gap-2'>
+                          <div className="mt-3 flex flex-wrap gap-2">
                             {roleDetail.members.users.length ? (
                               roleDetail.members.users.map((member) => (
                                 <div
                                   key={member.identity}
-                                  className='flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm'
+                                  className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm"
                                 >
                                   <span>
                                     {member.username}@{member.host}
                                   </span>
                                   {editingRole.is_mutable ? (
                                     <button
-                                      type='button'
-                                      className='text-muted-foreground transition-colors hover:text-foreground'
+                                      type="button"
+                                      className="text-muted-foreground transition-colors hover:text-foreground"
                                       onClick={() =>
                                         void handleRevokeRoleMember(
-                                          'user',
+                                          "user",
                                           member.username,
-                                          member.host
+                                          member.host,
                                         )
                                       }
                                     >
@@ -1839,19 +1882,19 @@ export function Users() {
                                 </div>
                               ))
                             ) : (
-                              <div className='text-sm text-muted-foreground'>
+                              <div className="text-sm text-muted-foreground">
                                 No user members yet.
                               </div>
                             )}
                           </div>
-                          <div className='mt-4 flex flex-col gap-2 sm:flex-row'>
+                          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                             <Select
                               value={memberUserIdentity}
                               onValueChange={setMemberUserIdentity}
                               disabled={!editingRole.is_mutable}
                             >
-                              <SelectTrigger className='w-full'>
-                                <SelectValue placeholder='Select user identity' />
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select user identity" />
                               </SelectTrigger>
                               <SelectContent>
                                 {userIdentities.map((identity) => (
@@ -1865,7 +1908,7 @@ export function Users() {
                               </SelectContent>
                             </Select>
                             <Button
-                              onClick={() => void handleGrantRoleMember('user')}
+                              onClick={() => void handleGrantRoleMember("user")}
                               disabled={!editingRole.is_mutable}
                             >
                               Add User
@@ -1873,28 +1916,28 @@ export function Users() {
                           </div>
                         </div>
 
-                        <div className='rounded-xl border p-4'>
-                          <div className='flex items-center gap-2 text-sm font-medium'>
-                            <Shield className='size-4' />
+                        <div className="rounded-xl border p-4">
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <Shield className="size-4" />
                             Nested Roles
                           </div>
-                          <div className='mt-3 flex flex-wrap gap-2'>
+                          <div className="mt-3 flex flex-wrap gap-2">
                             {roleDetail.members.nested_roles.length ? (
                               roleDetail.members.nested_roles.map(
                                 (memberRole) => (
                                   <div
                                     key={memberRole}
-                                    className='flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm'
+                                    className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm"
                                   >
                                     <span>{memberRole}</span>
                                     {editingRole.is_mutable ? (
                                       <button
-                                        type='button'
-                                        className='text-muted-foreground transition-colors hover:text-foreground'
+                                        type="button"
+                                        className="text-muted-foreground transition-colors hover:text-foreground"
                                         onClick={() =>
                                           void handleRevokeRoleMember(
-                                            'role',
-                                            memberRole
+                                            "role",
+                                            memberRole,
                                           )
                                         }
                                       >
@@ -1902,27 +1945,27 @@ export function Users() {
                                       </button>
                                     ) : null}
                                   </div>
-                                )
+                                ),
                               )
                             ) : (
-                              <div className='text-sm text-muted-foreground'>
+                              <div className="text-sm text-muted-foreground">
                                 No nested roles yet.
                               </div>
                             )}
                           </div>
-                          <div className='mt-4 flex flex-col gap-2 sm:flex-row'>
+                          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                             <Select
                               value={memberRoleName}
                               onValueChange={setMemberRoleName}
                               disabled={!editingRole.is_mutable}
                             >
-                              <SelectTrigger className='w-full'>
-                                <SelectValue placeholder='Select role to grant' />
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select role to grant" />
                               </SelectTrigger>
                               <SelectContent>
                                 {mutableRoleOptions
                                   .filter(
-                                    (roleName) => roleName !== editingRole.name
+                                    (roleName) => roleName !== editingRole.name,
                                   )
                                   .map((roleName) => (
                                     <SelectItem key={roleName} value={roleName}>
@@ -1932,7 +1975,7 @@ export function Users() {
                               </SelectContent>
                             </Select>
                             <Button
-                              onClick={() => void handleGrantRoleMember('role')}
+                              onClick={() => void handleGrantRoleMember("role")}
                               disabled={!editingRole.is_mutable}
                             >
                               Add Role
@@ -1940,21 +1983,21 @@ export function Users() {
                           </div>
                           {roleDetail.members.parent_roles.length ? (
                             <>
-                              <Separator className='my-4' />
-                              <div className='space-y-2'>
-                                <div className='text-sm font-medium'>
+                              <Separator className="my-4" />
+                              <div className="space-y-2">
+                                <div className="text-sm font-medium">
                                   Granted Into Roles
                                 </div>
-                                <div className='flex flex-wrap gap-2'>
+                                <div className="flex flex-wrap gap-2">
                                   {roleDetail.members.parent_roles.map(
                                     (parentRole) => (
                                       <Badge
                                         key={parentRole}
-                                        variant='secondary'
+                                        variant="secondary"
                                       >
                                         {parentRole}
                                       </Badge>
-                                    )
+                                    ),
                                   )}
                                 </div>
                               </div>
@@ -1963,13 +2006,13 @@ export function Users() {
                         </div>
                       </div>
 
-                      <div className='rounded-xl border p-4'>
-                        <div className='flex items-center gap-2 text-sm font-medium'>
-                          <Database className='size-4' />
+                      <div className="rounded-xl border p-4">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          <Database className="size-4" />
                           Add Privilege
                         </div>
-                        <div className='mt-4 space-y-3'>
-                          <div className='space-y-2'>
+                        <div className="mt-4 space-y-3">
+                          <div className="space-y-2">
                             <Label>Scope</Label>
                             <Select
                               value={privilegeForm.scope}
@@ -1982,21 +2025,21 @@ export function Users() {
                                       value as PrivilegeScope
                                     ][0],
                                   selectorMode:
-                                    value === 'SYSTEM' || value === 'CATALOG'
-                                      ? 'specific'
+                                    value === "SYSTEM" || value === "CATALOG"
+                                      ? "specific"
                                       : current.selectorMode,
-                                  objectName: '',
+                                  objectName: "",
                                 }))
                               }
                               disabled={!editingRole.is_mutable}
                             >
-                              <SelectTrigger className='w-full'>
+                              <SelectTrigger className="w-full">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
                                 {(
                                   Object.keys(
-                                    PRIVILEGE_OPTIONS
+                                    PRIVILEGE_OPTIONS,
                                   ) as PrivilegeScope[]
                                 ).map((scope) => (
                                   <SelectItem key={scope} value={scope}>
@@ -2007,7 +2050,7 @@ export function Users() {
                             </Select>
                           </div>
 
-                          <div className='space-y-2'>
+                          <div className="space-y-2">
                             <Label>Privilege</Label>
                             <Select
                               value={privilegeForm.privilege}
@@ -2019,7 +2062,7 @@ export function Users() {
                               }
                               disabled={!editingRole.is_mutable}
                             >
-                              <SelectTrigger className='w-full'>
+                              <SelectTrigger className="w-full">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -2031,15 +2074,15 @@ export function Users() {
                                     >
                                       {privilege}
                                     </SelectItem>
-                                  )
+                                  ),
                                 )}
                               </SelectContent>
                             </Select>
                           </div>
 
-                          {privilegeForm.scope !== 'SYSTEM' &&
-                          privilegeForm.scope !== 'CATALOG' ? (
-                            <div className='space-y-2'>
+                          {privilegeForm.scope !== "SYSTEM" &&
+                          privilegeForm.scope !== "CATALOG" ? (
+                            <div className="space-y-2">
                               <Label>Selector Mode</Label>
                               <Select
                                 value={privilegeForm.selectorMode}
@@ -2048,24 +2091,24 @@ export function Users() {
                                     ...current,
                                     selectorMode: value as SelectorMode,
                                     objectName:
-                                      value === 'specific'
+                                      value === "specific"
                                         ? current.objectName
-                                        : '',
+                                        : "",
                                   }))
                                 }
                                 disabled={!editingRole.is_mutable}
                               >
-                                <SelectTrigger className='w-full'>
+                                <SelectTrigger className="w-full">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value='specific'>
+                                  <SelectItem value="specific">
                                     Specific
                                   </SelectItem>
-                                  <SelectItem value='all_in_database'>
+                                  <SelectItem value="all_in_database">
                                     All in database
                                   </SelectItem>
-                                  <SelectItem value='all_databases'>
+                                  <SelectItem value="all_databases">
                                     All databases
                                   </SelectItem>
                                 </SelectContent>
@@ -2073,12 +2116,16 @@ export function Users() {
                             </div>
                           ) : null}
 
-                          {privilegeForm.scope === 'CATALOG' ? (
-                            <div className='space-y-2'>
+                          {privilegeForm.scope === "CATALOG" ? (
+                            <div className="space-y-2">
                               <Label>Catalog</Label>
                               <Input
                                 value={privilegeForm.catalog}
-                                onChange={(event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                                onChange={(
+                                  event: React.ChangeEvent<
+                                    HTMLInputElement | HTMLTextAreaElement
+                                  >,
+                                ) =>
                                   setPrivilegeForm((current) => ({
                                     ...current,
                                     catalog: event.target.value,
@@ -2089,10 +2136,10 @@ export function Users() {
                             </div>
                           ) : null}
 
-                          {privilegeForm.scope !== 'SYSTEM' &&
-                          privilegeForm.scope !== 'CATALOG' &&
-                          privilegeForm.selectorMode !== 'all_databases' ? (
-                            <div className='space-y-2'>
+                          {privilegeForm.scope !== "SYSTEM" &&
+                          privilegeForm.scope !== "CATALOG" &&
+                          privilegeForm.selectorMode !== "all_databases" ? (
+                            <div className="space-y-2">
                               <Label>Database</Label>
                               <Select
                                 value={privilegeForm.database}
@@ -2100,13 +2147,13 @@ export function Users() {
                                   setPrivilegeForm((current) => ({
                                     ...current,
                                     database: value,
-                                    objectName: '',
+                                    objectName: "",
                                   }))
                                 }
                                 disabled={!editingRole.is_mutable}
                               >
-                                <SelectTrigger className='w-full'>
-                                  <SelectValue placeholder='Select database' />
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select database" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {databases.map((database) => (
@@ -2119,11 +2166,11 @@ export function Users() {
                             </div>
                           ) : null}
 
-                          {privilegeForm.scope !== 'SYSTEM' &&
-                          privilegeForm.scope !== 'CATALOG' &&
-                          privilegeForm.scope !== 'DATABASE' &&
-                          privilegeForm.selectorMode === 'specific' ? (
-                            <div className='space-y-2'>
+                          {privilegeForm.scope !== "SYSTEM" &&
+                          privilegeForm.scope !== "CATALOG" &&
+                          privilegeForm.scope !== "DATABASE" &&
+                          privilegeForm.selectorMode === "specific" ? (
+                            <div className="space-y-2">
                               <Label>Object</Label>
                               <Select
                                 value={privilegeForm.objectName}
@@ -2135,8 +2182,8 @@ export function Users() {
                                 }
                                 disabled={!editingRole.is_mutable}
                               >
-                                <SelectTrigger className='w-full'>
-                                  <SelectValue placeholder='Select object' />
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select object" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {objectOptions.map((objectName) => (
@@ -2152,10 +2199,10 @@ export function Users() {
                             </div>
                           ) : null}
 
-                          <label className='flex items-center gap-3 rounded-lg border px-3 py-2 text-sm'>
+                          <label className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm">
                             <Checkbox
                               checked={privilegeForm.withGrantOption}
-                              onCheckedChange={(checked : boolean) =>
+                              onCheckedChange={(checked: boolean) =>
                                 setPrivilegeForm((current) => ({
                                   ...current,
                                   withGrantOption: checked === true,
@@ -2167,7 +2214,7 @@ export function Users() {
                           </label>
 
                           <Button
-                            className='w-full'
+                            className="w-full"
                             onClick={() => void handleGrantPrivilege()}
                             disabled={!editingRole.is_mutable}
                           >
@@ -2177,19 +2224,19 @@ export function Users() {
                       </div>
                     </div>
 
-                    <div className='rounded-xl border'>
-                      <div className='flex items-center justify-between gap-2 border-b px-4 py-3'>
+                    <div className="rounded-xl border">
+                      <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
                         <div>
-                          <div className='text-sm font-medium'>Privileges</div>
-                          <div className='text-sm text-muted-foreground'>
+                          <div className="text-sm font-medium">Privileges</div>
+                          <div className="text-sm text-muted-foreground">
                             Structured grants for supported scopes.
                           </div>
                         </div>
-                        <Badge variant='outline'>
+                        <Badge variant="outline">
                           {roleDetail.privileges.length} grants
                         </Badge>
                       </div>
-                      <SimpleTableViewport className='max-h-[40vh] rounded-none border-0'>
+                      <SimpleTableViewport className="max-h-[40vh] rounded-none border-0">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -2197,7 +2244,7 @@ export function Users() {
                               <TableHead>Scope</TableHead>
                               <TableHead>Object</TableHead>
                               <TableHead>Grantability</TableHead>
-                              <TableHead className='w-[120px] text-right'>
+                              <TableHead className="w-[120px] text-right">
                                 Action
                               </TableHead>
                             </TableRow>
@@ -2209,24 +2256,24 @@ export function Users() {
                                   key={`${privilege.PRIVILEGE_TYPE}-${privilege.OBJECT_TYPE}-${privilege.OBJECT_NAME}-${index}`}
                                 >
                                   <TableCell>
-                                    {privilege.PRIVILEGE_TYPE ?? '-'}
+                                    {privilege.PRIVILEGE_TYPE ?? "-"}
                                   </TableCell>
                                   <TableCell>
-                                    {privilege.OBJECT_TYPE ?? 'SYSTEM'}
+                                    {privilege.OBJECT_TYPE ?? "SYSTEM"}
                                   </TableCell>
-                                  <TableCell className='text-sm text-muted-foreground'>
+                                  <TableCell className="text-sm text-muted-foreground">
                                     {objectDescriptor(privilege)}
                                   </TableCell>
                                   <TableCell>
-                                    <Badge variant='outline'>
+                                    <Badge variant="outline">
                                       {detailGrantLabel(privilege.IS_GRANTABLE)}
                                     </Badge>
                                   </TableCell>
                                   <TableCell>
-                                    <div className='flex justify-end'>
+                                    <div className="flex justify-end">
                                       <Button
-                                        variant='outline'
-                                        size='sm'
+                                        variant="outline"
+                                        size="sm"
                                         onClick={() =>
                                           void handleRevokePrivilege(privilege)
                                         }
@@ -2242,7 +2289,7 @@ export function Users() {
                               <TableRow>
                                 <TableCell
                                   colSpan={5}
-                                  className='py-10 text-center text-muted-foreground'
+                                  className="py-10 text-center text-muted-foreground"
                                 >
                                   No structured privileges found for this role.
                                 </TableCell>
@@ -2253,14 +2300,14 @@ export function Users() {
                       </SimpleTableViewport>
                     </div>
 
-                    <div className='rounded-xl border p-4'>
-                      <div className='text-sm font-medium'>Raw Grants</div>
-                      <div className='mt-3 max-h-48 overflow-auto space-y-2 text-xs text-muted-foreground'>
+                    <div className="rounded-xl border p-4">
+                      <div className="text-sm font-medium">Raw Grants</div>
+                      <div className="mt-3 max-h-48 overflow-auto space-y-2 text-xs text-muted-foreground">
                         {roleDetail.grants.length ? (
                           roleDetail.grants.map((grant) => (
                             <div
                               key={grant}
-                              className='rounded-md bg-muted/40 px-3 py-2'
+                              className="rounded-md bg-muted/40 px-3 py-2"
                             >
                               {grant}
                             </div>
@@ -2276,12 +2323,12 @@ export function Users() {
             ) : null}
           </ScrollArea>
           <SheetFooter>
-            <Button variant='outline' onClick={() => setEditingRole(null)}>
+            <Button variant="outline" onClick={() => setEditingRole(null)}>
               Close
             </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
     </>
-  )
+  );
 }

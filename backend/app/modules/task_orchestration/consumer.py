@@ -34,12 +34,8 @@ class GraphRunConsumer:
     ) -> None:
         self._client = client
         self._group = group if group is not None else settings.TASK_STREAM_GROUP
-        self._consumer = (
-            consumer if consumer is not None else settings.WORKER_NAME
-        )
-        self._stream_key = (
-            stream_key if stream_key is not None else settings.TASK_STREAM_KEY
-        )
+        self._consumer = consumer if consumer is not None else settings.WORKER_NAME
+        self._stream_key = stream_key if stream_key is not None else settings.TASK_STREAM_KEY
 
     @property
     def stream_key(self) -> str:
@@ -53,9 +49,7 @@ class GraphRunConsumer:
         not replay ancient jobs — the reconciler owns catch-up.
         """
         try:
-            await self._client.xgroup_create(
-                self._stream_key, self._group, id="$", mkstream=True
-            )
+            await self._client.xgroup_create(self._stream_key, self._group, id="$", mkstream=True)
         except aioredis.ResponseError as exc:
             if "BUSYGROUP" not in str(exc):
                 raise
@@ -111,6 +105,4 @@ class GraphRunConsumer:
 def job_fields_are_safe(fields: dict[str, Any]) -> bool:
     """True when a payload carries no credential-shaped key or value."""
     serialized = str(fields).lower()
-    return not any(
-        bad in serialized for bad in ("password", "secret", "token", "credential")
-    )
+    return not any(bad in serialized for bad in ("password", "secret", "token", "credential"))

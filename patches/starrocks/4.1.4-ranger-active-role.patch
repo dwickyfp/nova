@@ -1,0 +1,206 @@
+diff --git a/conf/ranger/ranger-starrocks-security.xml b/conf/ranger/ranger-starrocks-security.xml
+index bdfe321..6e74601 100644
+--- a/conf/ranger/ranger-starrocks-security.xml
++++ b/conf/ranger/ranger-starrocks-security.xml
+@@ -56,6 +56,16 @@
+         </description>
+     </property>
+ 
++    <property>
++        <name>ranger.plugin.starrocks.role.context.mode</name>
++        <value>assigned_roles</value>
++        <description>
++            Set to active_role in Nova deployments to send exactly one active
++            StarRocks session role to Ranger. The default preserves upstream
++            behavior for installations that do not opt in.
++        </description>
++    </property>
++
+     <property>
+         <name>ranger.plugin.starrocks.policy.rest.client.connection.timeoutMs</name>
+         <value>30000</value>
+diff --git a/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java b/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java
+index ae61de2..9dc6713 100644
+--- a/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java
++++ b/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java
+@@ -33,6 +33,7 @@ import org.apache.ranger.plugin.service.RangerBasePlugin;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
++import java.util.List;
+ import java.util.Objects;
+ import java.util.Set;
+ 
+@@ -42,9 +43,14 @@ import static java.util.Locale.ENGLISH;
+ public abstract class RangerAccessController extends ExternalAccessController implements AccessTypeConverter {
+     private static final Logger LOG = LoggerFactory.getLogger(RangerAccessController.class);
+     protected final RangerBasePlugin rangerPlugin;
++    private final boolean useActiveRoleContext;
+ 
+     public RangerAccessController(String serviceType, String serviceName) {
+         RangerPluginConfig rangerPluginContext = buildRangerPluginContext(serviceType, serviceName);
++        String roleContextMode = rangerPluginContext.get(
++                "ranger.plugin.starrocks.role.context.mode", "assigned_roles");
++        useActiveRoleContext = "active_role".equalsIgnoreCase(roleContextMode);
++        LOG.info("Ranger role context mode: {}", roleContextMode);
+         rangerPlugin = new RangerBasePlugin(rangerPluginContext);
+         if (!isCheckpointThread()) {
+             rangerPlugin.init(); // this will initialize policy engine and policy refresher
+@@ -68,6 +73,7 @@ public abstract class RangerAccessController extends ExternalAccessController im
+     public Expr getColumnMaskingExpression(RangerAccessResourceImpl resource, Column column, ConnectContext context) {
+         RangerStarRocksAccessRequest request = RangerStarRocksAccessRequest.createAccessRequest(
+                 resource, context.getCurrentUserIdentity(), context.getGroups(),
++                getRequestRoles(context),
+                 PrivilegeType.SELECT.name().toLowerCase(ENGLISH));
+ 
+         RangerAccessResult result = rangerPlugin.evalDataMaskPolicies(request, null);
+@@ -101,6 +107,7 @@ public abstract class RangerAccessController extends ExternalAccessController im
+     protected Expr getRowAccessExpression(RangerAccessResourceImpl resource, ConnectContext context) {
+         RangerStarRocksAccessRequest request = RangerStarRocksAccessRequest.createAccessRequest(
+                 resource, context.getCurrentUserIdentity(), context.getGroups(),
++                getRequestRoles(context),
+                 PrivilegeType.SELECT.name().toLowerCase(ENGLISH));
+         RangerAccessResult result = rangerPlugin.evalRowFilterPolicies(request, null);
+         if (result != null && result.isRowFilterEnabled()) {
+@@ -125,10 +132,35 @@ public abstract class RangerAccessController extends ExternalAccessController im
+         }
+ 
+         RangerStarRocksAccessRequest request =
+-                RangerStarRocksAccessRequest.createAccessRequest(resource, user, groups, accessType);
++                RangerStarRocksAccessRequest.createAccessRequest(
++                        resource, user, groups, getRequestRoles(ConnectContext.get()), accessType);
+         RangerAccessResult result = rangerPlugin.isAccessAllowed(request);
+         if (result == null || !result.getIsAllowed()) {
+             throw new AccessDeniedException();
+         }
+     }
++
++    protected Set<String> getRequestRoles(ConnectContext context) {
++        if (!useActiveRoleContext) {
++            return null;
++        }
++        if (context == null) {
++            throw new IllegalStateException("Ranger active-role mode requires a ConnectContext");
++        }
++        if (UserIdentity.ROOT.equals(context.getCurrentUserIdentity())) {
++            return Set.of();
++        }
++        Set<Long> roleIds = context.getCurrentRoleIds();
++        if (roleIds == null || roleIds.size() != 1) {
++            throw new IllegalStateException(
++                    "Ranger active-role mode requires exactly one active StarRocks role");
++        }
++        List<String> roleNames = context.getGlobalStateMgr().getAuthorizationMgr()
++                .getRoleNamesByRoleIds(roleIds);
++        if (roleNames.size() != 1) {
++            throw new IllegalStateException(
++                    "Ranger active-role mode could not resolve exactly one active role name");
++        }
++        return Set.of(roleNames.get(0));
++    }
+ }
+diff --git a/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java b/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java
+index 6cb0d58..dc7a3ed 100644
+--- a/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java
++++ b/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java
+@@ -32,10 +32,14 @@ public class RangerStarRocksAccessRequest extends RangerAccessRequestImpl {
+     public static RangerStarRocksAccessRequest createAccessRequest(RangerAccessResourceImpl resource,
+                                                                    UserIdentity user,
+                                                                    Set<String> groups,
++                                                                   Set<String> userRoles,
+                                                                    String accessType) {
+         RangerStarRocksAccessRequest request = new RangerStarRocksAccessRequest();
+         request.setUser(user.getUser());
+         request.setUserGroups(groups);
++        if (userRoles != null) {
++            request.setUserRoles(userRoles);
++        }
+         request.setAccessType(accessType);
+         request.setResource(resource);
+         request.setClientIPAddress(user.getHost());
+@@ -47,4 +51,4 @@ public class RangerStarRocksAccessRequest extends RangerAccessRequestImpl {
+ 
+         return request;
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/fe/fe-core/src/test/java/com/starrocks/authorization/ranger/RangerInterfaceTest.java b/fe/fe-core/src/test/java/com/starrocks/authorization/ranger/RangerInterfaceTest.java
+index 654cbed..8a01c61 100644
+--- a/fe/fe-core/src/test/java/com/starrocks/authorization/ranger/RangerInterfaceTest.java
++++ b/fe/fe-core/src/test/java/com/starrocks/authorization/ranger/RangerInterfaceTest.java
+@@ -16,6 +16,7 @@ package com.starrocks.authorization.ranger;
+ import com.google.common.collect.Lists;
+ import com.starrocks.authorization.AccessControlProvider;
+ import com.starrocks.authorization.AccessDeniedException;
++import com.starrocks.authorization.AuthorizationMgr;
+ import com.starrocks.authorization.NativeAccessController;
+ import com.starrocks.authorization.PrivilegeType;
+ import com.starrocks.authorization.ranger.hive.RangerHiveAccessController;
+@@ -25,6 +26,7 @@ import com.starrocks.catalog.Column;
+ import com.starrocks.catalog.TableName;
+ import com.starrocks.catalog.UserIdentity;
+ import com.starrocks.qe.ConnectContext;
++import com.starrocks.server.GlobalStateMgr;
+ import com.starrocks.sql.analyzer.Authorizer;
+ import com.starrocks.sql.ast.AstTraverser;
+ import com.starrocks.sql.ast.QueryStatement;
+@@ -231,6 +233,35 @@ public class RangerInterfaceTest {
+                 new UserIdentity("alice", "%"), Set.of(), PrivilegeType.OPERATE));
+     }
+ 
++    @Test
++    public void testStrictActiveRoleContext() {
++        RangerStarRocksAccessController controller = new RangerStarRocksAccessController();
++        ConnectContext context = Mockito.mock(ConnectContext.class);
++        GlobalStateMgr state = Mockito.mock(GlobalStateMgr.class);
++        AuthorizationMgr authorizationMgr = Mockito.mock(AuthorizationMgr.class);
++
++        Mockito.when(context.getCurrentUserIdentity()).thenReturn(new UserIdentity("alice", "%"));
++        Mockito.when(context.getGlobalStateMgr()).thenReturn(state);
++        Mockito.when(state.getAuthorizationMgr()).thenReturn(authorizationMgr);
++        Mockito.when(context.getCurrentRoleIds()).thenReturn(Set.of(42L));
++        Mockito.when(authorizationMgr.getRoleNamesByRoleIds(Set.of(42L)))
++                .thenReturn(List.of("marketing"));
++
++        Set<String> roles = controller.getRequestRoles(context);
++        Assertions.assertEquals(Set.of("marketing"), roles);
++
++        RangerStarRocksAccessRequest request = RangerStarRocksAccessRequest.createAccessRequest(
++                RangerStarRocksResource.builder().setSystem().build(),
++                new UserIdentity("alice", "%"), Set.of(), roles, "select");
++        Assertions.assertEquals(Set.of("marketing"), request.getUserRoles());
++
++        Mockito.when(context.getCurrentRoleIds()).thenReturn(Set.of());
++        Assertions.assertThrows(IllegalStateException.class, () -> controller.getRequestRoles(context));
++
++        Mockito.when(context.getCurrentRoleIds()).thenReturn(Set.of(42L, 43L));
++        Assertions.assertThrows(IllegalStateException.class, () -> controller.getRequestRoles(context));
++    }
++
+     @Test
+     public void testRootUserBypassesRanger() {
+         // Mock Ranger to deny all requests
+diff --git a/fe/fe-core/src/test/resources/ranger-starrocks-security.xml b/fe/fe-core/src/test/resources/ranger-starrocks-security.xml
+index 818f641..4ed075f 100644
+--- a/fe/fe-core/src/test/resources/ranger-starrocks-security.xml
++++ b/fe/fe-core/src/test/resources/ranger-starrocks-security.xml
+@@ -56,6 +56,11 @@
+         </description>
+     </property>
+ 
++    <property>
++        <name>ranger.plugin.starrocks.role.context.mode</name>
++        <value>active_role</value>
++    </property>
++
+     <property>
+         <name>ranger.plugin.starrocks.policy.rest.client.connection.timeoutMs</name>
+         <value>30000</value>
+@@ -71,4 +76,4 @@
+             S3 Plugin RangerRestClient read Timeout in Milli Seconds
+         </description>
+     </property>
+-</configuration>
+\ No newline at end of file
++</configuration>

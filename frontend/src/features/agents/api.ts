@@ -27,6 +27,9 @@ export type Agent = {
   tool_not_accessible: string;
   default_tools: string[];
   default_skills: string[];
+  discoverable_skills?: string[];
+  compiled_instructions?: Record<string, unknown>;
+  harness_mode?: "auto" | "fast" | "guided" | "strict";
   policy: "auto_read_only" | "ask_every_tool";
   semantic_model_id: string | null;
   /** All bound semantic models. The scalar mirrors the first entry. */
@@ -37,7 +40,14 @@ export type Agent = {
 };
 
 export type AgentCreateInput = Partial<
-  Omit<Agent, "agent_id" | "owner_name" | "created_at" | "updated_at">
+  Omit<
+    Agent,
+    | "agent_id"
+    | "owner_name"
+    | "created_at"
+    | "updated_at"
+    | "compiled_instructions"
+  >
 > & {
   name: string;
 };
@@ -64,6 +74,45 @@ export type SemanticValidateResult = {
   dataset_count: number;
   metric_count: number;
   relationship_count: number;
+};
+
+export type SemanticPreview = {
+  semantic_model_id: string;
+  model_fingerprint: string;
+  semantic_plan: Record<string, unknown>;
+  generated_sql: string;
+  confidence: Record<string, unknown>;
+  relationship_path: string[];
+  warnings: string[];
+};
+
+export type SemanticLintResult = {
+  semantic_model_id: string;
+  model_fingerprint: string;
+  valid: boolean;
+  errors: string[];
+  findings: Array<{
+    code: string;
+    severity: string;
+    message: string;
+    object_name: string | null;
+  }>;
+  quality: Record<string, unknown>;
+};
+
+export type VerifiedQuery = {
+  verified_query_id: string;
+  semantic_model_id: string;
+  model_fingerprint: string;
+  question: string;
+  semantic_plan: Record<string, unknown>;
+  verified_sql: string;
+  expected_result_signature: string | null;
+  verified_by: string;
+  verified_at: string;
+  tags: string[];
+  usage_count: number;
+  success_count: number;
 };
 
 export type AgentThread = {
@@ -120,6 +169,33 @@ export const agentsApi = {
     api.post<SemanticValidateResult>("/agents/semantic-models/validate", {
       definition,
     }),
+  previewSemanticQuestion: (id: string, question: string) =>
+    api.post<SemanticPreview>(
+      `/agents/semantic-models/${encodeURIComponent(id)}/preview`,
+      { question },
+    ),
+  lintSemanticModel: (id: string) =>
+    api.get<SemanticLintResult>(
+      `/agents/semantic-models/${encodeURIComponent(id)}/lint`,
+    ),
+  listVerifiedQueries: (id: string) =>
+    api.get<{ queries: VerifiedQuery[]; count: number }>(
+      `/agents/semantic-models/${encodeURIComponent(id)}/verified-queries`,
+    ),
+  createVerifiedQuery: (
+    id: string,
+    body: {
+      question: string;
+      semantic_plan: Record<string, unknown>;
+      verified_sql: string;
+      expected_result_signature?: string | null;
+      tags?: string[];
+    },
+  ) =>
+    api.post<VerifiedQuery>(
+      `/agents/semantic-models/${encodeURIComponent(id)}/verified-queries`,
+      body,
+    ),
 
   listThreads: (agentId: string) =>
     api.get<{ threads: AgentThread[]; count: number }>(
@@ -278,7 +354,7 @@ export type StudioSettings = {
 
 export type StudioCapabilities = {
   agents: { name: string; description: string; agent_id: string }[];
-  skills: { name: string; description: string }[];
+  skills: { name: string; description: string; source: "builtin" | "user" }[];
   tools: {
     name: string;
     description: string;
@@ -395,6 +471,8 @@ export type Skill = {
   description: string;
   body: string;
   scope: "user" | "global";
+  source: "builtin" | "user";
+  read_only: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -519,6 +597,37 @@ export type TraceStep =
       }[];
       /** Tool-specific, bounded, credential-free observability payload. */
       trace_detail?: Record<string, unknown>;
+      /** Evidence accepted by Nova's verifier for final composition. */
+      evidence_id?: string;
+    }
+  | {
+      kind: "runtime_decision";
+      step_id?: string;
+      intent: string;
+      harness_mode: "fast" | "guided" | "strict";
+      selected_tools: string[];
+      selected_skills: string[];
+      semantic_model_ids: string[];
+      prompt_telemetry: Record<string, number>;
+      status: "done";
+      started_offset_ms?: number;
+      duration_ms?: number;
+    }
+  | {
+      kind: "state";
+      step_id?: string;
+      state: string;
+      status: "done";
+      started_offset_ms?: number;
+      duration_ms?: number;
+    }
+  | {
+      kind: "active_state";
+      step_id?: string;
+      state: Record<string, unknown>;
+      status: "done";
+      started_offset_ms?: number;
+      duration_ms?: number;
     }
   | {
       kind: "answer";

@@ -56,6 +56,9 @@ class AgentView(BaseModel):
     tool_not_accessible: str = "accept"
     default_tools: list[str] = Field(default_factory=list)
     default_skills: list[str] = Field(default_factory=list)
+    discoverable_skills: list[str] = Field(default_factory=list)
+    compiled_instructions: dict = Field(default_factory=dict)
+    harness_mode: Literal["auto", "fast", "guided", "strict"] = "auto"
     policy: AgentPolicy = "auto_read_only"
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] = Field(default_factory=list)
@@ -87,6 +90,8 @@ class AgentCreateRequest(BaseModel):
     tool_not_accessible: Literal["accept", "reject"] = "accept"
     default_tools: list[AgentToolName] = Field(default_factory=list)
     default_skills: list[str] = Field(default_factory=list)
+    discoverable_skills: list[str] = Field(default_factory=list)
+    harness_mode: Literal["auto", "fast", "guided", "strict"] = "auto"
     policy: AgentPolicy = "auto_read_only"
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] = Field(default_factory=list)
@@ -113,6 +118,8 @@ class AgentUpdateRequest(BaseModel):
     tool_not_accessible: Literal["accept", "reject"] | None = None
     default_tools: list[AgentToolName] | None = None
     default_skills: list[str] | None = None
+    discoverable_skills: list[str] | None = None
+    harness_mode: Literal["auto", "fast", "guided", "strict"] | None = None
     policy: AgentPolicy | None = None
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] | None = None
@@ -164,6 +171,64 @@ class SemanticValidateResponse(BaseModel):
     relationship_count: int = 0
 
 
+class SemanticPreviewRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+
+
+class SemanticPreviewResponse(BaseModel):
+    semantic_model_id: str
+    model_fingerprint: str
+    semantic_plan: dict
+    generated_sql: str
+    confidence: dict
+    relationship_path: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SemanticLintView(BaseModel):
+    code: str
+    severity: str
+    message: str
+    object_name: str | None = None
+
+
+class SemanticLintResponse(BaseModel):
+    semantic_model_id: str
+    model_fingerprint: str
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+    findings: list[SemanticLintView] = Field(default_factory=list)
+    quality: dict = Field(default_factory=dict)
+
+
+class VerifiedQueryCreateRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    semantic_plan: dict
+    verified_sql: str = Field(min_length=1, max_length=100_000)
+    expected_result_signature: str | None = Field(default=None, max_length=256)
+    tags: list[str] = Field(default_factory=list)
+
+
+class VerifiedQueryView(BaseModel):
+    verified_query_id: str
+    semantic_model_id: str
+    model_fingerprint: str
+    question: str
+    semantic_plan: dict
+    verified_sql: str
+    expected_result_signature: str | None = None
+    verified_by: str
+    verified_at: datetime
+    tags: list[str] = Field(default_factory=list)
+    usage_count: int = 0
+    success_count: int = 0
+
+
+class VerifiedQueryListResponse(BaseModel):
+    queries: list[VerifiedQueryView]
+    count: int
+
+
 class SkillView(BaseModel):
     skill_id: str
     owner_name: str
@@ -171,6 +236,8 @@ class SkillView(BaseModel):
     description: str = ""
     body: str = ""
     scope: str = "user"
+    source: Literal["builtin", "user"] = "user"
+    read_only: bool = False
     created_at: datetime
     updated_at: datetime
 

@@ -25,6 +25,11 @@ from dataclasses import dataclass
 
 import asyncmy
 
+from app.core.config import settings
+from app.modules.access_control.role_activation import (
+    RoleActivationError,
+    role_activation_service,
+)
 from app.proxy.auth import (
     AuthenticatedUser,
     AuthenticationError,
@@ -129,9 +134,7 @@ class ProxyConnection:
             raise ProtocolError(f"packet of {length} bytes exceeds the proxy limit")
         if length == 0:
             return b""
-        return await asyncio.wait_for(
-            self._reader.readexactly(length), timeout=self._read_timeout
-        )
+        return await asyncio.wait_for(self._reader.readexactly(length), timeout=self._read_timeout)
 
     async def _write_payloads(self, payloads: list[bytes], *, start_sequence: int = 1) -> None:
         sequence = start_sequence
@@ -274,6 +277,36 @@ class ProxyConnection:
         self._ctx.connection = await upstream.open_session()
         self._ctx.upstream = upstream
 
+        requested_role = response.connect_attrs.get("nova_role") or None
+        if settings.RANGER_ENABLED or requested_role is not None:
+            try:
+                active_role, assignments = await role_activation_service.activate(
+                    self._ctx.connection,
+                    principal=response.username,
+                    requested_role=requested_role,
+                )
+            except RoleActivationError as exc:
+                logger.info(
+                    "[%s] role activation failed for %r from %s",
+                    self._ctx.connection_id,
+                    response.username,
+                    self._ctx.peer,
+                )
+                await self._write_error(ER_ACCESS_DENIED_ERROR, str(exc), sequence=2)
+                await upstream.close()
+                return False
+
+            self._ctx.session.establish_security(
+                principal=response.username,
+                assigned_roles=assignments.assigned_roles,
+                default_role=assignments.default_role or "",
+                active_role=active_role,
+            )
+        else:
+            # Native-RBAC compatibility mode predates mandatory role markers.
+            # Keep the authenticated principal, but never manufacture a role.
+            self._ctx.session.principal = response.username
+
         self._ctx.user = AuthenticatedUser(
             username=response.username,
             database=response.database,
@@ -331,9 +364,7 @@ class ProxyConnection:
                 # Connection-level option changes (multi-statement toggle).
                 # Acknowledged, not applied: the proxy already handles multi
                 # statements through its own splitter and one response shape.
-                await self._write_payloads(
-                    [build_eof_packet_payload(self._ctx.capabilities)]
-                )
+                await self._write_payloads([build_eof_packet_payload(self._ctx.capabilities)])
                 continue
 
             await self._on_unsupported(command)
@@ -379,9 +410,7 @@ class ProxyConnection:
             await self._write_error(ER_NO_DB_ERROR, "No database selected")
             return
         self._ctx.session.set_database(database)
-        await self._write_payloads(
-            [build_ok_packet(0, 0, capabilities=self._ctx.capabilities)]
-        )
+        await self._write_payloads([build_ok_packet(0, 0, capabilities=self._ctx.capabilities)])
 
     async def _on_unsupported(self, command: int) -> None:
         """Refuse a command Nova does not implement, in MySQL's own idiom.
@@ -407,8 +436,7 @@ class ProxyConnection:
         if command == COM_CHANGE_USER:
             await self._write_error(
                 ER_NOT_SUPPORTED_YET,
-                "COM_CHANGE_USER is not supported by the Nova MySQL proxy; "
-                "open a new connection",
+                "COM_CHANGE_USER is not supported by the Nova MySQL proxy; open a new connection",
             )
             return
         await self._write_error(ER_UNKNOWN_COM_ERROR, f"Unknown command {command}")

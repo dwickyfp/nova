@@ -168,9 +168,7 @@ class WorkerService:
             except Exception:
                 logger.exception("reconcile pass failed; continuing")
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(
-                    stop_event.wait(), timeout=self._reconcile_interval
-                )
+                await asyncio.wait_for(stop_event.wait(), timeout=self._reconcile_interval)
 
     async def _process_available(self, *, block_ms: int) -> int:
         processed = 0
@@ -232,9 +230,7 @@ class WorkerService:
                 return
             # ``list_active_graph_runs`` orders by ``started_at``, so the first
             # pending row is the oldest deferred run.
-            pending = next(
-                (run for run in active if str(run.get("state")) == "pending"), None
-            )
+            pending = next((run for run in active if str(run.get("state")) == "pending"), None)
             if pending is None:
                 return
             state = await self._drive(pending)

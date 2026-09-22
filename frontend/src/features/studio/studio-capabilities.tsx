@@ -1,21 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Bot, LayoutGrid, Wrench } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Skeleton } from "@/components/ui/skeleton";
-import { studioApi } from "@/features/agents/api";
+import { useQuery } from '@tanstack/react-query'
+import { BookOpen, Bot, LayoutGrid, Wrench } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Skeleton } from '@/components/ui/skeleton'
+import { studioApi } from '@/features/agents/api'
 
 /** Capabilities — the agents, skills, and tools available to this user. */
-export function StudioCapabilities({
-  onSelectAgent,
-}: {
-  onSelectAgent: (id: string) => void;
-}) {
+export function StudioCapabilities({ onSelectAgent }: { onSelectAgent: (id: string) => void }) {
   const capsQuery = useQuery({
-    queryKey: ["studio", "capabilities"],
+    queryKey: ['studio', 'capabilities'],
     queryFn: () => studioApi.capabilities(),
-  });
+  })
 
   return (
     <>
@@ -28,11 +24,7 @@ export function StudioCapabilities({
             <Skeleton className="h-64 w-full" />
           ) : (
             <>
-              <Section
-                icon={Bot}
-                title="Agents"
-                count={capsQuery.data?.agents.length ?? 0}
-              >
+              <Section icon={Bot} title="Agents" count={capsQuery.data?.agents.length ?? 0}>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {capsQuery.data?.agents.map((agent) => (
                     <button
@@ -52,16 +44,12 @@ export function StudioCapabilities({
                 </div>
               </Section>
 
-              <Section
-                icon={Wrench}
-                title="Tools"
-                count={capsQuery.data?.tools.length ?? 0}
-              >
+              <Section icon={Wrench} title="Tools" count={capsQuery.data?.tools.length ?? 0}>
                 <div className="flex flex-wrap gap-2">
                   {capsQuery.data?.tools.map((tool) => (
                     <Badge
                       key={`${tool.source}-${tool.name}`}
-                      variant={tool.is_enabled ? "secondary" : "outline"}
+                      variant={tool.is_enabled ? 'secondary' : 'outline'}
                       className="font-mono"
                     >
                       {tool.name}
@@ -70,36 +58,29 @@ export function StudioCapabilities({
                 </div>
               </Section>
 
-              <Section
-                icon={BookOpen}
-                title="Your skills"
-                count={capsQuery.data?.skills.length ?? 0}
-              >
+              <Section icon={BookOpen} title="Skills" count={capsQuery.data?.skills.length ?? 0}>
                 {capsQuery.data?.skills.length ? (
                   <div className="flex flex-wrap gap-2">
                     {capsQuery.data.skills.map((skill) => (
                       <Badge
-                        key={skill.name}
+                        key={`${skill.source}-${skill.name}`}
                         variant="secondary"
                         className="font-mono"
                       >
                         {skill.name}
+                        {skill.source === 'builtin' ? ' · built-in' : ''}
                       </Badge>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No custom skills yet. Add one under AI &amp; ML &gt; Skills.
-                  </p>
+                  <p className="text-sm text-muted-foreground">No skills are available.</p>
                 )}
               </Section>
 
               <div className="flex justify-center">
                 <Button
                   variant="outline"
-                  onClick={() =>
-                    onSelectAgent(capsQuery.data?.agents[0]?.agent_id ?? "")
-                  }
+                  onClick={() => onSelectAgent(capsQuery.data?.agents[0]?.agent_id ?? '')}
                 >
                   <LayoutGrid className="size-4" />
                   Open an agent
@@ -110,7 +91,7 @@ export function StudioCapabilities({
         </div>
       </ScrollArea>
     </>
-  );
+  )
 }
 
 function Section({
@@ -119,10 +100,10 @@ function Section({
   count,
   children,
 }: {
-  icon: typeof Bot;
-  title: string;
-  count: number;
-  children: React.ReactNode;
+  icon: typeof Bot
+  title: string
+  count: number
+  children: React.ReactNode
 }) {
   return (
     <section>
@@ -133,5 +114,5 @@ function Section({
       </div>
       {children}
     </section>
-  );
+  )
 }

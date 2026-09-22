@@ -18,6 +18,7 @@ from app.proxy.session import (
     SessionState,
     handle_set_statement,
     is_show_databases,
+    parse_role_statement,
     parse_use_statement,
     split_statements,
     substitute_user_variables,
@@ -121,21 +122,39 @@ class TestSetStatements:
         handle_set_statement("SET @x = 1;", session)
         assert session.user_variables["x"] == "1"
 
-    def test_set_role_updates_active_role(self):
-        session = SessionState()
-        result = handle_set_statement("SET ROLE ACCOUNTADMIN", session)
-        assert result.handled is True
-        assert session.active_role == "ACCOUNTADMIN"
+    @pytest.mark.parametrize(
+        ("statement", "expected"),
+        [
+            ("SET ROLE ACCOUNTADMIN", "ACCOUNTADMIN"),
+            ("SET ROLE 'analyst'", "analyst"),
+            ("set role accountadmin", "accountadmin"),
+            ("USE ROLE finance", "finance"),
+            ("SET ROLE DEFAULT", "DEFAULT"),
+        ],
+    )
+    def test_role_statement_requires_central_activation(self, statement, expected):
+        session = SessionState(active_role="marketing")
+        result = handle_set_statement(statement, session)
 
-    def test_set_role_quoted(self):
-        session = SessionState()
-        handle_set_statement("SET ROLE 'analyst'", session)
-        assert session.active_role == "analyst"
+        assert result.handled is False
+        if statement.upper().startswith("SET ROLE"):
+            assert result.error == "SET ROLE must be validated by the role activation service"
+        else:
+            assert result.error is None
+        assert session.active_role == "marketing"
+        assert parse_role_statement(statement) == expected
 
-    def test_set_role_is_case_insensitive(self):
-        session = SessionState()
-        assert handle_set_statement("set role accountadmin", session).handled is True
-        assert session.active_role == "accountadmin"
+    @pytest.mark.parametrize(
+        "statement",
+        ["SET ROLE ALL", "SET ROLE NONE", "SET ROLE marketing, finance"],
+    )
+    def test_unsafe_role_activation_is_rejected_without_state_change(self, statement):
+        session = SessionState(active_role="marketing")
+
+        with pytest.raises(ValueError, match="Exactly one named role"):
+            parse_role_statement(statement)
+
+        assert session.active_role == "marketing"
 
     def test_set_names_is_handled_without_state(self):
         session = SessionState()
@@ -302,9 +321,7 @@ class TestUserVariableSubstitution:
         favour would make a stored value silently shadow a stage.
         """
         session = self._session(products="'shadow'")
-        result = substitute_user_variables(
-            "SELECT * FROM @products.products_new.csv", session
-        )
+        result = substitute_user_variables("SELECT * FROM @products.products_new.csv", session)
         assert result.sql == "SELECT * FROM @products.products_new.csv"
         assert result.substituted == []
 

@@ -32,18 +32,32 @@ class SessionStore:
             self._redis = None
 
     async def create(
-        self, username: str, encrypted_password: str, roles: list[str], active_role: str | None = None
+        self,
+        username: str,
+        encrypted_password: str,
+        roles: list[str],
+        *,
+        default_role: str | None = None,
+        active_role: str | None = None,
     ) -> str:
         """Create a new session. Returns session_id (UUID)."""
         if not self._redis:
             raise RuntimeError("SessionStore not initialized. Call init() first.")
 
         session_id = str(uuid.uuid4())
+        if settings.RANGER_ENABLED:
+            if not default_role or default_role not in roles:
+                raise ValueError("A valid explicit default role is required")
+            if not active_role or active_role not in roles:
+                raise ValueError("A valid active role is required")
         data = {
             "username": username,
             "encrypted_password": encrypted_password,
             "roles": ",".join(roles),
-            "active_role": active_role or (roles[0] if roles else ""),
+            "assigned_roles": ",".join(roles),
+            "default_role": default_role or "",
+            "active_role": active_role or "",
+            "security_context_version": "1",
         }
         key = f"{SESSION_PREFIX}{session_id}"
         await self._redis.hset(key, mapping=data)
@@ -58,24 +72,35 @@ class SessionStore:
         data = await self._redis.hgetall(f"{SESSION_PREFIX}{session_id}")
         if not data:
             return None
-        data["roles"] = data.get("roles", "").split(",") if data.get("roles") else []
-        data["active_role"] = data.get("active_role") or (data["roles"][0] if data["roles"] else None)
+        roles_value = data.get("assigned_roles") or data.get("roles", "")
+        data["roles"] = roles_value.split(",") if roles_value else []
+        data["assigned_roles"] = list(data["roles"])
+        data["default_role"] = data.get("default_role") or None
+        data["active_role"] = data.get("active_role") or None
+        data["security_context_version"] = int(
+            data.get("security_context_version") or 1
+        )
         return data
 
-    async def set_active_role(self, session_id: str, active_role: str, roles: list[str]) -> None:
-        """Update active role and normalized role order for a session."""
+    async def set_active_role(self, session_id: str, active_role: str) -> int:
+        """Commit a verified active role and advance the security boundary."""
         if not self._redis:
             raise RuntimeError("SessionStore not initialized. Call init() first.")
 
         key = f"{SESSION_PREFIX}{session_id}"
+        current = await self.get(session_id)
+        if not current or active_role not in current["assigned_roles"]:
+            raise ValueError("Role is not assigned to this session")
+        version = int(current.get("security_context_version") or 1) + 1
         await self._redis.hset(
             key,
             mapping={
                 "active_role": active_role,
-                "roles": ",".join(roles),
+                "security_context_version": str(version),
             },
         )
         await self._redis.expire(key, settings.SESSION_TTL_SECONDS)
+        return version
 
     async def delete(self, session_id: str) -> None:
         """Delete a session (logout)."""

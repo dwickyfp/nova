@@ -16,7 +16,7 @@ overrides) rather than via ``create_app`` so no engine, Redis or MinIO is
 required, matching ``test_internal_ml_endpoint_auth.py``.
 
 The repository/service is stubbed at the module boundary; the *authorization*
-chain — ``require_role`` over ``get_current_user`` — is the real thing under
+chain — ``require_active_role`` over ``get_current_user`` — is the real thing under
 test, not a mock.
 """
 
@@ -40,14 +40,14 @@ ADMIN_USER = {
     "username": "admin",
     "session_id": "s",
     "roles": ["ACCOUNTADMIN"],
-    "active_role": None,
+    "active_role": "ACCOUNTADMIN",
     "encrypted_password": "enc",
 }
 ANALYST_USER = {
     "username": "analyst",
     "session_id": "s",
     "roles": ["test_analyst"],
-    "active_role": None,
+    "active_role": "test_analyst",
     "encrypted_password": "enc",
 }
 ROLELESS_USER: dict[str, Any] = {
@@ -169,7 +169,7 @@ def app() -> FastAPI:
     from app.core.exceptions import register_exception_handlers
 
     application = FastAPI()
-    # ``require_role`` raises ``InsufficientRoleError``; without the real global
+    # ``require_active_role`` raises ``InsufficientRoleError``; without the real global
     # handler a denial surfaces as a 500 instead of the 403 the contract promises.
     register_exception_handlers(application)
     application.include_router(router, prefix=PREFIX)
@@ -226,7 +226,7 @@ class TestKillRequiresPrivilegedRole:
 
     @pytest.mark.parametrize("role", KILL_ROLES)
     def test_admin_role_succeeds(self, app, spy, role):
-        admin = {**ADMIN_USER, "roles": [role]}
+        admin = {**ADMIN_USER, "roles": [role], "active_role": role}
         with _as(app, admin) as client:
             resp = client.post(f"{PREFIX}/queries/kill", json={"connection_id": 7})
 
@@ -239,6 +239,18 @@ class TestKillRequiresPrivilegedRole:
             resp = client.post(f"{PREFIX}/queries/kill", json={"connection_id": 42})
 
         assert resp.status_code == 401, resp.text
+        assert spy.kill_calls == []
+
+    def test_inactive_admin_role_gets_403(self, app, spy):
+        user = {
+            **ANALYST_USER,
+            "roles": ["test_analyst", "ACCOUNTADMIN"],
+            "active_role": "test_analyst",
+        }
+        with _as(app, user) as client:
+            resp = client.post(f"{PREFIX}/queries/kill", json={"connection_id": 42})
+
+        assert resp.status_code == 403, resp.text
         assert spy.kill_calls == []
 
 
@@ -292,8 +304,13 @@ class TestRoleSets:
     def test_kill_roles_does_not_include_plain_analyst_roles(self):
         assert "test_analyst" not in KILL_ROLES
 
-    def test_admin_roles_are_the_expected_three(self):
-        assert set(READ_ROLES) == {"ACCOUNTADMIN", "user_admin", "security_admin"}
+    def test_admin_roles_include_ranger_securityadmin(self):
+        assert set(READ_ROLES) == {
+            "ACCOUNTADMIN",
+            "SECURITYADMIN",
+            "user_admin",
+            "security_admin",
+        }
 
 
 class TestEveryMonitoringEndpointIsGuarded:
@@ -311,10 +328,10 @@ class TestEveryMonitoringEndpointIsGuarded:
         [r for r in router.routes if hasattr(r, "dependant")],
         ids=lambda r: f"{sorted(r.methods)[0] if r.methods else '?'} {r.path}",
     )
-    def test_route_uses_require_role(self, route):
+    def test_route_uses_require_active_role(self, route):
         dep_names = _dependency_names(route.dependant)
-        assert "require_role.<locals>._check" in dep_names, (
-            f"{route.path} is not guarded by require_role — only {dep_names}"
+        assert "require_active_role.<locals>._check" in dep_names, (
+            f"{route.path} is not guarded by require_active_role — only {dep_names}"
         )
 
     def test_kill_route_is_present_and_guarded(self):
@@ -324,7 +341,9 @@ class TestEveryMonitoringEndpointIsGuarded:
             if r.path == "/queries/kill" and "POST" in (r.methods or set())
         ]
         assert kill, "POST /queries/kill route not found"
-        assert "require_role.<locals>._check" in _dependency_names(kill[0].dependant)
+        assert "require_active_role.<locals>._check" in _dependency_names(
+            kill[0].dependant
+        )
 
 
 def _dependency_names(dependant) -> set[str]:

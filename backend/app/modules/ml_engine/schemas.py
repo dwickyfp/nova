@@ -174,6 +174,31 @@ class BatchPredictResponse(BaseModel):
     total_rows: int
 
 
+class ForecastRequest(BaseModel):
+    model_alias: str = Field(..., min_length=1)
+    horizon: int = Field(..., ge=1)
+    confidence_level: int = Field(default=95, ge=1, le=99)
+    series: str | None = None
+    database_name: str | None = None
+
+
+class VersionForecastRequest(BaseModel):
+    model_id: str = Field(..., min_length=1)
+    version: int = Field(..., ge=1)
+    horizon: int = Field(..., ge=1)
+    confidence_level: int = Field(default=95, ge=1, le=99)
+    series: str | None = None
+    database_name: str | None = None
+
+
+class ForecastResponse(BaseModel):
+    model_name: str
+    model_version: int
+    model_alias: str | None = None
+    model_id: str | None = None
+    forecast: list[dict[str, Any]]
+
+
 # ── Model Management ──────────────────────────────────────────
 
 

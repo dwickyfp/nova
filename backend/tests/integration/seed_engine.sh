@@ -69,11 +69,23 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (
   rewritten_sql TEXT,
   file_id       VARCHAR(64),
   database_name VARCHAR(128),
-  schema_name   VARCHAR(128)
+  schema_name   VARCHAR(128),
+  active_role   VARCHAR(128),
+  security_context_version BIGINT,
+  decision      VARCHAR(32),
+  ranger_policy_ids VARCHAR(2048)
 ) DUPLICATE KEY(log_id, query_id, event_type, event_time)
 DISTRIBUTED BY HASH(log_id) BUCKETS 8
 PROPERTIES('replication_num'='1');
 "
+
+# StarRocks 4.0 (used by this legacy L3 stack) has no ADD COLUMN IF NOT EXISTS.
+# New tables already contain these fields; tolerate duplicate-column errors when
+# upgrading a persisted local test volume created before the Ranger migration.
+fe_sql -e "ALTER TABLE NOVA_SYSTEM.AUDIT_LOG ADD COLUMN active_role VARCHAR(128)" || true
+fe_sql -e "ALTER TABLE NOVA_SYSTEM.AUDIT_LOG ADD COLUMN security_context_version BIGINT" || true
+fe_sql -e "ALTER TABLE NOVA_SYSTEM.AUDIT_LOG ADD COLUMN decision VARCHAR(32)" || true
+fe_sql -e "ALTER TABLE NOVA_SYSTEM.AUDIT_LOG ADD COLUMN ranger_policy_ids VARCHAR(2048)" || true
 
 echo "== users and databases =="
 # init-nova.sql creates nova_admin with its own password ('!1password') and

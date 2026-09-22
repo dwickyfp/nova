@@ -1,0 +1,10 @@
+# Local-host development only.
+#
+# The primary stack keeps StarRocks SQL private to the Docker network. This
+# override publishes it on a loopback-only, non-standard port so the backend
+# started by ../dev.sh can reach the engine without exposing it to the LAN.
+
+services:
+  starrocks-fe:
+    ports:
+      - "127.0.0.1:${STARROCKS_DEV_MYSQL_PORT:-29030}:9030"

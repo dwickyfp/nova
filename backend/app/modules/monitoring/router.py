@@ -17,7 +17,7 @@ Endpoints under /api/v1/monitoring:
   GET  /alerts                 → production alert rules evaluated live
   GET  /readiness              → read-only production readiness audit
 
-Authorization: every endpoint is gated with ``require_role``. Reads use
+Authorization: every endpoint is gated with ``require_active_role``. Reads use
 ``READ_ROLES``; ``POST /queries/kill`` uses the (identical) ``KILL_ROLES`` set
 kept separate so tightening the kill surface later is a one-line change. See the
 constants below for why the system-pool reads still need a backend gate.
@@ -26,7 +26,7 @@ constants below for why the system-pool reads still need a backend gate.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from app.core.deps import require_role
+from app.core.role_gates import require_active_role
 from app.modules.monitoring.runtime_health import RuntimeHealthResponse
 from app.modules.monitoring.service import monitoring_service
 from app.modules.users.router import ADMIN_ROLES as ADMIN_ROLES
@@ -54,8 +54,8 @@ KILL_ROLES = ADMIN_ROLES
 
 # Built once so routes use module-level dependencies instead of calling
 # ``Depends(...)`` in argument defaults (ruff B008).
-require_read = Depends(require_role(*READ_ROLES))
-require_kill = Depends(require_role(*KILL_ROLES))
+require_read = Depends(require_active_role(*READ_ROLES))
+require_kill = Depends(require_active_role(*KILL_ROLES))
 
 
 # ── Response Models ──────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import asyncmy.cursors
 import pyarrow as pa
 
 from app.core.config import settings
+from app.core.security import encrypt_password
 from app.modules.ml_engine.artifacts.serializer import serialize_bundle
 from app.modules.ml_engine.artifacts.store import ArtifactStore, ObjectArtifactStore
 from app.modules.ml_engine.data.datasource import TrainingDataSource, collect_bounded
@@ -32,6 +33,7 @@ from app.modules.ml_engine.ephemeral.cache import EphemeralEntry, EphemeralRunCa
 from app.modules.ml_engine.ephemeral.fingerprint import execution_fingerprint
 from app.modules.ml_engine.execution.budgets import budget_for
 from app.modules.ml_engine.execution.job_runner import MLJobRunner
+from app.modules.ml_engine.execution.worker import MLWorkerJob, MLWorkerSecurity
 from app.modules.ml_engine.registry.repository import (
     ModelRegistryRepository,
     model_registry_repository,
@@ -87,8 +89,14 @@ class MLEngineService:
             repository=self.repository, store=self.artifact_store
         )
         self.ephemeral_cache = ephemeral_cache or EphemeralRunCache(
-            settings.ML_EPHEMERAL_TTL_SECONDS
+            settings.ML_EPHEMERAL_TTL_SECONDS,
+            max_entries=settings.ML_EPHEMERAL_MAX_ENTRIES,
+            max_memory_bytes=settings.ML_EPHEMERAL_MAX_MEMORY_BYTES,
         )
+        if self.ephemeral_cache.on_evict is None:
+            self.ephemeral_cache.on_evict = lambda entry: (
+                self.artifact_store.delete(entry.artifact_uri) if entry.artifact_uri else None
+            )
 
     async def execute(self, spec: MLExecutionSpec) -> MLRunResult:
         spec.validate()
@@ -109,6 +117,8 @@ class MLEngineService:
             "mode": spec.mode.value,
             "user_scope": spec.security.scope_key,
             "cache_hit": False,
+            "ephemeral_cache_hit": False,
+            "model_cache_hit": False,
         }
         model_id = None
         version = None
@@ -116,30 +126,79 @@ class MLEngineService:
         version_registered = False
         try:
             engine_sql = await self._prepare_user_sql(spec.input_sql, spec.security)
-            extracted = await collect_bounded(self.data_source, engine_sql, spec.security, budget)
+            training_started = time.perf_counter()
+            if (
+                getattr(self.job_runner, "worker_direct", False)
+                and type(self.data_source) is PreferredDataSource
+            ):
+                # The production boundary carries only a job descriptor. The
+                # caller password is encrypted before multiprocessing pickles
+                # the payload and is decrypted only inside the child.
+                protected_spec = replace(
+                    spec,
+                    security=replace(spec.security, password=""),
+                    input_sql="[prepared by orchestrator]",
+                )
+                worker_result = await self.job_runner.run_job(
+                    MLWorkerJob(
+                        run_id=run_id,
+                        spec=protected_spec,
+                        normalized_input_sql=engine_sql,
+                        security=MLWorkerSecurity(
+                            username=spec.security.username,
+                            encrypted_password=encrypt_password(spec.security.password),
+                            database=spec.security.database,
+                            schema=spec.security.schema,
+                            role=spec.security.role,
+                            tenant=spec.security.tenant,
+                        ),
+                        dispatched_at=time.perf_counter(),
+                    ),
+                    timeout_seconds=budget.timeout_seconds,
+                )
+                output = worker_result.output
+                extraction = worker_result.extraction
+                telemetry["ipc_mode"] = "worker_direct_flight"
+                telemetry["ipc_bytes"] = 0
+                telemetry["worker_startup_seconds"] = worker_result.worker_startup_seconds
+                telemetry["training_seconds"] = worker_result.training_seconds
+                telemetry["worker_peak_rss_bytes"] = worker_result.worker_peak_rss_bytes
+            else:
+                # Explicit test/embedded seam. Production MLJobRunner never
+                # follows this path, which keeps custom in-memory sources usable
+                # without teaching a child process how to reconstruct them.
+                extracted = await collect_bounded(
+                    self.data_source, engine_sql, spec.security, budget
+                )
+                extraction = extracted.metrics
+                output = await self.job_runner.run(
+                    _train_worker,
+                    extracted.table,
+                    replace(spec, input_sql="[prepared by orchestrator]"),
+                    timeout_seconds=budget.timeout_seconds,
+                )
+                telemetry["ipc_mode"] = "embedded_columnar"
+                telemetry["ipc_bytes"] = extracted.table.nbytes
+                telemetry["worker_startup_seconds"] = 0.0
+                telemetry["training_seconds"] = time.perf_counter() - training_started
+                telemetry["worker_peak_rss_bytes"] = None
             telemetry.update(
                 {
-                    "rows_read": extracted.metrics.rows_read,
-                    "bytes_read": extracted.metrics.bytes_read,
-                    "arrow_batches_read": extracted.metrics.batches_read,
-                    "extraction_duration_ms": extracted.metrics.duration_ms,
-                    "transport": extracted.metrics.transport,
+                    "extraction_rows": extraction.rows_read,
+                    "extraction_bytes": extraction.bytes_read,
+                    "record_batches": extraction.batches_read,
+                    "largest_batch_bytes": extraction.largest_batch_bytes,
+                    "final_materialized_bytes": extraction.final_materialized_bytes,
+                    "extraction_seconds": extraction.duration_ms / 1000,
+                    "queue_wait_time": getattr(extraction, "queue_wait_seconds", 0.0),
+                    "data_conversion_duration": getattr(
+                        extraction, "data_conversion_duration", 0.0
+                    ),
+                    "transport": extraction.transport,
                 }
             )
-            worker_spec = replace(
-                spec,
-                security=MLSecurityContext(username="ml-worker", password=""),
-                input_sql="[prepared by orchestrator]",
-            )
-            training_started = time.perf_counter()
-            output = await self.job_runner.run(
-                _train_worker,
-                extracted.table,
-                worker_spec,
-                timeout_seconds=budget.timeout_seconds,
-            )
             telemetry["training_duration_ms"] = round(
-                (time.perf_counter() - training_started) * 1000, 3
+                float(telemetry["training_seconds"]) * 1000, 3
             )
             telemetry.update(
                 {
@@ -148,20 +207,26 @@ class MLEngineService:
                     "validation_metric": output.metrics.get("validation_score")
                     or output.metrics.get("validation_mae")
                     or output.metrics.get("silhouette"),
+                    "arrow_to_pandas_seconds": output.metrics.get("arrow_to_pandas_seconds", 0.0),
+                    "arrow_to_numpy_seconds": output.metrics.get("arrow_to_numpy_seconds", 0.0),
                 }
             )
-            payload, checksum = serialize_bundle(output.bundle)
+            serialization_started = time.perf_counter()
+            payload, checksum = await asyncio.to_thread(serialize_bundle, output.bundle)
+            telemetry["serialization_seconds"] = time.perf_counter() - serialization_started
             telemetry["artifact_size"] = len(payload)
             if spec.persist:
                 model_id, version = await self.repository.reserve_version(
                     replace(spec, input_sql=redact_for_output(spec.input_sql)),
                     feature_columns=output.feature_columns,
                 )
+                upload_started = time.perf_counter()
                 artifact_uri = await asyncio.to_thread(
                     self.artifact_store.put,
                     self._artifact_key(spec, model_id, version),
                     payload,
                 )
+                telemetry["upload_seconds"] = time.perf_counter() - upload_started
                 await self.repository.register_version(
                     model_id=model_id,
                     version=version,
@@ -174,18 +239,40 @@ class MLEngineService:
                 )
                 version_registered = True
             else:
+                upload_started = time.perf_counter()
+                artifact_uri = await asyncio.to_thread(
+                    self.artifact_store.put,
+                    self._ephemeral_artifact_key(spec, run_id),
+                    payload,
+                )
+                telemetry["upload_seconds"] = time.perf_counter() - upload_started
+                cached_output = replace(output, bundle={}, results=output.results[:1000])
                 self.ephemeral_cache.put(
                     EphemeralEntry(
                         run_id=run_id,
                         fingerprint=fingerprint,
                         scope_key=spec.security.scope_key,
-                        output=output,
-                        artifact_payload=payload,
+                        task=spec.task.value,
+                        output=cached_output,
+                        artifact_uri=artifact_uri,
                         artifact_sha256=checksum,
+                        artifact_size=len(payload),
                         expires_at=time.monotonic() + settings.ML_EPHEMERAL_TTL_SECONDS,
                     )
                 )
+            telemetry["result_rows"] = (
+                output.result_table.num_rows
+                if output.result_table is not None
+                else output.metrics.get("result_rows", len(output.results))
+            )
+            telemetry["result_bytes"] = (
+                output.result_table.nbytes
+                if output.result_table is not None
+                else output.metrics.get("result_bytes")
+            )
             telemetry["total_duration_ms"] = round((time.perf_counter() - started) * 1000, 3)
+            telemetry["lifecycle_state"] = "SUCCEEDED"
+            telemetry["ephemeral_cache_hit"] = False
             await self._record_run_best_effort(
                 run_id=run_id,
                 spec=spec,
@@ -217,6 +304,30 @@ class MLEngineService:
                     else "Ephemeral ML run completed"
                 ),
             )
+        except asyncio.CancelledError as exc:
+            if spec.persist and model_id and version:
+                await self._abort_persistence_best_effort(
+                    model_id=model_id,
+                    version=version,
+                    artifact_uri=artifact_uri,
+                )
+            elif artifact_uri:
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(self.artifact_store.delete, artifact_uri)
+            telemetry["lifecycle_state"] = "CANCELLED"
+            telemetry["total_duration_ms"] = round((time.perf_counter() - started) * 1000, 3)
+            await self._record_run_best_effort(
+                run_id=run_id,
+                spec=spec,
+                status="cancelled",
+                fingerprint=fingerprint,
+                telemetry=telemetry,
+                model_id=model_id,
+                version=version,
+                artifact_uri=artifact_uri,
+                error=exc,
+            )
+            raise
         except Exception as exc:
             if spec.persist and not version_registered and model_id and version:
                 await self._abort_persistence_best_effort(
@@ -224,8 +335,13 @@ class MLEngineService:
                     version=version,
                     artifact_uri=artifact_uri,
                 )
+            elif not spec.persist and artifact_uri:
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(self.artifact_store.delete, artifact_uri)
             telemetry["total_duration_ms"] = round((time.perf_counter() - started) * 1000, 3)
             telemetry["error_class"] = type(exc).__name__
+            telemetry["error_type"] = type(exc).__name__
+            telemetry["lifecycle_state"] = "FAILED"
             await self._record_run_best_effort(
                 run_id=run_id,
                 spec=spec,
@@ -248,7 +364,7 @@ class MLEngineService:
             raise ValueError("Ephemeral ML run was not found, expired, or belongs to another scope")
         output = entry.output
         spec = MLExecutionSpec(
-            task=MLTask(output.bundle["task"]),
+            task=MLTask(entry.task),
             input_sql="[promoted ephemeral run]",
             security=security,
             persist=True,
@@ -260,13 +376,18 @@ class MLEngineService:
         version = None
         artifact_uri = None
         try:
+            payload = (
+                entry.artifact_payload
+                if entry.artifact_payload is not None
+                else await asyncio.to_thread(self.artifact_store.get, entry.artifact_uri)
+            )
             model_id, version = await self.repository.reserve_version(
                 spec, feature_columns=output.feature_columns
             )
             artifact_uri = await asyncio.to_thread(
                 self.artifact_store.put,
                 self._artifact_key(spec, model_id, version),
-                entry.artifact_payload,
+                payload,
             )
             await self.repository.register_version(
                 model_id=model_id,
@@ -275,7 +396,7 @@ class MLEngineService:
                 output=output,
                 artifact_uri=artifact_uri,
                 artifact_sha256=entry.artifact_sha256,
-                artifact_size=len(entry.artifact_payload),
+                artifact_size=len(payload),
                 training_duration_ms=0,
             )
         except Exception:
@@ -327,12 +448,16 @@ class MLEngineService:
     ) -> dict[str, Any]:
         del created_by
         if as_system:
+            if settings.RANGER_ENABLED:
+                raise ValueError("System identity cannot train on user data")
             username = settings.STARROCKS_ROOT_USER
             password = settings.STARROCKS_ROOT_PASSWORD
         if username is None or password is None:
             raise ValueError("Training requires caller credentials")
-        parameters = dict(hyperparameters or {})
-        parameters.setdefault("test_size", test_size)
+        parameters = {
+            "test_size": test_size,
+            "estimator_parameters": dict(hyperparameters or {}),
+        }
         result = await self.execute(
             MLExecutionSpec(
                 task=MLTask(model_type),
@@ -415,6 +540,58 @@ class MLEngineService:
             "model_version": version,
         }
 
+    async def forecast_alias(
+        self,
+        model_alias: str,
+        horizon: int,
+        *,
+        owner_name: str,
+        database_name: str | None = None,
+        level: int = 95,
+        series: str | None = None,
+    ) -> dict[str, Any]:
+        metadata, table = await self.runtime.forecast_alias(
+            model_alias,
+            horizon,
+            owner_name=owner_name,
+            database_name=database_name,
+            level=level,
+            series=series,
+        )
+        return {
+            "model_alias": model_alias,
+            "model_name": metadata["model_name"],
+            "model_version": metadata["version"],
+            "forecast": table.to_pylist(),
+        }
+
+    async def forecast_version(
+        self,
+        model_id: str,
+        version: int,
+        horizon: int,
+        *,
+        owner_name: str,
+        database_name: str | None = None,
+        level: int = 95,
+        series: str | None = None,
+    ) -> dict[str, Any]:
+        metadata, table = await self.runtime.forecast_version(
+            model_id,
+            version,
+            horizon,
+            owner_name=owner_name,
+            database_name=database_name,
+            level=level,
+            series=series,
+        )
+        return {
+            "model_id": model_id,
+            "model_name": metadata["model_name"],
+            "model_version": version,
+            "forecast": table.to_pylist(),
+        }
+
     async def batch_predict(
         self,
         model_alias: str,
@@ -436,6 +613,8 @@ class MLEngineService:
         )
         engine_sql = await self._prepare_user_sql(prediction_sql, security)
         if as_system:
+            if settings.RANGER_ENABLED:
+                raise ValueError("System identity cannot run prediction on user data")
             username = settings.STARROCKS_ROOT_USER
             password = settings.STARROCKS_ROOT_PASSWORD
         if username is None or (password is None and connection is None):
@@ -453,21 +632,87 @@ class MLEngineService:
             security,
             budget_for(MLMode.INTERACTIVE),
         )
-        metadata, predictions, _ = await self.runtime.predict_alias(
+        # Keep the public JSON API on its established runtime seam. SQL
+        # interception uses batch_predict_projected(), which remains Arrow
+        # columnar through projection; this endpoint must also support custom
+        # runtimes that implement the original predict_alias contract.
+        metadata, predictions, probabilities = await self.runtime.predict_alias(
             model_alias,
             dataset.table,
             owner_name=username,
             database_name=database_name,
         )
         rows = dataset.table.to_pylist()
-        for row, prediction in zip(rows, predictions, strict=False):
-            row["prediction"] = prediction
+        for index, row in enumerate(rows):
+            row["prediction"] = predictions[index]
+            if probabilities is not None:
+                row["probability"] = probabilities[index]
         return {
             "model_alias": model_alias,
             "model_name": metadata["model_name"],
             "predictions": rows,
             "total_rows": len(rows),
         }
+
+    async def batch_predict_projected(
+        self,
+        model_alias: str,
+        prediction_sql: str,
+        *,
+        feature_source_columns: tuple[str, ...],
+        prediction_index: int,
+        prediction_name: str,
+        database_name: str | None,
+        username: str,
+        password: str,
+        role: str | None = None,
+        connection: Any | None = None,
+        max_rows: int | None = None,
+    ) -> tuple[dict[str, Any], pa.Table]:
+        security = MLSecurityContext(
+            username=username,
+            password=password,
+            database=database_name,
+            role=role,
+        )
+        engine_sql = await self._prepare_user_sql(prediction_sql, security)
+        budget = budget_for(MLMode.INTERACTIVE)
+        budget = replace(
+            budget,
+            max_rows=min(
+                budget.max_rows,
+                max_rows or settings.ML_SQL_RESULT_MAX_ROWS,
+            ),
+        )
+        dataset = await collect_bounded(
+            ExistingConnectionBatchDataSource(connection)
+            if connection is not None
+            else self.data_source,
+            engine_sql,
+            security,
+            budget,
+        )
+        metadata = await self.runtime.resolve_alias(
+            model_alias, owner_name=username, database_name=database_name
+        )
+        bundle = await self.runtime.load(metadata)
+        expected = list(bundle.get("feature_columns") or [])
+        if len(expected) != len(feature_source_columns):
+            raise ValueError(
+                f"Model expects {len(expected)} feature(s), but ML_PREDICT received "
+                f"{len(feature_source_columns)}"
+            )
+        features = dataset.table.select(feature_source_columns).rename_columns(expected)
+        predicted = await self.runtime.executor.run(
+            self.runtime.predict_bundle_table, bundle, features
+        )
+        visible = dataset.table.drop(list(feature_source_columns))
+        result = visible.add_column(
+            prediction_index,
+            prediction_name,
+            predicted.column("prediction"),
+        )
+        return metadata, result
 
     async def create_alias(
         self,
@@ -534,11 +779,13 @@ class MLEngineService:
         version: int,
         artifact_uri: str | None,
     ) -> None:
+        artifact_can_be_deleted = True
         try:
-            await self.repository.abort_version(model_id, version)
+            result = await self.repository.abort_version(model_id, version)
+            artifact_can_be_deleted = result is not False
         except Exception:
             logger.warning("Could not roll back ML version reservation", exc_info=True)
-        if artifact_uri:
+        if artifact_uri and artifact_can_be_deleted:
             try:
                 await asyncio.to_thread(self.artifact_store.delete, artifact_uri)
             except Exception:
@@ -554,6 +801,13 @@ class MLEngineService:
         return (
             f"{settings.ML_ARTIFACT_PREFIX.strip('/')}/{safe_scope}/"
             f"{model_id}/v{version}/model.joblib"
+        )
+
+    @staticmethod
+    def _ephemeral_artifact_key(spec: MLExecutionSpec, run_id: str) -> str:
+        safe_scope = re.sub(r"[^A-Za-z0-9_.-]", "_", spec.security.scope_key)
+        return (
+            f"{settings.ML_ARTIFACT_PREFIX.strip('/')}/ephemeral/{safe_scope}/{run_id}/model.joblib"
         )
 
     @staticmethod
@@ -573,7 +827,12 @@ class MLEngineService:
             metrics=output.metrics,
             results=output.results,
             cache_hit=cache_hit,
-            telemetry={"cache_hit": cache_hit},
+            telemetry={
+                "cache_hit": cache_hit,
+                "ephemeral_cache_hit": cache_hit,
+                "model_cache_hit": False,
+                "lifecycle_state": "SUCCEEDED",
+            },
             message="Reused a fresh equivalent ephemeral run",
         )
 
@@ -611,9 +870,7 @@ class MLEngineService:
     ) -> dict[str, Any] | None:
         models = [
             item
-            for item in await self.list_models(
-                owner_name=owner_name, database_name=database_name
-            )
+            for item in await self.list_models(owner_name=owner_name, database_name=database_name)
             if item["model_id"] == model_id
         ]
         if not models:
@@ -639,9 +896,7 @@ class MLEngineService:
         owner_name: str,
         database_name: str | None = None,
     ) -> dict[str, Any]:
-        detail = await self.get_model(
-            model_id, owner_name=owner_name, database_name=database_name
-        )
+        detail = await self.get_model(model_id, owner_name=owner_name, database_name=database_name)
         if detail is None:
             raise ValueError("Model not found in this scope")
         artifact_uris = [

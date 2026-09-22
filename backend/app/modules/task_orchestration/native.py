@@ -129,9 +129,7 @@ async def read_latest_native_run(conn: Any, task_name: str) -> NativeRun:
             await cur.execute(sql, (task_name,))
             rows = _as_dicts(await cur.fetchall())
     except Exception as exc:
-        logger.warning(
-            "could not read native task state for %s: %s", task_name, _redact(str(exc))
-        )
+        logger.warning("could not read native task state for %s: %s", task_name, _redact(str(exc)))
         return NativeRun(task_name=task_name, state=NativeState.UNKNOWN)
 
     if not rows:
@@ -171,9 +169,7 @@ async def probe_engine_liveness(conn: Any) -> bool:
     return True
 
 
-async def read_latest_native_runs(
-    conn: Any, task_names: list[str]
-) -> dict[str, NativeRun]:
+async def read_latest_native_runs(conn: Any, task_names: list[str]) -> dict[str, NativeRun]:
     """Read the latest run for several tasks in one query per batch.
 
     The reconciler polls only graph runs that are actually ``RUNNING`` (design
@@ -211,10 +207,7 @@ async def read_latest_native_runs(
         return {name: NativeRun(task_name=name, state=NativeState.UNKNOWN) for name in task_names}
 
     if not rows and not await probe_engine_liveness(conn):
-        return {
-            name: NativeRun(task_name=name, state=NativeState.UNKNOWN)
-            for name in task_names
-        }
+        return {name: NativeRun(task_name=name, state=NativeState.UNKNOWN) for name in task_names}
 
     latest: dict[str, NativeRun] = {}
     for row in rows:
@@ -228,9 +221,7 @@ async def read_latest_native_runs(
             query_id=str(row.get("QUERY_ID")) if row.get("QUERY_ID") else None,
             error_message=_redact(str(error)) if error else None,
             create_time=(
-                row.get("CREATE_TIME")
-                if isinstance(row.get("CREATE_TIME"), datetime)
-                else None
+                row.get("CREATE_TIME") if isinstance(row.get("CREATE_TIME"), datetime) else None
             ),
         )
     for name in task_names:
@@ -308,13 +299,8 @@ async def fetch_native_runs(task_names: list[str]) -> dict[str, NativeRun]:
         async with db.system_conn() as conn:
             return await read_latest_native_runs(conn, task_names)
     except Exception as exc:
-        logger.warning(
-            "could not acquire a connection to read native runs: %s", _redact(str(exc))
-        )
-        return {
-            name: NativeRun(task_name=name, state=NativeState.UNKNOWN)
-            for name in task_names
-        }
+        logger.warning("could not acquire a connection to read native runs: %s", _redact(str(exc)))
+        return {name: NativeRun(task_name=name, state=NativeState.UNKNOWN) for name in task_names}
 
 
 async def fetch_native_schedules(task_names: list[str]) -> dict[str, str]:
@@ -354,9 +340,7 @@ def schedule_is_paused(schedule: str | None) -> bool:
     return any(marker in upper for marker in _PAUSE_MARKERS)
 
 
-async def read_native_schedules(
-    conn: Any, task_names: list[str]
-) -> dict[str, str]:
+async def read_native_schedules(conn: Any, task_names: list[str]) -> dict[str, str]:
     """Read each task's native ``SCHEDULE`` string, best-effort.
 
     ``information_schema.tasks`` has no ``STATE`` column (design §1), so the
@@ -377,9 +361,7 @@ async def read_native_schedules(
             await cur.execute(sql, tuple(task_names))
             rows = _as_dicts(await cur.fetchall())
     except Exception as exc:
-        logger.warning(
-            "could not read native task schedules: %s", _redact(str(exc))
-        )
+        logger.warning("could not read native task schedules: %s", _redact(str(exc)))
         return {}
     return {
         str(row.get("TASK_NAME")): str(row.get("SCHEDULE") or "")

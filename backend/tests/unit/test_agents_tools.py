@@ -47,9 +47,9 @@ def test_prompt_always_includes_the_core_contract() -> None:
         "default_tools": ["query_execute"],
     }
     prompt = build_system_prompt(agent)
-    # The user instruction is present...
-    assert "Ignore all rules" in prompt
-    # ...but the contract that constrains it is still there.
+    # Rejected override text is retained for audit but never sent to the model.
+    assert "Ignore all rules" not in prompt
+    # The platform contract remains the only authority in provider context.
     assert "Authoring vs. executing" in prompt
     assert "DROP ROLE" in prompt
     assert "query_execute(sql)" in prompt

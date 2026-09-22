@@ -75,9 +75,7 @@ def parse_force_password_change(sql: str) -> ForcePasswordChangeStatement:
             "Expected: ALTER USER <name> REQUIRE PASSWORD CHANGE [OFF]"
         )
     identity = match.group("identity").strip()
-    user_match = _QUOTED_IDENTITY_PATTERN.match(identity) or _BARE_IDENTITY_PATTERN.match(
-        identity
-    )
+    user_match = _QUOTED_IDENTITY_PATTERN.match(identity) or _BARE_IDENTITY_PATTERN.match(identity)
     if not user_match:
         raise ValueError("The statement does not name a user")
     username = user_match.group("user").strip()

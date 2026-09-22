@@ -166,8 +166,7 @@ def _split_qualified_task_name(
         raise TaskDDLError(f"invalid task name {raw!r}: empty name segment")
     if len(parts) > 3:
         raise TaskDDLError(
-            f"invalid task name {raw!r}: expected task, schema.task, or "
-            "database.schema.task"
+            f"invalid task name {raw!r}: expected task, schema.task, or database.schema.task"
         )
 
     name = parts[-1]
@@ -240,9 +239,7 @@ def parse_create_task(
     finalize = _clause_finalize(sql, clauses.get("FINALIZE"))
     when_expr = _clause_when(sql, clauses.get("WHEN"))
     overlap = _clause_overlap(sql, clauses.get("OVERLAP_POLICY"))
-    schedule_kind, schedule_expr, embedded_zone = _clause_schedule(
-        sql, clauses.get("SCHEDULE")
-    )
+    schedule_kind, schedule_expr, embedded_zone = _clause_schedule(sql, clauses.get("SCHEDULE"))
     # An explicit zone in the cron string wins: it is what the author wrote in
     # this statement, and silently preferring the session default would fire the
     # task at the wrong wall-clock moment.
@@ -258,9 +255,7 @@ def parse_create_task(
         # bare `AS SELECT` fails in the grammar before this point. Reaching here
         # means the tree shape is unfamiliar, so fail loudly rather than emit an
         # empty body to the engine.
-        raise TaskDDLError(
-            "CREATE TASK body must be CREATE TABLE ... AS, INSERT, or CACHE SELECT"
-        )
+        raise TaskDDLError("CREATE TASK body must be CREATE TABLE ... AS, INSERT, or CACHE SELECT")
     body = _slice(sql, body_node)
 
     # NOTE: `@stage` in the body cannot reach here. The pinned StarRocks grammar
@@ -305,9 +300,7 @@ def _clause_after(sql: str, clause) -> tuple[str, ...]:
     inner = _first_child(clause, "TaskAfterClauseContext")
     if inner is None:
         raise TaskDDLError("AFTER clause is malformed")
-    names = tuple(
-        _bare_task_ref(_slice(sql, q)) for q in _find_all(inner, "QualifiedNameContext")
-    )
+    names = tuple(_bare_task_ref(_slice(sql, q)) for q in _find_all(inner, "QualifiedNameContext"))
     if not names:
         raise TaskDDLError("AFTER requires at least one task name")
     if len(set(names)) != len(names):
@@ -418,9 +411,7 @@ def _clause_schedule(sql: str, clause) -> tuple[str, str | None, str | None]:
 
     interval_ctx = _find_first(clause, "TaskIntervalContext")
     if interval_ctx is None:
-        raise TaskDDLError(
-            "SCHEDULE requires a cron string or an EVERY(INTERVAL …) form"
-        )
+        raise TaskDDLError("SCHEDULE requires a cron string or an EVERY(INTERVAL …) form")
     return "interval", _slice(sql, interval_ctx), None
 
 

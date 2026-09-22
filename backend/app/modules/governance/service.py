@@ -26,6 +26,8 @@ import logging
 import re
 
 from app.common.sql_guard import split_sql_statements
+from app.core.config import settings
+from app.modules.access_control.service import access_control_service
 from app.modules.query.service import query_service
 
 log = logging.getLogger(__name__)
@@ -93,6 +95,11 @@ class GovernanceService:
         destructive pattern and the API call is itself the confirmation. The hard
         guard (``guard_sql``) still runs regardless of the flag.
         """
+        if settings.RANGER_ENABLED:
+            raise GovernanceError(
+                "Native StarRocks governance DDL is disabled in Ranger mode; "
+                "use the Ranger-backed Access Control policy endpoints"
+            )
         result = await query_service.execute(
             sql=sql,
             username=username,
@@ -114,6 +121,18 @@ class GovernanceService:
         session_id: str | None,
         role: str | None = None,
     ) -> list[dict]:
+        if settings.RANGER_ENABLED:
+            policies = await access_control_service.list_managed_policies()
+            return [
+                {
+                    "name": str(policy.get("name", "")),
+                    "body": None,
+                    "bound_columns": [],
+                    "bound_tables": [],
+                }
+                for policy in policies
+                if int(policy.get("policyType", 0)) == 1
+            ]
         result = await query_service.execute(
             sql="SHOW MASKING POLICIES",
             username=username,
@@ -140,10 +159,7 @@ class GovernanceService:
         safe_name = _safe_ident(name, "policy name")
         safe_type = _safe_ident(column_type, "column type")
         safe_body = _safe_body(body)
-        statement = (
-            f"CREATE MASKING POLICY {_quote(safe_name)} "
-            f"AS (val {safe_type}) -> {safe_body}"
-        )
+        statement = f"CREATE MASKING POLICY {_quote(safe_name)} AS (val {safe_type}) -> {safe_body}"
         await self._run(
             statement,
             username=username,
@@ -220,8 +236,7 @@ class GovernanceService:
         else:
             safe_policy = _quote(_safe_ident(policy_name, "policy name"))
             statement = (
-                f"ALTER TABLE {target} MODIFY COLUMN {safe_column} "
-                f"SET MASKING POLICY {safe_policy}"
+                f"ALTER TABLE {target} MODIFY COLUMN {safe_column} SET MASKING POLICY {safe_policy}"
             )
         await self._run(
             statement,
@@ -247,6 +262,18 @@ class GovernanceService:
         session_id: str | None,
         role: str | None = None,
     ) -> list[dict]:
+        if settings.RANGER_ENABLED:
+            policies = await access_control_service.list_managed_policies()
+            return [
+                {
+                    "name": str(policy.get("name", "")),
+                    "body": None,
+                    "bound_columns": [],
+                    "bound_tables": [],
+                }
+                for policy in policies
+                if int(policy.get("policyType", 0)) == 2
+            ]
         result = await query_service.execute(
             sql="SHOW ROW ACCESS POLICIES",
             username=username,
@@ -346,8 +373,7 @@ class GovernanceService:
         safe_column = _quote(_safe_ident(column, "column"))
         safe_policy = _quote(_safe_ident(policy_name, "policy name"))
         await self._run(
-            f"ALTER TABLE {target} ADD ROW ACCESS POLICY {safe_policy} "
-            f"ON ({safe_column})",
+            f"ALTER TABLE {target} ADD ROW ACCESS POLICY {safe_policy} ON ({safe_column})",
             username=username,
             encrypted_password=encrypted_password,
             session_id=session_id,

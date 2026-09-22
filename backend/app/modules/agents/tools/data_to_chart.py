@@ -125,6 +125,9 @@ class DataToChartTool:
             ok=True,
             summary=f"chart: {title} ({_mark_of(spec)})",
             chart={"chart_spec": json.dumps(spec, separators=(",", ":"))},
+            data={"title": title, "mark": _mark_of(spec), "row_count": len(rows)},
+            evidence={"source": "latest_verified_table", "row_count": len(rows)},
+            metadata={"columns": columns[:50]},
             trace_detail={
                 "kind": "chart_generation",
                 "intent": intent[:1000],

@@ -55,6 +55,13 @@ class TestActiveRoleGate:
         user = {"username": "admin", "roles": ["ACCOUNTADMIN"], "active_role": None}
         assert await _run(require_active_role, BACKUP_ROLES, user) == user
 
+    async def test_ranger_mode_requires_explicit_active_role(self, monkeypatch):
+        monkeypatch.setattr("app.core.role_gates.settings.RANGER_ENABLED", True)
+        user = {"username": "admin", "roles": ["ACCOUNTADMIN"], "active_role": None}
+
+        with pytest.raises(InsufficientRoleError, match="active role is required"):
+            await _run(require_active_role, BACKUP_ROLES, user)
+
     async def test_roleless_session_with_no_active_role_is_denied(self):
         user = {"username": "nobody", "roles": [], "active_role": None}
         with pytest.raises(InsufficientRoleError):

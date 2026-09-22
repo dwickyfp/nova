@@ -387,7 +387,7 @@ async def test_grant_never_auto_approves_zero_gap_into_stage():
     frames = await _collect(
         loop.run(
             thread=thread,
-            user_content="go",
+            user_content="SELECT 1",
             context=_context(),
             resolve_consent=resolver,
         )
@@ -536,7 +536,7 @@ async def test_grant_never_auto_approves_explain_over_a_mutation():
     frames = await _collect(
         loop.run(
             thread=thread,
-            user_content="go",
+            user_content="SELECT 1",
             context=_context(),
             resolve_consent=resolver,
         )
@@ -650,7 +650,7 @@ async def test_destructive_call_never_auto_approves_even_with_a_grant():
     frames = await _collect(
         loop.run(
             thread=thread,
-            user_content="go",
+            user_content="SELECT 1",
             context=_context(),
             resolve_consent=resolver,
         )
@@ -681,7 +681,7 @@ async def test_read_only_call_is_covered_by_an_allow_session_grant():
     frames = await _collect(
         loop.run(
             thread=thread,
-            user_content="go",
+            user_content="SELECT 1",
             context=_context(),
             resolve_consent=resolver,
         )
@@ -718,7 +718,7 @@ async def test_deny_decision_blocks_execution(fakes):
     frames = await _collect(
         loop.run(
             thread=AssistantThread(thread_id="t1", user_name="alice", title="T"),
-            user_content="go",
+            user_content="SELECT 1",
             context=_context(),
             resolve_consent=lambda inv, cls: _deny(),
         )
@@ -876,7 +876,7 @@ async def test_result_error_never_reaches_the_sse_frame(monkeypatch, fakes):
     frames = await _collect(
         loop.run(
             thread=thread,
-            user_content="go",
+            user_content="SELECT 1",
             context=_context(),
             resolve_consent=resolver,
         )

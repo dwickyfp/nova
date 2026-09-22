@@ -44,9 +44,7 @@ class WorkerProcessHeartbeat:
             else settings.WORKER_PROCESS_HEARTBEAT_INTERVAL_SECONDS
         )
         self._stale_seconds = (
-            stale_seconds
-            if stale_seconds is not None
-            else settings.WORKER_PROCESS_STALE_SECONDS
+            stale_seconds if stale_seconds is not None else settings.WORKER_PROCESS_STALE_SECONDS
         )
         self._clock = clock
 

@@ -808,6 +808,12 @@ class UserService:
         joined_roles = ", ".join(self._quote_ident(role) for role in roles)
         await db.execute_system(f"SET DEFAULT ROLE {joined_roles} TO {identity}")
 
+    async def set_default_roles(
+        self, username: str, host: str, mode: str, roles: list[str]
+    ) -> None:
+        """Set marker-role defaults after centralized membership provisioning."""
+        await self._apply_default_roles(username, host, mode, roles)
+
     async def _apply_user_properties(
         self,
         username: str,

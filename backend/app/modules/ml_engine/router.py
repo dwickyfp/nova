@@ -20,6 +20,8 @@ from app.modules.ml_engine.schemas import (
     BatchPredictRequest,
     BatchPredictResponse,
     DeleteModelResponse,
+    ForecastRequest,
+    ForecastResponse,
     MLExecuteRequest,
     MLExecuteResponse,
     ModelAliasCreate,
@@ -32,6 +34,7 @@ from app.modules.ml_engine.schemas import (
     PromoteRunRequest,
     TrainModelRequest,
     TrainModelResponse,
+    VersionForecastRequest,
     VersionPredictRequest,
     VersionPredictResponse,
 )
@@ -175,6 +178,39 @@ async def batch_predict(
             status_code=500,
             detail=f"Batch prediction failed: {redact_for_output(str(e))}",
         ) from e
+
+
+@router.post("/forecast", response_model=ForecastResponse)
+async def forecast(req: ForecastRequest, user: dict = require_user):
+    """Forecast a future horizon from a persisted forecast alias."""
+    try:
+        return await ml_engine_service.forecast_alias(
+            req.model_alias,
+            req.horizon,
+            owner_name=user["username"],
+            database_name=req.database_name,
+            level=req.confidence_level,
+            series=req.series,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
+
+
+@router.post("/forecast/version", response_model=ForecastResponse)
+async def forecast_version(req: VersionForecastRequest, user: dict = require_user):
+    """Forecast from one immutable persisted model version."""
+    try:
+        return await ml_engine_service.forecast_version(
+            req.model_id,
+            req.version,
+            req.horizon,
+            owner_name=user["username"],
+            database_name=req.database_name,
+            level=req.confidence_level,
+            series=req.series,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
 
 
 # ── Model Management ──────────────────────────────────────────

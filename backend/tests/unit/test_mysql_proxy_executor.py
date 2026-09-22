@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.modules.access_control.role_activation import RoleAssignments
 from app.modules.query.repository import QueryResult
 from app.proxy.executor import ProxyQueryExecutor, WireResult
 from app.proxy.session import SessionState
@@ -49,6 +50,32 @@ class FakeQueryService:
         return self.calls[-1]["role"]
 
 
+class FakeRoleActivationService:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def activate(
+        self,
+        connection,
+        *,
+        principal: str,
+        requested_role: str,
+        known_default_role: str | None = None,
+    ):
+        self.calls.append(
+            {
+                "connection": connection,
+                "principal": principal,
+                "requested_role": requested_role,
+                "known_default_role": known_default_role,
+            }
+        )
+        return requested_role, RoleAssignments(
+            assigned_roles=("marketing", "ACCOUNTADMIN"),
+            default_role="marketing",
+        )
+
+
 @pytest.fixture
 def fake_service(monkeypatch):
     fake = FakeQueryService()
@@ -64,9 +91,7 @@ def _patch_service(monkeypatch, fake: FakeQueryService) -> FakeQueryService:
 class TestRoutingToThePipeline:
     async def test_select_goes_through_execute_statements(self, fake_service):
         executor = ProxyQueryExecutor(SessionState())
-        result = await executor.execute(
-            "SELECT 1", username="u", connection=object()
-        )
+        result = await executor.execute("SELECT 1", username="u", connection=object())
         assert isinstance(result, WireResult)
         assert len(fake_service.calls) == 1
         assert fake_service.last_sql == "SELECT 1"
@@ -99,9 +124,7 @@ class TestRoutingToThePipeline:
 
     async def test_a_script_of_set_statements_only_yields_ok(self, fake_service):
         executor = ProxyQueryExecutor(SessionState())
-        result = await executor.execute(
-            "SET @a = 1; SET @b = 2", username="u", connection=object()
-        )
+        result = await executor.execute("SET @a = 1; SET @b = 2", username="u", connection=object())
         assert result.is_ok
         assert result.ok_affected == 0
         assert fake_service.calls == []
@@ -126,11 +149,36 @@ class TestRoutingToThePipeline:
         await executor.execute("SELECT 1", username="u", connection=object())
         assert fake_service.last_database == "NOVA_DEMO"
 
-    async def test_set_role_reaches_the_pipeline_as_the_role(self, fake_service):
-        executor = ProxyQueryExecutor(SessionState())
-        await executor.execute("SET ROLE ACCOUNTADMIN", username="u", connection=object())
+    async def test_set_role_is_validated_before_it_reaches_the_pipeline_as_the_role(
+        self, fake_service, monkeypatch
+    ):
+        activation = FakeRoleActivationService()
+        monkeypatch.setattr("app.proxy.executor.role_activation_service", activation)
+        session = SessionState(
+            principal="u",
+            assigned_roles=("marketing", "ACCOUNTADMIN"),
+            default_role="marketing",
+            active_role="marketing",
+        )
+        connection = object()
+        executor = ProxyQueryExecutor(session)
+
+        result = await executor.execute(
+            "SET ROLE ACCOUNTADMIN", username="u", connection=connection
+        )
         await executor.execute("SELECT 1", username="u", connection=object())
+
+        assert result.is_ok
+        assert activation.calls == [
+            {
+                "connection": connection,
+                "principal": "u",
+                "requested_role": "ACCOUNTADMIN",
+                "known_default_role": "marketing",
+            }
+        ]
         assert fake_service.last_role == "ACCOUNTADMIN"
+        assert session.security_context_version == 2
 
     async def test_empty_query_is_an_error(self, fake_service):
         executor = ProxyQueryExecutor(SessionState())
@@ -140,9 +188,7 @@ class TestRoutingToThePipeline:
 
     async def test_set_global_is_reported_as_an_error(self, fake_service):
         executor = ProxyQueryExecutor(SessionState())
-        result = await executor.execute(
-            "SET @@global.x = 1", username="u", connection=object()
-        )
+        result = await executor.execute("SET @@global.x = 1", username="u", connection=object())
         assert result.error is not None
         assert fake_service.calls == []
 
@@ -169,9 +215,7 @@ class TestResultMapping:
         assert result.rows == [[1, "Alice"], [2, "Bob"]]
 
     async def test_dml_without_columns_is_an_ok_packet(self, monkeypatch):
-        fake = FakeQueryService(
-            [QueryResult(affected_rows=3, executed_sql="DELETE FROM t")]
-        )
+        fake = FakeQueryService([QueryResult(affected_rows=3, executed_sql="DELETE FROM t")])
         _patch_service(monkeypatch, fake)
         executor = ProxyQueryExecutor(SessionState())
 
@@ -236,9 +280,7 @@ class TestResultMapping:
         assert [c.name for c in result.columns] == ["b"]
 
     async def test_affected_rows_accumulate_across_statements(self, monkeypatch):
-        fake = FakeQueryService(
-            [QueryResult(affected_rows=2), QueryResult(affected_rows=3)]
-        )
+        fake = FakeQueryService([QueryResult(affected_rows=2), QueryResult(affected_rows=3)])
         _patch_service(monkeypatch, fake)
         executor = ProxyQueryExecutor(SessionState())
 
@@ -259,9 +301,7 @@ class TestResultMapping:
         assert result.ok_affected == 0
 
     async def test_null_values_survive_the_mapping(self, monkeypatch):
-        fake = FakeQueryService(
-            [QueryResult(columns=["a", "b"], rows=[[1, None]], row_count=1)]
-        )
+        fake = FakeQueryService([QueryResult(columns=["a", "b"], rows=[[1, None]], row_count=1)])
         _patch_service(monkeypatch, fake)
         executor = ProxyQueryExecutor(SessionState())
 
@@ -273,9 +313,7 @@ class TestResultMapping:
         from app.proxy.protocol import TYPE_LONGLONG, TYPE_VAR_STRING
 
         executor = ProxyQueryExecutor(SessionState())
-        wire = executor._to_wire(
-            [QueryResult(columns=["n", "s"], rows=[[7, "x"]], row_count=1)]
-        )
+        wire = executor._to_wire([QueryResult(columns=["n", "s"], rows=[[7, "x"]], row_count=1)])
         assert wire.columns[0].type_code == TYPE_LONGLONG
         assert wire.columns[1].type_code == TYPE_VAR_STRING
 
@@ -283,9 +321,7 @@ class TestResultMapping:
         from app.proxy.protocol import TYPE_VAR_STRING
 
         executor = ProxyQueryExecutor(SessionState())
-        wire = executor._to_wire(
-            [QueryResult(columns=["a"], rows=[[None]], row_count=1)]
-        )
+        wire = executor._to_wire([QueryResult(columns=["a"], rows=[[None]], row_count=1)])
         assert wire.columns[0].type_code == TYPE_VAR_STRING
 
 
@@ -381,7 +417,6 @@ class TestColumnTypeInference:
         assert self._type_of([None, None]) == TYPE_VAR_STRING
         assert TYPE_NULL != TYPE_VAR_STRING
 
-
     def test_mixed_numeric_resultset_keeps_both_types_distinct(self):
         """The QA case: ``SELECT 1.5 AS a, 2/3 AS b`` in one row.
 
@@ -412,9 +447,7 @@ class TestColumnTypeInference:
         from app.proxy.protocol import build_text_row
 
         executor = ProxyQueryExecutor(SessionState())
-        wire = executor._to_wire(
-            [QueryResult(columns=["d"], rows=[[Decimal("1.5")]], row_count=1)]
-        )
+        wire = executor._to_wire([QueryResult(columns=["d"], rows=[[Decimal("1.5")]], row_count=1)])
         assert build_text_row(wire.rows[0], wire.columns) == b"\x031.5"
 
     def test_bytes_map_to_blob_not_var_string(self):

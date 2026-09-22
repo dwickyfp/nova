@@ -1,0 +1,13 @@
+.git
+.gitignore
+**/.DS_Store
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+backend/.venv
+frontend/node_modules
+frontend/dist
+frontend/coverage
+*.log

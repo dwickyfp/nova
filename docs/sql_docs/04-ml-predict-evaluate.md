@@ -6,43 +6,42 @@ Sources: `backend/app/modules/ml_engine/service.py`, `internal_router.py`, `rout
 
 ---
 
-## Two prediction surfaces
+## Prediction surfaces
 
 | Surface | How it runs | Where |
 |---------|-------------|-------|
-| `ML_PREDICT(alias, features_json)` in SQL | A **global UDF** registered in StarRocks. The shipped placeholder returns a hint string; production wiring calls the Nova prediction API. | `init-nova.sql:779` |
-| HTTP API | `POST /api/v1/ml/predict`, `POST /api/v1/ml/predict/batch` | `ml_engine/router.py` |
+| `ML_PREDICT(alias, expressions...)` through Nova SQL | Balanced parsing, one feature query, one vectorized model call, projection-preserving result | `common/ml_intercept.py`, `query/service.py` |
+| `ML_FORECAST(...)` through Nova SQL | Persisted horizon forecast returning future rows | `common/ml_intercept.py`, `query/service.py` |
+| HTTP API | Single/batch prediction and alias/version forecast endpoints | `ml_engine/router.py` |
 
 ---
 
 ## `ML_PREDICT` — the SQL function
 
-Registered at init and re-registered by the backend on startup:
+Nova's Query API, worksheet, and MySQL proxy intercept this syntax before it
+reaches StarRocks:
 
 ```sql
-CREATE GLOBAL FUNCTION ML_PREDICT(model_alias STRING, features_json STRING)
-RETURNS CONCAT('Use POST /api/v1/ml/predict with {"model_alias":"', model_alias,
-               '","features":', features_json, '} to get prediction');
+SELECT
+  customer_id,
+  ML_PREDICT(
+    'production_churn',
+    COALESCE(total_spend, 0),
+    LOG(order_count + 1)
+  ) AS churn
+FROM analytics.customers;
 ```
 
-Its signature is `(STRING, STRING)` in the shipped form, and `GRANT USAGE` is issued to `root`, `db_admin`, `cluster_admin`, `user_admin`, and `ACCOUNTADMIN` — for the `STRING`, `VARCHAR`, and `VARCHAR(65533)` signatures — so it behaves like a native built-in for every user (`llm_functions/service.py:361`).
+The scanner is quote/comment aware and balances nested expressions. Nova keeps
+the non-ML projection (`customer_id` above), adds hidden feature expressions to
+one engine query, predicts the Arrow batch once, removes the hidden columns,
+and inserts the named prediction at its requested position. The result is
+bounded by `ML_SQL_RESULT_MAX_ROWS`; there is no per-row HTTP inference.
 
-Example call:
+Direct connections to StarRocks do not traverse Nova's interception pipeline.
+The compatibility global UDF remains an instructional fallback for those
+connections.
 
-```sql
-SELECT ML_PREDICT('churn_model', '{"age": 34, "income": 5200}') FROM NOVA_DEMO.orders LIMIT 1;
-```
-
-> **Current behaviour:** the UDF in the repository returns an instructional string, not a prediction. Actual inference is via the HTTP API or the internal endpoint. Do not present `ML_PREDICT` as producing a model score in the current build.
-
-### The `ml_predict()` intercept helper
-
-`backend/app/common/ml_intercept.py` contains a helper that detects an `ml_predict('alias', …)` call, extracts the model alias and the feature arguments, and rewrites the statement to fetch the feature rows. It supports two calling shapes:
-
-1. `ml_predict('alias', col1, col2, …)` — features as columns.
-2. `ml_predict('alias', json_string)` — features as a JSON string.
-
-The rewrite replaces the call with `NULL AS __ml_prediction__` and returns `(alias, inner_sql, feature_args)`. This module is a building block; the shipped SQL UDF does not use it.
 ### Internal predict endpoint
 
 StarRocks BEs can call Nova over the authenticated internal channel:
@@ -120,9 +119,9 @@ Request:
 
 1. Prepare `prediction_sql` through the shared pipeline — guard, parse, `@stage` translation, credential injection, redaction. This SQL runs on a credential-bearing connection, so it takes the same five steps as training (`NOVA-28`).
 2. Resolve the alias and load the model.
-3. Execute the query (setting `USE <database>` first when a database is given) and fetch rows.
-4. Build `X`, skipping rows with NULL features; predict.
-5. Return each valid input row plus a `prediction` field.
+3. Stream bounded Arrow batches using the caller's StarRocks identity.
+4. Run preprocessing and one vectorized prediction on the bounded inference executor.
+5. Convert to Python objects only at the JSON response boundary.
 
 Response:
 
@@ -135,7 +134,7 @@ Response:
 }
 ```
 
-Rows with a NULL feature are silently dropped from the output, so `total_rows` can be less than the query's row count.
+Preprocessing follows the schema and imputers stored with the model artifact.
 
 ---
 
@@ -168,6 +167,47 @@ Computed in `train_model` on the held-out split. When there are fewer than 20 ro
 
 `rmse` is `sqrt(mse)`.
 
+## Persisted forecast inference
+
+Forecast models use horizon semantics and are intentionally separate from
+row-oriented `ML_PREDICT`. Calling a forecast bundle through generic prediction
+fails clearly instead of invoking `model.predict(X)` with the wrong contract.
+
+```http
+POST /api/v1/ml/forecast
+Content-Type: application/json
+
+{
+  "model_alias": "sales_forecast",
+  "horizon": 30,
+  "confidence_level": 95,
+  "database_name": "analytics"
+}
+```
+
+For reproducibility, `POST /api/v1/ml/forecast/version` accepts `model_id` and
+`version`. Both paths checksum and reload the persisted artifact, including
+after an API process restart.
+
+Nova SQL exposes the same task-specific semantics without overloading
+`ML_PREDICT`:
+
+```sql
+SELECT * FROM ML_FORECAST(
+  MODEL => 'sales_forecast',
+  HORIZON => 30,
+  SERIES => 'west',
+  CONFIDENCE => 95
+);
+
+SELECT * FROM ML_FORECAST(
+  MODEL_ID => 'model-id', VERSION => 2, HORIZON => 30
+);
+```
+
+The result columns are `timestamp`, `series`, `prediction`, `lower`, and
+`upper`.
+
 These metrics are stored as JSON in `NOVA_SYSTEM.ML_MODEL_VERSIONS.metrics` and surfaced by `GET /api/v1/ml/models/{id}` and by the `CREATE ML_MODEL` response.
 
 ---
@@ -182,17 +222,19 @@ A prediction resolves through `NOVA_SYSTEM.ML_MODEL_ALIASES` (`alias_name → mo
 | Create/update | `POST /api/v1/ml/aliases` (`alias_name`, `model_id`, `version`) |
 | Delete | `DELETE /api/v1/ml/aliases/{alias_name}` |
 
-Alias upsert is an `INSERT` into a Duplicate Key table; `delete_model` removes aliases for the model.
+Alias upsert targets the scoped Primary Key table; `delete_model` removes aliases
+for the model.
 
 ---
 
 ## Limitations
 
-- `ML_PREDICT` as shipped is a placeholder, not a scorer.
-- Batch prediction drops rows with any NULL feature rather than imputing.
-- Feature coercion is `float()`; non-numeric categorical features are not handled (only the target label is encoded).
+- SQL interception requires a Nova connection; a direct StarRocks connection
+  sees only the compatibility UDF.
+- SQL prediction results are deliberately capped rather than materializing
+  unbounded Python row arrays.
 - A model trained on fewer than 20 rows evaluates on its training data.
-- The internal predict endpoints are unauthenticated. They must remain bound to localhost; do not route them publicly.
+- Internal prediction requires both a trusted peer and `X-Nova-Internal-Token`.
 - Azure/GCS storage backends are not implemented, so `@stage` in a training/prediction SQL only resolves for S3-compatible connections today.
 
 ---
@@ -201,6 +243,8 @@ Alias upsert is an `INSERT` into a Duplicate Key table; `delete_model` removes a
 
 | Claim | Test |
 |-------|------|
+| Nested SQL prediction and projection preservation | `tests/unit/test_ml_boundary_hardening.py` |
+| Alias/version SQL forecast semantics | `tests/unit/test_ml_boundary_hardening.py` |
 | Batch prediction prepares caller SQL (guard/translate) | `tests/unit/test_ml_engine_batch_predict.py` |
 | Training SQL guard + stage translation | `tests/unit/test_ml_engine_training_sql.py` |
 | `CREATE ML_MODEL` response columns/metrics shape | `tests/unit/test_ml_model_ddl.py::test_query_service_routes_create_ml_model_to_ml_engine` |

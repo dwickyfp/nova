@@ -13,7 +13,9 @@ import json
 import re
 
 import pytest
+from asyncmy.errors import ProgrammingError
 
+from app.common import nova_system
 from app.common.nova_system import (
     TASK_ORCHESTRATION_COLUMN_MIGRATIONS,
     TASK_ORCHESTRATION_DDL,
@@ -56,6 +58,52 @@ class TestDdlStatements:
             assert 'DISTRIBUTED BY HASH(' in ddl
             assert "BUCKETS 1" in ddl
             assert '"enable_persistent_index"="true"' in ddl
+
+
+class TestConcurrentColumnMigration:
+    async def test_accepts_column_added_between_check_and_alter(self, monkeypatch):
+        class RacingDatabase:
+            def __init__(self) -> None:
+                self.metadata_reads = 0
+
+            async def execute_system(self, sql, params=None):
+                if sql.startswith("SELECT COLUMN_NAME"):
+                    self.metadata_reads += 1
+                    rows = [] if self.metadata_reads == 1 else [["heartbeat_at"]]
+                    return {"columns": ["COLUMN_NAME"], "rows": rows, "row_count": len(rows)}
+                raise ProgrammingError(
+                    1064,
+                    "Can not add column which already exists in base table: heartbeat_at",
+                )
+
+        racing_db = RacingDatabase()
+        monkeypatch.setattr(nova_system, "db", racing_db)
+        monkeypatch.setattr(
+            nova_system,
+            "TASK_ORCHESTRATION_COLUMN_MIGRATIONS",
+            (("CONFIG_TASK_RUNS", "heartbeat_at", "DATETIME"),),
+        )
+
+        await nova_system.migrate_task_orchestration_columns()
+
+        assert racing_db.metadata_reads == 2
+
+    async def test_reraises_when_the_column_is_still_absent(self, monkeypatch):
+        class BrokenDatabase:
+            async def execute_system(self, sql, params=None):
+                if sql.startswith("SELECT COLUMN_NAME"):
+                    return {"columns": ["COLUMN_NAME"], "rows": [], "row_count": 0}
+                raise ProgrammingError(1064, "syntax error")
+
+        monkeypatch.setattr(nova_system, "db", BrokenDatabase())
+        monkeypatch.setattr(
+            nova_system,
+            "TASK_ORCHESTRATION_COLUMN_MIGRATIONS",
+            (("CONFIG_TASK_RUNS", "heartbeat_at", "DATETIME"),),
+        )
+
+        with pytest.raises(ProgrammingError, match="syntax error"):
+            await nova_system.migrate_task_orchestration_columns()
 
 
 class TestNoCredentialColumnsInDdl:

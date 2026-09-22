@@ -10,11 +10,11 @@ from app.modules.query.dialect.translator import detect_format_from_filename
 
 # Magic bytes for format detection
 _MAGIC_BYTES = {
-    b'PAR1': 'parquet',          # Parquet magic
-    b'ORC': 'orc',               # ORC magic
-    b'\x1f\x8b': 'csv',          # gzip (assume CSV inside)
-    b'{': 'json',                # JSON (starts with {)
-    b'[': 'json',                # JSON array
+    b"PAR1": "parquet",  # Parquet magic
+    b"ORC": "orc",  # ORC magic
+    b"\x1f\x8b": "csv",  # gzip (assume CSV inside)
+    b"{": "json",  # JSON (starts with {)
+    b"[": "json",  # JSON array
 }
 
 
@@ -46,16 +46,16 @@ def detect_format_from_content(header_bytes: bytes) -> str:
 
     # Try text-based detection
     try:
-        text = header_bytes.decode('utf-8', errors='ignore')
-        if text.startswith('{') or text.startswith('['):
-            return 'json'
+        text = header_bytes.decode("utf-8", errors="ignore")
+        if text.startswith("{") or text.startswith("["):
+            return "json"
         # If it looks like delimited text
-        if ',' in text or '\t' in text:
-            return 'csv'
+        if "," in text or "\t" in text:
+            return "csv"
     except Exception:
         pass
 
-    return 'csv'  # Default fallback
+    return "csv"  # Default fallback
 
 
 def detect_format_from_listing(
@@ -72,7 +72,7 @@ def detect_format_from_listing(
         Most common format among the sampled files.
     """
     if not object_keys:
-        return 'csv'
+        return "csv"
 
     from collections import Counter
 
@@ -81,4 +81,4 @@ def detect_format_from_listing(
         fmt = detect_format_from_key(key)
         formats[fmt] += 1
 
-    return formats.most_common(1)[0][0] if formats else 'csv'
+    return formats.most_common(1)[0][0] if formats else "csv"

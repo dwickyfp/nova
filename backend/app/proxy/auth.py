@@ -140,11 +140,7 @@ class StarRocksLogin:
         reply = await self.reader.readexactly(length)
 
         if reply and reply[0] == 0xFF:
-            code = (
-                struct.unpack("<H", reply[1:3])[0]
-                if len(reply) >= 3
-                else ER_ACCESS_DENIED_ERROR
-            )
+            code = struct.unpack("<H", reply[1:3])[0] if len(reply) >= 3 else ER_ACCESS_DENIED_ERROR
             if code == ER_ACCESS_DENIED_ERROR:
                 raise AuthenticationError(f"Access denied for user '{username}'")
             raise AuthenticationError(f"StarRocks refused the login (error {code})")
@@ -235,9 +231,7 @@ async def open_starrocks_login(
             asyncio.open_connection(target_host, target_port), timeout=timeout
         )
     except (OSError, TimeoutError) as exc:
-        raise AuthenticationError(
-            "Cannot reach the StarRocks authentication service"
-        ) from exc
+        raise AuthenticationError("Cannot reach the StarRocks authentication service") from exc
 
     try:
         header = await asyncio.wait_for(reader.readexactly(4), timeout=timeout)
