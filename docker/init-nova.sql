@@ -162,12 +162,35 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AI_MODELS (
   display_name   VARCHAR(256),
   type           VARCHAR(32) NOT NULL,
   max_tokens     INT DEFAULT "4096",
+  logical_alias  VARCHAR(128),
+  revision       VARCHAR(128),
+  dimensions     INT,
+  modality       VARCHAR(32),
+  metric         VARCHAR(32),
   default_params TEXT,
   is_active      BOOLEAN DEFAULT "true",
   created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
   created_by     VARCHAR(128)
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ENTITIES (
+  catalog_name  VARCHAR(128) NOT NULL,
+  database_name VARCHAR(128) NOT NULL,
+  schema_name   VARCHAR(128) NOT NULL,
+  name          VARCHAR(128) NOT NULL,
+  id            VARCHAR(64) NOT NULL,
+  description   TEXT,
+  relation_name VARCHAR(512) NOT NULL,
+  key_columns   JSON NOT NULL,
+  owner_name    VARCHAR(128) NOT NULL,
+  tags          JSON,
+  status        VARCHAR(32) NOT NULL,
+  created_at    DATETIME NOT NULL,
+  updated_at    DATETIME NOT NULL
+) PRIMARY KEY(catalog_name, database_name, schema_name, name)
+DISTRIBUTED BY HASH(catalog_name, database_name, schema_name, name) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 -- Assistant conversations. Persisted per user so history survives a reload;

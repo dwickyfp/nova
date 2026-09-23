@@ -220,7 +220,9 @@ async def test_capabilities_only_exposes_internal_connector_metadata(monkeypatch
         ]
     )
     monkeypatch.setattr(agent_repository, "list_mcp_servers", listing)
-    result = await studio_router.get_studio_capabilities({"username": "alice"})
+    result = await studio_router.get_studio_capabilities(
+        {"username": "alice", "roles": ["analyst"], "active_role": "analyst"}
+    )
     listing.assert_awaited_once_with(owner_name=studio_router.INTERNAL_CONNECTOR_OWNER)
     assert "private-url" not in result.model_dump_json()
     assert [skill["source"] for skill in result.skills] == ["user"]

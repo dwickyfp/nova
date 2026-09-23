@@ -1,10 +1,9 @@
 """AI Provider Management schemas — Pydantic models for provider and model CRUD."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, Field, model_validator
 
 # ── AI Providers ──────────────────────────────────────────────
 
@@ -65,9 +64,25 @@ class AIModelCreate(BaseModel):
     provider_id: str
     name: str = Field(..., min_length=1, max_length=128)
     display_name: str | None = Field(default=None, max_length=256)
-    type: str = Field(..., min_length=1, max_length=32)
-    max_tokens: int | None = None
+    type: Literal["llm", "embedding"]
+    max_tokens: int | None = Field(default=None, gt=0)
+    logical_alias: str | None = Field(default=None, min_length=1, max_length=128)
+    revision: str | None = Field(default=None, min_length=1, max_length=128)
+    dimensions: int | None = Field(default=None, gt=0)
+    modality: Literal["text"] | None = None
+    metric: Literal["cosine", "l2"] | None = None
     default_params: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_embedding(self) -> "AIModelCreate":
+        if self.type == "embedding":
+            if not all((self.logical_alias, self.revision, self.dimensions)):
+                raise ValueError("Embedding models require logical_alias, revision, and dimensions")
+            if self.max_tokens is not None:
+                raise ValueError("max_tokens applies only to LLM models")
+        elif any((self.logical_alias, self.revision, self.dimensions, self.modality, self.metric)):
+            raise ValueError("Embedding metadata applies only to embedding models")
+        return self
 
 
 class AIModelResponse(BaseModel):
@@ -77,8 +92,13 @@ class AIModelResponse(BaseModel):
     provider_id: str
     name: str
     display_name: str | None = None
-    type: str
+    type: Literal["llm", "embedding"]
     max_tokens: int | None = None
+    logical_alias: str | None = None
+    revision: str | None = None
+    dimensions: int | None = None
+    modality: str | None = None
+    metric: str | None = None
     default_params: dict[str, Any] | None = None
     is_active: bool = True
     created_at: datetime | None = None
@@ -97,8 +117,13 @@ class AIModelUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
     display_name: str | None = Field(default=None, max_length=256)
-    type: str | None = Field(default=None, min_length=1, max_length=32)
-    max_tokens: int | None = None
+    type: Literal["llm", "embedding"] | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
+    logical_alias: str | None = Field(default=None, min_length=1, max_length=128)
+    revision: str | None = Field(default=None, min_length=1, max_length=128)
+    dimensions: int | None = Field(default=None, gt=0)
+    modality: Literal["text"] | None = None
+    metric: Literal["cosine", "l2"] | None = None
     default_params: dict[str, Any] | None = None
     is_active: bool | None = None
 

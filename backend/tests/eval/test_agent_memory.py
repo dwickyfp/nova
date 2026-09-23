@@ -16,7 +16,6 @@ from app.modules.agents.memory import (
     remember_user_message,
     select_memories,
 )
-from app.modules.assistant.intelligence import TurnIntent, TurnRouter
 
 
 class MemoryStore(AgentMemoryRepository):
@@ -73,30 +72,6 @@ class ExtractionModel:
 
     async def complete(self, **_kwargs):
         return {"content": json.dumps(self.answers.pop(0), ensure_ascii=False)}
-
-
-def test_teaching_a_business_rule_does_not_require_a_data_tool():
-    router = TurnRouter()
-    teaching = router.route(
-        "Aturan bisnis saya: omzet bersih adalah invoice lunas dikurangi retur. "
-        "Tolong ingat definisi ini."
-    )
-    assert teaching.intent == TurnIntent.DIRECT_ANSWER
-    assert teaching.required_capabilities == ()
-
-    recall = router.route("Apa definisi omzet bersih yang pernah saya jelaskan kepadamu?")
-    assert recall.intent == TurnIntent.DIRECT_ANSWER
-    assert recall.required_capabilities == ()
-
-    correction = router.route(
-        "Koreksi aturan bisnis saya: omzet bersih adalah invoice lunas dikurangi retur."
-    )
-    assert correction.intent == TurnIntent.DIRECT_ANSWER
-    assert correction.required_capabilities == ()
-
-    analytics = router.route("Hitung omzet bersih per channel bulan ini.")
-    assert analytics.intent != TurnIntent.DIRECT_ANSWER
-    assert analytics.needs_data
 
 
 @pytest.mark.asyncio

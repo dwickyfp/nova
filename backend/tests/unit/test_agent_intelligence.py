@@ -19,10 +19,7 @@ from app.modules.agents.tools.custom_tool import (
 )
 from app.modules.assistant.intelligence import (
     ActiveConversationState,
-    CapabilityRegistry,
     EvidenceTracker,
-    TurnIntent,
-    TurnRouter,
     enforce_evidence,
     validate_json_arguments,
 )
@@ -33,7 +30,7 @@ from app.modules.assistant.provider_capabilities import (
 )
 from app.modules.assistant.service import AssistantLoop, LoopContext, _tool_message
 from app.modules.assistant.state import AssistantThread
-from app.modules.assistant.tools import ToolInvocation, ToolRegistry
+from app.modules.assistant.tools import ToolInvocation
 
 
 def test_agent_view_normalizes_legacy_harness_mode_to_auto():
@@ -52,85 +49,6 @@ def test_agent_view_normalizes_legacy_harness_mode_to_auto():
     )
 
     assert view.harness_mode == "auto"
-
-
-@pytest.mark.parametrize(
-    ("user_text", "intent", "tools"),
-    [
-        ("Revenue this month", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
-        ("SELECT * FROM orders", TurnIntent.RAW_SQL_QUERY, ("query_execute",)),
-        ("Describe table orders", TurnIntent.SCHEMA_INSPECTION, ("query_execute",)),
-        ("Forecast revenue 30 days", TurnIntent.MACHINE_LEARNING, ("semantic_query", "ml_execute")),
-        ("Cluster customers", TurnIntent.MACHINE_LEARNING, ("semantic_query", "ml_execute")),
-        ("Visualisasikan tabel sebelumnya", TurnIntent.CHART, ("query_execute", "data_to_chart")),
-        ("Buat grafiknya dari data tadi", TurnIntent.CHART, ("query_execute", "data_to_chart")),
-        ("Plotkan hasil ini", TurnIntent.CHART, ("query_execute", "data_to_chart")),
-        (
-            "Forecast revenue and chart it",
-            TurnIntent.COMPOUND_ANALYTICS,
-            ("semantic_query", "ml_execute", "data_to_chart"),
-        ),
-        ("How do I use Nova?", TurnIntent.DIRECT_ANSWER, ()),
-        ("Create a user for Maya", TurnIntent.UI_OPERATION, ()),
-        ("Tambahkan scope pada role analyst untuk sales", TurnIntent.UI_OPERATION, ()),
-        ("Edit workspace SQL sales_report", TurnIntent.UI_OPERATION, ()),
-        ("Buat semantic view untuk sales", TurnIntent.UI_OPERATION, ()),
-        ("Hubungkan MCP server", TurnIntent.UI_OPERATION, ()),
-    ],
-)
-def test_turn_router_reduces_capabilities(user_text, intent, tools):
-    route = TurnRouter().route(user_text)
-    assert route.intent == intent
-    assert route.required_capabilities == tools
-
-
-@pytest.mark.parametrize(
-    ("user_text", "tools"),
-    [
-        ("Visualisasikan tabel sebelumnya", ("data_to_chart",)),
-        ("Buat grafiknya dari data tadi", ("data_to_chart",)),
-        ("Plotkan hasil ini", ("data_to_chart",)),
-        ("Buat chart", ("data_to_chart",)),
-        ("Buat chart revenue bulan ini", ("semantic_query", "data_to_chart")),
-    ],
-)
-def test_chart_follow_up_reuses_only_referenced_results(user_text, tools):
-    loop = AssistantLoop(
-        provider=AssistantProviderClient(), registry=ToolRegistry(), system_prompt="test"
-    )
-    context = LoopContext(
-        user_name="alice",
-        last_result={"columns": ["month", "revenue"], "rows": [["2026-06", 1]]},
-    )
-    assert loop._route(user_text, context).required_capabilities == tools
-
-
-def test_tool_gating_excludes_unrelated_capabilities():
-    registry = CapabilityRegistry.from_tool_names(
-        [
-            "semantic_query",
-            "semantic_search",
-            "query_execute",
-            "ml_execute",
-            "data_to_chart",
-            "custom_pay",
-        ]
-    )
-    selected = registry.gated_tools(TurnRouter().route("Revenue this month"))
-    assert selected == ("semantic_query", "semantic_search")
-    assert "query_execute" not in selected
-    assert "ml_execute" not in selected
-    assert "custom_pay" not in selected
-
-
-def test_ui_operation_route_exposes_discovery_and_execution_tools():
-    registry = CapabilityRegistry.from_tool_names(
-        ["find_ui_operation", "call_ui_operation", "query_execute", "semantic_query"]
-    )
-    selected = registry.gated_tools(TurnRouter().route("Tambahkan scope pada role analyst"))
-    assert "find_ui_operation" in selected
-    assert "call_ui_operation" in selected
-    assert "semantic_query" not in selected
 
 
 def test_agent_prompt_is_compiled_once_and_describes_only_real_tools():
@@ -362,7 +280,7 @@ async def test_user_default_and_discoverable_skills_have_runtime_semantics(monke
     assert "DISCOVERED_USER_PROCEDURE" not in prompt
 
     loop = AssistantLoop(provider=object(), registry=registry, system_prompt=prompt)
-    context = LoopContext(user_name="alice")
+    context = LoopContext(user_name="alice", selected_skills=["incident-investigation"])
     messages = loop._build_messages(
         AssistantThread(thread_id="t", user_name="alice", title="t"),
         "Investigate incident errors",
@@ -395,7 +313,7 @@ async def test_ml_agent_auto_discovers_the_native_ml_platform_skill(monkeypatch)
     assert "Native ML" not in prompt
 
     loop = AssistantLoop(provider=object(), registry=registry, system_prompt=prompt)
-    context = LoopContext(user_name="alice")
+    context = LoopContext(user_name="alice", selected_skills=["native-ml"])
     messages = loop._build_messages(
         AssistantThread(thread_id="t", user_name="alice", title="t"),
         "Deteksi anomali pada transaksi pelanggan",

@@ -2,11 +2,13 @@ import {
   ArrowRightLeft,
   Box,
   CalendarClock,
+  BrainCircuit,
   Database,
   Eye,
   FolderOpen,
   FolderTree,
   Layers3,
+  Network,
   Sigma,
   Table2,
 } from 'lucide-react'
@@ -50,12 +52,17 @@ export function getNodeIcon(type: ExplorerNodeType) {
     case 'pipe': return ArrowRightLeft
     case 'stage': return Box
     case 'task': return CalendarClock
+    case 'entity': return Network
+    case 'semantic_view': return BrainCircuit
+    case 'feature_view': return Layers3
   }
 }
 
 export function getNodeTypeLabel(type: ExplorerNodeType) {
   switch (type) {
     case 'materialized_view': return 'Materialized View'
+    case 'semantic_view': return 'Semantic View'
+    case 'feature_view': return 'Feature View'
     default: return type.charAt(0).toUpperCase() + type.slice(1)
   }
 }
@@ -260,6 +267,68 @@ export function buildDatabaseChildren(
         }))
       : [emptyNode(`${idBase}-mvs`, 'Materialized Views')],
   })
+
+  const intelligenceGroups: Array<{
+    key: 'entities' | 'semantic_views' | 'feature_views'
+    label: string
+    type: ExplorerNodeType
+    items: Array<{ id: string; name: string; metadata: ExplorerNode['metadata'] }>
+  }> = [
+    {
+      key: 'entities', label: 'Entities', type: 'entity',
+      items: (data.entities ?? []).map((entity) => ({
+        id: entity.id, name: entity.name,
+        metadata: [
+          { label: 'Source relation', value: entity.relation },
+          { label: 'Key columns', value: entity.key_columns.join(', ') },
+          { label: 'Nova schema', value: entity.schema_name || db },
+        ],
+      })),
+    },
+    {
+      key: 'semantic_views', label: 'Semantic Views', type: 'semantic_view',
+      items: (data.semantic_views ?? []).map((view) => ({
+        id: view.id, name: view.name,
+        metadata: [
+          { label: 'Status', value: view.status },
+          { label: 'Active version', value: view.active_version?.toString() ?? '—' },
+          { label: 'Nova schema', value: view.schema_name || db },
+        ],
+      })),
+    },
+    {
+      key: 'feature_views', label: 'Feature Views', type: 'feature_view',
+      items: (data.feature_views ?? []).map((view) => ({
+        id: view.name, name: view.name,
+        metadata: [
+          { label: 'Status', value: view.status },
+          { label: 'Active version', value: view.active_version?.toString() ?? '—' },
+        ],
+      })),
+    },
+  ]
+  for (const group of intelligenceGroups) {
+    children.push({
+      id: `${idBase}-${group.key}`,
+      label: group.label,
+      type: 'group',
+      path: [catalogPath, db, group.label],
+      database: db,
+      catalog,
+      metadata: [{ label: 'Count', value: String(group.items.length) }],
+      children: group.items.length
+        ? group.items.map((item) => ({
+            id: `${idBase}-${group.key}-${item.id}`,
+            label: item.name,
+            type: group.type,
+            path: [catalogPath, db, group.label, item.name],
+            database: db,
+            catalog,
+            metadata: item.metadata,
+          }))
+        : [emptyNode(`${idBase}-${group.key}`, group.label)],
+    })
+  }
 
   // Functions group
   children.push({

@@ -3,7 +3,6 @@ import json
 
 import pytest
 
-from app.modules.assistant.intelligence import TurnIntent, TurnRouter
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.tools import ToolRegistry
 from tests.benchmark.harness import ScriptedProvider, text_frame, thread, tool_call_frame
@@ -115,7 +114,13 @@ async def test_capability_help_cannot_execute_database_query():
 
     loop = AssistantLoop(
         provider=Provider(
-            [tool_call_frame("wrong", sql="SHOW DATABASES"), text_frame("I can help with SQL.")]
+            [tool_call_frame("wrong", sql="SHOW DATABASES"), text_frame("I can help with SQL.")],
+            turn_plan={
+                "intent": "capability_help",
+                "tools": [],
+                "required_tools": [],
+                "ml_task": None,
+            },
         ),
         registry=registry,
         system_prompt="test",
@@ -137,15 +142,3 @@ async def test_capability_help_cannot_execute_database_query():
     assert snapshots[0]["tools"] is None
     assert "query_execute" in json.dumps(snapshots[0]["messages"])
     assert TurnResult(frames=frames).finish_reason == "stop"
-
-
-@pytest.mark.parametrize(
-    "prompt", ["Show me what Nove can do", "What can you do?", "Nova bisa apa?"]
-)
-def test_capability_help_routing(prompt):
-    assert TurnRouter().route(prompt).intent == TurnIntent.CAPABILITY_HELP
-
-
-def test_sql_and_data_requests_keep_their_routes():
-    assert TurnRouter().route("SHOW DATABASES").intent == TurnIntent.RAW_SQL_QUERY
-    assert TurnRouter().route("What can you tell me about sales?").needs_data

@@ -9,6 +9,9 @@ export type ExplorerNodeType =
   | 'pipe'
   | 'stage'
   | 'task'
+  | 'entity'
+  | 'semantic_view'
+  | 'feature_view'
 
 export type ExplorerNode = {
   id: string
@@ -150,6 +153,29 @@ export type TaskSummary = {
   overlap_policy: string | null
 }
 
+export type EntitySummary = {
+  id: string
+  name: string
+  schema_name: string
+  relation: string
+  key_columns: string[]
+}
+
+export type SemanticViewSummary = {
+  id: string
+  name: string
+  schema_name: string
+  status: string
+  active_version: number | null
+}
+
+export type FeatureViewSummary = {
+  name: string
+  entity_id: string
+  status: string
+  active_version: number | null
+}
+
 export type DatabaseObjectsResponse = {
   database: string
   tables: TableSummary[]
@@ -159,6 +185,9 @@ export type DatabaseObjectsResponse = {
   pipes: PipeSummary[]
   stages: StageSummary[]
   tasks: TaskSummary[]
+  entities: EntitySummary[]
+  semantic_views: SemanticViewSummary[]
+  feature_views: FeatureViewSummary[]
   summary: Record<string, number>
 }
 

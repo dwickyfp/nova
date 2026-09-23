@@ -47,6 +47,11 @@ class FakeProvider:
         self._script = list(script)
         self.calls: list[dict] = []
 
+    async def plan_turn(self, *, user_content, available_tools):
+        from tests.benchmark.harness import scripted_turn_plan
+
+        return scripted_turn_plan(self._script)
+
     async def resolve(self, *, provider_id=None, model=None):
         from app.modules.assistant.provider import ProviderConfig
 

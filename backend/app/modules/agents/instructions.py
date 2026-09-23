@@ -177,6 +177,9 @@ def _preferred_capabilities(text: str) -> list[str]:
         ("semantic_query", r"\b(semantic|business metric|governed metric|kpi)\b"),
         ("query_execute", r"\b(raw sql|schema inspection|describe table)\b"),
         ("semantic_search", r"\b(search|literal|lookup)\b"),
+        ("ai_search", r"\b(ai search|hybrid search|vector search)\b"),
+        ("semantic_view_query", r"\bsemantic view\b"),
+        ("feature_lookup", r"\b(feature group|feature lookup)\b"),
         ("ml_execute", r"\b(forecast|cluster|anomal|classif|regress|machine learning|ml)\b"),
         ("data_to_chart", r"\b(chart|graph|visuali[sz])\b"),
     )

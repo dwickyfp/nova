@@ -568,11 +568,16 @@ class AccessControlService:
             catalog, database, table = parts
         else:
             raise AccessControlError("Resource must be database.table or catalog.database.table")
-        policies = await self.list_managed_policies()
+        # Ranger's bootstrap policies also authorize roles such as ACCOUNTADMIN.
+        # Restricting this preview to Nova-managed policies makes real grants
+        # look like gaps in Agent Verify Access.
+        policies = await self._ranger.list_policies()
         matching = [
             policy
             for policy in policies
-            if active_role
+            if policy.get("service", settings.RANGER_SERVICE_NAME) == settings.RANGER_SERVICE_NAME
+            and policy.get("isEnabled", True)
+            and active_role
             in {
                 role
                 for key in ("policyItems", "rowFilterPolicyItems", "dataMaskPolicyItems")

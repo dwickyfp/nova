@@ -37,6 +37,7 @@ from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
 from app.modules.agents import mcp_client, observability, tool_catalog
+from app.modules.agents.access import access_fingerprint, has_verified_access
 from app.modules.agents.artifact_editor import propose_artifact_edit, run_artifact_draft
 from app.modules.agents.artifact_repository import artifact_repository
 from app.modules.agents.dashboard_repository import dashboard_repository
@@ -96,6 +97,7 @@ from app.modules.agents.studio_schemas import (
 )
 from app.modules.agents.studio_service import studio_service
 from app.modules.agents.tools.custom_tool import validate_custom_tool_definition
+from app.modules.assistant.security import session_security
 from app.modules.query.service import query_service
 
 logger = logging.getLogger(__name__)
@@ -127,6 +129,8 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
     """What the caller can use, for the Studio Capabilities view."""
     owner = user["username"]
     agents = await agent_repository.list_agents(owner_name=owner)
+    role = session_security(user).active_role
+    agents = [a for a in agents if await has_verified_access(a, role_name=role, user=user)]
     skills = await agent_repository.list_skills(owner_name=owner)
     await _seed_builtin_tools(owner)
     tools = await agent_repository.list_tools(owner_name=owner)
@@ -242,9 +246,13 @@ async def create_dashboard(
         owner_name=user["username"], title=body.title.strip()
     )
     await write_audit_log(
-        event_type="DASHBOARD", user_name=user["username"], action="create",
-        object_type="DASHBOARD", object_name=dashboard["dashboard_id"],
-        status="SUCCESS", session_id=user.get("session_id"),
+        event_type="DASHBOARD",
+        user_name=user["username"],
+        action="create",
+        object_type="DASHBOARD",
+        object_name=dashboard["dashboard_id"],
+        status="SUCCESS",
+        session_id=user.get("session_id"),
     )
     return DashboardView(**dashboard)
 
@@ -275,9 +283,13 @@ async def update_dashboard(
     if updated is None:
         raise HTTPException(status_code=409, detail="Dashboard changed. Reload before saving.")
     await write_audit_log(
-        event_type="DASHBOARD", user_name=user["username"], action="update",
-        object_type="DASHBOARD", object_name=dashboard_id,
-        status="SUCCESS", session_id=user.get("session_id"),
+        event_type="DASHBOARD",
+        user_name=user["username"],
+        action="update",
+        object_type="DASHBOARD",
+        object_name=dashboard_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
     )
     return DashboardView(**updated)
 
@@ -287,9 +299,13 @@ async def delete_dashboard(dashboard_id: str, user: dict = Depends(get_current_u
     await _dashboard_or_404(dashboard_id, user["username"])
     await dashboard_repository.delete(dashboard_id, owner_name=user["username"])
     await write_audit_log(
-        event_type="DASHBOARD", user_name=user["username"], action="delete",
-        object_type="DASHBOARD", object_name=dashboard_id,
-        status="SUCCESS", session_id=user.get("session_id"),
+        event_type="DASHBOARD",
+        user_name=user["username"],
+        action="delete",
+        object_type="DASHBOARD",
+        object_name=dashboard_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
     )
 
 
@@ -689,9 +705,20 @@ async def list_available_roles(user: dict = Depends(get_current_user)):
 
 @router.get("/{agent_id}/access", response_model=AgentRoleListResponse)
 async def list_agent_access(agent_id: str, user: dict = Depends(get_current_user)):
-    await _require_agent(agent_id, user["username"])
+    agent = await _require_agent(agent_id, user["username"])
     roles = await agent_repository.list_agent_roles(agent_id, owner_name=user["username"])
-    views = [AgentRoleView(**r) for r in roles]
+    fingerprint = await access_fingerprint(agent)
+    views = []
+    for grant in roles:
+        valid = grant.get("verified_fingerprint") == fingerprint
+        if valid:
+            valid = await has_verified_access(
+                agent, role_name=grant["role_name"], user=user
+            )
+        views.append(AgentRoleView(
+            role_name=grant["role_name"], grant_type=grant["grant_type"],
+            verified=valid, verified_at=grant.get("verified_at") if valid else None,
+        ))
     return AgentRoleListResponse(roles=views, count=len(views))
 
 
@@ -702,11 +729,26 @@ async def add_agent_access(
     user: dict = Depends(get_current_user),
 ):
     await _require_agent(agent_id, user["username"])
+    from app.modules.users.service import user_service
+
+    available = await user_service.list_roles()
+    if body.role_name not in {r["name"] for r in available if r.get("name")}:
+        raise HTTPException(status_code=422, detail="Role does not exist")
     await agent_repository.add_agent_role(
         agent_id,
         owner_name=user["username"],
         role_name=body.role_name,
         grant_type=body.grant_type,
+    )
+    await write_audit_log(
+        event_type="AGENT_ACCESS",
+        user_name=user["username"],
+        action="GRANT",
+        object_type="AGENT",
+        object_name=agent_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
     )
     return AgentRoleView(role_name=body.role_name, grant_type=body.grant_type)
 
@@ -722,6 +764,16 @@ async def remove_agent_access(
         agent_id, owner_name=user["username"], role_name=role_name
     ):
         raise HTTPException(status_code=404, detail="Role not granted on this agent")
+    await write_audit_log(
+        event_type="AGENT_ACCESS",
+        user_name=user["username"],
+        action="REVOKE",
+        object_type="AGENT",
+        object_name=agent_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
     return None
 
 
@@ -739,6 +791,9 @@ async def verify_agent_access(
     from app.modules.agents.access import verify_access
 
     agent = await _require_agent(agent_id, user["username"])
+    grants = await agent_repository.list_agent_roles(agent_id, owner_name=user["username"])
+    if body.role_name not in {grant["role_name"] for grant in grants}:
+        raise HTTPException(status_code=422, detail="Assign the role before verifying access")
     try:
         items = await verify_access(
             agent=agent,
@@ -750,9 +805,26 @@ async def verify_agent_access(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    all_granted = all(item.granted for item in items)
+    await agent_repository.set_agent_role_verification(
+        agent_id,
+        owner_name=user["username"],
+        role_name=body.role_name,
+        fingerprint=await access_fingerprint(agent) if all_granted else None,
+    )
+    await write_audit_log(
+        event_type="AGENT_ACCESS",
+        user_name=user["username"],
+        action="VERIFY",
+        object_type="AGENT",
+        object_name=agent_id,
+        status="SUCCESS" if all_granted else "DENIED",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
     return AccessCheckResponse(
         role_name=body.role_name,
-        all_granted=all(item.granted for item in items),
+        all_granted=all_granted,
         items=[AccessCheckItem(**item.__dict__) for item in items],
         checked_at=datetime.now(),
     )
@@ -780,9 +852,13 @@ async def create_custom_tool(
     await _require_unique_custom_tool_name(user["username"], fields["name"])
     created = await agent_repository.create_custom_tool(owner_name=user["username"], fields=fields)
     await write_audit_log(
-        event_type="CUSTOM_TOOL", user_name=user["username"], action="create",
-        object_type="CUSTOM_TOOL", object_name=created["tool_id"],
-        status="SUCCESS", session_id=user.get("session_id"),
+        event_type="CUSTOM_TOOL",
+        user_name=user["username"],
+        action="create",
+        object_type="CUSTOM_TOOL",
+        object_name=created["tool_id"],
+        status="SUCCESS",
+        session_id=user.get("session_id"),
     )
     return CustomToolView(**created)
 
@@ -827,15 +903,17 @@ async def update_custom_tool(
                     agent["agent_id"],
                     owner_name=user["username"],
                     fields={
-                        "default_tools": [
-                            new_key if tool == old_key else tool for tool in selected
-                        ]
+                        "default_tools": [new_key if tool == old_key else tool for tool in selected]
                     },
                 )
     await write_audit_log(
-        event_type="CUSTOM_TOOL", user_name=user["username"], action="update",
-        object_type="CUSTOM_TOOL", object_name=tool_id,
-        status="SUCCESS", session_id=user.get("session_id"),
+        event_type="CUSTOM_TOOL",
+        user_name=user["username"],
+        action="update",
+        object_type="CUSTOM_TOOL",
+        object_name=tool_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
     )
     return CustomToolView(**updated)
 
@@ -845,9 +923,13 @@ async def delete_custom_tool(tool_id: str, user: dict = Depends(get_current_user
     if not await agent_repository.delete_custom_tool(tool_id, owner_name=user["username"]):
         raise HTTPException(status_code=404, detail="Custom tool not found")
     await write_audit_log(
-        event_type="CUSTOM_TOOL", user_name=user["username"], action="delete",
-        object_type="CUSTOM_TOOL", object_name=tool_id,
-        status="SUCCESS", session_id=user.get("session_id"),
+        event_type="CUSTOM_TOOL",
+        user_name=user["username"],
+        action="delete",
+        object_type="CUSTOM_TOOL",
+        object_name=tool_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
     )
     return None
 
@@ -905,9 +987,7 @@ async def _require_unique_custom_tool_name(
     owner: str, name: str, *, except_tool_id: str | None = None
 ) -> None:
     tools = await agent_repository.list_custom_tools(owner_name=owner)
-    if any(
-        tool["name"] == name and tool["tool_id"] != except_tool_id for tool in tools
-    ):
+    if any(tool["name"] == name and tool["tool_id"] != except_tool_id for tool in tools):
         raise HTTPException(status_code=409, detail="Custom tool name already exists")
 
 

@@ -47,6 +47,9 @@ async def test_explorer_hides_denied_stage_metadata(monkeypatch):
         ]),
     )
     monkeypatch.setattr(module, "decrypt_password", lambda value: "pw")
+    monkeypatch.setattr(module.entity_registry, "list", AsyncMock(return_value=[]))
+    monkeypatch.setattr(module.semantic_view_service, "list", AsyncMock(return_value=[]))
+    monkeypatch.setattr(module.feature_store, "list_views", AsyncMock(return_value=[]))
 
     async def authorize(stage, **kwargs):
         if stage["schema_name"] == "silver":

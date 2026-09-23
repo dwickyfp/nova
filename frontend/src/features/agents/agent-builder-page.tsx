@@ -121,7 +121,7 @@ export function AgentBuilderPage() {
             />
           </TabsContent>
           <TabsContent value="access" className="mt-6">
-            <AgentAccessTab agentId={agentId} />
+            <AgentAccessTab agentId={agentId} agentName={agent.name} />
           </TabsContent>
           <TabsContent value="observability" className="mt-6">
             <AgentObservabilityTab agentId={agentId} />

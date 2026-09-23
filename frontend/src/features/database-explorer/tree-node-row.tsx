@@ -142,7 +142,7 @@ export function TreeNodeRow({
               </span>
             </button>
           </CollapsibleTrigger>
-          <CollapsibleContent>
+          <CollapsibleContent className='CollapsibleContent'>
             <SidebarMenuSub>
               {node.children?.map((child) => (
                 <TreeNodeRow

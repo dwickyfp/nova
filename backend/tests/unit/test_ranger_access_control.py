@@ -5,6 +5,7 @@ import json
 import httpx
 import pytest
 
+from app.core.config import settings
 from app.core.redis import SessionStore
 from app.integrations.ranger.client import RangerClient
 from app.integrations.ranger.compiler import (
@@ -370,6 +371,60 @@ async def test_effective_access_resolves_scope_and_mask_from_ranger(monkeypatch)
     assert result["object_access"] == ["SELECT"]
     assert result["row_restrictions"] == ["city IN ('Jakarta')"]
     assert result["column_restrictions"] == {"phone": "MASK"}
+
+
+@pytest.mark.asyncio
+async def test_effective_access_includes_accountadmin_bootstrap_policy(monkeypatch) -> None:
+    class Ranger:
+        async def list_policies(self):
+            return [
+                {
+                    "service": settings.RANGER_SERVICE_NAME,
+                    "name": "all - database, table, column",
+                    "policyType": 0,
+                    "isEnabled": True,
+                    "resources": {
+                        "catalog": {"values": ["default_catalog"]},
+                        "database": {"values": ["*"]},
+                        "table": {"values": ["*"]},
+                    },
+                    "policyItems": [
+                        {
+                            "roles": ["ACCOUNTADMIN"],
+                            "accesses": [
+                                {"type": "select", "isAllowed": True},
+                                {"type": "usage", "isAllowed": True},
+                            ],
+                        }
+                    ],
+                }
+            ]
+
+        async def get_user_attributes(self, principal):
+            return {}
+
+    service = AccessControlService(Ranger())
+    result = await service.effective_access(
+        principal="nova_admin",
+        active_role="ACCOUNTADMIN",
+        resource="NOVA_SALES.fact_sales",
+    )
+
+    assert result["object_access"] == ["SELECT", "USAGE"]
+    assert result["policy_health"] == "ACTIVE"
+
+    from app.modules.agents import access as agent_access
+
+    async def dependencies(_agent):
+        return [("table", "NOVA_SALES.fact_sales"), ("database", "NOVA_SALES")]
+
+    monkeypatch.setattr("app.modules.access_control.service.access_control_service", service)
+    monkeypatch.setattr(agent_access, "resolve_agent_dependencies", dependencies)
+    items = await agent_access.verify_access(
+        agent={}, role_name="ACCOUNTADMIN", username="nova_admin",
+        encrypted_password="", session_id=None,
+    )
+    assert all(item.granted for item in items)
 
 
 def test_ml_cache_scope_includes_principal_role_and_epoch() -> None:

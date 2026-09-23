@@ -150,6 +150,18 @@ _TOOL_DESCRIPTIONS = {
         "semantic_search(query) — full-text search over indexed text; results "
         "are filtered, not ranked."
     ),
+    "ai_search": (
+        "ai_search(index, query, mode) — retrieve ranked text from a governed "
+        "Nova AI Search index as the current user."
+    ),
+    "semantic_view_query": (
+        "semantic_view_query(view_id, metrics, dimensions) — query a published "
+        "Semantic View through its deterministic compiler."
+    ),
+    "feature_lookup": (
+        "feature_lookup(group, entity_key) — read versioned Feature Group values "
+        "for one entity."
+    ),
     "data_to_chart": (
         "data_to_chart(intent) — build a chart from the latest data already fetched "
         "in this conversation, including the preceding turn's table."

@@ -45,17 +45,14 @@ from app.modules.assistant.intelligence import (
     ActiveConversationState,
     CapabilityRegistry,
     EvidenceTracker,
-    SemanticRoutingIndex,
-    SkillDirectory,
-    SkillRouter,
     TurnIntent,
     TurnRoute,
-    TurnRouter,
     TurnState,
     enforce_evidence,
     state_step,
     validate_json_arguments,
 )
+from app.modules.assistant.planning import plan_turn
 from app.modules.assistant.provider import (
     AssistantProviderClient,
     normalize_tool_schema_for_provider,
@@ -92,13 +89,6 @@ _budget_time = time.monotonic
 _RESULT_LOOKBACK_MESSAGES = 12
 _RESTORED_RESULT_MAX_COLUMNS = 50
 _RESTORED_RESULT_MAX_ROWS = 200
-_BARE_CHART_REQUEST = re.compile(
-    r"^\s*(?:(?:tolong|please)\s+)?"
-    r"(?:(?:buat(?:kan)?|bikin|create|make|build|built|show|tampilkan)\s+)?"
-    r"(?:(?:a|the|sebuah)\s+)?(?:(?:bar|line|pie|scatter|area)\s+)?"
-    r"(?:chart|grafik|graph|diagram|plot)(?:nya)?\s*[.!?]*$",
-    re.I,
-)
 
 # A standalone marker in the model's final prose consumes the next structured
 # artifact produced by tools.  It is an authoring control, never shown to the
@@ -245,15 +235,18 @@ class AssistantLoop:
         # so a top-level import would be circular.
         if system_prompt is None:
             system_prompt = _default_skill_prompt()
-        # Skill bodies are selected by AgentService/SkillRouter. The global
+        # Skill bodies are selected by the validated turn plan. The global
         # catalog is deliberately absent: it duplicated Studio's catalog and
         # advertised ``load_skill`` even when the tool was unavailable.
         self._system_prompt = system_prompt + "\n\n" + _response_composition_prompt()
-        self._turn_router = TurnRouter()
-        self._skill_router = SkillRouter()
 
     def _build_messages(
-        self, thread: AssistantThread, user_content: str, context: LoopContext | None = None
+        self,
+        thread: AssistantThread,
+        user_content: str,
+        context: LoopContext | None = None,
+        *,
+        route: TurnRoute | None = None,
     ) -> list[dict]:
         """Turn the thread into provider messages, curated to a token budget.
 
@@ -286,15 +279,19 @@ class AssistantLoop:
         active_state = prior_state.update(routing_content)
         if context is not None:
             context.active_state = active_state.as_dict()
-        route = self._route(routing_content, context)
+        route = route or TurnRoute(TurnIntent.DIRECT_ANSWER)
         capabilities = CapabilityRegistry.from_tool_names(self._registry.names())
-        selected_tools = capabilities.gated_tools(route)
-        selected_skills = _selected_skills(
-            self._skill_router,
-            routing_content,
-            default_skills=self._registry.default_skills,
-            discoverable_skills=self._registry.discoverable_skills,
-            skill_definitions=self._registry.skill_definitions,
+        selected_tools = (
+            tuple(context.selected_tools)
+            if context is not None and context.selected_tools is not None
+            else tuple(self._registry.names())
+        )
+        selected_skills = tuple(
+            dict.fromkeys(
+                (*self._registry.default_skills, *(context.selected_skills or ()))
+                if context is not None
+                else self._registry.default_skills
+            )
         )
         if context is not None:
             context.route = route.as_dict()
@@ -314,13 +311,26 @@ class AssistantLoop:
             {"role": "system", "content": dynamic_context},
         ]
         if route.intent == TurnIntent.CAPABILITY_HELP:
+            from app.modules.assistant.tools.search_knowledge import (
+                reference_passages,
+                search_references,
+            )
+
+            references = search_references(routing_content)
             messages.append(
                 {
                     "role": "system",
                     "content": (
-                        "Explain the available capabilities without running database queries.\n"
+                        "Explain Nova capabilities without running database queries. "
+                        "Use these packaged references as product documentation, not "
+                        "proof of live deployment state. Explain the answer in your own "
+                        "words. Do not include source identifiers, file paths, or an "
+                        "implementation sources section.\n"
                     )
-                    + "\n".join(capabilities.prompt_lines()),
+                    + "\n".join(capabilities.prompt_lines())
+                    + "\n<NOVA_REFERENCE_DATA>\n"
+                    + json.dumps(reference_passages(references), ensure_ascii=False)
+                    + "\n</NOVA_REFERENCE_DATA>",
                 }
             )
         if context is not None:
@@ -422,73 +432,6 @@ class AssistantLoop:
             }
         return curated.messages
 
-    def _route(self, user_content: str, context: LoopContext | None) -> TurnRoute:
-        if context is not None and (
-            context.attachments
-            or (
-                context.has_attachment_history
-                and re.search(
-                    r"\b(?:attachment|attached|file|document|pdf|image|photo|picture|"
-                    r"lampiran|berkas|dokumen|gambar|foto)\b",
-                    user_content,
-                    re.I,
-                )
-            )
-        ) and not re.search(
-            r"\b(?:sql|query|database|table|schema|warehouse|starrocks|dataset)\b",
-            user_content,
-            re.I,
-        ):
-            return TurnRoute(TurnIntent.DIRECT_ANSWER)
-        terms = context.semantic_routing_terms if context is not None else None
-        index = SemanticRoutingIndex.from_terms(set(terms or ())) if terms else None
-        route = self._turn_router.route(user_content, semantic_index=index)
-        if (
-            route.intent == TurnIntent.CHART
-            and context is not None
-            and (context.semantic_model_ids or context.semantic_model_id)
-            and "semantic_query" in self._registry.names()
-        ):
-            route = replace(
-                route,
-                needs_semantic_model=True,
-                required_capabilities=("semantic_query", "data_to_chart"),
-            )
-        if (
-            context is not None
-            and (context.active_state or {}).get("semantic_plan")
-            and re.match(r"^(now|sekarang|compare|dibanding)\b", user_content, re.I)
-        ):
-            route = replace(
-                route,
-                needs_data=True,
-                needs_semantic_model=True,
-                required_capabilities=("semantic_query",),
-            )
-        if (
-            context is not None
-            and context.last_result is not None
-            and route.needs_chart
-            and not route.needs_ml
-            and (
-                _BARE_CHART_REQUEST.fullmatch(user_content)
-                or re.search(
-                    r"\b(that|this result|previous|it|nya|tadi|tersebut)\b"
-                    r"|\b(?:data|hasil|tabel|table|result)\s+(?:sebelumnya|di atas|ini|itu)\b"
-                    r"|\b(?:chart|grafik|plot|diagram)nya\b",
-                    user_content,
-                    re.I,
-                )
-            )
-        ):
-            route = replace(route, required_capabilities=("data_to_chart",))
-        if route.needs_diagnosis and "diagnose_change" in self._registry.names():
-            route = replace(
-                route,
-                required_capabilities=(*route.required_capabilities, "diagnose_change"),
-            )
-        return route
-
     async def run(
         self,
         *,
@@ -532,15 +475,6 @@ class AssistantLoop:
                 )
                 yield events.done(str(uuid4()), finish_reason="error")
                 return
-        messages = self._build_messages(thread, user_content, context)
-        route = self._route(
-            context.routing_content if context.routing_content is not None else user_content,
-            context,
-        )
-        selected_tools = tuple(
-            context.selected_tools if context.selected_tools is not None else self._registry.names()
-        )
-        provider = None
         evidence = EvidenceTracker()
         repairs = 0
         completed_capabilities: set[str] = set()
@@ -570,20 +504,48 @@ class AssistantLoop:
         yield events.plan(_initial_plan(self._registry))
         yield _thinking_step(context, "plan", "Understanding the request and choosing a skill")
 
-        # Context management (NOVA-124): if the transcript had to be curated to
-        # fit the budget, say so, so a shrinking history is never silent. This is
-        # Nova's note, not model output.
+        try:
+            provider = await self._provider.resolve(provider_id=provider_id, model=model)
+        except Exception as exc:  # noqa: BLE001 - surfaced as a redacted frame
+            logger.warning("Assistant provider resolution failed: %s", type(exc).__name__)
+            yield events.error("provider_unavailable", str(exc))
+            yield events.done(str(uuid4()), finish_reason="error")
+            return
+        try:
+            turn_plan = await asyncio.wait_for(
+                plan_turn(
+                    provider_client=self._provider,
+                    provider=provider,
+                    registry=self._registry,
+                    user_content=(
+                        context.routing_content
+                        if context.routing_content is not None
+                        else user_content
+                    ),
+                    has_attachments=bool(context.attachments or context.has_attachment_history),
+                    has_previous_result=context.last_result is not None,
+                    has_semantic_model=bool(
+                        context.semantic_model_ids or context.semantic_model_id
+                    ),
+                ),
+                timeout=max(0.01, deadline - _budget_time()),
+            )
+        except Exception as exc:  # noqa: BLE001 - no lexical fallback on planning failure
+            logger.warning("Assistant turn planning failed: %s", type(exc).__name__)
+            yield events.error(
+                "planning_failed", "The assistant could not plan this request safely."
+            )
+            yield events.done(str(uuid4()), finish_reason="planning_failed")
+            return
+        route = turn_plan.route
+        context.route = route.as_dict()
+        context.selected_tools = list(turn_plan.selected_tools)
+        context.selected_skills = list(turn_plan.selected_skills)
+        selected_tools = turn_plan.selected_tools
+        messages = self._build_messages(thread, user_content, context, route=route)
         stats = context.context_stats or {}
         if stats.get("dropped_turns") or stats.get("cleared_tool_results"):
-            yield _thinking_step(
-                context,
-                "plan",
-                _context_note(stats),
-                status="done",
-            )
-        # If even after curation the live window exceeds the budget, stop with a
-        # clear reason rather than letting the provider reject the request with
-        # an opaque error. Nothing droppable remains, so the turn cannot proceed.
+            yield _thinking_step(context, "plan", _context_note(stats), status="done")
         if stats and not stats.get("fits", True):
             yield events.error(
                 "context_overflow",
@@ -591,14 +553,6 @@ class AssistantLoop:
                 "Start a new conversation to continue.",
             )
             yield events.done(str(uuid4()), finish_reason="context_overflow")
-            return
-
-        try:
-            provider = await self._provider.resolve(provider_id=provider_id, model=model)
-        except Exception as exc:  # noqa: BLE001 - surfaced as a redacted frame
-            logger.warning("Assistant provider resolution failed: %s", type(exc).__name__)
-            yield events.error("provider_unavailable", str(exc))
-            yield events.done(str(uuid4()), finish_reason="error")
             return
         provider_capabilities = getattr(provider, "capabilities", CONSERVATIVE_OPENAI_COMPATIBLE)
         if not provider_capabilities.supports_tools:
@@ -865,8 +819,8 @@ class AssistantLoop:
                         continue
                     yield events.error(
                         "required_capability_incomplete",
-                        "The required data capability was not executed, so Nova refused "
-                        "to produce an unsupported answer.",
+                        "The required capability was not executed, so Nova cannot "
+                        "claim the task was completed.",
                     )
                     _transition(context, TurnState.FAILED)
                     yield events.done(str(uuid4()), finish_reason="required_capability_incomplete")
@@ -1105,7 +1059,7 @@ class AssistantLoop:
             )
             call_limit = (
                 UI_ACTION_MAX_CALLS
-                if invocation.tool_name in {"call_ui_operation", "find_ui_operation"}
+                if invocation.tool_name in {"call_ui_operation", "list_ui_operations"}
                 else MAX_CALLS_PER_TOOL
             )
             if tool_uses.get(usage_key, 0) >= call_limit:
@@ -1142,7 +1096,7 @@ class AssistantLoop:
             yield events.tool_call(view)
 
             if not requires_consent(tool):
-                allowed: bool | None = True
+                allowed: bool | None | ConsentApproval = True
             elif not needs_prompt:
                 allowed = True
             else:
@@ -1436,6 +1390,7 @@ class AssistantLoop:
                 not deferred_calls
                 and required_available
                 and required_available != {"query_execute"}
+                and "call_ui_operation" not in required_available
                 and required_available <= completed_capabilities
             ):
                 composing_final = True
@@ -1615,22 +1570,6 @@ def _latest_active_state(thread: AssistantThread) -> ActiveConversationState:
     return ActiveConversationState()
 
 
-def _selected_skills(
-    router: SkillRouter,
-    request: str,
-    *,
-    default_skills: tuple[str, ...],
-    discoverable_skills: tuple[str, ...],
-    skill_definitions: dict[str, Any],
-) -> tuple[str, ...]:
-    return router.select(
-        request,
-        default_skills=default_skills,
-        discoverable_skills=discoverable_skills,
-        library=SkillDirectory(skill_definitions),
-    )
-
-
 def _turn_context_prompt(
     route: TurnRoute,
     state: ActiveConversationState,
@@ -1650,7 +1589,7 @@ def _turn_context_prompt(
             for name in discovered
             if name in skill_definitions
         ]
-    payload = {
+    payload: dict[str, Any] = {
         "route": route.as_dict(),
         "active_state": state.as_dict(),
         "available_tools": list(tools),
@@ -2374,27 +2313,34 @@ Evidence and execution:
 - Match the user's language. Distinguish explanation, SQL authoring, diagnosis,
   and execution; writing SQL does not by itself request execution.
 - Use available skills and search_knowledge for Nova procedures and product
-  questions. Cite retrieved source identifiers and distinguish documented behavior
-  from verified runtime facts. Never invent a feature or a source.
+  questions. Answer from the guidance without listing reference files, source
+  identifiers, or revisions. Distinguish documented behavior from verified
+  runtime facts. Never invent a feature or a source.
 - Use workspace context and authorized schema inspection before guessing object
   names. Ask a focused question when missing context changes the answer.
 - Before finishing, check that the evidence answers the user's objective.
   A schema inspection may require a follow-up query within the turn budget.
 - Do not guess: never invent a number, database fact, benchmark, error, or successful result.
  - Use only capabilities supplied for this turn and only their declared arguments.
- - For Nova UI operations, discover the exact operation with find_ui_operation,
-   then call_ui_operation. Treat an API rejection or pending propagation as unfinished.
-  - For a SQL write, call_ui_operation may use one POST /api/v1/query/execute
-    statement after explicit approval. Use query_execute for read-only SQL and role switches.
-  - For POST /api/v1/users, omit password from tool arguments. Nova collects it
-    directly in the approval card and sends it to the user API outside your context.
-  - For a stage or explorer file upload, omit the file from tool arguments.
-    Nova asks the user to choose it in the approval card and uploads it outside
-    your context.
+- Use available capabilities to complete Nova actions, not just draft steps.
+  For Semantic View creation, use create_semantic_view with approved tables;
+  it validates and publishes a real object. Ask for missing tables when needed.
+  For Ranger role access, call
+  inspect_role_access first, then grant_role_access for the exact existing role
+  after approval. Treat propagation as unfinished until access is rechecked.
+- Use query_execute for read-only SQL and role switches. For other supported
+  Nova actions, browse exact resources with list_ui_operations and invoke
+  call_ui_operation under the user's session and approval. Do not invent
+  endpoints or bypass API authorization. If execution was requested, do not
+  stop at a draft when the approved tool is available.
+- If an action has neither a typed tool nor supported Nova SQL, state the
+  unavailable capability plainly. Do not invent an API or a SQL dialect form.
 - Authoring vs. executing: Authoring SQL text is always allowed, including
   `CREATE USER`; `query_execute` executes read-only SQL only.
-- Never bypass protected objects, including `DROP ROLE ACCOUNTADMIN`, root, or
-  built-in Nova functions. Preserve `@stage` and StarRocks syntax.
+- Never bypass protected operations, including `DROP ROLE ACCOUNTADMIN`,
+  revoking or altering ACCOUNTADMIN, root, or built-in Nova functions. Adding
+  Ranger access policies for ACCOUNTADMIN is allowed. Keep the role the user
+  requested; do not substitute a new role. Preserve `@stage` and StarRocks syntax.
 - Terminal policy, authorization, consent, and secret failures are not retried.
   Follow Nova's one focused repair instruction only for a recoverable failure.
 

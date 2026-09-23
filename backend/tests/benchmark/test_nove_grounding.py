@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.modules.assistant.intelligence import SkillRouter
+from app.modules.assistant.planning import validate_turn_plan
 from app.modules.assistant.registry import build_registry
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.skill_registry import skill_library
@@ -21,19 +21,20 @@ async def test_nove_context_and_reference_cost():
 
     async def context():
         ctx = LoopContext(user_name="bench", database="analytics", schema_name="public")
+        ctx.selected_skills = ["debug-sql"]
         messages = loop._build_messages(thread(), "Cari penyebab query lambat", ctx)
         assert "debug-sql" in ctx.selected_skills
         assert ctx.context_stats["fits"]
         return messages
 
     async def skills():
-        result = SkillRouter().select(
-            "Buat tabel dari @stage file csv",
-            default_skills=(),
-            discoverable_skills=skill_library.names(),
-            library=skill_library,
+        result = validate_turn_plan(
+            {"intent": "sql_authoring", "tools": [], "required_tools": [],
+             "skills": ["create-table"], "ml_task": None},
+            set(registry.names()),
+            set(skill_library.names()),
         )
-        assert "create-table" in result
+        assert "create-table" in result.selected_skills
 
     async def references():
         result = search_references("query lambat penyebab")
@@ -41,7 +42,7 @@ async def test_nove_context_and_reference_cost():
 
     for name, operation in [
         ("nove_context", context),
-        ("nove_skill_routing", skills),
+        ("nove_skill_plan_validation", skills),
         ("nove_reference_search", references),
     ]:
         _print(name, await measure(operation, iterations=200))

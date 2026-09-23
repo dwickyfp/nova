@@ -317,6 +317,21 @@ BACKEND_ENV=(
   RANGER_TLS_VERIFY="$RANGER_TLS_VERIFY"
 )
 
+if ! (
+  cd "$BACKEND_DIR"
+  "${BACKEND_ENV[@]}" uv run python - <<'PY'
+from app.core.config import settings
+
+user = settings.WORKER_IMPERSONATION_USER
+password = settings.WORKER_IMPERSONATION_PASSWORD
+role = settings.WORKER_IMPERSONATION_ROLE
+valid = bool(user and password and user.lower() not in {"root", "nova_admin"})
+raise SystemExit(0 if valid and (not settings.RANGER_ENABLED or role) else 1)
+PY
+); then
+  die "task worker configuration is incomplete. Set WORKER_IMPERSONATION_USER and WORKER_IMPERSONATION_PASSWORD in backend/.env for a dedicated StarRocks account. With Ranger enabled, also set WORKER_IMPERSONATION_ROLE."
+fi
+
 # Backend: FastAPI with the embedded MySQL proxy (PROXY_PORT, default 4406).
 run backend "$C_BLUE" "$BACKEND_DIR" \
   "${BACKEND_ENV[@]}" PROXY_PORT="$PROXY_PORT" \

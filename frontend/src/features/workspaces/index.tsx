@@ -13,7 +13,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { getRouteApi } from "@tanstack/react-router";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { format as formatSql } from "sql-formatter";
 import Editor, { type Monaco } from "@monaco-editor/react";
@@ -91,6 +91,7 @@ import { readToken } from "@/lib/read-token";
 import { applyNovaSqlTheme } from "./monaco-theme";
 import { FileHistoryDialog } from "./file-history-dialog";
 import { WorkspaceTabStrip } from "./workspace-tab-strip";
+import { createStarterTemplateFile, getStarterTemplate } from "./starter-templates";
 import { ExplainTreeView } from "./explain-tree";
 import { QueryHistory } from "./query-history";
 import type {
@@ -631,6 +632,7 @@ const SQL_KEYWORDS = [
 
 export function WorkspacesPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const search = workspacesRoute.useSearch();
   const [sidebarTab, setSidebarTab] = useState<"workspaces" | "databases">(
     "workspaces",
@@ -731,6 +733,7 @@ export function WorkspacesPage() {
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
   const pendingRevealRef = useRef<{ tabId: string; sql: string } | null>(null);
+  const handledTemplateRef = useRef<string | null>(null);
 
   const {
     open: assistantOpen,
@@ -970,6 +973,42 @@ export function WorkspacesPage() {
     if (!tab || tab.loaded) return;
     void openTab(activeTabId);
   }, [activeTabId, tabs]);
+
+  useEffect(() => {
+    const templateId = search.template;
+    const template = templateId ? getStarterTemplate(templateId) : undefined;
+    const tree = workspaceTreeQuery.data;
+    const context = queryContextQuery.data;
+    if (!template || !tree || !context || handledTemplateRef.current === templateId) return;
+    handledTemplateRef.current = templateId ?? null;
+
+    void createStarterTemplateFile(template, tree.entries).then((response) => {
+      setOpenTabIds((prev) => [...new Set([...prev, response.entry.id])]);
+      setActiveTabId(response.entry.id);
+      setTabs((prev) => ({
+        ...prev,
+        [response.entry.id]: {
+          id: response.entry.id,
+          title: response.entry.name,
+          content: response.content,
+          savedContent: response.content,
+          database: tree.defaults.database ?? context.defaults.database ?? context.databases[0] ?? "",
+          schema: tree.defaults.schema ?? context.defaults.schema ?? "default",
+          role: sessionRole,
+          loaded: true,
+        },
+      }));
+      void queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+      void navigate({
+        to: "/workspaces",
+        search: { file: response.entry.id },
+        replace: true,
+      });
+    }).catch((error) => {
+      handledTemplateRef.current = null;
+      toast.error(error instanceof Error ? error.message : "Failed to create template worksheet.");
+    });
+  }, [search.template, workspaceTreeQuery.data, queryContextQuery.data, queryClient, navigate, sessionRole]);
 
   // Deep links from Home's Recent work: `?file=<id>` opens that worksheet and
   // `?q=<sql>` selects the matching statement so the user lands on the query,

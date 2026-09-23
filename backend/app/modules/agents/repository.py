@@ -203,6 +203,8 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_ROLES (
     role_name   VARCHAR(128) NOT NULL,
     owner_name  VARCHAR(128) NOT NULL,
     grant_type  VARCHAR(32) NOT NULL,
+    verified_fingerprint VARCHAR(64),
+    verified_at DATETIME,
     created_at  DATETIME NOT NULL,
     updated_at  DATETIME NOT NULL
 ) PRIMARY KEY(agent_id, role_name)
@@ -543,6 +545,17 @@ class AgentRepository:
         await db.execute_system(MCP_SERVERS_DDL)
         await db.execute_system(TOOLS_DDL)
         await db.execute_system(AGENT_ROLES_DDL)
+        for column, column_type in (
+            ("verified_fingerprint", "VARCHAR(64)"),
+            ("verified_at", "DATETIME"),
+        ):
+            try:
+                await db.execute_system(
+                    f"ALTER TABLE NOVA_SYSTEM.CONFIG_AGENT_ROLES ADD COLUMN {column} {column_type}"
+                )
+            except Exception as exc:  # noqa: BLE001 - duplicate column is benign
+                if "already exists" not in str(exc).lower() and "duplicate" not in str(exc).lower():
+                    raise
         await db.execute_system(CUSTOM_TOOLS_DDL)
         await db.execute_system(VERIFIED_QUERIES_DDL)
         await db.execute_system(SEMANTIC_USAGE_DDL)
@@ -1260,11 +1273,35 @@ class AgentRepository:
 
     async def list_agent_roles(self, agent_id: str, *, owner_name: str) -> list[dict]:
         result = await db.execute_system(
-            "SELECT role_name, grant_type FROM NOVA_SYSTEM.CONFIG_AGENT_ROLES "
+            "SELECT role_name, grant_type, verified_fingerprint, verified_at "
+            "FROM NOVA_SYSTEM.CONFIG_AGENT_ROLES "
             "WHERE agent_id = %s AND owner_name = %s ORDER BY role_name ASC",
             [agent_id, owner_name],
         )
-        return [{"role_name": row[0], "grant_type": row[1] or "USAGE"} for row in result["rows"]]
+        return [
+            {
+                "role_name": row[0],
+                "grant_type": row[1] or "USAGE",
+                "verified_fingerprint": row[2],
+                "verified_at": _iso(row[3]) if row[3] else None,
+            }
+            for row in result["rows"]
+        ]
+
+    async def set_agent_role_verification(
+        self,
+        agent_id: str,
+        *,
+        owner_name: str,
+        role_name: str,
+        fingerprint: str | None,
+    ) -> None:
+        await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_ROLES "
+            "SET verified_fingerprint = %s, verified_at = %s, updated_at = %s "
+            "WHERE agent_id = %s AND owner_name = %s AND role_name = %s",
+            [fingerprint, _now() if fingerprint else None, _now(), agent_id, owner_name, role_name],
+        )
 
     async def add_agent_role(
         self, agent_id: str, *, owner_name: str, role_name: str, grant_type: str = "USAGE"

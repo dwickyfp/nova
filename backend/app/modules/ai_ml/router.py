@@ -21,6 +21,7 @@ per-request guard remains the authoritative check.
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.common.audit import write_audit_log
 from app.common.ssrf_guard import BlockedEndpointError, resolve_and_validate_url
 from app.core.deps import get_current_user, require_role
 from app.modules.ai_ml.schemas import (
@@ -165,7 +166,7 @@ async def list_models(
 async def create_model(
     provider_id: str,
     body: AIModelCreate,
-    user: dict = require_user,
+    user: dict = require_admin,
 ):
     """Create a new AI model under a provider."""
     # Ensure provider_id in path matches body (use path value)
@@ -173,27 +174,47 @@ async def create_model(
     data["provider_id"] = provider_id
     try:
         result = await ai_service.create_model(data, user["username"])
-    except Exception as e:
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    await write_audit_log(
+        event_type="AI_MODEL",
+        user_name=user["username"],
+        action="CREATE",
+        object_type="AI_MODEL",
+        object_name=result["id"],
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
     return AIModelResponse(**result)
 
 
 @router.delete("/models/{model_id}", status_code=204)
 async def delete_model(
     model_id: str,
-    user: dict = require_user,
+    user: dict = require_admin,
 ):
     """Delete an AI model by ID."""
     deleted = await ai_service.delete_model(model_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
+    await write_audit_log(
+        event_type="AI_MODEL",
+        user_name=user["username"],
+        action="DELETE",
+        object_type="AI_MODEL",
+        object_name=model_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
 
 
 @router.put("/models/{model_id}", response_model=AIModelResponse)
 async def update_model(
     model_id: str,
     body: AIModelUpdate,
-    user: dict = require_user,
+    user: dict = require_admin,
 ):
     """Update an existing AI model."""
     data = body.model_dump(exclude_none=True)
@@ -201,10 +222,20 @@ async def update_model(
         raise HTTPException(status_code=400, detail="No fields to update")
     try:
         result = await ai_service.update_model(model_id, data)
-    except Exception as e:
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not result:
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
+    await write_audit_log(
+        event_type="AI_MODEL",
+        user_name=user["username"],
+        action="UPDATE",
+        object_type="AI_MODEL",
+        object_name=model_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
     return AIModelResponse(**result)
 
 

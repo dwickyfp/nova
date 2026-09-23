@@ -80,10 +80,11 @@ class SemanticCompiler:
             if field is not None and field.dataset != base_dataset
         }
         needed_datasets.update(metric_datasets - {base_dataset})
+        from app.modules.agents.semantic.derived import compile_metric_expression
         from app.modules.agents.semantic.expressions import referenced_datasets
 
         for metric in metrics:
-            for expression in (metric.expression, *metric.filters):
+            for expression in (compile_metric_expression(model, metric), *metric.filters):
                 needed_datasets.update(
                     referenced_datasets(expression, metric.base_dataset) - {base_dataset}
                 )
@@ -128,9 +129,7 @@ class SemanticCompiler:
             select_parts.append(f"{expression} AS {_quote(field.name)}")
             group_parts.append(expression)
         for metric in metrics:
-            from app.modules.agents.semantic.expressions import qualify_expression
-
-            expression = qualify_expression(metric.expression, metric.base_dataset, model)
+            expression = compile_metric_expression(model, metric)
             select_parts.append(f"{expression} AS {_quote(metric.name)}")
         if not select_parts:
             raise SemanticPlanError("The semantic plan produces no projection.")

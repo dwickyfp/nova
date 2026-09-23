@@ -54,7 +54,7 @@ class AgentService:
         """Return ``(registry, system_prompt, time_budget_seconds, token_budget)``.
 
         Default skills are loaded into trusted task-procedure context here.
-        Discoverable skills stay out of the prompt until ``SkillRouter`` selects
+        Discoverable skills stay out of the prompt until the turn plan selects
         one for a turn. The global catalog is never dumped into model context.
 
         ``token_budget`` is the agent's context-window budget (NOVA-124), or

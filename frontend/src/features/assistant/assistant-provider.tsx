@@ -102,6 +102,8 @@ type AssistantContextType = {
   openThread: (threadId: string) => Promise<void>;
   /** Clears the conversation so the next message starts a fresh thread. */
   newChat: () => void;
+  /** Opens a fresh conversation and sends its first message. */
+  newChatAndSend: (text: string) => void;
   /** Panel width in px, clamped to the allowed range; persisted in a cookie. */
   width: number;
   setWidth: (width: number) => void;
@@ -137,6 +139,9 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpenState] = useState(false);
   const [binding, setBindingState] = useState<AssistantBinding | null>(null);
   const [selectedModel, setSelectedModel] = useState<SelectedModel>(null);
+  const [pendingNewChatMessage, setPendingNewChatMessage] = useState<
+    string | null
+  >(null);
   // Read synchronously on first render so the panel does not flash at the
   // default width before the cookie is applied.
   const [width, setWidthState] = useState(() =>
@@ -267,14 +272,37 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   );
 
   const openThread = useCallback(
-    (threadId: string) => conversation.loadThread(threadId),
+    (threadId: string) => {
+      setPendingNewChatMessage(null);
+      return conversation.loadThread(threadId);
+    },
     [conversation],
   );
   const newChat = useCallback(() => {
     setAttachments([]);
     setProposedRewriteState(null);
+    setPendingNewChatMessage(null);
     conversation.startNewThread();
   }, [conversation]);
+  const newChatAndSend = useCallback(
+    (text: string) => {
+      newChat();
+      setPendingNewChatMessage(text);
+      initialisedRef.current = true;
+      setOpenState(true);
+    },
+    [newChat],
+  );
+  useEffect(() => {
+    if (
+      !pendingNewChatMessage ||
+      conversation.threadId ||
+      conversation.streaming
+    )
+      return;
+    setPendingNewChatMessage(null);
+    void conversation.sendMessage(pendingNewChatMessage);
+  }, [conversation, pendingNewChatMessage]);
 
   const setOpen = useCallback((next: boolean) => setOpenState(next), []);
   const toggle = useCallback(() => setOpenState((prev) => !prev), []);
@@ -335,6 +363,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       loadingThread: conversation.loadingThread,
       openThread,
       newChat,
+      newChatAndSend,
       width,
       setWidth,
       offsetY,
@@ -359,6 +388,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       selectedModel,
       openThread,
       newChat,
+      newChatAndSend,
       width,
       setWidth,
       offsetY,

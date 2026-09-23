@@ -1,7 +1,7 @@
 import asyncio
 
 from app.modules.agents.tools.ml_execute import MLExecuteTool
-from app.modules.assistant.intelligence import validate_json_arguments
+from app.modules.assistant.intelligence import TurnIntent, TurnRoute, validate_json_arguments
 from app.modules.assistant.service import AssistantLoop, LoopContext, _ml_parameters_for_task
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
@@ -105,7 +105,8 @@ async def _run_semantic_clustering_scenario(monkeypatch):
     ]
 
     schema = loop._tool_schemas(
-        ("ml_execute",), route=loop._route("Cluster monthly order count per region", context)
+        ("ml_execute",),
+        route=TurnRoute(TurnIntent.MACHINE_LEARNING, needs_ml=True, ml_task="clustering"),
     )[0]["function"]["parameters"]
     assert validate_json_arguments(schema, arguments) == []
     assert [step["name"] for step in context.steps if step["kind"] == "tool"] == [

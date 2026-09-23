@@ -70,6 +70,11 @@ type AIModel = {
   display_name: string | null
   type: ModelType
   max_tokens: number | null
+  logical_alias: string | null
+  revision: string | null
+  dimensions: number | null
+  modality: string | null
+  metric: string | null
   default_params: Record<string, unknown> | null
   is_active: boolean
   created_at: string | null
@@ -94,7 +99,6 @@ const MODEL_TYPES: { value: ModelType; label: string }[] = [
   { value: 'embedding', label: 'Embedding' },
 ]
 
-
 const emptyProviderForm = {
   name: '',
   type: 'openai' as ProviderType,
@@ -108,6 +112,10 @@ const emptyModelForm = {
   display_name: '',
   type: 'llm' as ModelType,
   max_tokens: '4096',
+  logical_alias: '',
+  revision: '',
+  dimensions: '',
+  metric: 'cosine',
   default_params: '',
 }
 
@@ -308,6 +316,10 @@ export function ProvidersTab() {
       display_name: model.display_name ?? '',
       type: model.type,
       max_tokens: model.max_tokens ? String(model.max_tokens) : '',
+      logical_alias: model.logical_alias ?? '',
+      revision: model.revision ?? '',
+      dimensions: model.dimensions ? String(model.dimensions) : '',
+      metric: model.metric ?? 'cosine',
       default_params: model.default_params
         ? JSON.stringify(model.default_params)
         : '',
@@ -323,6 +335,16 @@ export function ProvidersTab() {
       toast.error('Model name is required')
       return
     }
+    if (
+      modelForm.type === 'embedding' &&
+      (!modelForm.logical_alias.trim() ||
+        !modelForm.revision.trim() ||
+        !Number.isInteger(Number(modelForm.dimensions)) ||
+        Number(modelForm.dimensions) <= 0)
+    ) {
+      toast.error('Alias, revision, and positive dimensions are required')
+      return
+    }
     setSubmitting(true)
     try {
       const body: Record<string, unknown> = {
@@ -332,8 +354,15 @@ export function ProvidersTab() {
       if (modelForm.display_name.trim()) {
         body.display_name = modelForm.display_name.trim()
       }
-      if (modelForm.max_tokens) {
+      if (modelForm.type === 'llm' && modelForm.max_tokens) {
         body.max_tokens = parseInt(modelForm.max_tokens, 10)
+      }
+      if (modelForm.type === 'embedding') {
+        body.logical_alias = modelForm.logical_alias.trim()
+        body.revision = modelForm.revision.trim()
+        body.dimensions = Number(modelForm.dimensions)
+        body.modality = 'text'
+        body.metric = modelForm.metric
       }
       if (modelForm.default_params.trim()) {
         body.default_params = JSON.parse(modelForm.default_params)
@@ -443,7 +472,11 @@ export function ProvidersTab() {
           },
         ]}
         actions={
-          <Button size='sm' className='gap-1.5' onClick={openCreateProviderDialog}>
+          <Button
+            size='sm'
+            className='gap-1.5'
+            onClick={openCreateProviderDialog}
+          >
             <Plus className='size-3.5' />
             Add Provider
           </Button>
@@ -546,9 +579,7 @@ export function ProvidersTab() {
                           {provider.api_key_masked ?? '••••'}
                         </span>
                       ) : (
-                        <span className='text-xs text-muted-foreground'>
-                          —
-                        </span>
+                        <span className='text-xs text-muted-foreground'>—</span>
                       )}
                     </td>
                     <td className='px-4 py-3 text-center'>
@@ -639,7 +670,7 @@ export function ProvidersTab() {
                                     Type
                                   </th>
                                   <th className='py-2 pr-4 text-right text-xs font-medium text-muted-foreground'>
-                                    Max Tokens
+                                    Tokens / Dimensions
                                   </th>
                                   <th className='py-2 pr-4 text-center text-xs font-medium text-muted-foreground'>
                                     Status
@@ -659,7 +690,12 @@ export function ProvidersTab() {
                                       {model.name}
                                     </td>
                                     <td className='py-2 pr-4 text-xs text-muted-foreground'>
-                                      {model.display_name ?? '—'}
+                                      <div>{model.display_name ?? '—'}</div>
+                                      {model.type === 'embedding' && model.logical_alias && (
+                                        <div className='font-mono text-[11px]'>
+                                          {model.logical_alias} · {model.revision}
+                                        </div>
+                                      )}
                                     </td>
                                     <td className='py-2 pr-4'>
                                       <Badge
@@ -672,8 +708,9 @@ export function ProvidersTab() {
                                       </Badge>
                                     </td>
                                     <td className='py-2 pr-4 text-right font-mono text-xs'>
-                                      {model.max_tokens?.toLocaleString() ??
-                                        '—'}
+                                      {model.type === 'embedding'
+                                        ? model.dimensions?.toLocaleString() ?? '—'
+                                        : model.max_tokens?.toLocaleString() ?? '—'}
                                     </td>
                                     <td className='py-2 pr-4 text-center'>
                                       <Badge
@@ -929,12 +966,8 @@ export function ProvidersTab() {
               Cancel
             </Button>
             <Button onClick={handleSaveProvider} disabled={submitting}>
-              {submitting && (
-                <Loader2 className='mr-2 size-3.5 animate-spin' />
-              )}
-              {providerEditMode === 'edit'
-                ? 'Save Changes'
-                : 'Create Provider'}
+              {submitting && <Loader2 className='mr-2 size-3.5 animate-spin' />}
+              {providerEditMode === 'edit' ? 'Save Changes' : 'Create Provider'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -991,6 +1024,7 @@ export function ProvidersTab() {
                 <Label htmlFor='model-type'>Type</Label>
                 <Select
                   value={modelForm.type}
+                  disabled={modelEditMode === 'edit'}
                   onValueChange={(v) =>
                     setModelForm((f) => ({ ...f, type: v as ModelType }))
                   }
@@ -1007,22 +1041,91 @@ export function ProvidersTab() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className='space-y-2'>
-                <Label htmlFor='model-tokens'>Max Tokens</Label>
-                <Input
-                  id='model-tokens'
-                  type='number'
-                  placeholder='4096'
-                  value={modelForm.max_tokens}
-                  onChange={(e) =>
-                    setModelForm((f) => ({
-                      ...f,
-                      max_tokens: e.target.value,
-                    }))
-                  }
-                />
-              </div>
+              {modelForm.type === 'llm' && (
+                <div className='space-y-2'>
+                  <Label htmlFor='model-tokens'>Max Tokens</Label>
+                  <Input
+                    id='model-tokens'
+                    type='number'
+                    placeholder='4096'
+                    value={modelForm.max_tokens}
+                    onChange={(e) =>
+                      setModelForm((f) => ({
+                        ...f,
+                        max_tokens: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              )}
             </div>
+            {modelForm.type === 'embedding' && (
+              <div className='space-y-4 rounded-md border p-4'>
+                <div className='space-y-2'>
+                  <Label htmlFor='model-alias'>Logical alias</Label>
+                  <Input
+                    id='model-alias'
+                    placeholder='nova.embedding.default'
+                    value={modelForm.logical_alias}
+                    onChange={(e) =>
+                      setModelForm((f) => ({
+                        ...f,
+                        logical_alias: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className='grid grid-cols-2 gap-4'>
+                  <div className='space-y-2'>
+                    <Label htmlFor='model-revision'>Revision</Label>
+                    <Input
+                      id='model-revision'
+                      placeholder='2026-09'
+                      value={modelForm.revision}
+                      onChange={(e) =>
+                        setModelForm((f) => ({
+                          ...f,
+                          revision: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <Label htmlFor='model-dimensions'>Dimensions</Label>
+                    <Input
+                      id='model-dimensions'
+                      type='number'
+                      min={1}
+                      placeholder='1536'
+                      value={modelForm.dimensions}
+                      onChange={(e) =>
+                        setModelForm((f) => ({
+                          ...f,
+                          dimensions: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='model-metric'>Distance metric</Label>
+                  <Select
+                    value={modelForm.metric}
+                    onValueChange={(v) =>
+                      setModelForm((f) => ({ ...f, metric: v }))
+                    }
+                  >
+                    <SelectTrigger id='model-metric'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='cosine'>Cosine</SelectItem>
+                      <SelectItem value='l2'>L2</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
             <div className='space-y-2'>
               <Label htmlFor='model-params'>
                 Default Params (JSON, optional)
@@ -1041,16 +1144,11 @@ export function ProvidersTab() {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant='outline'
-              onClick={() => setModelDialogOpen(false)}
-            >
+            <Button variant='outline' onClick={() => setModelDialogOpen(false)}>
               Cancel
             </Button>
             <Button onClick={handleSaveModel} disabled={submitting}>
-              {submitting && (
-                <Loader2 className='mr-2 size-3.5 animate-spin' />
-              )}
+              {submitting && <Loader2 className='mr-2 size-3.5 animate-spin' />}
               {modelEditMode === 'edit' ? 'Save Changes' : 'Create Model'}
             </Button>
           </DialogFooter>
@@ -1080,9 +1178,7 @@ export function ProvidersTab() {
               onClick={handleDelete}
               disabled={submitting}
             >
-              {submitting && (
-                <Loader2 className='mr-2 size-3.5 animate-spin' />
-              )}
+              {submitting && <Loader2 className='mr-2 size-3.5 animate-spin' />}
               Delete
             </Button>
           </DialogFooter>

@@ -195,6 +195,7 @@ export type AgentMessage = {
 
 export const agentsApi = {
   list: () => api.get<{ agents: Agent[]; count: number }>("/agents"),
+  listStudio: () => api.get<{ agents: Agent[]; count: number }>("/agents?studio=true"),
   get: (id: string) => api.get<Agent>(`/agents/${encodeURIComponent(id)}`),
   create: (body: AgentCreateInput) => api.post<Agent>("/agents", body),
   update: (id: string, body: Partial<AgentCreateInput>) =>
@@ -727,7 +728,12 @@ export const skillsApi = {
 
 // ── Agent access roles + Verify Access ─────────────────────────
 
-export type AgentRole = { role_name: string; grant_type: string };
+export type AgentRole = {
+  role_name: string;
+  grant_type: string;
+  verified: boolean;
+  verified_at: string | null;
+};
 
 export type AccessCheckItem = {
   kind: string;

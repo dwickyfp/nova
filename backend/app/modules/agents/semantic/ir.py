@@ -58,6 +58,7 @@ class SemanticMetricIR:
     name: str
     expression: str
     base_dataset: str
+    datatype: str | None = None
     description: str = ""
     grain: SemanticGrain = field(default_factory=SemanticGrain)
     additivity: Additivity = Additivity.ADDITIVE
@@ -100,6 +101,12 @@ class SemanticExampleIR:
 
 
 @dataclass(frozen=True)
+class SemanticHierarchyIR:
+    name: str
+    dimensions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class SemanticModelIR:
     name: str
     description: str
@@ -108,6 +115,8 @@ class SemanticModelIR:
     datasets: tuple[SemanticDatasetIR, ...]
     metrics: tuple[SemanticMetricIR, ...]
     relationships: tuple[SemanticRelationshipIR, ...]
+    hierarchies: tuple[SemanticHierarchyIR, ...] = ()
+    entity_ids: tuple[str, ...] = ()
     named_filters: tuple[SemanticNamedFilterIR, ...] = ()
     examples: tuple[SemanticExampleIR, ...] = ()
     question_routing_instructions: str = ""
@@ -155,8 +164,10 @@ class SemanticModelIR:
             raw_additivity = str(additivity_value).lower().replace("-", "_")
             try:
                 additivity = Additivity(raw_additivity)
-            except ValueError:
-                additivity = Additivity.ADDITIVE
+            except ValueError as exc:
+                raise ValueError(
+                    f"Metric {raw.get('name')!r} has unsupported additivity {raw_additivity!r}"
+                ) from exc
             metric_grain = raw.get("grain") or {}
             metric_keys = metric_grain.get("keys") if isinstance(metric_grain, dict) else []
             metrics.append(
@@ -164,6 +175,7 @@ class SemanticModelIR:
                     name=str(raw["name"]),
                     expression=expression,
                     base_dataset=base,
+                    datatype=_optional_str(raw.get("datatype")),
                     description=str(raw.get("description") or ""),
                     grain=SemanticGrain(tuple(str(key) for key in (metric_keys or []))),
                     additivity=additivity,
@@ -215,6 +227,22 @@ class SemanticModelIR:
             if isinstance(raw, dict) and raw.get("name") and raw.get("expression")
         )
         examples = tuple(_examples(definition.get("ai_context")))
+        raw_hierarchies = definition.get("hierarchies") or {}
+        hierarchies = (
+            tuple(
+                SemanticHierarchyIR(str(name), tuple(str(field) for field in dimensions))
+                for name, dimensions in raw_hierarchies.items()
+                if isinstance(dimensions, list)
+            )
+            if isinstance(raw_hierarchies, dict)
+            else ()
+        )
+        raw_entities = definition.get("entities") or {}
+        entity_ids = (
+            tuple(str(value) for value in raw_entities.values())
+            if isinstance(raw_entities, dict)
+            else tuple(str(value) for value in raw_entities)
+        )
         canonical = json.dumps(definition, sort_keys=True, separators=(",", ":"), default=str)
         return cls(
             name=str(definition.get("name") or ""),
@@ -224,6 +252,8 @@ class SemanticModelIR:
             datasets=tuple(datasets),
             metrics=tuple(metrics),
             relationships=relationships,
+            hierarchies=hierarchies,
+            entity_ids=entity_ids,
             named_filters=named_filters,
             examples=examples,
             question_routing_instructions=str(

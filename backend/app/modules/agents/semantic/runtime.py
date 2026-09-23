@@ -177,6 +177,7 @@ def semantic_ir_to_definition(model: SemanticModelIR) -> dict[str, Any]:
                 "name": metric.name,
                 "expression": metric.expression,
                 "base_dataset": metric.base_dataset,
+                "datatype": metric.datatype,
                 "description": metric.description,
                 "grain": {"keys": list(metric.grain.keys)},
                 "additivity": metric.additivity.value,
@@ -457,6 +458,9 @@ class SemanticValidation:
 
 def validate_semantic_model_ir(model: SemanticModelIR) -> SemanticValidation:
     """Validate cross-object references that Ossie shape validation cannot."""
+    from app.modules.agents.semantic.derived import compile_metric_expression
+    from app.modules.agents.semantic.ir import FieldKind
+
     errors: list[str] = []
     dataset_names = {dataset.name for dataset in model.datasets}
     for dataset in model.datasets:
@@ -488,6 +492,21 @@ def validate_semantic_model_ir(model: SemanticModelIR) -> SemanticValidation:
             field = model.field(metric.default_time_dimension)
             if field is None or not field.is_time:
                 errors.append(f"Metric {metric.name!r} has an invalid default time dimension.")
+        try:
+            compile_metric_expression(model, metric)
+        except ValueError as exc:
+            errors.append(f"Metric {metric.name!r}: {exc}")
+    for hierarchy in model.hierarchies:
+        if len(hierarchy.dimensions) < 2 or len(set(hierarchy.dimensions)) != len(
+            hierarchy.dimensions
+        ):
+            errors.append(f"Hierarchy {hierarchy.name!r} needs distinct ordered dimensions.")
+        for dimension in hierarchy.dimensions:
+            field = model.field(dimension)
+            if field is None or field.kind != FieldKind.DIMENSION:
+                errors.append(
+                    f"Hierarchy {hierarchy.name!r} references unknown dimension {dimension!r}."
+                )
     for named_filter in model.named_filters:
         if named_filter.dataset and named_filter.dataset not in dataset_names:
             errors.append(

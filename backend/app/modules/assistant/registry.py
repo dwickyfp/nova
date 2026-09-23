@@ -34,14 +34,24 @@ def build_registry() -> ToolRegistry:
     A factory (rather than only the process-wide instance) so tests get an
     isolated registry.
     """
+    from app.modules.agents.tools.ai_search import ai_search_tool
     from app.modules.agents.tools.data_to_chart import data_to_chart_tool
+    from app.modules.agents.tools.intelligence_views import (
+        feature_lookup_tool,
+        semantic_view_query_tool,
+    )
     from app.modules.agents.tools.ml_execute import ml_execute_tool
+    from app.modules.assistant.tools.create_semantic_view import create_semantic_view_tool
     from app.modules.assistant.tools.load_skill import load_skill_tool
     from app.modules.assistant.tools.query_execute import query_execute_tool
+    from app.modules.assistant.tools.role_access import (
+        grant_role_access_tool,
+        inspect_role_access_tool,
+    )
     from app.modules.assistant.tools.search_knowledge import search_knowledge_tool
     from app.modules.assistant.tools.ui_actions import (
         call_ui_operation_tool,
-        find_ui_operation_tool,
+        list_ui_operations_tool,
     )
 
     registry = ToolRegistry()
@@ -50,8 +60,14 @@ def build_registry() -> ToolRegistry:
     registry.register(query_execute_tool)
     registry.register(ml_execute_tool)
     registry.register(data_to_chart_tool)
-    registry.register(find_ui_operation_tool)
+    registry.register(ai_search_tool)
+    registry.register(semantic_view_query_tool)
+    registry.register(feature_lookup_tool)
+    registry.register(inspect_role_access_tool)
+    registry.register(grant_role_access_tool)
+    registry.register(list_ui_operations_tool)
     registry.register(call_ui_operation_tool)
+    registry.register(create_semantic_view_tool)
 
     from app.modules.assistant.intelligence import SkillDefinition
     from app.modules.assistant.skill_registry import skill_library

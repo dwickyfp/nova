@@ -7,7 +7,7 @@ from app.modules.agents.tools.diagnose_change import (
     decompose_change,
     diagnose_change_tool,
 )
-from app.modules.assistant.intelligence import CapabilityRegistry, TurnRouter
+from app.modules.assistant.planning import validate_turn_plan
 from app.modules.assistant.tools import ToolInvocation
 
 
@@ -70,12 +70,11 @@ async def test_diagnostic_tool_uses_only_the_authorized_last_result() -> None:
     assert result.table["rows"][-1] == ["net_change", "-7"]
 
 
-def test_why_revenue_dropped_routes_to_data_and_optional_diagnostic() -> None:
-    route = TurnRouter().route("Mengapa omzet turun bulan ini?")
-    assert route.needs_data and route.needs_diagnosis
-    assert route.required_capabilities == ("semantic_query",)
-    selected = CapabilityRegistry.from_tool_names(
-        ["semantic_query", "diagnose_change", "query_execute"]
-    ).gated_tools(route)
-    assert "semantic_query" in selected
-    assert "diagnose_change" in selected
+def test_diagnostic_plan_keeps_data_evidence_requirement() -> None:
+    plan = validate_turn_plan(
+        {"intent": "compound_analytics", "tools": ["semantic_query", "diagnose_change"],
+         "required_tools": ["semantic_query", "diagnose_change"], "ml_task": None},
+        {"semantic_query", "diagnose_change", "query_execute"},
+    )
+    assert plan.route.needs_data and plan.route.needs_diagnosis
+    assert plan.route.required_capabilities == ("semantic_query", "diagnose_change")

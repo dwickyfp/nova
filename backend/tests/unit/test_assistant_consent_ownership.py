@@ -529,6 +529,11 @@ class _FakeProvider:
     def __init__(self, script: list[dict]) -> None:
         self._script = list(script)
 
+    async def plan_turn(self, *, user_content, available_tools):
+        from tests.benchmark.harness import scripted_turn_plan
+
+        return scripted_turn_plan(self._script)
+
     async def resolve(self, **_kwargs):
         return object()
 

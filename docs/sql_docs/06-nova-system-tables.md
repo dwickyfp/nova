@@ -78,7 +78,7 @@ Virtual workspace files: `id` (PK), `user_name`, `parent_path`, `name`, `entry_t
 
 ### `CONFIG_AI_MODELS`
 
-`id` (PK), `provider_id`, `name`, `display_name`, `type`, `max_tokens`, `default_params`, `is_active`, timestamps.
+`id` (PK), `provider_id`, `name`, `display_name`, `type` (`llm` or `embedding`), `max_tokens`, `default_params`, `is_active`, timestamps. Embedding models also record `logical_alias`, immutable `revision`, `dimensions`, `modality`, and `metric`. Existing tables receive those columns through an additive startup migration; new tables are created with them by `docker/init-nova.sql`.
 
 ### `CONFIG_MODEL_ALIASES`
 

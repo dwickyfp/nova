@@ -46,32 +46,33 @@ describe("AssistantToggle", () => {
     expect(button.element().getAttribute("aria-controls")).toBe(
       "assistant-panel",
     );
+    expect(button.element().parentElement?.parentElement).toBe(document.body);
   });
 
-  it("carries the 44px minimum hit target classes on the primary fill", async () => {
+  it("keeps the primary fill compact while preserving its width", async () => {
     const { getByRole } = await renderToggle();
     // The browser test runner does not load the Tailwind stylesheet, so the
     // measured box is the UA default. Assert the sizing contract instead.
     const classes = getByRole("button", { name: "Ask Nove" }).element()
       .className;
-    expect(classes).toContain("min-h-12");
-    expect(classes).toContain("min-w-12");
+    expect(classes).toContain("min-h-9");
+    expect(classes).toContain("min-w-11");
     expect(classes).toContain("bg-primary");
     expect(classes).toContain("text-primary-foreground");
   });
 
   it("shows a six-dot grip affordance, hidden until hover", async () => {
-    const { getByRole, container } = await renderToggle();
+    const { getByRole } = await renderToggle();
     const button = getByRole("button", { name: "Ask Nove" }).element();
 
-    // The grip is a span sibling of the button (not its icon svg), so it is
-    // not part of the button's accessible content.
-    const grip = container.querySelector("span[class*='grid-cols-2']");
+    const grip = button.querySelector("span[class*='grid-cols-2']");
     expect(grip).not.toBeNull();
+    expect(grip?.getAttribute("aria-hidden")).toBe("true");
     expect(grip?.className).toContain("opacity-0");
     expect(grip?.className).toContain("group-hover:opacity-100");
     expect(grip?.querySelectorAll("span").length).toBe(6);
     expect(button.className).toContain("touch-none");
+    expect(button.className).toContain("group-hover:min-w-16");
   });
 
   it("is not draggable without the prop, and carries no grip", async () => {

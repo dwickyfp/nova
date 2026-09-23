@@ -21,6 +21,7 @@ from app.common.ssrf_guard import (
     resolve_and_validate_url,
 )
 from app.core.config import settings
+from app.modules.ai_ml.schemas import AIModelCreate
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +252,8 @@ class AIService:
                 if provider_id:
                     await cur.execute(
                         "SELECT id, provider_id, name, display_name, type, "
-                        "max_tokens, default_params, is_active, created_at, created_by "
+                        "max_tokens, logical_alias, revision, dimensions, modality, metric, "
+                        "default_params, is_active, created_at, created_by "
                         "FROM NOVA_SYSTEM.CONFIG_AI_MODELS "
                         "WHERE provider_id = %s ORDER BY name",
                         (provider_id,),
@@ -259,14 +261,14 @@ class AIService:
                 else:
                     await cur.execute(
                         "SELECT id, provider_id, name, display_name, type, "
-                        "max_tokens, default_params, is_active, created_at, created_by "
+                        "max_tokens, logical_alias, revision, dimensions, modality, metric, "
+                        "default_params, is_active, created_at, created_by "
                         "FROM NOVA_SYSTEM.CONFIG_AI_MODELS ORDER BY name"
                     )
                 rows = await cur.fetchall()
                 result = []
                 for row in rows:
                     d = self._deserialize_row(row)
-                    d["api_key"] = decrypt(d.get("api_key"))
                     result.append(d)
                 return result
         finally:
@@ -279,7 +281,8 @@ class AIService:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
                 await cur.execute(
                     "SELECT id, provider_id, name, display_name, type, "
-                    "max_tokens, default_params, is_active, created_at, created_by "
+                    "max_tokens, logical_alias, revision, dimensions, modality, metric, "
+                    "default_params, is_active, created_at, created_by "
                     "FROM NOVA_SYSTEM.CONFIG_AI_MODELS WHERE id = %s",
                     (model_id,),
                 )
@@ -290,6 +293,11 @@ class AIService:
 
     async def create_model(self, data: dict, username: str) -> dict | None:
         """INSERT a new AI model. Returns the created model."""
+        data = AIModelCreate.model_validate(data).model_dump()
+        if not await self.get_provider(data["provider_id"]):
+            raise ValueError("Provider not found")
+        if data["type"] == "embedding":
+            await self._assert_unique_alias(data["logical_alias"])
         model_id = str(uuid4())
         default_params_json = (
             json.dumps(data.get("default_params")) if data.get("default_params") else None
@@ -300,8 +308,9 @@ class AIService:
                 await cur.execute(
                     "INSERT INTO NOVA_SYSTEM.CONFIG_AI_MODELS "
                     "(id, provider_id, name, display_name, type, max_tokens, "
+                    "logical_alias, revision, dimensions, modality, metric, "
                     "default_params, is_active, created_at, created_by) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, true, NOW(), %s)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, NOW(), %s)",
                     (
                         model_id,
                         data["provider_id"],
@@ -309,6 +318,11 @@ class AIService:
                         data.get("display_name"),
                         data["type"],
                         data.get("max_tokens"),
+                        data.get("logical_alias"),
+                        data.get("revision"),
+                        data.get("dimensions"),
+                        data.get("modality") or ("text" if data["type"] == "embedding" else None),
+                        data.get("metric") or ("cosine" if data["type"] == "embedding" else None),
                         default_params_json,
                         username,
                     ),
@@ -338,6 +352,16 @@ class AIService:
         existing = await self.get_model(model_id)
         if not existing:
             return None
+        if data.get("type", existing["type"]) != existing["type"]:
+            raise ValueError("Model type cannot be changed after creation")
+        if existing["type"] == "embedding":
+            for field in ("name", "revision", "dimensions", "modality", "metric"):
+                if field in data and data[field] != existing.get(field):
+                    raise ValueError(f"Embedding {field} is immutable; register a new model")
+
+        validated = AIModelCreate.model_validate({**existing, **data})
+        if validated.type == "embedding":
+            await self._assert_unique_alias(validated.logical_alias, exclude_id=model_id)
 
         merged = {
             "provider_id": existing["provider_id"],
@@ -345,6 +369,11 @@ class AIService:
             "display_name": data.get("display_name", existing.get("display_name")),
             "type": data.get("type", existing["type"]),
             "max_tokens": data.get("max_tokens", existing.get("max_tokens")),
+            "logical_alias": data.get("logical_alias", existing.get("logical_alias")),
+            "revision": data.get("revision", existing.get("revision")),
+            "dimensions": data.get("dimensions", existing.get("dimensions")),
+            "modality": data.get("modality", existing.get("modality")),
+            "metric": data.get("metric", existing.get("metric")),
             "default_params": data.get("default_params", existing.get("default_params")),
             "is_active": data.get("is_active", existing.get("is_active", True)),
             "created_at": existing.get("created_at"),
@@ -363,8 +392,9 @@ class AIService:
                 await cur.execute(
                     "INSERT INTO NOVA_SYSTEM.CONFIG_AI_MODELS "
                     "(id, provider_id, name, display_name, type, max_tokens, "
+                    "logical_alias, revision, dimensions, modality, metric, "
                     "default_params, is_active, created_at, created_by) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         model_id,
                         merged["provider_id"],
@@ -372,6 +402,11 @@ class AIService:
                         merged["display_name"],
                         merged["type"],
                         merged["max_tokens"],
+                        merged["logical_alias"],
+                        merged["revision"],
+                        merged["dimensions"],
+                        merged["modality"],
+                        merged["metric"],
                         default_params_json,
                         merged["is_active"],
                         merged["created_at"],
@@ -379,6 +414,25 @@ class AIService:
                     ),
                 )
             return await self.get_model(model_id)
+        finally:
+            conn.close()
+
+    async def _assert_unique_alias(
+        self, alias: str | None, *, exclude_id: str | None = None
+    ) -> None:
+        if not alias:
+            return
+        conn = await self._connect()
+        try:
+            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
+                await cur.execute(
+                    "SELECT id FROM NOVA_SYSTEM.CONFIG_AI_MODELS "
+                    "WHERE logical_alias = %s AND type = 'embedding' LIMIT 1",
+                    (alias,),
+                )
+                row = await cur.fetchone()
+                if row and row["id"] != exclude_id:
+                    raise ValueError("Embedding alias already exists")
         finally:
             conn.close()
 

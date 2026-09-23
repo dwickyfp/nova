@@ -102,6 +102,29 @@ class TaskSummary(BaseModel):
     overlap_policy: str | None = None
 
 
+class EntitySummary(BaseModel):
+    id: str
+    name: str
+    schema_name: str
+    relation: str
+    key_columns: list[str]
+
+
+class SemanticViewSummary(BaseModel):
+    id: str
+    name: str
+    schema_name: str
+    status: str
+    active_version: int | None = None
+
+
+class FeatureViewSummary(BaseModel):
+    name: str
+    entity_id: str
+    status: str
+    active_version: int | None = None
+
+
 class DatabaseObjectsResponse(BaseModel):
     """All objects inside a database for the explorer tree."""
 
@@ -113,6 +136,9 @@ class DatabaseObjectsResponse(BaseModel):
     pipes: list[PipeSummary]
     stages: list[StageSummary]
     tasks: list[TaskSummary] = Field(default_factory=list)
+    entities: list[EntitySummary] = Field(default_factory=list)
+    semantic_views: list[SemanticViewSummary] = Field(default_factory=list)
+    feature_views: list[FeatureViewSummary] = Field(default_factory=list)
     summary: dict[str, int] = Field(default_factory=dict)
 
 

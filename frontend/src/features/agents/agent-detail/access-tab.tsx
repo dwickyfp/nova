@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import {
+  AlertCircle,
+  Brain,
+  CheckCircle2,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +32,14 @@ import {
   rolesApi,
   type AccessCheckResult,
 } from "@/features/agents/api";
+import { useAssistant } from "@/features/assistant/assistant-provider";
+import { buildAccessGrantPrompt } from "./access-prompt";
+
+const requiredPrivilege: Record<string, string> = {
+  table: "SELECT",
+  database: "USAGE",
+  function: "EXECUTE",
+};
 
 /**
  * Agent Access — which roles may use the agent, and Verify Access.
@@ -34,12 +49,23 @@ import {
  * against the role's engine grants. A red row is a real gap the engine would
  * refuse at run time.
  */
-export function AgentAccessTab({ agentId }: { agentId: string }) {
+export function AgentAccessTab({
+  agentId,
+  agentName,
+}: {
+  agentId: string;
+  agentName?: string;
+}) {
   const queryClient = useQueryClient();
+  const { newChatAndSend } = useAssistant();
   const [addOpen, setAddOpen] = useState(false);
   const [roleName, setRoleName] = useState("");
   const [grantType, setGrantType] = useState<"USAGE" | "OWNERSHIP">("USAGE");
   const [result, setResult] = useState<AccessCheckResult | null>(null);
+  const [verifyError, setVerifyError] = useState<{
+    roleName: string;
+    message: string;
+  } | null>(null);
 
   const rolesQuery = useQuery({
     queryKey: ["agents", "access", agentId],
@@ -63,24 +89,39 @@ export function AgentAccessTab({ agentId }: { agentId: string }) {
       queryClient.invalidateQueries({
         queryKey: ["agents", "access", agentId],
       });
+      queryClient.invalidateQueries({ queryKey: ["studio", "agents"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const removeRole = useMutation({
     mutationFn: (role: string) => agentAccessApi.remove(agentId, role),
-    onSuccess: () => {
+    onSuccess: (_, role) => {
+      if (result?.role_name === role) setResult(null);
+      if (verifyError?.roleName === role) setVerifyError(null);
       queryClient.invalidateQueries({
         queryKey: ["agents", "access", agentId],
       });
+      queryClient.invalidateQueries({ queryKey: ["studio", "agents"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const verify = useMutation({
     mutationFn: (role: string) => agentAccessApi.verify(agentId, role),
-    onSuccess: (data) => setResult(data),
-    onError: (e: Error) => toast.error(e.message),
+    onMutate: () => {
+      setResult(null);
+      setVerifyError(null);
+    },
+    onSuccess: (data) => {
+      setResult(data);
+      queryClient.invalidateQueries({
+        queryKey: ["agents", "access", agentId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["studio", "agents"] });
+    },
+    onError: (e: Error, role) =>
+      setVerifyError({ roleName: role, message: e.message }),
   });
 
   const onVerify = (role: string) => {
@@ -114,86 +155,148 @@ export function AgentAccessTab({ agentId }: { agentId: string }) {
         </div>
       ) : (
         <div className="divide-y rounded-2xl border">
-          {roles.map((role) => (
-            <div
-              key={role.role_name}
-              className="flex items-center justify-between gap-3 px-4 py-3"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium">{role.role_name}</span>
-                <Badge variant="outline">{role.grant_type}</Badge>
+          {roles.map((role) => {
+            const roleResult =
+              result?.role_name === role.role_name ? result : null;
+            const roleError =
+              verifyError?.roleName === role.role_name ? verifyError : null;
+            const gaps =
+              roleResult?.items.filter((item) => !item.granted) ?? [];
+            return (
+              <div key={role.role_name}>
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">
+                      {role.role_name}
+                    </span>
+                    <Badge variant="outline">{role.grant_type}</Badge>
+                    <Badge variant={role.verified ? "secondary" : "outline"}>
+                      {role.verified ? "Verified" : "Needs verification"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={verify.isPending}
+                      onClick={() => onVerify(role.role_name)}
+                    >
+                      {verify.isPending && verify.variables === role.role_name
+                        ? "Checking…"
+                        : "Verify"}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => removeRole.mutate(role.role_name)}
+                      aria-label={`Remove ${role.role_name}`}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+                {roleResult || roleError ? (
+                  <div
+                    className={`border-t px-4 py-4 sm:px-5 ${
+                      roleError || gaps.length > 0
+                        ? "bg-destructive/5"
+                        : "bg-success/5"
+                    }`}
+                    role={roleError || gaps.length > 0 ? "alert" : "status"}
+                  >
+                    <div className="flex items-start gap-3">
+                      {roleError || gaps.length > 0 ? (
+                        <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                      ) : (
+                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
+                      )}
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div>
+                          <p className="text-sm font-medium">
+                            {roleError
+                              ? "Verification could not finish"
+                              : gaps.length > 0
+                                ? `${gaps.length} access ${gaps.length === 1 ? "gap" : "gaps"} found`
+                                : "Access verified"}
+                          </p>
+                          <p className="mt-0.5 text-sm text-muted-foreground">
+                            {roleError
+                              ? roleError.message
+                              : gaps.length > 0
+                                ? "Grant these permissions in Access Control, then verify again."
+                                : roleResult?.items.length
+                                  ? `All ${roleResult.items.length} resources are accessible to this role.`
+                                  : "This agent has no external resources to check."}
+                          </p>
+                        </div>
+                        {gaps.length > 0 ? (
+                          <div className="space-y-2">
+                            <ul className="grid gap-1.5 sm:grid-cols-2">
+                              {gaps.map((item) => (
+                                <li
+                                  key={`${item.kind}:${item.name}`}
+                                  className="flex min-w-0 items-start gap-2 rounded-md border bg-background/70 px-3 py-2 text-xs"
+                                >
+                                  <span className="shrink-0 text-muted-foreground">
+                                    {requiredPrivilege[item.kind] ?? item.kind}
+                                  </span>
+                                  <span className="min-w-0 break-all font-mono">
+                                    {item.name}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                            <a
+                              href="/access-control"
+                              className="inline-block text-sm font-medium text-primary underline-offset-4 hover:underline"
+                            >
+                              Open Access Control
+                            </a>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {gaps.length > 0 ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-11 sm:size-8"
+                            aria-label="Ask Nove to grant missing access"
+                            title="Ask Nove to grant missing access"
+                            onClick={() =>
+                              newChatAndSend(
+                                buildAccessGrantPrompt({
+                                  agentName: agentName || agentId,
+                                  roleName: role.role_name,
+                                  gaps,
+                                }),
+                              )
+                            }
+                          >
+                            <Brain aria-hidden="true" className="size-4" />
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-11 sm:size-8"
+                          onClick={() => {
+                            setResult(null);
+                            setVerifyError(null);
+                          }}
+                          aria-label="Dismiss verification result"
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onVerify(role.role_name)}
-                >
-                  Verify
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => removeRole.mutate(role.role_name)}
-                  aria-label={`Remove ${role.role_name}`}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-
-      {result ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-card p-4 shadow-lg">
-          <div className="mx-auto flex max-w-4xl items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="mb-2 flex items-center gap-2">
-                <ShieldCheck className="size-4" />
-                <span className="font-medium">
-                  Verify access: {result.role_name}
-                </span>
-                <Badge
-                  variant={result.all_granted ? "secondary" : "destructive"}
-                >
-                  {result.all_granted ? "All granted" : "Gaps found"}
-                </Badge>
-              </div>
-              <div className="space-y-1">
-                {result.items.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    This agent has no external dependencies to check.
-                  </p>
-                ) : (
-                  result.items.map((item, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      {item.granted ? (
-                        <Check className="size-3.5 text-success" />
-                      ) : (
-                        <X className="size-3.5 text-destructive" />
-                      )}
-                      <Badge
-                        variant="outline"
-                        className="font-mono text-[10px]"
-                      >
-                        {item.kind}
-                      </Badge>
-                      <span className="font-mono text-xs">{item.name}</span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {item.detail}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-            <Button variant="ghost" size="icon" onClick={() => setResult(null)}>
-              <X className="size-4" />
-            </Button>
-          </div>
-        </div>
-      ) : null}
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>

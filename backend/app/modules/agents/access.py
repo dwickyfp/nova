@@ -1,7 +1,7 @@
 """Agent access verification.
 
 Given an agent and a role, this resolves the agent's dependencies and inspects
-the matching Ranger-managed authorization policies.
+matching Ranger authorization policies, including bootstrap policies.
 
 What is resolved:
 
@@ -15,6 +15,8 @@ markers in full Ranger mode and would be a misleading authorization source.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -22,7 +24,7 @@ from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
-#: Roles that imply full reach regardless of per-object grants.
+
 @dataclass
 class AccessItem:
     kind: str
@@ -128,9 +130,7 @@ async def resolve_agent_dependencies(agent: dict) -> list[tuple[str, str]]:
         [agent["semantic_model_id"]] if agent.get("semantic_model_id") else []
     )
     for model_id in model_ids:
-        model = await agent_repository.get_semantic_model(
-            model_id, owner_name=owner or ""
-        )
+        model = await agent_repository.get_semantic_model(model_id, owner_name=owner or "")
         if model:
             for dataset in (model.get("definition") or {}).get("datasets") or []:
                 source = dataset.get("source")
@@ -158,7 +158,7 @@ async def verify_access(
     encrypted_password: str,
     session_id: str | None,
 ) -> list[AccessItem]:
-    """Check every agent dependency against Ranger-managed policy state."""
+    """Check every agent dependency against Ranger policy state."""
     del encrypted_password, session_id
     from app.modules.access_control.service import access_control_service
 
@@ -168,11 +168,11 @@ async def verify_access(
         effective = await access_control_service.effective_access(
             principal=username,
             active_role=role_name,
-            resource=name,
+            resource=f"{name}.*" if kind == "database" else name,
         )
-        granted = any(
-            policy.get("policyType", 0) == 0 for policy in effective["policies"]
-        )
+        required = {"table": "SELECT", "database": "USAGE", "function": "EXECUTE"}[kind]
+        privileges = {str(value).upper() for value in effective.get("object_access", [])}
+        granted = required in privileges or "ALL" in privileges
         detail = (
             f"Ranger authorizes {role_name} for {name}."
             if granted
@@ -180,6 +180,42 @@ async def verify_access(
         )
         items.append(AccessItem(kind=kind, name=name, granted=granted, detail=detail))
     return items
+
+
+async def access_fingerprint(agent: dict) -> str:
+    """Bind verification to the agent configuration and resolved dependencies."""
+    payload = {
+        "agent": {key: value for key, value in agent.items() if key not in {"created_at"}},
+        "dependencies": await resolve_agent_dependencies(agent),
+    }
+    encoded = json.dumps(payload, sort_keys=True, default=str).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+async def has_verified_access(agent: dict, *, role_name: str, user: dict) -> bool:
+    """A grant and a current successful permission check are both required."""
+    from app.modules.agents.repository import agent_repository
+
+    grants = await agent_repository.list_agent_roles(
+        agent["agent_id"], owner_name=agent["owner_name"]
+    )
+    grant = next((item for item in grants if item["role_name"] == role_name), None)
+    if not grant or not grant.get("verified_fingerprint"):
+        return False
+    try:
+        if grant["verified_fingerprint"] != await access_fingerprint(agent):
+            return False
+        items = await verify_access(
+            agent=agent,
+            role_name=role_name,
+            username=user["username"],
+            encrypted_password=user.get("encrypted_password", ""),
+            session_id=user.get("session_id"),
+        )
+        return all(item.granted for item in items)
+    except Exception:  # noqa: BLE001 - authorization fails closed
+        logger.warning("Agent access verification failed for role %s", role_name)
+        return False
 
 
 def now_utc() -> datetime:
