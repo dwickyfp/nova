@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import logging
 
+from app.core.security import decrypt_password
+from app.modules.stages.access import StageAccessDenied, check_stage_access
+
 from .repository import explorer_repo
 from .schemas import (
     CatalogInfo,
@@ -56,7 +59,7 @@ class ExplorerService:
         return CatalogsResponse(catalogs=catalogs)
 
     async def get_database_objects(
-        self, database: str, catalog: str | None = None
+        self, database: str, catalog: str | None = None, *, user: dict
     ) -> DatabaseObjectsResponse:
         tables_raw = await explorer_repo.list_tables(database, catalog=catalog)
         views_raw = await explorer_repo.list_views(database)
@@ -64,6 +67,19 @@ class ExplorerService:
         funcs_raw = await explorer_repo.list_functions(database)
         pipes_raw = await explorer_repo.list_pipes(database)
         stages_raw = await explorer_repo.list_stages(database)
+        password = decrypt_password(user["encrypted_password"])
+        authorized_stages = []
+        for stage in stages_raw:
+            try:
+                await check_stage_access(
+                    {"database_name": database, "schema_name": stage["schema_name"]},
+                    action="read", username=user["username"], password=password,
+                    active_role=user.get("active_role"),
+                )
+            except StageAccessDenied:
+                continue
+            authorized_stages.append(stage)
+        stages_raw = authorized_stages
         tasks_raw = await explorer_repo.list_tasks(database)
 
         return DatabaseObjectsResponse(
@@ -237,7 +253,7 @@ class ExplorerService:
             (stage_name, database),
         )
         rows = result.get("rows", [])
-        return rows[0][0] if rows else None
+        return rows[0][0] if len(rows) == 1 else None
 
 
 explorer_service = ExplorerService()

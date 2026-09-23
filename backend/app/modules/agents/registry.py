@@ -29,6 +29,7 @@ KNOWN_TOOLS = frozenset(
         "semantic_query",
         "semantic_search",
         "data_to_chart",
+        "diagnose_change",
         "ml_execute",
     }
 )
@@ -81,6 +82,11 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
         except ImportError:  # pragma: no cover - stage ordering only
             pass
 
+    if "diagnose_change" in selected:
+        from app.modules.agents.tools.diagnose_change import diagnose_change_tool
+
+        registry.register(diagnose_change_tool)
+
     if "ml_execute" in selected:
         from app.modules.agents.tools.ml_execute import ml_execute_tool
 
@@ -117,3 +123,31 @@ async def add_custom_tools(
     for tool in tools:
         if tool["name"] in wanted:
             registry.register(CustomToolRunner(tool))
+
+
+async def add_mcp_tools(registry: ToolRegistry, agent: dict[str, Any]) -> None:
+    """Register only explicitly selected, enabled HTTP connector tools."""
+    selected = {
+        value.split(":", 1)[1]
+        for value in (agent.get("default_tools") or [])
+        if isinstance(value, str) and value.startswith("mcp:")
+    }
+    if not selected:
+        return
+    from app.modules.agents.repository import agent_repository
+    from app.modules.agents.tools.mcp_tool import McpToolRunner
+
+    tools = await agent_repository.list_tools(owner_name="__nova__")
+    servers = {
+        server["server_id"]: server
+        for server in await agent_repository.list_mcp_servers(owner_name="__nova__")
+    }
+    for tool in tools:
+        if tool["tool_id"] not in selected or not tool.get("is_enabled"):
+            continue
+        source = str(tool.get("source") or "")
+        if not source.startswith("mcp:"):
+            continue
+        server = servers.get(source.split(":", 1)[1])
+        if server and server.get("is_active") and server.get("transport") == "http":
+            registry.register(McpToolRunner(server, tool))

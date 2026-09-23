@@ -42,6 +42,8 @@ export type RailStep = {
   kind: "thinking" | "tool" | "consent" | "note";
   /** Phase label, tool name, or note kind, used for the icon and the verb. */
   label: string;
+  /** Name of a loaded skill, when this is a skill tool row. */
+  skillName?: string;
   /** The line the user reads. */
   text: string;
   status: ToolCallStatus | "running" | "done";
@@ -51,10 +53,7 @@ export type RailStep = {
   group?: string;
   /** Longer reasoning body, shown when the row is open. */
   body?: string;
-  /**
-   * What the tool did: a loaded skill's body, or a short result summary.
-   * Redacted by the backend. Shown when the row is open.
-   */
+  /** A tool result summary, shown when the row is open. */
   detail?: string;
 };
 
@@ -224,10 +223,7 @@ function ProcessStepRow({ step, last }: { step: RailStep; last: boolean }) {
   const Icon = stepIcon(step);
   const running = isRunning(step);
   const failed = isFailed(step);
-  // Every step that has something to show opens. A reader who opens a step is
-  // asking "what did this actually do", so the answer (the skill it read, the
-  // statement it ran, the result it saw, the note it left) belongs behind one
-  // click, not scattered across different affordances per step kind.
+  // Rows with a statement or result can be opened for more detail.
   const [open, setOpen] = useState(false);
   const body =
     step.body?.trim() && step.body.trim() !== step.text.trim()

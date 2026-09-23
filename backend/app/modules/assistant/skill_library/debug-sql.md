@@ -2,7 +2,7 @@
 name: debug-sql
 title: Debug a SQL error
 summary: Diagnose a failing statement by explaining the pipeline stage it failed at and proposing a corrected statement.
-triggers: error, debug, why fail, syntax error, not working, gagal, salah, fix query, troubleshoot, permission denied
+triggers: error, debug, why fail, syntax error, not working, gagal, salah, fix query, troubleshoot, permission denied, penyebab, query lambat, slow query
 source: docs/sql_docs/01-dialect-pipeline.md, docs/sql_docs/09-guardrails-invariants.md, docs/sql_docs/11-query-catalog.md
 ---
 

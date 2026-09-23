@@ -260,7 +260,7 @@ def test_native_ml_skill_is_packaged_and_covers_the_runtime_contract():
 
 def test_nove_selects_native_ml_without_a_global_skill_catalog():
     registry = build_registry()
-    assert registry.discoverable_skills == ("native-ml",)
+    assert set(registry.discoverable_skills) == set(skill_library.names())
     assert registry.skill_definitions["native-ml"].trust_level == "platform_skill"
 
     loop = AssistantLoop(provider=_NullProvider(), registry=registry)

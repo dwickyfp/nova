@@ -80,14 +80,16 @@ def explain_client(monkeypatch):
 
     engine = FakeEngine()
 
-    async def fake_configs(database, schema):
-        return {"stage1": _stage_config()}
+    async def fake_configs(parsed, **kwargs):
+        if any(ref.stage_name != "stage1" for ref in parsed.stage_refs):
+            raise ValueError(f"Stage '{parsed.stage_refs[0].stage_name}' not found")
+        return parsed, {ref.start: _stage_config() for ref in parsed.stage_refs}
 
     async def fake_csv_params(parsed, stage_configs):
         return {}, None
 
     monkeypatch.setattr(query_service, "_repo", engine)
-    monkeypatch.setattr(query_service, "_load_stage_configs", fake_configs)
+    monkeypatch.setattr(query_service, "_resolve_stage_refs", fake_configs)
     monkeypatch.setattr(query_service, "_detect_csv_params", fake_csv_params)
     monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
 
@@ -146,6 +148,12 @@ class TestSuccessfulExplainStaysSuccessful:
 
         assert payload["success"] is True
         assert payload["error"] is None
+        assert engine.calls == [f"EXPLAIN {SELECT_SQL}"]
+
+    def test_existing_explain_is_not_prefixed_twice(self, explain_client):
+        client, engine = explain_client
+        payload = client.post(EXPLAIN_ENDPOINT, json={"sql": f"EXPLAIN {SELECT_SQL}"}).json()
+        assert payload["success"] is True
         assert engine.calls == [f"EXPLAIN {SELECT_SQL}"]
 
     def test_at_stage_explain_reports_success_true(self, explain_client):
@@ -224,21 +232,21 @@ class TestExecuteContractIsUntouched:
 
         from app.modules.query.service import query_service
 
-        async def no_stages(database, schema):
-            return {}
+        async def no_stages(parsed, **kwargs):
+            raise ValueError("Stage not found")
 
         async def fake_csv_params(parsed, stage_configs):
             return {}, None
 
-        original_configs = query_service._load_stage_configs
+        original_configs = query_service._resolve_stage_refs
         original_csv = query_service._detect_csv_params
-        query_service._load_stage_configs = no_stages
+        query_service._resolve_stage_refs = no_stages
         query_service._detect_csv_params = fake_csv_params
         try:
             explain = client.post(EXPLAIN_ENDPOINT, json={"sql": STAGE_SQL}).json()
             execute = client.post("/api/v1/query/execute", json={"sql": STAGE_SQL}).json()[0]
         finally:
-            query_service._load_stage_configs = original_configs
+            query_service._resolve_stage_refs = original_configs
             query_service._detect_csv_params = original_csv
 
         assert explain["success"] is False

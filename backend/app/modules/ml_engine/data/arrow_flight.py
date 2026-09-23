@@ -120,6 +120,8 @@ class ArrowFlightDataSource:
             return False
 
     def _open_reader(self, sql: str, security: MLSecurityContext) -> Iterator[pa.RecordBatch]:
+        if settings.RANGER_ENABLED:
+            raise PermissionError("Arrow Flight is not qualified for Ranger enforcement")
         import adbc_driver_flightsql.dbapi as flight_sql
         import adbc_driver_manager
 

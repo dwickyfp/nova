@@ -159,14 +159,22 @@ class RangerClient:
         )
         if isinstance(result, list):
             return [dict(item) for item in result]
-        return [dict(item) for item in (result or {}).get("vXRoles", [])]
+        rows = (result or {}).get("roles", (result or {}).get("vXRoles", []))
+        return [dict(item) for item in rows]
 
     async def get_role(self, name: str) -> dict | None:
-        return await self._request(
-            "GET",
-            f"/service/roles/roles/name/{quote(name, safe='')}",
-            params={"serviceName": settings.RANGER_SERVICE_NAME},
-        )
+        try:
+            return await self._request(
+                "GET",
+                f"/service/roles/roles/name/{quote(name, safe='')}",
+                params={"serviceName": settings.RANGER_SERVICE_NAME},
+            )
+        except RangerError as exc:
+            if "status 400" not in str(exc):
+                raise
+            if any(role.get("name") == name for role in await self.list_roles()):
+                raise
+            return None
 
     async def put_role(self, role: RangerRole) -> dict:
         existing = await self.get_role(role.name)
@@ -208,22 +216,20 @@ class RangerClient:
                 other = {}
         merged = {**other, **attributes, "original_name": username, "sync_source": "NOVA"}
         user = {
-            **current,
             "name": username,
             "firstName": current.get("firstName") or username,
             "description": current.get("description") or "Managed by Nova",
-            "userSource": current.get("userSource") or "1",
-            "status": current.get("status") or "1",
-            "isVisible": current.get("isVisible") or "1",
+            "userSource": int(current.get("userSource") or 1),
+            "status": int(current.get("status") or 1),
+            "isVisible": int(current.get("isVisible") or 1),
             "userRoleList": current.get("userRoleList") or ["ROLE_USER"],
             "syncSource": "NOVA",
-            "otherAttrsMap": merged,
             "otherAttributes": json.dumps(merged, sort_keys=True),
         }
         await self._request(
             "POST",
             "/service/xusers/ugsync/users",
-            json={"totalCount": 1, "xuserInfoList": [user]},
+            json={"totalCount": 1, "vXUsers": [user]},
             expected=(200,),
         )
 
@@ -265,10 +271,9 @@ class RangerClient:
         return policies
 
     async def get_policy(self, name: str) -> dict | None:
-        return await self._request(
-            "GET",
-            "/service/public/v2/api/service/"
-            f"{quote(settings.RANGER_SERVICE_NAME, safe='')}/policy/{quote(name, safe='')}",
+        return next(
+            (policy for policy in await self.list_policies() if policy.get("name") == name),
+            None,
         )
 
     async def put_policy(self, policy: RangerPolicy) -> dict:

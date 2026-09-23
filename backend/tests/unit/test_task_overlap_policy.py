@@ -227,6 +227,30 @@ class TestSchedulerEnqueue:
 
 
 class TestWorkerQueueDeferral:
+    async def test_oldest_pending_run_proceeds_with_pending_siblings(self, audit) -> None:
+        repo = FakeRepository()
+        repo.add_task("A")
+        repo.add_graph_run("gr_first", "id_A", state="pending", overlap_policy="queue")
+        repo.add_graph_run("gr_second", "id_A", state="pending", overlap_policy="queue")
+
+        executor = RecordingExecutor()
+        state = await GraphRunWorker(repo, executor).handle(GraphRunJob("gr_first", "id_A"))
+
+        assert state == GraphState.SUCCESS
+        assert [spec.name for spec, _ in executor.submissions] == ["A"]
+
+    async def test_later_pending_run_waits_for_earlier_pending_run(self, audit) -> None:
+        repo = FakeRepository()
+        repo.add_task("A")
+        repo.add_graph_run("gr_first", "id_A", state="pending", overlap_policy="queue")
+        repo.add_graph_run("gr_second", "id_A", state="pending", overlap_policy="queue")
+
+        executor = RecordingExecutor()
+        state = await GraphRunWorker(repo, executor).handle(GraphRunJob("gr_second", "id_A"))
+
+        assert state == GraphState.PENDING
+        assert executor.submissions == []
+
     async def test_queue_run_defers_while_another_run_is_active(self, audit) -> None:
         repo = FakeRepository()
         repo.add_task("A")

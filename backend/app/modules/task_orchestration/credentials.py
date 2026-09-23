@@ -1,9 +1,9 @@
-"""Owner-credential resolution for delegate-first execution.
+"""Owner-credential providers for legacy callers and tests.
 
-The worker runs ``SUBMIT TASK`` on the **task owner's** StarRocks connection so
-the engine enforces RBAC (design D9.4). That needs the owner's password, which
-exists nowhere in Nova's durable state — the Credential-Invisible invariant
-forbids storing it in ``NOVA_SYSTEM``.
+The standalone scheduler worker uses a dedicated account with restricted
+StarRocks ``IMPERSONATE`` grants. These providers remain for callers that
+already hold an owner's password. The Credential-Invisible invariant forbids
+storing either password in ``NOVA_SYSTEM``.
 
 The rule this module enforces: a credential is resolved **at execution time,
 in memory, and discarded when the connection closes**. It is never written to
@@ -14,9 +14,8 @@ connection with it — nothing caches it.
 ``SessionCredentialProvider`` reads the password from the existing session path:
 an authenticated user's Fernet-encrypted password in the Redis session store.
 Nova has no reverse index from username to session id, so the provider scans the
-live session keys and matches on the ``username`` field. A task whose owner has
-no live session cannot be executed delegate-first and is reported as
-:class:`CredentialUnavailable` — never silently downgraded to a root connection.
+live session keys and matches on the ``username`` field. It is not used by the
+standalone worker, because unattended schedules outlive login sessions.
 """
 
 from __future__ import annotations

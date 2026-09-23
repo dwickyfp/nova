@@ -94,7 +94,15 @@ def estimate_message_tokens(message: dict[str, Any]) -> int:
     The content is the bulk of the cost; tool-call arguments are counted too so a
     message proposing a large argument payload is not under-billed.
     """
-    total = estimate_tokens(str(message.get("content") or ""))
+    content = message.get("content")
+    if isinstance(content, list):
+        total = sum(
+            estimate_tokens(str(part.get("text") or ""))
+            if part.get("type") == "text" else 2_048
+            for part in content if isinstance(part, dict)
+        )
+    else:
+        total = estimate_tokens(str(content or ""))
     for call in message.get("tool_calls") or []:
         function = call.get("function") or {}
         total += estimate_tokens(str(function.get("name") or ""))
@@ -348,7 +356,13 @@ def _summary_line(message: dict[str, Any]) -> str:
     role = message.get("role")
     if role == "tool" or _is_tool_result(message):
         return ""
-    content = " ".join(str(message.get("content") or "").split())
+    value = message.get("content")
+    if isinstance(value, list):
+        value = " ".join(
+            str(part.get("text") or "")
+            for part in value if isinstance(part, dict) and part.get("type") == "text"
+        )
+    content = " ".join(str(value or "").split())
     if not content:
         return ""
     label = "User" if role == "user" else "Assistant"

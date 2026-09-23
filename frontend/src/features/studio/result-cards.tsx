@@ -55,6 +55,17 @@ export const ResultTable = memo(function ResultTable({
   // to guard: an empty string is not "no title", it is an unhelpful one.
   const title = block.title?.trim() || "Query result";
 
+  const numericColumns = useMemo(
+    () =>
+      block.columns.map((_, columnIndex) => {
+        const values = block.rows
+          .map((row) => row[columnIndex])
+          .filter((cell) => cell != null);
+        return values.length > 0 && values.every(numeric);
+      }),
+    [block.columns, block.rows],
+  );
+
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     let out = block.rows;
@@ -172,8 +183,8 @@ export const ResultTable = memo(function ResultTable({
       </div>
 
       <div className="max-h-96 overflow-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur">
+        <table className="w-full border-separate border-spacing-0 text-sm">
+          <thead className="sticky top-0 z-10 bg-muted">
             <tr>
               {block.columns.map((column, i) => (
                 <th
@@ -186,21 +197,30 @@ export const ResultTable = memo(function ResultTable({
                         : "descending"
                       : "none"
                   }
-                  className="whitespace-nowrap border-b px-3 py-1.5 text-left font-medium"
+                  className="border-b border-r border-border p-0 align-middle font-medium last:border-r-0"
                 >
                   <button
                     type="button"
                     onClick={() => toggleSort(i)}
-                    className="flex items-center gap-1 rounded transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    className={cn(
+                      "flex w-full items-center gap-1.5 whitespace-nowrap px-3 py-2 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:outline-none",
+                      numericColumns[i]
+                        ? "flex-row-reverse text-right"
+                        : "text-left",
+                    )}
                   >
                     {column}
-                    {sort?.column === i ? (
-                      sort.dir === "asc" ? (
-                        <ArrowUp aria-hidden="true" className="size-3" />
-                      ) : (
-                        <ArrowDown aria-hidden="true" className="size-3" />
-                      )
-                    ) : null}
+                    {sort?.column === i && sort.dir === "desc" ? (
+                      <ArrowDown aria-hidden="true" className="size-3 shrink-0" />
+                    ) : (
+                      <ArrowUp
+                        aria-hidden="true"
+                        className={cn(
+                          "size-3 shrink-0",
+                          sort?.column !== i && "invisible",
+                        )}
+                      />
+                    )}
                   </button>
                 </th>
               ))}
@@ -210,14 +230,16 @@ export const ResultTable = memo(function ResultTable({
             {rows.map((row, rowIndex) => (
               <tr
                 key={rowIndex}
-                className="border-b last:border-0 even:bg-muted/20"
+                className="even:bg-muted/20 last:[&>td]:border-b-0"
               >
                 {row.map((cell, cellIndex) => (
                   <td
                     key={cellIndex}
                     className={cn(
-                      "px-3 py-1.5",
-                      numeric(cell) ? "text-right tabular-nums" : "text-left",
+                      "border-b border-r border-border px-3 py-2 align-middle last:border-r-0",
+                      numericColumns[cellIndex]
+                        ? "whitespace-nowrap text-right tabular-nums"
+                        : "text-left",
                     )}
                   >
                     {cell === null ? (
@@ -235,7 +257,7 @@ export const ResultTable = memo(function ResultTable({
                   colSpan={block.columns.length}
                   className="px-3 py-6 text-center text-sm text-muted-foreground"
                 >
-                  No row matches {`"${query}"`}.
+                  {query ? `No row matches "${query}".` : "The query returned no rows."}
                 </td>
               </tr>
             ) : null}
@@ -243,10 +265,12 @@ export const ResultTable = memo(function ResultTable({
         </table>
       </div>
 
-      <p className="border-t px-3 py-2 text-xs text-muted-foreground">
-        Capped at the engine's row limit for this query. Run the SQL above to
-        see the full result.
-      </p>
+      {block.rows.length > 0 ? (
+        <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+          Capped at the engine's row limit for this query. Run the SQL above to
+          see the full result.
+        </p>
+      ) : null}
     </div>
   );
 });

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from typing import Protocol
 from uuid import uuid4
 
@@ -11,11 +13,17 @@ from botocore.client import Config as BotoConfig
 from app.core.config import get_storage_connection, settings
 from app.modules.query.dialect.injector import resolve_storage_credentials
 
+logger = logging.getLogger(__name__)
+
 
 class ArtifactStore(Protocol):
+    def uri_for_key(self, key: str) -> str: ...
+    def cleanup_upload(self, uri: str, *, keep_final: bool = False) -> None: ...
+    def cleanup_result(self, manifest_uri: str) -> None: ...
     def put(self, key: str, payload: bytes) -> str: ...
     def get(self, uri: str) -> bytes: ...
     def delete(self, uri: str) -> None: ...
+    def copy(self, uri: str, key: str, checksum: str) -> str: ...
 
 
 class ObjectArtifactStore:
@@ -28,6 +36,39 @@ class ObjectArtifactStore:
 
     def _connection(self):
         return get_storage_connection(self.connection_name)
+
+    def uri_for_key(self, key: str) -> str:
+        return f"{self.scheme}://{self.connection_name}/{key.strip('/')}"
+
+    def cleanup_upload(self, uri: str, *, keep_final: bool = False) -> None:
+        connection, key = self._parse(uri)
+        if connection != self.connection_name:
+            ObjectArtifactStore(connection).cleanup_upload(uri, keep_final=keep_final)
+            return
+        client = self._client()
+        bucket = self._connection().bucket
+        # This exact destination's staging objects belong to the same upload lease.
+        for page in client.get_paginator("list_objects_v2").paginate(
+            Bucket=bucket, Prefix=f"{key}.upload-"
+        ):
+            for item in page.get("Contents", []):
+                client.delete_object(Bucket=bucket, Key=item["Key"])
+        if not keep_final:
+            self.delete(uri)
+
+    def cleanup_result(self, manifest_uri: str) -> None:
+        connection, key = self._parse(manifest_uri)
+        if not key.endswith("/manifest.json") or "/results/" not in f"/{key}":
+            raise ValueError("Invalid result cleanup destination")
+        if connection != self.connection_name:
+            ObjectArtifactStore(connection).cleanup_result(manifest_uri)
+            return
+        client = self._client()
+        bucket = self._connection().bucket
+        prefix = key.rsplit("/", 1)[0] + "/"
+        for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+            for item in page.get("Contents", []):
+                client.delete_object(Bucket=bucket, Key=item["Key"])
 
     def _client(self):
         connection = self._connection()
@@ -56,20 +97,54 @@ class ObjectArtifactStore:
                 raise OSError(
                     f"Artifact upload size mismatch: expected {len(payload)}, got {stored_size}"
                 )
+            body = client.get_object(Bucket=bucket, Key=temporary)["Body"]
+            digest = hashlib.sha256()
+            try:
+                for chunk in iter(lambda: body.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            finally:
+                body.close()
+            if digest.digest() != hashlib.sha256(payload).digest():
+                raise OSError("Artifact upload checksum mismatch")
             client.copy_object(
                 Bucket=bucket,
                 Key=normalized,
                 CopySource={"Bucket": bucket, "Key": temporary},
             )
         finally:
-            client.delete_object(Bucket=bucket, Key=temporary)
+            try:
+                client.delete_object(Bucket=bucket, Key=temporary)
+            except Exception:
+                logger.warning("Temporary ML upload cleanup failed")
         return f"{self.scheme}://{self.connection_name}/{normalized}"
 
     def get(self, uri: str) -> bytes:
         connection_name, key = self._parse(uri)
         if connection_name != self.connection_name:
             return ObjectArtifactStore(connection_name).get(uri)
-        return self._client().get_object(Bucket=self._connection().bucket, Key=key)["Body"].read()
+        body = self._client().get_object(Bucket=self._connection().bucket, Key=key)["Body"]
+        try:
+            return body.read()
+        finally:
+            body.close()
+
+    def copy(self, uri: str, key: str, checksum: str) -> str:
+        connection, source_key = self._parse(uri)
+        if connection != self.connection_name:
+            raise ValueError("Artifact promotion must stay in the configured storage connection")
+        client = self._client()
+        bucket = self._connection().bucket
+        body = client.get_object(Bucket=bucket, Key=source_key)["Body"]
+        digest = hashlib.sha256()
+        try:
+            for chunk in iter(lambda: body.read(1024 * 1024), b""):
+                digest.update(chunk)
+        finally:
+            body.close()
+        if digest.hexdigest() != checksum:
+            raise ValueError("Artifact promotion checksum mismatch")
+        client.copy_object(Bucket=bucket, Key=key, CopySource={"Bucket": bucket, "Key": source_key})
+        return f"{self.scheme}://{connection}/{key}"
 
     def delete(self, uri: str) -> None:
         connection_name, key = self._parse(uri)
@@ -95,6 +170,20 @@ class MemoryArtifactStore:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
 
+    def uri_for_key(self, key: str) -> str:
+        return f"memory://{key.strip('/')}"
+
+    def cleanup_upload(self, uri: str, *, keep_final: bool = False) -> None:
+        for key in list(self.objects):
+            if key.startswith(f"{uri}.upload-") or (key == uri and not keep_final):
+                self.delete(key)
+
+    def cleanup_result(self, manifest_uri: str) -> None:
+        prefix = manifest_uri.rsplit("/", 1)[0] + "/"
+        for key in list(self.objects):
+            if key.startswith(prefix):
+                self.delete(key)
+
     def put(self, key: str, payload: bytes) -> str:
         uri = f"memory://{key.strip('/')}"
         self.objects[uri] = payload
@@ -105,3 +194,9 @@ class MemoryArtifactStore:
 
     def delete(self, uri: str) -> None:
         self.objects.pop(uri, None)
+
+    def copy(self, uri: str, key: str, checksum: str) -> str:
+        payload = self.get(uri)
+        if hashlib.sha256(payload).hexdigest() != checksum:
+            raise ValueError("Artifact promotion checksum mismatch")
+        return self.put(key, payload)

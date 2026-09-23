@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -53,16 +55,15 @@ class MLSecurityContext:
 
     @property
     def scope_key(self) -> str:
-        return ":".join(
-            (
-                self.tenant,
-                self.username,
-                self.role or "",
-                str(self.security_context_version),
-                self.database or "",
-                self.schema or "",
-            )
+        value = (
+            self.tenant,
+            self.username,
+            self.role or "",
+            str(self.security_context_version),
+            self.database or "",
+            self.schema or "",
         )
+        return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,7 @@ class MLExecutionSpec:
     metric: str | None = None
     parameters: dict[str, Any] = field(default_factory=dict)
     budget: ExecutionBudget | None = None
+    deadline_at: float | None = None
 
     def validate(self) -> None:
         self.security.validate()
@@ -144,6 +146,26 @@ class DataBudgetExceeded(MLError):
 
 class TrainingTimeout(MLError):
     code = "training_timeout"
+
+
+class MLExecutionTimeout(TrainingTimeout):
+    code = "ml_execution_timeout"
+
+    def __init__(self, stage: str) -> None:
+        self.stage = stage
+        self.code = f"ml_{stage}_timeout"
+        super().__init__(f"ML execution deadline expired during {stage}")
+
+    def __reduce__(self):
+        return type(self), (self.stage,)
+
+
+class UnsupportedMLSQLExpression(MLError):
+    code = "ml_unsupported_sql_expression"
+
+
+class MLMemoryBudgetExceeded(MLError):
+    code = "ml_memory_budget_exceeded"
 
 
 class CorruptArtifact(MLError):

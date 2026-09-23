@@ -95,10 +95,6 @@ def service(monkeypatch):
         },
     )
 
-    async def no_stage_configs(_self, database_name):
-        return {}
-
-    monkeypatch.setattr(MLEngineService, "_load_stage_configs", no_stage_configs)
     return MLEngineService()
 
 
@@ -141,10 +137,14 @@ class TestTrainingSqlStageTranslation:
     """`@stage` in training SQL must be rewritten before the engine sees it."""
 
     async def test_stage_reference_is_rewritten_not_sent_raw(self, service, monkeypatch):
-        async def stage_configs(_self, database_name):
-            return _stage_configs()
+        async def stage_configs(parsed, **kwargs):
+            return parsed, {
+                ref.start: _stage_configs()[ref.stage_name] for ref in parsed.stage_refs
+            }
 
-        monkeypatch.setattr(MLEngineService, "_load_stage_configs", stage_configs)
+        monkeypatch.setattr(
+            "app.modules.query.service.query_service._resolve_stage_refs", stage_configs
+        )
 
         engine_sql = await service._prepare_user_sql(
             sql="SELECT * FROM @stage1.data.csv", database_name=None, what="training"
@@ -174,10 +174,14 @@ class TestNoCredentialMaterialEscapes:
     """
 
     async def test_redacted_form_is_credential_free(self, service, monkeypatch):
-        async def stage_configs(_self, database_name):
-            return _stage_configs()
+        async def stage_configs(parsed, **kwargs):
+            return parsed, {
+                ref.start: _stage_configs()[ref.stage_name] for ref in parsed.stage_refs
+            }
 
-        monkeypatch.setattr(MLEngineService, "_load_stage_configs", stage_configs)
+        monkeypatch.setattr(
+            "app.modules.query.service.query_service._resolve_stage_refs", stage_configs
+        )
 
         engine_sql = await service._prepare_user_sql(
             sql="SELECT * FROM @stage1.data.csv", database_name=None, what="training"
@@ -221,11 +225,14 @@ class TestNoCredentialMaterialEscapes:
             async def record_run(self, **kwargs):
                 return None
 
+        from tests.unit.ml_fakes import MemoryEphemeralRepository
+
         svc = MLEngineService(
             data_source=Source(),
             job_runner=InlineJobRunner(),
             artifact_store=MemoryArtifactStore(),
             repository=Repository(),
+            ephemeral_repository=MemoryEphemeralRepository(),
         )
         monkeypatch.setattr(
             "app.modules.query.sql_pipeline.get_credential_params",
@@ -235,10 +242,14 @@ class TestNoCredentialMaterialEscapes:
             },
         )
 
-        async def stage_configs(_self, database_name):
-            return _stage_configs()
+        async def stage_configs(parsed, **kwargs):
+            return parsed, {
+                ref.start: _stage_configs()[ref.stage_name] for ref in parsed.stage_refs
+            }
 
-        monkeypatch.setattr(MLEngineService, "_load_stage_configs", stage_configs)
+        monkeypatch.setattr(
+            "app.modules.query.service.query_service._resolve_stage_refs", stage_configs
+        )
 
         await svc.train_model(
             model_name="m",

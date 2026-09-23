@@ -27,6 +27,20 @@ const attachment: AttachedQuery = {
 };
 
 describe("transcriptReducer", () => {
+  it("clears prior-role output before displaying new-role results", () => {
+    const before = reduce([], { type: "text_delta", text: "finance-secret" });
+    const after = reduce(
+      before,
+      {
+        type: "role_changed",
+        active_role: "marketing",
+        security_context_version: 2,
+      },
+      { type: "text_delta", text: "marketing result" },
+    );
+    expect(JSON.stringify(after)).not.toContain("finance-secret");
+    expect(after[0].content).toBe("marketing result");
+  });
   it("carries attachments and the typed display text on a user message", () => {
     const state = transcriptReducer([], {
       type: "user_message",

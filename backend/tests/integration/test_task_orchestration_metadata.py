@@ -579,7 +579,7 @@ class TestCreateTaskLoweringAgainstEngine:
             timezone="Asia/Jakarta",
         )
         persisted = await persist_lowered_task(task, created_by="alice")
-        graph_id = f"NOVA_DEMO.default.{name}"
+        graph_id = str(persisted.edges[0]["graph_id"])
         try:
             row = persisted.task
             assert row["name"] == name
@@ -859,8 +859,8 @@ class TestReadApiRepositoryAgainstEngine:
         )
         persisted_f = await persist_lowered_task(finalizer_task, created_by="alice")
 
-        child_graph = f"NOVA_DEMO.default.{child}"
-        finalizer_graph = f"NOVA_DEMO.default.{finalizer}"
+        child_graph = str(persisted_b.edges[0]["graph_id"])
+        finalizer_graph = str(persisted_f.edges[0]["graph_id"])
         try:
             # list_graph_ids must surface the graph (qualified).
             graph_ids = await repo.list_graph_ids()

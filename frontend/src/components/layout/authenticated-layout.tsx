@@ -43,7 +43,7 @@ function AssistantRow({ children }: { children: React.ReactNode }) {
   // whose height is content-driven (a `layout=auto` inset), `flex-1` lets the
   // item grow past the viewport, which is exactly what stretched the page.
   const fixedClass =
-    "has-data-[layout=fixed]:h-svh has-data-[layout=fixed]:overflow-hidden";
+    "has-data-[layout=fixed]:h-full has-data-[layout=fixed]:overflow-hidden";
   // The panel open on a `layout=auto` page also bounds the row, so the two
   // columns share the viewport instead of the transcript stretching the page.
   const bounded = open;
@@ -54,7 +54,7 @@ function AssistantRow({ children }: { children: React.ReactNode }) {
         "flex w-full min-h-0",
         fixedClass,
         bounded
-          ? "h-svh shrink-0 overflow-hidden"
+          ? "h-full shrink-0 overflow-hidden"
           : "flex-1 has-data-[layout=fixed]:shrink-0",
       )}
     >
@@ -117,7 +117,9 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
             <SidebarInset
               className={cn(
                 // Set content container, so we can use container queries
-                "@container/content",
+                "@container/content min-w-0",
+                "has-data-[assistant-open=true]:h-svh has-data-[assistant-open=true]:overflow-hidden",
+                "md:peer-data-[variant=inset]:has-data-[assistant-open=true]:h-[calc(100svh-(var(--spacing)*4))]",
 
                 // If layout is fixed, set the height
                 // to 100svh to prevent overflow

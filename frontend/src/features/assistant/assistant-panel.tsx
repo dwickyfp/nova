@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  MessageSquarePlus,
-  PanelRightClose,
-  ShieldCheck,
-} from "lucide-react";
+import { MessageSquarePlus, PanelRightClose, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -44,11 +40,6 @@ export type AssistantPanelProps = {
   onStop?: () => void;
   /** Announced to assistive tech on state transitions, never per token. */
   statusMessage?: string | null;
-  /** True while a read-only always-allow grant covers this conversation. */
-  grantActive?: boolean;
-  onResetPermissions?: () => void;
-  /** Disables the reset control while the revoke request is in flight. */
-  resettingPermissions?: boolean;
   /** Model pinned for the next turn; null lets the backend choose. */
   selectedModel?: SelectedModel;
   onSelectModel?: (model: SelectedModel) => void;
@@ -84,42 +75,6 @@ export type AssistantPanelProps = {
   recentThreads?: ThreadView[];
 };
 
-function ResetPermissionsBar({
-  active,
-  onReset,
-  resetting,
-}: {
-  active: boolean;
-  onReset: () => void;
-  resetting: boolean;
-}) {
-  if (!active) return null;
-
-  return (
-    <div className="flex items-center justify-between gap-2 border-b bg-surface-2 px-3 py-2">
-      <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-        <ShieldCheck
-          aria-hidden="true"
-          className="size-3.5 shrink-0 text-success-strong"
-        />
-        <span className="truncate">
-          Read-only queries are allowed in this conversation.
-        </span>
-      </p>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="min-h-11 shrink-0"
-        disabled={resetting}
-        onClick={onReset}
-      >
-        {resetting ? "Resetting" : "Reset permissions"}
-      </Button>
-    </div>
-  );
-}
-
 function AssistantBody({
   children,
   onSendMessage,
@@ -130,9 +85,6 @@ function AssistantBody({
   streaming,
   onStop,
   statusMessage,
-  grantActive,
-  onResetPermissions,
-  resettingPermissions,
   loadingThread,
   selectedModel,
   onSelectModel,
@@ -167,16 +119,11 @@ function AssistantBody({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ResetPermissionsBar
-        active={Boolean(grantActive)}
-        onReset={() => onResetPermissions?.()}
-        resetting={Boolean(resettingPermissions)}
-      />
       {/* `h-0` + `flex-1` pins the scroll area to the leftover space in the
           column, so the transcript scrolls inside the panel rather than the
           page growing taller. */}
       <ScrollArea ref={scrollRef} className="h-0 min-h-0 flex-1">
-        <div className="flex min-h-full flex-col p-3">
+        <div className="flex min-h-full w-0 min-w-full flex-col p-3">
           {loadingThread ? (
             <p className="p-4 text-center text-xs text-muted-foreground">
               Loading conversation…
@@ -248,60 +195,62 @@ function AssistantHeader({
       <h2 className="min-w-0 flex-1 truncate text-sm font-medium">
         {title ?? "Nove"}
       </h2>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            className="grid size-9 shrink-0 place-items-center text-success-strong"
-            aria-label="Enterprise data protection"
-          >
-            <ShieldCheck aria-hidden="true" className="size-4" />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent
-          arrowClassName="!bg-background !fill-background border-r border-b"
-          className="border bg-background text-foreground"
-        >
-          <div className="text-sm">
-            <a
-              href="https://docs.starrocks.io"
-              target="_blank"
-              rel="noreferrer"
-              className="block font-medium text-primary underline underline-offset-2"
+      <div className="flex shrink-0 items-center gap-0">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="grid size-9 shrink-0 place-items-center text-success-strong"
+              aria-label="Enterprise data protection"
             >
-              Enterprise data protection
-            </a>
-            <p>applies to this chat.</p>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-      {onNewChat ? (
+              <ShieldCheck aria-hidden="true" className="size-4" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent
+            arrowClassName="!bg-background !fill-background border-r border-b"
+            className="border bg-background text-foreground"
+          >
+            <div className="text-sm">
+              <a
+                href="https://docs.starrocks.io"
+                target="_blank"
+                rel="noreferrer"
+                className="block font-medium text-primary underline underline-offset-2"
+              >
+                Enterprise data protection
+              </a>
+              <p>applies to this chat.</p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        {onNewChat ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onNewChat}
+            disabled={busy}
+            aria-label="New chat"
+          >
+            <MessageSquarePlus aria-hidden="true" className="size-4" />
+          </Button>
+        ) : null}
+        {onOpenThread ? (
+          <ThreadHistory
+            activeThreadId={activeThreadId ?? null}
+            onOpenThread={onOpenThread}
+            disabled={busy}
+          />
+        ) : null}
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          onClick={onNewChat}
-          disabled={busy}
-          aria-label="New chat"
+          onClick={onClose}
+          aria-label="Close assistant"
         >
-          <MessageSquarePlus aria-hidden="true" className="size-4" />
+          <PanelRightClose className="size-4" />
         </Button>
-      ) : null}
-      {onOpenThread ? (
-        <ThreadHistory
-          activeThreadId={activeThreadId ?? null}
-          onOpenThread={onOpenThread}
-          disabled={busy}
-        />
-      ) : null}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={onClose}
-        aria-label="Close assistant"
-      >
-        <PanelRightClose className="size-4" />
-      </Button>
+      </div>
     </div>
   );
 }

@@ -153,8 +153,8 @@ async def create_user(body: UserCreate, user: dict = require_admin):
                 },
             }
         return UserResponse(**created)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Unable to create user") from exc
 
 
 @router.put("/{username}")

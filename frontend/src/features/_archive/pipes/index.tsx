@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -62,6 +63,7 @@ export default function PipesPage() {
   const [page, setPage] = useState(0)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [deletePipeName, setDeletePipeName] = useState<string | null>(null)
 
   // Create form state
   const [form, setForm] = useState<CreatePipePayload>({
@@ -252,9 +254,7 @@ export default function PipesPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => {
-                            if (confirm(`Delete pipe "${pipe.name}"?`)) deleteMutation.mutate(pipe.name)
-                          }}
+                          onClick={() => setDeletePipeName(pipe.name)}
                           title="Delete"
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
@@ -409,8 +409,21 @@ export default function PipesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={deletePipeName !== null}
+        onOpenChange={(open) => { if (!open) setDeletePipeName(null) }}
+        title="Delete pipe?"
+        desc={deletePipeName ? `“${deletePipeName}” will be deleted.` : 'This pipe will be deleted.'}
+        confirmText="Delete pipe"
+        destructive
+        isLoading={deleteMutation.isPending}
+        handleConfirm={() => {
+          const name = deletePipeName
+          setDeletePipeName(null)
+          if (name) deleteMutation.mutate(name)
+        }}
+      />
     </div>
   )
 }
-
 

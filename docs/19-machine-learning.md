@@ -175,7 +175,7 @@ shows provider-specific storage URLs or credential values.
 - Full-matrix algorithms still require one bounded Arrow table in the worker.
   Requests above configured row or byte limits must be narrowed; an out-of-core
   Parquet worker mode is not implemented yet.
-- Ephemeral run state is process-local and cannot be promoted from a different
-  backend replica without a shared cache.
+- Ephemeral descriptors and sanitized specifications persist in StarRocks.
+  Promotion works across replicas within TTL and requires the same security scope.
 - Direct connections that bypass Nova cannot use Nova-only DDL or the
   vectorized SQL prediction interceptor.

@@ -19,7 +19,7 @@ const metricCardVariants = cva('flex flex-col gap-1.5', {
   },
 })
 
-const metricValueVariants = cva('font-semibold tracking-tight', {
+const metricValueVariants = cva('font-normal tabular-nums', {
   variants: {
     weight: {
       primary: 'text-3xl sm:text-4xl',

@@ -1,15 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { decideToolCall, toConsentPayload } from "./stream-client";
+import {
+  decideToolCall,
+  streamAssistantTurn,
+  toConsentPayload,
+} from "./stream-client";
+
+const setUser = vi.hoisted(() => vi.fn());
 
 vi.mock("@/stores/auth-store", () => ({
   useAuthStore: {
-    getState: () => ({ auth: { accessToken: "test-token", reset: vi.fn() } }),
+    getState: () => ({
+      auth: {
+        accessToken: "test-token",
+        reset: vi.fn(),
+        user: {
+          username: "alice",
+          roles: ["finance", "marketing"],
+          activeRole: "finance",
+        },
+        setUser,
+      },
+    }),
   },
 }));
 
 const fetchMock = vi.fn();
 
 beforeEach(() => {
+  setUser.mockClear();
   fetchMock.mockClear();
   fetchMock.mockResolvedValue(
     new Response(
@@ -29,6 +47,26 @@ afterEach(() => {
 });
 
 describe("toConsentPayload", () => {
+  it("updates the sidebar role from the server role-change event", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        'event: role_changed\ndata: {"active_role":"marketing","security_context_version":2}\n\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      ),
+    );
+    const onEvent = vi.fn();
+    await streamAssistantTurn("thread", "USE ROLE marketing", { onEvent });
+    expect(setUser).toHaveBeenCalledWith({
+      username: "alice",
+      roles: ["finance", "marketing"],
+      activeRole: "marketing",
+    });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: "role_changed",
+      active_role: "marketing",
+      security_context_version: 2,
+    });
+  });
   it("maps allow to allow_once, allow + always to allow_session, and deny to deny", () => {
     expect(toConsentPayload("approve", false)).toBe("allow_once");
     expect(toConsentPayload("approve", true)).toBe("allow_session");
@@ -56,6 +94,33 @@ describe("decideToolCall", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       decision: "allow_session",
     });
+  });
+
+  it("sends secure input only in the approval request", async () => {
+    await decideToolCall("create-user", "approve", false, {
+      password: "private-marker",
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      decision: "allow_once",
+      secure_input: { password: "private-marker" },
+    });
+  });
+
+  it("sends a stage file as multipart approval outside the model request", async () => {
+    const file = new File(["private-file-data"], "data.csv", {
+      type: "text/csv",
+    });
+    await decideToolCall("stage-upload", "approve", false, undefined, file);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "/api/v1/assistant/tool-calls/stage-upload/upload-decision",
+    );
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("file")).toBe(file);
+    expect(
+      (init.headers as Record<string, string>)["Content-Type"],
+    ).toBeUndefined();
   });
 
   it("sends deny without an always-allow field", async () => {

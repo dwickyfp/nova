@@ -657,6 +657,23 @@ class TestTickOrderingAndIdempotency:
         assert len(repo.graph_runs) == 1
         assert len(transport.published) == 1
 
+    async def test_batch_existing_lookup_avoids_per_occurrence_reads(self):
+        class BatchRepository(FakeRepository):
+            async def existing_graph_run_ids(self, run_ids: list[str]) -> set[str]:
+                self.calls.append("existing_graph_run_ids")
+                return set(run_ids) & self.graph_runs.keys()
+
+        repo = BatchRepository([make_task("solo", created_at=TestPlanTick.ONE_STEP_ANCHOR)])
+        transport = RecordingTransport()
+        tick = SchedulerTick(repo, transport)
+
+        await tick.tick(NOW)
+        await tick.tick(NOW)
+
+        assert repo.calls.count("existing_graph_run_ids") == 2
+        assert "get_graph_run" not in repo.calls
+        assert len(transport.published) == 1
+
     async def test_a_later_due_time_creates_a_second_run(self):
         # `queue` is required for a second run to be enqueued while the first is
         # still active; with the default `skip` the occurrence is deliberately
@@ -805,4 +822,3 @@ def test_integration_scheduler_fixture_restores_scheduler_timezone() -> None:
         "settings.SCHEDULER_ENGINE_TIMEZONE without restoration at line "
         f"{offender.lineno}; use monkeypatch.setattr so the value is restored."
     )
-

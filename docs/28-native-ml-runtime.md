@@ -89,10 +89,17 @@ FROM analytics.customer_features;
 ### On-the-fly execution
 
 `POST /api/v1/ml/execute` uses the same execution contract. The default is
-`persist=false`; bounded result metadata stays in a scoped TTL/LRU cache while
-the promotion-ready artifact is written under a tenant-scoped temporary object
-key. No model registry row is created. Expiry or LRU eviction deletes the
-temporary artifact idempotently.
+`persist=false`; descriptors and sanitized execution specifications live in
+`NOVA_SYSTEM.ML_EPHEMERAL_RUNS`. A local TTL/LRU cache accelerates reads; its
+eviction never deletes shared artifacts. The worker writes the promotion-ready
+artifact under a scoped temporary key. A new API replica can promote within TTL
+without retraining or loading the model into the API process. Promotion verifies
+the checksum and copies the artifact in storage.
+
+The startup sweeper removes expired artifacts off the event loop. Upload intent
+is durable before dispatch; abandoned worker destinations become eligible for
+cleanup 60 seconds after their execution deadline. Cleanup checks READY registry
+versions before removing final model objects and retries partial deletions.
 
 ```json
 {
@@ -119,10 +126,10 @@ Content-Type: application/json
 
 ### Prediction
 
-Aliases are scoped by owner and database and point to one exact
+Aliases are scoped by tenant, owner and database and point to one exact
 `model_id/version`. The Query API, SQL Workspace, and Nova MySQL proxy intercept
 `ML_PREDICT`, extract feature rows in bounded batches, load the selected
-artifact through the runtime cache, and perform one vectorized prediction call.
+artifact through the runtime cache, and perform bounded vectorized prediction calls.
 
 ```sql
 SELECT customer_id, ML_PREDICT('production_churn', age, plan, active)
@@ -132,11 +139,30 @@ FROM analytics.active_customers;
 The Java scalar HTTP UDF remains only for compatibility with direct StarRocks
 connections. It is not the default SQL Workspace or Query API path.
 
-SQL prediction expressions are parsed with a balanced SQL-aware scanner rather
-than a parenthesis-breaking regex. Nova evaluates nested feature expressions as
-one vectorized batch and reconstructs the requested projection, so columns such
-as `customer_id` are not replaced by internal feature columns. SQL result
-materialization is capped by `ML_SQL_RESULT_MAX_ROWS`.
+SQL prediction expressions use the generated StarRocks AST. Comments, CTEs,
+nested feature expressions, and multiple top-level predictions are supported.
+The planner preserves visible columns and their order, then removes hidden
+feature columns. Wrapped predictions (ROUND, CAST, CASE, arithmetic), wildcard
+projections, aggregation, set operations, and ORDER BY are rejected explicitly.
+SQL inline results are capped by rows and Arrow bytes.
+
+For larger results, use `POST /api/v1/ml/predict/materialize` or:
+
+```sql
+SELECT * FROM ML_PREDICT_TABLE('production_churn',
+  'SELECT age, plan, active FROM analytics.active_customers');
+```
+
+This returns a result handle, not the full prediction table. A worker reads,
+predicts, and writes Parquet parts in batches capped at 4,096 rows and 16 MiB
+of logical Arrow data. Read one bounded part with
+`GET /api/v1/ml/results/{result_id}?part=0&database_name=analytics` (also pass
+`schema_name` when used at creation). The same tenant, principal, role,
+security-context version, database and schema must match. Result descriptors
+share the durable TTL store; expiry removes parts, manifest, and staging objects.
+Relayed MySQL sessions cannot materialize results because they do not retain a
+reusable password for a worker connection. They support the bounded inline
+`ML_PREDICT` path; use an authenticated API session for materialization.
 
 ### Persisted forecast inference
 
@@ -198,7 +224,7 @@ does not expose provider-specific storage URLs or credentials.
   are terminated when a deadline or request cancellation is reached.
 - Prediction and artifact deserialization run on a dedicated bounded executor,
   never directly on FastAPI's event-loop thread.
-- New model versions are serialized with joblib, SHA-256 checksummed, and
+- Both persistent and ephemeral models are serialized inside the worker with joblib, SHA-256 checksummed, and
   written through a temporary object followed by verified promotion. The
   serialization envelope carries an explicit format version; legacy artifacts
   remain readable.
@@ -206,11 +232,20 @@ does not expose provider-specific storage URLs or credentials.
   Reservation creates `TRAINING`; artifact completion writes `READY`; only a
   READY version can advance `current_version`. Aborted reservations become
   `FAILED`, leaving the previous production version untouched.
-- The model cache is single-flight, TTL, LRU, and byte bounded. Its key is
-  `(model_id, version)`, so alias movement cannot return the wrong version.
+- The model cache is single-flight, TTL, LRU, and estimated-memory bounded. Its
+  key includes tenant, model and version. Lock records are released after their
+  final waiter. The default loaded-memory estimate is four times artifact bytes;
+  this is a configurable estimate, not a measured RSS ceiling.
+- One absolute monotonic deadline covers startup, extraction, fitting and
+  finalization. Engines receive remaining time, reserving two seconds for
+  serialization/upload. The worker records its active phase for timeout errors.
+- Categorical expansion is capped at 100 categories per column and remains
+  sparse. Numeric allocations and required sparse-to-dense conversions check a
+  256 MiB dense-matrix limit before allocating.
 - Run telemetry includes extraction rows, bytes, batches, queue wait, largest
   batch, and duration; worker startup, training, serialization, upload, and
-  total duration; IPC mode/bytes; selected engine and algorithm; validation
+  total duration; dataset IPC bytes, trained-model IPC bytes and serialized
+  worker-result bytes; actual transport (including fallback); selected engine and algorithm; validation
   metric; artifact/result sizes; cache state; scope; lifecycle state; and a
   sanitized failure type/message.
 
@@ -271,6 +306,15 @@ measurements.
 - Nova SQL surfaces use vectorized `ML_PREDICT` and task-aware `ML_FORECAST`;
   direct clients that bypass Nova and connect to StarRocks cannot use those
   interception paths.
-- Ephemeral cache state is process-local. Deployments with multiple backend
-  replicas need a shared run-cache implementation if promotion must cross
-  replicas.
+- Inference bounds cover logical prediction batches. An incoming Arrow Flight
+  batch and preprocessing/library scratch space can exceed one output batch;
+  worker RSS is reported separately. Training remains in-memory within its
+  configured input budget.
+- Metadata durability requires the StarRocks registry and configured artifact
+  storage to remain available. There is no process-local persistence fallback.
+- Forecast responses are inline and row/byte capped. Training returns at most
+  1,000 forecast preview rows; reduce horizon or series count if a forecast
+  exceeds the inline budget. Table materialization is for row-prediction models.
+- Apply the additive `20260922_ml_ephemeral_runs.sql` upgrade once on existing
+  installations, or use startup's column-existence-aware migration. Existing
+  model rows default to tenant `default`; legacy aliases retain their scope.

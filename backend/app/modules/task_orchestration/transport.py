@@ -100,6 +100,10 @@ class LeaderLock:
     def is_leader(self) -> bool:
         return self._token is not None
 
+    @property
+    def ttl_seconds(self) -> int:
+        return self._ttl
+
     async def acquire(self) -> bool:
         token = str(uuid.uuid4())
         acquired = await self._client.set(self._key, token, nx=True, ex=self._ttl)

@@ -25,6 +25,15 @@ export function parseAssistantEvent(
   const record = payload as Record<string, unknown>;
   const parsed = (() => {
     switch (eventName) {
+      case "role_changed":
+        return typeof record.active_role === "string" &&
+          typeof record.security_context_version === "number"
+          ? {
+              type: "role_changed",
+              active_role: record.active_role,
+              security_context_version: record.security_context_version,
+            }
+          : null;
       case "text_delta":
         return typeof record.text === "string"
           ? {
@@ -97,11 +106,14 @@ export function parseAssistantEvent(
         // the panel must show nothing rather than a zero it invented.
         const total = (record.usage as { total_tokens?: unknown } | undefined)
           ?.total_tokens;
+        const usage = record.usage as { prompt_tokens?: unknown; completion_tokens?: unknown } | undefined;
         return {
           type: "done",
           message_id: record.message_id,
           finish_reason: record.finish_reason,
           total_tokens: typeof total === "number" ? total : undefined,
+          prompt_tokens: typeof usage?.prompt_tokens === "number" ? usage.prompt_tokens : undefined,
+          completion_tokens: typeof usage?.completion_tokens === "number" ? usage.completion_tokens : undefined,
         };
       }
       case "error":
@@ -141,6 +153,7 @@ const STATUSES: ToolCallStatus[] = [
 
 const CLASSIFICATIONS: ToolClassification[] = [
   "read_only",
+  "session_change",
   "destructive",
   "denied",
 ];

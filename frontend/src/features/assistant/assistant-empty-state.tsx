@@ -22,6 +22,15 @@ export type AssistantEmptyStateProps = {
 /** The prompt the CTA sends; also the tour's own subject. */
 export const ASSISTANT_TOUR_PROMPT = "Show me what Nove can do";
 
+const MAX_RECENT_TITLE_LENGTH = 36;
+
+function displayTitle(title: string): string {
+  const value = title.trim() || "New conversation";
+  const characters = Array.from(value);
+  if (characters.length <= MAX_RECENT_TITLE_LENGTH) return value;
+  return `${characters.slice(0, MAX_RECENT_TITLE_LENGTH).join("").trimEnd()}…`;
+}
+
 function formatWhen(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
@@ -54,7 +63,7 @@ export function AssistantEmptyState({
   const canStart = Boolean(onSendMessage);
 
   return (
-    <div className="flex min-h-full flex-col items-start justify-start px-4 pt-10 pb-2">
+    <div className="flex min-h-full min-w-0 w-full flex-col items-start justify-start px-4 pt-10 pb-2">
       <h2 className="text-4xl leading-tight font-semibold tracking-tight text-foreground">
         Hi {name},
       </h2>
@@ -77,17 +86,18 @@ export function AssistantEmptyState({
       ) : null}
 
       {recent.length > 0 ? (
-        <div className="mt-10 w-full">
+        <div className="mt-10 min-w-0 w-full">
           <p className="px-1 text-sm text-muted-foreground">Recent chats</p>
-          <ul className="mt-2 flex flex-col">
+          <ul className="mt-2 flex min-w-0 w-full flex-col">
             {recent.map((thread) => (
-              <li key={thread.thread_id}>
+              <li key={thread.thread_id} className="min-w-0 w-full">
                 <button
                   type="button"
+                  title={thread.title?.trim() || "New conversation"}
                   disabled={!onOpenThread}
                   onClick={() => void onOpenThread?.(thread.thread_id)}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm",
+                    "flex min-w-0 w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm",
                     "hover:bg-accent hover:text-accent-foreground disabled:cursor-default",
                     thread.thread_id === activeThreadId &&
                       "bg-accent text-accent-foreground",
@@ -98,9 +108,9 @@ export function AssistantEmptyState({
                     className="size-4 shrink-0 text-muted-foreground"
                   />
                   <span className="min-w-0 flex-1 truncate">
-                    {thread.title || "New conversation"}
+                    {displayTitle(thread.title)}
                   </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
+                  <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                     {formatWhen(thread.updated_at)}
                   </span>
                 </button>

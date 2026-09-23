@@ -8,12 +8,14 @@ import {
   PackageOpen,
   RefreshCw,
   Search,
+  Send,
   Table2,
 } from "lucide-react";
 import hljs from "highlight.js/lib/core";
 import sql from "highlight.js/lib/languages/sql";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,10 +23,18 @@ import { ChartBlock as VegaChart } from "@/features/agents/chart-block";
 import {
   studioApi,
   type StudioArtifact,
+  type StudioArtifactEditMessage,
+  type StudioArtifactEditResponse,
   type StudioArtifactRefresh,
 } from "@/features/agents/api";
 import { cn } from "@/lib/utils";
 import { formatArtifactSql } from "./artifact-source";
+import { ArtifactFilterBar } from "./artifact-filter-bar";
+import {
+  filterArtifactRows,
+  type ArtifactFilter,
+  type ArtifactFilterMode,
+} from "./artifact-filters";
 
 hljs.registerLanguage("sql", sql);
 
@@ -147,7 +157,7 @@ function ArtifactCard({
           onOpen();
         }
       }}
-      className="group min-w-0 cursor-pointer overflow-hidden rounded-xl border bg-card shadow-sm transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="group min-w-0 cursor-pointer overflow-hidden rounded-xl border bg-card shadow-sm transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       <div className="flex items-start gap-3 border-b px-4 py-3">
         <ArtifactIcon type={artifact.artifact_type} />
@@ -200,6 +210,41 @@ function ArtifactDetail({
 }) {
   const queryClient = useQueryClient();
   const detail = useArtifactData(artifactId);
+  const [filters, setFilters] = useState<ArtifactFilter[]>([]);
+  const [filterMode, setFilterMode] = useState<ArtifactFilterMode>("all");
+  const [draftResponse, setDraftResponse] =
+    useState<StudioArtifactEditResponse | null>(null);
+  const [editHistory, setEditHistory] = useState<StudioArtifactEditMessage[]>(
+    [],
+  );
+  const [chatInput, setChatInput] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [editNotice, setEditNotice] = useState<string | null>(null);
+  const displayedData =
+    detail.data && draftResponse?.draft
+      ? {
+          ...detail.data,
+          artifact: { ...detail.data.artifact, ...draftResponse.draft },
+          columns: draftResponse.columns,
+          rows: draftResponse.rows,
+          row_count: draftResponse.row_count,
+          elapsed_ms: draftResponse.elapsed_ms,
+        }
+      : detail.data;
+  const filteredRows = useMemo(
+    () =>
+      displayedData
+        ? filterArtifactRows(
+            displayedData.columns,
+            displayedData.rows,
+            filters,
+            filterMode,
+          )
+        : [],
+    [displayedData, filters, filterMode],
+  );
   const remove = useMutation({
     mutationFn: () => studioApi.deleteArtifact(artifactId),
     onSuccess: async () => {
@@ -211,6 +256,65 @@ function ArtifactDetail({
     },
     onError: (error: Error) => toast.error(error.message),
   });
+
+  const sendEdit = async () => {
+    const instruction = chatInput.trim();
+    if (!instruction || chatBusy || !detail.data) return;
+    const history = editHistory.slice(-8);
+    setEditHistory((messages) => [
+      ...messages,
+      { role: "user", content: instruction },
+    ]);
+    setChatInput("");
+    setEditNotice(null);
+    setChatBusy(true);
+    try {
+      const response = await studioApi.editArtifact(artifactId, {
+        instruction,
+        draft: draftResponse?.draft ?? null,
+        columns: displayedData?.columns ?? [],
+        history,
+      });
+      setEditHistory((messages) => [
+        ...messages,
+        { role: "assistant", content: response.message },
+      ]);
+      if (response.draft) {
+        setDraftResponse(response);
+      } else {
+        setEditNotice(response.message);
+      }
+    } catch (error) {
+      setEditHistory(history);
+      setChatInput(instruction);
+      toast.error((error as Error).message);
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const applyEdit = async () => {
+    if (!draftResponse?.draft || !detail.data || applyBusy) return;
+    setApplyBusy(true);
+    try {
+      const saved = await studioApi.applyArtifactEdit(artifactId, {
+        draft: draftResponse.draft,
+        expected_updated_at: detail.data.artifact.updated_at,
+      });
+      queryClient.setQueryData(["studio", "artifact-data", artifactId], saved);
+      await queryClient.invalidateQueries({
+        queryKey: ["studio", "artifacts"],
+      });
+      setDraftResponse(null);
+      setEditHistory([]);
+      setEditNotice(null);
+      toast.success("Artifact updated");
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setApplyBusy(false);
+    }
+  };
 
   if (detail.isLoading) {
     return <LoadingState label="Opening artifact" />;
@@ -228,22 +332,58 @@ function ArtifactDetail({
   }
 
   const { artifact } = detail.data;
+  const activeData = displayedData ?? detail.data;
+  const visibleData = { ...activeData, rows: filteredRows };
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <DetailHeader
         onBack={onBack}
         title={artifact.title}
-        subtitle={`Updated ${formatTimestamp(artifact.updated_at)} · ${detail.data.row_count.toLocaleString()} rows · ${formatDuration(detail.data.elapsed_ms)}`}
+        subtitle={`${draftResponse?.draft ? "Draft" : `Updated ${formatTimestamp(artifact.updated_at)}`} · ${activeData.row_count.toLocaleString()} rows · ${formatDuration(activeData.elapsed_ms)}`}
         refreshing={detail.isFetching}
         onRefresh={() => void detail.refetch()}
-        onDelete={() => {
-          if (window.confirm(`Delete “${artifact.title}”?`)) remove.mutate();
-        }}
+        onDelete={() => setDeleteOpen(true)}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
-        <section className="min-w-0 rounded-xl border bg-card p-4 shadow-sm">
-          <ArtifactVisual data={detail.data} compact />
+        {draftResponse?.draft ? (
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-3">
+            <div className="min-w-0 flex-1 text-sm">
+              <p className="font-medium">Draft preview</p>
+              <p className="text-xs text-muted-foreground">
+                Review the result, then apply it to the saved artifact.
+              </p>
+            </div>
+          </div>
+        ) : null}
+        <ArtifactFilterBar
+          columns={activeData.columns}
+          rows={activeData.rows}
+          filters={filters}
+          onFiltersChange={setFilters}
+          mode={filterMode}
+          onModeChange={setFilterMode}
+          visibleCount={filteredRows.length}
+        />
+        <section
+          aria-label="Artifact preview"
+          aria-busy={chatBusy}
+          data-ai-processing={chatBusy ? "true" : undefined}
+          className={cn(
+            "min-w-0 rounded-xl border bg-card p-4 shadow-sm",
+            chatBusy && "artifact-ai-active",
+          )}
+        >
+          <span className="sr-only" role="status">
+            {chatBusy ? "Nova is preparing an artifact preview." : ""}
+          </span>
+          {activeData.rows.length > 0 && filteredRows.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No rows match these filters.
+            </p>
+          ) : (
+            <ArtifactVisual data={visibleData} compact />
+          )}
         </section>
 
         <Tabs defaultValue="table" className="mt-5 min-w-0">
@@ -253,9 +393,14 @@ function ArtifactDetail({
           </TabsList>
           <TabsContent value="table" className="mt-2">
             <ArtifactTable
-              columns={detail.data.columns}
-              rows={detail.data.rows}
+              columns={activeData.columns}
+              rows={filteredRows}
               showRowNumbers
+              emptyMessage={
+                activeData.rows.length > 0
+                  ? "No rows match these filters."
+                  : undefined
+              }
             />
           </TabsContent>
           <TabsContent value="sql" className="mt-2">
@@ -271,7 +416,7 @@ function ArtifactDetail({
                   dangerouslySetInnerHTML={{
                     __html:
                       highlightArtifactSql(
-                        formatArtifactSql(artifact.sql_text),
+                        formatArtifactSql(activeData.artifact.sql_text),
                       ) ?? "",
                   }}
                 />
@@ -280,6 +425,100 @@ function ArtifactDetail({
           </TabsContent>
         </Tabs>
       </div>
+
+      <form
+        className="shrink-0 bg-background px-4 py-3 sm:px-7"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void sendEdit();
+        }}
+      >
+        {editNotice ? (
+          <p
+            className="mx-auto mb-2 max-w-3xl text-xs text-muted-foreground"
+            role="status"
+          >
+            {editNotice}
+          </p>
+        ) : null}
+        {draftResponse?.draft ? (
+          <div className="mx-auto mb-2 flex max-w-3xl items-center justify-end gap-2">
+            <span className="mr-auto text-xs text-muted-foreground">
+              Draft ready to review
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDraftResponse(null);
+                setEditHistory([]);
+                setEditNotice(null);
+              }}
+              disabled={applyBusy}
+            >
+              Discard draft
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void applyEdit()}
+              disabled={applyBusy}
+            >
+              {applyBusy ? (
+                <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+              ) : null}
+              Apply changes
+            </Button>
+          </div>
+        ) : null}
+        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border bg-card p-2 shadow-sm focus-within:border-ring">
+          <textarea
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                void sendEdit();
+              }
+            }}
+            aria-label="Edit artifact with Nova"
+            placeholder="Ask Nova to add a column or change this to a bar or line chart"
+            rows={2}
+            disabled={chatBusy || applyBusy}
+            className="max-h-32 min-h-12 flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
+          />
+          <Button
+            type="submit"
+            size="icon"
+            aria-label="Send artifact edit"
+            disabled={!chatInput.trim() || chatBusy || applyBusy}
+          >
+            {chatBusy ? (
+              <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+            ) : (
+              <Send aria-hidden="true" className="size-4" />
+            )}
+          </Button>
+        </div>
+      </form>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete artifact?"
+        desc={`“${artifact.title}” will be deleted.`}
+        confirmText="Delete artifact"
+        destructive
+        isLoading={remove.isPending}
+        handleConfirm={() => {
+          setDeleteOpen(false);
+          remove.mutate();
+        }}
+      />
     </div>
   );
 }
@@ -367,10 +606,12 @@ function ArtifactTable({
   columns,
   rows,
   showRowNumbers = false,
+  emptyMessage = "The query returned no rows.",
 }: {
   columns: string[];
   rows: (string | number | null)[][];
   showRowNumbers?: boolean;
+  emptyMessage?: string;
 }) {
   return (
     <div className="min-w-0 overflow-auto rounded-lg border">
@@ -420,7 +661,7 @@ function ArtifactTable({
                 colSpan={columns.length + (showRowNumbers ? 1 : 0)}
                 className="px-3 py-8 text-center text-muted-foreground"
               >
-                The query returned no rows.
+                {emptyMessage}
               </td>
             </tr>
           ) : null}

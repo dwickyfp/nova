@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ArrowUp, FileCode, Square, X } from "lucide-react";
+import { ArrowUp, FileCode, Info, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ApprovalModeSelector } from "./approval-mode-selector";
@@ -63,7 +63,7 @@ export function AssistantComposer({
   };
 
   return (
-    <div className="px-3 pt-3 pb-6">
+    <div className="px-3 pt-3 pb-2">
       {disabled ? (
         <p className="mb-2 text-xs text-muted-foreground">
           The assistant backend is not connected yet. This panel is read-only
@@ -173,8 +173,9 @@ export function AssistantComposer({
           )}
         </div>
       </div>
-      <p className="mt-2 text-left text-xs text-muted-foreground">
-        AI can make mistakes
+      <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-xs leading-4 text-muted-foreground">
+        <Info aria-hidden="true" className="size-3.5 shrink-0" />
+        <span>Nove can make mistakes. Check important details.</span>
       </p>
     </div>
   );

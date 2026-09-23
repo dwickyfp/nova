@@ -50,6 +50,10 @@ class TestCronParsing:
         with pytest.raises(ScheduleError):
             next_fire("cron", "bad", "UTC", datetime(2026, 1, 1, tzinfo=UTC))
 
+    def test_impossible_calendar_date_is_rejected(self):
+        with pytest.raises(ScheduleError, match="no valid fire date"):
+            parse_cron("0 0 31 2 *")
+
 
 class TestCronNextFire:
     def test_next_fire_is_strictly_after_the_reference(self):
@@ -182,6 +186,10 @@ class TestInterval:
         result = next_fire("interval", "EVERY(INTERVAL 1 DAY)", "UTC", reference)
         assert result == datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
 
+    def test_huge_interval_is_a_schedule_error(self):
+        with pytest.raises(ScheduleError, match="too large"):
+            parse_interval("INTERVAL 999999999999999999 DAY")
+
 
 class TestManualSchedule:
     def test_manual_has_no_next_fire(self):
@@ -304,6 +312,44 @@ class TestCronExactFireInstant:
         last = datetime(2026, 1, 1, 2, 0, tzinfo=UTC)
         now = datetime(2026, 1, 2, 2, 0, tzinfo=UTC)
         assert is_due("cron", "0 2 * * *", "UTC", last, now) is True
+
+
+class TestCronClockChanges:
+    def test_created_at_exact_fire_instant_waits_for_next_occurrence(self):
+        from app.modules.task_orchestration.schedule import due_occurrences
+
+        anchor = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
+        assert due_occurrences("cron", "* * * * *", "UTC", anchor, anchor) == []
+        fires = due_occurrences("cron", "* * * * *", "UTC", anchor, anchor + timedelta(minutes=1))
+        assert fires == [
+            anchor + timedelta(minutes=1)
+        ]
+
+    def test_fall_back_runs_each_real_repeated_hour_instant_once(self):
+        from app.modules.task_orchestration.schedule import due_occurrences
+
+        anchor = datetime(2026, 11, 1, 4, 0, tzinfo=UTC)
+        first = datetime(2026, 11, 1, 5, 30, tzinfo=UTC)
+        second = datetime(2026, 11, 1, 6, 30, tzinfo=UTC)
+        assert due_occurrences(
+            "cron", "30 1 * * *", "America/New_York", anchor,
+            datetime(2026, 11, 1, 6, 10, tzinfo=UTC),
+        ) == [first]
+        assert due_occurrences(
+            "cron", "30 1 * * *", "America/New_York", anchor,
+            datetime(2026, 11, 1, 7, 0, tzinfo=UTC),
+        ) == [first, second]
+        assert next_fire("cron", "30 1 * * *", "America/New_York", first) == second
+
+    def test_spring_gap_skips_nonexistent_wall_time(self):
+        from app.modules.task_orchestration.schedule import due_occurrences
+
+        anchor = datetime(2026, 3, 8, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 3, 8, 8, 0, tzinfo=UTC)
+        assert due_occurrences("cron", "30 2 * * *", "America/New_York", anchor, now) == []
+        assert next_fire("cron", "30 2 * * *", "America/New_York", anchor) == datetime(
+            2026, 3, 9, 6, 30, tzinfo=UTC
+        )
 
 
 class TestDueOccurrences:

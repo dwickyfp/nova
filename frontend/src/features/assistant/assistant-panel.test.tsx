@@ -219,48 +219,21 @@ describe("AssistantPanel", () => {
       .toBeDisabled();
   });
 
-  it("offers no reset control while no grant is active", async () => {
+  it("does not show a permissions banner", async () => {
     const { getByRole } = await render(
-      <AssistantPanel open onOpenChange={() => {}} grantActive={false} />,
+      <AssistantPanel
+        open
+        onOpenChange={() => {}}
+        approvalMode="allow_read_only"
+      />,
     );
     expect(
       getByRole("button", { name: "Reset permissions" }).query(),
     ).toBeNull();
     expect(document.body.textContent).not.toContain("Reset permissions");
-  });
-
-  it("shows the grant state and resets it through the labelled control", async () => {
-    const onResetPermissions = vi.fn();
-    const { getByRole, getByText } = await render(
-      <AssistantPanel
-        open
-        onOpenChange={() => {}}
-        grantActive
-        onResetPermissions={onResetPermissions}
-      />,
+    expect(document.body.textContent).not.toContain(
+      "Read-only queries are allowed in this conversation.",
     );
-
-    await expect
-      .element(getByText("Read-only queries are allowed in this conversation."))
-      .toBeInTheDocument();
-    const reset = getByRole("button", { name: "Reset permissions" });
-    await reset.click();
-    expect(onResetPermissions).toHaveBeenCalledTimes(1);
-  });
-
-  it("disables the reset control while the revoke is in flight", async () => {
-    const { getByRole } = await render(
-      <AssistantPanel
-        open
-        onOpenChange={() => {}}
-        grantActive
-        onResetPermissions={() => {}}
-        resettingPermissions
-      />,
-    );
-    await expect
-      .element(getByRole("button", { name: "Resetting" }))
-      .toBeDisabled();
   });
 
   it("applies the given width inline and shows the resize handle", async () => {

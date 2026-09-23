@@ -15,9 +15,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from croniter import croniter
+from croniter import CroniterBadDateError, croniter
 
 _CRON_FIELDS = 5
 
@@ -39,6 +40,8 @@ _INTERVAL_RE = re.compile(
     r"^\s*every\s*\(\s*interval\s+(\d+)\s+"
     r"(second|seconds|minute|minutes|hour|hours|day|days)\s*\)\s*$"
     r"|^\s*(?:every\s+)?(\d+)\s*"
+    r"(second|seconds|minute|minutes|hour|hours|day|days)\s*$"
+    r"|^\s*interval\s+(\d+)\s+"
     r"(second|seconds|minute|minutes|hour|hours|day|days)\s*$",
     re.IGNORECASE,
 )
@@ -58,7 +61,10 @@ class Interval:
     def resolve(self, reference: datetime) -> timedelta:
         if self.amount <= 0:
             raise ScheduleError(f"interval amount must be positive, got {self.amount}")
-        return timedelta(**{_INTERVAL_UNITS[self.unit]: self.amount})
+        try:
+            return timedelta(**{_INTERVAL_UNITS[self.unit]: self.amount})
+        except (OverflowError, ValueError) as exc:
+            raise ScheduleError("interval amount is too large") from exc
 
 
 def _parse_offset(name: str) -> timezone | None:
@@ -126,6 +132,17 @@ def engine_timezone_matches(configured: str, engine_reported: str) -> bool:
     )
 
 
+@lru_cache(maxsize=4096)
+def _validate_cron_expression(stripped: str) -> None:
+    if not croniter.is_valid(stripped):
+        raise ScheduleError(f"invalid cron expression: {stripped!r}")
+    iterator = croniter(stripped)
+    try:
+        iterator.get_next(datetime, start_time=datetime(2024, 1, 1))
+    except (CroniterBadDateError, OverflowError) as exc:
+        raise ScheduleError(f"cron expression has no valid fire date: {stripped!r}") from exc
+
+
 def parse_cron(expression: str) -> croniter:
     """Parse a 5-field cron expression. Raises ``ScheduleError`` when invalid."""
     if not expression or not expression.strip():
@@ -136,26 +153,113 @@ def parse_cron(expression: str) -> croniter:
             f"cron expression must have exactly {_CRON_FIELDS} fields, "
             f"got {len(stripped.split())}: {expression!r}"
         )
-    if not croniter.is_valid(stripped):
-        raise ScheduleError(f"invalid cron expression: {expression!r}")
+    _validate_cron_expression(stripped)
     return croniter(stripped)
 
 
 def parse_interval(expression: str) -> Interval:
-    """Parse ``EVERY(INTERVAL n UNIT)`` / ``n UNIT``. Raises ``ScheduleError``."""
+    """Parse a stored interval clause or a user-facing interval expression."""
     if not expression or not expression.strip():
         raise ScheduleError("interval expression is required")
     match = _INTERVAL_RE.match(expression)
     if match is None:
         raise ScheduleError(
-            "interval expression must look like 'EVERY(INTERVAL 5 MINUTE)' "
-            f"or '5 minute', got {expression!r}"
+            "interval expression must look like 'EVERY(INTERVAL 5 MINUTE)', "
+            f"'INTERVAL 5 MINUTE', or '5 minute', got {expression!r}"
         )
-    amount = int(match.group(1) or match.group(3))
-    unit = match.group(2) or match.group(4)
+    amount = int(match.group(1) or match.group(3) or match.group(5))
+    unit = match.group(2) or match.group(4) or match.group(6)
     if amount <= 0:
         raise ScheduleError(f"interval amount must be positive, got {amount}")
-    return Interval(amount=amount, unit=unit.lower())
+    interval = Interval(amount=amount, unit=unit.lower())
+    interval.resolve(datetime(2024, 1, 1))
+    return interval
+
+
+def _local_instants(local: datetime, zone: ZoneInfo | timezone) -> list[datetime]:
+    """Resolve a cron wall time, skipping gaps and retaining both repeated hours."""
+    instants: set[datetime] = set()
+    for fold in (0, 1):
+        aware = local.replace(tzinfo=zone, fold=fold)
+        instant = aware.astimezone(ZoneInfo("UTC"))
+        if instant.astimezone(zone).replace(tzinfo=None) == local:
+            instants.add(instant)
+    return sorted(instants)
+
+
+def _near_clock_change(instant: datetime, zone: ZoneInfo | timezone) -> bool:
+    """A repeated local hour needs a short wall-time lookahead."""
+    before = (instant - timedelta(hours=3)).astimezone(zone).utcoffset()
+    after = (instant + timedelta(hours=3)).astimezone(zone).utcoffset()
+    return before != after
+
+
+def _cron_fires_before(
+    expression: str,
+    zone: ZoneInfo | timezone,
+    anchor: datetime,
+    now: datetime,
+    limit: int,
+) -> list[datetime]:
+    """Return the latest distinct UTC fires strictly after anchor, through now."""
+    if now <= anchor or limit <= 0:
+        return []
+    local_now = now.astimezone(zone).replace(tzinfo=None)
+    local_anchor = anchor.astimezone(zone).replace(tzinfo=None)
+    near_change = _near_clock_change(now, zone)
+    # In the second copy of a repeated hour, an earlier UTC fire can have a
+    # later wall-clock label. Inspect the whole nearby wall window first.
+    seed = local_now + (timedelta(hours=3) if near_change else timedelta(microseconds=1))
+    iterator = croniter(expression, seed)
+    fires: set[datetime] = set()
+    for _ in range(10000):
+        try:
+            local = iterator.get_prev(datetime)
+        except (CroniterBadDateError, OverflowError):
+            return sorted(fires)[-limit:]
+        instants = _local_instants(local, zone)
+        fires.update(instant for instant in instants if anchor < instant <= now)
+        if near_change:
+            if local >= local_now - timedelta(hours=3):
+                continue
+            near_change = False
+        if len(fires) >= limit:
+            return sorted(fires)[-limit:]
+        # Outside a clock change, wall-time and UTC order agree. A small
+        # offset check avoids discarding an earlier repeated-hour fire.
+        if (
+            instants
+            and max(instants) <= anchor
+            and not _near_clock_change(anchor, zone)
+            and not _near_clock_change(max(instants), zone)
+        ):
+            return sorted(fires)[-limit:]
+        if local < local_anchor - timedelta(days=1):
+            return sorted(fires)[-limit:]
+    raise ScheduleError("cron schedule exceeded bounded occurrence search")
+
+
+def _next_cron_fire(
+    expression: str, zone: ZoneInfo | timezone, after: datetime
+) -> datetime:
+    local_after = after.astimezone(zone).replace(tzinfo=None)
+    near_change = _near_clock_change(after, zone)
+    seed = local_after - (timedelta(hours=3) if near_change else timedelta(0))
+    iterator = croniter(expression, seed)
+    candidates: list[datetime] = []
+    for _ in range(10000):
+        try:
+            local = iterator.get_next(datetime)
+        except (CroniterBadDateError, OverflowError) as exc:
+            raise ScheduleError("cron schedule has no future fire date") from exc
+        candidates.extend(instant for instant in _local_instants(local, zone) if instant > after)
+        if near_change:
+            if local <= local_after + timedelta(hours=3):
+                continue
+            near_change = False
+        if candidates:
+            return min(candidates)
+    raise ScheduleError("cron schedule exceeded bounded next-fire search")
 
 
 def next_fire(
@@ -184,12 +288,17 @@ def next_fire(
     local_reference = after.astimezone(zone)
 
     if kind == "cron":
-        iterator = parse_cron(schedule_expr)
-        return iterator.get_next(datetime, start_time=local_reference).astimezone(ZoneInfo("UTC"))
+        parse_cron(schedule_expr)
+        return _next_cron_fire(schedule_expr, zone, after)
 
     if kind == "interval":
         interval = parse_interval(schedule_expr)
-        return (local_reference + interval.resolve(local_reference)).astimezone(ZoneInfo("UTC"))
+        try:
+            return (local_reference + interval.resolve(local_reference)).astimezone(
+                ZoneInfo("UTC")
+            )
+        except OverflowError as exc:
+            raise ScheduleError("interval next-fire exceeds datetime range") from exc
 
     raise ScheduleError(f"unsupported schedule kind: {schedule_kind!r}")
 
@@ -251,20 +360,9 @@ def latest_occurrence(
         return None
 
     if kind == "cron":
-        iterator = parse_cron(schedule_expr)
-        # A fire exactly at ``now`` is due at that instant. croniter.get_prev is
-        # strictly-before, so on the fire instant it would skip this occurrence
-        # and fall back to the previous one; interval has no such gap. Floating
-        # to the minute first makes this match the cron grid (cron has no second
-        # field), and croniter.match needs a naive local datetime.
-        on_grid = local_now.replace(second=0, microsecond=0)
-        if iterator.match(schedule_expr, on_grid.replace(tzinfo=None)):
-            candidate = on_grid
-        else:
-            candidate = iterator.get_prev(datetime, start_time=local_now)
-        if candidate is None or candidate < local_anchor:
-            return None
-        return candidate.astimezone(ZoneInfo("UTC"))
+        parse_cron(schedule_expr)
+        fires = _cron_fires_before(schedule_expr, zone, anchor, now, 1)
+        return fires[-1] if fires else None
 
     if kind == "interval":
         interval = parse_interval(schedule_expr)
@@ -336,22 +434,8 @@ def due_occurrences(
         return []
 
     if kind == "cron":
-        iterator = parse_cron(schedule_expr)
-        # ``get_prev`` is strictly before its reference, so anchor the walk one
-        # microsecond past ``now`` to include a fire exactly at ``now``.
-        cursor = local_now + timedelta(microseconds=1)
-        raw: list[datetime] = []
-        # Walk backwards; stop as soon as we fall below the anchor or hit the
-        # cap. Walking back from ``now`` is what makes the cap keep the newest.
-        while len(raw) < limit:
-            candidate = iterator.get_prev(datetime, start_time=cursor)
-            if candidate is None or candidate < local_anchor:
-                break
-            raw.append(candidate)
-            # ``get_prev`` is strictly-before, so step back past this hit.
-            cursor = candidate.replace(microsecond=0) - timedelta(seconds=1)
-        raw.reverse()
-        return [c.astimezone(ZoneInfo("UTC")) for c in raw]
+        parse_cron(schedule_expr)
+        return _cron_fires_before(schedule_expr, zone, anchor, now, limit)
 
     if kind == "interval":
         interval = parse_interval(schedule_expr)

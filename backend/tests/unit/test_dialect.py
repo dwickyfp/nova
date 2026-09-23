@@ -475,6 +475,37 @@ class TestTranslator:
         assert "testkey" not in translated
         assert "FILES(" not in translated
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT '@stage1.data.csv' AS label, * FROM @stage1.data.csv",
+            "SELECT /* @stage1.data.csv */ * FROM @stage1.data.csv",
+            "SELECT * FROM @stage1.data.csv JOIN @stage1.data.csv ON 1=1",
+        ],
+    )
+    def test_translation_uses_parser_spans_for_repeated_stage_text(self, sql):
+        parsed = parse_sql(sql)
+        translated, _ = translate_stage_query(parsed, {"stage1": self._make_config()})
+        assert translated.count("FILES(") == len(parsed.stage_refs)
+        assert translated.count("@stage1.data.csv") == (
+            sql.count("@stage1.data.csv") - len(parsed.stage_refs)
+        )
+
+    def test_translation_preserves_interleaved_comment_in_stage_reference(self):
+        sql = "SELECT * FROM @stage1 /* gap */ .data.csv"
+        parsed = parse_sql(sql)
+        translated, _ = translate_stage_query(parsed, {"stage1": self._make_config()})
+        assert parsed.stage_refs[0].full_match == "@stage1 /* gap */ .data.csv"
+        assert "@stage1" not in translated
+        assert "FILES(" in translated
+
+    def test_files_properties_escape_sql_quotes(self):
+        config = self._make_config()
+        config.secret_key = "sec'ret"
+        sql = build_files_function("s3://bucket/it's.csv", "csv", config)
+        assert "s3://bucket/it''s.csv" in sql
+        assert "sec''ret" in sql
+
     def test_detect_format_csv(self):
         assert detect_format_from_filename("data.csv") == "csv"
 
@@ -573,7 +604,8 @@ class TestBareAndDirectoryStagesReachTranslation:
         translated, _ = translate_stage_query(parsed, {"stage1": self._config()})
 
         assert "FILES(" in translated
-        assert translated.startswith("LIST ")
+        assert translated.startswith("SELECT * FROM FILES(")
+        assert "'list_files_only'='true'" in translated
 
     def test_an_unknown_stage_still_raises(self):
         """Resolution is not weakened: a stage with no config is still refused."""

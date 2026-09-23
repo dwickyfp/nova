@@ -10,8 +10,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 from app.core.config import settings
+from app.modules.ml_engine.automl.metrics import higher_is_better
 from app.modules.ml_engine.automl.router import AutoMLRouter, evaluate_predictions
 from app.modules.ml_engine.engines.base import TrainingOutput
+from app.modules.ml_engine.execution.deadline import ExecutionDeadline
+from app.modules.ml_engine.preprocessing.memory import estimator_matrix
 from app.modules.ml_engine.preprocessing.preprocessor import FeaturePreprocessor
 from app.modules.ml_engine.preprocessing.profiler import serialize_profiles
 from app.modules.ml_engine.spec import InsufficientTrainingRows, MLExecutionSpec, MLTask
@@ -77,13 +80,25 @@ def train_tabular(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         y_train=y_train,
         X_valid=X_valid,
         y_valid=y_valid,
-        timeout_seconds=budget.timeout_seconds,
+        timeout_seconds=(
+            ExecutionDeadline(spec.deadline_at).remaining(
+                "training", reserve=settings.ML_FINALIZE_RESERVE_SECONDS
+            )
+            if spec.deadline_at
+            else budget.timeout_seconds
+        ),
         algorithm=spec.algorithm,
         metric=spec.metric,
         parameters=estimator_parameters,
     )
-    predicted = selection.estimator.predict(X_valid)
-    metrics: dict[str, Any] = evaluate_predictions(spec.task, y_valid, predicted)
+    validation = estimator_matrix(X_valid, selection.estimator)
+    predicted = selection.estimator.predict(validation)
+    probabilities = (
+        selection.estimator.predict_proba(validation)
+        if selection.metric in {"log_loss", "roc_auc"}
+        else None
+    )
+    metrics: dict[str, Any] = evaluate_predictions(spec.task, y_valid, predicted, probabilities)
     metric_name = selection.metric
     metric_value = metrics.get(metric_name)
     metrics.update(
@@ -92,7 +107,7 @@ def train_tabular(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
             "selection_metric": selection.metric,
             "metric_name": metric_name,
             "metric_value": metric_value,
-            "higher_is_better": True,
+            "higher_is_better": higher_is_better(metric_name),
             "loss_name": "flaml_validation_loss" if selection.backend == "flaml" else None,
             "loss_value": selection.loss_value,
             # Compatibility field, now always a directly computed metric rather
@@ -102,6 +117,10 @@ def train_tabular(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
             "search_duration_seconds": round(selection.duration_seconds, 6),
             "hyperparameters": selection.hyperparameters,
             "feature_metadata": serialize_profiles(preprocessor.profiles),
+            "preprocessing_policy": {
+                "categorical_encoding": "bounded_one_hot",
+                "max_categories": preprocessor.max_categories,
+            },
             "arrow_to_pandas_seconds": preprocessor.arrow_to_pandas_seconds,
         }
     )

@@ -103,7 +103,7 @@ export function SemanticModelsPage() {
       <Main>
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="text-2xl leading-8 font-normal">
               Semantic models
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -125,7 +125,7 @@ export function SemanticModelsPage() {
           </div>
         </div>
 
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea className="min-h-0 flex-1 pe-3">
           {modelsQuery.isLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 3 }).map((_, i) => (

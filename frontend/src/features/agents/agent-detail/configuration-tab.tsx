@@ -1,15 +1,9 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  CheckCircle2,
-  Pencil,
-  Plus,
-  Save,
-  ShieldAlert,
-  Trash2,
-} from "lucide-react";
+import { Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { AgentModelSelect } from "./model-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -47,6 +41,7 @@ const BUNDLEABLE = new Set([
   "semantic_query",
   "semantic_search",
   "data_to_chart",
+  "diagnose_change",
   "ml_execute",
 ]);
 
@@ -138,17 +133,13 @@ export function AgentConfigurationTab({
         </TabsContent>
 
         <TabsContent value="instructions" className="mt-6 max-w-3xl space-y-4">
-          <div className="space-y-2">
-            <Label>Model</Label>
-            <Input
-              value={draft.model_name ?? "Provider default"}
-              disabled
-              className="max-w-xs"
-            />
-            <p className="text-xs text-muted-foreground">
-              Inherits the provider configured under AI Providers.
-            </p>
-          </div>
+          <AgentModelSelect
+            providerId={draft.model_provider_id ?? null}
+            modelName={draft.model_name ?? null}
+            onChange={(model_provider_id, model_name) =>
+              setDraft((prev) => ({ ...prev, model_provider_id, model_name }))
+            }
+          />
           <div className="space-y-2">
             <Label htmlFor="c-orch">Orchestration instructions</Label>
             <Textarea
@@ -171,7 +162,6 @@ export function AgentConfigurationTab({
               className="min-h-32"
             />
           </div>
-          <CompiledContract contract={agent.compiled_instructions} />
         </TabsContent>
 
         <TabsContent value="tools" className="mt-6">
@@ -221,6 +211,9 @@ function ToolsConfig({
 
   const bundleable =
     toolsQuery.data?.tools.filter((t) => BUNDLEABLE.has(t.name)) ?? [];
+  const mcpTools = toolsQuery.data?.tools.filter(
+    (tool) => tool.source.startsWith("mcp:") && tool.is_enabled,
+  ) ?? [];
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -252,6 +245,32 @@ function ToolsConfig({
           ))}
         </div>
       </section>
+
+      {mcpTools.length ? (
+        <section className="space-y-2">
+          <div>
+            <h3 className="text-sm font-medium">MCP tools</h3>
+            <p className="text-xs text-muted-foreground">External calls always require approval.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {mcpTools.map((tool) => {
+              const key = `mcp:${tool.tool_id}`;
+              return (
+                <label key={tool.tool_id} className="flex items-start gap-2 rounded-xl border p-3 text-sm">
+                  <Checkbox
+                    checked={(draft.default_tools ?? []).includes(key)}
+                    onCheckedChange={() => toggle(key)}
+                  />
+                  <span className="min-w-0">
+                    <span className="block break-all font-mono text-xs font-medium">{tool.name}</span>
+                    <span className="block text-xs text-muted-foreground">{tool.description}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
@@ -420,7 +439,17 @@ function CustomToolsSection({
         ? customToolsApi.update(editing.tool_id, payload)
         : customToolsApi.create(payload);
     },
-    onSuccess: () => {
+    onSuccess: (_saved, submitted) => {
+      if (editing && editing.name !== submitted.name) {
+        const oldKey = `custom:${editing.name}`;
+        const newKey = `custom:${submitted.name}`;
+        set(
+          "default_tools",
+          (draft.default_tools ?? []).map((tool) =>
+            tool === oldKey ? newKey : tool,
+          ) as AgentCreateInput["default_tools"],
+        );
+      }
       toast.success(editing ? "Custom tool updated" : "Custom tool created");
       setOpen(false);
       setEditing(null);
@@ -513,16 +542,18 @@ function CustomToolsSection({
         </div>
       )}
 
-      <CustomToolEditorDialog
-        open={open}
-        onOpenChange={(v) => {
-          setOpen(v);
-          if (!v) setEditing(null);
-        }}
-        initial={editing}
-        submitting={save.isPending}
-        onSubmit={(d) => save.mutate(d)}
-      />
+      {open && (
+        <CustomToolEditorDialog
+          open={open}
+          onOpenChange={(v) => {
+            setOpen(v);
+            if (!v) setEditing(null);
+          }}
+          initial={editing}
+          submitting={save.isPending}
+          onSubmit={(d) => save.mutate(d)}
+        />
+      )}
     </section>
   );
 }
@@ -630,99 +661,6 @@ function SkillsConfig({
       )}
     </div>
   );
-}
-
-function CompiledContract({
-  contract,
-}: {
-  contract?: Record<string, unknown>;
-}) {
-  if (!contract || Object.keys(contract).length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed p-4">
-        <p className="text-sm font-medium">Compiled agent contract</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Save the agent to compile these instructions into Nova's bounded
-          runtime contract.
-        </p>
-      </div>
-    );
-  }
-
-  const mission = typeof contract.mission === "string" ? contract.mission : "";
-  const mustDo = stringList(contract.must_do);
-  const mustNot = stringList(contract.must_not);
-  const capabilities = stringList(contract.preferred_capabilities);
-  const rejected = stringList(contract.rejected_rules);
-
-  return (
-    <section className="space-y-3 rounded-lg border p-4">
-      <div className="flex items-center gap-2">
-        <CheckCircle2 className="size-4 text-success" />
-        <h3 className="text-sm font-medium">Compiled agent contract</h3>
-        <Badge variant="secondary">Runtime input</Badge>
-      </div>
-      {mission ? (
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">Mission</p>
-          <p className="mt-1 text-sm">{mission}</p>
-        </div>
-      ) : null}
-      <ContractList label="Required behavior" values={mustDo} />
-      <ContractList label="Prohibited behavior" values={mustNot} />
-      {capabilities.length ? (
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">
-            Preferred capabilities
-          </p>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {capabilities.map((capability) => (
-              <Badge
-                key={capability}
-                variant="outline"
-                className="font-mono text-xs"
-              >
-                {capability}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      {rejected.length ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
-            <ShieldAlert className="size-3.5" />
-            Rejected by platform policy
-          </p>
-          <ul className="mt-2 list-disc space-y-1 pl-4 text-xs">
-            {rejected.map((rule) => (
-              <li key={rule}>{rule}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function ContractList({ label, values }: { label: string; values: string[] }) {
-  if (!values.length) return null;
-  return (
-    <div>
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <ul className="mt-1 list-disc space-y-1 pl-4 text-xs">
-        {values.map((value) => (
-          <li key={value}>{value}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function stringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
 }
 
 function toAgentDraft(agent: Agent): AgentCreateInput {

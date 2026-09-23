@@ -23,12 +23,21 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.modules.agents.repository import agent_repository
+from app.modules.agents.semantic.compiler import (
+    SemanticPlanError,
+    quote_semantic_identifier,
+    quote_semantic_source,
+)
+from app.modules.agents.semantic.runtime import (
+    SemanticModelCandidate,
+    SemanticModelRouter,
+)
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, policy
 from app.modules.assistant.tools.query_execute import (
     ASSISTANT_MAX_PREVIEW_CHARS,
     ASSISTANT_MAX_ROWS,
+    _active_role,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +87,7 @@ class SemanticSearchTool:
 
     def __init__(self, *, max_rows: int = ASSISTANT_MAX_ROWS) -> None:
         self.max_rows = max_rows
+        self._model_router = SemanticModelRouter()
 
     def preview(self, invocation: ToolInvocation) -> str:
         query = _arg(invocation, "query")
@@ -106,7 +116,7 @@ class SemanticSearchTool:
                 error="No user connection is available for this tool call.",
             )
 
-        semantic_model = await self._resolve_model(context)
+        semantic_model = await self._resolve_model(context, query)
         if semantic_model is None:
             return ToolOutcome(
                 ok=False,
@@ -133,12 +143,19 @@ class SemanticSearchTool:
         keyword = " ".join(_sanitize_term(t) for t in terms)
         if not keyword:
             return ToolOutcome(ok=False, summary="", error="No usable search terms.")
-        # Column and source come from the semantic model, not the model's own
-        # text, so the identifier cannot be attacker-controlled. The keyword is a
-        # string literal; quotes are escaped so it cannot break the predicate.
+        try:
+            safe_source = quote_semantic_source(source)
+            safe_column = quote_semantic_identifier(physical_column)
+        except SemanticPlanError as exc:
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error="The semantic search target is not a safe SQL identifier.",
+                safe_detail=str(exc),
+            )
         sql = (
-            f"SELECT * FROM {source} "
-            f"WHERE {physical_column} {predicate} '{keyword}' "
+            f"SELECT * FROM {safe_source} "
+            f"WHERE {safe_column} {predicate} '{keyword}' "
             f"LIMIT {int(self.max_rows)}"
         )
 
@@ -158,7 +175,7 @@ class SemanticSearchTool:
                 encrypted_password=encrypted_password,
                 database=_context_value(context, "database"),
                 schema=_context_value(context, "schema_name"),
-                role=_context_value(context, "role"),
+                role=_active_role(context),
                 max_rows=self.max_rows,
                 session_id=_context_value(context, "audit_session_id"),
                 confirm_destructive=False,
@@ -187,21 +204,21 @@ class SemanticSearchTool:
 
         return ToolOutcome(ok=True, summary=_render(query, column, mode, results))
 
-    async def _resolve_model(self, context: Any) -> dict[str, Any] | None:
-        ids = _context_value(context, "semantic_model_ids") or []
-        scalar = _context_value(context, "semantic_model_id")
-        if not ids and scalar:
-            ids = [scalar]
-        owner = _context_value(context, "user_name")
-        if not ids or not owner:
-            return None
-        for model_id in ids:
-            model = await agent_repository.get_semantic_model(
-                model_id, owner_name=owner
-            )
-            if model and (model.get("definition") or {}).get("datasets"):
-                return model
-        return None
+    async def _resolve_model(self, context: Any, query: str) -> dict[str, Any] | None:
+        from app.modules.agents.semantic.access import load_authorized_models
+
+        models = await load_authorized_models(context)
+        candidates = [
+            SemanticModelCandidate(str(model["semantic_model_id"]), model["_scoped_ir"])
+            for model in models
+        ]
+        if len(models) == 1:
+            return models[0]
+        selection = self._model_router.route(query, candidates)
+        return next(
+            (model for model in models if str(model["semantic_model_id"]) == selection.model_id),
+            None,
+        )
 
 
 def _resolve_target(definition: dict[str, Any], column: str) -> tuple[str, str] | None:
@@ -213,6 +230,7 @@ def _resolve_target(definition: dict[str, Any], column: str) -> tuple[str, str] 
     not the model's output).
     """
     wanted = column.strip().lower()
+    matches: list[tuple[str, str]] = []
     for dataset in definition.get("datasets") or []:
         source = dataset.get("source")
         if not source:
@@ -220,17 +238,21 @@ def _resolve_target(definition: dict[str, Any], column: str) -> tuple[str, str] 
         for field in dataset.get("fields") or []:
             name = str(field.get("name") or "").strip().lower()
             expression = str(field.get("expression") or "").strip()
-            if name == wanted:
+            qualified = str(dataset.get("name") or "").lower() + "." + name
+            if name == wanted or qualified == wanted:
+                datatype = str(field.get("datatype") or "").lower()
+                if datatype and datatype not in {"string", "text", "varchar", "char"}:
+                    continue
                 physical = expression or name
                 # Only a plain identifier is safe to use unquoted; a computed
                 # expression needs an alias the caller cannot supply here.
                 if _is_identifier(physical):
-                    return str(source), physical
-    return None
+                    matches.append((str(source), physical))
+    return matches[0] if len(matches) == 1 else None
 
 
 def _is_identifier(text: str) -> bool:
-    return bool(text) and all(part.isidentifier() for part in text.split("."))
+    return bool(text) and text.isidentifier()
 
 
 def _sanitize_term(term: str) -> str:
@@ -244,13 +266,15 @@ def _arg(invocation: ToolInvocation, name: str) -> str:
 
 
 def _render(query: str, column: str, mode: str, results: list[Any]) -> str:
+    from app.modules.assistant.tools.redaction import redact_rows
+
     lines = [
         f"search: {query} (mode={mode}) in {column}",
         "note: results are unranked (the engine has no relevance score on this path)",
     ]
     for result in results:
         columns = list(getattr(result, "columns", []) or [])
-        rows = list(getattr(result, "rows", []) or [])
+        rows = redact_rows(columns, list(getattr(result, "rows", []) or []))
         lines.append(f"columns: {', '.join(columns)}")
         lines.append(f"row_count: {getattr(result, 'row_count', len(rows))}")
         if rows:

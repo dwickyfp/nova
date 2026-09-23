@@ -19,8 +19,9 @@ from app.modules.agents.semantic.planning import SemanticPlanner
 from app.modules.agents.semantic.runtime import (
     SemanticModelCandidate,
     SemanticModelRouter,
+    scope_semantic_model,
 )
-from app.modules.assistant.intelligence import TurnIntent, TurnRouter
+from app.modules.assistant.intelligence import SemanticRoutingIndex, TurnIntent, TurnRouter
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,9 @@ class RouteCase:
 
 
 ROUTE_CASES = (
+    RouteCase("What is revenue this month?", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
+    RouteCase("Revenue by segment", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
+    RouteCase("Write SQL for revenue by month", TurnIntent.SQL_AUTHORING, ()),
     RouteCase("Revenue this month", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
     RouteCase("Omzet Jakarta bulan lalu", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
     RouteCase("Active customers by city", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
@@ -110,7 +114,7 @@ SEMANTIC_MODELS = [
         "finance", _model("finance", "Gross margin and balance", "gross_margin", "margin")
     ),
     SemanticModelCandidate(
-        "marketing", _model("marketing", "Campaign acquisition", "campaign_cac", "cac")
+        "marketing", _model("marketing", "Campaign acquisition", "campaign_cac", "acquisition CAC")
     ),
 ]
 
@@ -153,8 +157,11 @@ def evaluate() -> dict[str, object]:
     for question, expected_model, expected_metric, expected_dimension in SEMANTIC_CASES:
         selection = semantic_router.route(question, SEMANTIC_MODELS)
         model_ok = selection.model_id == expected_model
-        plan = planner.plan(by_id[expected_model], question).plan
-        metric_ok = bool(plan and plan.metrics == (expected_metric,))
+        planned = planner.plan(by_id[expected_model], question)
+        plan = planned.plan
+        metric_ok = bool(
+            plan and not planned.confidence.unresolved_count and plan.metrics == (expected_metric,)
+        )
         dimension_ok = bool(
             plan
             and (
@@ -174,7 +181,21 @@ def evaluate() -> dict[str, object]:
             }
         )
 
+    unresolved = planner.plan(by_id["sales"], "Revenue Enterprise")
+    empty_scope = scope_semantic_model(by_id["sales"], set())
+    adversarial = {
+        "unknown_constraint_is_unresolved": unresolved.confidence.unresolved_count > 0,
+        "unknown_constraint_not_high_confidence": unresolved.confidence.level != "high",
+        "explicit_empty_authorization_denies_all": not empty_scope.datasets
+        and not empty_scope.metrics,
+        "custom_metric_routes_to_data": router.route(
+            "Retained ARR this month",
+            semantic_index=SemanticRoutingIndex.from_terms({"retained_arr"}),
+        ).needs_data,
+    }
     return {
+        "adversarial": adversarial,
+        "scope": "Deterministic offline cases; not a production-quality estimate.",
         "agent": {
             "cases": len(ROUTE_CASES),
             "route_accuracy": route_correct / len(ROUTE_CASES),
@@ -201,7 +222,9 @@ def main() -> int:
         report["semantic"]["metric_accuracy"],
         report["semantic"]["dimension_accuracy"],
     ]
-    return 0 if all(score >= 0.95 for score in scores) else 1
+    return (
+        0 if all(score >= 0.95 for score in scores) and all(report["adversarial"].values()) else 1
+    )
 
 
 if __name__ == "__main__":

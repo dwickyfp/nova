@@ -33,8 +33,6 @@ import {
   GripHorizontal,
   Hash,
   History,
-  MoreHorizontal,
-  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -92,6 +90,7 @@ import { useTheme } from "@/context/theme-provider";
 import { readToken } from "@/lib/read-token";
 import { applyNovaSqlTheme } from "./monaco-theme";
 import { FileHistoryDialog } from "./file-history-dialog";
+import { WorkspaceTabStrip } from "./workspace-tab-strip";
 import { ExplainTreeView } from "./explain-tree";
 import { QueryHistory } from "./query-history";
 import type {
@@ -106,6 +105,7 @@ import type {
   WorkspaceTreeResponse,
 } from "./types";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
@@ -641,8 +641,6 @@ export function WorkspacesPage() {
   const [tabs, setTabs] = useState<Record<string, WorkspaceTabState>>({});
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
-  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
   const [expandedWorkspacePaths, setExpandedWorkspacePaths] = useState<
     Record<string, boolean>
   >({ "": true });
@@ -701,9 +699,16 @@ export function WorkspacesPage() {
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [renameEntryTarget, setRenameEntryTarget] = useState<WorkspaceEntry | null>(null);
+  const [renameEntryName, setRenameEntryName] = useState("");
+  const [renamingEntry, setRenamingEntry] = useState(false);
+  const [deleteEntryTarget, setDeleteEntryTarget] = useState<WorkspaceEntry | null>(null);
+  const [deletingEntry, setDeletingEntry] = useState(false);
+  const [pendingDestructiveSql, setPendingDestructiveSql] = useState<{
+    sql: string;
+    tabId: string;
+  } | null>(null);
 
   const activeTab = activeTabId ? tabs[activeTabId] : null;
   // The authenticated session is the single source of truth for the active role.
@@ -720,6 +725,11 @@ export function WorkspacesPage() {
   const saveTimerRef = useRef<number | null>(null);
   const stateSaveTimerRef = useRef<number | null>(null);
   const editorContentRef = useRef("");
+  const conflictedFilesRef = useRef(new Set<string>());
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
   const pendingRevealRef = useRef<{ tabId: string; sql: string } | null>(null);
 
   const {
@@ -785,6 +795,75 @@ export function WorkspacesPage() {
     [tabs, setProposedRewrite],
   );
 
+  const assistantCanApproveUiAction = useCallback(
+    ({ method, path }: { method: string; path: string }) => {
+      if (!["PUT", "DELETE"].includes(method)) return true;
+      const match = /^\/api\/v1\/workspaces\/files\/([^/]+)$/.exec(path);
+      if (!match) return true;
+      const tab = tabsRef.current[decodeURIComponent(match[1])];
+      if (!tab || tab.content === tab.savedContent) return true;
+      toast.error(
+        "Save your unsaved SQL edits before approving this file action.",
+      );
+      return false;
+    },
+    [],
+  );
+
+  const assistantOnUiActionCompleted = useCallback(
+    ({ method, path }: { method: string; path: string }) => {
+      const match = /^\/api\/v1\/workspaces\/files\/([^/]+)$/.exec(path);
+      if (!match) return;
+      const id = decodeURIComponent(match[1]);
+      if (method === "DELETE") {
+        conflictedFilesRef.current.delete(id);
+        setTabs((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setOpenTabIds((prev) => prev.filter((tabId) => tabId !== id));
+        if (activeTabIdRef.current === id) setActiveTabId(null);
+        return;
+      }
+      if (method !== "PUT" || !tabsRef.current[id]) return;
+      void api.get<WorkspaceFileResponse>(`/workspaces/files/${id}`).then(
+        (file) => {
+          const current = tabsRef.current[id];
+          if (!current) return;
+          if (current.content !== current.savedContent) {
+            conflictedFilesRef.current.add(id);
+            toast.error(
+              "The SQL file changed while local edits were open. Copy your draft, then reload.",
+            );
+            return;
+          }
+          conflictedFilesRef.current.delete(id);
+          if (activeTabIdRef.current === id)
+            editorContentRef.current = file.content;
+          setTabs((prev) => {
+            const tab = prev[id];
+            if (!tab || tab.content !== tab.savedContent) return prev;
+            return {
+              ...prev,
+              [id]: {
+                ...tab,
+                title: file.entry.name,
+                content: file.content,
+                savedContent: file.content,
+              },
+            };
+          });
+        },
+        () => {
+          conflictedFilesRef.current.add(id);
+          toast.error("The SQL file was saved, but its tab could not refresh.");
+        },
+      );
+    },
+    [],
+  );
+
   // The global panel owns open/closed and the conversation; the workspace
   // supplies only the per-file binding (thread + active tab context). With no
   // file open the binding is cleared so the provider's global conversation
@@ -802,6 +881,8 @@ export function WorkspacesPage() {
       ensureThread,
       onError: assistantOnError,
       onProposedRewrite: assistantOnProposedRewrite,
+      canApproveUiAction: assistantCanApproveUiAction,
+      onUiActionCompleted: assistantOnUiActionCompleted,
       title: activeTabTitle,
     });
     return () => setBinding(null);
@@ -812,6 +893,8 @@ export function WorkspacesPage() {
     ensureThread,
     assistantOnError,
     assistantOnProposedRewrite,
+    assistantCanApproveUiAction,
+    assistantOnUiActionCompleted,
     setBinding,
   ]);
 
@@ -1082,6 +1165,7 @@ export function WorkspacesPage() {
     const file = await api.get<WorkspaceFileResponse>(
       `/workspaces/files/${id}`,
     );
+    conflictedFilesRef.current.delete(id);
     const context = queryContextQuery.data;
     const defaults = workspaceTreeQuery.data?.defaults;
     editorContentRef.current = file.content;
@@ -1116,6 +1200,12 @@ export function WorkspacesPage() {
     schema: string,
     role: string,
   ) {
+    if (conflictedFilesRef.current.has(id)) {
+      toast.error(
+        "Copy your local SQL edits, then reload this file before saving.",
+      );
+      return false;
+    }
     const response = await api.put<WorkspaceFileResponse>(
       `/workspaces/files/${id}`,
       {
@@ -1134,6 +1224,7 @@ export function WorkspacesPage() {
       },
     }));
     await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+    return true;
   }
 
   function generateUniqueFileName(): string {
@@ -1193,58 +1284,83 @@ export function WorkspacesPage() {
     }
   }
 
-  async function renameEntry(entry: WorkspaceEntry) {
-    const name = window.prompt("Rename entry", entry.name);
-    if (!name || name === entry.name) return;
-    await api.post<{ entry: WorkspaceEntry }>("/workspaces/rename", {
-      id: entry.id,
-      name,
-      parent_path: entry.parent_path,
-    });
-    await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+  function renameEntry(entry: WorkspaceEntry) {
+    setRenameEntryTarget(entry);
+    setRenameEntryName(entry.name);
   }
 
-  async function deleteEntry(entry: WorkspaceEntry) {
-    if (!window.confirm(`Delete ${entry.name}?`)) return;
-    await api.delete<{ success: boolean }>(`/workspaces/files/${entry.id}`);
-    setOpenTabIds((prev) => prev.filter((id) => id !== entry.id));
-    if (activeTabId === entry.id) {
-      setActiveTabId((prev) => openTabIds.find((id) => id !== prev) ?? null);
+  async function confirmRenameEntry() {
+    const target = renameEntryTarget;
+    const name = renameEntryName.trim();
+    if (!target || !name || name === target.name) return;
+    setRenamingEntry(true);
+    try {
+      await api.post<{ entry: WorkspaceEntry }>("/workspaces/rename", {
+        id: target.id,
+        name,
+        parent_path: target.parent_path,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+      setRenameEntryTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rename entry.");
+    } finally {
+      setRenamingEntry(false);
     }
-    await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
   }
 
-  async function renameTabFile(tabId: string, newName: string) {
+  function deleteEntry(entry: WorkspaceEntry) {
+    setDeleteEntryTarget(entry);
+  }
+
+  async function confirmDeleteEntry() {
+    const target = deleteEntryTarget;
+    if (!target) return;
+    setDeletingEntry(true);
+    try {
+      await api.delete<{ success: boolean }>(`/workspaces/files/${target.id}`);
+      setOpenTabIds((prev) => prev.filter((id) => id !== target.id));
+      if (activeTabId === target.id) {
+        setActiveTabId((prev) => openTabIds.find((id) => id !== prev) ?? null);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+      setDeleteEntryTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete entry.");
+    } finally {
+      setDeletingEntry(false);
+    }
+  }
+
+  async function renameTabFile(tabId: string, newName: string): Promise<boolean> {
     const trimmed = newName.trim();
-    if (!trimmed) return;
+    if (!trimmed) return false;
     const tab = tabs[tabId];
-    if (!tab || trimmed === tab.title) {
-      setRenamingTabId(null);
-      return;
-    }
+    if (!tab) return false;
+    if (trimmed === tab.title) return true;
     // Check uniqueness among open tabs
     const existingNames = Object.entries(tabs)
       .filter(([id]) => id !== tabId)
       .map(([, t]) => t.title.toLowerCase());
     if (existingNames.includes(trimmed.toLowerCase())) {
       toast.error(`A file named "${trimmed}" already exists.`);
-      return;
+      return false;
     }
     try {
-      await api.post("/workspaces/rename", {
-        id: tabId,
-        name: trimmed,
-        parent_path: "",
-      });
-      setTabs((prev) => ({
-        ...prev,
-        [tabId]: { ...prev[tabId], title: trimmed },
-      }));
-      await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+      const response = await api.post<{ entry: WorkspaceEntry }>(
+        "/workspaces/rename",
+        { id: tabId, name: trimmed },
+      );
+      setTabs((prev) =>
+        prev[tabId]
+          ? { ...prev, [tabId]: { ...prev[tabId], title: response.entry.name } }
+          : prev,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+      return true;
     } catch {
       toast.error("Failed to rename file.");
-    } finally {
-      setRenamingTabId(null);
+      return false;
     }
   }
 
@@ -1255,11 +1371,8 @@ export function WorkspacesPage() {
       getSqlForExecution(editorContentRef.current || activeTab.content);
     if (!sql) return;
     if (!confirmDestructive && isDestructiveSql(sql)) {
-      const ok = window.confirm(
-        "This query looks destructive. Do you want to run it?",
-      );
-      if (!ok) return;
-      return runQuery(true, sql);
+      setPendingDestructiveSql({ sql, tabId: activeTab.id });
+      return;
     }
     setRunning(true);
     setQueryResults(null);
@@ -1454,14 +1567,14 @@ export function WorkspacesPage() {
       [rewrite.tabId]: { ...prev[rewrite.tabId], content: nextContent },
     }));
     setProposedRewrite(null);
-    await saveFile(
+    const saved = await saveFile(
       rewrite.tabId,
       nextContent,
       tab.database,
       tab.schema,
       sessionRole,
     );
-    toast.success("Rewrite applied");
+    if (saved) toast.success("Rewrite applied");
   }
 
   function denyProposedRewrite() {
@@ -1470,6 +1583,7 @@ export function WorkspacesPage() {
 
   async function flushTabSave(tabId: string | null) {
     if (!tabId) return;
+    if (conflictedFilesRef.current.has(tabId)) return;
     const tab = tabs[tabId];
     if (!tab || !tab.loaded || tab.content === tab.savedContent) return;
     await saveFile(tab.id, tab.content, tab.database, tab.schema, sessionRole);
@@ -1549,7 +1663,7 @@ export function WorkspacesPage() {
       <Header fixed>
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold">Workspaces</h1>
+            <h1 className="truncate text-lg font-heading">Workspaces</h1>
             <p className="text-sm text-muted-foreground">
               SQL workspace with per-tab context, object browsing, and results.
             </p>
@@ -1744,142 +1858,16 @@ export function WorkspacesPage() {
 
         <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
           <div className="flex items-end border-b border-border px-2 pt-2">
-            <div className="flex min-w-0 flex-1 items-end gap-0">
-              {openTabIds.map((id) => {
-                const tab = tabs[id];
-                if (!tab) return null;
-                const isActive = activeTabId === id;
-                const isRenaming = renamingTabId === id;
-                const isDragging = draggingTabId === id;
-                const isDragOver = dragOverTabId === id && draggingTabId !== id;
-                return (
-                  <div
-                    key={id}
-                    onDragOver={(event) => {
-                      if (!draggingTabId || draggingTabId === id) return;
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                      setDragOverTabId(id);
-                    }}
-                    onDragLeave={() => {
-                      setDragOverTabId((current) =>
-                        current === id ? null : current,
-                      );
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      if (draggingTabId) reorderTabs(draggingTabId, id);
-                      setDraggingTabId(null);
-                      setDragOverTabId(null);
-                    }}
-                    className={cn(
-                      "group relative flex min-w-[120px] max-w-[260px] items-center transition-opacity",
-                      isDragging && "opacity-40",
-                      isDragOver &&
-                        "before:absolute before:inset-y-1 before:-left-px before:z-30 before:w-0.5 before:rounded-full before:bg-primary",
-                    )}
-                  >
-                    {isRenaming ? (
-                      <Input
-                        autoFocus
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter")
-                            void renameTabFile(id, renameValue);
-                          if (e.key === "Escape") setRenamingTabId(null);
-                        }}
-                        onBlur={() => void renameTabFile(id, renameValue)}
-                        onFocus={(e) => {
-                          const dotIdx = renameValue.lastIndexOf(".");
-                          e.target.setSelectionRange(
-                            0,
-                            dotIdx > 0 ? dotIdx : renameValue.length,
-                          );
-                        }}
-                        className={cn(
-                          "mx-1.5 h-6 flex-1 rounded border py-0 pl-2 pr-1 text-xs shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
-                          isActive
-                            ? "z-10 -mb-px border-border bg-background text-primary"
-                            : "border-border bg-muted/40 text-foreground",
-                        )}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        draggable={!isRenaming}
-                        onDragStart={(event) => {
-                          event.dataTransfer.effectAllowed = "move";
-                          event.dataTransfer.setData("text/plain", id);
-                          setDraggingTabId(id);
-                        }}
-                        onDragEnd={() => {
-                          setDraggingTabId(null);
-                          setDragOverTabId(null);
-                        }}
-                        onClick={() => activateTab(id)}
-                        className={cn(
-                          "flex flex-1 cursor-grab items-center gap-2 rounded-t-md py-1.5 pr-14 pl-3 text-sm transition-colors active:cursor-grabbing",
-                          isActive
-                            ? "z-10 -mb-px border-x border-t-2 border-x-border border-t-primary border-b-0 bg-background text-primary"
-                            : "border-b border-b-border bg-muted/40 text-muted-foreground hover:bg-muted/60",
-                        )}
-                      >
-                        <span className="truncate">{tab.title}</span>
-                      </button>
-                    )}
-                    {/* 3-dot menu + close — hidden when renaming */}
-                    {!isRenaming && (
-                      <div
-                        className={cn(
-                          "absolute right-1 z-20 flex items-center gap-0.5 rounded-sm transition-opacity",
-                          isActive
-                            ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100",
-                        )}
-                      >
-                        <TabMenuButton
-                          onRename={() => {
-                            setRenameValue(tab.title);
-                            setRenamingTabId(id);
-                          }}
-                          onDownload={() => {
-                            const blob = new Blob([tab.content], {
-                              type: "text/sql",
-                            });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement("a");
-                            a.href = url;
-                            a.download = tab.title.endsWith(".sql")
-                              ? tab.title
-                              : `${tab.title}.sql`;
-                            a.click();
-                            URL.revokeObjectURL(url);
-                          }}
-                          onClose={() => closeTab(id)}
-                        />
-                        <X
-                          className="size-3.5 shrink-0 cursor-pointer rounded-sm p-0.5 hover:bg-muted-foreground/20"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            closeTab(id);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              <button
-                type="button"
-                className="mb-0.5 ml-0.5 shrink-0 rounded-t-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title="New file"
-                onClick={() => void createNewFile()}
-              >
-                <Plus className="size-3.5" />
-              </button>
-            </div>
+            <WorkspaceTabStrip
+              tabs={tabs}
+              openTabIds={openTabIds}
+              activeTabId={activeTabId}
+              onActivate={activateTab}
+              onClose={closeTab}
+              onReorder={reorderTabs}
+              onRename={renameTabFile}
+              onNewFile={() => void createNewFile()}
+            />
           </div>
 
           {activeTab ? (
@@ -1913,15 +1901,15 @@ export function WorkspacesPage() {
                   <Braces className="size-4" />
                   Format
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
+                <button
+                  type="button"
+                  aria-label="Version history"
                   title="Version history"
+                  className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => setHistoryOpen(true)}
                 >
                   <History className="size-4" />
-                  History
-                </Button>
+                </button>
                 <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
                   {/*
                     Read-only mirror of the session role. The active role is
@@ -2234,6 +2222,53 @@ export function WorkspacesPage() {
         entryId={activeTab?.id ?? null}
         fileName={activeTab?.title ?? ""}
       />
+      <ConfirmDialog
+        open={renameEntryTarget !== null}
+        onOpenChange={(open) => { if (!open) setRenameEntryTarget(null); }}
+        title="Rename entry"
+        desc={renameEntryTarget ? `Enter a new name for “${renameEntryTarget.name}”.` : "Enter a new name."}
+        confirmText="Rename"
+        disabled={!renameEntryName.trim() || renameEntryName.trim() === renameEntryTarget?.name}
+        isLoading={renamingEntry}
+        handleConfirm={() => void confirmRenameEntry()}
+      >
+        <Input
+          aria-label="New entry name"
+          autoFocus
+          value={renameEntryName}
+          onChange={(event) => setRenameEntryName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void confirmRenameEntry();
+            }
+          }}
+        />
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={deleteEntryTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteEntryTarget(null); }}
+        title="Delete entry?"
+        desc={deleteEntryTarget ? `“${deleteEntryTarget.name}” will be deleted.` : "This entry will be deleted."}
+        confirmText="Delete entry"
+        destructive
+        isLoading={deletingEntry}
+        handleConfirm={() => void confirmDeleteEntry()}
+      />
+      <ConfirmDialog
+        open={pendingDestructiveSql !== null}
+        onOpenChange={(open) => { if (!open) setPendingDestructiveSql(null); }}
+        title="Run destructive query?"
+        desc="This query may change or delete data. Review the SQL before continuing."
+        confirmText="Run query"
+        destructive
+        handleConfirm={() => {
+          const pending = pendingDestructiveSql;
+          setPendingDestructiveSql(null);
+          if (pending && pending.tabId === activeTabId) void runQuery(true, pending.sql);
+          else toast.error("The active SQL file changed. Run the query again from that file.");
+        }}
+      />
     </div>
   );
 }
@@ -2367,82 +2402,6 @@ function renderWorkspaceEntries(
         </SidebarMenuItem>
       );
     });
-}
-
-function TabMenuButton({
-  onRename,
-  onDownload,
-  onClose,
-}: {
-  onRename: () => void;
-  onDownload: () => void;
-  onClose: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen(!open);
-        }}
-      >
-        <MoreHorizontal className="size-3.5" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-36 rounded-md border bg-popover py-1 shadow-md">
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRename();
-              setOpen(false);
-            }}
-          >
-            <Pencil className="size-3.5" /> Rename
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDownload();
-              setOpen(false);
-            }}
-          >
-            <Download className="size-3.5" /> Download SQL
-          </button>
-          <div className="my-1 border-t" />
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-              setOpen(false);
-            }}
-          >
-            <X className="size-3.5" /> Close
-          </button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 function DatabaseExplorer({

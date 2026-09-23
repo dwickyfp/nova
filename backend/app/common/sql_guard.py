@@ -138,6 +138,7 @@ BLOCKED_PATTERNS: list[tuple[str, str]] = [
 #: there would also hit the *unquoted* form of an identifier-shaped string
 #: literal (``SELECT 'INTOOUTFILE'`` normalizes to ``SELECT INTOOUTFILE`` under
 #: the module's quote-collapse rule), which is a value, not a clause.
+_STAGE_EXPORT_EGRESS_PATTERN = rf"\bINTO{_GAP_OPT}@"
 _EGRESS_PATTERNS: list[tuple[str, str]] = [
     (
         rf"\bINTO{_GAP}OUTFILE\b",
@@ -148,7 +149,7 @@ _EGRESS_PATTERNS: list[tuple[str, str]] = [
         "INTO FILES writes to a file path and is not read-only.",
     ),
     (
-        rf"\bINTO{_GAP_OPT}@",
+        _STAGE_EXPORT_EGRESS_PATTERN,
         "INTO @stage exports query results and is not read-only.",
     ),
 ]
@@ -332,7 +333,7 @@ def normalize_sql(sql: str) -> str:
     return _WHITESPACE_RUN.sub(" ", unquoted)
 
 
-def guard_sql(sql: str) -> None:
+def guard_sql(sql: str, *, allow_stage_export: bool = False) -> None:
     """Check SQL for dangerous operations. Raises ForbiddenSQLError if blocked.
 
     The whole script is checked statement by statement. A caller that hands over
@@ -350,10 +351,10 @@ def guard_sql(sql: str) -> None:
         ForbiddenSQLError: If any statement matches a blocked pattern.
     """
     for statement in split_sql_statements(sql) or [sql]:
-        _guard_single_statement(statement)
+        _guard_single_statement(statement, allow_stage_export=allow_stage_export)
 
 
-def _guard_single_statement(sql: str) -> None:
+def _guard_single_statement(sql: str, *, allow_stage_export: bool = False) -> None:
     """Match one already-split statement against ``BLOCKED_PATTERNS``.
 
     The patterns are anchored with ``[^;]*?`` between keywords so a match cannot
@@ -368,6 +369,8 @@ def _guard_single_statement(sql: str) -> None:
         if re.search(pattern, normalized, BLOCKED_PATTERN_FLAGS):
             raise ForbiddenSQLError(message)
     for pattern, message in _EGRESS_PATTERNS:
+        if allow_stage_export and pattern == _STAGE_EXPORT_EGRESS_PATTERN:
+            continue
         if re.search(pattern, _blank_string_literals(normalized), BLOCKED_PATTERN_FLAGS):
             raise ForbiddenSQLError(message)
 

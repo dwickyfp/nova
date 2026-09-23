@@ -6,14 +6,15 @@ import time
 
 import pandas as pd
 import pyarrow as pa
-from statsforecast import StatsForecast
-from statsforecast.models import AutoARIMA, AutoETS, HistoricAverage, Naive, SeasonalNaive
 
+from app.core.config import settings
 from app.modules.ml_engine.engines.base import TrainingOutput
-from app.modules.ml_engine.spec import InsufficientTrainingRows, MLExecutionSpec
+from app.modules.ml_engine.spec import DataBudgetExceeded, InsufficientTrainingRows, MLExecutionSpec
 
 
 def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
+    from statsforecast import StatsForecast
+
     timestamp = str(spec.timestamp_column)
     target = str(spec.target_column)
     for column in (timestamp, target):
@@ -63,6 +64,10 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     if duplicates:
         raise ValueError(f"Forecast input contains {int(duplicates)} duplicate timestamp(s)")
     frequency = spec.frequency or _infer_frequency(frame)
+    if int(frame["unique_id"].nunique()) * horizon > settings.ML_RESULT_INLINE_MAX_ROWS:
+        raise DataBudgetExceeded(
+            "Forecast output exceeds the inline row budget; reduce series or horizon"
+        )
     minimum_series_rows = int(frame.groupby("unique_id").size().min())
     validation_horizon = min(horizon, max(1, minimum_series_rows // 5))
     cutoff = frame.groupby("unique_id").tail(validation_horizon).index
@@ -85,7 +90,7 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
     results = []
     lower = f"{prediction_column}-lo-95"
     upper = f"{prediction_column}-hi-95"
-    for record in forecast.to_dict(orient="records"):
+    for record in forecast.head(1000).to_dict(orient="records"):
         results.append(
             {
                 "series": None if record["unique_id"] == "__single__" else record["unique_id"],
@@ -96,6 +101,7 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
             }
         )
     metrics = {
+        "result_rows": len(forecast),
         "validation_mae": validation_mae,
         "validation_strategy": "chronological_holdout",
         "validation_horizon": validation_horizon,
@@ -131,6 +137,8 @@ def train_forecast(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
 
 
 def _models_for(spec: MLExecutionSpec, frequency: str):
+    from statsforecast.models import AutoARIMA, AutoETS, HistoricAverage, Naive, SeasonalNaive
+
     if spec.algorithm != "auto":
         choices = {
             "naive": Naive(),

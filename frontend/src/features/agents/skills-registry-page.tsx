@@ -86,7 +86,7 @@ export function SkillsRegistryPage() {
       <Main>
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">Skill Registry</h1>
+            <h1 className="text-2xl leading-8 font-normal">Skill Registry</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Playbooks an agent loads before answering a task it covers. Add one as a SKILL.md
               document and any agent can pick it up.
@@ -98,7 +98,7 @@ export function SkillsRegistryPage() {
           </Button>
         </div>
 
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea className="min-h-0 flex-1 pe-3">
           <section>
             {skillsQuery.isLoading ? (
               <Skeleton className="h-32 w-full" />

@@ -250,7 +250,7 @@ class ExplorerRepository:
     async def list_stages(self, database: str) -> list[dict]:
         """Nova stages from CONFIG_STAGES table."""
         sql = (
-            "SELECT name, storage_connection, base_prefix, created_at "
+            "SELECT name, schema_name, storage_connection, base_prefix, created_at "
             "FROM NOVA_SYSTEM.CONFIG_STAGES "
             "WHERE database_name = %s"
         )
@@ -259,9 +259,10 @@ class ExplorerRepository:
             return [
                 {
                     "name": row[0],
-                    "storage_connection": row[1],
-                    "prefix": row[2],
-                    "created_at": row[3],
+                    "schema_name": row[1],
+                    "storage_connection": row[2],
+                    "base_prefix": row[3],
+                    "created_at": row[4],
                 }
                 for row in result["rows"]
             ]

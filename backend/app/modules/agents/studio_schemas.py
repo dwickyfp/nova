@@ -8,9 +8,11 @@ warehouses they can pick, and their Studio preferences.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.modules.assistant.schemas import utc_datetime
 
 StudioTheme = Literal["light", "dark", "system"]
 
@@ -61,6 +63,7 @@ class StudioCapabilities(BaseModel):
     agents: list[dict] = Field(default_factory=list)
     skills: list[dict] = Field(default_factory=list)
     tools: list[dict] = Field(default_factory=list)
+    connectors: list[dict] = Field(default_factory=list)
 
 
 # ── Query-backed artifacts ───────────────────────────────────
@@ -109,6 +112,119 @@ class ArtifactRefreshResponse(BaseModel):
     elapsed_ms: float = 0.0
 
 
+class ArtifactDraft(BaseModel):
+    sql_text: str = Field(min_length=1, max_length=200_000)
+    artifact_type: ArtifactType
+    chart_spec: dict[str, Any] | None = None
+
+
+class ArtifactEditMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=1000)
+
+
+class ArtifactEditRequest(BaseModel):
+    instruction: str = Field(min_length=1, max_length=2000)
+    draft: ArtifactDraft | None = None
+    columns: list[Annotated[str, Field(max_length=128)]] = Field(
+        default_factory=list, max_length=100
+    )
+    history: list[ArtifactEditMessage] = Field(default_factory=list, max_length=8)
+
+
+class ArtifactEditResponse(BaseModel):
+    message: str
+    draft: ArtifactDraft | None = None
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[Any]] = Field(default_factory=list)
+    row_count: int = 0
+    elapsed_ms: float = 0.0
+
+
+class ArtifactApplyRequest(BaseModel):
+    draft: ArtifactDraft
+    expected_updated_at: datetime
+
+
+# ── Studio dashboards ──────────────────────────────────────────
+
+class DashboardTile(BaseModel):
+    tile_id: str = Field(min_length=1, max_length=64)
+    artifact_id: str = Field(min_length=1, max_length=64)
+    x: int = Field(ge=0, le=5)
+    y: int = Field(ge=0, le=3)
+    w: int = Field(ge=1, le=6)
+    h: int = Field(ge=1, le=4)
+
+    @model_validator(mode="after")
+    def within_grid(self) -> DashboardTile:
+        if self.x + self.w > 6 or self.y + self.h > 4:
+            raise ValueError("Dashboard tiles must fit inside the 6 × 4 grid.")
+        return self
+
+
+class DashboardLayout(BaseModel):
+    tiles: list[DashboardTile] = Field(default_factory=list, max_length=24)
+
+    @model_validator(mode="after")
+    def no_overlaps(self) -> DashboardLayout:
+        seen_ids: set[str] = set()
+        occupied: set[tuple[int, int]] = set()
+        for tile in self.tiles:
+            if tile.tile_id in seen_ids:
+                raise ValueError("Dashboard tile IDs must be unique.")
+            seen_ids.add(tile.tile_id)
+            cells = {
+                (x, y)
+                for x in range(tile.x, tile.x + tile.w)
+                for y in range(tile.y, tile.y + tile.h)
+            }
+            if occupied & cells:
+                raise ValueError("Dashboard tiles cannot overlap.")
+            occupied.update(cells)
+        return self
+
+
+class DashboardCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=256)
+
+    @field_validator("title")
+    @classmethod
+    def nonblank_title(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Dashboard name cannot be blank.")
+        return value
+
+
+class DashboardUpdateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=256)
+    layout: DashboardLayout
+    expected_updated_at: datetime
+
+    @field_validator("title")
+    @classmethod
+    def nonblank_title(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Dashboard name cannot be blank.")
+        return value
+
+
+class DashboardSummary(BaseModel):
+    dashboard_id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class DashboardView(DashboardSummary):
+    layout: DashboardLayout
+
+
+class DashboardListResponse(BaseModel):
+    dashboards: list[DashboardSummary] = Field(default_factory=list)
+    count: int = 0
+
+
 # ── Observability ──────────────────────────────────────────────
 
 
@@ -135,6 +251,11 @@ class SessionView(BaseModel):
     total_tokens: int = 0
     first_input: str = ""
 
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def mark_timestamps_utc(cls, value: datetime) -> datetime:
+        return utc_datetime(value)
+
 
 class SessionListResponse(BaseModel):
     sessions: list[SessionView]
@@ -155,6 +276,11 @@ class TurnView(BaseModel):
     #: The system prompt sent to the model for this turn.
     instructions: str | None = None
 
+    @field_validator("created_at")
+    @classmethod
+    def mark_created_at_utc(cls, value: datetime) -> datetime:
+        return utc_datetime(value)
+
 
 class ThreadTraceResponse(BaseModel):
     thread_id: str
@@ -165,6 +291,11 @@ class ThreadTraceResponse(BaseModel):
     updated_at: datetime
     total_tokens: int = 0
     turns: list[TurnView] = Field(default_factory=list)
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def mark_timestamps_utc(cls, value: datetime) -> datetime:
+        return utc_datetime(value)
 
 
 class AccessCheckRequest(BaseModel):

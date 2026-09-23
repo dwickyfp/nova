@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { TurnContext } from "./stream-client";
 import type { AssistantEvent } from "./types";
 import type { AttachedQuery } from "./query-attach";
+import type { UiAction } from "./use-assistant-turn";
 import {
   transcriptReducer,
   type TranscriptMessage,
@@ -42,6 +43,8 @@ export type AssistantConversationOptions = {
     sql: string;
     messageId: string;
   }) => void;
+  canApproveUiAction?: (action: UiAction) => boolean;
+  onUiActionCompleted?: (action: UiAction) => void;
 };
 
 type ConversationStore = {
@@ -71,6 +74,8 @@ export function useAssistantConversation({
   retainOnLeave,
   onError,
   onProposedRewrite,
+  canApproveUiAction,
+  onUiActionCompleted,
 }: AssistantConversationOptions) {
   const [store, setStore] = useState<ConversationStore>({
     messages: {},
@@ -152,6 +157,8 @@ export function useAssistantConversation({
     context,
     onError,
     onProposedRewrite,
+    canApproveUiAction,
+    onUiActionCompleted,
     transcript,
   });
   const { snapshot, restore, resetPermissions } = assistant;

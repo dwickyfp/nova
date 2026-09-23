@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { getCookie, setCookie } from "@/lib/cookies";
 import { useAuthStore } from "@/stores/auth-store";
@@ -15,7 +15,7 @@ import type { WorkspaceTreeResponse } from "@/features/workspaces/types";
 import { createThread, listThreads } from "./thread-client";
 import type { TurnContext } from "./stream-client";
 import { useAssistantConversation } from "./use-assistant-conversation";
-import type { ApprovalMode } from "./use-assistant-turn";
+import type { ApprovalMode, UiAction } from "./use-assistant-turn";
 import type { AssistantPanelProps } from "./assistant-panel";
 import {
   nextAttachmentId,
@@ -49,6 +49,8 @@ type AssistantBinding = {
     sql: string;
     messageId: string;
   }) => void;
+  canApproveUiAction?: (action: UiAction) => boolean;
+  onUiActionCompleted?: (action: UiAction) => void;
   /** Label the header shows for this binding, e.g. the open worksheet's name. */
   title?: string;
 };
@@ -131,6 +133,7 @@ const EMPTY_CONTEXT: TurnContext = { database: null, schema: null, role: null };
 export const GLOBAL_ASSISTANT_BINDING_KEY = "__global__";
 
 export function AssistantProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   const [open, setOpenState] = useState(false);
   const [binding, setBindingState] = useState<AssistantBinding | null>(null);
   const [selectedModel, setSelectedModel] = useState<SelectedModel>(null);
@@ -182,6 +185,13 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   );
 
   const activeBinding = binding ?? defaultBinding;
+  const onUiActionCompleted = useCallback(
+    (action: UiAction) => {
+      if (action.method !== "GET") void queryClient.invalidateQueries();
+      activeBinding.onUiActionCompleted?.(action);
+    },
+    [activeBinding, queryClient],
+  );
 
   // The selected model is layered onto the binding's own context so the turn
   // driver reads one context object; it does not participate in the binding
@@ -204,6 +214,8 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     retainOnLeave: (key) => key === GLOBAL_ASSISTANT_BINDING_KEY,
     onError: activeBinding.onError,
     onProposedRewrite: activeBinding.onProposedRewrite,
+    canApproveUiAction: activeBinding.canApproveUiAction,
+    onUiActionCompleted,
   });
 
   /**
@@ -419,9 +431,6 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       streaming: conversation.streaming,
       onStop: conversation.stop,
       statusMessage: conversation.statusMessage,
-      grantActive: conversation.grantActive,
-      onResetPermissions: conversation.resetPermissions,
-      resettingPermissions: conversation.resettingGrant,
       selectedModel,
       onSelectModel: setSelectedModel,
       approvalMode: conversation.approvalMode,

@@ -572,7 +572,7 @@ class TestRestartSafety:
         await service.reconcile_once()
         assert (await repo.get_graph_run(run_id))["state"] == "success"
 
-    async def test_abandoned_running_node_is_re_evaluated(self, worker_infra, cleanup_runs):
+    async def test_abandoned_running_node_is_not_replayed(self, worker_infra, cleanup_runs):
         suffix = uuid4().hex[:8]
         name = f"dead_{suffix}"
         run_id, ids = await _make_graph(
@@ -603,11 +603,10 @@ class TestRestartSafety:
         assert node["id"] in report.abandoned_task_runs
         assert run_id in report.abandoned_graph_runs
 
-        # Re-evaluation does not trust the dead row: it is moved to abandoned,
-        # then the node runs to success and the work is not lost.
         await repo.transition_task_run(node["id"], ["running"], "abandoned")
         state = await _drive(run_id, f"g_{suffix}")
-        assert state == GraphState.SUCCESS
+        assert state == GraphState.RUNNING
+        assert (await repo.get_task_run(node["id"]))["state"] == "abandoned"
 
     async def test_heartbeat_advances_while_the_node_runs(self, worker_infra, cleanup_runs):
         """A live worker stamps a heartbeat; a dead one stops, and only then

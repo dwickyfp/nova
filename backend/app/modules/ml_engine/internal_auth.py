@@ -67,9 +67,7 @@ def require_internal_caller(request: Request) -> None:
     expected = settings.NOVA_INTERNAL_TOKEN
     presented = request.headers.get(INTERNAL_TOKEN_HEADER, "")
     if not expected:
-        logger.error(
-            "Rejected internal call: NOVA_INTERNAL_TOKEN is not configured"
-        )
+        logger.error("Rejected internal call: NOVA_INTERNAL_TOKEN is not configured")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Internal endpoint is not configured",

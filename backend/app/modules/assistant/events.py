@@ -54,9 +54,8 @@ EVENT_PING = "ping"
 EVENT_TABLE = "table"
 EVENT_CHART = "chart"
 EVENT_CITATION = "citation"
-#: What a tool did, sent after it succeeded so the panel can show the detail
-#: behind a step (a loaded skill's body, a query's result summary). Already
-#: redacted by the tool, like every other payload on this stream.
+#: A visible tool result summary, sent after success. Skill bodies stay in the
+#: model's tool result and are not emitted on this stream.
 EVENT_TOOL_DETAIL = "tool_detail"
 
 #: Media type the route must set on the response.

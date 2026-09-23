@@ -23,6 +23,7 @@ from app.modules.query.sql_pipeline import redact_for_output
 
 class ModelRegistryRepository:
     _local_locks: dict[str, asyncio.Lock] = {}
+    _local_lock_users: dict[str, int] = {}
 
     async def _connect(self) -> asyncmy.Connection:
         return await asyncmy.connect(
@@ -47,12 +48,14 @@ class ModelRegistryRepository:
                     await cursor.execute(
                         "SELECT model_id, current_version FROM NOVA_SYSTEM.ML_MODELS "
                         "WHERE model_name=%s AND created_by=%s AND "
+                        "tenant_name=%s AND "
                         "COALESCE(database_name, '')=COALESCE(%s, '') "
                         "AND COALESCE(schema_name, '')=COALESCE(%s, '') "
                         "ORDER BY updated_at DESC LIMIT 1",
                         (
                             spec.model_name,
                             spec.security.username,
+                            spec.security.tenant,
                             spec.security.database,
                             spec.security.schema,
                         ),
@@ -73,8 +76,8 @@ class ModelRegistryRepository:
                         "INSERT INTO NOVA_SYSTEM.ML_MODELS "
                         "(model_id, model_type, model_name, target_column, feature_columns, "
                         "hyperparameters, training_sql, database_name, schema_name, created_at, "
-                        "created_by, current_version, updated_at) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),%s,%s,NOW())",
+                        "created_by, current_version, tenant_name, updated_at) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),%s,%s,%s,NOW())",
                         (
                             model_id,
                             spec.task.value,
@@ -87,6 +90,7 @@ class ModelRegistryRepository:
                             spec.security.schema,
                             spec.security.username,
                             current_version,
+                            spec.security.tenant,
                         ),
                     )
                     await cursor.execute(
@@ -111,10 +115,28 @@ class ModelRegistryRepository:
         artifact_size: int,
         training_duration_ms: int,
     ) -> None:
-        async with self._reservation_lock(self._model_scope(spec)):
+        async with (
+            self._reservation_lock(self._model_scope(spec)),
+            self._reservation_lock(f"version:{model_id}:{version}"),
+        ):
             conn = await self._connect()
             try:
                 async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
+                    await cursor.execute(
+                        "SELECT status FROM NOVA_SYSTEM.ML_MODEL_VERSIONS "
+                        "WHERE model_id=%s AND version=%s",
+                        (model_id, version),
+                    )
+                    reservation = await cursor.fetchone()
+                    if not reservation or reservation["status"] != "TRAINING":
+                        raise VersionReservationConflict(
+                            "Model version is no longer reserved for training"
+                        )
+                    await cursor.execute(
+                        "UPDATE NOVA_SYSTEM.ML_MODELS SET feature_columns=%s "
+                        "WHERE model_id=%s AND tenant_name=%s",
+                        (json.dumps(output.feature_columns), model_id, spec.security.tenant),
+                    )
                     await cursor.execute(
                         "INSERT INTO NOVA_SYSTEM.ML_MODEL_VERSIONS "
                         "(model_id, version, status, training_rows, metrics, artifact_uri, "
@@ -133,7 +155,8 @@ class ModelRegistryRepository:
                             artifact_size,
                             spec.task.value,
                             output.engine,
-                            _framework_version(output.engine),
+                            output.metrics.get("framework_version")
+                            or _framework_version(output.engine),
                             output.algorithm,
                             json.dumps(output.metrics.get("feature_metadata", []), default=str),
                             training_duration_ms,
@@ -157,15 +180,20 @@ class ModelRegistryRepository:
 
     async def abort_version(self, model_id: str, version: int) -> bool:
         """Mark a partial version failed without moving the production pointer."""
+        async with self._reservation_lock(f"version:{model_id}:{version}"):
+            return await self._abort_version(model_id, version)
+
+    async def _abort_version(self, model_id: str, version: int) -> bool:
         conn = await self._connect()
         try:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
                 await cursor.execute(
-                    "SELECT current_version FROM NOVA_SYSTEM.ML_MODELS WHERE model_id=%s",
-                    (model_id,),
+                    "SELECT status FROM NOVA_SYSTEM.ML_MODEL_VERSIONS "
+                    "WHERE model_id=%s AND version=%s",
+                    (model_id, version),
                 )
                 model = await cursor.fetchone()
-                if model and int(model.get("current_version") or 0) == version:
+                if model and model.get("status") == "READY":
                     return False
                 await cursor.execute(
                     "UPDATE NOVA_SYSTEM.ML_MODEL_VERSIONS SET status='FAILED',failed_at=NOW(),"
@@ -182,25 +210,36 @@ class ModelRegistryRepository:
         """Serialize allocation across replicas with Redis plus a local lock."""
         digest = hashlib.sha256(scope.encode()).hexdigest()
         local = self._local_locks.setdefault(digest, asyncio.Lock())
-        async with local:
-            client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-            key = f"nova:ml:version:{digest}"
-            token = str(uuid4())
-            deadline = time.monotonic() + 10
-            acquired = False
-            try:
-                while time.monotonic() < deadline:
-                    if await client.set(key, token, nx=True, ex=30):
-                        acquired = True
-                        break
-                    await asyncio.sleep(0.05)
-                if not acquired:
-                    raise VersionReservationConflict(
-                        "Could not reserve a model version within 10 seconds; "
-                        "retry the training job"
-                    )
+        self._local_lock_users[digest] = self._local_lock_users.get(digest, 0) + 1
+        try:
+            async with local, self._distributed_lock(digest):
                 yield
-            finally:
+        finally:
+            self._local_lock_users[digest] -= 1
+            if self._local_lock_users[digest] == 0:
+                self._local_lock_users.pop(digest)
+                self._local_locks.pop(digest)
+
+    @asynccontextmanager
+    async def _distributed_lock(self, digest: str):
+        client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        key = f"nova:ml:version:{digest}"
+        token = str(uuid4())
+        deadline = time.monotonic() + 10
+        acquired = False
+        try:
+            while time.monotonic() < deadline:
+                if await client.set(key, token, nx=True, ex=30):
+                    acquired = True
+                    break
+                await asyncio.sleep(0.05)
+            if not acquired:
+                raise VersionReservationConflict(
+                    "Could not reserve a model version within 10 seconds; retry the training job"
+                )
+            yield
+        finally:
+            try:
                 if acquired:
                     await client.eval(
                         "if redis.call('get', KEYS[1]) == ARGV[1] then return "
@@ -209,6 +248,7 @@ class ModelRegistryRepository:
                         key,
                         token,
                     )
+            finally:
                 await client.aclose()
 
     @staticmethod
@@ -264,21 +304,21 @@ class ModelRegistryRepository:
             conn.close()
 
     async def resolve_alias(
-        self, alias: str, *, owner_name: str, database_name: str | None
+        self, alias: str, *, owner_name: str, database_name: str | None, tenant: str = "default"
     ) -> dict[str, Any] | None:
         conn = await self._connect()
         try:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
                 await cursor.execute(
-                    "SELECT a.model_id, a.version, m.model_name, m.model_type, "
+                    "SELECT a.model_id, a.version, m.model_name, m.model_type, m.tenant_name, "
                     "v.artifact_uri, v.artifact_sha256, v.artifact_size, v.model_binary "
                     "FROM NOVA_SYSTEM.ML_MODEL_ALIASES a "
                     "JOIN NOVA_SYSTEM.ML_MODELS m ON m.model_id=a.model_id "
                     "JOIN NOVA_SYSTEM.ML_MODEL_VERSIONS v "
                     "ON v.model_id=a.model_id AND v.version=a.version "
                     "WHERE a.alias_name=%s AND a.owner_name=%s AND a.database_name=%s "
-                    "AND v.status='READY'",
-                    (alias, owner_name, database_name or ""),
+                    "AND m.tenant_name=%s AND v.status='READY'",
+                    (alias, owner_name, alias_database_scope(database_name, tenant), tenant),
                 )
                 row = await cursor.fetchone()
                 return dict(row) if row else None
@@ -292,17 +332,19 @@ class ModelRegistryRepository:
         *,
         owner_name: str,
         database_name: str | None,
+        tenant: str = "default",
     ) -> dict[str, Any] | None:
         conn = await self._connect()
         try:
             async with conn.cursor(asyncmy.cursors.DictCursor) as cursor:
                 await cursor.execute(
-                    "SELECT v.*, m.model_name, m.model_type FROM NOVA_SYSTEM.ML_MODEL_VERSIONS v "
+                    "SELECT v.*, m.model_name, m.model_type, m.tenant_name "
+                    "FROM NOVA_SYSTEM.ML_MODEL_VERSIONS v "
                     "JOIN NOVA_SYSTEM.ML_MODELS m ON m.model_id=v.model_id "
                     "WHERE v.model_id=%s AND v.version=%s AND m.created_by=%s "
                     "AND COALESCE(m.database_name, '')=COALESCE(%s, '') "
-                    "AND v.status='READY'",
-                    (model_id, version, owner_name, database_name),
+                    "AND m.tenant_name=%s AND v.status='READY'",
+                    (model_id, version, owner_name, database_name, tenant),
                 )
                 row = await cursor.fetchone()
                 return dict(row) if row else None
@@ -317,6 +359,7 @@ class ModelRegistryRepository:
         *,
         owner_name: str,
         database_name: str | None,
+        tenant: str = "default",
     ) -> dict[str, Any]:
         if (
             await self.get_version(
@@ -324,6 +367,7 @@ class ModelRegistryRepository:
                 version,
                 owner_name=owner_name,
                 database_name=database_name,
+                tenant=tenant,
             )
             is None
         ):
@@ -336,7 +380,13 @@ class ModelRegistryRepository:
                     "(alias_name, owner_name, database_name, model_id, version, "
                     "created_at, updated_at) "
                     "VALUES (%s,%s,%s,%s,%s,NOW(),NOW())",
-                    (alias, owner_name, database_name or "", model_id, version),
+                    (
+                        alias,
+                        owner_name,
+                        alias_database_scope(database_name, tenant),
+                        model_id,
+                        version,
+                    ),
                 )
         finally:
             conn.close()
@@ -350,6 +400,13 @@ class ModelRegistryRepository:
 
 
 model_registry_repository = ModelRegistryRepository()
+
+
+def alias_database_scope(database_name: str | None, tenant: str) -> str:
+    if tenant == "default":
+        return database_name or ""
+    value = json.dumps([tenant, database_name or ""], separators=(",", ":"))
+    return "tenant:" + hashlib.sha256(value.encode()).hexdigest()
 
 
 def _framework_version(engine: str) -> str:

@@ -39,6 +39,7 @@ from app.modules.ml_engine.spec import (
     MLSecurityContext,
     MLTask,
 )
+from tests.unit.ml_fakes import MemoryEphemeralRepository
 
 SECURITY = MLSecurityContext("alice", "secret", database="analytics")
 BUDGET = ExecutionBudget(5, 10_000, 10_000_000)
@@ -138,15 +139,18 @@ async def test_job_cancellation_terminates_spawned_worker():
 class _DescriptorRunner:
     worker_direct = True
 
-    def __init__(self) -> None:
+    def __init__(self, store=None) -> None:
         self.job: MLWorkerJob | None = None
+        self.store = store or MemoryArtifactStore()
 
     async def run_job(self, job, *, timeout_seconds):
-        assert timeout_seconds == BUDGET.timeout_seconds
+        assert 0 < timeout_seconds <= BUDGET.timeout_seconds
         self.job = job
+        payload, checksum = serialize_bundle({"task": "regression", "model": LinearRegression()})
+        uri = self.store.put(job.artifact_key, payload)
         return MLWorkerResult(
             output=TrainingOutput(
-                bundle={"task": "regression", "model": LinearRegression()},
+                bundle={},
                 engine="sklearn",
                 algorithm="linear",
                 metrics={},
@@ -166,6 +170,10 @@ class _DescriptorRunner:
                     "transport": "ArrowFlightDataSource",
                 },
             )(),
+            artifact_uri=uri,
+            artifact_sha256=checksum,
+            artifact_size=len(payload),
+            worker_result_ipc_bytes=512,
         )
 
 
@@ -183,7 +191,6 @@ class _PreparedService(MLEngineService):
 @pytest.mark.asyncio
 async def test_orchestrator_dispatches_descriptor_not_arrow_table(monkeypatch):
     runner = _DescriptorRunner()
-    event_loop_thread = threading.get_ident()
     serialization_threads: list[int] = []
 
     def recording_serialize(bundle):
@@ -196,6 +203,7 @@ async def test_orchestrator_dispatches_descriptor_not_arrow_table(monkeypatch):
         job_runner=runner,
         artifact_store=MemoryArtifactStore(),
         repository=_RunRepository(),
+        ephemeral_repository=MemoryEphemeralRepository(),
     )
     result = await service.execute(
         MLExecutionSpec(
@@ -211,9 +219,10 @@ async def test_orchestrator_dispatches_descriptor_not_arrow_table(monkeypatch):
     assert runner.job.spec.security.password == ""
     assert runner.job.security.encrypted_password == "cipher"
     assert not any(isinstance(value, pa.Table) for value in vars(runner.job).values())
-    assert result.telemetry["ipc_mode"] == "worker_direct_flight"
-    assert result.telemetry["ipc_bytes"] == 0
-    assert serialization_threads and serialization_threads[0] != event_loop_thread
+    assert result.telemetry["ipc_mode"] == "worker_direct"
+    assert result.telemetry["dataset_ipc_bytes"] == 0
+    assert result.telemetry["worker_result_ipc_bytes"] == 512
+    assert serialization_threads == []
 
 
 @pytest.mark.asyncio
@@ -245,9 +254,10 @@ async def test_cancel_after_upload_marks_cancelled_and_removes_partial_artifact(
     store = MemoryArtifactStore()
     monkeypatch.setattr("app.modules.ml_engine.service.encrypt_password", lambda value: "cipher")
     service = _PreparedService(
-        job_runner=_DescriptorRunner(),
+        job_runner=_DescriptorRunner(store),
         artifact_store=store,
         repository=repository,
+        ephemeral_repository=MemoryEphemeralRepository(),
     )
     task = asyncio.create_task(
         service.execute(

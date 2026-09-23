@@ -27,6 +27,7 @@ from app.modules.ml_engine.spec import (
     MLSecurityContext,
     MLTask,
 )
+from tests.unit.ml_fakes import MemoryEphemeralRepository
 
 
 class ArrowTables:
@@ -141,6 +142,7 @@ def _service(tables):
         job_runner=runner,
         artifact_store=artifacts,
         repository=registry,
+        ephemeral_repository=MemoryEphemeralRepository(),
     )
     return service, registry, artifacts, runner
 

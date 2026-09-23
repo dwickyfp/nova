@@ -28,7 +28,7 @@ class SessionStore:
     async def close(self) -> None:
         """Close Redis connection. Call at shutdown."""
         if self._redis:
-            await self._redis.close()
+            await self._redis.aclose()
             self._redis = None
 
     async def create(

@@ -17,6 +17,16 @@ from typing import Any
 
 #: name -> (description, input_schema)
 BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
+    "search_knowledge": (
+        "Search packaged Nova product guidance and playbooks with source revisions; "
+        "documentation does not establish runtime database facts.",
+        {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    ),
     "query_execute": (
         "Run one read-only StarRocks SELECT/SHOW/DESCRIBE/EXPLAIN on the user's "
         "connection for explicit SQL, schema inspection, or data outside a semantic "
@@ -68,6 +78,23 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "properties": {
                 "intent": {"type": "string", "description": "What the chart should show."}
             },
+        },
+    ),
+    "diagnose_change": (
+        "Reconcile a two-period authorized result into arithmetic volume, unit-value, "
+        "interaction, and returns contributions. Unavailable drivers stay unassigned; "
+        "the tool does not prove causes.",
+        {
+            "type": "object",
+            "properties": {
+                "prior_period": {"type": "string"},
+                "current_period": {"type": "string"},
+                "revenue_column": {"type": "string"},
+                "units_column": {"type": "string"},
+                "returns_column": {"type": "string"},
+            },
+            "required": ["prior_period", "current_period", "revenue_column"],
+            "additionalProperties": False,
         },
     ),
     "ml_execute": (
@@ -140,6 +167,29 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "required": ["name"],
         },
     ),
+    "find_ui_operation": (
+        "Find a Nova UI API operation by task, including its exact path and input fields.",
+        {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    ),
+    "call_ui_operation": (
+        "Call one discovered Nova UI API operation as the current user, with consent and audit.",
+        {
+            "type": "object",
+            "properties": {
+                "operation": {"type": "string"},
+                "path_params": {"type": "object", "additionalProperties": True},
+                "query": {"type": "object", "additionalProperties": True},
+                "body": {"type": "object", "additionalProperties": True},
+            },
+            "required": ["operation"],
+            "additionalProperties": False,
+        },
+    ),
 }
 
 
@@ -151,6 +201,7 @@ AGENT_BUNDLEABLE_TOOLS = (
     "semantic_query",
     "semantic_search",
     "data_to_chart",
+    "diagnose_change",
     "ml_execute",
 )
 

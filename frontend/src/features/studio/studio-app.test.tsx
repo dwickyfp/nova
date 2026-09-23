@@ -39,6 +39,10 @@ vi.mock("@/features/agents/api", () => ({
     })),
   },
   studioApi: {
+    skillAuthor: vi.fn(async () => ({
+      agent_id: "nova-skill-author",
+      name: "Nova Studio",
+    })),
     settings: vi.fn(async () => ({
       identity: { active_role: null },
       preferences: {},
@@ -50,12 +54,15 @@ vi.mock("./studio-chat", () => ({
   StudioChat: ({
     agent,
     onThreadChange,
+    initialPrompt,
   }: {
     agent: { name: string } | null;
     onThreadChange: (id: string | null) => void;
+    initialPrompt?: string;
   }) => (
     <div>
       <span>{agent?.name ?? "No agent"}</span>
+      <span>{initialPrompt}</span>
       <button type="button" onClick={() => onThreadChange(null)}>
         Header new chat
       </button>
@@ -73,7 +80,7 @@ vi.mock("./studio-sidebar", () => ({
   }: {
     threads: unknown[];
     onNewChat: () => void;
-    onView: (view: "artifacts") => void;
+    onView: (view: "artifacts" | "capabilities") => void;
   }) => (
     <div>
       <span>Threads: {threads.length}</span>
@@ -83,14 +90,24 @@ vi.mock("./studio-sidebar", () => ({
       <button type="button" onClick={() => onView("artifacts")}>
         Open artifacts
       </button>
+      <button type="button" onClick={() => onView("capabilities")}>
+        Open capabilities
+      </button>
     </div>
   ),
 }));
 vi.mock("./studio-account-menu", () => ({ StudioAccountMenu: () => null }));
 vi.mock("./studio-artifacts", () => ({
   StudioArtifacts: () => <div>Artifacts view</div>,
+  chartSpecWithRows: () => "{}",
 }));
-vi.mock("./studio-capabilities", () => ({ StudioCapabilities: () => null }));
+vi.mock("./studio-capabilities", () => ({
+  StudioCapabilities: ({
+    onCreateWithChat,
+  }: {
+    onCreateWithChat: () => void;
+  }) => <button onClick={onCreateWithChat}>Create with chat</button>,
+}));
 
 function renderStudio() {
   return render(
@@ -161,7 +178,40 @@ describe("StudioApp thread routing", () => {
       screen.getByRole("button", { name: "Open artifacts" }),
     );
     await new Promise((resolve) => window.setTimeout(resolve, 50));
-    expect(mocks.navigate).toHaveBeenCalledTimes(1);
+    expect(mocks.navigate).toHaveBeenCalledTimes(2);
+    expect(mocks.navigate).toHaveBeenLastCalledWith({
+      to: "/studio",
+      search: { agent: "a1", thread: undefined, view: "artifacts" },
+      replace: true,
+    });
+  });
+
+  it("starts skill authoring in a fresh chat from capabilities", async () => {
+    const screen = await renderStudio();
+    await expect
+      .element(screen.getByText("Revenue Analyst"))
+      .toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open capabilities" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Create with chat" }),
+    );
+    await expect
+      .element(screen.getByText("/create-skill-with-chat"))
+      .toBeInTheDocument();
+    expect(mocks.navigate).toHaveBeenLastCalledWith({
+      to: "/studio",
+      search: { agent: "nova-skill-author" },
+      replace: true,
+    });
+  });
+
+  it("restores an embedded author conversation without adding it to user agents", async () => {
+    mocks.search = { agent: "nova-skill-author", thread: "draft-1" };
+    const screen = await renderStudio();
+    await expect.element(screen.getByText("Nova Studio")).toBeVisible();
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
   it("returns to chat and starts fresh from the sidebar action", async () => {

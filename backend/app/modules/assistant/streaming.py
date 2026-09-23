@@ -70,12 +70,11 @@ class StreamAccumulator:
         text = delta.get("content")
         if isinstance(text, str) and text:
             self.content += text
-            return text
 
         tool_calls = delta.get("tool_calls")
         if isinstance(tool_calls, list):
             self._accumulate_tool_calls(tool_calls)
-        return ""
+        return text if isinstance(text, str) else ""
 
     def _accumulate_tool_calls(self, tool_calls: list[Any]) -> None:
         for entry in tool_calls:

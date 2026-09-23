@@ -104,9 +104,11 @@ class TestGuardRejectionIsAudited:
                 sql="DROP ROLE ACCOUNTADMIN",
                 username="analyst",
                 encrypted_password="enc",
+                role="city_reader",
             )
 
         assert sink.entries[0]["rewritten_sql"] is None
+        assert sink.entries[0]["active_role"] == "city_reader"
 
     async def test_destructive_without_confirmation_is_audited(self, wired):
         """The confirmation gate is a refusal too, not only the role guard."""
@@ -153,10 +155,10 @@ class TestTranslationFailureIsAudited:
     async def test_unknown_stage_writes_one_error_row(self, wired, monkeypatch):
         service, repo, sink = wired
 
-        async def no_stages(database, schema):
-            return {}
+        async def no_stages(parsed, **kwargs):
+            raise ValueError(f"Stage '{parsed.stage_refs[0].stage_name}' not found")
 
-        monkeypatch.setattr(service, "_load_stage_configs", no_stages)
+        monkeypatch.setattr(service, "_resolve_stage_refs", no_stages)
 
         result = await service.execute(
             sql="SELECT * FROM @qa_audit_t1.file.csv",
@@ -177,10 +179,10 @@ class TestTranslationFailureIsAudited:
         """Auditing is additive: the failure still reports itself the same way."""
         service, _, _ = wired
 
-        async def no_stages(database, schema):
-            return {}
+        async def no_stages(parsed, **kwargs):
+            raise ValueError(f"Stage '{parsed.stage_refs[0].stage_name}' not found")
 
-        monkeypatch.setattr(service, "_load_stage_configs", no_stages)
+        monkeypatch.setattr(service, "_resolve_stage_refs", no_stages)
 
         result = await service.execute(
             sql="SELECT * FROM @missing.file.csv",
@@ -198,13 +200,13 @@ class TestTranslationFailureIsAudited:
     ):
         service, _, _ = wired
 
-        async def no_stages(database, schema):
-            return {}
+        async def no_stages(parsed, **kwargs):
+            raise ValueError(f"Stage '{parsed.stage_refs[0].stage_name}' not found")
 
         async def exploding_sink(**kwargs):
             raise RuntimeError("audit sink is down")
 
-        monkeypatch.setattr(service, "_load_stage_configs", no_stages)
+        monkeypatch.setattr(service, "_resolve_stage_refs", no_stages)
         monkeypatch.setattr("app.modules.query.service.write_audit_log", exploding_sink)
 
         result = await service.execute(
@@ -226,10 +228,12 @@ class TestEnginePathsStillAuditExactlyOnce:
             sql="SELECT 1",
             username="analyst",
             encrypted_password="enc",
+            role="city_reader",
         )
 
         assert result.success is True
         assert sink.statuses == ["SUCCESS"]
+        assert sink.entries[0]["active_role"] == "city_reader"
         assert repo.calls == ["SELECT 1"]
 
     async def test_engine_failure_writes_one_error_row(self, wired):
@@ -325,10 +329,10 @@ class TestPreEngineRowShape:
         """
         service, _, sink = wired
 
-        async def no_stages(database, schema):
-            return {}
+        async def no_stages(parsed, **kwargs):
+            raise ValueError(f"Stage '{parsed.stage_refs[0].stage_name}' not found")
 
-        monkeypatch.setattr(service, "_load_stage_configs", no_stages)
+        monkeypatch.setattr(service, "_resolve_stage_refs", no_stages)
 
         await service.execute(
             sql="SELECT * FROM @stage1.data.csv",

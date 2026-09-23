@@ -14,10 +14,12 @@ export type ToolCallStatus =
   | "failed"
   | "cancelled";
 
-export type ToolClassification = "read_only" | "destructive" | "denied";
+export type ToolClassification =
+  "read_only" | "session_change" | "destructive" | "denied";
 
 export type ToolCallView = {
   tool_name: string;
+  skill_name?: string | null;
   /** Redacted SQL only. The backend guarantees this before the event is sent. */
   sql_preview: string;
   classification: ToolClassification;
@@ -80,6 +82,11 @@ export type ContentPosition = {
 };
 
 export type AssistantEvent = (
+  | {
+      type: "role_changed";
+      active_role: string;
+      security_context_version: number;
+    }
   | ({ type: "text_delta"; text: string } & ContentPosition)
   | {
       type: "thinking";
@@ -120,6 +127,8 @@ export type AssistantEvent = (
       finish_reason: string;
       /** Total tokens the turn spent, when the provider reported any. */
       total_tokens?: number;
+      prompt_tokens?: number;
+      completion_tokens?: number;
     }
   | { type: "error"; code: string; message: string }
   | { type: "ping" }

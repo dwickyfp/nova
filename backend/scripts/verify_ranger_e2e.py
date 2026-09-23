@@ -214,15 +214,25 @@ def _assert_cities(rows: list[list[str | None]], expected: set[str]) -> None:
         raise AssertionError(f"Expected cities {sorted(expected)}, got {sorted(cities)}")
 
 
+def _assert_metadata_visibility(client: MySQLClient, *, sales_visible: bool) -> None:
+    rows = client.query(
+        "SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA='analytics'"
+    )
+    assert ("sales" in {row[0] for row in rows}) == sales_visible
+    client.query("SHOW TABLES FROM NOVA_SYSTEM")
+
+
 def verify_proxy() -> None:
     with MySQLClient("alice", "NovaAlice2026!", role="marketing") as alice:
         assert alice.query("SELECT CURRENT_ROLE()") == [["marketing"]]
+        _assert_metadata_visibility(alice, sales_visible=True)
         _assert_cities(alice.query("SELECT id, city, amount FROM analytics.sales"), {"Jakarta"})
         assert alice.query(
             "SELECT id, city, amount FROM analytics.sales WHERE city='Bandung'"
         ) == []
         alice.query("USE ROLE regional_manager")
         assert alice.query("SELECT CURRENT_ROLE()") == [["regional_manager"]]
+        _assert_metadata_visibility(alice, sales_visible=True)
         _assert_cities(
             alice.query("SELECT id, city, amount FROM analytics.sales"),
             {"Jakarta", "Bandung"},
@@ -241,6 +251,7 @@ def verify_proxy() -> None:
         "alice", "NovaAlice2026!", database=None, role="finance"
     ) as finance:
         assert finance.query("SELECT CURRENT_ROLE()") == [["finance"]]
+        _assert_metadata_visibility(finance, sales_visible=False)
         try:
             finance.query("SELECT id, city, amount FROM analytics.sales")
         except MySQLError:

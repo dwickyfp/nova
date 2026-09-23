@@ -34,31 +34,37 @@ def build_registry() -> ToolRegistry:
     A factory (rather than only the process-wide instance) so tests get an
     isolated registry.
     """
+    from app.modules.agents.tools.data_to_chart import data_to_chart_tool
     from app.modules.agents.tools.ml_execute import ml_execute_tool
     from app.modules.assistant.tools.load_skill import load_skill_tool
     from app.modules.assistant.tools.query_execute import query_execute_tool
+    from app.modules.assistant.tools.search_knowledge import search_knowledge_tool
+    from app.modules.assistant.tools.ui_actions import (
+        call_ui_operation_tool,
+        find_ui_operation_tool,
+    )
 
     registry = ToolRegistry()
     registry.register(load_skill_tool)
+    registry.register(search_knowledge_tool)
     registry.register(query_execute_tool)
     registry.register(ml_execute_tool)
+    registry.register(data_to_chart_tool)
+    registry.register(find_ui_operation_tool)
+    registry.register(call_ui_operation_tool)
 
-    # Nove always owns the ML tool, so make the matching platform procedure
-    # discoverable. The body is still injected only on an ML turn; the global
-    # catalog is not copied into every prompt.
     from app.modules.assistant.intelligence import SkillDefinition
     from app.modules.assistant.skill_registry import skill_library
 
-    native_ml = skill_library.get("native-ml")
-    if native_ml is not None:
-        registry.skill_definitions[native_ml.name] = SkillDefinition(
-            name=native_ml.name,
-            summary=native_ml.summary,
-            triggers=native_ml.triggers,
-            body=native_ml.body,
+    for skill in skill_library.skills:
+        registry.skill_definitions[skill.name] = SkillDefinition(
+            name=skill.name,
+            summary=skill.summary,
+            triggers=skill.triggers,
+            body=skill.body,
             trust_level="platform_skill",
         )
-        registry.discoverable_skills = (native_ml.name,)
+    registry.discoverable_skills = tuple(skill_library.names())
 
     # Agent Studio authoring tools (Phase 12). Nove can draft a semantic model or
     # an agent from a request. Both are write tools: classified ``destructive``

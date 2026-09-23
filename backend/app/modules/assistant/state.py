@@ -41,6 +41,8 @@ class AssistantMessage:
     #: The context builder folds a bounded summary into follow-up turns.
     steps: list[dict] = field(default_factory=list)
     created_at: datetime = field(default_factory=_now)
+    security_context: dict | None = None
+    attachments: list[dict] = field(default_factory=list)
 
 
 @dataclass

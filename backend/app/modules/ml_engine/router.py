@@ -50,6 +50,11 @@ router = APIRouter()
 require_user = Depends(get_current_user)
 
 
+def _tenant_options(user: dict) -> dict:
+    tenant = user.get("tenant", "default")
+    return {"tenant": tenant} if tenant != "default" else {}
+
+
 def _caller_credentials(user: dict) -> str:
     """The decrypted StarRocks password from the caller's session.
 
@@ -97,6 +102,7 @@ async def train_model(
             horizon=req.horizon,
             frequency=req.frequency,
             mode=req.mode,
+            **_tenant_options(user),
         )
         return result
     except ValueError as e:
@@ -123,6 +129,7 @@ async def predict(
             req.features,
             owner_name=user["username"],
             database_name=req.database_name,
+            **_tenant_options(user),
         )
         return result
     except ValueError as e:
@@ -144,6 +151,7 @@ async def predict_version(req: VersionPredictRequest, user: dict = require_user)
             req.features,
             owner_name=user["username"],
             database_name=req.database_name,
+            **_tenant_options(user),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
@@ -169,6 +177,7 @@ async def batch_predict(
             username=user["username"],
             password=password,
             role=user.get("active_role"),
+            **_tenant_options(user),
         )
         return result
     except ValueError as e:
@@ -191,9 +200,75 @@ async def forecast(req: ForecastRequest, user: dict = require_user):
             database_name=req.database_name,
             level=req.confidence_level,
             series=req.series,
+            **_tenant_options(user),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
+
+
+@router.post("/predict/materialize")
+async def materialize_prediction(req: BatchPredictRequest, user: dict = require_user):
+    from app.common.audit import write_audit_log
+
+    security = MLSecurityContext(
+        username=user["username"],
+        password=_caller_credentials(user),
+        database=req.database_name,
+        role=user.get("active_role"),
+        tenant=user.get("tenant", "default"),
+        security_context_version=user.get("security_context_version", 1),
+    )
+    try:
+        result = await ml_engine_service.materialize_prediction(
+            req.model_alias, req.prediction_sql, security
+        )
+    except Exception as exc:
+        await write_audit_log(
+            event_type="ml",
+            user_name=user["username"],
+            action="materialize_prediction",
+            object_type="ml_model",
+            object_name=req.model_alias,
+            status="ERROR",
+            error_message=redact_for_output(str(exc)),
+        )
+        raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
+    await write_audit_log(
+        event_type="ml",
+        user_name=user["username"],
+        action="materialize_prediction",
+        object_type="ml_model",
+        object_name=req.model_alias,
+        status="SUCCESS",
+        rows_affected=result["total_rows"],
+    )
+    return result
+
+
+@router.get("/results/{run_id}")
+async def result_page(
+    run_id: str,
+    part: int = 0,
+    database_name: str | None = None,
+    schema_name: str | None = None,
+    user: dict = require_user,
+):
+    try:
+        return await ml_engine_service.result_page(
+            run_id,
+            part,
+            MLSecurityContext(
+                username=user["username"],
+                password="",
+                database=database_name,
+                schema=schema_name,
+                role=user.get("active_role"),
+                tenant=user.get("tenant", "default"),
+                security_context_version=user.get("security_context_version", 1),
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
 
 
 @router.post("/forecast/version", response_model=ForecastResponse)
@@ -208,6 +283,7 @@ async def forecast_version(req: VersionForecastRequest, user: dict = require_use
             database_name=req.database_name,
             level=req.confidence_level,
             series=req.series,
+            **_tenant_options(user),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=redact_for_output(str(exc))) from exc
@@ -223,7 +299,7 @@ async def list_models(
 ):
     """List all trained models."""
     models = await ml_engine_service.list_models(
-        owner_name=user["username"], database_name=database_name
+        owner_name=user["username"], database_name=database_name, **_tenant_options(user)
     )
     return {"models": models, "count": len(models)}
 
@@ -236,7 +312,7 @@ async def get_model(
 ):
     """Get model detail with all versions."""
     result = await ml_engine_service.get_model(
-        model_id, owner_name=user["username"], database_name=database_name
+        model_id, owner_name=user["username"], database_name=database_name, **_tenant_options(user)
     )
     if not result:
         raise HTTPException(status_code=404, detail="Model not found")
@@ -252,7 +328,10 @@ async def delete_model(
     """Delete a model and all its versions."""
     try:
         return await ml_engine_service.delete_model(
-            model_id, owner_name=user["username"], database_name=database_name
+            model_id,
+            owner_name=user["username"],
+            database_name=database_name,
+            **_tenant_options(user),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
@@ -268,7 +347,7 @@ async def list_aliases(
 ):
     """List all model aliases."""
     aliases = await ml_engine_service.list_aliases(
-        owner_name=user["username"], database_name=database_name
+        owner_name=user["username"], database_name=database_name, **_tenant_options(user)
     )
     return {"aliases": aliases, "count": len(aliases)}
 
@@ -286,6 +365,7 @@ async def create_alias(
             req.version,
             owner_name=user["username"],
             database_name=req.database_name,
+            **_tenant_options(user),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=redact_for_output(str(e))) from e
@@ -299,7 +379,10 @@ async def delete_alias(
 ):
     """Delete a model alias."""
     return await ml_engine_service.delete_alias(
-        alias_name, owner_name=user["username"], database_name=database_name
+        alias_name,
+        owner_name=user["username"],
+        database_name=database_name,
+        **_tenant_options(user),
     )
 
 
@@ -318,6 +401,8 @@ async def execute_ml(req: MLExecuteRequest, user: dict = require_user):
                     database=req.database_name,
                     schema=req.schema_name,
                     role=user.get("active_role"),
+                    tenant=user.get("tenant", "default"),
+                    security_context_version=user.get("security_context_version", 1),
                 ),
                 mode=MLMode(req.mode),
                 persist=req.persist,
@@ -355,6 +440,8 @@ async def promote_run(
             database=req.database_name,
             schema=req.schema_name,
             role=user.get("active_role"),
+            tenant=user.get("tenant", "default"),
+            security_context_version=user.get("security_context_version", 1),
         ),
     )
     return result.__dict__

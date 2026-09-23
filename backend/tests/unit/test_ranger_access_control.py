@@ -94,6 +94,7 @@ def test_ranger_policy_compiler_separates_access_scope_and_mask(monkeypatch) -> 
     ).to_api()
     assert access["policyItems"][0]["roles"] == ["marketing"]
     assert access["policyItems"][0]["accesses"] == [{"type": "select", "isAllowed": True}]
+    assert access["resources"]["column"]["values"] == ["*"]
 
     scope = compile_row_filter_policy(
         role="marketing",
@@ -143,6 +144,81 @@ async def test_ranger_client_role_upsert_is_service_scoped(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_ranger_29_role_list_and_missing_role_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/roles/name/missing"):
+            return httpx.Response(400, request=request)
+        return httpx.Response(
+            200,
+            json={"totalCount": 1, "roles": [{"id": 7, "name": "marketing"}]},
+            request=request,
+        )
+
+    async with httpx.AsyncClient(
+        base_url="http://ranger.invalid", transport=httpx.MockTransport(handler)
+    ) as http:
+        client = RangerClient(http)
+        assert [role["name"] for role in await client.list_roles()] == ["marketing"]
+        assert await client.get_role("missing") is None
+
+
+@pytest.mark.asyncio
+async def test_ranger_policy_lookup_handles_managed_names_with_slashes() -> None:
+    name = "nova-managed/access/city_reader/default_catalog/rbac_city_demo/city_sales"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/service/public/v2/api/policy"
+        return httpx.Response(
+            200, json=[{"id": 19, "name": name, "policyItems": []}], request=request,
+        )
+
+    async with httpx.AsyncClient(
+        base_url="http://ranger.invalid", transport=httpx.MockTransport(handler)
+    ) as http:
+        client = RangerClient(http)
+        assert (await client.get_policy(name))["id"] == 19
+        assert await client.get_policy("missing") is None
+
+
+@pytest.mark.asyncio
+async def test_assign_role_syncs_new_user_before_ranger_membership(monkeypatch) -> None:
+    from app.modules.access_control import service as service_module
+
+    class Ranger:
+        synced = False
+
+        async def put_user_attributes(self, username, attributes):
+            assert username == "rbac_jakarta" and attributes == {}
+            self.synced = True
+
+        async def get_role(self, name):
+            assert name == "rbac_city_reader"
+            return {"id": 1, "name": name, "users": []}
+
+        async def put_role(self, role):
+            assert self.synced
+            assert [user.name for user in role.users] == ["rbac_jakarta"]
+
+    class DB:
+        async def execute_system(self, sql):
+            assert sql.startswith("GRANT rbac_city_reader TO USER")
+
+    ranger = Ranger()
+    service = AccessControlService(ranger)
+
+    async def no_audit(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(service_module, "db", DB())
+    monkeypatch.setattr(service, "_audit_admin", no_audit)
+    await service.assign_role(
+        SecurityContext(principal="nova_admin", active_role="ACCOUNTADMIN"),
+        role="rbac_city_reader", username="rbac_jakarta",
+    )
+    assert ranger.synced
+
+
+@pytest.mark.asyncio
 async def test_ranger_usersync_serializes_role_scoped_attributes() -> None:
     bodies: list[dict] = []
 
@@ -163,9 +239,9 @@ async def test_ranger_usersync_serializes_role_scoped_attributes() -> None:
             "alice", {"nova_scope.marketing.city": "Bandung,Jakarta"}
         )
 
-    attrs = bodies[0]["xuserInfoList"][0]["otherAttrsMap"]
+    attrs = json.loads(bodies[0]["vXUsers"][0]["otherAttributes"])
     assert attrs["nova_scope.marketing.city"] == "Bandung,Jakarta"
-    assert bodies[0]["xuserInfoList"][0]["syncSource"] == "NOVA"
+    assert bodies[0]["vXUsers"][0]["syncSource"] == "NOVA"
 
 
 @pytest.mark.asyncio

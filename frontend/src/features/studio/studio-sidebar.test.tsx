@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { StudioSidebar } from "./studio-sidebar";
 import { relativeUpdatedAt } from "./thread-time";
 import type { AgentThread } from "@/features/agents/api";
+import "@/styles/index.css";
 
 function thread(overrides: Partial<AgentThread> = {}): AgentThread {
   return {
@@ -81,13 +82,49 @@ describe("StudioSidebar", () => {
 
   it("shows the full title in a tooltip when the row truncates it", async () => {
     const title = "Show revenue by product category for the last twelve months";
-    const screen = await renderSidebar({ threads: [thread({ title })] });
+    const screen = await renderSidebar({
+      threads: [thread({ title })],
+      onRenameThread: vi.fn(),
+      onDeleteThread: vi.fn(),
+    });
+    const titleElement = screen.getByText(title).element() as HTMLElement;
+    const actions = screen.getByRole("button", { name: `Actions for ${title}` });
+    const row = titleElement.closest("li")!;
+    const sidebar = row.closest("aside")!;
 
-    // The visible line truncates; the tooltip is the way to read it in full.
+    expect(titleElement.scrollWidth).toBeGreaterThan(titleElement.clientWidth);
+    expect(getComputedStyle(titleElement).textOverflow).toBe("ellipsis");
+    expect(titleElement.getBoundingClientRect().right).toBeLessThanOrEqual(
+      actions.element().getBoundingClientRect().left,
+    );
+    expect(row.getBoundingClientRect().right).toBeLessThanOrEqual(
+      sidebar.getBoundingClientRect().right,
+    );
+    expect(actions.element().getBoundingClientRect().right).toBeLessThanOrEqual(
+      row.getBoundingClientRect().right,
+    );
     await userEvent.hover(screen.getByText(title));
     await expect
-      .poll(() => screen.getByText(title).elements().length)
-      .toBeGreaterThan(0);
+      .element(screen.getByRole("tooltip"))
+      .toHaveTextContent(title);
+    const tooltip = screen.getByRole("tooltip").element()
+      .closest('[data-slot="tooltip-content"]')!;
+    await expect.poll(() => {
+      const tooltipBounds = tooltip.getBoundingClientRect();
+      const actionBounds = actions.element().getBoundingClientRect();
+      return tooltipBounds.bottom <= actionBounds.top ||
+        tooltipBounds.top >= actionBounds.bottom ||
+        tooltipBounds.right <= actionBounds.left ||
+        tooltipBounds.left >= actionBounds.right;
+    }).toBe(true);
+
+    await userEvent.click(actions);
+    await expect.element(screen.getByRole("tooltip")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("menuitem", { name: "Rename" })).toBeVisible();
+    await expect.element(screen.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(actions).toHaveFocus();
+    await expect.element(screen.getByRole("tooltip")).not.toBeInTheDocument();
   });
 
   it("renders the conversation as a two-line row with its relative date", async () => {
@@ -105,12 +142,9 @@ describe("StudioSidebar", () => {
 
     await expect
       .element(
-        screen.getByRole("button", { name: "Rename What was total revenue?" }),
-      )
-      .not.toBeInTheDocument();
-    await expect
-      .element(
-        screen.getByRole("button", { name: "Delete What was total revenue?" }),
+        screen.getByRole("button", {
+          name: "Actions for What was total revenue?",
+        }),
       )
       .not.toBeInTheDocument();
   });
@@ -123,9 +157,14 @@ describe("StudioSidebar", () => {
     });
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Rename What was total revenue?" }),
+      screen.getByRole("button", { name: "Actions for What was total revenue?" }),
     );
+    await expect
+      .element(screen.getByRole("menuitem", { name: "Delete" }))
+      .not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
     const input = screen.getByRole("textbox", { name: "Conversation title" });
+    await expect.element(input).toHaveFocus();
     await userEvent.clear(input);
     await userEvent.type(input, "  Revenue check  ");
     await userEvent.keyboard("{Enter}");
@@ -135,16 +174,23 @@ describe("StudioSidebar", () => {
 
   it("deletes from the row action", async () => {
     const onDeleteThread = vi.fn();
+    const onOpenThread = vi.fn();
     const screen = await renderSidebar({
       threads: [thread()],
       onDeleteThread,
+      onOpenThread,
     });
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Delete What was total revenue?" }),
+      screen.getByRole("button", { name: "Actions for What was total revenue?" }),
     );
+    await expect
+      .element(screen.getByRole("menuitem", { name: "Rename" }))
+      .not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
 
     expect(onDeleteThread).toHaveBeenCalledWith("t1");
+    expect(onOpenThread).not.toHaveBeenCalled();
   });
 });
 

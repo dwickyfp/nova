@@ -27,7 +27,7 @@ def train_flaml(
         y_val=y_valid,
         task="classification" if task == "classification" else "regression",
         metric=metric or "auto",
-        time_budget=max(1, int(timeout_seconds)),
+        time_budget=timeout_seconds,
         estimator_list=estimator_list,
         eval_method="holdout",
         n_jobs=1,

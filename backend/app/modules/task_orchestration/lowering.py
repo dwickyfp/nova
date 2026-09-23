@@ -64,17 +64,17 @@ async def persist_lowered_task(
     ``created_by`` and therefore the identity the worker submits ``SUBMIT TASK``
     as (delegate-first, design D9.4). No password is accepted or stored.
 
-    ``graph_id`` defaults to the task's **qualified** name
-    (``database.schema.name``), so a graph's identity is unique across schemas:
-    two schemas may each hold a task named ``etl_daily`` without their edges
-    colliding. The edges are written first so the merged graph is complete when
-    it is validated.
+    ``graph_id`` defaults to the predecessor's existing graph, or the first
+    predecessor's qualified name when the graph has no edges yet. A standalone
+    task uses its own qualified name. Sibling tasks therefore share one graph
+    run instead of submitting their common root more than once. The new edges
+    are persisted before the merged graph is validated.
 
     Raises :class:`TaskLoweringError` when the merged graph would contain a
     cycle, after removing the rows this call created so a rejected statement
     leaves no partial task behind.
     """
-    graph_key = graph_id or task.qualified_name
+    graph_key = graph_id or await _graph_key_for_task(task)
 
     created_task = await task_orchestration_repository.create_task(
         {
@@ -129,6 +129,35 @@ async def persist_lowered_task(
         raise
 
     return PersistedTask(task=created_task, edges=created_edges)
+
+
+async def _graph_key_for_task(task: LoweredTask) -> str:
+    predecessors = [*task.after, *([task.finalize] if task.finalize else [])]
+    if not predecessors:
+        return task.qualified_name
+
+    existing_graphs: set[str] = set()
+    for edge in await task_orchestration_repository.list_all_edges():
+        edge_graph_id = str(edge.get("graph_id") or "")
+        if not _edge_in_scope(edge_graph_id, task.database_name, task.schema_name):
+            continue
+        if (
+            str(edge.get("parent_task")) in predecessors
+            or str(edge.get("child_task")) in predecessors
+        ):
+            existing_graphs.add(edge_graph_id)
+
+    if len(existing_graphs) > 1:
+        raise TaskLoweringError(
+            "CREATE TASK joins predecessors from different stored graphs; "
+            "reconcile their graph definitions before creating this task"
+        )
+    if existing_graphs:
+        return next(iter(existing_graphs))
+
+    parent = predecessors[0]
+    parts = [part for part in (task.database_name, task.schema_name, parent) if part]
+    return ".".join(parts)
 
 
 async def _validate_merged_graph(

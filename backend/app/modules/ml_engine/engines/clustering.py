@@ -10,6 +10,7 @@ from sklearn.mixture import GaussianMixture
 
 from app.core.config import settings
 from app.modules.ml_engine.engines.base import TrainingOutput
+from app.modules.ml_engine.preprocessing.memory import bounded_dense
 from app.modules.ml_engine.preprocessing.preprocessor import FeaturePreprocessor
 from app.modules.ml_engine.preprocessing.profiler import serialize_profiles
 from app.modules.ml_engine.spec import InsufficientTrainingRows, MLExecutionSpec
@@ -23,8 +24,7 @@ def train_clustering(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         raise InsufficientTrainingRows("Clustering requires at least 6 rows")
     preprocessor = FeaturePreprocessor(features, scale_numeric=True)
     X = preprocessor.fit_transform(table)
-    if hasattr(X, "toarray"):
-        X = X.toarray()
+    X = bounded_dense(X, max_bytes=spec.budget.max_bytes if spec.budget else None)
     max_k = min(int(spec.parameters.get("max_clusters", 8)), max(2, int(np.sqrt(len(X)))))
     candidates = []
     for k in range(2, max_k + 1):
@@ -89,6 +89,10 @@ def train_clustering(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         "cluster_count": int(len(np.unique(labels[labels >= 0]))),
         "candidates_evaluated": len(evaluated),
         "feature_metadata": serialize_profiles(preprocessor.profiles),
+        "preprocessing_policy": {
+            "categorical_encoding": "bounded_one_hot",
+            "max_categories": preprocessor.max_categories,
+        },
         "arrow_to_pandas_seconds": preprocessor.arrow_to_pandas_seconds,
     }
     return TrainingOutput(

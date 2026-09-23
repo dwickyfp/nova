@@ -1,18 +1,10 @@
-"""ML intercept — detect and execute ml_predict() calls in SQL.
-
-When a user writes:
-  SELECT ml_predict('status_predictor', total_amount) FROM NOVA_EXAMPLE.orders
-
-The backend intercepts this, executes the inner query to fetch features,
-runs the ML model prediction on each row, and returns the combined result.
-
-Supported patterns:
-  1. ml_predict('alias', column1, column2, ...) — features from columns
-  2. ml_predict('alias', json_string) — features as JSON
-"""
+"""Plan SQL prediction projections and recognize standalone forecast statements."""
 
 import re
 from dataclasses import dataclass
+
+from app.modules.ml_engine.spec import UnsupportedMLSQLExpression
+from app.modules.query.dialect.parser import _parse_tree, _walk_nodes
 
 
 @dataclass(frozen=True)
@@ -40,6 +32,16 @@ class MLPredictCall:
 class MLPredictRewrite:
     alias: str
     feature_sql: str
+    feature_columns: tuple[str, ...]
+    prediction_index: int
+    prediction_name: str
+    predictions: tuple["MLPredictExpression", ...] = ()
+
+
+@dataclass(frozen=True)
+class MLPredictExpression:
+    alias: str
+    feature_args: tuple[str, ...]
     feature_columns: tuple[str, ...]
     prediction_index: int
     prediction_name: str
@@ -123,153 +125,258 @@ def detect_ml_forecast(sql: str) -> MLForecastCall | None:
 
 
 def detect_ml_predict(sql: str) -> MLPredictCall | None:
-    """Find one balanced ``ML_PREDICT`` call outside strings/comments."""
-    name = "ML_PREDICT"
-    index = 0
-    quote: str | None = None
-    while index < len(sql):
-        char = sql[index]
-        if quote:
-            if char == quote:
-                if index + 1 < len(sql) and sql[index + 1] == quote:
-                    index += 2
-                    continue
-                quote = None
-            index += 1
-            continue
-        if sql.startswith("--", index):
-            newline = sql.find("\n", index + 2)
-            index = len(sql) if newline < 0 else newline + 1
-            continue
-        if sql.startswith("/*", index):
-            end = sql.find("*/", index + 2)
-            index = len(sql) if end < 0 else end + 2
-            continue
-        if char in {"'", '"', "`"}:
-            quote = char
-            index += 1
-            continue
-        if sql[index : index + len(name)].upper() == name:
-            before = sql[index - 1] if index else " "
-            after_name = index + len(name)
-            if before.isalnum() or before == "_":
-                index += 1
-                continue
-            cursor = after_name
-            while cursor < len(sql) and sql[cursor].isspace():
-                cursor += 1
-            if cursor >= len(sql) or sql[cursor] != "(":
-                index += 1
-                continue
-            close = _matching_parenthesis(sql, cursor)
-            arguments = _split_args(sql[cursor + 1 : close])
-            if len(arguments) < 2:
-                raise ValueError("ML_PREDICT requires an alias and at least one feature")
-            alias_token = arguments[0].strip()
-            if not (len(alias_token) >= 2 and alias_token[0] == alias_token[-1] == "'"):
-                raise ValueError("ML_PREDICT model alias must be a string literal")
-            alias = alias_token[1:-1].replace("''", "'")
-            return MLPredictCall(index, close + 1, alias, tuple(arguments[1:]))
-        index += 1
-    return None
+    """Return the first parser-proven ``ML_PREDICT`` expression."""
+    if "ml_predict" not in sql.casefold():
+        return None
+    calls = _ml_predict_nodes(sql)
+    if not calls:
+        return None
+    node = calls[0]
+    arguments = list(node.expression())
+    if len(arguments) < 2:
+        raise ValueError("ML_PREDICT requires an alias and at least one feature")
+    alias_token = _source(sql, arguments[0]).strip()
+    if not (
+        arguments[0].start.tokenIndex == arguments[0].stop.tokenIndex
+        and len(alias_token) >= 2
+        and alias_token[0] == alias_token[-1] == "'"
+        and "\\" not in alias_token
+    ):
+        raise ValueError("ML_PREDICT model alias must be a string literal")
+    return MLPredictCall(
+        node.start.start,
+        node.stop.stop + 1,
+        alias_token[1:-1].replace("''", "'"),
+        tuple(_source(sql, argument) for argument in arguments[1:]),
+    )
 
 
-def rewrite_ml_predict_sql(sql: str, match: MLPredictCall) -> tuple[str, str, list[str]]:
-    """Rewrite SQL to extract the inner query without ml_predict wrapper.
+def detect_ml_predict_table(sql: str) -> tuple[str, str] | None:
+    if "ml_predict_table" not in sql.casefold():
+        return None
+    stream, tree, errors = _parse_tree(sql)
+    calls = [
+        node
+        for node in _walk_nodes(tree)
+        if type(node).__name__ == "TableFunctionContext"
+        and node.qualifiedName().getText().strip("`").casefold() == "ml_predict_table"
+    ]
+    if not calls:
+        if errors and any(
+            token.channel == 0 and token.text.casefold().strip("`") == "ml_predict_table"
+            for token in stream.tokens
+            if token.text
+        ):
+            raise UnsupportedMLSQLExpression("Cannot safely parse ML_PREDICT_TABLE")
+        return None
+    if errors or len(calls) != 1:
+        raise UnsupportedMLSQLExpression("ML_PREDICT_TABLE requires one complete table call")
+    call = calls[0]
+    from app.modules.query.dialect.parser import _first_statement
 
-    Args:
-        sql: Original SQL with ml_predict() call
-        match: Regex match from detect_ml_predict
-
-    Returns:
-        Tuple of (alias, inner_sql, feature_args)
-        - alias: model alias name
-        - inner_sql: SQL to execute to get feature data
-        - feature_args: list of feature column expressions
-    """
-    alias = match.group(1)
-    features = list(match.feature_args)
-
-    # Execute a dedicated feature query, then append vectorized predictions in
-    # Nova. Keeping the original FROM/WHERE/GROUP/ORDER tail delegates all data
-    # processing to StarRocks while ensuring no scalar UDF or per-row HTTP call
-    # remains in the active path.
-    from_index = _top_level_from(sql, match.end())
-    if from_index < 0:
-        raise ValueError("ML_PREDICT requires a FROM clause")
-    inner_sql = "SELECT " + ", ".join(features) + " " + sql[from_index:]
-
-    return alias, inner_sql, features
+    if (
+        len(tree.singleStatement()) != 1
+        or type(_first_statement(tree)).__name__ != "QueryStatementContext"
+    ):
+        raise UnsupportedMLSQLExpression("ML_PREDICT_TABLE requires one SELECT statement")
+    specs = [
+        node for node in _walk_nodes(tree) if type(node).__name__ == "QuerySpecificationContext"
+    ]
+    if (
+        len(specs) != 1
+        or specs[0].getText().casefold() != ("SELECT*FROM" + call.getText()).casefold()
+    ):
+        raise UnsupportedMLSQLExpression(
+            "Use SELECT * FROM ML_PREDICT_TABLE('alias', 'input SQL') without outer clauses"
+        )
+    if any(
+        type(node).__name__
+        in {
+            "SortItemContext",
+            "LimitElementContext",
+            "WithClauseContext",
+            "SetOperationContext",
+            "OutfileContext",
+        }
+        for node in _walk_nodes(tree)
+    ):
+        raise UnsupportedMLSQLExpression("ML_PREDICT_TABLE does not support outer query clauses")
+    args = call.expressionList().expression() if call.expressionList() else []
+    if len(args) != 2:
+        raise UnsupportedMLSQLExpression("ML_PREDICT_TABLE requires an alias and input SQL string")
+    values = []
+    for argument in args:
+        text = _source(sql, argument)
+        if (
+            argument.start.tokenIndex != argument.stop.tokenIndex
+            or len(text) < 2
+            or text[0] != "'"
+            or text[-1] != "'"
+            or "\\" in text
+        ):
+            raise UnsupportedMLSQLExpression("ML_PREDICT_TABLE arguments must be string literals")
+        values.append(text[1:-1].replace("''", "'"))
+    return values[0], values[1]
 
 
 def rewrite_ml_predict_projection(sql: str, match: MLPredictCall) -> MLPredictRewrite:
-    """Build a feature query while retaining the user's projection contract."""
-    select_start = _select_projection_start(sql)
-    from_index = _top_level_from(sql, select_start)
-    if from_index < 0:
-        raise ValueError("ML_PREDICT requires a FROM clause")
-    projection_text = sql[select_start:from_index]
-    items = _split_args(projection_text)
-    relative_start = match.start() - select_start
-    offsets: list[tuple[int, int]] = []
-    cursor = 0
-    for item in items:
-        found = projection_text.find(item, cursor)
-        offsets.append((found, found + len(item)))
-        cursor = found + len(item)
-    prediction_index = next(
-        (index for index, (start, end) in enumerate(offsets) if start <= relative_start < end),
-        -1,
-    )
-    if prediction_index < 0:
-        raise ValueError("ML_PREDICT must appear in the top-level SELECT projection")
-    prediction_item = items[prediction_index]
-    call_end_in_item = match.end() - select_start - offsets[prediction_index][0]
-    suffix = prediction_item[call_end_in_item:].strip()
-    alias_match = re.fullmatch(
-        r"(?:AS\s+)?(`[^`]+`|[A-Za-z_][A-Za-z0-9_$]*)", suffix, re.IGNORECASE
-    )
-    prediction_name = alias_match.group(1).strip("`") if alias_match else "prediction"
-    retained = [item for index, item in enumerate(items) if index != prediction_index]
-    hidden = tuple(f"__ml_feature_{index}" for index in range(len(match.feature_args)))
-    feature_projection = [
-        f"({expression}) AS `{name}`"
-        for expression, name in zip(match.feature_args, hidden, strict=True)
+    """Plan all top-level prediction expressions from the StarRocks AST."""
+    del match
+    _, tree, errors = _parse_tree(sql)
+    if errors:
+        raise ValueError(str(errors[0]))
+    query_specs = [
+        node for node in _walk_nodes(tree) if type(node).__name__ == "QuerySpecificationContext"
     ]
-    inner_projection = retained + feature_projection
+    if not query_specs:
+        raise UnsupportedMLSQLExpression("ML_PREDICT interception requires a SELECT query")
+    statements = tree.singleStatement()
+    if len(statements) != 1 or not any(
+        type(node).__name__ == "QueryStatementContext"
+        for node in getattr(statements[0], "children", ())
+    ):
+        # StatementContext adds a wrapper in some generated parser versions.
+        from app.modules.query.dialect.parser import _first_statement
+
+        if len(statements) != 1 or type(_first_statement(tree)).__name__ != "QueryStatementContext":
+            raise UnsupportedMLSQLExpression("ML_PREDICT requires one SELECT statement")
+    outer = max(query_specs, key=lambda node: (node.stop.stop, node.stop.stop - node.start.start))
+    unsupported = {"SetOperationContext", "SortItemContext", "OutfileContext"}
+    if any(type(node).__name__ in unsupported for node in _walk_nodes(tree)):
+        raise UnsupportedMLSQLExpression(
+            "ML_PREDICT does not support set operations, ORDER BY, or OUTFILE"
+        )
+    if outer.setQuantifier() is not None or outer.groupingElement() is not None or outer.having:
+        raise UnsupportedMLSQLExpression(
+            "ML_PREDICT does not support DISTINCT, GROUP BY, or HAVING"
+        )
+    items = list(outer.selectItem())
+    from_clause = outer.fromClause()
+    if from_clause is None or from_clause.start is None:
+        raise ValueError("ML_PREDICT requires a FROM clause")
+
+    retained: list[str] = []
+    predictions: list[MLPredictExpression] = []
+    feature_aliases: dict[str, str] = {}
+    feature_projection: list[str] = []
+    all_calls = _ml_predict_nodes(sql, tree=tree)
+    if any(type(item).__name__ == "SelectAllContext" for item in items):
+        raise UnsupportedMLSQLExpression("List output columns explicitly when using ML_PREDICT")
+
+    for index, item in enumerate(items):
+        calls = [
+            call
+            for call in all_calls
+            if item.start.start <= call.start.start and call.stop.stop <= item.stop.stop
+        ]
+        if not calls:
+            retained.append(_source(sql, item))
+            continue
+        if len(calls) != 1 or type(item).__name__ != "SelectSingleContext":
+            raise UnsupportedMLSQLExpression(
+                "ML_PREDICT must be a standalone top-level SELECT item"
+            )
+        call = calls[0]
+        expression = item.expression()
+        if expression.start.start != call.start.start or expression.stop.stop != call.stop.stop:
+            raise UnsupportedMLSQLExpression(
+                "Wrapped ML_PREDICT expressions are not supported; project the prediction "
+                "with an alias and apply ROUND, CAST, CASE, or arithmetic in a follow-up query"
+            )
+        arguments = list(call.expression())
+        if len(arguments) < 2:
+            raise ValueError("ML_PREDICT requires an alias and at least one feature")
+        alias_token = _source(sql, arguments[0]).strip()
+        if not (
+            arguments[0].start.tokenIndex == arguments[0].stop.tokenIndex
+            and len(alias_token) >= 2
+            and alias_token[0] == alias_token[-1] == "'"
+            and "\\" not in alias_token
+        ):
+            raise ValueError("ML_PREDICT model alias must be a string literal")
+        model_alias = alias_token[1:-1].replace("''", "'")
+        hidden: list[str] = []
+        feature_args: list[str] = []
+        for argument in arguments[1:]:
+            source = _source(sql, argument)
+            # Source text keeps token boundaries distinct (for example, a + +b).
+            canonical = source
+            hidden_name = feature_aliases.get(canonical)
+            if hidden_name is None:
+                hidden_name = f"__ml_feature_{len(feature_aliases)}"
+                feature_aliases[canonical] = hidden_name
+                feature_projection.append(f"({source}) AS `{hidden_name}`")
+            hidden.append(hidden_name)
+            feature_args.append(source)
+        prediction_name = _select_alias(item) or (
+            "prediction" if not predictions else f"prediction_{len(predictions) + 1}"
+        )
+        predictions.append(
+            MLPredictExpression(
+                alias=model_alias,
+                feature_args=tuple(feature_args),
+                feature_columns=tuple(hidden),
+                prediction_index=index,
+                prediction_name=prediction_name,
+            )
+        )
+
+    if not predictions:
+        raise UnsupportedMLSQLExpression("ML_PREDICT was not found in the outer SELECT list")
+    if len(predictions) != len(all_calls):
+        raise UnsupportedMLSQLExpression(
+            "ML_PREDICT is supported only in the outer SELECT list, not filters or subqueries"
+        )
+    if any("__ml_feature_" in item.getText().casefold() for item in items):
+        raise UnsupportedMLSQLExpression(
+            "The __ml_feature_ prefix is reserved for prediction inputs"
+        )
+    projection = retained + feature_projection
+    projection_start = items[0].start.start
+    feature_sql = (
+        sql[:projection_start] + ", ".join(projection) + " " + sql[from_clause.start.start :]
+    )
+    first = predictions[0]
     return MLPredictRewrite(
-        alias=match.alias,
-        feature_sql="SELECT " + ", ".join(inner_projection) + " " + sql[from_index:],
-        feature_columns=hidden,
-        prediction_index=prediction_index,
-        prediction_name=prediction_name,
+        alias=first.alias,
+        feature_sql=feature_sql,
+        feature_columns=first.feature_columns,
+        prediction_index=first.prediction_index,
+        prediction_name=first.prediction_name,
+        predictions=tuple(predictions),
     )
 
 
-def _top_level_from(sql: str, start: int) -> int:
-    depth = 0
-    quote: str | None = None
-    index = start
-    while index < len(sql):
-        char = sql[index]
-        if quote:
-            if char == quote:
-                quote = None
-            index += 1
-            continue
-        if char in {"'", '"', "`"}:
-            quote = char
-        elif char == "(":
-            depth += 1
-        elif char == ")":
-            depth = max(0, depth - 1)
-        elif depth == 0 and sql[index : index + 4].upper() == "FROM":
-            before = sql[index - 1] if index else " "
-            after = sql[index + 4] if index + 4 < len(sql) else " "
-            if not (before.isalnum() or before == "_") and not (after.isalnum() or after == "_"):
-                return index
-        index += 1
-    return -1
+def _ml_predict_nodes(sql: str, *, tree=None) -> list:
+    if tree is None:
+        stream, tree, errors = _parse_tree(sql)
+        if errors and any(
+            token.text and token.text.strip("`").casefold() == "ml_predict" and token.channel == 0
+            for token in stream.tokens
+        ):
+            raise UnsupportedMLSQLExpression("Cannot safely parse the ML_PREDICT statement")
+    return [
+        node
+        for node in _walk_nodes(tree)
+        if type(node).__name__ == "SimpleFunctionCallContext"
+        and node.qualifiedName().getText().strip("`").casefold() == "ml_predict"
+    ]
+
+
+def _source(sql: str, node) -> str:
+    return sql[node.start.start : node.stop.stop + 1]
+
+
+def _select_alias(item) -> str | None:
+    identifiers = item.identifier()
+    if identifiers:
+        node = identifiers[-1] if isinstance(identifiers, list) else identifiers
+        return node.getText().strip("`")
+    strings = item.string()
+    if strings:
+        node = strings[-1] if isinstance(strings, list) else strings
+        return node.getText().strip("'").replace("''", "'")
+    return None
 
 
 def _split_args(args_str: str) -> list[str]:
@@ -347,10 +454,3 @@ def _positive_integer(token: str, argument: str) -> int:
     if value < 1:
         raise ValueError(f"ML_FORECAST {argument} must be a positive integer")
     return value
-
-
-def _select_projection_start(sql: str) -> int:
-    match = re.match(r"\s*SELECT\b", sql, re.IGNORECASE)
-    if not match:
-        raise ValueError("ML_PREDICT interception currently requires a SELECT statement")
-    return match.end()

@@ -135,7 +135,11 @@ async def test_run_output_mode_reports_no_rows(monkeypatch) -> None:
     runner = CustomToolRunner(tool)
 
     class Ctx:
-        user = {"username": "u", "encrypted_password": "e"}
+        user = {
+            "username": "u", "encrypted_password": "e",
+            "active_role": "analyst", "assigned_roles": ["analyst"],
+            "security_context_version": 1,
+        }
 
     outcome = await runner.run(
         ToolInvocation("1", "custom_DO_IT", {}), Ctx()

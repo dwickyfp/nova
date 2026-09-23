@@ -48,6 +48,47 @@ logger = logging.getLogger(__name__)
 _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 
+def normalize_tool_schema_for_provider(schema: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Return a strict-compatible copy when the supported JSON subset permits it."""
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        return schema, False
+    normalized = dict(schema)
+    properties = normalized.get("properties", {})
+    if not isinstance(properties, dict):
+        return schema, False
+    normalized_properties: dict[str, Any] = {}
+    compatible = True
+    for name, rule in properties.items():
+        if not isinstance(rule, dict):
+            compatible = False
+            normalized_properties[name] = rule
+            continue
+        updated = dict(rule)
+        if isinstance(updated.get("type"), list) or any(
+            key in updated for key in ("$ref", "anyOf", "oneOf", "allOf")
+        ):
+            compatible = False
+        if updated.get("type") == "object":
+            updated, child_compatible = normalize_tool_schema_for_provider(updated)
+            compatible = compatible and child_compatible
+        elif updated.get("type") == "array" and isinstance(updated.get("items"), dict):
+            items = dict(updated["items"])
+            if items.get("type") == "object":
+                items, child_compatible = normalize_tool_schema_for_provider(items)
+                compatible = compatible and child_compatible
+            updated["items"] = items
+        normalized_properties[name] = updated
+    normalized["properties"] = normalized_properties
+    if normalized.get("additionalProperties") not in (None, False):
+        compatible = False
+    else:
+        normalized["additionalProperties"] = False
+    required = normalized.get("required", [])
+    if not isinstance(required, list) or set(required) != set(normalized_properties):
+        compatible = False
+    return normalized, compatible
+
+
 class AssistantProviderError(NovaException):
     """The provider could not be reached or refused the request.
 
@@ -130,9 +171,7 @@ class AssistantProviderClient:
             resolved_model = await self._resolve_model(provider["id"], model)
             provider_params = provider.get("default_params") or {}
             capabilities = ProviderCapabilities.from_mapping(
-                provider_params.get("capabilities")
-                if isinstance(provider_params, dict)
-                else None,
+                provider_params.get("capabilities") if isinstance(provider_params, dict) else None,
                 base=CONSERVATIVE_OPENAI_COMPATIBLE,
             )
             for model_record in await ai_service.list_models(provider["id"]):
@@ -140,9 +179,7 @@ class AssistantProviderClient:
                     continue
                 model_params = model_record.get("default_params") or {}
                 capabilities = ProviderCapabilities.from_mapping(
-                    model_params.get("capabilities")
-                    if isinstance(model_params, dict)
-                    else None,
+                    model_params.get("capabilities") if isinstance(model_params, dict) else None,
                     base=capabilities,
                 )
                 max_tokens = model_record.get("max_tokens")
@@ -198,14 +235,17 @@ class AssistantProviderClient:
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"model": config.model, "messages": messages}
         if tools and config.capabilities.supports_tools:
-            if config.capabilities.supports_strict_tool_schema:
-                tools = [
-                    {
-                        **tool,
-                        "function": {**tool.get("function", {}), "strict": True},
-                    }
-                    for tool in tools
-                ]
+            prepared_tools: list[dict[str, Any]] = []
+            for tool in tools:
+                function = dict(tool.get("function") or {})
+                parameters, strict_compatible = normalize_tool_schema_for_provider(
+                    function.get("parameters") or {}
+                )
+                function["parameters"] = parameters
+                if config.capabilities.supports_strict_tool_schema and strict_compatible:
+                    function["strict"] = True
+                prepared_tools.append({**tool, "function": function})
+            tools = prepared_tools
             body["tools"] = tools
             if tool_choice is not None and config.capabilities.supports_tool_choice:
                 body["tool_choice"] = tool_choice

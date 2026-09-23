@@ -162,3 +162,73 @@ class TestPrepareStageSqlOrdering:
         # The redacted form must not carry the credential values.
         assert "'K'" not in prepared.redacted_sql
         assert "'***'" in prepared.redacted_sql
+
+    def test_stage_params_do_not_modify_literal_or_native_files_call(self):
+        import asyncio
+
+        config = StorageConfig(
+            storage_type="s3",
+            endpoint="",
+            bucket="stages",
+            base_prefix="products",
+            access_key="K",
+            secret_key="S",
+        )
+        sql = (
+            "SELECT 'FILES(x)' AS note FROM @products.data.csv p "
+            "JOIN FILES('path'='s3://other/data.csv') f ON p.id = f.id"
+        )
+        prepared = asyncio.run(
+            prepare_stage_sql(sql, stage_configs={"products": config}, csv_params=CSV_PARAMS)
+        )
+        assert "'FILES(x)' AS note" in prepared.engine_sql
+        assert "FILES('path'='s3://other/data.csv')" in prepared.engine_sql
+        assert prepared.engine_sql.count("csv.column_separator") == 1
+
+    def test_csv_params_do_not_reach_parquet_stage(self):
+        import asyncio
+
+        configs = {
+            name: StorageConfig(
+                storage_type="s3",
+                endpoint="",
+                bucket="stages",
+                base_prefix=name,
+                access_key="K",
+                secret_key="S",
+            )
+            for name in ("csv_stage", "parquet_stage")
+        }
+        prepared = asyncio.run(
+            prepare_stage_sql(
+                "SELECT * FROM @csv_stage.a.csv a "
+                "JOIN @parquet_stage.b.parquet b ON 1=1",
+                stage_configs=configs,
+                csv_params=CSV_PARAMS,
+            )
+        )
+        assert prepared.engine_sql.count("csv.column_separator") == 1
+
+    def test_fallback_credentials_only_touch_the_generated_stage_call(self, monkeypatch):
+        import asyncio
+
+        config = StorageConfig(
+            storage_type="s3",
+            endpoint="",
+            bucket="stages",
+            base_prefix="first",
+            storage_connection="first",
+        )
+        monkeypatch.setattr(
+            "app.modules.query.sql_pipeline.get_credential_params",
+            lambda storage_type, connection: {"aws.s3.access_key": connection},
+        )
+        prepared = asyncio.run(
+            prepare_stage_sql(
+                "SELECT * FROM @first.a.csv a "
+                "JOIN FILES('path'='s3://other/b.csv') b ON 1=1",
+                stage_configs={"first": config},
+            )
+        )
+        assert prepared.engine_sql.count("'aws.s3.access_key'='first'") == 1
+        assert "FILES('path'='s3://other/b.csv')" in prepared.engine_sql

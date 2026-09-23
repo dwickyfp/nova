@@ -47,6 +47,9 @@ class RecordingS3:
             def read(self):
                 return b"data"
 
+            def close(self):
+                return None
+
         return {"Body": _Body()}
 
     def delete_object(self, *, Bucket, Key):  # noqa: N803 - boto3 API

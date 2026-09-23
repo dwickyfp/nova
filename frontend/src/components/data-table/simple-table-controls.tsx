@@ -30,7 +30,7 @@ export function SimpleTableViewport({
   return (
     <div
       className={cn(
-        'relative max-h-[56vh] min-h-0 overflow-auto overscroll-contain rounded-lg border border-border bg-background',
+        'relative max-h-[56vh] min-h-0 overflow-auto rounded-lg border border-border bg-background',
         '[&>table>thead]:sticky [&>table>thead]:top-0 [&>table>thead]:z-20',
         '[&>table>thead]:border-b [&>table>thead]:border-border [&>table>thead]:bg-muted',
         '[&>table>tbody]:bg-background',

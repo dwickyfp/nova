@@ -21,7 +21,7 @@ from app.modules.ml_engine.registry.repository import (
     model_registry_repository,
 )
 from app.modules.ml_engine.runtime.model_cache import ModelCache
-from app.modules.ml_engine.spec import InvalidMLSpec
+from app.modules.ml_engine.spec import DataBudgetExceeded, InvalidMLSpec
 
 
 class ModelRuntime:
@@ -39,21 +39,28 @@ class ModelRuntime:
             max_models=settings.ML_MODEL_CACHE_MAX_MODELS,
             max_bytes=settings.ML_MODEL_CACHE_MAX_BYTES,
             ttl_seconds=settings.ML_MODEL_CACHE_TTL_SECONDS,
+            memory_multiplier=settings.ML_MODEL_CACHE_MEMORY_MULTIPLIER,
         )
         self.executor = executor or BoundedMLExecutor(name="nova-ml-inference")
 
     async def resolve_alias(
-        self, alias: str, *, owner_name: str, database_name: str | None
+        self, alias: str, *, owner_name: str, database_name: str | None, tenant: str = "default"
     ) -> dict[str, Any]:
         row = await self.repository.resolve_alias(
-            alias, owner_name=owner_name, database_name=database_name
+            alias,
+            owner_name=owner_name,
+            database_name=database_name,
+            **({"tenant": tenant} if tenant != "default" else {}),
         )
         if row is None:
             raise ValueError(f"Model alias '{alias}' was not found in this scope")
         return row
 
     async def load(self, metadata: dict[str, Any]) -> dict:
-        key = (str(metadata["model_id"]), int(metadata["version"]))
+        key = (
+            str(metadata.get("tenant_name", "default")) + ":" + str(metadata["model_id"]),
+            int(metadata["version"]),
+        )
 
         async def loader() -> tuple[dict, int]:
             artifact_uri = metadata.get("artifact_uri")
@@ -81,9 +88,10 @@ class ModelRuntime:
         *,
         owner_name: str,
         database_name: str | None,
+        tenant: str = "default",
     ) -> tuple[dict[str, Any], list[Any], list[dict[str, float]] | None]:
         metadata = await self.resolve_alias(
-            alias, owner_name=owner_name, database_name=database_name
+            alias, owner_name=owner_name, database_name=database_name, tenant=tenant
         )
         bundle = await self.load(metadata)
         if bundle.get("task") == "forecast":
@@ -105,6 +113,7 @@ class ModelRuntime:
         *,
         owner_name: str,
         database_name: str | None,
+        tenant: str = "default",
     ) -> tuple[dict[str, Any], list[Any], list[dict[str, float]] | None]:
         """Predict with one immutable model version, bypassing alias movement."""
         metadata = await self.repository.get_version(
@@ -112,6 +121,7 @@ class ModelRuntime:
             version,
             owner_name=owner_name,
             database_name=database_name,
+            **({"tenant": tenant} if tenant != "default" else {}),
         )
         if metadata is None:
             raise ValueError(f"Model version '{model_id}:{version}' was not found")
@@ -136,9 +146,10 @@ class ModelRuntime:
         *,
         owner_name: str,
         database_name: str | None,
+        tenant: str = "default",
     ) -> tuple[dict[str, Any], pa.Table]:
         metadata = await self.resolve_alias(
-            alias, owner_name=owner_name, database_name=database_name
+            alias, owner_name=owner_name, database_name=database_name, tenant=tenant
         )
         bundle = await self.load(metadata)
         if bundle.get("task") == "forecast":
@@ -154,9 +165,10 @@ class ModelRuntime:
         database_name: str | None,
         level: int = 95,
         series: str | None = None,
+        tenant: str = "default",
     ) -> tuple[dict[str, Any], pa.Table]:
         metadata = await self.resolve_alias(
-            alias, owner_name=owner_name, database_name=database_name
+            alias, owner_name=owner_name, database_name=database_name, tenant=tenant
         )
         bundle = await self.load(metadata)
         return metadata, await self.executor.run(
@@ -173,9 +185,14 @@ class ModelRuntime:
         database_name: str | None,
         level: int = 95,
         series: str | None = None,
+        tenant: str = "default",
     ) -> tuple[dict[str, Any], pa.Table]:
         metadata = await self.repository.get_version(
-            model_id, version, owner_name=owner_name, database_name=database_name
+            model_id,
+            version,
+            owner_name=owner_name,
+            database_name=database_name,
+            **({"tenant": tenant} if tenant != "default" else {}),
         )
         if metadata is None:
             raise ValueError(f"Model version '{model_id}:{version}' was not found")
@@ -209,10 +226,14 @@ class ModelRuntime:
         else:
             X = preprocessor.transform(table)
         model = bundle["model"]
-        if task == "anomaly_detection" or task == "clustering":
-            values = model.predict(X)
-        else:
-            values = model.predict(X)
+        from app.modules.ml_engine.preprocessing.memory import estimator_matrix
+
+        X = estimator_matrix(X, model)
+        if task in {"anomaly_detection", "clustering"}:
+            from app.modules.ml_engine.preprocessing.memory import bounded_dense
+
+            X = bounded_dense(X)
+        values = model.predict(X)
         label_encoder = bundle.get("label_encoder")
         if label_encoder is not None:
             values = label_encoder.inverse_transform(values)
@@ -246,6 +267,11 @@ class ModelRuntime:
         if horizon < 1:
             raise InvalidMLSpec("forecast horizon must be at least 1")
         model = bundle["model"]
+        series_count = len(getattr(model, "uids", [None]))
+        if horizon * series_count > settings.ML_RESULT_INLINE_MAX_ROWS:
+            raise DataBudgetExceeded(
+                "Forecast output exceeds the inline row budget; reduce series or horizon"
+            )
         frame = model.predict(h=horizon, level=[level])
         if series is not None:
             frame = frame.loc[frame["unique_id"].astype(str) == series]
@@ -272,4 +298,7 @@ class ModelRuntime:
                 "upper": frame.get(upper, None),
             }
         )
-        return pa.Table.from_pandas(output, preserve_index=False)
+        result = pa.Table.from_pandas(output, preserve_index=False)
+        if result.nbytes > settings.ML_RESULT_INLINE_MAX_BYTES:
+            raise DataBudgetExceeded("Forecast output exceeds the inline byte budget")
+        return result

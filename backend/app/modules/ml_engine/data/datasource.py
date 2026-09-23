@@ -61,6 +61,7 @@ async def collect_bounded(
             )
         batches.append(batch)
     metrics.queue_wait_seconds = float(getattr(source, "queue_wait_seconds", 0.0))
+    metrics.transport = getattr(source, "transport_used", metrics.transport)
     if not batches:
         raise ValueError("ML input query returned no rows")
     metrics.duration_ms = round((time.perf_counter() - started) * 1000, 3)

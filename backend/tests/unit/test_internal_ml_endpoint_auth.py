@@ -158,6 +158,27 @@ class TestTrustedCallerIsAccepted:
         assert resp.status_code == 200, resp.text
         assert resp.json()["prediction"] == "churned"
 
+    def test_prediction_failure_does_not_expose_internal_error(
+        self, predict_app, monkeypatch, caplog
+    ):
+        from app.modules.ml_engine.service import ml_engine_service
+
+        async def fail(*args, **kwargs):
+            raise RuntimeError("secret-sentinel")
+
+        monkeypatch.setattr(ml_engine_service, "predict", fail)
+        with _client(predict_app, peer="127.0.0.1") as client:
+            resp = client.post(
+                INTERNAL_PREDICT,
+                json=REQUEST_BODY,
+                headers={INTERNAL_TOKEN_HEADER: SECRET},
+            )
+
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Prediction failed"
+        assert "secret-sentinel" not in resp.text
+        assert "secret-sentinel" not in caplog.text
+
     def test_trusted_proxy_with_valid_token_succeeds(self, predict_app, monkeypatch):
         """Docker BE traffic forwarded by a trusted proxy is allowed in.
 

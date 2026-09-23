@@ -13,15 +13,20 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from app.core.config import settings
 from app.modules.ml_engine.preprocessing.profiler import FeatureProfile, profile_table
-from app.modules.ml_engine.spec import InferenceSchemaMismatch, UnsupportedFeatureType
+from app.modules.ml_engine.spec import (
+    InferenceSchemaMismatch,
+    MLMemoryBudgetExceeded,
+    UnsupportedFeatureType,
+)
 
 
 @dataclass
 class FeaturePreprocessor:
     feature_columns: list[str]
     scale_numeric: bool = True
-    max_categories: int = 100
+    max_categories: int = field(default_factory=lambda: settings.ML_MAX_CATEGORIES)
     profiles: list[FeatureProfile] = field(default_factory=list)
     transformer: ColumnTransformer | None = None
     expanded_columns: list[str] = field(default_factory=list)
@@ -33,13 +38,14 @@ class FeaturePreprocessor:
         unsupported = [item.name for item in self.profiles if item.kind == "unsupported"]
         if unsupported:
             raise UnsupportedFeatureType("Unsupported ML feature types: " + ", ".join(unsupported))
-        frame = self._frame(table)
         numeric = [item.name for item in self.profiles if item.kind == "numeric"]
         boolean = [item.name for item in self.profiles if item.kind == "boolean"]
         categorical = [item.name for item in self.profiles if item.kind == "categorical"]
         datetime_columns = [item.name for item in self.profiles if item.kind == "datetime"]
         expanded_datetime = self._datetime_columns(datetime_columns)
         numeric += expanded_datetime
+        self._guard_numeric_allocation(table.num_rows, len(numeric))
+        frame = self._frame(table)
         self.expanded_columns = list(frame.columns)
 
         numeric_steps: list[tuple[str, object]] = [
@@ -67,14 +73,24 @@ class FeaturePreprocessor:
             transformers.append(("categorical", categorical_pipeline, categorical + boolean))
         if not transformers:
             raise UnsupportedFeatureType("No supported feature columns were found")
-        self.transformer = ColumnTransformer(transformers, remainder="drop")
+        self.transformer = ColumnTransformer(transformers, remainder="drop", sparse_threshold=1.0)
         return self.transformer.fit_transform(frame)
 
     def transform(self, table: pa.Table):
         self._validate_columns(table)
         if self.transformer is None:
             raise RuntimeError("FeaturePreprocessor has not been fitted")
+        numeric_count = sum(item.kind == "numeric" for item in self.profiles)
+        numeric_count += len(
+            self._datetime_columns([item.name for item in self.profiles if item.kind == "datetime"])
+        )
+        self._guard_numeric_allocation(table.num_rows, numeric_count)
         return self.transformer.transform(self._frame(table))
+
+    @staticmethod
+    def _guard_numeric_allocation(rows: int, columns: int) -> None:
+        if rows * columns * 8 > settings.ML_DENSE_MATRIX_MAX_BYTES:
+            raise MLMemoryBudgetExceeded("Numeric feature matrix exceeds the dense-memory budget")
 
     def _validate_columns(self, table: pa.Table) -> None:
         missing = [name for name in self.feature_columns if name not in table.column_names]

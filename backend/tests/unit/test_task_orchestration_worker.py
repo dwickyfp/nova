@@ -33,6 +33,7 @@ from app.modules.task_orchestration.execution import (
     NodeExecutionError,
     TaskSpec,
     build_submit_task,
+    native_attempt_name,
 )
 from app.modules.task_orchestration.worker import GraphRunJob, GraphRunWorker
 
@@ -266,6 +267,8 @@ class TestDagExecution:
         )
         assert state == GraphState.SUCCESS
         assert [spec.name for spec, _ in executor.submissions] == ["A", "B", "C", "D"]
+        assert len({spec.native_name for spec, _ in executor.submissions}) == 4
+        assert all(spec.native_name for spec, _ in executor.submissions)
         assert repo.graph_runs["gr1"]["state"] == "success"
 
     async def test_node_failure_fails_the_graph_and_skips_descendants(self, audit):
@@ -289,6 +292,24 @@ class TestDagExecution:
         # A, then B, then C+D in flight together: the peak is 2, not 1.
         assert executor.max_in_flight == 2
         assert len(executor.submissions) == 4
+
+    async def test_wide_graph_limits_in_flight_nodes(self, audit):
+        repo = FakeRepository()
+        repo.add_task("A")
+        for index in range(12):
+            name = f"child_{index}"
+            repo.add_task(name)
+            repo.add_edge("g_wide", "A", name)
+        repo.add_graph_run("gr_wide", "g_wide")
+        executor = RecordingExecutor(delay=0.01)
+
+        state = await GraphRunWorker(repo, executor, max_parallel_nodes=3).handle(
+            GraphRunJob("gr_wide", "g_wide")
+        )
+
+        assert state == GraphState.SUCCESS
+        assert executor.max_in_flight == 3
+        assert len(executor.submissions) == 13
 
     async def test_join_waits_for_both_parents(self, audit):
         repo = FakeRepository()
@@ -355,7 +376,15 @@ class TestDelegateFirst:
         executor = RecordingExecutor()
         await GraphRunWorker(repo, executor).handle(GraphRunJob("gr1", "id_A"))
         assert executor.submissions == [
-            (TaskSpec(name="A", body="INSERT INTO t SELECT 1", database=None), "bob")
+            (
+                TaskSpec(
+                    name="A",
+                    body="INSERT INTO t SELECT 1",
+                    database=None,
+                    native_name=native_attempt_name("tr_gr1_id_A"),
+                ),
+                "bob",
+            )
         ]
 
     async def test_owner_without_a_credential_fails_the_node(self, audit):
@@ -384,6 +413,13 @@ class TestDelegateFirst:
         assert build_submit_task(TaskSpec("t", "SELECT 1", database="db")) == (
             "SUBMIT TASK `db`.`t` AS SELECT 1"
         )
+        first = native_attempt_name("node-run-1")
+        second = native_attempt_name("node-run-2")
+        assert first != second
+        assert first == native_attempt_name("node-run-1")
+        assert build_submit_task(
+            TaskSpec("t", "INSERT INTO x SELECT 1", database="db", native_name=first)
+        ) == f"SUBMIT TASK `db`.`{first}` AS INSERT INTO x SELECT 1"
 
     def test_identifier_is_escaped(self):
         assert build_submit_task(TaskSpec("a`b", "SELECT 1")) == (
@@ -401,6 +437,23 @@ class _DenyProvider(OwnerCredentialProvider):
 
 
 class TestIdempotency:
+    async def test_late_claim_cannot_reset_a_settled_graph(self, audit):
+        class RacingRepository(FakeRepository):
+            async def transition_graph_run(self, run_id, from_states, to_state):
+                self.graph_runs[run_id]["state"] = "success"
+                return await super().transition_graph_run(run_id, from_states, to_state)
+
+        repo = RacingRepository()
+        repo.add_task("A")
+        repo.add_graph_run("gr1", "id_A")
+        executor = RecordingExecutor()
+
+        state = await GraphRunWorker(repo, executor).handle(GraphRunJob("gr1", "id_A"))
+
+        assert state == GraphState.SUCCESS
+        assert repo.graph_runs["gr1"]["state"] == "success"
+        assert executor.submissions == []
+
     async def test_duplicate_delivery_executes_each_node_once(self, audit):
         repo = FakeRepository()
         make_chain(repo)
@@ -453,12 +506,8 @@ class TestIdempotency:
 
 
 class TestRestartSafety:
-    async def test_abandoned_running_row_is_re_evaluated(self, audit):
-        """A RUNNING node with a stale heartbeat is not trusted as progress.
-
-        The reconciler marks it abandoned; the worker re-evaluates the graph and
-        re-runs the node, so the work is not lost.
-        """
+    async def test_abandoned_running_row_is_held_without_resubmission(self, audit):
+        """A lost heartbeat cannot prove the native submit did not happen."""
         repo = FakeRepository()
         repo.add_task("A")
         repo.add_graph_run("gr1", "id_A", state="running")
@@ -467,11 +516,12 @@ class TestRestartSafety:
         stale["running_stale"] = True
 
         executor = RecordingExecutor()
-        # The worker re-derives: a stale running row is abandoned, so A is ready.
+        # The worker re-derives the graph but does not replay uncertain SQL.
         await repo.transition_task_run(stale["id"], ["running"], "abandoned")
         state = await GraphRunWorker(repo, executor).handle(GraphRunJob("gr1", "id_A"))
-        assert state == GraphState.SUCCESS
-        assert [spec.name for spec, _ in executor.submissions] == ["A"]
+        assert state == GraphState.RUNNING
+        assert repo.task_runs[stale["id"]]["state"] == "abandoned"
+        assert executor.submissions == []
 
     async def test_pending_run_with_no_delivery_is_reconcilable(self, audit):
         """A graph run persisted but never published is still visible."""

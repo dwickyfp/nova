@@ -5,13 +5,11 @@ import { Bot, Plus, Save, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -70,7 +68,7 @@ export function AgentsPage() {
       <Main>
         <div className='mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
           <div className='min-w-0'>
-            <h1 className='text-2xl font-semibold tracking-tight'>Agent Studio</h1>
+            <h1 className='text-2xl leading-8 font-normal'>Agent Studio</h1>
             <p className='mt-1 text-sm text-muted-foreground'>
               Build agents with instructions, tools, and a semantic model, then
               chat with them in Nova Studio.
@@ -97,7 +95,7 @@ export function AgentsPage() {
           />
         </div>
 
-        <ScrollArea className='min-h-0 flex-1'>
+        <div className='min-h-0 min-w-0 flex-1'>
           {agentsQuery.isLoading ? (
             <div className='space-y-2'>
               {Array.from({ length: 5 }).map((_, i) => (
@@ -117,14 +115,13 @@ export function AgentsPage() {
               }
             />
           ) : (
-            <Table>
+            <Table className='min-w-[36rem] table-fixed'>
               <TableHeader>
                 <TableRow>
                   <TableHead>Agent</TableHead>
-                  <TableHead>Semantic data</TableHead>
-                  <TableHead>Tools</TableHead>
-                  <TableHead>Updated</TableHead>
-                  <TableHead className='text-right'>Actions</TableHead>
+                  <TableHead className='w-40'>Semantic data</TableHead>
+                  <TableHead className='w-28'>Updated</TableHead>
+                  <TableHead className='w-28 text-right'>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -132,9 +129,9 @@ export function AgentsPage() {
                   <TableRow key={agent.agent_id}>
                     <TableCell>
                       <div className='flex flex-col'>
-                        <span className='font-medium'>{agent.name}</span>
+                        <span className='truncate font-medium' title={agent.name}>{agent.name}</span>
                         {agent.description ? (
-                          <span className='line-clamp-1 text-xs text-muted-foreground'>
+                          <span className='truncate text-xs text-muted-foreground' title={agent.description}>
                             {agent.description}
                           </span>
                         ) : null}
@@ -146,18 +143,6 @@ export function AgentsPage() {
                             agent.semantic_model_ids.length === 1 ? '' : 's'
                           }`
                         : 'No semantic model'}
-                    </TableCell>
-                    <TableCell>
-                      <div className='flex flex-wrap gap-1'>
-                        {agent.default_tools.slice(0, 3).map((tool) => (
-                          <Badge key={tool} variant='secondary'>
-                            {tool}
-                          </Badge>
-                        ))}
-                        {agent.default_tools.length > 3 ? (
-                          <Badge variant='outline'>+{agent.default_tools.length - 3}</Badge>
-                        ) : null}
-                      </div>
                     </TableCell>
                     <TableCell className='text-muted-foreground'>
                       {new Date(agent.updated_at).toLocaleDateString()}
@@ -174,7 +159,7 @@ export function AgentsPage() {
               </TableBody>
             </Table>
           )}
-        </ScrollArea>
+        </div>
       </Main>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

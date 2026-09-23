@@ -199,7 +199,13 @@ async def get_view_ddl(
     """Get the CREATE VIEW DDL."""
     check_identifier(database, field="database")
     check_identifier(view, field="view name")
-    detail = await object_repo.get_view_detail(database, view)
+    detail = await object_repo.get_view_detail(
+        database,
+        view,
+        username=user["username"],
+        encrypted_password=user["encrypted_password"],
+        role=user.get("active_role"),
+    )
     if not detail:
         raise HTTPException(status_code=404, detail=f"View '{database}.{view}' not found")
     return {"ddl": detail["ddl"], "database": database, "view": view}

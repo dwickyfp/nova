@@ -2,6 +2,36 @@ import { describe, expect, it } from "vitest";
 import { parseAssistantEvent, readSseFrames } from "./events";
 
 describe("parseAssistantEvent", () => {
+  it("parses role changes and requires their security version", () => {
+    expect(
+      parseAssistantEvent(
+        "role_changed",
+        JSON.stringify({
+          active_role: "marketing",
+          security_context_version: 2,
+        }),
+      ),
+    ).toEqual({
+      type: "role_changed",
+      active_role: "marketing",
+      security_context_version: 2,
+    });
+    expect(
+      parseAssistantEvent("role_changed", '{"active_role":"marketing"}'),
+    ).toBeNull();
+    expect(
+      parseAssistantEvent(
+        "tool_call",
+        JSON.stringify({
+          tool_call_id: "switch",
+          tool_name: "query_execute",
+          sql_preview: "USE ROLE marketing",
+          classification: "session_change",
+          status: "pending",
+        }),
+      ),
+    ).toMatchObject({ payload: { classification: "session_change" } });
+  });
   it("parses a text delta", () => {
     expect(
       parseAssistantEvent("text_delta", JSON.stringify({ text: "hello" })),

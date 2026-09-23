@@ -152,14 +152,14 @@ async def list_sessions(
 
 
 async def thread_trace(
-    *, owner_name: str, thread_id: str
+    *, owner_name: str, agent_id: str, thread_id: str
 ) -> dict[str, Any] | None:
     """One thread's ordered turns, with model and tokens per assistant turn."""
     thread = await db.execute_system(
         "SELECT thread_id, title, user_name, agent_id, created_at, updated_at "
         "FROM NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS "
-        "WHERE thread_id = %s AND user_name = %s",
-        [thread_id, owner_name],
+        "WHERE thread_id = %s AND user_name = %s AND agent_id = %s",
+        [thread_id, owner_name, agent_id],
     )
     if not thread["rows"]:
         return None

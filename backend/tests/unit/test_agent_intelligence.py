@@ -33,7 +33,7 @@ from app.modules.assistant.provider_capabilities import (
 )
 from app.modules.assistant.service import AssistantLoop, LoopContext, _tool_message
 from app.modules.assistant.state import AssistantThread
-from app.modules.assistant.tools import ToolInvocation
+from app.modules.assistant.tools import ToolInvocation, ToolRegistry
 
 
 def test_agent_view_normalizes_legacy_harness_mode_to_auto():
@@ -62,18 +62,47 @@ def test_agent_view_normalizes_legacy_harness_mode_to_auto():
         ("Describe table orders", TurnIntent.SCHEMA_INSPECTION, ("query_execute",)),
         ("Forecast revenue 30 days", TurnIntent.MACHINE_LEARNING, ("semantic_query", "ml_execute")),
         ("Cluster customers", TurnIntent.MACHINE_LEARNING, ("semantic_query", "ml_execute")),
+        ("Visualisasikan tabel sebelumnya", TurnIntent.CHART, ("query_execute", "data_to_chart")),
+        ("Buat grafiknya dari data tadi", TurnIntent.CHART, ("query_execute", "data_to_chart")),
+        ("Plotkan hasil ini", TurnIntent.CHART, ("query_execute", "data_to_chart")),
         (
             "Forecast revenue and chart it",
             TurnIntent.COMPOUND_ANALYTICS,
             ("semantic_query", "ml_execute", "data_to_chart"),
         ),
         ("How do I use Nova?", TurnIntent.DIRECT_ANSWER, ()),
+        ("Create a user for Maya", TurnIntent.UI_OPERATION, ()),
+        ("Tambahkan scope pada role analyst untuk sales", TurnIntent.UI_OPERATION, ()),
+        ("Edit workspace SQL sales_report", TurnIntent.UI_OPERATION, ()),
+        ("Buat semantic view untuk sales", TurnIntent.UI_OPERATION, ()),
+        ("Hubungkan MCP server", TurnIntent.UI_OPERATION, ()),
     ],
 )
 def test_turn_router_reduces_capabilities(user_text, intent, tools):
     route = TurnRouter().route(user_text)
     assert route.intent == intent
     assert route.required_capabilities == tools
+
+
+@pytest.mark.parametrize(
+    ("user_text", "tools"),
+    [
+        ("Visualisasikan tabel sebelumnya", ("data_to_chart",)),
+        ("Buat grafiknya dari data tadi", ("data_to_chart",)),
+        ("Plotkan hasil ini", ("data_to_chart",)),
+        ("Buat chart", ("data_to_chart",)),
+        ("Buat chart revenue bulan ini", ("semantic_query", "data_to_chart")),
+    ],
+)
+def test_chart_follow_up_reuses_only_referenced_results(user_text, tools):
+    loop = AssistantLoop(
+        provider=AssistantProviderClient(), registry=ToolRegistry(), system_prompt="test"
+    )
+    context = LoopContext(
+        user_name="alice",
+        last_result={"columns": ["month", "revenue"], "rows": [["2026-06", 1]]},
+    )
+    assert loop._route(user_text, context).required_capabilities == tools
 
 
 def test_tool_gating_excludes_unrelated_capabilities():
@@ -92,6 +121,16 @@ def test_tool_gating_excludes_unrelated_capabilities():
     assert "query_execute" not in selected
     assert "ml_execute" not in selected
     assert "custom_pay" not in selected
+
+
+def test_ui_operation_route_exposes_discovery_and_execution_tools():
+    registry = CapabilityRegistry.from_tool_names(
+        ["find_ui_operation", "call_ui_operation", "query_execute", "semantic_query"]
+    )
+    selected = registry.gated_tools(TurnRouter().route("Tambahkan scope pada role analyst"))
+    assert "find_ui_operation" in selected
+    assert "call_ui_operation" in selected
+    assert "semantic_query" not in selected
 
 
 def test_agent_prompt_is_compiled_once_and_describes_only_real_tools():
@@ -146,14 +185,44 @@ def test_prompt_linter_detects_platform_conflicts():
 
 
 def test_active_state_accumulates_follow_up_constraints():
-    state = ActiveConversationState().update("Revenue Indonesia bulan ini")
-    state.update("Sekarang Jakarta saja")
-    state.update("dibanding bulan lalu")
-    assert state.filters == {"country": "Indonesia", "city": "Jakarta"}
+    state = ActiveConversationState().update("Revenue for enterprise this month")
+    assert state.filters == {}
+    state.merge_patch(
+        {"filters": {"segment": "Enterprise"}, "time_context": {"primary": "current_month"}}
+    )
+    state.merge_patch({"filters": {"region": "West"}})
+    state.merge_patch({"time_context": {"comparison": "previous_period"}})
+    assert state.filters == {"segment": "Enterprise", "region": "West"}
     assert state.time_context == {
         "primary": "current_month",
-        "comparison": "previous_month",
+        "comparison": "previous_period",
     }
+
+
+def test_intent_ledger_records_replaced_metric_and_filter() -> None:
+    state = ActiveConversationState().update("Revenue in West")
+    state.merge_patch(
+        {
+            "semantic_plan": {"metrics": ["revenue"]},
+            "selected_metrics": ["revenue"],
+            "filters": {"region": "West"},
+        }
+    )
+    state.update("Actually use net revenue in East")
+    state.merge_patch(
+        {
+            "semantic_plan": {"metrics": ["net_revenue"]},
+            "selected_metrics": ["net_revenue"],
+            "filters": {"region": "East"},
+        }
+    )
+    assert state.selected_metrics == ["net_revenue"]
+    assert state.filters == {"region": "East"}
+    assert state.intent_revision == 2
+    assert {item["field"] for item in state.intent_changes[-2:]} == {
+        "selected_metrics", "filters"
+    }
+    assert ActiveConversationState.from_dict(state.as_dict()).intent_changes == state.intent_changes
 
 
 def test_tool_result_never_uses_user_role_even_without_native_tools():
@@ -219,9 +288,7 @@ def test_provider_capability_matrix_changes_transport_only():
     assert body["tools"][0]["function"]["strict"] is True
     assert body["tool_choice"]["function"]["name"] == "semantic_query"
     assert body["parallel_tool_calls"] is False
-    decision = AssistantDecision.from_openai_message(
-        {"content": "", "tool_calls": [{"id": "1"}]}
-    )
+    decision = AssistantDecision.from_openai_message({"content": "", "tool_calls": [{"id": "1"}]})
     assert decision.tool_calls == ({"id": "1"},)
 
 
@@ -279,9 +346,7 @@ async def test_user_default_and_discoverable_skills_have_runtime_semantics(monke
             },
         ]
 
-    monkeypatch.setattr(
-        "app.modules.agents.service.agent_repository.list_skills", list_skills
-    )
+    monkeypatch.setattr("app.modules.agents.service.agent_repository.list_skills", list_skills)
     registry, prompt, _, _ = await AgentService().build_loop_inputs(
         {
             "agent_id": "a1",
@@ -313,9 +378,7 @@ async def test_ml_agent_auto_discovers_the_native_ml_platform_skill(monkeypatch)
         assert owner_name == "alice"
         return []
 
-    monkeypatch.setattr(
-        "app.modules.agents.service.agent_repository.list_skills", list_skills
-    )
+    monkeypatch.setattr("app.modules.agents.service.agent_repository.list_skills", list_skills)
     registry, prompt, _, _ = await AgentService().build_loop_inputs(
         {
             "agent_id": "ml-agent",

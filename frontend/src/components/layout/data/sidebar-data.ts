@@ -59,14 +59,10 @@ export const sidebarData: SidebarData = {
           icon: Brain,
           items: [
             {
-              title: "ML Models",
-              url: "/ml-models",
-              icon: Brain,
-            },
-            {
               title: "Agent",
               url: "/agents",
               icon: Bot,
+              section: "AI",
             },
             {
               title: "Semantic",
@@ -91,6 +87,12 @@ export const sidebarData: SidebarData = {
               // console keeps its current page, the way Snowflake CoWork opens
               // separately.
               newTab: true,
+            },
+            {
+              title: "ML Models",
+              url: "/ml-models",
+              icon: Brain,
+              section: "Machine Learning",
             },
           ],
         },

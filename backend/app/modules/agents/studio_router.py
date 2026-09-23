@@ -33,10 +33,18 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
 from app.core.deps import get_current_user
 from app.modules.agents import mcp_client, observability, tool_catalog
+from app.modules.agents.artifact_editor import propose_artifact_edit, run_artifact_draft
 from app.modules.agents.artifact_repository import artifact_repository
+from app.modules.agents.dashboard_repository import dashboard_repository
+from app.modules.agents.personal_skills import (
+    SkillDocumentRequest,
+    parse_skill_document,
+    save_skill,
+)
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.schemas import (
     AccessCheckItem,
@@ -44,6 +52,7 @@ from app.modules.agents.schemas import (
     AgentRoleAddRequest,
     AgentRoleListResponse,
     AgentRoleView,
+    AgentView,
     CustomToolCreateRequest,
     CustomToolListResponse,
     CustomToolUpdateRequest,
@@ -53,19 +62,28 @@ from app.modules.agents.schemas import (
     McpServerListResponse,
     McpServerUpdateRequest,
     McpServerView,
+    SkillListResponse,
+    SkillView,
     ToolCreateRequest,
     ToolListResponse,
     ToolToggleRequest,
     ToolView,
 )
-from app.modules.agents.skill_catalog import merge_skill_rows
 from app.modules.agents.studio_schemas import (
     AccessCheckRequest,
+    ArtifactApplyRequest,
     ArtifactCreateRequest,
+    ArtifactEditRequest,
+    ArtifactEditResponse,
     ArtifactListResponse,
     ArtifactRefreshResponse,
     ArtifactSummary,
     ArtifactView,
+    DashboardCreateRequest,
+    DashboardListResponse,
+    DashboardSummary,
+    DashboardUpdateRequest,
+    DashboardView,
     RoleListResponse,
     SessionListResponse,
     SessionView,
@@ -109,7 +127,7 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
     """What the caller can use, for the Studio Capabilities view."""
     owner = user["username"]
     agents = await agent_repository.list_agents(owner_name=owner)
-    skills = merge_skill_rows(await agent_repository.list_skills(owner_name=owner))
+    skills = await agent_repository.list_skills(owner_name=owner)
     await _seed_builtin_tools(owner)
     tools = await agent_repository.list_tools(owner_name=owner)
     return StudioCapabilities(
@@ -121,7 +139,7 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
             {
                 "name": s["name"],
                 "description": s["description"],
-                "source": s["source"],
+                "source": "user",
             }
             for s in skills
         ],
@@ -134,6 +152,144 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
             }
             for t in tools
         ],
+        connectors=[
+            {
+                "server_id": s["server_id"],
+                "name": s["name"],
+                "description": s["description"],
+                "is_active": s["is_active"],
+                "last_status": s.get("last_status"),
+            }
+            for s in await agent_repository.list_mcp_servers(owner_name=INTERNAL_CONNECTOR_OWNER)
+        ],
+    )
+
+
+@router.get("/studio/skills", response_model=SkillListResponse)
+async def list_personal_skills(user: dict = Depends(get_current_user)):
+    rows = await agent_repository.list_skills(owner_name=user["username"])
+    return SkillListResponse(skills=[SkillView(**row) for row in rows], count=len(rows))
+
+
+@router.post("/studio/skill-author", response_model=AgentView)
+async def ensure_skill_author(user: dict = Depends(get_current_user)):
+    from app.modules.agents.skill_author import skill_author_config
+
+    return AgentView(**skill_author_config(user["username"]))
+
+
+@router.post("/studio/skills", response_model=SkillView, status_code=201)
+async def upload_personal_skill(body: SkillDocumentRequest, user: dict = Depends(get_current_user)):
+    try:
+        fields = parse_skill_document(body.document)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return SkillView(**await save_skill(fields, user=user))
+
+
+@router.post("/studio/skills/verify")
+async def verify_personal_skill(
+    body: SkillDocumentRequest, user: dict = Depends(get_current_user)
+) -> dict[str, str]:
+    from app.modules.assistant.skill_registry import skill_library
+
+    try:
+        fields = parse_skill_document(body.document)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if skill_library.get(fields["name"]):
+        raise HTTPException(409, "That name is reserved by a built-in skill.")
+    existing = await agent_repository.list_skills(owner_name=user["username"])
+    if any(row["name"] == fields["name"] for row in existing):
+        raise HTTPException(409, "You already have a skill with this name.")
+    return {"name": fields["name"], "description": fields["description"]}
+
+
+@router.put("/studio/skills/{skill_id}", response_model=SkillView)
+async def update_personal_skill(
+    skill_id: str, body: SkillDocumentRequest, user: dict = Depends(get_current_user)
+):
+    try:
+        fields = parse_skill_document(body.document)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return SkillView(**await save_skill(fields, user=user, skill_id=skill_id))
+
+
+# ── Studio dashboards ─────────────────────────────────────────
+
+
+async def _dashboard_or_404(dashboard_id: str, owner_name: str) -> dict:
+    dashboard = await dashboard_repository.get(dashboard_id, owner_name=owner_name)
+    if dashboard is None:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    return dashboard
+
+
+@router.get("/studio/dashboards", response_model=DashboardListResponse)
+async def list_dashboards(user: dict = Depends(get_current_user)):
+    rows = await dashboard_repository.list(owner_name=user["username"])
+    dashboards = [DashboardSummary(**row) for row in rows]
+    return DashboardListResponse(dashboards=dashboards, count=len(dashboards))
+
+
+@router.post("/studio/dashboards", response_model=DashboardView, status_code=201)
+async def create_dashboard(
+    body: DashboardCreateRequest,
+    user: dict = Depends(get_current_user),
+):
+    dashboard = await dashboard_repository.create(
+        owner_name=user["username"], title=body.title.strip()
+    )
+    await write_audit_log(
+        event_type="DASHBOARD", user_name=user["username"], action="create",
+        object_type="DASHBOARD", object_name=dashboard["dashboard_id"],
+        status="SUCCESS", session_id=user.get("session_id"),
+    )
+    return DashboardView(**dashboard)
+
+
+@router.get("/studio/dashboards/{dashboard_id}", response_model=DashboardView)
+async def get_dashboard(dashboard_id: str, user: dict = Depends(get_current_user)):
+    return DashboardView(**await _dashboard_or_404(dashboard_id, user["username"]))
+
+
+@router.put("/studio/dashboards/{dashboard_id}", response_model=DashboardView)
+async def update_dashboard(
+    dashboard_id: str,
+    body: DashboardUpdateRequest,
+    user: dict = Depends(get_current_user),
+):
+    await _dashboard_or_404(dashboard_id, user["username"])
+    owned = await artifact_repository.list(owner_name=user["username"])
+    owned_ids = {artifact["artifact_id"] for artifact in owned}
+    if any(tile.artifact_id not in owned_ids for tile in body.layout.tiles):
+        raise HTTPException(status_code=422, detail="Dashboard contains an unavailable artifact")
+    updated = await dashboard_repository.update(
+        dashboard_id,
+        owner_name=user["username"],
+        title=body.title.strip(),
+        layout=body.layout,
+        expected_updated_at=body.expected_updated_at,
+    )
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Dashboard changed. Reload before saving.")
+    await write_audit_log(
+        event_type="DASHBOARD", user_name=user["username"], action="update",
+        object_type="DASHBOARD", object_name=dashboard_id,
+        status="SUCCESS", session_id=user.get("session_id"),
+    )
+    return DashboardView(**updated)
+
+
+@router.delete("/studio/dashboards/{dashboard_id}", status_code=204)
+async def delete_dashboard(dashboard_id: str, user: dict = Depends(get_current_user)):
+    await _dashboard_or_404(dashboard_id, user["username"])
+    await dashboard_repository.delete(dashboard_id, owner_name=user["username"])
+    await write_audit_log(
+        event_type="DASHBOARD", user_name=user["username"], action="delete",
+        object_type="DASHBOARD", object_name=dashboard_id,
+        status="SUCCESS", session_id=user.get("session_id"),
     )
 
 
@@ -241,6 +397,80 @@ async def refresh_artifact(
     )
 
 
+@router.post(
+    "/studio/artifacts/{artifact_id}/edit",
+    response_model=ArtifactEditResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def edit_artifact(
+    artifact_id: str,
+    body: ArtifactEditRequest,
+    user: dict = Depends(get_current_user),
+):
+    artifact = await _artifact_or_404(artifact_id, user["username"])
+    try:
+        proposal = await propose_artifact_edit(artifact, body, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await write_audit_log(
+        event_type="ARTIFACT",
+        user_name=user["username"],
+        action="propose_edit",
+        object_type="ARTIFACT",
+        object_name=artifact_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+    )
+    return proposal
+
+
+@router.patch(
+    "/studio/artifacts/{artifact_id}",
+    response_model=ArtifactRefreshResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def apply_artifact_edit(
+    artifact_id: str,
+    body: ArtifactApplyRequest,
+    user: dict = Depends(get_current_user),
+):
+    artifact = await _artifact_or_404(artifact_id, user["username"])
+    try:
+        result = await run_artifact_draft(body.draft, artifact, user)
+        updated = await artifact_repository.update(
+            artifact_id,
+            owner_name=user["username"],
+            expected_updated_at=body.expected_updated_at,
+            sql_text=body.draft.sql_text,
+            artifact_type=body.draft.artifact_type,
+            chart_spec=body.draft.chart_spec,
+            title=artifact["title"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This artifact changed. Refresh it before applying the draft.",
+        )
+    await write_audit_log(
+        event_type="ARTIFACT",
+        user_name=user["username"],
+        action="update",
+        object_type="ARTIFACT",
+        object_name=artifact_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+    )
+    return ArtifactRefreshResponse(
+        artifact=ArtifactView(**updated),
+        columns=result.columns,
+        rows=result.rows,
+        row_count=result.row_count,
+        elapsed_ms=result.elapsed_ms,
+    )
+
+
 @router.delete("/studio/artifacts/{artifact_id}", status_code=204)
 async def delete_artifact(
     artifact_id: str,
@@ -310,10 +540,33 @@ async def delete_tool(tool_id: str, user: dict = Depends(get_current_user)):
 
 # ── MCP servers ────────────────────────────────────────────────
 
+INTERNAL_CONNECTOR_OWNER = "__nova__"
+
+
+def _require_connector_admin(user: dict) -> None:
+    if "ACCOUNTADMIN" not in (user.get("roles") or []):
+        raise HTTPException(403, "MCP connectors are managed by your Nova administrator.")
+
+
+async def _audit_connector(
+    user: dict, action: str, server_id: str, status: str = "SUCCESS"
+) -> None:
+    await write_audit_log(
+        event_type="MCP_CONNECTOR",
+        user_name=user["username"],
+        action=action,
+        object_type="MCP_CONNECTOR",
+        object_name=server_id,
+        status=status,
+        session_id=user.get("session_id"),
+    )
+
 
 @router.get("/mcp-servers", response_model=McpServerListResponse)
 async def list_mcp_servers(user: dict = Depends(get_current_user)):
-    servers = await agent_repository.list_mcp_servers(owner_name=user["username"])
+    servers = await agent_repository.list_mcp_servers(owner_name=INTERNAL_CONNECTOR_OWNER)
+    if "ACCOUNTADMIN" not in (user.get("roles") or []):
+        servers = [{**s, "endpoint": None, "command": None, "args": []} for s in servers]
     views = [McpServerView(**s) for s in servers]
     return McpServerListResponse(servers=views, count=len(views))
 
@@ -323,9 +576,11 @@ async def create_mcp_server(
     body: McpServerCreateRequest,
     user: dict = Depends(get_current_user),
 ):
+    _require_connector_admin(user)
     created = await agent_repository.create_mcp_server(
-        owner_name=user["username"], fields=body.model_dump()
+        owner_name=INTERNAL_CONNECTOR_OWNER, fields=body.model_dump()
     )
+    await _audit_connector(user, "CREATE", created["server_id"])
     return McpServerView(**created)
 
 
@@ -342,19 +597,23 @@ async def update_mcp_server(
     body: McpServerUpdateRequest,
     user: dict = Depends(get_current_user),
 ):
-    await _require_server(server_id, user["username"])
+    _require_connector_admin(user)
+    await _require_server(server_id, INTERNAL_CONNECTOR_OWNER)
     updated = await agent_repository.update_mcp_server(
-        server_id, owner_name=user["username"], fields=body.model_dump(exclude_unset=True)
+        server_id, owner_name=INTERNAL_CONNECTOR_OWNER, fields=body.model_dump(exclude_unset=True)
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="MCP server not found")
+    await _audit_connector(user, "UPDATE", server_id)
     return McpServerView(**updated)
 
 
 @router.delete("/mcp-servers/{server_id}", status_code=204)
 async def delete_mcp_server(server_id: str, user: dict = Depends(get_current_user)):
-    if not await agent_repository.delete_mcp_server(server_id, owner_name=user["username"]):
+    _require_connector_admin(user)
+    if not await agent_repository.delete_mcp_server(server_id, owner_name=INTERNAL_CONNECTOR_OWNER):
         raise HTTPException(status_code=404, detail="MCP server not found")
+    await _audit_connector(user, "DELETE", server_id)
     return None
 
 
@@ -368,7 +627,8 @@ async def discover_mcp_server(
     Metadata only: the tools are recorded so they can be listed and selected.
     Nova does not invoke them, and does not run stdio servers.
     """
-    owner = user["username"]
+    _require_connector_admin(user)
+    owner = INTERNAL_CONNECTOR_OWNER
     server = await _require_server(server_id, owner)
 
     try:
@@ -377,6 +637,7 @@ async def discover_mcp_server(
         await agent_repository.update_mcp_server(
             server_id, owner_name=owner, fields={"last_status": "error"}
         )
+        await _audit_connector(user, "DISCOVER", server_id, "FAILED")
         return McpDiscoverResponse(ok=False, status="error", error=str(exc))
 
     for tool in discovered:
@@ -393,6 +654,7 @@ async def discover_mcp_server(
     await agent_repository.update_mcp_server(
         server_id, owner_name=owner, fields={"last_status": "connected"}
     )
+    await _audit_connector(user, "DISCOVER", server_id)
     return McpDiscoverResponse(ok=True, status="connected", tools_discovered=len(discovered))
 
 
@@ -515,8 +777,12 @@ async def create_custom_tool(
     errors = validate_custom_tool_definition(fields)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
-    created = await agent_repository.create_custom_tool(
-        owner_name=user["username"], fields=fields
+    await _require_unique_custom_tool_name(user["username"], fields["name"])
+    created = await agent_repository.create_custom_tool(owner_name=user["username"], fields=fields)
+    await write_audit_log(
+        event_type="CUSTOM_TOOL", user_name=user["username"], action="create",
+        object_type="CUSTOM_TOOL", object_name=created["tool_id"],
+        status="SUCCESS", session_id=user.get("session_id"),
     )
     return CustomToolView(**created)
 
@@ -541,11 +807,36 @@ async def update_custom_tool(
     errors = validate_custom_tool_definition(candidate)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
+    if candidate["name"] != existing["name"]:
+        await _require_unique_custom_tool_name(
+            user["username"], candidate["name"], except_tool_id=tool_id
+        )
     updated = await agent_repository.update_custom_tool(
         tool_id, owner_name=user["username"], fields=changes
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Custom tool not found")
+    if updated["name"] != existing["name"]:
+        old_key = f"custom:{existing['name']}"
+        new_key = f"custom:{updated['name']}"
+        agents = await agent_repository.list_agents(owner_name=user["username"])
+        for agent in agents:
+            selected = agent.get("default_tools") or []
+            if old_key in selected:
+                await agent_repository.update_agent(
+                    agent["agent_id"],
+                    owner_name=user["username"],
+                    fields={
+                        "default_tools": [
+                            new_key if tool == old_key else tool for tool in selected
+                        ]
+                    },
+                )
+    await write_audit_log(
+        event_type="CUSTOM_TOOL", user_name=user["username"], action="update",
+        object_type="CUSTOM_TOOL", object_name=tool_id,
+        status="SUCCESS", session_id=user.get("session_id"),
+    )
     return CustomToolView(**updated)
 
 
@@ -553,6 +844,11 @@ async def update_custom_tool(
 async def delete_custom_tool(tool_id: str, user: dict = Depends(get_current_user)):
     if not await agent_repository.delete_custom_tool(tool_id, owner_name=user["username"]):
         raise HTTPException(status_code=404, detail="Custom tool not found")
+    await write_audit_log(
+        event_type="CUSTOM_TOOL", user_name=user["username"], action="delete",
+        object_type="CUSTOM_TOOL", object_name=tool_id,
+        status="SUCCESS", session_id=user.get("session_id"),
+    )
     return None
 
 
@@ -583,7 +879,9 @@ async def agent_sessions(agent_id: str, limit: int = 100, user: dict = Depends(g
 )
 async def agent_thread_trace(agent_id: str, thread_id: str, user: dict = Depends(get_current_user)):
     await _require_agent(agent_id, user["username"])
-    trace = await observability.thread_trace(owner_name=user["username"], thread_id=thread_id)
+    trace = await observability.thread_trace(
+        owner_name=user["username"], agent_id=agent_id, thread_id=thread_id
+    )
     if trace is None:
         raise HTTPException(status_code=404, detail="Thread not found")
     return ThreadTraceResponse(**trace)
@@ -601,6 +899,16 @@ async def _require_custom_tool(tool_id: str, owner: str) -> dict:
     if tool is None:
         raise HTTPException(status_code=404, detail="Custom tool not found")
     return tool
+
+
+async def _require_unique_custom_tool_name(
+    owner: str, name: str, *, except_tool_id: str | None = None
+) -> None:
+    tools = await agent_repository.list_custom_tools(owner_name=owner)
+    if any(
+        tool["name"] == name and tool["tool_id"] != except_tool_id for tool in tools
+    ):
+        raise HTTPException(status_code=409, detail="Custom tool name already exists")
 
 
 def _clamp_days(days: int) -> int:

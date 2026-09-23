@@ -82,13 +82,13 @@ Only one object ever holds both forms, and its field names state which is which:
 |---------|----------------------|-------|
 | Stage file access | `@stage[.path][/][.file.ext]` → `FILES()` | `02-stage-queries.md` |
 | ML model training | `CREATE ML_MODEL name TYPE=… TARGET=… AS SELECT …` | `03-ml-model-ddl.md` |
-| Classical ML inference | `ML_PREDICT(alias, features_json)` — **placeholder UDF; SQL intercept not wired** | `04-ml-predict-evaluate.md` |
+| Classical ML inference | `ML_PREDICT(alias, features_json)` — intercepted by Nova's query service | `04-ml-predict-evaluate.md` |
 | LLM functions | `AI_COMPLETE`, `AI_SENTIMENT`, `AI_CLASSIFY`, `AI_SUMMARIZE`, `AI_EXTRACT`, `AI_TRANSLATE`, `AI_FILTER` | `05-ai-functions.md` |
 | Nova DDL (also intercepted) | `CREATE TASK …` lowered to `CONFIG_TASK*` metadata | `06-nova-system-tables.md` |
 
 `CREATE ML_MODEL` and `CREATE TASK` are **Nova statements**: they are parsed by Nova and never sent to StarRocks in their written form. The `AI_*` functions are **StarRocks global UDFs** registered by Nova at startup, so they execute inside the engine.
 
-> **`ML_PREDICT` gap.** `ML_PREDICT` is registered as a global UDF and executes in the engine, but it is a **placeholder**: it returns an instruction string, not a prediction. The SQL-level `ml_predict()` intercept in `backend/app/common/ml_intercept.py` is **not wired** — the module has zero imports outside its own definition (`grep -rn 'ml_intercept' backend/app/` → no import). Real inference is via `POST /api/v1/ml/predict` and `POST /api/v1/ml/predict/batch`. See `04-ml-predict-evaluate.md`; the parity finding is `10:81`.
+> **`ML_PREDICT` execution.** Nova's query service imports the SQL intercept from `backend/app/common/ml_intercept.py`; inference through Nova is not the placeholder UDF path. Direct engine connections do not use Nova's intercept. Supported forms and limitations are documented in `04-ml-predict-evaluate.md`.
 
 ### Execution surfaces
 

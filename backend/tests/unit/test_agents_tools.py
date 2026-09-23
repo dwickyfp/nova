@@ -16,13 +16,19 @@ No engine, no network.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 
 from app.modules.agents.prompt import build_system_prompt
 from app.modules.agents.registry import build_registry
-from app.modules.agents.tools.data_to_chart import sanitize_chart_spec
+from app.modules.agents.tools.data_to_chart import DataToChartTool, sanitize_chart_spec
 from app.modules.assistant import events
+from app.modules.assistant.tools import ToolInvocation
 
 
 def test_registry_is_a_structural_tool_selection() -> None:
@@ -100,6 +106,81 @@ def test_sanitize_chart_spec_rejects_unknown_mark() -> None:
 def test_sanitize_chart_spec_rejects_missing_data() -> None:
     raw = {"mark": "bar", "encoding": {}}
     assert sanitize_chart_spec(raw, title="t") is None
+
+
+@pytest.mark.asyncio
+async def test_chart_uses_every_verified_row_not_only_model_preview() -> None:
+    tool = DataToChartTool()
+    tool._model_spec = AsyncMock(
+        return_value={
+            "mark": "point",
+            "data": {"values": [{"x": 0, "y": 0}]},
+            "encoding": {
+                "x": {"field": "x", "type": "quantitative"},
+                "y": {"field": "y", "type": "quantitative"},
+            },
+        }
+    )
+    context = SimpleNamespace(
+        last_result={
+            "title": "Scatter",
+            "columns": ["x", "y"],
+            "rows": [[i, Decimal("1.5")] for i in range(35)],
+        }
+    )
+
+    outcome = await tool.run(ToolInvocation("chart-1", "data_to_chart", {}), context)
+
+    assert outcome.ok
+    spec = json.loads(outcome.chart["chart_spec"])
+    assert spec["mark"] == "point"
+    assert len(spec["data"]["values"]) == 35
+    assert spec["data"]["values"][34] == {"x": 34, "y": 1.5}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "encoding",
+    [
+        {
+            "x": {"field": "invented", "type": "nominal"},
+            "y": {"field": "sales", "type": "quantitative"},
+        },
+        {
+            "x": {"field": "region", "type": []},
+            "y": {"field": "sales", "type": "quantitative"},
+        },
+    ],
+)
+async def test_chart_falls_back_when_model_encoding_is_invalid(
+    encoding: dict[str, object],
+) -> None:
+    tool = DataToChartTool()
+    tool._model_spec = AsyncMock(
+        return_value={
+            "mark": "point",
+            "data": {"values": []},
+            "encoding": encoding,
+        }
+    )
+    context = SimpleNamespace(last_result={"columns": ["region", "sales"], "rows": [["West", 12]]})
+
+    outcome = await tool.run(ToolInvocation("chart-1", "data_to_chart", {}), context)
+
+    assert outcome.ok
+    spec = json.loads(outcome.chart["chart_spec"])
+    assert spec["mark"] == "bar"
+    assert spec["data"]["values"] == [{"region": "West", "sales": 12}]
+
+
+def test_chart_dimensions_are_bounded() -> None:
+    spec = sanitize_chart_spec(
+        {"mark": "bar", "data": {"values": []}, "width": 100000, "height": -1},
+        title="t",
+    )
+    assert spec is not None
+    assert "width" not in spec
+    assert "height" not in spec
 
 
 def test_fallback_chart_is_a_horizontal_abbreviated_bar() -> None:
