@@ -248,8 +248,12 @@ async def sr_root(docker_services):
             continue
         break
 
+    admin_password = os.getenv("NOVA_ADMIN_TEST_PASSWORD", "NovaProxy2026!")
     async with conn.cursor() as cur:
-        await cur.execute("CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY 'nova'")
+        await cur.execute(
+            "CREATE USER IF NOT EXISTS 'nova_admin' IDENTIFIED BY %s", (admin_password,)
+        )
+        await cur.execute("ALTER USER 'nova_admin' IDENTIFIED BY %s", (admin_password,))
         await cur.execute("GRANT ALL ON *.* TO 'nova_admin' WITH GRANT OPTION")
         await cur.execute("CREATE USER IF NOT EXISTS 'testanalyst' IDENTIFIED BY 'testpass'")
         await cur.execute("CREATE ROLE IF NOT EXISTS 'test_analyst'")
@@ -340,7 +344,7 @@ async def admin_token(client):
         "/api/v1/auth/login",
         json={
             "username": "nova_admin",
-            "password": os.getenv("NOVA_ADMIN_TEST_PASSWORD", "nova"),
+            "password": os.getenv("NOVA_ADMIN_TEST_PASSWORD", "NovaProxy2026!"),
         },
     )
     assert resp.status_code == 200

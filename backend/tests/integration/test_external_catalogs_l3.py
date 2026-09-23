@@ -59,14 +59,8 @@ CATALOG_NAME = "nova_l3_iceberg"
 DATABASE_NAME = "db1"
 TABLE_NAME = "events"
 
-#: This suite provisions its own admin instead of using the shared
-#: ``admin_token`` fixture. ``admin_token`` logs in as ``nova_admin`` with the
-#: password conftest assumes, but CI runs ``seed_engine.sh`` first, which resets
-#: ``nova_admin`` to the proxy suite's password — so the shared account's
-#: credential is not portable, and a hard-coded login there is what made this
-#: suite 401 at setup in CI. A suite-local account (same pattern as
-#: ``test_tasks_rbac_connection.py``) is deterministic regardless of what the
-#: environment seeded.
+#: Keep catalog changes under a suite-local admin so they do not depend on
+#: the shared ``nova_admin`` account or another test's session state.
 L3_ADMIN_USER = f"nova_l3_admin_{uuid.uuid4().hex[:8]}"
 L3_ADMIN_PASSWORD = "nova_l3_admin_pw"
 
@@ -467,4 +461,3 @@ class TestNoCredentialLeak:
         flat = str(rows)
         assert MINIO_ACCESS not in flat
         assert MINIO_SECRET not in flat
-

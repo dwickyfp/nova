@@ -72,7 +72,7 @@ async def list_databases(user: dict = require_admin):
         databases = await user_service.list_databases()
         return {"databases": databases, "count": len(databases)}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/databases/{db}/tables")
@@ -81,7 +81,7 @@ async def list_tables(db: str, user: dict = require_admin):
         tables = await user_service.list_tables(db)
         return {"database": db, "tables": tables, "count": len(tables)}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("", response_model=UserListResponse)
@@ -147,7 +147,9 @@ async def create_user(body: UserCreate, user: dict = require_admin):
                 "auth_mode": "native_password",
                 "password_enabled": True,
                 "properties": {
-                    "max_user_connections": "" if body.max_user_connections is None else str(body.max_user_connections),
+                    "max_user_connections": (
+                        "" if body.max_user_connections is None else str(body.max_user_connections)
+                    ),
                     "catalog": body.catalog or "",
                     "database": body.database or "",
                 },
@@ -224,11 +226,11 @@ async def update_user(
                 raise ValueError("No update fields provided")
         return {"username": username, "host": host, "updated": executed}
     except PermissionError as e:
-        raise ForbiddenSQLError(str(e))
+        raise ForbiddenSQLError(str(e)) from e
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/{username}", status_code=204)
@@ -258,9 +260,9 @@ async def drop_user(
                     )
                 raise
     except PermissionError as e:
-        raise ForbiddenSQLError(str(e))
+        raise ForbiddenSQLError(str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{username}/grants")
@@ -273,7 +275,7 @@ async def get_user_grants(
         grants = await user_service.get_user_grants(username, host=host)
         return {"username": username, "host": host, "grants": grants, "count": len(grants)}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{username}/detail", response_model=UserDetailResponse)
@@ -285,9 +287,9 @@ async def get_user_detail(
     try:
         return UserDetailResponse(**await user_service.get_user_detail(username, host=host))
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{username}/properties")
@@ -299,7 +301,7 @@ async def get_user_properties(
         properties = await user_service.get_user_properties(username)
         return {"username": username, "properties": properties}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{username}/authentication", response_model=UserAuthenticationResponse)
@@ -309,9 +311,11 @@ async def get_user_authentication(
     user: dict = require_admin,
 ):
     try:
-        return UserAuthenticationResponse(**await user_service.get_user_authentication(username, host=host))
+        return UserAuthenticationResponse(
+            **await user_service.get_user_authentication(username, host=host)
+        )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{username}/default-roles", response_model=UserDefaultRolesResponse)
@@ -321,9 +325,11 @@ async def get_user_default_roles(
     user: dict = require_admin,
 ):
     try:
-        return UserDefaultRolesResponse(**await user_service.get_user_default_roles(username, host=host))
+        return UserDefaultRolesResponse(
+            **await user_service.get_user_default_roles(username, host=host)
+        )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/{username}/roles", status_code=201)
@@ -341,7 +347,7 @@ async def assign_role(
             await user_service.assign_role(username, body.role, host=body.host)
         return {"message": f"Role '{body.role}' assigned to '{username}@{body.host}'"}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/{username}/reset-password", response_model=UserResetPasswordResponse)
@@ -359,9 +365,9 @@ async def reset_user_password(
             message="Password reset successfully",
         )
     except PermissionError as e:
-        raise ForbiddenSQLError(str(e))
+        raise ForbiddenSQLError(str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/{username}/roles/{role}", status_code=204)
@@ -379,7 +385,7 @@ async def revoke_role(
         else:
             await user_service.revoke_role(username, role, host=host)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/roles")
@@ -397,7 +403,7 @@ async def create_role(body: RoleCreate, user: dict = require_admin):
             await user_service.create_role(body.role_name)
         return {"message": f"Role '{body.role_name}' created", "role": body.role_name}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/roles/{name}")
@@ -412,7 +418,7 @@ async def get_role_detail(name: str, user: dict = require_admin):
             ]
         return detail
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/roles/{name}", status_code=204)
@@ -423,9 +429,9 @@ async def drop_role(name: str, user: dict = require_admin):
         else:
             await user_service.drop_role(name)
     except PermissionError as e:
-        raise ForbiddenSQLError(str(e))
+        raise ForbiddenSQLError(str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/roles/{name}/privileges")
@@ -438,7 +444,7 @@ async def get_role_privileges(name: str, user: dict = require_admin):
         )
         return {"role": name, "privileges": privileges, "count": len(privileges)}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/roles/{name}/privileges", status_code=201)
@@ -472,9 +478,9 @@ async def grant_privilege(
             )
         return {"message": f"Privilege granted to role '{name}'", "sql": sql}
     except PermissionError as e:
-        raise ForbiddenSQLError(str(e))
+        raise ForbiddenSQLError(str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/roles/{name}/privileges")
@@ -507,9 +513,9 @@ async def revoke_privilege(
             )
         return {"message": f"Privilege revoked from role '{name}'", "sql": sql}
     except PermissionError as e:
-        raise ForbiddenSQLError(str(e))
+        raise ForbiddenSQLError(str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/roles/{name}/members")
@@ -518,7 +524,7 @@ async def get_role_members(name: str, user: dict = require_admin):
         members = await user_service.get_role_members(name)
         return {"role": name, "members": members}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/roles/{name}/members", status_code=201)
@@ -542,9 +548,9 @@ async def grant_role_member(
             await user_service.grant_role_to_role(name, body.member_name)
         return {"message": f"Member granted to role '{name}'"}
     except PermissionError as e:
-        raise ForbiddenSQLError(str(e))
+        raise ForbiddenSQLError(str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/roles/{name}/members")
@@ -568,6 +574,6 @@ async def revoke_role_member(
             await user_service.revoke_role_from_role(name, body.member_name)
         return {"message": f"Member revoked from role '{name}'"}
     except PermissionError as e:
-        raise ForbiddenSQLError(str(e))
+        raise ForbiddenSQLError(str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e

@@ -14,7 +14,9 @@ from app.modules.assistant.schemas import AgentMessageRequest, MessageFeedbackRe
 async def test_feedback_scopes_read_and_write_to_owner_thread_and_assistant(monkeypatch, feedback):
     execute = AsyncMock(return_value={"rows": [["m1"]]})
     monkeypatch.setattr(repository.db, "execute_system", execute)
-    assert await repository.assistant_repository.set_feedback("t1", "m1", feedback, user_name="alice")
+    assert await repository.assistant_repository.set_feedback(
+        "t1", "m1", feedback, user_name="alice"
+    )
     for call in execute.call_args_list:
         sql, params = call.args
         assert "message_id = %s AND thread_id = %s AND user_name = %s AND role = 'assistant'" in sql
@@ -25,12 +27,23 @@ async def test_feedback_scopes_read_and_write_to_owner_thread_and_assistant(monk
 async def test_missing_or_foreign_message_is_not_updated(monkeypatch):
     execute = AsyncMock(return_value={"rows": []})
     monkeypatch.setattr(repository.db, "execute_system", execute)
-    assert not await repository.assistant_repository.set_feedback("t1", "foreign", "like", user_name="alice")
+    assert not await repository.assistant_repository.set_feedback(
+        "t1", "foreign", "like", user_name="alice"
+    )
     assert execute.await_count == 1
 
 
 async def test_replay_includes_stored_feedback(monkeypatch):
-    execute = AsyncMock(return_value={"rows": [["m1", "assistant", "Answer", "2026-09-23 00:00:00", "model", 20, 10, 30, [], None, "dislike"]]})
+    execute = AsyncMock(
+        return_value={
+            "rows": [
+                [
+                    "m1", "assistant", "Answer", "2026-09-23 00:00:00", "model",
+                    20, 10, 30, [], None, "dislike",
+                ]
+            ]
+        }
+    )
     monkeypatch.setattr(repository.db, "execute_system", execute)
     messages = await repository.assistant_repository.list_messages("t1", user_name="alice")
     assert router._message_view(messages[0]).feedback == "dislike"
@@ -45,14 +58,18 @@ async def test_feedback_endpoint_checks_agent_thread_and_audits(monkeypatch):
     monkeypatch.setattr(router, "_require_agent_thread", thread)
     monkeypatch.setattr(router.assistant_repository, "set_feedback", save)
     monkeypatch.setattr(router, "write_audit_log", audit)
-    result = await router.update_message_feedback("a1", "t1", "m1", MessageFeedbackRequest(feedback="like"), {"username": "alice"})
+    result = await router.update_message_feedback(
+        "a1", "t1", "m1", MessageFeedbackRequest(feedback="like"), {"username": "alice"}
+    )
     assert result.feedback == "like"
     agent.assert_awaited_once_with("a1", {"username": "alice"})
     thread.assert_awaited_once_with("t1", "a1", "alice")
     assert audit.call_args.kwargs["decision"] == "like"
     save.return_value = False
     with pytest.raises(HTTPException) as error:
-        await router.update_message_feedback("a1", "t1", "missing", MessageFeedbackRequest(feedback=None), {"username": "alice"})
+        await router.update_message_feedback(
+            "a1", "t1", "missing", MessageFeedbackRequest(feedback=None), {"username": "alice"}
+        )
     assert error.value.status_code == 404
     assert audit.await_count == 1
 
@@ -68,7 +85,11 @@ async def test_stream_persists_the_terminal_message_id_before_sending_done(monke
     agent = {"agent_id": "a1", "name": "Analyst", "owner_name": "alice", "database_name": "sales"}
     monkeypatch.setattr(router, "_require_agent", AsyncMock(return_value=agent))
     monkeypatch.setattr(router, "_require_agent_thread", AsyncMock(return_value={"title": "Sales"}))
-    monkeypatch.setattr(router.agent_service, "build_loop_inputs", AsyncMock(return_value=(ToolRegistry(), "System", 60, None)))
+    monkeypatch.setattr(
+        router.agent_service,
+        "build_loop_inputs",
+        AsyncMock(return_value=(ToolRegistry(), "System", 60, None)),
+    )
     monkeypatch.setattr(router, "_generate_thread_title", AsyncMock(return_value="Sales"))
     monkeypatch.setattr(router.assistant_repository, "list_messages", AsyncMock(return_value=[]))
     monkeypatch.setattr(router.assistant_repository, "rename_thread", AsyncMock())
@@ -89,9 +110,16 @@ async def test_stream_persists_the_terminal_message_id_before_sending_done(monke
 
     monkeypatch.setattr(router, "AssistantLoop", ScriptedLoop)
     response = await router.send_agent_message(
-        "a1", "feedback-stream", AgentMessageRequest(content="Sales"),
+        "a1",
+        "feedback-stream",
+        AgentMessageRequest(content="Sales"),
         SimpleNamespace(is_disconnected=AsyncMock(return_value=False)),
-        {"username": "alice", "active_role": "analyst", "roles": ["analyst"], "session_id": "feedback-session"},
+        {
+            "username": "alice",
+            "active_role": "analyst",
+            "roles": ["analyst"],
+            "session_id": "feedback-session",
+        },
     )
     frames = []
     async for frame in response.body_iterator:
