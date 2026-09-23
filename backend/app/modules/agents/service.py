@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from app.modules.agents.prompt import build_system_prompt
-from app.modules.agents.registry import add_custom_tools, build_registry
+from app.modules.agents.registry import add_custom_tools, add_mcp_tools, build_registry
 from app.modules.agents.repository import agent_repository
 from app.modules.assistant.intelligence import SkillDefinition
 from app.modules.assistant.skill_registry import skill_library
@@ -63,13 +63,20 @@ class AgentService:
         would make every turn overflow, and one above the model window defeats
         the purpose.
         """
+        from app.modules.agents.skill_author import SKILL_AUTHOR_ID
+
+        if agent.get("agent_id") == SKILL_AUTHOR_ID:
+            from app.modules.agents.personal_skills import SKILL_AUTHORING_PROMPT
+
+            prompt = build_system_prompt({"name": "Nova Studio"}, actual_tools=[])
+            return ToolRegistry(), prompt + "\n\n" + SKILL_AUTHORING_PROMPT, 60, 16000
+
         registry = build_registry(agent)
         await add_custom_tools(registry, agent)
+        await add_mcp_tools(registry, agent)
 
         requested_skills = [s for s in (agent.get("default_skills") or []) if s]
-        discoverable_skills = [
-            s for s in (agent.get("discoverable_skills") or []) if s
-        ]
+        discoverable_skills = [s for s in (agent.get("discoverable_skills") or []) if s]
         # Every ML-capable agent gets the trusted ML procedure on demand. It is
         # discoverable rather than default, so non-ML turns pay no prompt cost.
         if (
@@ -79,14 +86,24 @@ class AgentService:
         ):
             discoverable_skills.append("native-ml")
         skill_bodies: list[str] = []
-        configured_names = set(requested_skills) | set(discoverable_skills)
         owner_name = str(agent.get("owner_name") or "")
         stored_skills = (
-            await agent_repository.list_skills(owner_name=owner_name)
-            if configured_names and owner_name
-            else []
+            await agent_repository.list_skills(owner_name=owner_name) if owner_name else []
         )
         user_skills = {str(skill["name"]): skill for skill in stored_skills}
+        discoverable_skills = list(
+            dict.fromkeys(
+                [
+                    *discoverable_skills,
+                    *(
+                        name
+                        for name in user_skills
+                        if name not in requested_skills and not skill_library.get(name)
+                    ),
+                ]
+            )
+        )
+        configured_names = set(requested_skills) | set(discoverable_skills)
         for name in configured_names:
             platform = skill_library.get(name)
             if platform is not None:
@@ -104,8 +121,7 @@ class AgentService:
                     name=name,
                     summary=str(user_skill.get("description") or ""),
                     triggers=tuple(
-                        word.lower()
-                        for word in str(user_skill.get("description") or name).split()
+                        word.lower() for word in str(user_skill.get("description") or name).split()
                     ),
                     body=str(user_skill.get("body") or ""),
                     trust_level="user_skill",
@@ -126,6 +142,10 @@ class AgentService:
 
         registry.default_skills = tuple(requested_skills)
         registry.discoverable_skills = tuple(discoverable_skills)
+        if registry.get("load_skill") is not None:
+            from app.modules.agents.tools.load_personal_skill import PersonalSkillLoader
+
+            registry.register(PersonalSkillLoader(owner_name, registry.skill_definitions))
 
         system_prompt = build_system_prompt(
             agent,

@@ -64,9 +64,7 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 #: Additive migration: an agent predates multi-model support and has only
 #: ``semantic_model_id``. The list column holds all bound models; the scalar is
 #: kept in sync with the first entry for a reader that still expects one.
-AGENTS_SEMANTIC_IDS_DDL = (
-    "ALTER TABLE NOVA_SYSTEM.CONFIG_AGENTS ADD COLUMN semantic_model_ids JSON"
-)
+AGENTS_SEMANTIC_IDS_DDL = "ALTER TABLE NOVA_SYSTEM.CONFIG_AGENTS ADD COLUMN semantic_model_ids JSON"
 
 AGENT_INTELLIGENCE_COLUMNS = (
     ("discoverable_skills", "JSON"),
@@ -107,6 +105,19 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_SKILLS (
     created_at  DATETIME NOT NULL,
     updated_at  DATETIME NOT NULL
 ) PRIMARY KEY(skill_id)
+DISTRIBUTED BY HASH(skill_id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
+SKILL_BODY_PREFIX = "nova-skill-body:v1:"
+SKILL_BODY_CHUNKS_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SKILL_BODY_CHUNKS (
+    skill_id VARCHAR(64) NOT NULL,
+    revision VARCHAR(64) NOT NULL,
+    part_index INT NOT NULL,
+    owner_name VARCHAR(128) NOT NULL,
+    content VARCHAR(65533) NOT NULL
+) PRIMARY KEY(skill_id, revision, part_index)
 DISTRIBUTED BY HASH(skill_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
@@ -445,8 +456,20 @@ def _skill_row(row: list[Any]) -> dict:
 
 
 def _mcp_row(row: list[Any]) -> dict:
-    (server_id, owner, name, description, transport, endpoint, command, args,
-     is_active, last_status, created_at, updated_at) = row
+    (
+        server_id,
+        owner,
+        name,
+        description,
+        transport,
+        endpoint,
+        command,
+        args,
+        is_active,
+        last_status,
+        created_at,
+        updated_at,
+    ) = row
     return {
         "server_id": server_id,
         "owner_name": owner,
@@ -464,8 +487,17 @@ def _mcp_row(row: list[Any]) -> dict:
 
 
 def _tool_row(row: list[Any]) -> dict:
-    (tool_id, owner, name, description, source, input_schema, is_enabled,
-     created_at, updated_at) = row
+    (
+        tool_id,
+        owner,
+        name,
+        description,
+        source,
+        input_schema,
+        is_enabled,
+        created_at,
+        updated_at,
+    ) = row
     return {
         "tool_id": tool_id,
         "owner_name": owner,
@@ -507,6 +539,7 @@ class AgentRepository:
                     raise
         await db.execute_system(SEMANTIC_MODELS_DDL)
         await db.execute_system(AGENT_SKILLS_DDL)
+        await db.execute_system(SKILL_BODY_CHUNKS_DDL)
         await db.execute_system(MCP_SERVERS_DDL)
         await db.execute_system(TOOLS_DDL)
         await db.execute_system(AGENT_ROLES_DDL)
@@ -515,6 +548,44 @@ class AgentRepository:
         await db.execute_system(SEMANTIC_USAGE_DDL)
 
     # ── Agents ─────────────────────────────────────────────────
+
+    async def migrate_legacy_skill_authors(self) -> None:
+        from app.common.audit import write_audit_log
+        from app.modules.agents.skill_author import SKILL_AUTHOR_ID, is_legacy_skill_author
+
+        result = await db.execute_system(
+            f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
+            "WHERE name = %s AND description = %s",
+            ["Nova Studio", "Helps you write reusable skills."],
+        )
+        for raw in result["rows"]:
+            agent = _agent_row(raw)
+            if not is_legacy_skill_author(agent):
+                continue
+            old_id, owner = agent["agent_id"], agent["owner_name"]
+            provenance = await db.execute_system(
+                "SELECT query_id FROM NOVA_SYSTEM.AUDIT_LOG WHERE event_type = 'AGENT' "
+                "AND action = 'CREATE' AND status = 'SUCCESS' "
+                "AND object_name = %s AND user_name = %s LIMIT 1",
+                [old_id, owner],
+            )
+            if not provenance["rows"]:
+                continue
+            for table in ("CONFIG_ASSISTANT_THREADS", "CONFIG_ASSISTANT_MESSAGES"):
+                await db.execute_system(
+                    f"UPDATE NOVA_SYSTEM.{table} SET agent_id = %s "
+                    "WHERE agent_id = %s AND user_name = %s",
+                    [SKILL_AUTHOR_ID, old_id, owner],
+                )
+            await write_audit_log(
+                event_type="AGENT",
+                user_name=owner,
+                action="MIGRATE",
+                object_type="AGENT",
+                object_name=old_id,
+                status="SUCCESS",
+            )
+            await self.delete_agent(old_id, owner_name=owner)
 
     async def create_agent(self, *, owner_name: str, fields: dict) -> dict:
         agent_id = str(uuid4())
@@ -580,22 +651,67 @@ class AgentRepository:
             clauses.append("name LIKE %s")
             params.append(f"%{search}%")
         where = " AND ".join(clauses)
-        result = await db.execute_system(
-            f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
-            f"WHERE {where} ORDER BY updated_at DESC",
-            params,
-        )
+        for _ in range(3):
+            result = await db.execute_system(
+                f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
+                f"WHERE {where} ORDER BY updated_at DESC",
+                params,
+            )
+            if result["rows"] and all(len(row) == 28 for row in result["rows"]):
+                break
+        if any(len(row) != 28 for row in result["rows"]):
+            raise RuntimeError("Agent metadata query returned an invalid result")
         return [_agent_row(row) for row in result["rows"]]
 
     async def get_agent(self, agent_id: str, *, owner_name: str) -> dict | None:
+        for _ in range(3):
+            result = await db.execute_system(
+                f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
+                "WHERE agent_id = %s AND owner_name = %s",
+                [agent_id, owner_name],
+            )
+            if result["rows"] and len(result["rows"][0]) == 28:
+                break
+        if not result["rows"]:
+            return None
+        if len(result["rows"][0]) != 28:
+            raise RuntimeError("Agent metadata query returned an invalid result")
+        return _agent_row(result["rows"][0])
+
+    async def get_shared_agent(self, agent_id: str, *, role_name: str) -> dict | None:
         result = await db.execute_system(
             f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
-            "WHERE agent_id = %s AND owner_name = %s",
-            [agent_id, owner_name],
+            "WHERE agent_id = %s AND visibility = 'shared'",
+            [agent_id],
         )
         if not result["rows"]:
             return None
-        return _agent_row(result["rows"][0])
+        if len(result["rows"][0]) != 28:
+            raise RuntimeError("Agent metadata query returned an invalid result")
+        agent = _agent_row(result["rows"][0])
+        grants = await self.list_agent_roles(agent_id, owner_name=agent["owner_name"])
+        if not any(grant["role_name"] == role_name for grant in grants):
+            return None
+        return agent
+
+    async def list_shared_agents(self, *, role_name: str) -> list[dict]:
+        grants = await db.execute_system(
+            "SELECT agent_id FROM NOVA_SYSTEM.CONFIG_AGENT_ROLES WHERE role_name = %s",
+            [role_name],
+        )
+        agent_ids = [str(row[0]) for row in grants["rows"]]
+        if not agent_ids:
+            return []
+        placeholders = ", ".join(["%s"] * len(agent_ids))
+        result = await db.execute_system(
+            f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
+            f"WHERE visibility = 'shared' AND agent_id IN ({placeholders}) "
+            "ORDER BY updated_at DESC",
+            agent_ids,
+        )
+        if any(len(row) != 28 for row in result["rows"]):
+            raise RuntimeError("Agent metadata query returned an invalid result")
+        return [_agent_row(row) for row in result["rows"]]
 
     async def update_agent(self, agent_id: str, *, owner_name: str, fields: dict) -> dict | None:
         """Patch the provided fields only; unknown keys are ignored."""
@@ -656,7 +772,7 @@ class AgentRepository:
 
     async def delete_agent(self, agent_id: str, *, owner_name: str) -> bool:
         result = await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_AGENTS " "WHERE agent_id = %s AND owner_name = %s",
+            "DELETE FROM NOVA_SYSTEM.CONFIG_AGENTS WHERE agent_id = %s AND owner_name = %s",
             [agent_id, owner_name],
         )
         return bool(result.get("affected", 0))
@@ -783,9 +899,7 @@ class AgentRepository:
             "success_count": 0,
         }
 
-    async def list_verified_queries(
-        self, semantic_model_id: str, *, owner_name: str
-    ) -> list[dict]:
+    async def list_verified_queries(self, semantic_model_id: str, *, owner_name: str) -> list[dict]:
         result = await db.execute_system(
             "SELECT verified_query_id, semantic_model_id, model_fingerprint, question, "
             "semantic_plan, verified_sql, expected_result_signature, verified_by, "
@@ -858,9 +972,45 @@ class AgentRepository:
 
     # ── User skills ────────────────────────────────────────────
 
+    async def _store_skill_body(self, skill_id: str, owner_name: str, body: str) -> str:
+        if len(body.encode("utf-8")) <= 60000 and not body.startswith(SKILL_BODY_PREFIX):
+            return body
+        revision = str(uuid4())
+        # 16,000 Unicode characters fit in a 65,533-byte column, including emoji.
+        parts = [body[offset : offset + 16000] for offset in range(0, len(body), 16000)]
+        for offset in range(0, len(parts), 8):
+            batch = parts[offset : offset + 8]
+            params = []
+            for index, content in enumerate(batch, start=offset):
+                params.extend([skill_id, owner_name, revision, index, content])
+            await db.execute_system(
+                "INSERT INTO NOVA_SYSTEM.CONFIG_SKILL_BODY_CHUNKS "
+                "(skill_id, owner_name, revision, part_index, content) VALUES "
+                + ", ".join(["(%s, %s, %s, %s, %s)"] * len(batch)),
+                params,
+            )
+        # Publish only after all parts exist, so readers never see a partial revision.
+        return f"{SKILL_BODY_PREFIX}{revision}:{len(parts)}"
+
+    async def _load_skill_body(self, skill: dict) -> dict:
+        body = skill["body"]
+        if not body.startswith(SKILL_BODY_PREFIX):
+            return skill
+        revision, count = body[len(SKILL_BODY_PREFIX) :].split(":")
+        result = await db.execute_system(
+            "SELECT part_index, content FROM NOVA_SYSTEM.CONFIG_SKILL_BODY_CHUNKS "
+            "WHERE skill_id = %s AND owner_name = %s AND revision = %s ORDER BY part_index",
+            [skill["skill_id"], skill["owner_name"], revision],
+        )
+        rows = result["rows"]
+        if len(rows) != int(count) or any(row[0] != index for index, row in enumerate(rows)):
+            raise ValueError("The skill document could not be loaded completely.")
+        return {**skill, "body": "".join(row[1] for row in rows)}
+
     async def create_skill(self, *, owner_name: str, fields: dict) -> dict:
         skill_id = str(uuid4())
         now = _now()
+        body = await self._store_skill_body(skill_id, owner_name, fields.get("body", ""))
         await db.execute_system(
             "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_SKILLS ("
             "skill_id, owner_name, name, description, body, scope, created_at, updated_at"
@@ -870,7 +1020,7 @@ class AgentRepository:
                 owner_name,
                 fields["name"],
                 fields.get("description", ""),
-                fields.get("body", ""),
+                body,
                 fields.get("scope", "user"),
                 now,
                 now,
@@ -886,7 +1036,7 @@ class AgentRepository:
             "WHERE owner_name = %s ORDER BY name ASC",
             [owner_name],
         )
-        return [_skill_row(row) for row in result["rows"]]
+        return [await self._load_skill_body(_skill_row(row)) for row in result["rows"]]
 
     async def get_skill(self, skill_id: str, *, owner_name: str) -> dict | None:
         result = await db.execute_system(
@@ -896,15 +1046,39 @@ class AgentRepository:
         )
         if not result["rows"]:
             return None
-        return _skill_row(result["rows"][0])
+        return await self._load_skill_body(_skill_row(result["rows"][0]))
 
     async def delete_skill(self, skill_id: str, *, owner_name: str) -> bool:
         result = await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_AGENT_SKILLS "
+            "DELETE FROM NOVA_SYSTEM.CONFIG_AGENT_SKILLS WHERE skill_id = %s AND owner_name = %s",
+            [skill_id, owner_name],
+        )
+        await db.execute_system(
+            "DELETE FROM NOVA_SYSTEM.CONFIG_SKILL_BODY_CHUNKS "
             "WHERE skill_id = %s AND owner_name = %s",
             [skill_id, owner_name],
         )
         return bool(result.get("affected", 0))
+
+    async def update_skill(self, skill_id: str, *, owner_name: str, fields: dict) -> dict | None:
+        if not await self.get_skill(skill_id, owner_name=owner_name):
+            return None
+        body = await self._store_skill_body(skill_id, owner_name, fields["body"])
+        await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_SKILLS "
+            "SET name = %s, description = %s, body = %s, scope = %s, updated_at = %s "
+            "WHERE skill_id = %s AND owner_name = %s",
+            [
+                fields["name"],
+                fields["description"],
+                body,
+                "user",
+                _now(),
+                skill_id,
+                owner_name,
+            ],
+        )
+        return await self.get_skill(skill_id, owner_name=owner_name)
 
     # ── MCP servers ────────────────────────────────────────────
 
@@ -988,13 +1162,11 @@ class AgentRepository:
     async def delete_mcp_server(self, server_id: str, *, owner_name: str) -> bool:
         # Remove the server's discovered tools first so a delete cannot orphan them.
         await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_TOOLS "
-            "WHERE owner_name = %s AND source = %s",
+            "DELETE FROM NOVA_SYSTEM.CONFIG_TOOLS WHERE owner_name = %s AND source = %s",
             [owner_name, f"mcp:{server_id}"],
         )
         result = await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_MCP_SERVERS "
-            "WHERE server_id = %s AND owner_name = %s",
+            "DELETE FROM NOVA_SYSTEM.CONFIG_MCP_SERVERS WHERE server_id = %s AND owner_name = %s",
             [server_id, owner_name],
         )
         return bool(result.get("affected", 0))
@@ -1092,9 +1264,7 @@ class AgentRepository:
             "WHERE agent_id = %s AND owner_name = %s ORDER BY role_name ASC",
             [agent_id, owner_name],
         )
-        return [
-            {"role_name": row[0], "grant_type": row[1] or "USAGE"} for row in result["rows"]
-        ]
+        return [{"role_name": row[0], "grant_type": row[1] or "USAGE"} for row in result["rows"]]
 
     async def add_agent_role(
         self, agent_id: str, *, owner_name: str, role_name: str, grant_type: str = "USAGE"
@@ -1113,9 +1283,7 @@ class AgentRepository:
             [agent_id, owner_name, role_name, grant_type, now, now],
         )
 
-    async def remove_agent_role(
-        self, agent_id: str, *, owner_name: str, role_name: str
-    ) -> bool:
+    async def remove_agent_role(self, agent_id: str, *, owner_name: str, role_name: str) -> bool:
         result = await db.execute_system(
             "DELETE FROM NOVA_SYSTEM.CONFIG_AGENT_ROLES "
             "WHERE agent_id = %s AND owner_name = %s AND role_name = %s",
@@ -1198,16 +1366,25 @@ class AgentRepository:
 
     async def delete_custom_tool(self, tool_id: str, *, owner_name: str) -> bool:
         result = await db.execute_system(
-            "DELETE FROM NOVA_SYSTEM.CONFIG_CUSTOM_TOOLS "
-            "WHERE tool_id = %s AND owner_name = %s",
+            "DELETE FROM NOVA_SYSTEM.CONFIG_CUSTOM_TOOLS WHERE tool_id = %s AND owner_name = %s",
             [tool_id, owner_name],
         )
         return bool(result.get("affected", 0))
 
 
 def _custom_tool_row(row: list[Any]) -> dict:
-    (tool_id, owner, name, description, kind, database_name, function_name,
-     definition, created_at, updated_at) = row
+    (
+        tool_id,
+        owner,
+        name,
+        description,
+        kind,
+        database_name,
+        function_name,
+        definition,
+        created_at,
+        updated_at,
+    ) = row
     return {
         "tool_id": tool_id,
         "owner_name": owner,

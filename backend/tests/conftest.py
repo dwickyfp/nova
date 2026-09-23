@@ -338,7 +338,10 @@ async def admin_token(client):
     """Login as nova_admin and return JWT token."""
     resp = await client.post(
         "/api/v1/auth/login",
-        json={"username": "nova_admin", "password": "nova"},
+        json={
+            "username": "nova_admin",
+            "password": os.getenv("NOVA_ADMIN_TEST_PASSWORD", "nova"),
+        },
     )
     assert resp.status_code == 200
     data = resp.json()

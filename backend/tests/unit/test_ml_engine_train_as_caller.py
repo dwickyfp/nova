@@ -122,7 +122,7 @@ class _UserConnectionFactory:
         cursor = self.cursor
 
         class Connection:
-            def cursor(self):
+            def cursor(self, cursor_type=None):
                 return cursor
 
         class Context:

@@ -2,7 +2,7 @@
 name: create-task
 title: Schedule work with CREATE TASK
 summary: Author a Nova CREATE TASK statement that is lowered to NOVA_SYSTEM metadata and run by the worker.
-triggers: create task, schedule, jadwal, cron, pipeline, dag, finalize, when, after, orchestration
+triggers: create task, schedule, jadwal, terjadwal, buat task, cron, pipeline, dag, finalize, orchestration
 source: docs/sql_docs/08-native-starrocks-sql.md, docs/08-task-manager.md
 ---
 

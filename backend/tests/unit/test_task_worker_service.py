@@ -180,3 +180,61 @@ class TestReconcileCadence:
         await asyncio.wait_for(task, timeout=2)
 
         assert passes["n"] >= 1, "reconcile must run independently of the drain loop"
+
+
+class TestBoundedGraphConcurrency:
+    async def test_slow_run_does_not_block_other_runs_or_exceed_capacity(self):
+        class WaitingWorker:
+            def __init__(self) -> None:
+                self.started: list[str] = []
+                self.release = asyncio.Event()
+                self.two_started = asyncio.Event()
+
+            async def handle(self, job):
+                self.started.append(job.graph_run_id)
+                if len(self.started) >= 2:
+                    self.two_started.set()
+                await self.release.wait()
+                return GraphState.SUCCESS
+
+        class BoundedConsumer(FakeConsumer):
+            async def read(self, *, count=None, block_ms=5000):
+                count = count or len(self.jobs)
+                jobs, self.jobs = self.jobs[:count], self.jobs[count:]
+                if not jobs:
+                    await asyncio.sleep(0.01)
+                return jobs
+
+        jobs = [
+            (f"s{i}", {"graph_run_id": f"r{i}", "graph_id": f"g{i}"})
+            for i in range(3)
+        ]
+        repo = FakeRepository([], [])
+        consumer = BoundedConsumer(jobs)
+        worker = WaitingWorker()
+        service = WorkerService(
+            repo,
+            executor=None,
+            consumer=consumer,
+            reconciler=FakeReconciler(),
+            reconcile_interval=1,
+            max_concurrent_graph_runs=2,
+        )
+        service._worker = worker  # type: ignore[assignment]
+        stop = asyncio.Event()
+        loop = asyncio.create_task(service.run_forever(stop))
+        try:
+            await asyncio.wait_for(worker.two_started.wait(), timeout=1)
+            assert worker.started == ["r0", "r1"]
+            assert len(consumer.jobs) == 1
+            worker.release.set()
+            for _ in range(100):
+                if len(consumer.acked) == 3:
+                    break
+                await asyncio.sleep(0.01)
+            assert len(consumer.acked) == 3
+            assert worker.started == ["r0", "r1", "r2"]
+        finally:
+            worker.release.set()
+            stop.set()
+            await asyncio.wait_for(loop, timeout=2)

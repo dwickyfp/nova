@@ -29,19 +29,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core.deps import get_current_user
 from app.modules.assistant import events
-from app.modules.assistant.consent import consent_broker
+from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.registry import tool_registry
 from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.schemas import (
+    AttachmentView,
     ConsentDecisionRequest,
     ConsentDecisionResponse,
     GrantRequest,
@@ -53,6 +55,7 @@ from app.modules.assistant.schemas import (
     ThreadUpdateRequest,
     ThreadView,
 )
+from app.modules.assistant.security import observation_context, session_security
 from app.modules.assistant.service import AssistantLoop, LoopContext
 from app.modules.assistant.state import AssistantMessage, thread_store
 from app.modules.assistant.tools import ToolInvocation
@@ -88,6 +91,15 @@ def _message_view(row: dict) -> MessageView:
         completion_tokens=row.get("completion_tokens"),
         total_tokens=row.get("total_tokens"),
         model_name=row.get("model_name"),
+        attachments=[
+            AttachmentView(
+                name=item["name"],
+                size_bytes=item["size_bytes"],
+                media_type=item.get("media_type", "text/plain"),
+            )
+            for item in row.get("attachments") or []
+            if isinstance(item, dict) and "name" in item and "size_bytes" in item
+        ],
     )
 
 
@@ -98,7 +110,7 @@ async def _require_thread(thread_id: str, user_name: str) -> dict:
     from a missing one — existence never leaks.
     """
     thread = await assistant_repository.get_thread(thread_id, user_name=user_name)
-    if thread is None:
+    if thread is None or thread.get("agent_id") is not None:
         raise HTTPException(status_code=404, detail="Thread not found")
     return thread
 
@@ -185,6 +197,7 @@ async def delete_thread(
     thread_id: str,
     user: dict = Depends(get_current_user),
 ):
+    await _require_thread(thread_id, user["username"])
     if not await assistant_repository.delete_thread(
         thread_id, user_name=user["username"]
     ):
@@ -254,6 +267,8 @@ async def send_message(
     turn still leaves a coherent transcript. The assistant's reply is stored as
     one message when the stream ends. Both writes are user-scoped in SQL.
     """
+    security = session_security(user)
+    stamp = observation_context(security)
     thread_row = await _require_thread(thread_id, user["username"])
     user_name = user["username"]
 
@@ -274,6 +289,7 @@ async def send_message(
             content=row["content"],
             steps=row.get("steps") or [],
             created_at=row["created_at"],
+            security_context=row.get("security_context"),
         )
         for row in history
     ]
@@ -281,17 +297,20 @@ async def send_message(
     # Store the user's message before the stream starts, so a disconnect still
     # leaves a coherent transcript.
     await assistant_repository.append_message(
-        thread_id, user_name=user_name, role="user", content=body.content
+        thread_id, user_name=user_name, role="user", content=body.content,
+        security_context=stamp,
     )
     runtime.messages.append(
-        AssistantMessage(message_id=str(uuid4()), role="user", content=body.content)
+        AssistantMessage(
+            message_id=str(uuid4()), role="user", content=body.content, security_context=stamp
+        )
     )
 
     context = LoopContext(
         user_name=user_name,
         database=body.database,
         schema_name=body.schema_name,
-        role=body.role,
+        role=security.active_role,
         workspace_file_id=thread_row.get("workspace_file_id"),
         session_id=user.get("session_id"),
         thread_id=thread_id,
@@ -300,7 +319,7 @@ async def send_message(
 
     async def resolve_consent(
         invocation: ToolInvocation, classification: str
-    ) -> bool | None:
+    ) -> bool | None | ConsentApproval:
         # The loop has already emitted the tool_call frame; the client answers
         # out of band. If the stream is disconnected, treat it as cancelled.
         future = consent_broker.open(
@@ -308,6 +327,19 @@ async def send_message(
             thread_id=thread_id,
             user_name=user_name,
             classification=classification,
+            secure_fields=(
+                ("password",)
+                if invocation.tool_name == "call_ui_operation"
+                and invocation.arguments.get("operation") == "POST /api/v1/users"
+                else ()
+            ),
+            upload_required=(
+                invocation.tool_name == "call_ui_operation"
+                and invocation.arguments.get("operation") in {
+                    "POST /api/v1/stages/{stage_id}/files",
+                    "POST /api/v1/explorer/databases/{database}/stages/{stage}/files",
+                }
+            ),
         )
 
         async def _watch_disconnect() -> None:
@@ -327,9 +359,11 @@ async def send_message(
             return await future
         finally:
             watcher.cancel()
+            consent_broker.resolve(invocation.tool_call_id, None, user_name=user_name)
 
     async def generate() -> AsyncIterator[str]:
         reply_parts: list[str] = []
+        reply_stamp = stamp
         try:
             async for frame in _loop.run(
                 thread=runtime,
@@ -344,6 +378,9 @@ async def send_message(
                     break
                 if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
                     reply_parts.append(_text_from_frame(frame))
+                if frame.startswith("event: role_changed\n"):
+                    reply_parts.clear()
+                    reply_stamp = observation_context(session_security(context.user or {}))
                 yield frame
         except Exception as exc:  # noqa: BLE001 - never leak an internal trace
             logger.exception("Assistant stream failed")
@@ -370,6 +407,11 @@ async def send_message(
                         usage=context.usage,
                         steps=steps,
                         instructions=context.instructions,
+                        security_context=(
+                            reply_stamp if reply_stamp == observation_context(
+                                session_security(context.user or {})
+                            ) else None
+                        ),
                     )
                 except Exception:
                     logger.exception("Could not persist the assistant reply")
@@ -422,6 +464,8 @@ async def resolve_tool_call(
         raise HTTPException(status_code=404, detail="Tool call not found")
 
     if body.decision == "deny":
+        if body.secure_input:
+            raise HTTPException(status_code=400, detail="Secure input is not valid for denial")
         resolved = consent_broker.resolve(
             tool_call_id, False, user_name=user["username"]
         )
@@ -432,6 +476,18 @@ async def resolve_tool_call(
         )
 
     grant_active = False
+    secure_fields = consent_broker.secure_fields_of(tool_call_id) or ()
+    if consent_broker.upload_required_of(tool_call_id):
+        raise HTTPException(status_code=400, detail="Choose a file for this action")
+    if body.secure_input is not None:
+        if (
+            body.decision != "allow_once"
+            or set(body.secure_input) != set(secure_fields)
+            or any(not value or len(value) > 1024 for value in body.secure_input.values())
+        ):
+            raise HTTPException(status_code=400, detail="Invalid secure input")
+    elif secure_fields and body.decision == "allow_once":
+        raise HTTPException(status_code=400, detail="Secure input is required")
     if body.decision == "allow_session":
         # The grant only covers read-only statements (spec §6.1), and the UI
         # only offers always-allow for a read-only call. Refuse a session grant
@@ -447,10 +503,69 @@ async def resolve_tool_call(
         grant_active = True
 
     resolved = consent_broker.resolve(
-        tool_call_id, True, user_name=user["username"]
+        tool_call_id,
+        ConsentApproval(body.secure_input) if body.secure_input is not None else True,
+        user_name=user["username"],
     )
     return ConsentDecisionResponse(
         tool_call_id=tool_call_id,
         status="approved" if resolved else "cancelled",
         grant_active=grant_active,
+    )
+
+
+@router.post(
+    "/tool-calls/{tool_call_id}/upload-decision",
+    response_model=ConsentDecisionResponse,
+)
+async def resolve_upload_tool_call(
+    tool_call_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Approve one stage upload with browser-owned bytes outside the model context."""
+    owner = consent_broker.owner_of(tool_call_id)
+    if owner is None or owner[1] != user["username"]:
+        raise HTTPException(status_code=404, detail="Tool call not found")
+    if thread_store.get(owner[0], user_name=user["username"]) is None:
+        raise HTTPException(status_code=404, detail="Tool call not found")
+    if not consent_broker.upload_required_of(tool_call_id):
+        raise HTTPException(status_code=400, detail="A file is not valid for this action")
+
+    from app.modules.stages.service import stage_service
+
+    filename = file.filename or ""
+    try:
+        if stage_service._safe_relative_path(filename) != filename:
+            raise ValueError("Filename must be normalized")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid filename") from exc
+
+    max_bytes = 256 * 1024 * 1024
+    total = 0
+    # The paused tool consumes this stream after this request returns.
+    stream = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)  # noqa: SIM115
+    try:
+        while chunk := await file.read(1024 * 1024):
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(status_code=413, detail="File exceeds the 256 MB limit")
+            stream.write(chunk)
+        stream.seek(0)
+        resolved = consent_broker.resolve(
+            tool_call_id,
+            ConsentApproval(
+                upload=(filename, stream, file.content_type or "application/octet-stream")
+            ),
+            user_name=user["username"],
+        )
+        if not resolved:
+            raise HTTPException(status_code=404, detail="Tool call not found")
+    except BaseException:
+        stream.close()
+        raise
+    return ConsentDecisionResponse(
+        tool_call_id=tool_call_id,
+        status="approved",
+        grant_active=False,
     )

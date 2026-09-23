@@ -17,12 +17,16 @@ class CacheEntry:
 
 
 class ModelCache:
-    def __init__(self, *, max_models: int, max_bytes: int, ttl_seconds: float) -> None:
+    def __init__(
+        self, *, max_models: int, max_bytes: int, ttl_seconds: float, memory_multiplier: float = 1.0
+    ) -> None:
         self.max_models = max_models
         self.max_bytes = max_bytes
         self.ttl_seconds = ttl_seconds
+        self.memory_multiplier = max(1.0, memory_multiplier)
         self._entries: OrderedDict[tuple[str, int], CacheEntry] = OrderedDict()
         self._locks: dict[tuple[str, int], asyncio.Lock] = {}
+        self._lock_users: dict[tuple[str, int], int] = {}
         self.hits = 0
         self.misses = 0
 
@@ -36,21 +40,24 @@ class ModelCache:
             self.hits += 1
             return cached
         lock = self._locks.setdefault(key, asyncio.Lock())
-        async with lock:
-            cached = self._get(key)
-            if cached is not None:
-                self.hits += 1
-                return cached
-            self.misses += 1
-            try:
+        self._lock_users[key] = self._lock_users.get(key, 0) + 1
+        try:
+            async with lock:
+                cached = self._get(key)
+                if cached is not None:
+                    self.hits += 1
+                    return cached
+                self.misses += 1
                 value, size = await loader()
-            except Exception:
-                self._entries.pop(key, None)
-                raise
-            self._entries[key] = CacheEntry(value, size, time.monotonic() + self.ttl_seconds)
-            self._entries.move_to_end(key)
-            self._evict()
-            return value
+                self._entries[key] = CacheEntry(value, size, time.monotonic() + self.ttl_seconds)
+                self._entries.move_to_end(key)
+                self._evict()
+                return value
+        finally:
+            self._lock_users[key] -= 1
+            if self._lock_users[key] == 0:
+                self._lock_users.pop(key)
+                self._locks.pop(key)
 
     def invalidate(self, key: tuple[str, int] | None = None) -> None:
         if key is None:
@@ -64,6 +71,9 @@ class ModelCache:
             "misses": self.misses,
             "models": len(self._entries),
             "bytes": sum(item.size_bytes for item in self._entries.values()),
+            "estimated_loaded_bytes": int(
+                sum(item.size_bytes for item in self._entries.values()) * self.memory_multiplier
+            ),
         }
 
     def _get(self, key: tuple[str, int]) -> dict | None:
@@ -79,6 +89,7 @@ class ModelCache:
     def _evict(self) -> None:
         while self._entries and (
             len(self._entries) > self.max_models
-            or sum(item.size_bytes for item in self._entries.values()) > self.max_bytes
+            or sum(item.size_bytes for item in self._entries.values()) * self.memory_multiplier
+            > self.max_bytes
         ):
             self._entries.popitem(last=False)

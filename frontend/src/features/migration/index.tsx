@@ -252,7 +252,7 @@ export function MigrationPage() {
       <Header fixed>
         <div className='flex min-w-0 flex-1 items-center gap-3'>
           <div className='min-w-0'>
-            <h1 className='truncate text-lg font-semibold'>Migration Connector</h1>
+            <h1 className='truncate text-lg font-heading'>Migration Connector</h1>
             <p className='text-sm text-muted-foreground'>
               Assess a source StarRocks cluster, preview a dry-run, and build an
               apply plan. Execution is gated on the backend.

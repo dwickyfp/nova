@@ -40,4 +40,5 @@ async def internal_predict(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}") from e
+        logger.error("Internal prediction failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Prediction failed") from e

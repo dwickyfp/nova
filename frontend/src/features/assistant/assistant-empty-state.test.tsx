@@ -64,6 +64,20 @@ describe("AssistantEmptyState", () => {
     expect(onOpenThread).toHaveBeenCalledWith("t2");
   });
 
+  it("keeps the full title available when a recent chat is shortened", async () => {
+    const title =
+      "Perbandingan Revenue Gross Margin dan Order Count per Channel";
+    const { getByRole } = await render(
+      <AssistantEmptyState recentThreads={[thread({ title })]} />,
+    );
+    const chat = getByRole("button", { name: /Perbandingan Revenue/ });
+
+    expect(chat.element().getAttribute("title")).toBe(title);
+    expect(chat.element().textContent).toContain("…");
+    expect(chat.element().textContent).not.toContain(title);
+    expect(chat.element().textContent).toMatch(/(?:ago|just now)/);
+  });
+
   it("hides the recent list when there is nothing to show", async () => {
     const { container } = await render(
       <AssistantEmptyState recentThreads={[]} />,

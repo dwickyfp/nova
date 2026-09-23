@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -22,6 +23,8 @@ class EphemeralEntry:
     artifact_size: int = 0
     # Compatibility for old callers. Production entries never retain this.
     artifact_payload: bytes | None = None
+    spec_snapshot: dict[str, Any] = field(default_factory=dict)
+    artifact_kind: str = "model"
 
     @property
     def memory_bytes(self) -> int:
@@ -32,6 +35,9 @@ class EphemeralEntry:
             + len(self.task)
             + len(self.artifact_uri)
             + (len(self.artifact_payload) if self.artifact_payload else 0)
+            + len(json.dumps(self.spec_snapshot, default=str).encode())
+            + len(json.dumps(getattr(self.output, "metrics", {}), default=str).encode())
+            + len(json.dumps(getattr(self.output, "results", []), default=str).encode())
         )
 
 
@@ -119,7 +125,9 @@ class EphemeralRunCache:
     ) -> None:
         if not already_removed:
             self._by_run.pop(entry.run_id, None)
-        self._by_fingerprint.pop((entry.scope_key, entry.fingerprint), None)
+        key = (entry.scope_key, entry.fingerprint)
+        if self._by_fingerprint.get(key) == entry.run_id:
+            self._by_fingerprint.pop(key, None)
         self._memory_bytes = max(0, self._memory_bytes - entry.memory_bytes)
         if cleanup_artifact and self.on_evict is not None:
             try:

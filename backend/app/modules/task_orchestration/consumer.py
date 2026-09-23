@@ -12,7 +12,9 @@ No credential ever appears in the stream, and none is written back.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, cast
+from uuid import uuid4
 
 import redis.asyncio as aioredis
 
@@ -34,8 +36,13 @@ class GraphRunConsumer:
     ) -> None:
         self._client = client
         self._group = group if group is not None else settings.TASK_STREAM_GROUP
-        self._consumer = consumer if consumer is not None else settings.WORKER_NAME
+        self._consumer = (
+            consumer
+            if consumer is not None
+            else f"{settings.WORKER_NAME}-{os.getpid()}-{uuid4().hex[:8]}"
+        )
         self._stream_key = stream_key if stream_key is not None else settings.TASK_STREAM_KEY
+        self._claim_cursor = "0-0"
 
     @property
     def stream_key(self) -> str:
@@ -92,12 +99,13 @@ class GraphRunConsumer:
             self._group,
             self._consumer,
             min_idle_time=min_idle_ms,
-            start_id="0-0",
+            start_id=self._claim_cursor,
             count=count,
         )
         # redis-py returns (next_id, entries, deleted) on 6.2+, (next_id, entries)
         # on older servers.
         payload = cast("list[Any]", response)
+        self._claim_cursor = str(payload[0]) if payload and str(payload[0]) != "0-0" else "0-0"
         entries = cast("list[Any]", payload[1]) if len(payload) > 1 else []
         return [(str(sid), dict(fields)) for sid, fields in entries]
 

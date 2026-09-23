@@ -140,41 +140,49 @@ class TestMLEngineLoaderResolvesTheStageConnection:
         monkeypatch.setattr(svc, "_connect", fake_connect)
         return svc
 
-    async def test_loader_returns_provider_value_not_inline(self, monkeypatch, referenced_provider):
-        """ML delegates to the one query-stage loader instead of duplicating secrets."""
+    async def test_ml_uses_authorized_stage_resolver(self, monkeypatch, referenced_provider):
+        """ML uses the same reference binding as worksheet queries."""
         from app.modules.ml_engine.service import MLEngineService
+        from app.modules.ml_engine.spec import MLSecurityContext
+        from app.modules.query.dialect.translator import StorageConfig
         from app.modules.query.service import query_service
 
-        expected = object()
         calls = []
 
-        async def shared_loader(database_name, schema_name):
-            calls.append((database_name, schema_name))
-            return expected
+        async def shared_resolver(parsed, **kwargs):
+            calls.append((kwargs["database"], kwargs["schema"], kwargs["username"]))
+            config = StorageConfig("s3", "http://storage", "bucket", "prefix", "key", "secret")
+            return parsed, {ref.start: config for ref in parsed.stage_refs}
 
-        monkeypatch.setattr(query_service, "_load_stage_configs", shared_loader)
+        monkeypatch.setattr(query_service, "_resolve_stage_refs", shared_resolver)
         svc = MLEngineService()
 
-        configs = await svc._load_stage_configs(None)
+        sql = await svc._prepare_user_sql(
+            "SELECT * FROM @stage1.data.csv",
+            MLSecurityContext("analyst", "pw", database="db", schema="sch", role="analyst"),
+        )
 
-        assert configs is expected
-        assert calls == [(None, None)]
+        assert "FILES(" in sql
+        assert calls == [("db", "sch", "analyst")]
         assert referenced_provider.calls == []
 
-    async def test_loader_fails_closed_on_provider_error(self, monkeypatch):
+    async def test_ml_resolver_fails_closed_on_provider_error(self, monkeypatch):
         """A provider failure raises; it never falls back to inline values."""
         from app.modules.ml_engine.service import MLEngineService
+        from app.modules.ml_engine.spec import MLSecurityContext
         from app.modules.query.service import query_service
 
-        async def shared_loader(database_name, schema_name):
-            del database_name, schema_name
+        async def shared_resolver(parsed, **kwargs):
             raise SecretResolutionError("secret provider unavailable")
 
-        monkeypatch.setattr(query_service, "_load_stage_configs", shared_loader)
+        monkeypatch.setattr(query_service, "_resolve_stage_refs", shared_resolver)
         svc = MLEngineService()
 
         with pytest.raises(SecretResolutionError):
-            await svc._load_stage_configs(None)
+            await svc._prepare_user_sql(
+                "SELECT * FROM @stage1.data.csv",
+                MLSecurityContext("analyst", "pw", database="db", schema="sch"),
+            )
 
 
 # ── NOVA-66: /query/explain ─────────────────────────────────────────────────
@@ -215,6 +223,10 @@ class TestExplainFailsClosedAndRedacted:
         )
         monkeypatch.setattr(service_module, "write_audit_log", fake_write_audit_log)
         monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
+        async def allowed_stage(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(service_module, "check_stage_access", allowed_stage)
 
         async def fake_execute_system(sql, params=None):
             return {"rows": [("stage1", "db", "sch", "production", "db/sch/stage1")]}

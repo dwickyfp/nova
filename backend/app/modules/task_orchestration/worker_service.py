@@ -47,6 +47,7 @@ class WorkerService:
         reconciler: Reconciler,
         *,
         reconcile_interval: float | None = None,
+        max_concurrent_graph_runs: int | None = None,
     ) -> None:
         self._repository = repository
         self._worker = GraphRunWorker(repository, executor)
@@ -57,6 +58,15 @@ class WorkerService:
             if reconcile_interval is not None
             else settings.WORKER_RECONCILE_INTERVAL_SECONDS
         )
+        configured = (
+            max_concurrent_graph_runs
+            if max_concurrent_graph_runs is not None
+            else settings.WORKER_MAX_CONCURRENT_GRAPH_RUNS
+        )
+        if configured < 1:
+            raise ValueError("max_concurrent_graph_runs must be positive")
+        self._max_concurrent_graph_runs = configured
+        self._execution_slots = asyncio.Semaphore(configured)
 
     async def run_once(self, *, block_ms: int = 100) -> int:
         """One cycle: drain new + claimed deliveries. Returns jobs processed."""
@@ -144,20 +154,62 @@ class WorkerService:
         reconcile_task = asyncio.create_task(
             self._reconcile_forever(stop_event), name="nova-worker-reconcile"
         )
+        active: dict[str, asyncio.Task[None]] = {}
 
         try:
             while not stop_event.is_set():
+                for stream_id, task in list(active.items()):
+                    if task.done():
+                        del active[stream_id]
+                        if task.cancelled():
+                            continue
+                        if error := task.exception():
+                            logger.error(
+                                "stream delivery %s failed: %s",
+                                stream_id,
+                                type(error).__name__,
+                            )
+
+                capacity = self._max_concurrent_graph_runs - len(active)
+                if capacity <= 0:
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(stop_event.wait(), timeout=0.5)
+                    continue
+
                 try:
-                    await self._process_available(block_ms=500)
+                    for stream_id, payload in await self._consumer.claim_stale(count=capacity):
+                        if stream_id not in active:
+                            active[stream_id] = asyncio.create_task(
+                                self._handle(stream_id, payload),
+                                name=f"nova-graph-run-{stream_id}",
+                            )
+                    capacity = self._max_concurrent_graph_runs - len(active)
+                    if capacity > 0:
+                        for stream_id, payload in await self._consumer.read(
+                            count=capacity, block_ms=500
+                        ):
+                            if stream_id not in active:
+                                active[stream_id] = asyncio.create_task(
+                                    self._handle(stream_id, payload),
+                                    name=f"nova-graph-run-{stream_id}",
+                                )
                 except Exception:
                     logger.exception("worker cycle failed; continuing")
 
                 with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(stop_event.wait(), timeout=0.5)
+                    await asyncio.wait_for(stop_event.wait(), timeout=0.1)
         finally:
-            reconcile_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reconcile_task
+            in_flight = [reconcile_task, *active.values()]
+            done, pending = await asyncio.wait(
+                in_flight,
+                timeout=max(0.0, settings.WORKER_SHUTDOWN_GRACE_SECONDS),
+            )
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            for task in done:
+                if not task.cancelled() and (error := task.exception()):
+                    logger.error("worker shutdown task failed: %s", type(error).__name__)
             logger.info("nova-worker stopped")
 
     async def _reconcile_forever(self, stop_event: asyncio.Event) -> None:
@@ -183,11 +235,14 @@ class WorkerService:
 
     async def _handle(self, stream_id: str, payload: dict[str, str]) -> None:
         try:
-            state = await self._worker.handle(GraphRunJob.from_payload(payload))
+            async with self._execution_slots:
+                state = await self._worker.handle(GraphRunJob.from_payload(payload))
         except Exception:
-            # Leave the job unacked so it is redelivered; the handler is
-            # idempotent, so a retry cannot double-execute a node.
-            logger.exception("graph run %s failed; leaving for redelivery", payload)
+            # Leave the job unacked for redelivery. Settled nodes are skipped;
+            # a node with an uncertain native outcome stays abandoned.
+            logger.exception(
+                "graph run %s failed; leaving for redelivery", payload.get("graph_run_id")
+            )
             return
         await self._consumer.ack(stream_id)
         if state is not None:
@@ -249,7 +304,8 @@ class WorkerService:
             "trigger_type": "reconcile",
             "task_ids": ",".join(task_ids),
         }
-        return await self._worker.handle(GraphRunJob.from_payload(payload))
+        async with self._execution_slots:
+            return await self._worker.handle(GraphRunJob.from_payload(payload))
 
     async def _requeue(self, run: dict[str, Any]) -> None:
         """Re-run a graph from durable state, without the stream.
@@ -261,8 +317,9 @@ class WorkerService:
         acks a stream id, and there is no stream entry for a reconciler-driven
         re-run — acking the graph-run id would be a no-op at best and could ack
         an unrelated pending delivery at worst. The handler is idempotent, so
-        driving the worker directly is safe; a failure is simply retried on the
-        next reconcile pass (the row stays non-terminal).
+        driving the worker directly is safe for settled nodes. An abandoned
+        node is held for inspection; a transient failure is retried on the next
+        reconcile pass while its graph remains non-terminal.
         """
         logger.info("reconciling graph run %s", run["id"])
         state = await self._drive(run)

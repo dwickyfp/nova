@@ -7,7 +7,10 @@ import asyncio
 import json
 import resource
 import sys
+import tempfile
 import time
+from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
 import pyarrow as pa
@@ -118,7 +121,10 @@ async def run_worker_direct(sql: str, database: str, target: str) -> dict:
             mode=MLMode.BEST,
             budget=budget,
         ),
-        normalized_input_sql=sql,
+        normalized_input_sql=encrypt_password(sql),
+        encrypted_sql=True,
+        artifact_key=f"{settings.ML_ARTIFACT_PREFIX}/benchmark/{uuid4()}/model.joblib",
+        deadline_at=time.monotonic() + budget.timeout_seconds,
         security=MLWorkerSecurity(
             username=security.username,
             encrypted_password=encrypt_password(settings.STARROCKS_ROOT_PASSWORD),
@@ -139,7 +145,7 @@ async def run_worker_direct(sql: str, database: str, target: str) -> dict:
     api_peak_rss_bytes = _peak_rss_bytes()
     extraction = result.extraction
     return {
-        "architecture": "api_descriptor_to_worker_direct_flight",
+        "architecture": "api_descriptor_to_worker_direct",
         "wall_seconds": round(wall, 6),
         "rows": extraction.rows_read,
         "bytes": extraction.bytes_read,
@@ -148,7 +154,13 @@ async def run_worker_direct(sql: str, database: str, target: str) -> dict:
         "data_conversion_duration": extraction.data_conversion_duration,
         "largest_batch_bytes": extraction.largest_batch_bytes,
         "final_materialized_bytes": extraction.final_materialized_bytes,
-        "ipc_bytes": 0,
+        "dataset_ipc_bytes": 0,
+        "trained_model_ipc_bytes": 0,
+        "worker_result_ipc_bytes": result.worker_result_ipc_bytes,
+        "artifact_bytes": result.artifact_size,
+        "serialization_seconds": result.serialization_seconds,
+        "upload_seconds": result.upload_seconds,
+        "transport_used": extraction.transport,
         "worker_startup_seconds": result.worker_startup_seconds,
         "training_seconds": result.training_seconds,
         "api_peak_rss_bytes": api_peak_rss_bytes,
@@ -166,6 +178,113 @@ def _peak_rss_bytes() -> int:
     return int(value if sys.platform == "darwin" else value * 1024)
 
 
+def synthetic_worker_pipeline(training_rows: int, inference_rows: int, batch_size: int) -> dict:
+    """Exercise the real worker contract with synthetic input and temporary disk storage."""
+    from app.modules.ml_engine.execution import inference_worker, worker
+    from app.modules.ml_engine.execution.inference_worker import MLInferenceJob
+
+    class Source:
+        transport_used = "synthetic_arrow"
+
+        async def stream(self, sql, security):
+            rows = inference_rows if sql == "inference" else training_rows
+            for offset in range(0, rows, batch_size):
+                values = np.arange(offset, min(offset + batch_size, rows), dtype=np.float64)
+                yield pa.record_batch({"value": values, "target": values * 0.5})
+
+    with tempfile.TemporaryDirectory(prefix="nova-ml-benchmark-") as directory:
+
+        class LocalStore:
+            def put(self, key, payload):
+                path = Path(directory, key)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(payload)
+                return str(path)
+
+            def get(self, uri):
+                return Path(uri).read_bytes()
+
+            def delete(self, uri):
+                Path(uri).unlink(missing_ok=True)
+
+        worker.PreferredDataSource = Source
+        worker.ObjectArtifactStore = LocalStore
+        inference_worker.PreferredDataSource = Source
+        inference_worker.ObjectArtifactStore = LocalStore
+        budget = budget_for(MLMode.BEST)
+        security = MLWorkerSecurity(
+            "benchmark", encrypt_password(""), "benchmark", None, "analyst", "benchmark"
+        )
+        result = worker.execute_worker_job(
+            MLWorkerJob(
+                run_id="synthetic-benchmark",
+                spec=MLExecutionSpec(
+                    MLTask.REGRESSION,
+                    "[encrypted]",
+                    MLSecurityContext("benchmark", ""),
+                    target_column="target",
+                    feature_columns=("value",),
+                    algorithm="ridge",
+                    mode=MLMode.BEST,
+                    budget=budget,
+                ),
+                normalized_input_sql=encrypt_password("training"),
+                encrypted_sql=True,
+                security=security,
+                artifact_key="model.joblib",
+                deadline_at=time.monotonic() + budget.timeout_seconds,
+            )
+        )
+        inference = inference_worker.execute_inference_job(
+            MLInferenceJob(
+                "synthetic-inference",
+                encrypt_password("inference"),
+                security,
+                {"artifact_uri": result.artifact_uri, "artifact_sha256": result.artifact_sha256},
+                "results",
+                time.monotonic() + budget.timeout_seconds,
+                inference_rows,
+                max(inference_rows * 32, 1024),
+            )
+        )
+        inference.pop("result_uri")
+        inference["result_destination"] = "temporary_local_disk"
+        return {
+            "source": "synthetic_arrow",
+            "storage": "temporary_local_disk",
+            "training_rows": result.extraction.rows_read,
+            "training_seconds": result.training_seconds,
+            "serialization_seconds": result.serialization_seconds,
+            "upload_seconds": result.upload_seconds,
+            "artifact_bytes": result.artifact_size,
+            "worker_result_ipc_bytes": result.worker_result_ipc_bytes,
+            "dataset_ipc_bytes": 0,
+            "trained_model_ipc_bytes": 0,
+            "inference": inference,
+        }
+
+
+async def run_synthetic_worker(training_rows: int, inference_rows: int, batch_size: int) -> dict:
+    runner = MLJobRunner(max_workers=1)
+    started = time.monotonic()
+    before = _peak_rss_bytes()
+    try:
+        result = await runner.run(
+            synthetic_worker_pipeline,
+            training_rows,
+            inference_rows,
+            batch_size,
+            timeout_seconds=300,
+        )
+    finally:
+        runner.close()
+    return {
+        **result,
+        "wall_seconds": time.monotonic() - started,
+        "api_peak_rss_growth_bytes": max(0, _peak_rss_bytes() - before),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rows", type=int, default=100_000)
@@ -173,8 +292,12 @@ def main() -> None:
     parser.add_argument("--worker-direct-sql")
     parser.add_argument("--database", default="NOVA_EXAMPLE")
     parser.add_argument("--target", default="target")
+    parser.add_argument("--inference-rows", type=int, default=1_000_000)
     args = parser.parse_args()
     output = {"synthetic_columnar": run(args.rows, args.batch_size)}
+    output["synthetic_worker_pipeline"] = asyncio.run(
+        run_synthetic_worker(args.rows, args.inference_rows, args.batch_size)
+    )
     if args.worker_direct_sql:
         output["worker_direct"] = asyncio.run(
             run_worker_direct(args.worker_direct_sql, args.database, args.target)

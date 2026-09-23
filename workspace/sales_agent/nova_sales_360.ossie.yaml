@@ -1,0 +1,642 @@
+version: 0.1.1
+name: nova_sales_360
+description: >-
+  Governed semantic model for Nova's synthetic Indonesian omnichannel retail
+  warehouse. It covers recognized revenue, orders, margin, discounting, returns,
+  customers, products, campaigns, stores, and sales-representative quota performance.
+question_routing_instructions: >-
+  Route commercial KPI, customer, product, channel, campaign, regional, store,
+  return, margin, and sales-team questions to this model. Interpret an unqualified
+  request for sales as recognized_revenue, which excludes cancelled orders. Use
+  quota metrics only from rep_performance and never sum quota_attainment percentages.
+query_generation_instructions: >-
+  Use order_date as the default time dimension for transaction metrics and
+  sales_month for quota metrics. Keep period comparisons equal in duration. Use
+  the explicit relationships and many-to-one direction to avoid fanout. Monetary
+  metrics are IDR. For customer-level output, default to a top-10 result unless
+  the user asks for another limit.
+ai_context:
+  instructions: >-
+    Revenue is recognized for Completed, Processing, Pending, and Returned orders;
+    Cancelled orders carry zero net revenue. Return rate uses returned orders over
+    non-cancelled orders. Gross margin is gross profit divided by recognized revenue.
+    The data is synthetic but patterned to resemble a real Indonesian retailer.
+  examples:
+    - question: Show recognized revenue by sales channel.
+      semantic_plan:
+        metrics: [recognized_revenue]
+        dimensions: [sales_channel]
+        order_by: [{field: recognized_revenue, direction: desc}]
+    - question: Chart monthly recognized revenue.
+      semantic_plan:
+        metrics: [recognized_revenue]
+        time: {dimension: order_date, grain: month}
+    - question: Who are the top 10 sales representatives by revenue?
+      semantic_plan:
+        metrics: [recognized_revenue]
+        dimensions: [sales_rep_name]
+        order_by: [{field: recognized_revenue, direction: desc}]
+        limit: 10
+    - question: Compare quota attainment by team.
+      semantic_plan:
+        metrics: [quota_attainment]
+        dimensions: [team_name]
+
+datasets:
+  - name: sales
+    source: NOVA_SALES.fact_sales
+    description: One row per sold order line; 2.4 million deterministic transactions.
+    primary_key: [order_date, sale_id]
+    synonyms: [transactions, orders, purchases, penjualan, transaksi]
+    fields:
+      - name: sale_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sale_id}]}
+        datatype: Integer
+        description: Unique transaction identifier.
+      - name: order_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: order_date}]}
+        datatype: Date
+        description: Calendar date when the order was placed.
+        dimension: {is_time: true}
+        search_strategy: range
+        synonyms: [transaction date, sales date, tanggal transaksi]
+      - name: customer_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
+        datatype: Integer
+        description: Customer identifier used to join the customer dimension.
+      - name: product_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: product_id}]}
+        datatype: Integer
+        description: Product identifier used to join the product dimension.
+      - name: sales_rep_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sales_rep_id}]}
+        datatype: Integer
+        description: Sales representative credited for the transaction.
+      - name: store_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: store_id}]}
+        datatype: Integer
+        description: Store or fulfillment location credited for the transaction.
+      - name: campaign_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: campaign_id}]}
+        datatype: Integer
+        description: Campaign credited to the transaction; null means organic demand.
+      - name: sales_channel
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sales_channel}]}
+        datatype: String
+        description: Customer-facing channel where the order originated.
+        dimension:
+          sample_values: [Store, Marketplace, Website, Mobile App, WhatsApp B2B]
+        search_strategy: exact
+        synonyms: [channel, order channel, kanal penjualan]
+      - name: order_status
+        expression: {dialects: [{dialect: ANSI_SQL, expression: order_status}]}
+        datatype: String
+        description: Operational order state.
+        dimension:
+          sample_values: [Completed, Processing, Pending, Returned, Cancelled]
+        search_strategy: exact
+        synonyms: [status, transaction status]
+      - name: payment_method
+        expression: {dialects: [{dialect: ANSI_SQL, expression: payment_method}]}
+        datatype: String
+        description: Tender used to pay for the order.
+        dimension:
+          sample_values: [QRIS, Virtual Account, Credit Card, Debit Card, E-Wallet, PayLater, Bank Transfer]
+        search_strategy: exact
+        synonyms: [payment, tender, metode pembayaran]
+      - name: fulfillment_type
+        expression: {dialects: [{dialect: ANSI_SQL, expression: fulfillment_type}]}
+        datatype: String
+        description: How the purchased item reached the customer.
+        dimension:
+          sample_values: [Take Home, Scheduled Delivery, Click & Collect, Same Day, Standard Delivery]
+        search_strategy: exact
+        synonyms: [delivery type, fulfillment, pengiriman]
+      - name: quantity
+        expression: {dialects: [{dialect: ANSI_SQL, expression: quantity}]}
+        datatype: Integer
+        kind: fact
+        description: Units on the transaction line.
+      - name: gross_amount
+        expression: {dialects: [{dialect: ANSI_SQL, expression: gross_amount}]}
+        datatype: Decimal
+        kind: fact
+        description: Quantity multiplied by unit price before discount, in IDR.
+      - name: discount_pct
+        expression: {dialects: [{dialect: ANSI_SQL, expression: discount_pct}]}
+        datatype: Decimal
+        kind: fact
+        description: Applied line discount as a decimal fraction.
+      - name: discount_amount
+        expression: {dialects: [{dialect: ANSI_SQL, expression: discount_amount}]}
+        datatype: Decimal
+        kind: fact
+        description: Discount value in IDR.
+      - name: net_revenue
+        expression: {dialects: [{dialect: ANSI_SQL, expression: net_revenue}]}
+        datatype: Decimal
+        kind: fact
+        description: Revenue after discount and before tax and shipping, in IDR.
+      - name: cogs_amount
+        expression: {dialects: [{dialect: ANSI_SQL, expression: cogs_amount}]}
+        datatype: Decimal
+        kind: fact
+        description: Cost of goods sold in IDR.
+      - name: gross_profit
+        expression: {dialects: [{dialect: ANSI_SQL, expression: gross_profit}]}
+        datatype: Decimal
+        kind: fact
+        description: Net revenue less cost of goods sold, in IDR.
+      - name: returned_flag
+        expression: {dialects: [{dialect: ANSI_SQL, expression: returned_flag}]}
+        datatype: Boolean
+        description: True when the order was returned.
+        dimension:
+          sample_values: [true, false]
+        search_strategy: exact
+        synonyms: [returned, retur]
+
+  - name: customers
+    source: NOVA_SALES.vw_customer_360
+    description: One enriched row per customer with geography and lifetime behavior.
+    primary_key: [customer_id]
+    synonyms: [buyers, accounts, pelanggan]
+    fields:
+      - name: customer_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
+        datatype: Integer
+        description: Unique customer identifier.
+      - name: customer_code
+        expression: {dialects: [{dialect: ANSI_SQL, expression: customer_code}]}
+        datatype: String
+        description: Stable synthetic customer code safe to display.
+        dimension: {}
+        search_strategy: exact
+      - name: full_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: full_name}]}
+        datatype: String
+        description: Synthetic customer name.
+        dimension: {}
+        search_strategy: contains
+        synonyms: [customer name, nama pelanggan]
+      - name: customer_type
+        expression: {dialects: [{dialect: ANSI_SQL, expression: customer_type}]}
+        datatype: String
+        description: Individual or business account.
+        dimension: {sample_values: [Individual, Business]}
+        search_strategy: exact
+        synonyms: [account type]
+      - name: customer_segment
+        expression: {dialects: [{dialect: ANSI_SQL, expression: customer_segment}]}
+        datatype: String
+        description: Commercial value segment assigned to the customer.
+        dimension: {sample_values: [Strategic, High Value, Core, Occasional]}
+        search_strategy: exact
+        synonyms: [segment, customer value, segmen pelanggan]
+      - name: loyalty_tier
+        expression: {dialects: [{dialect: ANSI_SQL, expression: loyalty_tier}]}
+        datatype: String
+        description: Current loyalty program tier.
+        dimension: {sample_values: [Platinum, Gold, Silver, Bronze]}
+        search_strategy: exact
+        synonyms: [membership tier, member level]
+      - name: city
+        expression: {dialects: [{dialect: ANSI_SQL, expression: city}]}
+        datatype: String
+        description: Customer home city.
+        dimension: {}
+        search_strategy: exact
+        synonyms: [customer city, kota pelanggan]
+      - name: province
+        expression: {dialects: [{dialect: ANSI_SQL, expression: province}]}
+        datatype: String
+        description: Customer home province.
+        dimension: {}
+        search_strategy: exact
+        synonyms: [customer province, provinsi]
+      - name: customer_region
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sales_region}]}
+        datatype: String
+        description: Commercial region derived from the customer's location.
+        dimension:
+          sample_values: [Jabodetabek, Jawa Barat, Jawa Tengah, Jawa Timur, Sumatera, Bali Nusra, Sulawesi, Kalimantan]
+        search_strategy: exact
+        synonyms: [region, customer territory, wilayah pelanggan]
+      - name: customer_join_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: join_date}]}
+        datatype: Date
+        description: Date the customer account was created.
+        dimension: {is_time: true}
+        search_strategy: range
+      - name: last_order_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: last_order_date}]}
+        datatype: Date
+        description: Most recent transaction date for the customer.
+        dimension: {is_time: true}
+        search_strategy: range
+        synonyms: [last purchase, recency]
+
+  - name: products
+    source: NOVA_SALES.dim_products
+    description: Current product catalog and commercial hierarchy.
+    primary_key: [product_id]
+    synonyms: [items, sku, catalog, produk]
+    fields:
+      - name: product_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: product_id}]}
+        datatype: Integer
+        description: Unique product identifier.
+      - name: sku
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sku}]}
+        datatype: String
+        description: Stock keeping unit.
+        dimension: {}
+        search_strategy: exact
+      - name: product_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: product_name}]}
+        datatype: String
+        description: Synthetic product display name.
+        dimension: {}
+        search_strategy: contains
+        synonyms: [item name, nama produk]
+      - name: category
+        expression: {dialects: [{dialect: ANSI_SQL, expression: category}]}
+        datatype: String
+        description: Top-level product family.
+        dimension:
+          sample_values: [Electronics, Home Appliances, Computing, Mobile & Wearables, Audio & Entertainment, Furniture, Sports & Outdoor, Beauty & Personal Care]
+        search_strategy: exact
+        synonyms: [product category, kategori]
+      - name: subcategory
+        expression: {dialects: [{dialect: ANSI_SQL, expression: subcategory}]}
+        datatype: String
+        description: Product subcategory.
+        dimension: {}
+        search_strategy: exact
+      - name: brand
+        expression: {dialects: [{dialect: ANSI_SQL, expression: brand}]}
+        datatype: String
+        description: Synthetic product brand.
+        dimension: {}
+        search_strategy: exact
+        synonyms: [merek]
+      - name: supplier_tier
+        expression: {dialects: [{dialect: ANSI_SQL, expression: supplier_tier}]}
+        datatype: String
+        description: Commercial importance of the supplier relationship.
+        dimension: {sample_values: [Strategic, Preferred, Standard]}
+        search_strategy: exact
+
+  - name: sales_reps
+    source: NOVA_SALES.dim_sales_reps
+    description: Sales representative, team, territory, and seniority attributes.
+    primary_key: [sales_rep_id]
+    synonyms: [salespeople, account executives, salesperson, tenaga penjual]
+    fields:
+      - name: sales_rep_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sales_rep_id}]}
+        datatype: Integer
+        description: Unique sales representative identifier.
+      - name: sales_rep_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sales_rep_name}]}
+        datatype: String
+        description: Synthetic sales representative name.
+        dimension: {}
+        search_strategy: contains
+        synonyms: [salesperson name, nama sales]
+      - name: team_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: team_name}]}
+        datatype: String
+        description: Sales team assignment.
+        dimension: {}
+        search_strategy: exact
+        synonyms: [sales team, tim penjualan]
+      - name: territory
+        expression: {dialects: [{dialect: ANSI_SQL, expression: territory}]}
+        datatype: String
+        description: Sales territory assigned to the representative.
+        dimension:
+          sample_values: [Jabodetabek, Jawa Barat, Jawa Tengah, Jawa Timur, Sumatera, Bali Nusra, Sulawesi, Kalimantan]
+        search_strategy: exact
+        synonyms: [sales region, wilayah sales]
+      - name: seniority
+        expression: {dialects: [{dialect: ANSI_SQL, expression: seniority}]}
+        datatype: String
+        description: Representative career level.
+        dimension: {sample_values: [Principal, Senior, Associate, Junior]}
+        search_strategy: exact
+
+  - name: stores
+    source: NOVA_SALES.dim_stores
+    description: Physical and partner selling locations.
+    primary_key: [store_id]
+    synonyms: [outlets, branches, toko]
+    fields:
+      - name: store_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: store_id}]}
+        datatype: Integer
+        description: Unique store identifier.
+      - name: store_code
+        expression: {dialects: [{dialect: ANSI_SQL, expression: store_code}]}
+        datatype: String
+        description: Stable store code.
+        dimension: {}
+        search_strategy: exact
+      - name: store_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: store_name}]}
+        datatype: String
+        description: Store display name.
+        dimension: {}
+        search_strategy: contains
+        synonyms: [outlet name, nama toko]
+      - name: store_format
+        expression: {dialects: [{dialect: ANSI_SQL, expression: store_format}]}
+        datatype: String
+        description: Operating format of the store.
+        dimension: {sample_values: [Flagship, Experience Store, Express, Partner Outlet]}
+        search_strategy: exact
+        synonyms: [format, store type]
+
+  - name: campaigns
+    source: NOVA_SALES.dim_campaigns
+    description: Monthly marketing campaigns and promotional moments.
+    primary_key: [campaign_id]
+    synonyms: [promotions, promo, marketing campaigns]
+    fields:
+      - name: campaign_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: campaign_id}]}
+        datatype: Integer
+        description: Unique campaign identifier.
+      - name: campaign_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: campaign_name}]}
+        datatype: String
+        description: Campaign display name and year.
+        dimension: {}
+        search_strategy: contains
+        synonyms: [promotion name, nama campaign]
+      - name: campaign_type
+        expression: {dialects: [{dialect: ANSI_SQL, expression: campaign_type}]}
+        datatype: String
+        description: Campaign planning classification.
+        dimension: {sample_values: [Religious Moment, Mega Campaign, Seasonal, Always-on]}
+        search_strategy: exact
+      - name: campaign_channel
+        expression: {dialects: [{dialect: ANSI_SQL, expression: primary_channel}]}
+        datatype: String
+        description: Primary media or selling channel for the campaign.
+        dimension: {sample_values: [Marketplace, Mobile App, Store, Website]}
+        search_strategy: exact
+
+  - name: rep_performance
+    source: NOVA_SALES.vw_sales_rep_monthly_performance
+    description: One row per sales representative per month with actuals and targets.
+    primary_key: [sales_month, performance_sales_rep_id]
+    synonyms: [quota, target attainment, sales performance, kinerja sales]
+    fields:
+      - name: sales_month
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sales_month}]}
+        datatype: Date
+        description: Month of sales performance.
+        dimension: {is_time: true}
+        search_strategy: range
+      - name: performance_sales_rep_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sales_rep_id}]}
+        datatype: Integer
+        description: Sales representative identifier on the monthly scorecard.
+      - name: performance_sales_rep_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: sales_rep_name}]}
+        datatype: String
+        description: Sales representative name on the scorecard.
+        dimension: {}
+        search_strategy: contains
+        synonyms: [quota owner, target owner]
+      - name: performance_team
+        expression: {dialects: [{dialect: ANSI_SQL, expression: team_name}]}
+        datatype: String
+        description: Sales team on the monthly scorecard.
+        dimension: {}
+        search_strategy: exact
+        synonyms: [quota team]
+      - name: performance_territory
+        expression: {dialects: [{dialect: ANSI_SQL, expression: territory}]}
+        datatype: String
+        description: Territory on the monthly scorecard.
+        dimension: {}
+        search_strategy: exact
+        synonyms: [quota territory]
+      - name: actual_revenue_value
+        expression: {dialects: [{dialect: ANSI_SQL, expression: actual_revenue}]}
+        datatype: Decimal
+        kind: fact
+        description: Recognized revenue credited to the representative for the month.
+      - name: target_revenue_value
+        expression: {dialects: [{dialect: ANSI_SQL, expression: target_revenue}]}
+        datatype: Decimal
+        kind: fact
+        description: Revenue target assigned to the representative for the month.
+      - name: quota_attainment_value
+        expression: {dialects: [{dialect: ANSI_SQL, expression: quota_attainment}]}
+        datatype: Decimal
+        kind: fact
+        description: Actual revenue divided by target revenue.
+
+relationships:
+  - name: sales_to_customers
+    from: sales
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [customer_id]
+    cardinality: many_to_one
+    preferred: true
+  - name: sales_to_products
+    from: sales
+    to: products
+    from_columns: [product_id]
+    to_columns: [product_id]
+    cardinality: many_to_one
+    preferred: true
+  - name: sales_to_sales_reps
+    from: sales
+    to: sales_reps
+    from_columns: [sales_rep_id]
+    to_columns: [sales_rep_id]
+    cardinality: many_to_one
+    preferred: true
+  - name: sales_to_stores
+    from: sales
+    to: stores
+    from_columns: [store_id]
+    to_columns: [store_id]
+    cardinality: many_to_one
+    preferred: true
+  - name: sales_to_campaigns
+    from: sales
+    to: campaigns
+    from_columns: [campaign_id]
+    to_columns: [campaign_id]
+    cardinality: many_to_one
+    preferred: true
+
+named_filters:
+  - name: recognized_sales
+    expression: sales.order_status <> 'Cancelled'
+    dataset: sales
+    description: Exclude cancelled orders from commercial KPIs.
+    synonyms: [recognized, valid sales, penjualan diakui]
+  - name: returned_orders
+    expression: sales.returned_flag = TRUE
+    dataset: sales
+    description: Include only returned orders.
+    synonyms: [returns, retur]
+  - name: digital_channels
+    expression: sales.sales_channel IN ('Marketplace', 'Website', 'Mobile App')
+    dataset: sales
+    description: Consumer digital sales channels.
+    synonyms: [online, digital]
+  - name: physical_store_channel
+    expression: sales.sales_channel = 'Store'
+    dataset: sales
+    description: Physical store transactions only.
+    synonyms: [offline, in store]
+
+metrics:
+  - name: recognized_revenue
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(sales.net_revenue)}]}
+    base_dataset: sales
+    datatype: Decimal
+    currency: IDR
+    format: currency
+    description: Net revenue after discounts, excluding cancelled orders.
+    synonyms: [revenue, net sales, omzet, pendapatan, penjualan]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+    preferred_relationship_path: []
+  - name: gross_sales
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(sales.gross_amount)}]}
+    base_dataset: sales
+    datatype: Decimal
+    currency: IDR
+    format: currency
+    description: Sales value before discounts for non-cancelled orders.
+    synonyms: [gross revenue, sales before discount]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+  - name: gross_profit_amount
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(sales.gross_profit)}]}
+    base_dataset: sales
+    datatype: Decimal
+    currency: IDR
+    format: currency
+    description: Recognized revenue less cost of goods sold.
+    synonyms: [gross profit, laba kotor]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+  - name: discount_value
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(sales.discount_amount)}]}
+    base_dataset: sales
+    datatype: Decimal
+    currency: IDR
+    format: currency
+    description: Total discount funded on non-cancelled orders.
+    synonyms: [discount amount, promo cost, nilai diskon]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+  - name: order_count
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(DISTINCT sales.sale_id)}]}
+    base_dataset: sales
+    datatype: Integer
+    unit: orders
+    description: Number of non-cancelled orders.
+    synonyms: [orders, transactions, jumlah order]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+  - name: units_sold
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(sales.quantity)}]}
+    base_dataset: sales
+    datatype: Integer
+    unit: units
+    description: Units on non-cancelled orders.
+    synonyms: [volume, quantity, unit terjual]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+  - name: active_customers
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(DISTINCT sales.customer_id)}]}
+    base_dataset: sales
+    datatype: Integer
+    unit: customers
+    description: Distinct customers with a non-cancelled order.
+    synonyms: [buyers, purchasing customers, pelanggan aktif]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+  - name: average_order_value
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(sales.net_revenue) / NULLIF(COUNT(DISTINCT sales.sale_id), 0)"}]}
+    base_dataset: sales
+    datatype: Decimal
+    currency: IDR
+    format: currency
+    additivity: non_additive
+    description: Recognized revenue divided by non-cancelled order count.
+    synonyms: [AOV, basket size, rata rata order]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+    allowed_dimensions: [sales_channel, order_status, payment_method, fulfillment_type, customer_type, customer_segment, loyalty_tier, city, province, customer_region, category, subcategory, brand, supplier_tier, sales_rep_name, team_name, territory, seniority, store_code, store_name, store_format, campaign_name, campaign_type, campaign_channel]
+  - name: gross_margin_pct
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(sales.gross_profit) / NULLIF(SUM(sales.net_revenue), 0)"}]}
+    base_dataset: sales
+    datatype: Decimal
+    format: percentage
+    additivity: non_additive
+    description: Gross profit divided by recognized revenue.
+    synonyms: [margin, gross margin, margin kotor]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+    allowed_dimensions: [sales_channel, order_status, payment_method, fulfillment_type, customer_type, customer_segment, loyalty_tier, city, province, customer_region, category, subcategory, brand, supplier_tier, sales_rep_name, team_name, territory, seniority, store_code, store_name, store_format, campaign_name, campaign_type, campaign_channel]
+  - name: discount_rate
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(sales.discount_amount) / NULLIF(SUM(sales.gross_amount), 0)"}]}
+    base_dataset: sales
+    datatype: Decimal
+    format: percentage
+    additivity: non_additive
+    description: Discount value divided by gross sales.
+    synonyms: [discount percentage, markdown rate, tingkat diskon]
+    filters: [recognized_sales]
+    default_time_dimension: order_date
+    allowed_dimensions: [sales_channel, order_status, payment_method, fulfillment_type, customer_type, customer_segment, loyalty_tier, city, province, customer_region, category, subcategory, brand, supplier_tier, sales_rep_name, team_name, territory, seniority, store_code, store_name, store_format, campaign_name, campaign_type, campaign_channel]
+  - name: return_rate
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(CASE WHEN sales.returned_flag THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT CASE WHEN sales.order_status <> 'Cancelled' THEN sales.sale_id END), 0)"}]}
+    base_dataset: sales
+    datatype: Decimal
+    format: percentage
+    additivity: non_additive
+    description: Returned orders divided by all non-cancelled orders.
+    synonyms: [returns percentage, retur rate, tingkat retur]
+    default_time_dimension: order_date
+    allowed_dimensions: [sales_channel, payment_method, fulfillment_type, customer_type, customer_segment, loyalty_tier, city, province, customer_region, category, subcategory, brand, supplier_tier, sales_rep_name, team_name, territory, seniority, store_code, store_name, store_format, campaign_name, campaign_type, campaign_channel]
+  - name: target_revenue
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(rep_performance.target_revenue)}]}
+    base_dataset: rep_performance
+    datatype: Decimal
+    currency: IDR
+    format: currency
+    description: Sum of monthly sales-representative revenue targets.
+    synonyms: [sales target, quota value, target penjualan]
+    default_time_dimension: sales_month
+  - name: actual_revenue
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(rep_performance.actual_revenue)}]}
+    base_dataset: rep_performance
+    datatype: Decimal
+    currency: IDR
+    format: currency
+    description: Revenue recorded on monthly sales-representative scorecards.
+    synonyms: [quota actual, scorecard revenue, realisasi penjualan]
+    default_time_dimension: sales_month
+  - name: quota_attainment
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(rep_performance.actual_revenue) / NULLIF(SUM(rep_performance.target_revenue), 0)"}]}
+    base_dataset: rep_performance
+    datatype: Decimal
+    format: percentage
+    additivity: non_additive
+    description: Actual scorecard revenue divided by assigned target revenue.
+    synonyms: [target achievement, quota achievement, pencapaian target]
+    default_time_dimension: sales_month
+    allowed_dimensions: [sales_month, performance_sales_rep_name, performance_team, performance_territory]

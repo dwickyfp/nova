@@ -18,7 +18,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BACKEND_DIR="$REPO_ROOT/backend"
 COMPOSE_FILE="docker-compose.test.yml"
-PROJECT_NAME="$(basename "$BACKEND_DIR")"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "$BACKEND_DIR")}"
 
 SR_PORT="${STARROCKS_PORT:-29030}"
 S3_PORT="${S3_PORT:-29000}"

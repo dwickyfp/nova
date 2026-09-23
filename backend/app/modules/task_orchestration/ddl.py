@@ -42,7 +42,12 @@ from app.modules.task_orchestration.graph import (
     GraphValidationError,
     validate_graph,
 )
-from app.modules.task_orchestration.schedule import ScheduleError, parse_cron
+from app.modules.task_orchestration.schedule import (
+    ScheduleError,
+    parse_cron,
+    parse_interval,
+    resolve_timezone,
+)
 from app.modules.task_orchestration.schemas import OverlapPolicy
 from app.sql_dialect.grammar import StarRocksLexer, StarRocksParser
 
@@ -210,6 +215,9 @@ def parse_create_task(
     tree = parser.sqlStatements()
     if listener.errors:
         raise TaskDDLError("invalid CREATE TASK syntax: " + "; ".join(listener.errors))
+    statements = [item for item in tree.singleStatement() if item.statement() is not None]
+    if len(statements) != 1:
+        raise TaskDDLError("CREATE TASK must contain exactly one SQL statement")
 
     statement = _find_first(tree, "SubmitTaskStatementContext")
     if statement is None:
@@ -244,6 +252,11 @@ def parse_create_task(
     # this statement, and silently preferring the session default would fire the
     # task at the wrong wall-clock moment.
     resolved_timezone = embedded_zone or timezone
+    if resolved_timezone is not None:
+        try:
+            resolve_timezone(resolved_timezone)
+        except ScheduleError as exc:
+            raise TaskDDLError(f"invalid task timezone: {resolved_timezone!r}") from exc
 
     body_node = (
         _find_first(statement, "CreateTableAsSelectStatementContext")
@@ -257,14 +270,14 @@ def parse_create_task(
         # empty body to the engine.
         raise TaskDDLError("CREATE TASK body must be CREATE TABLE ... AS, INSERT, or CACHE SELECT")
     body = _slice(sql, body_node)
+    if "@" in body:
+        from app.modules.query.dialect.parser import parse_sql
 
-    # NOTE: `@stage` in the body cannot reach here. The pinned StarRocks grammar
-    # has no `@stage` rule, so `INSERT INTO t SELECT a FROM @stage1.x` fails the
-    # ANTLR parse above with `no viable alternative at input 'FROM @'` — the same
-    # gap NOVA-17 tracks. That means a task body is table-only today, and the
-    # worker-side `@stage` translation the design mentions is blocked on the
-    # grammar work, not merely on PR 3b. Stated here so the constraint is not
-    # rediscovered as a runtime surprise.
+        if parse_sql(body).stage_refs:
+            raise TaskDDLError(
+                "CREATE TASK with @stage is unavailable: native task definitions "
+                "would persist injected storage credentials"
+            )
 
     _validate_own_edges(bare_name, after, finalize)
 
@@ -412,7 +425,17 @@ def _clause_schedule(sql: str, clause) -> tuple[str, str | None, str | None]:
     interval_ctx = _find_first(clause, "TaskIntervalContext")
     if interval_ctx is None:
         raise TaskDDLError("SCHEDULE requires a cron string or an EVERY(INTERVAL …) form")
-    return "interval", _slice(sql, interval_ctx), None
+    schedule_ctx = _find_first(clause, "TaskScheduleDescContext")
+    if schedule_ctx is not None and schedule_ctx.START() is not None:
+        raise TaskDDLError(
+            "CREATE TASK SCHEDULE START is not supported by the Nova scheduler"
+        )
+    expression = _slice(sql, interval_ctx)
+    try:
+        parse_interval(expression)
+    except ScheduleError as exc:
+        raise TaskDDLError(str(exc)) from exc
+    return "interval", expression, None
 
 
 def _validate_own_edges(task_name: str, after: tuple[str, ...], finalize: str | None) -> None:

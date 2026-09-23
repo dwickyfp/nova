@@ -95,7 +95,7 @@ _SELECT_VERSIONS = f"""
     FROM NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS
     WHERE entry_id = %s AND user_name = %s
     ORDER BY version DESC
-    LIMIT %s
+    LIMIT %s OFFSET %s
 """
 
 _SELECT_VERSION = f"""
@@ -247,10 +247,10 @@ class WorkspaceRepository:
         )
 
     async def list_versions(
-        self, username: str, entry_id: str, limit: int = 100
+        self, username: str, entry_id: str, limit: int = 100, offset: int = 0
     ) -> list[dict[str, Any]]:
         result = await _system_query(
-            db.execute_system(_SELECT_VERSIONS, [entry_id, username, limit])
+            db.execute_system(_SELECT_VERSIONS, [entry_id, username, limit, offset])
         )
         return [_to_version(row) for row in result["rows"]]
 

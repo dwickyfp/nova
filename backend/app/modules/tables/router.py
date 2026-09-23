@@ -268,7 +268,13 @@ async def get_table_ddl(
     """Get the CREATE TABLE DDL for a table."""
     check_identifier(database, field="database")
     check_identifier(table, field="table name")
-    detail = await object_repo.get_table_detail(database, table)
+    detail = await object_repo.get_table_detail(
+        database,
+        table,
+        username=user["username"],
+        encrypted_password=user["encrypted_password"],
+        role=user.get("active_role"),
+    )
     if not detail:
         raise HTTPException(status_code=404, detail=f"Table '{database}.{table}' not found")
     return {"ddl": detail["ddl"], "database": database, "table": table}

@@ -59,10 +59,15 @@ def _plain_loop(max_iterations: int = DEFAULT_MAX_ITERATIONS) -> AssistantLoop:
 
 
 def _tool_loop(max_iterations: int = DEFAULT_MAX_ITERATIONS) -> AssistantLoop:
+    class FreshProvider(ScriptedProvider):
+        async def resolve(self, **kwargs):
+            self.script = [tool_call_frame("c1"), text_frame("done after tool")]
+            return await super().resolve(**kwargs)
+
     registry = ToolRegistry()
     registry.register(RecordingTool())
     return AssistantLoop(
-        provider=ScriptedProvider(
+        provider=FreshProvider(
             [tool_call_frame("c1"), text_frame("done after tool")]
         ),
         registry=registry,
@@ -104,6 +109,7 @@ async def test_benchmark_tool_round_trip():
         iterations=500,
     )
     _print("tool_round_trip", result)
+    assert loop._registry.get("query_execute").runs == 500
     _assert_measured(result)
 
 
@@ -119,6 +125,7 @@ async def test_benchmark_consent_auto_approve():
         iterations=500,
     )
     _print("consent_auto_approve", result)
+    assert loop._registry.get("query_execute").runs == 500
     _assert_measured(result)
 
 
@@ -130,6 +137,7 @@ async def test_benchmark_consent_explicit_per_call():
         iterations=500,
     )
     _print("consent_explicit_per_call", result)
+    assert loop._registry.get("query_execute").runs == 500
     _assert_measured(result)
 
 

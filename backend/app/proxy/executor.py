@@ -227,6 +227,7 @@ class ProxyQueryExecutor:
                 encrypted_password="",
                 database=self._session.database,
                 role=self._session.active_role,
+                security_context_version=self._session.security_context_version,
                 max_rows=DEFAULT_MAX_ROWS,
                 session_id=session_id,
                 connection=connection,
@@ -284,6 +285,7 @@ class ProxyQueryExecutor:
                 encrypted_password="",
                 database=self._session.database,
                 role=self._session.active_role,
+                security_context_version=self._session.security_context_version,
                 max_rows=DEFAULT_MAX_ROWS,
                 connection=connection,
             )

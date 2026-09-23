@@ -96,6 +96,8 @@ class StageReference:
     file_name: str | None  # Last part if it looks like a file: 'data.csv'
     is_directory: bool  # True if no file extension
     original_text: str  # The full SQL text for context
+    start: int  # Inclusive offset in original_text
+    end: int  # Exclusive offset in original_text
 
 
 @dataclass
@@ -409,11 +411,15 @@ def _stage_reference_from_atom(atom, original_sql: str) -> StageReference:
     stage_name = segments[0]
     raw_parts = segments[1:]
 
+    start = stage_ref.start.start
+    end = stage_ref.stop.stop + 1
     return _build_reference(
-        full_match=stage_ref.getText(),
+        full_match=original_sql[start:end],
         stage_name=stage_name,
         raw_parts=raw_parts,
         original_sql=original_sql,
+        start=start,
+        end=end,
     )
 
 
@@ -423,6 +429,8 @@ def _build_reference(
     stage_name: str,
     raw_parts: list[str],
     original_sql: str,
+    start: int,
+    end: int,
 ) -> StageReference:
     """Assemble a :class:`StageReference` from a name plus path segments.
 
@@ -464,6 +472,8 @@ def _build_reference(
         file_name=file_name,
         is_directory=file_name is None,
         original_text=original_sql,
+        start=start,
+        end=end,
     )
 
 
@@ -596,30 +606,24 @@ def _nova_surface_stage_refs(sql: str) -> list[StageReference]:
             tokens = tokens[index:]
             break
 
-    refs: list[StageReference] = []
-    index = 0
-    while index < len(tokens):
-        if tokens[index].text != "@":
-            index += 1
-            continue
-
-        # ``@stage1.data/*`` is a glob: the ``*`` is a path segment and the
-        # scan continues so a following ``.csv``/``.parquet`` joins it rather
-        # than being left dangling.
-        ref = _reference_from_tokens(tokens, index, sql)
-        if ref is None:
-            index += 1
-            continue
-        refs.append(ref)
-
-        # Advance past this reference's span so an inner ``@@`` cannot be
-        # re-read, and so a bare ``@`` that started a system variable is not
-        # revisited.
-        stop = tokens[index].start + len(ref.full_match)
-        index += 1
-        while index < len(tokens) and tokens[index].start < stop:
-            index += 1
-    return refs
+    if not tokens:
+        return []
+    leading = [token.text.upper() for token in tokens[:3]]
+    target_index: int | None = None
+    if leading[:1] == ["LIST"]:
+        target_index = 2 if leading[1:2] == ["FILES"] else 1
+    elif leading[:2] == ["COPY", "INTO"]:
+        if len(tokens) > 2 and tokens[2].text == "@":
+            target_index = 2
+        else:
+            for index, token in enumerate(tokens[3:], start=3):
+                if token.text.upper() == "FROM":
+                    target_index = index + 1
+                    break
+    if target_index is None or target_index >= len(tokens):
+        return []
+    ref = _reference_from_tokens(tokens, target_index, sql)
+    return [ref] if ref is not None else []
 
 
 #: Token types whose text is a numeric path segment the lexer fused the leading
@@ -754,7 +758,13 @@ def parse_sql(sql: str) -> ParsedSQL:
     stream, tree, errors = _parse_tree(sql)
     leading = _texts(_visible_tokens(stream)[:4])
 
-    nova_surface = leading[:1] in (["LIST"], ["COPY"])
+    visible = _visible_tokens(stream)
+    insert_stage = (
+        leading[:2] == ["INSERT", "INTO"]
+        and len(visible) > 2
+        and visible[2].text == "@"
+    )
+    nova_surface = leading[:1] in (["LIST"], ["COPY"]) or insert_stage
     if errors and not nova_surface:
         # A partial tree must not drive a rewrite: a missing token can make a
         # later ``@stage`` parse as something else, and the translator would then
@@ -770,7 +780,22 @@ def parse_sql(sql: str) -> ParsedSQL:
 
     command_type = detect_command_type(tree, leading)
 
-    if nova_surface:
+    if insert_stage:
+        target = _reference_from_tokens(visible, 2, sql)
+        stage_refs = [target] if target else []
+        command_type = CommandType.STAGE_EXPORT
+        if target:
+            source = sql[target.end :]
+            source_parsed = parse_sql(source.lstrip())
+            if source_parsed.errors:
+                errors.extend(source_parsed.errors)
+            shift = target.end + len(source) - len(source.lstrip())
+            for ref in source_parsed.stage_refs:
+                ref.start += shift
+                ref.end += shift
+                ref.original_text = sql
+                stage_refs.append(ref)
+    elif nova_surface:
         stage_refs = _nova_surface_stage_refs(sql)
         if leading[1:2] == ["INTO"]:
             command_type = _direction_from_tokens(_all_token_texts(stream))
@@ -959,12 +984,16 @@ def _reference_from_tokens(tokens: list, start_index: int, sql: str) -> StageRef
     if index < len(tokens) and tokens[index].text == "/":
         index += 1
 
-    full_match = sql[tokens[start_index].start : tokens[index - 1].stop + 1]
+    start = tokens[start_index].start
+    end = tokens[index - 1].stop + 1
+    full_match = sql[start:end]
     return _build_reference(
         full_match=full_match,
         stage_name=segments[0],
         raw_parts=segments[1:],
         original_sql=sql,
+        start=start,
+        end=end,
     )
 
 

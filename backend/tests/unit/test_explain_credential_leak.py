@@ -83,14 +83,16 @@ def explain_client(monkeypatch):
 
     repo = RecordingRepo()
 
-    async def fake_configs(database, schema):
-        return {"stage1": _stage_config()}
+    async def fake_configs(parsed, **kwargs):
+        if any(ref.stage_name != "stage1" for ref in parsed.stage_refs):
+            raise ValueError("Stage not found")
+        return parsed, {ref.start: _stage_config() for ref in parsed.stage_refs}
 
     async def fake_csv_params(parsed, stage_configs):
         return {}, None
 
     monkeypatch.setattr(query_service, "_repo", repo)
-    monkeypatch.setattr(query_service, "_load_stage_configs", fake_configs)
+    monkeypatch.setattr(query_service, "_resolve_stage_refs", fake_configs)
     monkeypatch.setattr(query_service, "_detect_csv_params", fake_csv_params)
     # The service decrypts the session password before calling the engine.
     monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
@@ -207,10 +209,10 @@ class TestRedactionCannotBeForgotten:
         client, _repo = explain_client
         from app.modules.query.service import query_service
 
-        async def no_stages(database, schema):
-            return {}
+        async def no_stages(parsed, **kwargs):
+            raise ValueError("Stage not found")
 
-        monkeypatch.setattr(query_service, "_load_stage_configs", no_stages)
+        monkeypatch.setattr(query_service, "_resolve_stage_refs", no_stages)
         payload = client.post(EXPLAIN_ENDPOINT, json={"sql": STAGE_SQL}).json()
 
         assert payload["warnings"], "the failure must be reported to the caller"

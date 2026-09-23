@@ -207,6 +207,8 @@ function applyEvent(
   event: AssistantEvent,
 ): TranscriptMessage[] {
   switch (event.type) {
+    case "role_changed":
+      return [];
     case "text_delta":
       return appendAssistantText(state, event.text);
     case "thinking":

@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet
 from sklearn.linear_model import LinearRegression
 
 from app.core.config import settings
-from app.modules.ml_engine.artifacts.store import MemoryArtifactStore
+from app.modules.ml_engine.artifacts.store import ObjectArtifactStore
 from app.modules.ml_engine.data.arrow_flight import ArrowFlightDataSource
 from app.modules.ml_engine.data.datasource import collect_bounded
 from app.modules.ml_engine.engines.base import TrainingOutput
@@ -102,6 +102,19 @@ async def test_concurrent_version_reservation_promotes_only_ready(docker_service
             'PROPERTIES("replication_num"="1", "enable_persistent_index"="true")'
         )
         await cursor.execute(
+            "SELECT COLUMN_NAME FROM information_schema.columns WHERE TABLE_SCHEMA='NOVA_SYSTEM' "
+            "AND TABLE_NAME='ML_MODELS' AND COLUMN_NAME='tenant_name'"
+        )
+        if not await cursor.fetchone():
+            from pathlib import Path
+
+            from app.common.sql_guard import split_sql_statements
+
+            migration = (
+                Path(__file__).parents[2] / "migrations/20260922_ml_ephemeral_runs.sql"
+            ).read_text()
+            await cursor.execute(split_sql_statements(migration)[0])
+        await cursor.execute(
             "CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_VERSIONS ("
             "model_id VARCHAR(64) NOT NULL, version INT NOT NULL, status VARCHAR(32), "
             "training_rows BIGINT, metrics TEXT, artifact_uri VARCHAR(2048), "
@@ -186,7 +199,9 @@ async def test_concurrent_version_reservation_promotes_only_ready(docker_service
 
 
 @pytest.mark.asyncio
-async def test_real_worker_fetches_arrow_without_api_table(docker_services, monkeypatch):
+async def test_real_worker_fetches_arrow_without_api_table(
+    docker_services, minio_client, monkeypatch, tmp_path
+):
     """Cross the spawn boundary with a descriptor and fetch inside the child."""
     require_stack(docker_services)
     ports = engine_host_ports()
@@ -195,8 +210,22 @@ async def test_real_worker_fetches_arrow_without_api_table(docker_services, monk
     monkeypatch.setenv("STARROCKS_HOST", "127.0.0.1")
     monkeypatch.setenv("STARROCKS_ARROW_FLIGHT_PORT", str(ports["starrocks-fe-arrow"]))
     monkeypatch.setenv("STARROCKS_FE_MYSQL_PORT", str(ports["starrocks-fe"]))
+    from app.core.config import load_nova_app_config
+
+    storage_settings = {
+        "NOVA_CONFIG_PATH": str(tmp_path / "missing-config.yaml"),
+        "S3_ENDPOINT": f"http://127.0.0.1:{ports['minio']}",
+        "S3_BUCKET": "test-stage",
+        "S3_ACCESS_KEY": "minioadmin",
+        "S3_SECRET_KEY": "minioadmin",
+    }
+    for name, value in storage_settings.items():
+        monkeypatch.setenv(name, value)
+        monkeypatch.setattr(settings, name, value)
+    load_nova_app_config.cache_clear()
     monkeypatch.setattr(settings, "FERNET_KEY", key)
     monkeypatch.setattr(settings, "STARROCKS_HOST", "127.0.0.1")
+    monkeypatch.setattr(settings, "STARROCKS_FE_MYSQL_PORT", ports["starrocks-fe"])
     monkeypatch.setattr(settings, "STARROCKS_ARROW_FLIGHT_PORT", ports["starrocks-fe-arrow"])
     from app.core import security as security_module
 
@@ -211,6 +240,7 @@ async def test_real_worker_fetches_arrow_without_api_table(docker_services, monk
     )
     database = f"nova_ml_worker_{uuid4().hex[:10]}"
     async with root.cursor() as cursor:
+        await cursor.execute("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
         await cursor.execute(f"CREATE DATABASE `{database}`")
         await cursor.execute(
             f"CREATE TABLE `{database}`.features (id INT, x DOUBLE, target DOUBLE) "
@@ -220,7 +250,7 @@ async def test_real_worker_fetches_arrow_without_api_table(docker_services, monk
         values = ",".join(f"({value},{value},{value * 2})" for value in range(1, 41))
         await cursor.execute(f"INSERT INTO `{database}`.features VALUES {values}")
 
-    class Repository:
+    class Repository(ModelRegistryRepository):
         async def record_run(self, **kwargs):
             del kwargs
 
@@ -229,7 +259,9 @@ async def test_real_worker_fetches_arrow_without_api_table(docker_services, monk
             del security
             return sql
 
-    service = Service(artifact_store=MemoryArtifactStore(), repository=Repository())
+    service = Service(artifact_store=ObjectArtifactStore(), repository=Repository())
+    await service.ephemeral_repository.ensure_schema()
+    result = None
     try:
         result = await service.execute(
             MLExecutionSpec(
@@ -242,11 +274,21 @@ async def test_real_worker_fetches_arrow_without_api_table(docker_services, monk
             )
         )
         assert result.training_rows == 40
-        assert result.telemetry["ipc_mode"] == "worker_direct_flight"
-        assert result.telemetry["ipc_bytes"] == 0
+        assert result.telemetry["ipc_mode"] == "worker_direct"
+        assert result.telemetry["dataset_ipc_bytes"] == 0
+        assert result.telemetry["trained_model_ipc_bytes"] == 0
+        assert result.telemetry["worker_result_ipc_bytes"] > 0
+        assert result.artifact_uri
+        assert service.artifact_store.get(result.artifact_uri)
         assert result.telemetry["extraction_rows"] == 40
     finally:
         service.job_runner.close()
+        if result:
+            service.artifact_store.cleanup_upload(result.artifact_uri)
+            await service.ephemeral_repository.remove(
+                result.run_id, MLSecurityContext("root", "", database=database).scope_key
+            )
+        load_nova_app_config.cache_clear()
         async with root.cursor() as cursor:
             await cursor.execute(f"DROP DATABASE IF EXISTS `{database}` FORCE")
         root.close()

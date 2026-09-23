@@ -1,0 +1,24 @@
+version: 0.1.1
+name: rbac_city_sales
+description: Sales amounts from the governed city sales table.
+datasets:
+  - name: sales
+    source: rbac_city_demo.city_sales
+    description: Four synthetic city sales records for RBAC acceptance tests.
+    primary_key: [id]
+    fields:
+      - name: id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: id}]}
+        datatype: Integer
+      - name: city
+        expression: {dialects: [{dialect: ANSI_SQL, expression: city}]}
+        datatype: String
+        dimension: {sample_values: [Jakarta, Bandung]}
+        search_strategy: exact
+      - name: amount
+        expression: {dialects: [{dialect: ANSI_SQL, expression: amount}]}
+        datatype: Decimal
+metrics:
+  - name: total_amount
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(sales.amount)"}]}
+    datatype: Decimal

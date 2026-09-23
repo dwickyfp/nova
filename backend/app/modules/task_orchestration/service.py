@@ -38,9 +38,8 @@ class SchedulerService:
     async def run_once(self) -> bool:
         """Acquire-if-possible then tick. Returns True when the tick ran.
 
-        The lock is not held across the sleep: another instance may take over
-        the moment this one stops ticking, and the deterministic run id makes
-        the handover safe even if both believed they were leader.
+        The lease is renewed while a tick is in progress. Losing it cancels
+        the tick; a persisted but unpublished run is recovered by the worker.
         """
         if not self._leader_lock.is_leader and not await self._leader_lock.acquire():
             return False
@@ -48,8 +47,40 @@ class SchedulerService:
             logger.info("scheduler leader lock lost; standing by")
             return False
 
-        await self._tick.tick()
-        return True
+        lost_lock = asyncio.Event()
+
+        async def keep_leadership() -> None:
+            while True:
+                await asyncio.sleep(max(0.1, self._leader_lock.ttl_seconds / 3))
+                try:
+                    held = await self._leader_lock.renew()
+                except Exception:
+                    logger.exception("scheduler leader renewal failed")
+                    held = False
+                if not held:
+                    lost_lock.set()
+                    return
+
+        tick_task = asyncio.create_task(self._tick.tick(), name="nova-scheduler-tick")
+        renewal = asyncio.create_task(keep_leadership(), name="nova-scheduler-lock-renewal")
+        try:
+            done, _ = await asyncio.wait({tick_task, renewal}, return_when=asyncio.FIRST_COMPLETED)
+            if renewal in done and lost_lock.is_set():
+                tick_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await tick_task
+                logger.warning("scheduler leader lock lost during tick; stopping enqueue")
+                return False
+            await tick_task
+            return True
+        finally:
+            renewal.cancel()
+            if not tick_task.done():
+                tick_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await tick_task
+            with contextlib.suppress(asyncio.CancelledError):
+                await renewal
 
     async def run_forever(self, stop_event: asyncio.Event) -> None:
         logger.info("nova-scheduler started (poll=%.1fs)", self._poll_interval)

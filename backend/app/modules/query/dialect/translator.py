@@ -6,7 +6,8 @@
 import re
 from dataclasses import dataclass
 
-from app.modules.query.dialect.parser import ParsedSQL, StageReference
+from app.common.sql_guard import strip_sql_comments
+from app.modules.query.dialect.parser import CommandType, ParsedSQL, StageReference
 
 
 @dataclass
@@ -52,6 +53,7 @@ def build_files_function(
     file_format: str,
     config: StorageConfig,
     credential_params: dict | None = None,
+    extra_params: dict[str, str] | None = None,
 ) -> str:
     """Build a StarRocks FILES() function call.
 
@@ -64,28 +66,33 @@ def build_files_function(
     Returns:
         FILES('path'='...', 'format'='...', 'aws.s3.access_key'='...', ...)
     """
-    params = [
-        f"'path'='{s3_path}'",
-        f"'format'='{file_format}'",
-    ]
+    def assignment(key: str, value: str) -> str:
+        quoted_key = key.replace("'", "''")
+        quoted_value = value.replace("'", "''")
+        return f"'{quoted_key}'='{quoted_value}'"
+
+    params = [assignment("path", s3_path), assignment("format", file_format)]
 
     # Add credentials
     if credential_params:
         for key, value in credential_params.items():
-            params.append(f"'{key}'='{value}'")
+            params.append(assignment(key, value))
     elif config.access_key:
-        params.append(f"'aws.s3.access_key'='{config.access_key}'")
-        params.append(f"'aws.s3.secret_key'='{config.secret_key}'")
+        params.append(assignment("aws.s3.access_key", config.access_key))
+        params.append(assignment("aws.s3.secret_key", config.secret_key))
         if config.endpoint:
-            params.append(f"'aws.s3.endpoint'='{config.endpoint}'")
+            params.append(assignment("aws.s3.endpoint", config.endpoint))
         if config.region:
-            params.append(f"'aws.s3.region'='{config.region}'")
+            params.append(assignment("aws.s3.region", config.region))
         # Required for MinIO / S3-compatible storage
         if config.endpoint and not config.endpoint.startswith("https"):
             params.append("'aws.s3.enable_ssl'='false'")
         params.append("'aws.s3.enable_path_style_access'='true'")
         params.append("'aws.s3.use_aws_sdk_default_behavior'='false'")
         params.append("'aws.s3.use_instance_profile'='false'")
+
+    if extra_params:
+        params.extend(assignment(key, value) for key, value in extra_params.items())
 
     return f"FILES({', '.join(params)})"
 
@@ -94,6 +101,12 @@ def translate_stage_query(
     parsed: ParsedSQL,
     stage_configs: dict[str, StorageConfig],
     format_overrides: dict[str, str] | None = None,
+    *,
+    files_params: dict[str, str] | None = None,
+    files_params_by_ref: dict[int, dict[str, str]] | None = None,
+    credential_params_by_stage: dict[str, dict[str, str]] | None = None,
+    stage_configs_by_ref: dict[int, StorageConfig] | None = None,
+    credential_params_by_ref: dict[int, dict[str, str]] | None = None,
 ) -> tuple[str, list[str]]:
     """Translate @stage references in SQL to FILES() calls.
 
@@ -111,16 +124,15 @@ def translate_stage_query(
     if not parsed.stage_refs:
         return parsed.original_sql, []
 
-    sql = parsed.original_sql
     warnings = []
+    replacements: list[tuple[int, int, str]] = []
 
-    for ref in parsed.stage_refs:
+    for index, ref in enumerate(parsed.stage_refs):
         stage_name = ref.stage_name
 
-        if stage_name not in stage_configs:
+        config = (stage_configs_by_ref or {}).get(ref.start) or stage_configs.get(stage_name)
+        if config is None:
             raise ValueError(f"Stage '{stage_name}' not found")
-
-        config = stage_configs[stage_name]
 
         # Build S3 path
         s3_path = build_s3_path(config, ref)
@@ -135,13 +147,77 @@ def translate_stage_query(
             warnings.append(f"⚠️ No file extension for @{stage_name}, defaulting to CSV")
 
         # Build FILES() function
-        files_func = build_files_function(s3_path, file_format, config)
+        is_destination = parsed.command_type == CommandType.STAGE_EXPORT and index == 0
+        extra_params = (
+            {"list_files_only": "true", "list_recursively": "true"}
+            if parsed.command_type == CommandType.STAGE_BROWSE
+            else None
+            if is_destination
+            else (files_params_by_ref or {}).get(ref.start, files_params)
+            if file_format == "csv"
+            else None
+        )
+        files_func = build_files_function(
+            s3_path,
+            file_format,
+            config,
+            credential_params=(credential_params_by_ref or {}).get(ref.start)
+            or (credential_params_by_stage or {}).get(stage_name),
+            extra_params=extra_params,
+        )
         warnings.append(f"Resolved @{stage_name} reference for execution")
 
-        # Replace @stage reference with FILES() call
-        # Handle both standalone and boundary cases
-        pattern = re.escape(ref.full_match)
-        sql = re.sub(pattern, files_func, sql, count=1)
+        if parsed.original_sql[ref.start : ref.end] != ref.full_match:
+            raise ValueError("Stage reference source span does not match the parsed SQL")
+        replacements.append((ref.start, ref.end, files_func))
+
+    sql = parsed.original_sql
+    for start, end, files_func in sorted(replacements, reverse=True):
+        sql = sql[:start] + files_func + sql[end:]
+
+    if parsed.command_type == CommandType.STAGE_BROWSE:
+        if len(replacements) != 1 or not re.fullmatch(
+            r"\s*LIST(?:\s+FILES)?\s+" + re.escape(parsed.stage_refs[0].full_match) + r"\s*;?\s*",
+            strip_sql_comments(parsed.original_sql),
+            flags=re.IGNORECASE,
+        ):
+            raise ValueError("LIST expects exactly one stage reference")
+        return f"SELECT * FROM {replacements[0][2]}", warnings
+
+    if parsed.command_type == CommandType.STAGE_LOAD:
+        if len(replacements) != 1:
+            raise ValueError("COPY INTO table expects exactly one stage source")
+        match = re.fullmatch(
+            r"\s*COPY\s+INTO\s+(?P<table>(?:`[^`]+`|[\w$]+)(?:\.(?:`[^`]+`|[\w$]+))?)\s+FROM\s+"
+            + re.escape(parsed.stage_refs[0].full_match)
+            + r"\s*;?\s*",
+            strip_sql_comments(parsed.original_sql),
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            raise ValueError("Unsupported COPY INTO load syntax")
+        return f"INSERT INTO {match.group('table')} SELECT * FROM {replacements[0][2]}", warnings
+
+    if parsed.command_type == CommandType.STAGE_EXPORT:
+        target = parsed.stage_refs[0]
+        prefix = strip_sql_comments(parsed.original_sql[: target.start])
+        suffix = strip_sql_comments(sql.split(replacements[0][2], 1)[1]).strip().rstrip(";").strip()
+        if re.fullmatch(r"\s*COPY\s+INTO\s+", prefix, flags=re.IGNORECASE):
+            match = re.fullmatch(r"FROM\s+(.+)", suffix, flags=re.IGNORECASE | re.DOTALL)
+            if not match:
+                raise ValueError("COPY INTO stage requires a source")
+            source = match.group(1).strip()
+            if re.fullmatch(r"(?:`[^`]+`|[\w$]+)(?:\.(?:`[^`]+`|[\w$]+))?", source):
+                suffix = f"SELECT * FROM {source}"
+            elif re.match(r"(?is)^(SELECT|WITH)\s+", source):
+                suffix = source
+            else:
+                raise ValueError("Unsupported COPY INTO export source")
+        elif not re.fullmatch(r"\s*INSERT\s+INTO\s+", prefix, flags=re.IGNORECASE):
+            raise ValueError("Unsupported stage export syntax")
+        elif not re.match(r"(?is)^(SELECT|WITH|VALUES)\s+", suffix):
+            raise ValueError("INSERT INTO stage requires a query or VALUES")
+        return f"INSERT INTO {replacements[0][2]} {suffix}", warnings
 
     return sql, warnings
 

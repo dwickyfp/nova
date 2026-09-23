@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from uuid import uuid4
 
@@ -101,7 +102,7 @@ class WorkspaceService:
     async def create_file(self, username: str, parent_path: str, name: str, content: str) -> dict:
         path = self._repo.build_path(parent_path, name)
         key = self.build_object_key(username, path)
-        result = self._put_object(key, content.encode("utf-8"))
+        result = await asyncio.to_thread(self._put_object, key, content.encode("utf-8"))
         entry_id = str(uuid4())
         await self._repo.insert_entry(
             entry_id=entry_id,
@@ -151,7 +152,7 @@ class WorkspaceService:
             raise StorageError("Workspace entry not found", status_code=404)
         if entry["entry_type"] != "file":
             raise StorageError("Only SQL files can be opened", status_code=400)
-        content = self._read_object(entry["object_key"])
+        content = await asyncio.to_thread(self._read_object, entry["object_key"])
         return entry, content.decode("utf-8")
 
     async def update_file(self, username: str, entry_id: str, content: str) -> dict:
@@ -163,7 +164,9 @@ class WorkspaceService:
         # missing object (a brand-new file whose first write is this one) is
         # treated as no predecessor.
         await self._snapshot_version(username, entry_id, entry, next_content=content)
-        result = self._put_object(entry["object_key"], content.encode("utf-8"))
+        result = await asyncio.to_thread(
+            self._put_object, entry["object_key"], content.encode("utf-8")
+        )
         await self._repo.update_entry(
             entry_id=entry_id,
             username=username,
@@ -189,7 +192,7 @@ class WorkspaceService:
         identical bytes is still the same version to a user.
         """
         try:
-            current = self._read_object(entry["object_key"])
+            current = await asyncio.to_thread(self._read_object, entry["object_key"])
         except StorageError:
             # No live object yet: nothing to snapshot. The next update will
             # snapshot the content written by this one.
@@ -204,7 +207,7 @@ class WorkspaceService:
 
         version = await self._repo.next_version_number(username, entry_id)
         key = self._version_object_key(username, entry_id, version)
-        result = self._put_object(key, current)
+        result = await asyncio.to_thread(self._put_object, key, current)
         await self._repo.insert_version(
             version_id=str(uuid4()),
             entry_id=entry_id,
@@ -232,7 +235,7 @@ class WorkspaceService:
         record = await self._repo.get_version(username, entry_id, version)
         if not record:
             raise StorageError("Version not found", status_code=404)
-        content = self._read_object(record["object_key"])
+        content = await asyncio.to_thread(self._read_object, record["object_key"])
         return content.decode("utf-8")
 
     async def get_file_version_record(
@@ -245,7 +248,9 @@ class WorkspaceService:
         record = await self._repo.get_version(username, entry_id, version)
         if not record:
             raise StorageError("Version not found", status_code=404)
-        content = self._read_object(record["object_key"]).decode("utf-8")
+        content = (await asyncio.to_thread(self._read_object, record["object_key"])).decode(
+            "utf-8"
+        )
         return record, content
 
     async def rename_entry(
@@ -265,7 +270,7 @@ class WorkspaceService:
         new_path = self._repo.build_path(target_parent, new_name)
         if entry["entry_type"] == "file":
             new_object_key = self.build_object_key(username, new_path)
-            self._move_object(entry["object_key"], new_object_key)
+            await asyncio.to_thread(self._move_object, entry["object_key"], new_object_key)
             await self._repo.update_entry(
                 entry_id=entry_id,
                 username=username,
@@ -283,7 +288,7 @@ class WorkspaceService:
                 rel_suffix = item["path"][len(old_path) :].lstrip("/")
                 if item["entry_type"] == "file" and item["object_key"]:
                     new_key = self.build_object_key(username, f"{new_path}/{rel_suffix}")
-                    self._move_object(item["object_key"], new_key)
+                    await asyncio.to_thread(self._move_object, item["object_key"], new_key)
                     await self._repo.update_entry(
                         entry_id=item["id"],
                         username=username,
@@ -340,7 +345,7 @@ class WorkspaceService:
         ]
         for item in sorted(targets, key=lambda row: len(row["path"].split("/")), reverse=True):
             if item["entry_type"] == "file" and item["object_key"]:
-                self._delete_object(item["object_key"])
+                await asyncio.to_thread(self._delete_object, item["object_key"])
                 await self._purge_versions(username, item["id"])
             await self._repo.soft_delete_entry(username, item["id"])
         await write_audit_log(
@@ -359,8 +364,14 @@ class WorkspaceService:
         unreachable too, so a deleted file does not leave orphaned history in
         the bucket.
         """
-        for record in await self._repo.list_versions(username, entry_id, limit=1000):
-            self._delete_object(record["object_key"])
+        offset = 0
+        while True:
+            records = await self._repo.list_versions(username, entry_id, limit=1000, offset=offset)
+            if not records:
+                break
+            for record in records:
+                await asyncio.to_thread(self._delete_object, record["object_key"])
+            offset += len(records)
         await self._repo.delete_versions_for_entry(username, entry_id)
 
     async def save_state(
@@ -398,7 +409,11 @@ class WorkspaceService:
 
     def _read_object(self, key: str) -> bytes:
         try:
-            return self._client().get_object(Bucket=self._bucket(), Key=key)["Body"].read()
+            body = self._client().get_object(Bucket=self._bucket(), Key=key)["Body"]
+            try:
+                return body.read()
+            finally:
+                body.close()
         except ClientError as exc:
             error = classify_storage_error(exc, action="read")
             if error.status_code == 502:
@@ -413,8 +428,8 @@ class WorkspaceService:
     def _delete_object(self, key: str) -> None:
         try:
             self._client().delete_object(Bucket=self._bucket(), Key=key)
-        except (ClientError, BotoCoreError):
-            return
+        except (ClientError, BotoCoreError) as exc:
+            raise classify_storage_error(exc, action="delete") from exc
 
     def _move_object(self, source_key: str, dest_key: str) -> None:
         client = self._client()

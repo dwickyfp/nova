@@ -112,6 +112,7 @@ async def put_data_scope(body: DataScopeRequest, user: CurrentUser):
     try:
         policy = await access_control_service.put_data_scope(
             _security(user),
+            principal=body.principal,
             role=body.role,
             catalog=body.catalog,
             database=body.database,

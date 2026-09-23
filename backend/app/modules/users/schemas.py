@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.config import settings
+
 DefaultRoleMode = Literal["explicit", "all", "none"]
 PrivilegeScope = Literal[
     "SYSTEM",
@@ -33,6 +35,7 @@ class UserCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_default_roles(self) -> "UserCreate":
+        validate_ranger_default(self.default_role_mode, self.default_roles)
         if self.default_role_mode == "explicit" and not self.default_roles:
             raise ValueError("default_roles is required when default_role_mode is explicit")
         if self.default_role_mode != "explicit" and self.default_roles:
@@ -56,11 +59,21 @@ class UserUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_payload(self) -> "UserUpdate":
+        if self.default_role_mode is not None or self.default_roles:
+            validate_ranger_default(self.default_role_mode, self.default_roles)
         if self.default_role_mode == "explicit" and not self.default_roles:
             raise ValueError("default_roles is required when default_role_mode is explicit")
         if self.default_role_mode not in (None, "explicit") and self.default_roles:
             raise ValueError("default_roles can only be provided when default_role_mode is explicit")
         return self
+
+
+def validate_ranger_default(mode: str | None, roles: list[str]) -> None:
+    if settings.RANGER_ENABLED and (
+        mode != "explicit" or len(roles) != 1
+        or any(not role.strip() or role.upper() in {"ALL", "NONE", "DEFAULT"} for role in roles)
+    ):
+        raise ValueError("Ranger mode requires exactly one explicit default role")
 
 
 class UserResponse(BaseModel):

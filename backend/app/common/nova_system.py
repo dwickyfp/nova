@@ -186,6 +186,7 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 
 ML_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("ML_MODELS", "current_version", 'INT DEFAULT "0"'),
+    ("ML_MODELS", "tenant_name", 'VARCHAR(128) NOT NULL DEFAULT "default"'),
     ("ML_MODEL_VERSIONS", "artifact_uri", "VARCHAR(2048)"),
     ("ML_MODEL_VERSIONS", "artifact_sha256", "VARCHAR(64)"),
     ("ML_MODEL_VERSIONS", "artifact_size", "BIGINT"),
@@ -229,7 +230,8 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODELS_PK (
     created_at DATETIME NOT NULL,
     created_by VARCHAR(128),
     current_version INT DEFAULT "0",
-    updated_at DATETIME NOT NULL
+    updated_at DATETIME NOT NULL,
+    tenant_name VARCHAR(128) NOT NULL DEFAULT "default"
 ) PRIMARY KEY(model_id)
 DISTRIBUTED BY HASH(model_id) BUCKETS 4
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -362,7 +364,7 @@ async def migrate_ml_metadata() -> None:
             "SELECT m.model_id,m.model_type,m.model_name,m.target_column,m.feature_columns,"
             "m.hyperparameters,m.training_sql,m.database_name,m.schema_name,m.created_at,"
             "m.created_by,GREATEST(COALESCE(m.current_version,0),"
-            "COALESCE(v.latest_version,0)),m.updated_at FROM NOVA_SYSTEM.ML_MODELS m "
+            "COALESCE(v.latest_version,0)),m.updated_at,m.tenant_name FROM NOVA_SYSTEM.ML_MODELS m "
             "LEFT JOIN (SELECT model_id,"
             "MAX(CASE WHEN status='READY' THEN version ELSE 0 END) AS latest_version "
             "FROM NOVA_SYSTEM.ML_MODEL_VERSIONS GROUP BY model_id) v "

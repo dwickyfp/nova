@@ -227,6 +227,7 @@ class TestDockerServicesIsSkipFriendly:
             return subprocess.CompletedProcess(args, returncode=0)
 
         monkeypatch.setattr(stack_conftest, "_compose", _compose_up_then_nothing)
+        monkeypatch.setattr(stack_conftest, "_preflight_failure", lambda: None)
         monkeypatch.setattr(stack_conftest.time, "sleep", lambda _: None)
         # Empty before `up` via the preflight check, then still refusing after.
         monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())

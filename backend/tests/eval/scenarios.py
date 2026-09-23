@@ -24,8 +24,13 @@ produced on every run and in CI without a provider key.
 
 from __future__ import annotations
 
+import base64
 import json
+from io import BytesIO
 
+from PIL import Image
+
+from app.modules.assistant.attachments import attachment_prompt, validate_attachments
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.state import AssistantMessage
 from app.modules.assistant.tools import ToolOutcome
@@ -42,7 +47,6 @@ from tests.eval.harness import (
     did_not_use_tool,
     finished_with,
     has_error_code,
-    has_tool_detail,
     no_error,
     prompted_for,
     recorded_step,
@@ -74,6 +78,208 @@ def scenario_delegates_to_query_execute() -> Scenario:
     )
 
 
+def scenario_numeric_claim_matches_query_result() -> Scenario:
+    return Scenario(
+        name="numeric_claim_matches_query_result",
+        content="What is revenue this month?",
+        script=[
+            tool_call_frame("c1", sql="SELECT SUM(amount) AS revenue FROM sales"),
+            text_frame("Revenue is 100."),
+        ],
+        tools=[
+            _query_tool(
+                summary="1 row",
+                table={"title": "Revenue", "columns": ["revenue"], "rows": [[100]]},
+            )
+        ],
+        read_only_grant=True,
+        checks=[
+            check("valid number shown", answer_contains("Revenue is 100")),
+            check(
+                "numeric claim linked to result",
+                lambda result: any(
+                    step.get("kind") == "answer_verification"
+                    and step.get("status") == "accepted"
+                    and step.get("claim_count") == 1
+                    and step.get("evidence_columns") == [
+                        {"evidence_id": "evidence_1", "column": "revenue"}
+                    ]
+                    and "active_role" in step
+                    for step in result.steps
+                ),
+            ),
+        ],
+    )
+
+
+def scenario_unsupported_numeric_claim_is_withheld() -> Scenario:
+    return Scenario(
+        name="unsupported_numeric_claim_is_withheld",
+        content="What is revenue this month?",
+        script=[
+            tool_call_frame("c1", sql="SELECT SUM(amount) AS revenue FROM sales"),
+            text_frame("Revenue is 900."),
+        ],
+        tools=[
+            _query_tool(
+                summary="1 row",
+                table={"title": "Revenue", "columns": ["revenue"], "rows": [[100]]},
+            )
+        ],
+        read_only_grant=True,
+        checks=[
+            check("unsupported number withheld", lambda result: "900" not in result.text),
+            check("result remains visible", lambda result: "table" in result.events),
+            check(
+                "rejection recorded",
+                lambda result: any(
+                    step.get("kind") == "answer_verification"
+                    and step.get("status") == "unsupported_number"
+                    for step in result.steps
+                ),
+            ),
+        ],
+    )
+
+
+def scenario_change_diagnosis_reconciles_after_data() -> Scenario:
+    return Scenario(
+        name="change_diagnosis_reconciles_after_data",
+        content="Why did revenue drop between August and September?",
+        script=[
+            tool_call_frame("c1", name="semantic_query", arguments={
+                "question": "Revenue in August and September by period"
+            }),
+            tool_call_frame("c2", name="diagnose_change", arguments={
+                "prior_period": "August", "current_period": "September",
+                "revenue_column": "revenue",
+            }),
+            text_frame("Net revenue change was -20. The cause is unassigned by this result."),
+        ],
+        tools=[
+            EvalTool(
+                "semantic_query", classification="read_only",
+                parameters={"type": "object", "properties": {"question": {"type": "string"}},
+                            "required": ["question"]},
+                data={"semantic_plan": {"metrics": ["revenue"]},
+                      "sql": "SELECT period, revenue FROM sales"},
+                table={"columns": ["period", "revenue"],
+                       "rows": [["August", 100], ["September", 80]]},
+            ),
+            EvalTool(
+                "diagnose_change", classification="read_only",
+                parameters={"type": "object", "properties": {
+                    "prior_period": {"type": "string"},
+                    "current_period": {"type": "string"},
+                    "revenue_column": {"type": "string"},
+                }, "required": ["prior_period", "current_period", "revenue_column"]},
+                table={"columns": ["component", "change"],
+                       "rows": [["unassigned", -20], ["net_change", -20]]},
+            ),
+        ],
+        read_only_grant=True,
+        checks=[
+            check("semantic query ran", used_tool("semantic_query")),
+            check("diagnostic ran", used_tool("diagnose_change")),
+            check("no consent prompt under grant", did_not_prompt()),
+            check("answer admits unassigned cause", answer_contains("unassigned")),
+            check("finished normally", finished_with("stop")),
+        ],
+    )
+
+
+def scenario_external_mcp_requires_explicit_consent() -> Scenario:
+    return Scenario(
+        name="external_mcp_requires_explicit_consent",
+        content="Use the CRM connector for this account.",
+        script=[
+            tool_call_frame("mcp1", name="mcp_tool1", arguments={"id": "account-1"}),
+            text_frame("The external CRM returned an account record."),
+        ],
+        tools=[EvalTool(
+            "mcp_tool1", classification="destructive", summary="CRM returned an account record",
+            parameters={"type": "object", "properties": {"id": {"type": "string"}},
+                        "required": ["id"]},
+        )],
+        read_only_grant=True,
+        resolve_consent=allow,
+        checks=[
+            check("external call prompted", prompted_for("mcp_tool1")),
+            check("approved call ran", used_tool("mcp_tool1")),
+            check("answer cites external result", answer_contains("CRM")),
+            check("finished normally", finished_with("stop")),
+        ],
+    )
+
+
+def scenario_studio_text_attachment_answers_without_tools() -> Scenario:
+    return Scenario(
+        name="studio_text_attachment_answers_without_tools",
+        content=attachment_prompt(
+            "What does the attached file say?",
+            [{"name": "facts.txt", "content": "The answer is 42."}],
+        ),
+        script=[text_frame("The attached file says the answer is 42.")],
+        checks=[
+            check("answer uses the file", answer_contains("42")),
+            check("no tool selected", did_not_use_tool("query_execute")),
+            check("no consent prompt", did_not_prompt()),
+            check("finished normally", finished_with("stop")),
+            check("no error", no_error()),
+        ],
+    )
+
+
+def scenario_studio_attachment_math_stays_with_document() -> Scenario:
+    question = "According to the attached brief, how many million remain for audit?"
+    files = validate_attachments([{
+        "name": "brief.txt",
+        "content": "Budget is 12 million. Domain costs 2 million. Testing costs 3 million.",
+    }])
+    return Scenario(
+        name="studio_attachment_math_stays_with_document",
+        content=attachment_prompt(question, files),
+        attachments=files,
+        routing_content=question,
+        script=[text_frame("The remaining budget is 12 - 2 - 3 = 7 million.")],
+        checks=[
+            check("answer uses the file", answer_contains("7 million")),
+            check("no database tool selected", did_not_use_tool("query_execute")),
+            check("no consent prompt", did_not_prompt()),
+            check("finished normally", finished_with("stop")),
+            check("no error", no_error()),
+        ],
+    )
+
+
+def scenario_studio_image_attachment_reaches_vision_turn() -> Scenario:
+    output = BytesIO()
+    Image.new("RGB", (1, 1), (255, 0, 0)).save(output, format="PNG")
+    encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    image = validate_attachments([{
+        "name": "photo.png", "media_type": "image/png",
+        "content": encoded,
+    }])
+    return Scenario(
+        name="studio_image_attachment_reaches_vision_turn",
+        content=attachment_prompt("Describe this image", image),
+        attachments=image,
+        routing_content="Describe this image",
+        script=[text_frame("The image is attached.")],
+        checks=[
+            check("answer present", answer_contains("image")),
+            check("no tool selected", did_not_use_tool("query_execute")),
+            check("no consent prompt", did_not_prompt()),
+            check(
+                "image bytes absent from stream",
+                lambda result: encoded not in "".join(result.frames),
+            ),
+            check("finished normally", finished_with("stop")),
+            check("no error", no_error()),
+        ],
+    )
+
+
 def scenario_destructive_tool_prompts() -> Scenario:
     """A destructive tool must prompt even with a read-only grant, and the grant
     must never cover it."""
@@ -91,6 +297,39 @@ def scenario_destructive_tool_prompts() -> Scenario:
             check("write ran", used_tool("write_thing")),
             check("prompted despite grant", prompted_for("write_thing")),
             check("finished", finished_with("stop")),
+        ],
+    )
+
+
+def scenario_ui_operation_requires_consent() -> Scenario:
+    return Scenario(
+        name="ui_operation_requires_consent",
+        content="Create an analyst role in Nova",
+        script=[
+            tool_call_frame(
+                "ui-1",
+                name="call_ui_operation",
+                arguments={"operation": "POST /api/v1/access-control/roles"},
+            ),
+            text_frame("The role was created."),
+        ],
+        tools=[
+            EvalTool(
+                "call_ui_operation",
+                classification="destructive",
+                parameters={
+                    "type": "object",
+                    "properties": {"operation": {"type": "string"}},
+                    "required": ["operation"],
+                },
+                summary="role created",
+            )
+        ],
+        read_only_grant=True,
+        checks=[
+            check("UI operation selected", used_tool("call_ui_operation")),
+            check("write still prompts", prompted_for("call_ui_operation")),
+            check("normal completion", finished_with("stop")),
         ],
     )
 
@@ -178,8 +417,10 @@ def scenario_recoverable_semantic_error_repairs_once() -> Scenario:
         checks=[
             check(
                 "exactly one repair call",
-                lambda result: result.tool_runs.count("semantic_query") == 2
-                or f"expected two attempts, got {result.tool_runs}",
+                lambda result: (
+                    result.tool_runs.count("semantic_query") == 2
+                    or f"expected two attempts, got {result.tool_runs}"
+                ),
             ),
             check("finished after repair", finished_with("stop")),
             check("grounded answer present", answer_contains("42")),
@@ -293,6 +534,7 @@ def scenario_context_is_curated() -> Scenario:
     manager = ContextManager(token_budget=1200, keep_recent=2)
     scenario = Scenario(
         name="context_is_curated",
+        content="Explain how SQL filters work.",
         script=[text_frame("Answer with limited context.")],
         tools=[_query_tool()],
         history_turns=40,
@@ -440,16 +682,11 @@ def scenario_trace_is_recorded_for_replay() -> Scenario:
     )
 
 
-def scenario_tool_detail_is_sent_and_recorded() -> Scenario:
-    """A tool's detail reaches the panel and survives into the trace.
-
-    Opening a step should answer "what did this do". For a skill load that is
-    the playbook body, which otherwise only ever reaches the model, so the
-    reader sees a step with nothing behind it.
-    """
+def scenario_skill_body_stays_out_of_transcript() -> Scenario:
+    """The model loads a skill without exposing its body in the transcript."""
     body = "Playbook: classify a plastic article by its essential character."
     return Scenario(
-        name="tool_detail_is_sent_and_recorded",
+        name="skill_body_stays_out_of_transcript",
         content="Load the engineering procedure",
         script=[
             tool_call_frame("c1", name="load_skill", arguments={"name": "engineering"}),
@@ -466,12 +703,26 @@ def scenario_tool_detail_is_sent_and_recorded() -> Scenario:
         ],
         checks=[
             check(
-                "the detail is sent on the stream",
-                has_tool_detail("c1", body),
+                "the skill tool runs",
+                lambda result: "load_skill" in result.tool_runs,
             ),
             check(
-                "the detail is recorded for replay",
-                recorded_step("tool", name="load_skill", detail=body),
+                "the skill name is sent to the panel",
+                lambda result: any(
+                    json.loads(frame.partition("data: ")[2]).get("skill_name")
+                    == "engineering"
+                    for frame in result.frames
+                    if frame.startswith("event: tool_call\n")
+                ),
+            ),
+            check(
+                "the skill body is absent from stream and replay",
+                lambda result: body not in "".join(result.frames)
+                and body not in str(result.steps),
+            ),
+            check(
+                "the skill step is recorded",
+                recorded_step("tool", name="load_skill", preview=""),
             ),
         ],
     )
@@ -585,6 +836,7 @@ def scenario_pure_answer_no_tool() -> Scenario:
     """A plain question is answered without touching a tool."""
     return Scenario(
         name="pure_answer_no_tool",
+        content="How do I filter rows with SQL?",
         script=[text_frame("Use SELECT with a WHERE clause.")],
         tools=[_query_tool()],
         checks=[
@@ -659,7 +911,7 @@ def scenario_follow_up_chart_reuses_previous_table() -> Scenario:
     }
     return Scenario(
         name="follow_up_chart_reuses_previous_table",
-        content="buat bar chart nya",
+        content="visualisasikan tabel sebelumnya",
         history_messages=[
             AssistantMessage(message_id="u-prior", role="user", content="revenue per category"),
             AssistantMessage(
@@ -856,17 +1108,74 @@ def _two_calls_announced(result) -> bool | str:
 
 def all_scenarios() -> list[Scenario]:
     """Every golden scenario, in a stable order."""
+    from tests.eval.nove_scenarios import nove_scenarios
+
     return [
+        *nove_scenarios(),
+        Scenario(
+            name="qualitative_data_claim_requires_execution",
+            content="Which revenue segment leads this month?",
+            script=[text_frame("Enterprise leads."), text_frame("Enterprise leads.")],
+            tools=[_query_tool()],
+            checks=[
+                check(
+                    "required execution enforced", finished_with("required_capability_incomplete")
+                ),
+                check("no unsupported text or secrets", lambda result: not result.text),
+                check("no query silently executed", did_not_use_tool("query_execute")),
+                check("one repair only", lambda result: result.provider_calls == 2),
+            ],
+        ),
+        Scenario(
+            name="missing_capability_refuses_answer",
+            content="Revenue this month",
+            script=[text_frame("Revenue increased.")],
+            checks=[
+                check("unavailable capability", finished_with("required_capability_unavailable")),
+                check("provider not called", lambda result: result.provider_calls == 0),
+                check("no unsupported prose", lambda result: not result.text),
+            ],
+        ),
+        Scenario(
+            name="disabled_chart_tool_gives_actionable_error",
+            content="visualisasikan tabel sebelumnya",
+            script=[text_frame("I can make that chart.")],
+            tools=[_query_tool()],
+            checks=[
+                check(
+                    "unavailable chart capability",
+                    finished_with("required_capability_unavailable"),
+                ),
+                check("provider not called", lambda result: result.provider_calls == 0),
+                check("no unsupported prose", lambda result: not result.text),
+                check(
+                    "configuration guidance",
+                    lambda result: any(
+                        "data_to_chart" in frame and "Tools configuration" in frame
+                        for frame in result.frames
+                        if frame.startswith("event: error\n")
+                    ),
+                ),
+            ],
+        ),
         scenario_delegates_to_query_execute(),
+        scenario_numeric_claim_matches_query_result(),
+        scenario_unsupported_numeric_claim_is_withheld(),
+        scenario_change_diagnosis_reconciles_after_data(),
+        scenario_external_mcp_requires_explicit_consent(),
+        scenario_studio_text_attachment_answers_without_tools(),
+        scenario_studio_attachment_math_stays_with_document(),
+        scenario_studio_image_attachment_reaches_vision_turn(),
         scenario_pure_answer_no_tool(),
         scenario_destructive_tool_prompts(),
+        scenario_ui_operation_requires_consent(),
         scenario_denied_call_continues(),
         scenario_failed_tool_terminates(),
         scenario_recoverable_semantic_error_repairs_once(),
         scenario_read_only_grant_auto_approves(),
         scenario_prompted_call_is_announced_as_pending(),
         scenario_trace_is_recorded_for_replay(),
-        scenario_tool_detail_is_sent_and_recorded(),
+        scenario_skill_body_stays_out_of_transcript(),
         scenario_observability_spans_are_recorded(),
         scenario_no_grant_prompts_every_call(),
         scenario_iteration_cap(),

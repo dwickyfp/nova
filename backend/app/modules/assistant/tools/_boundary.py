@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from app.modules.assistant.consent import ConsentApproval
 from app.modules.assistant.schemas import ToolClassification
 
 
@@ -58,6 +59,7 @@ class ToolOutcome:
     artifacts: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    state_patch: dict[str, Any] = field(default_factory=dict)
     error_class: str | None = None
     recoverable: bool = False
     safe_detail: str | None = None
@@ -77,6 +79,7 @@ class ToolOutcome:
                 "artifacts": self.artifacts,
                 "warnings": self.warnings,
                 "metadata": self.metadata,
+                "state_patch": self.state_patch,
             }
         return {
             "ok": False,
@@ -211,4 +214,6 @@ which registers the Stage C tools. Kept so a Stage B import keeps working."""
 
 #: Signature the loop uses to request a consent decision from the transport.
 #: ``None`` means the client disconnected or the turn was cancelled.
-ConsentResolver = Callable[[ToolInvocation, str], Awaitable[bool | None]]
+ConsentResolver = Callable[
+    [ToolInvocation, str], Awaitable[bool | None | ConsentApproval]
+]

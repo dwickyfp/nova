@@ -380,7 +380,11 @@ async def test_loop_announces_a_skill_load_as_its_own_step():
         name = "load_skill"
         classification = "read_only"
         description = "load"
-        parameters = {"type": "object", "properties": {}}
+        parameters = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        }
 
         def preview(self, invocation):
             return "load skill `create-table`"
@@ -480,12 +484,12 @@ async def test_router_stored_user_message_is_not_duplicated_to_the_provider():
     loop = AssistantLoop(provider=provider, registry=ToolRegistry())
     thread = _thread()
     # What send_message does before invoking the loop.
-    thread.messages.append(AssistantMessage(message_id="u1", role="user", content="SELECT 1"))
+    thread.messages.append(AssistantMessage(message_id="u1", role="user", content="Hello"))
 
     await _collect(
         loop.run(
             thread=thread,
-            user_content="SELECT 1",
+            user_content="Hello",
             context=LoopContext(user_name="alice"),
             resolve_consent=lambda inv, cls: _allow(),
         )
@@ -494,7 +498,7 @@ async def test_router_stored_user_message_is_not_duplicated_to_the_provider():
     sent = provider.calls[0]["messages"]
     user_entries = [m for m in sent if m["role"] == "user"]
     assert len(user_entries) == 1
-    assert user_entries[0]["content"] == "SELECT 1"
+    assert user_entries[0]["content"] == "Hello"
 
 
 async def test_two_turns_do_not_duplicate_or_lose_user_messages():

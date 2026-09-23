@@ -18,9 +18,10 @@ credential-shaped value fails closed exactly as on the create endpoint.
 from __future__ import annotations
 
 import json
-import logging
+import re
 from typing import Any
 
+from app.common.audit import write_audit_log
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.semantic.ossie import OssieParseError, parse_ossie
 from app.modules.agents.semantic.serialize import build_ossie_yaml
@@ -35,7 +36,7 @@ from app.modules.assistant.tools import (
     record_provider_usage,
 )
 
-logger = logging.getLogger(__name__)
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 _PARAMETERS = {
     "type": "object",
@@ -139,15 +140,32 @@ class CreateSemanticModelTool:
             return ToolOutcome(ok=False, summary="", error="At least one table is required.")
 
         owner = getattr(context, "user_name", None)
-        if not owner:
-            return ToolOutcome(ok=False, summary="", error="No user context is available.")
-
-        metadata = await self._fetch_metadata(tables, context)
-        if not metadata:
+        user = getattr(context, "user", None) or {}
+        if not owner or user.get("username") != owner or not user.get("encrypted_password"):
+            return ToolOutcome(ok=False, summary="", error="No user connection is available.")
+        if len(tables) > 8:
+            return ToolOutcome(ok=False, summary="", error="Use at most eight tables per model.")
+        existing = next(
+            (
+                model
+                for model in await agent_repository.list_semantic_models(owner_name=owner)
+                if model["name"] == name
+            ),
+            None,
+        )
+        if existing is not None:
             return ToolOutcome(
                 ok=False,
                 summary="",
-                error="None of the named tables could be read. Check the names.",
+                error=f"Semantic model {name!r} already exists. Review it before an update.",
+            )
+
+        metadata = await self._fetch_metadata(tables, context)
+        if len(metadata) != len(tables):
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error="One or more named tables could not be read under your active role.",
             )
 
         try:
@@ -164,7 +182,7 @@ class CreateSemanticModelTool:
 
         # Nova owns the serialization: the model returned a flat spec, and this
         # turns it into a valid Ossie document. The parser is still the gate.
-        spec.setdefault("name", name)
+        spec["name"] = name
         if not spec.get("description"):
             spec["description"] = description
         yaml_text = build_ossie_yaml(spec)
@@ -178,22 +196,30 @@ class CreateSemanticModelTool:
                 error=f"The generated model is not valid: {exc}",
             )
 
+        allowed_fields = {
+            item["table"].casefold(): {column["name"].casefold() for column in item["columns"]}
+            for item in metadata
+        }
+        datasets = parsed.model.get("datasets") or []
+        sources = {str(dataset.get("source") or "").casefold() for dataset in datasets}
+        if sources != set(allowed_fields):
+            return ToolOutcome(
+                ok=False, summary="", error="The generated model changed the approved table set."
+            )
+        for dataset in datasets:
+            columns = allowed_fields[str(dataset["source"]).casefold()]
+            if any(
+                str(field.get("name") or "").casefold() not in columns
+                for field in dataset.get("fields") or []
+            ):
+                return ToolOutcome(
+                    ok=False, summary="", error="The generated model invented a table column."
+                )
+
         first_source = (parsed.model.get("datasets") or [{}])[0].get("source") or ""
         database = first_source.split(".")[0] if first_source else None
         model_name = parsed.model.get("name") or name
 
-        # Idempotent by name: a model with this name already owned by the caller is
-        # updated rather than duplicated. A model that keeps its name should not
-        # accumulate copies when a model calls the tool more than once, which is a
-        # real behaviour when a request is split across steps.
-        existing = next(
-            (
-                m
-                for m in await agent_repository.list_semantic_models(owner_name=owner)
-                if m["name"] == model_name
-            ),
-            None,
-        )
         fields = {
             "name": model_name,
             "description": parsed.model.get("description") or description,
@@ -203,19 +229,30 @@ class CreateSemanticModelTool:
             "definition": parsed.as_dict(),
             "source_file_id": None,
         }
-        if existing is not None:
-            created = await agent_repository.update_semantic_model(
-                existing["semantic_model_id"], owner_name=owner, fields=fields
+        audit_fields = {
+            "event_type": "assistant_semantic_model_create",
+            "user_name": owner,
+            "action": "CREATE",
+            "object_type": "SEMANTIC_MODEL",
+            "object_name": model_name,
+            "session_id": getattr(context, "audit_session_id", None),
+        }
+        await write_audit_log(**audit_fields, status="PENDING")
+        try:
+            created = await agent_repository.create_semantic_model(
+                owner_name=owner, fields=fields
             )
-            verb = "Updated"
-        else:
-            created = await agent_repository.create_semantic_model(owner_name=owner, fields=fields)
-            verb = "Created"
+        except Exception:
+            await write_audit_log(**audit_fields, status="FAILED")
+            return ToolOutcome(
+                ok=False, summary="", error="The semantic model could not be created."
+            )
+        await write_audit_log(**audit_fields, status="SUCCESS")
         assert created is not None
         return ToolOutcome(
             ok=True,
             summary=(
-                f"{verb} semantic model `{created['name']}` "
+                f"Created semantic model `{created['name']}` "
                 f"({parsed.dataset_count} datasets, {parsed.metric_count} metrics, "
                 f"{parsed.relationship_count} relationships). "
                 "Open AI & ML > Semantic to review it. Do not create it again."
@@ -224,27 +261,56 @@ class CreateSemanticModelTool:
 
     async def _fetch_metadata(self, tables: list, context: Any) -> list[dict[str, Any]]:
         """Read columns for each table on the user's connection."""
-        from app.modules.explorer.service import explorer_service
+        from app.modules.query.service import query_service
 
+        user = context.user
         out: list[dict[str, Any]] = []
         for raw in tables:
-            full = str(raw)
+            full = str(raw).strip()
             parts = full.split(".")
-            if len(parts) < 2:
-                continue
+            if len(parts) != 2 or any(_IDENTIFIER.fullmatch(part) is None for part in parts):
+                return []
             database, table = parts[0], parts[1]
+            query_context = {
+                "username": user["username"],
+                "encrypted_password": user["encrypted_password"],
+                "database": database,
+                "role": user.get("active_role"),
+                "session_id": getattr(context, "audit_session_id", None),
+                "tenant": user.get("tenant", "default"),
+                "security_context_version": user.get("security_context_version", 1),
+            }
             try:
-                detail = await explorer_service.get_table_detail(database, table)
-            except Exception:  # noqa: BLE001 - a missing table is reported, not fatal
-                logger.warning("create_semantic_model: cannot read %s", full)
-                continue
+                allowed = await query_service.execute_statements(
+                    sql=f"SELECT * FROM `{database}`.`{table}` LIMIT 0",
+                    max_rows=1,
+                    **query_context,
+                )
+                if not allowed or allowed[0].error:
+                    return []
+                results = await query_service.execute_statements(
+                    sql=f"DESCRIBE `{database}`.`{table}`",
+                    max_rows=201,
+                    **query_context,
+                )
+            except Exception:
+                return []
+            if not results or results[0].error or not results[0].rows:
+                return []
+            rows = results[0].rows
+            if len(rows) > 200:
+                return []
             out.append(
                 {
                     "table": full,
                     "primary_key": next(
-                        (c.name for c in detail.columns if c.column_key == "PRI"), None
+                        (str(row[0]) for row in rows if len(row) > 3 and row[3] == "PRI"),
+                        None,
                     ),
-                    "columns": [{"name": c.name, "type": c.data_type} for c in detail.columns],
+                    "columns": [
+                        {"name": str(row[0]), "type": str(row[1])}
+                        for row in rows if len(row) > 1
+                    ],
                 }
             )
         return out

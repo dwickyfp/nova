@@ -238,7 +238,7 @@ export function RolesPage() {
               <Shield className='size-4' />
               Administrator
             </div>
-            <h1 className='text-2xl font-bold tracking-tight'>Roles</h1>
+            <h1 className='text-2xl leading-8 font-normal'>Roles</h1>
             <p className='max-w-3xl text-sm text-muted-foreground'>
               Manage roles, memberships, and scoped privileges.
             </p>

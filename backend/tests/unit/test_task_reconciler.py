@@ -226,6 +226,27 @@ class TestLostTrace:
 
 
 class TestAdvanceFromNative:
+    async def test_uuid_node_uses_its_unique_native_attempt_name(self, audit):
+        from app.modules.task_orchestration.execution import native_attempt_name
+
+        repo = FakeRepository()
+        task_id = repo.add_task("A")
+        run_id = "9243c29e-35c2-4b55-b8c3-8ed28acb1c9e"
+        repo.add_node_run(run_id, task_id)
+        native_name = native_attempt_name(run_id)
+        observer = FakeObserver(
+            {
+                native_name: NativeRun(
+                    task_name=native_name, state=NativeState.SUCCESS, query_id="q1"
+                )
+            }
+        )
+
+        report = await _reconciler(repo, observer).reconcile_native()
+
+        assert report.advanced == [run_id]
+        assert repo.task_runs[run_id]["starrocks_query_id"] == "q1"
+
     async def test_native_success_advances_the_node(self, audit):
         repo = FakeRepository()
         task_id = repo.add_task("A")

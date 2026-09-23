@@ -123,9 +123,7 @@ class FakeProvider:
 
 
 def _invocation(sql: str, call_id: str = "c1") -> ToolInvocation:
-    return ToolInvocation(
-        tool_call_id=call_id, tool_name="query_execute", arguments={"sql": sql}
-    )
+    return ToolInvocation(tool_call_id=call_id, tool_name="query_execute", arguments={"sql": sql})
 
 
 def _user(session_id: str = "sess-1") -> dict:
@@ -133,13 +131,13 @@ def _user(session_id: str = "sess-1") -> dict:
         "username": "alice",
         "session_id": session_id,
         "active_role": "analyst",
+        "assigned_roles": ["analyst"],
+        "security_context_version": 1,
         "encrypted_password": "enc",
     }
 
 
-def _context(
-    *, thread_id: str = "thread-1", session_id: str | None = "sess-1"
-) -> LoopContext:
+def _context(*, thread_id: str = "thread-1", session_id: str | None = "sess-1") -> LoopContext:
     return LoopContext(
         user_name="alice",
         database="db1",
@@ -283,9 +281,7 @@ async def test_multi_statement_payload_cannot_smuggle_a_denied_statement(fakes):
 
 
 def test_mixed_payload_is_destructive_and_pure_denied_is_denied():
-    classification, decisions = classify_statements(
-        ["SELECT 1", "DROP TABLE x"]
-    )
+    classification, decisions = classify_statements(["SELECT 1", "DROP TABLE x"])
     assert classification == "destructive"
     assert [d.allowed for d in decisions] == [True, False]
 
@@ -545,6 +541,7 @@ async def test_grant_never_auto_approves_explain_over_a_mutation():
     assert asked == ["denied"]
     assert tool.runs == 0
 
+
 # ── CTE body: a WITH prefix is not itself read-only ─────────────────────────
 
 
@@ -594,7 +591,11 @@ class RecordingTool:
         self.name = "query_execute"
         self.classification = classification
         self.description = ""
-        self.parameters = {"type": "object", "properties": {}}
+        self.parameters = {
+            "type": "object",
+            "properties": {"sql": {"type": "string"}},
+            "required": ["sql"],
+        }
         self.runs = 0
 
     def preview(self, invocation):
@@ -688,11 +689,7 @@ async def test_read_only_call_is_covered_by_an_allow_session_grant():
     )
     # Announced so the panel can show the statement, but never `pending`: the
     # grant covered it, so no card was raised.
-    statuses = [
-        _frame_data(f).get("status")
-        for f in frames
-        if _frame_event(f) == "tool_call"
-    ]
+    statuses = [_frame_data(f).get("status") for f in frames if _frame_event(f) == "tool_call"]
     assert statuses == ["running"]
     assert asked == []
 
@@ -724,8 +721,7 @@ async def test_deny_decision_blocks_execution(fakes):
         )
     )
     assert any(
-        _frame_event(f) == "tool_status" and _frame_data(f)["status"] == "denied"
-        for f in frames
+        _frame_event(f) == "tool_status" and _frame_data(f)["status"] == "denied" for f in frames
     )
     assert service.calls == []
 
@@ -832,8 +828,7 @@ def test_preview_withholds_sql_it_cannot_redact(monkeypatch):
 # frame. This is the process-wide public doc example, not a real secret.
 CREDENTIAL_VALUE = "AKIAIOSFODNN7EXAMPLE"
 CREDENTIAL_BEARING_ENGINE_ERROR = (
-    "SQL error: (1064) syntax error near "
-    f"FILES(\"aws.s3.access_key\"='{CREDENTIAL_VALUE}')"
+    f"SQL error: (1064) syntax error near FILES(\"aws.s3.access_key\"='{CREDENTIAL_VALUE}')"
 )
 
 
@@ -915,9 +910,7 @@ async def test_privilege_error_classification_reads_the_unredacted_message(fakes
 
 async def test_result_warning_is_redacted_in_the_model_summary(fakes):
     service, _audit = fakes
-    service._results = [
-        FakeResult(affected_rows=1, warnings=[CREDENTIAL_BEARING_ENGINE_ERROR])
-    ]
+    service._results = [FakeResult(affected_rows=1, warnings=[CREDENTIAL_BEARING_ENGINE_ERROR])]
     tool = QueryExecuteTool()
 
     outcome = await tool.run(_invocation("SELECT * FROM @stage1.data.csv"), _context())
@@ -946,9 +939,7 @@ async def test_result_warning_uses_the_shared_redactor(monkeypatch, fakes):
     outcome = await tool.run(_invocation("SELECT 1"), _context())
 
     assert CREDENTIAL_BEARING_ENGINE_ERROR in calls
-    assert outcome.summary == json.dumps(
-        {"affected_rows": 1, "warning": "***"}
-    )
+    assert outcome.summary == json.dumps({"affected_rows": 1, "warning": "***"})
 
 
 async def test_result_without_a_warning_is_unchanged(fakes):
@@ -979,8 +970,7 @@ async def test_unredactable_warning_is_withheld_not_leaked(monkeypatch, fakes):
     assert outcome.ok is True
     assert CREDENTIAL_VALUE not in outcome.summary
     assert (
-        json.loads(outcome.summary)["warning"]
-        == "[statement withheld: it could not be redacted]"
+        json.loads(outcome.summary)["warning"] == "[statement withheld: it could not be redacted]"
     )
 
 
@@ -1091,17 +1081,13 @@ def test_none_stays_none_in_a_credential_column():
 
 async def test_credential_value_is_redacted_before_entering_the_model_summary(fakes):
     service, _audit = fakes
-    service._results = [
-        FakeResult(columns=["note"], rows=[["AKIAIOSFODNN7EXAMPLE"]], row_count=1)
-    ]
+    service._results = [FakeResult(columns=["note"], rows=[["AKIAIOSFODNN7EXAMPLE"]], row_count=1)]
     tool = QueryExecuteTool()
     outcome = await tool.run(_invocation("SELECT note FROM t"), _context())
 
     assert outcome.ok is True
     assert "AKIAIOSFODNN7EXAMPLE" not in outcome.summary
     assert "***" in outcome.summary
-
-
 
 
 async def test_camel_case_password_columns_are_redacted_before_the_model(fakes):

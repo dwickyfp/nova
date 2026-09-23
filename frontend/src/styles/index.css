@@ -1,8 +1,26 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./fonts.css";
 @import "./theme.css";
 
 @custom-variant dark (&:is(.dark *));
+@source inline("font-plex font-system");
+
+.studio-sidebar {
+  --foreground: #27272a;
+  --muted: #f4f4f5;
+  --muted-foreground: #62626a;
+  --accent: #e9e9ec;
+  --accent-foreground: #18181b;
+}
+
+.dark .studio-sidebar {
+  --foreground: #e4e4e7;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --accent: #303034;
+  --accent-foreground: #fafafa;
+}
 
 @layer base {
   * {
@@ -12,9 +30,16 @@
   }
   html {
     @apply overflow-x-hidden;
+    font-family: var(--font-plex);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   body {
     @apply min-h-svh w-full bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 400;
+    letter-spacing: 0;
   }
 
   /* Override Radix scroll locking for sticky headers */
@@ -241,6 +266,59 @@ input:-webkit-autofill:active {
   }
   to {
     background-position: -50% center;
+  }
+}
+
+@property --artifact-ai-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.artifact-ai-active {
+  position: relative;
+  isolation: isolate;
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+}
+
+.artifact-ai-active::before {
+  position: absolute;
+  z-index: 1;
+  inset: -1px;
+  padding: 2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--artifact-ai-angle),
+    transparent 0deg,
+    transparent 270deg,
+    color-mix(in srgb, var(--primary) 35%, transparent) 305deg,
+    var(--primary) 335deg,
+    transparent 360deg
+  );
+  content: "";
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: artifact-ai-orbit 2.2s linear infinite;
+}
+
+@keyframes artifact-ai-orbit {
+  to {
+    --artifact-ai-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact-ai-active::before {
+    background: var(--primary);
+    opacity: 0.7;
+    animation: none;
   }
 }
 

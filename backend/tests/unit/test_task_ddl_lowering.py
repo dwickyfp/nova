@@ -8,6 +8,7 @@ validation, ``[=]`` normalisation, self/merged cycle rejection, and the fact tha
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -20,6 +21,7 @@ from app.modules.task_orchestration.ddl import (
 )
 from app.modules.task_orchestration.graph import Edge, GraphValidationError
 from app.modules.task_orchestration.lowering import TaskLoweringError, persist_lowered_task
+from app.modules.task_orchestration.scheduler import plan_tick
 
 
 def lower(sql: str, **kwargs: Any):
@@ -159,6 +161,38 @@ class TestTaskScope:
 
 
 class TestScheduleLowering:
+    def test_one_minute_create_task_is_scheduler_parseable(self) -> None:
+        from app.modules.task_orchestration.schedule import parse_interval
+
+        task = lower(
+            "CREATE TASK minute_task SCHEDULE EVERY(INTERVAL 1 MINUTE) "
+            "AS INSERT INTO sink SELECT 1"
+        )
+        assert task.schedule_kind == "interval"
+        assert parse_interval(task.schedule_expr or "").amount == 1
+        assert parse_interval(task.schedule_expr or "").unit == "minute"
+
+    @pytest.mark.parametrize("unit", ["SECOND", "MINUTE", "HOUR", "DAY"])
+    def test_interval_units_survive_lowering(self, unit: str) -> None:
+        from app.modules.task_orchestration.schedule import parse_interval
+
+        task = lower(
+            f"CREATE TASK t1 SCHEDULE EVERY(INTERVAL 1 {unit}) "
+            "AS INSERT INTO t SELECT 1"
+        )
+        assert parse_interval(task.schedule_expr or "").unit == unit.lower()
+
+    def test_zero_interval_is_rejected_at_create_time(self) -> None:
+        with pytest.raises(TaskDDLError, match="positive"):
+            lower("CREATE TASK t1 SCHEDULE EVERY(INTERVAL 0 MINUTE) AS INSERT INTO t SELECT 1")
+
+    def test_start_clause_is_rejected_until_scheduler_can_honor_it(self) -> None:
+        with pytest.raises(TaskDDLError, match="START is not supported"):
+            lower(
+                "CREATE TASK t1 SCHEDULE START('2026-09-23 10:00:00') "
+                "EVERY(INTERVAL 1 MINUTE) AS INSERT INTO t SELECT 1"
+            )
+
     def test_cron_with_embedded_timezone(self) -> None:
         task = lower("CREATE TASK t1 SCHEDULE = '0 2 * * * Asia/Jakarta' AS INSERT INTO t SELECT 1")
         assert task.schedule_kind == "cron"
@@ -173,6 +207,30 @@ class TestScheduleLowering:
         assert task.schedule_kind == "cron"
         assert task.schedule_expr == "0 2 * * *"
         assert task.timezone == "Asia/Jakarta"
+
+    @pytest.mark.parametrize(
+        "expression",
+        ["* * * * *", "*/5 * * * *", "0 9-17 * * MON-FRI", "15,45 2 * * 1-5"],
+    )
+    def test_five_field_cron_forms_survive_lowering(self, expression: str) -> None:
+        task = lower(f"CREATE TASK t1 SCHEDULE = '{expression}' AS INSERT INTO t SELECT 1")
+        assert task.schedule_kind == "cron"
+        assert task.schedule_expr == expression
+
+    def test_invalid_embedded_timezone_is_rejected_at_create_time(self) -> None:
+        with pytest.raises(TaskDDLError, match="invalid task timezone"):
+            lower("CREATE TASK t1 SCHEDULE = '* * * * * Bad/Zone' AS INSERT INTO t SELECT 1")
+
+    def test_impossible_cron_is_rejected_at_create_time(self) -> None:
+        with pytest.raises(TaskDDLError, match="no valid fire date"):
+            lower("CREATE TASK t1 SCHEDULE = '0 0 31 2 * UTC' AS INSERT INTO t SELECT 1")
+
+    def test_huge_interval_is_rejected_at_create_time(self) -> None:
+        with pytest.raises(TaskDDLError, match="too large"):
+            lower(
+                "CREATE TASK t1 SCHEDULE EVERY(INTERVAL 999999999999999999 DAY) "
+                "AS INSERT INTO t SELECT 1"
+            )
 
     def test_embedded_timezone_overrides_the_session_default(self) -> None:
         task = parse_create_task(
@@ -213,14 +271,47 @@ class TestBodyRestriction:
         with pytest.raises(TaskDDLError):
             lower("CREATE TASK t1 AS SELECT 1")
 
-    def test_stage_reference_body_is_accepted_since_109a(self) -> None:
-        # NOVA-125 (109-A) adds the `@stage` rule to the vendored grammar, so a
-        # task body that reads from a stage now parses. Before 109-A this failed
-        # at parse time ("no viable alternative at input 'FROM @'"). The task
-        # lowering preserves the body verbatim; `@stage` translation stays in the
-        # dialect pipeline (109-B, NOVA-126).
-        task = lower("CREATE TASK t1 AS INSERT INTO t SELECT a FROM @stage1.data.csv")
-        assert task.body == "INSERT INTO t SELECT a FROM @stage1.data.csv"
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "UPDATE t SET value = 1 WHERE id = 1",
+            "DELETE FROM t WHERE id = 1",
+            "MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN DELETE",
+            "CREATE ML_MODEL m TYPE = REGRESSION TARGET = y AS SELECT x, y FROM t",
+        ],
+    )
+    def test_non_native_task_bodies_are_rejected_at_create_time(self, body: str) -> None:
+        with pytest.raises(TaskDDLError):
+            lower(f"CREATE TASK t1 AS {body}")
+
+    @pytest.mark.parametrize(
+        "expression",
+        ["AI_COMPLETE('prompt')", "AI_SENTIMENT('good')", "ML_PREDICT('model', 1)"],
+    )
+    def test_ai_ml_function_syntax_is_allowed_in_an_insert(self, expression: str) -> None:
+        task = lower(f"CREATE TASK t1 AS INSERT INTO sink SELECT {expression}")
+        assert expression in task.body
+
+    def test_trailing_semicolon_is_allowed(self) -> None:
+        assert lower("CREATE TASK t1 AS INSERT INTO sink SELECT 1;").body == (
+            "INSERT INTO sink SELECT 1"
+        )
+
+    @pytest.mark.parametrize(
+        "suffix",
+        ["DROP TABLE sink", "CREATE TASK t2 AS INSERT INTO sink SELECT 2"],
+    )
+    def test_additional_statement_is_rejected(self, suffix: str) -> None:
+        with pytest.raises(TaskDDLError, match="exactly one SQL statement"):
+            lower(f"CREATE TASK t1 AS INSERT INTO sink SELECT 1; {suffix}")
+
+    def test_stage_reference_is_rejected_before_credentials_can_be_persisted(self) -> None:
+        with pytest.raises(TaskDDLError, match="persist injected storage credentials"):
+            lower("CREATE TASK t1 AS INSERT INTO t SELECT a FROM @stage1.data.csv")
+
+    def test_at_sign_inside_a_string_does_not_block_a_task(self) -> None:
+        task = lower("CREATE TASK t1 AS INSERT INTO t SELECT 'ops@example.com'")
+        assert task.body == "INSERT INTO t SELECT 'ops@example.com'"
 
 
 class TestValidation:
@@ -322,6 +413,35 @@ class TestPersistLoweredTask:
             "app.modules.task_orchestration.lowering.task_orchestration_repository", fake
         )
         return fake
+
+    async def test_scheduled_root_with_two_children_plans_one_graph_run(self, repo) -> None:
+        root = await persist_lowered_task(
+            lower("CREATE TASK db1.default.a SCHEDULE = '0 0 * * * UTC' AS INSERT INTO t SELECT 1"),
+            created_by="alice",
+        )
+        root.task["created_at"] = datetime(2026, 1, 1, 1, tzinfo=UTC)
+        await persist_lowered_task(
+            lower("CREATE TASK db1.default.b AFTER a AS INSERT INTO t SELECT 2"),
+            created_by="alice",
+        )
+        await persist_lowered_task(
+            lower("CREATE TASK db1.default.c AFTER a AS INSERT INTO t SELECT 3"),
+            created_by="alice",
+        )
+        await persist_lowered_task(
+            lower("CREATE TASK db1.default.d AFTER b, c AS INSERT INTO t SELECT 4"),
+            created_by="alice",
+        )
+
+        plan = plan_tick(
+            list(repo.tasks.values()),
+            repo.edges,
+            datetime(2026, 1, 2, tzinfo=UTC),
+        )
+
+        assert len(plan.due) == 1
+        assert plan.due[0].graph_id == "db1.default.a"
+        assert plan.due[0].task_names == ["a", "b", "c", "d"]
 
     async def test_single_after_writes_one_task_and_one_edge(self, repo) -> None:
         task = lower("CREATE TASK t1 AFTER a AS INSERT INTO t SELECT 1")

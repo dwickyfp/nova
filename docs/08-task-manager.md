@@ -146,11 +146,11 @@ allows):
 | **Scope** | The task name is `database.schema.task`; `schema.task` uses the session database, `task` uses the session database/schema. A four-part name is rejected. |
 | **Order** | `AFTER`, `FINALIZE`, `WHEN`, `OVERLAP_POLICY`, `SCHEDULE` — any other order is rejected. |
 | **No duplicates** | Each clause appears at most once. |
-| **`SCHEDULE`** | `SCHEDULE = '<cron>'` maps to `schedule_kind="cron"`; an optional `USING CRON` prefix and an optional trailing IANA zone are accepted (`'0 2 * * * Asia/Jakarta'`). `SCHEDULE START(…) EVERY(…)` maps to `interval`. An invalid cron is rejected before anything is stored. |
+| **`SCHEDULE`** | `SCHEDULE = '<cron>'` maps to `schedule_kind="cron"`; an optional `USING CRON` prefix and an optional trailing IANA zone are accepted (`'0 2 * * * Asia/Jakarta'`). `SCHEDULE EVERY(INTERVAL …)` maps to `interval`. Invalid cron, zero interval, and unknown timezone are rejected before anything is stored. `SCHEDULE START(…) EVERY(…)` is rejected because Nova cannot honor its start time yet. |
 | **`OVERLAP_POLICY`** | One of `skip` / `queue` / `allow` (case-insensitive). Anything else is rejected. Defaults to `skip`. |
 | **`FINALIZE` / `OVERLAP_POLICY` spelling** | `FINALIZE b` and `FINALIZE = b` are the same clause. |
 | **`WHEN`** | Stored verbatim, so `AND`/`OR` structure is preserved. |
-| **Body** | `CTAS | INSERT | CACHE SELECT` only; `AS SELECT` is rejected by the grammar. |
+| **Body** | `CTAS | INSERT | CACHE SELECT` only; `AS SELECT`, `UPDATE`, `DELETE`, `MERGE INTO`, and `CREATE ML_MODEL` are rejected by the task grammar. AI/ML function calls can parse inside an `INSERT` query, but execution requires the corresponding engine UDF and configured provider/model. |
 | **Cycles** | A statement that would close a cycle in the merged graph is rejected and rolled back. Cycle detection is scoped to the task's `database.schema`. |
 | **`AFTER`** | One task cannot depend on itself; a repeated parent is rejected; a parent must be a bare name in the same schema (a qualified parent is rejected). |
 
@@ -159,9 +159,15 @@ allows):
 with `edge_kind='finalize'` and excluded from the dependency adjacency until the
 scheduler/worker wiring lands (PR 3b).
 
-An `@stage` reference in the body is **not** usable yet: the pinned StarRocks
-grammar has no `@stage` rule, so the statement fails at parse time. Worker-side
-stage translation is blocked on the NOVA-17 grammar work.
+An `@stage` reference in a task body is rejected even though the Nova grammar
+can parse it. Translating the stage to `FILES(...)` before native `SUBMIT TASK`
+would persist injected storage credentials in StarRocks task definitions. The
+worker also rejects old stored stage tasks before submission. A secure execution
+path is required before scheduled stage queries can be enabled.
+
+Nova treats cron times as local wall-clock times in the task timezone. A
+nonexistent DST time is skipped; a repeated DST time fires once for each real
+instant. An occurrence exactly equal to the task creation instant is excluded.
 
 ### Alter Task (v4.1)
 
@@ -406,6 +412,14 @@ value can never start an overlap by accident.
 schedule anchors; one due root creates one graph run covering every reachable
 node. A cron expression is validated at create time by `schedule.parse_cron` and
 evaluated by the scheduler tick against the task's own IANA timezone.
+
+Each node attempt submits a one-shot StarRocks task under a deterministic
+native name derived from its durable node-run ID. This lets a recurring Nova
+task submit repeatedly without colliding with the preceding native template
+and lets reconciliation find the exact attempt. The worker drops the native
+template after the run settles; the run history remains available until the
+engine's history TTL. A worker crash after submission leaves an uncertain
+write that requires inspection before a retry.
 
 ### Design rules
 

@@ -192,17 +192,23 @@ def test_semantic_model_router_chooses_domain_and_reports_ties():
         ),
     )
     router = SemanticModelRouter()
-    assert router.route(
-        "revenue by region",
-        [SemanticModelCandidate("sales", sales), SemanticModelCandidate("finance", finance)],
-    ).model_id == "sales"
-    assert router.route(
-        "campaign CAC",
-        [
-            SemanticModelCandidate("sales", sales),
-            SemanticModelCandidate("marketing", marketing),
-        ],
-    ).model_id == "marketing"
+    assert (
+        router.route(
+            "revenue by region",
+            [SemanticModelCandidate("sales", sales), SemanticModelCandidate("finance", finance)],
+        ).model_id
+        == "sales"
+    )
+    assert (
+        router.route(
+            "campaign CAC",
+            [
+                SemanticModelCandidate("sales", sales),
+                SemanticModelCandidate("marketing", marketing),
+            ],
+        ).model_id
+        == "marketing"
+    )
 
 
 def test_catalog_retrieval_is_small_and_authorization_aware():
@@ -228,16 +234,12 @@ def test_catalog_retrieval_is_small_and_authorization_aware():
 
 
 def test_planner_selects_metric_dimension_literal_and_time():
-    planned = SemanticPlanner().plan(
-        sales_model(), "Revenue by city in Jakarta last month top 5"
-    )
+    planned = SemanticPlanner().plan(sales_model(), "Revenue by city in Jakarta last month top 5")
     assert planned.plan is not None
     assert planned.plan.metrics == ("total_revenue",)
     assert planned.plan.dimensions == ("city",)
     assert planned.plan.filters == (SemanticFilter("city", "=", "Jakarta"),)
-    assert planned.plan.time == SemanticTime(
-        "order_date", grain="month", range="previous_month"
-    )
+    assert planned.plan.time == SemanticTime("order_date", grain="month", range="previous_month")
     assert planned.plan.limit == 5
 
 
@@ -254,6 +256,32 @@ def test_compiler_generates_starrocks_sql_and_graph_join():
     assert "DATE_TRUNC('month'" in compiled.sql
     assert "`orders`.`city` = 'Jakarta'" in compiled.sql
     assert compiled.relationship_path == ("orders_region",)
+
+
+@pytest.mark.parametrize("range_value", ["last 3 months", "last_3_months"])
+def test_compiler_binds_recent_complete_months(range_value):
+    compiled = SemanticCompiler().compile(
+        sales_model(),
+        SemanticPlan(
+            metrics=("total_revenue",),
+            time=SemanticTime("order_date", grain="month", range=range_value),
+        ),
+    )
+    assert "DATE_SUB(DATE_TRUNC('month', CURRENT_DATE()), INTERVAL 3 MONTH)" in compiled.sql
+    assert "`orders`.`order_date` < DATE_TRUNC('month', CURRENT_DATE())" in compiled.sql
+
+
+@pytest.mark.parametrize("range_value", ["since_2023", "2023-01-01+"])
+def test_compiler_binds_open_start_to_today(range_value):
+    compiled = SemanticCompiler().compile(
+        sales_model(),
+        SemanticPlan(
+            metrics=("total_revenue",),
+            time=SemanticTime("order_date", grain="month", range=range_value),
+        ),
+    )
+    assert "`orders`.`order_date` >= '2023-01-01'" in compiled.sql
+    assert "`orders`.`order_date` < DATE_ADD(CURRENT_DATE(), INTERVAL 1 DAY)" in compiled.sql
 
 
 def test_compiler_builds_deterministic_previous_period_comparison():
@@ -363,9 +391,7 @@ def test_verified_query_retrieval_is_version_bound():
     current = retriever.retrieve(
         "regional revenue last month", [entry], model_fingerprint="sales-v1"
     )
-    stale = retriever.retrieve(
-        "regional revenue last month", [entry], model_fingerprint="sales-v2"
-    )
+    stale = retriever.retrieve("regional revenue last month", [entry], model_fingerprint="sales-v2")
     assert current == (entry,)
     assert stale == ()
 

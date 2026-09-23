@@ -68,7 +68,7 @@ export function AgentBuilderPage() {
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="truncate text-2xl font-semibold tracking-tight">
+              <h1 className="truncate text-2xl leading-8 font-normal">
                 {agent.name}
               </h1>
               <Badge variant="outline">Draft</Badge>

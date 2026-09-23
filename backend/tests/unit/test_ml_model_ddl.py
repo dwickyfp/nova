@@ -66,6 +66,39 @@ class TestCreateMLModelParser:
                 "CREATE ML_MODEL churn TYPE = CLASSIFICATION AS SELECT x, y FROM t"
             )
 
+    def test_reject_unknown_or_duplicate_clauses(self):
+        with pytest.raises(ValueError, match="Unsupported CREATE ML_MODEL clause: GARBAGE"):
+            parse_create_ml_model(
+                "CREATE ML_MODEL m TYPE = REGRESSION TARGET = y GARBAGE = 1 AS SELECT y FROM t"
+            )
+        with pytest.raises(ValueError, match="Duplicate CREATE ML_MODEL TYPE"):
+            parse_create_ml_model(
+                "CREATE ML_MODEL m TYPE = REGRESSION TYPE = FORECAST TARGET = y AS SELECT y FROM t"
+            )
+
+    def test_input_query_literals_do_not_supply_clause_values(self):
+        stmt = parse_create_ml_model(
+            "CREATE ML_MODEL m TYPE = FORECAST "
+            "INPUT = (SELECT 'TARGET = wrong' AS note, y FROM t) "
+            "TARGET = y TIMESTAMP = day HORIZON = 3"
+        )
+        assert stmt.target_column == "y"
+        assert stmt.training_sql == "SELECT 'TARGET = wrong' AS note, y FROM t"
+
+    def test_training_query_keeps_as_select_literal(self):
+        stmt = parse_create_ml_model(
+            "CREATE ML_MODEL m TYPE = REGRESSION TARGET = y "
+            "AS SELECT 'AS SELECT' AS note, y FROM t"
+        )
+        assert stmt.training_sql == "SELECT 'AS SELECT' AS note, y FROM t"
+
+    def test_reject_nonpositive_forecast_horizon(self):
+        with pytest.raises(ValueError, match="HORIZON must be positive"):
+            parse_create_ml_model(
+                "CREATE ML_MODEL m TYPE = FORECAST TARGET = y "
+                "HORIZON = 0 AS SELECT y FROM t"
+            )
+
 
 @pytest.mark.asyncio
 async def test_query_service_routes_create_ml_model_to_ml_engine(monkeypatch):

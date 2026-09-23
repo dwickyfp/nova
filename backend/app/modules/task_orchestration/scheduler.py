@@ -352,6 +352,14 @@ class SchedulerTick:
         tasks = await self._repository.list_tasks()
         edges = await self._repository.list_all_edges()
         plan = plan_tick(tasks, edges, moment, engine_timezone)
+        existing_ids: set[str] | None = None
+        if plan.due:
+            batch_lookup = getattr(self._repository, "existing_graph_run_ids", None)
+            if batch_lookup is not None:
+                try:
+                    existing_ids = await batch_lookup([due.run_id for due in plan.due])
+                except Exception:
+                    logger.exception("batch graph-run lookup failed; using per-run checks")
 
         for due in plan.due:
             # One graph's failure must not abandon the rest of the batch. Before
@@ -359,7 +367,9 @@ class SchedulerTick:
             # ``tick`` and every later due graph in the same batch was silently
             # dropped until the next tick.
             try:
-                await self._enqueue(due, plan)
+                if existing_ids is not None and due.run_id in existing_ids:
+                    continue
+                await self._enqueue(due, plan, skip_existing_lookup=existing_ids is not None)
             except Exception:
                 logger.exception(
                     "failed to enqueue due graph %s (root %s); continuing",
@@ -369,7 +379,9 @@ class SchedulerTick:
 
         return plan
 
-    async def _enqueue(self, due: DueGraph, plan: SchedulerPlan) -> None:
+    async def _enqueue(
+        self, due: DueGraph, plan: SchedulerPlan, *, skip_existing_lookup: bool = False
+    ) -> None:
         """Persist then publish one due occurrence, idempotently.
 
         The overlap policy is evaluated against the runs that already exist —
@@ -388,9 +400,10 @@ class SchedulerTick:
         # already exists, there is nothing to decide — the stream or the
         # reconciler already owns it. Checking this before the overlap policy
         # keeps a re-tick from being miscounted as an overlap skip.
-        existing = await self._repository.get_graph_run(due.run_id)
-        if existing is not None:
-            return
+        if not skip_existing_lookup:
+            existing = await self._repository.get_graph_run(due.run_id)
+            if existing is not None:
+                return
 
         # `skip` refuses to create a run while one is active; `queue` creates it
         # (the worker defers it behind the active run); `allow` creates it and

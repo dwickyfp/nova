@@ -37,6 +37,8 @@ def resolve_storage_credentials(storage_connection: str | None = None) -> tuple[
     """
     config = load_nova_app_config()
     name = storage_connection or config.workspace.storage_connection
+    if name not in config.storage_connections:
+        raise ValueError(f"Storage connection '{name}' not found")
     connection = get_storage_connection(name)
     secret_ref = getattr(connection, "secret_ref", "") or ""
     if secret_ref:

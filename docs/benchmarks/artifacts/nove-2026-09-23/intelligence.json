@@ -1,0 +1,339 @@
+{
+  "adversarial": {
+    "unknown_constraint_is_unresolved": true,
+    "unknown_constraint_not_high_confidence": true,
+    "explicit_empty_authorization_denies_all": true,
+    "custom_metric_routes_to_data": true
+  },
+  "scope": "Deterministic offline cases; not a production-quality estimate.",
+  "agent": {
+    "cases": 31,
+    "route_accuracy": 1.0,
+    "tool_accuracy": 1.0,
+    "details": [
+      {
+        "question": "What is revenue this month?",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "semantic_analytics",
+        "actual_tools": [
+          "semantic_query"
+        ]
+      },
+      {
+        "question": "Revenue by segment",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "semantic_analytics",
+        "actual_tools": [
+          "semantic_query"
+        ]
+      },
+      {
+        "question": "Write SQL for revenue by month",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "sql_authoring",
+        "actual_tools": []
+      },
+      {
+        "question": "Revenue this month",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "semantic_analytics",
+        "actual_tools": [
+          "semantic_query"
+        ]
+      },
+      {
+        "question": "Omzet Jakarta bulan lalu",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "semantic_analytics",
+        "actual_tools": [
+          "semantic_query"
+        ]
+      },
+      {
+        "question": "Active customers by city",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "semantic_analytics",
+        "actual_tools": [
+          "semantic_query"
+        ]
+      },
+      {
+        "question": "Gross margin by quarter",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "semantic_analytics",
+        "actual_tools": [
+          "semantic_query"
+        ]
+      },
+      {
+        "question": "SELECT * FROM sales.orders",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "raw_sql_query",
+        "actual_tools": [
+          "query_execute"
+        ]
+      },
+      {
+        "question": "WITH x AS (SELECT 1) SELECT * FROM x",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "raw_sql_query",
+        "actual_tools": [
+          "query_execute"
+        ]
+      },
+      {
+        "question": "SHOW TABLES",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "schema_inspection",
+        "actual_tools": [
+          "query_execute"
+        ]
+      },
+      {
+        "question": "EXPLAIN SELECT * FROM orders",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "raw_sql_query",
+        "actual_tools": [
+          "query_execute"
+        ]
+      },
+      {
+        "question": "Describe table orders",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "schema_inspection",
+        "actual_tools": [
+          "query_execute"
+        ]
+      },
+      {
+        "question": "List columns in customers",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "schema_inspection",
+        "actual_tools": [
+          "query_execute"
+        ]
+      },
+      {
+        "question": "Struktur tabel orders",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "schema_inspection",
+        "actual_tools": [
+          "query_execute"
+        ]
+      },
+      {
+        "question": "Forecast revenue next 30 days",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "machine_learning",
+        "actual_tools": [
+          "semantic_query",
+          "ml_execute"
+        ]
+      },
+      {
+        "question": "Ramalkan penjualan",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "machine_learning",
+        "actual_tools": [
+          "semantic_query",
+          "ml_execute"
+        ]
+      },
+      {
+        "question": "Cluster customers",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "machine_learning",
+        "actual_tools": [
+          "semantic_query",
+          "ml_execute"
+        ]
+      },
+      {
+        "question": "Segment customers",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "machine_learning",
+        "actual_tools": [
+          "semantic_query",
+          "ml_execute"
+        ]
+      },
+      {
+        "question": "Find unusual orders",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "machine_learning",
+        "actual_tools": [
+          "semantic_query",
+          "ml_execute"
+        ]
+      },
+      {
+        "question": "Detect transaction anomalies",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "machine_learning",
+        "actual_tools": [
+          "ml_execute"
+        ]
+      },
+      {
+        "question": "Predict customer churn",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "machine_learning",
+        "actual_tools": [
+          "semantic_query",
+          "ml_execute"
+        ]
+      },
+      {
+        "question": "Classify support tickets",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "machine_learning",
+        "actual_tools": [
+          "ml_execute"
+        ]
+      },
+      {
+        "question": "Forecast revenue and chart it",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "compound_analytics",
+        "actual_tools": [
+          "semantic_query",
+          "ml_execute",
+          "data_to_chart"
+        ]
+      },
+      {
+        "question": "Plot sales by month",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "chart",
+        "actual_tools": [
+          "semantic_query",
+          "data_to_chart"
+        ]
+      },
+      {
+        "question": "Visualize this query",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "chart",
+        "actual_tools": [
+          "query_execute",
+          "data_to_chart"
+        ]
+      },
+      {
+        "question": "Search product Aqua",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "semantic_search",
+        "actual_tools": [
+          "semantic_search"
+        ]
+      },
+      {
+        "question": "Cari customer named Sari",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "semantic_search",
+        "actual_tools": [
+          "semantic_search"
+        ]
+      },
+      {
+        "question": "Write SQL for a new role",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "sql_authoring",
+        "actual_tools": []
+      },
+      {
+        "question": "What tools are available?",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "capability_help",
+        "actual_tools": []
+      },
+      {
+        "question": "Hello",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "direct_answer",
+        "actual_tools": []
+      },
+      {
+        "question": "Thanks",
+        "route_ok": true,
+        "tool_ok": true,
+        "actual_intent": "direct_answer",
+        "actual_tools": []
+      }
+    ]
+  },
+  "semantic": {
+    "cases": 6,
+    "model_routing_accuracy": 1.0,
+    "metric_accuracy": 1.0,
+    "dimension_accuracy": 1.0,
+    "details": [
+      {
+        "question": "Revenue by region",
+        "model_ok": true,
+        "metric_ok": true,
+        "dimension_ok": true
+      },
+      {
+        "question": "Sales revenue",
+        "model_ok": true,
+        "metric_ok": true,
+        "dimension_ok": true
+      },
+      {
+        "question": "Gross margin by region",
+        "model_ok": true,
+        "metric_ok": true,
+        "dimension_ok": true
+      },
+      {
+        "question": "Finance margin",
+        "model_ok": true,
+        "metric_ok": true,
+        "dimension_ok": true
+      },
+      {
+        "question": "Campaign CAC by region",
+        "model_ok": true,
+        "metric_ok": true,
+        "dimension_ok": true
+      },
+      {
+        "question": "Marketing acquisition CAC",
+        "model_ok": true,
+        "metric_ok": true,
+        "dimension_ok": true
+      }
+    ]
+  }
+}

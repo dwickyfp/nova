@@ -14,15 +14,26 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass
+from typing import BinaryIO
+
+
+@dataclass(repr=False)
+class ConsentApproval:
+    """Approved input kept only in the paused request's in-memory future."""
+
+    secure_input: dict[str, str] | None = None
+    upload: tuple[str, BinaryIO, str] | None = None
 
 
 @dataclass
 class _PendingConsent:
-    future: asyncio.Future[bool | None]
+    future: asyncio.Future[bool | None | ConsentApproval]
     loop: asyncio.AbstractEventLoop
     thread_id: str
     user_name: str
     classification: str = "read_only"
+    secure_fields: tuple[str, ...] = ()
+    upload_required: bool = False
 
 
 class ConsentConflictError(RuntimeError):
@@ -68,7 +79,9 @@ class ConsentBroker:
         thread_id: str,
         user_name: str,
         classification: str = "read_only",
-    ) -> asyncio.Future[bool | None]:
+        secure_fields: tuple[str, ...] = (),
+        upload_required: bool = False,
+    ) -> asyncio.Future[bool | None | ConsentApproval]:
         """Register a pending decision and return the future to await.
 
         Raises:
@@ -78,7 +91,7 @@ class ConsentBroker:
                 orphaning the first stream.
         """
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[bool | None] = loop.create_future()
+        future: asyncio.Future[bool | None | ConsentApproval] = loop.create_future()
         with self._lock:
             if tool_call_id in self._pending:
                 raise ConsentConflictError(tool_call_id)
@@ -88,6 +101,8 @@ class ConsentBroker:
                 thread_id=thread_id,
                 user_name=user_name,
                 classification=classification,
+                secure_fields=secure_fields,
+                upload_required=upload_required,
             )
         return future
 
@@ -103,13 +118,27 @@ class ConsentBroker:
             pending = self._pending.get(tool_call_id)
         return pending.classification if pending is not None else None
 
+    def secure_fields_of(self, tool_call_id: str) -> tuple[str, ...] | None:
+        with self._lock:
+            pending = self._pending.get(tool_call_id)
+        return pending.secure_fields if pending is not None else None
+
+    def upload_required_of(self, tool_call_id: str) -> bool:
+        with self._lock:
+            pending = self._pending.get(tool_call_id)
+        return bool(pending and pending.upload_required)
+
     def thread_for(self, tool_call_id: str) -> str | None:
         """The conversation that owns a still-pending call, if any."""
         owner = self.owner_of(tool_call_id)
         return owner[0] if owner is not None else None
 
     def resolve(
-        self, tool_call_id: str, allowed: bool | None, *, user_name: str
+        self,
+        tool_call_id: str,
+        allowed: bool | None | ConsentApproval,
+        *,
+        user_name: str,
     ) -> bool:
         """Resolve a pending decision, but only for its owner.
 
@@ -143,7 +172,10 @@ class ConsentBroker:
             self._pending.clear()
 
 
-def _set_future(future: asyncio.Future[bool | None], value: bool | None) -> None:
+def _set_future(
+    future: asyncio.Future[bool | None | ConsentApproval],
+    value: bool | None | ConsentApproval,
+) -> None:
     if not future.done():
         future.set_result(value)
 

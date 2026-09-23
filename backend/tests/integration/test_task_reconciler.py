@@ -713,21 +713,13 @@ class TestAutoPauseThresholdAgainstEngine:
         assert name in report.auto_paused
 
 
-class TestLostTraceSettlesThroughWorkerService:
-    """Criterion 1 + 4: reconcile re-enqueues, and the DAG does not hang."""
+class TestLostTraceIsHeldByWorkerService:
+    """A lost execution trace remains visible without replaying an uncertain write."""
 
-    async def test_lost_trace_re_enqueues_and_settles_the_graph(
+    async def test_lost_trace_is_abandoned_without_replay(
         self, engine_infra, cleanup_runs, audit_records
     ):
-        """A lost trace is settled via the heartbeat path, then re-driven.
-
-        This is the restart-safe path: a worker submits a node and dies, so the
-        node's heartbeat stops advancing. ``reconcile_once`` abandons the row
-        (audited ``NODE_ABANDONED``) from durable state alone — no engine
-        archive read decides it — then re-enqueues the graph; the worker
-        re-evaluates and the graph settles instead of hanging in ``running``
-        forever. The native read runs for real against the engine.
-        """
+        """A stale node is audited and held until its execution is resolved."""
         from app.modules.task_orchestration.credentials import StaticCredentialProvider
         from app.modules.task_orchestration.execution import DelegateExecutor
         from app.modules.task_orchestration.worker_service import WorkerService
@@ -777,23 +769,15 @@ class TestLostTraceSettlesThroughWorkerService:
             reconciler=Reconciler(repo, heartbeat_timeout_seconds=-1),
         )
 
-        # A dead worker's graph must be re-driven to a terminal state, not hang:
-        # bound the call so an infinite ``_drive`` loop fails instead of stalling
-        # the suite.
         await asyncio.wait_for(service.reconcile_once(), timeout=60)
 
-        # The node was settled by the heartbeat path, and the audit fired. This
-        # is what proves the node did not merely vanish behind a graph-level
-        # failure.
         assert "NODE_ABANDONED" in _node_actions(audit_records)
-        # The abandoned node must then be re-evaluated by the worker, so it ends
-        # in a settled state (its body runs) rather than remaining ``running``.
         final_node = await repo.get_task_run(node["id"])
         assert final_node is not None
-        assert final_node["state"] == "success"
+        assert final_node["state"] == "abandoned"
         settled = await repo.get_graph_run(run["id"])
         assert settled is not None
-        assert settled["state"] == "success"
+        assert settled["state"] == "running"
 
     async def test_fresh_heartbeat_running_node_does_not_hang_reconcile(
         self, engine_infra, cleanup_runs
@@ -891,4 +875,3 @@ class _NullConsumer:
 
     async def ensure_group(self):
         return None
-

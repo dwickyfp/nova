@@ -3,6 +3,8 @@
 StarRocks management console backend with domain-driven modular architecture.
 """
 
+import asyncio
+import contextlib
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -17,11 +19,11 @@ from app.core.config import settings
 from app.core.database import db
 from app.core.exceptions import register_exception_handlers
 from app.core.redis import session_store
+from app.modules.access_control.router import router as access_control_router
 
 # --- Module routers ---
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.studio_router import router as studio_router
-from app.modules.access_control.router import router as access_control_router
 from app.modules.ai_ml.router import router as ai_router
 from app.modules.assistant.router import router as assistant_router
 from app.modules.auth.router import router as auth_router
@@ -125,10 +127,19 @@ async def lifespan(app: FastAPI):
     # taking the whole web service down at boot.
     try:
         from app.modules.agents.artifact_repository import artifact_repository
+        from app.modules.agents.dashboard_repository import dashboard_repository
+        from app.modules.agents.memory import memory_repository
         from app.modules.agents.repository import agent_repository
+        from app.modules.agents.rule_proposals import rule_proposal_repository
+        from app.modules.agents.run_journal import run_journal
 
         await agent_repository.ensure_schema()
+        await memory_repository.ensure_schema()
+        await rule_proposal_repository.ensure_schema()
+        await run_journal.ensure_schema()
+        await agent_repository.migrate_legacy_skill_authors()
         await artifact_repository.ensure_schema()
+        await dashboard_repository.ensure_schema()
     except Exception as e:
         logger.warning("Could not ensure Agent Studio schema: %s", e)
 
@@ -161,7 +172,16 @@ async def lifespan(app: FastAPI):
             logger.warning("MySQL proxy did not start: %s", e)
             proxy_server = None
 
-    yield
+    from app.modules.ml_engine.service import ml_engine_service
+
+    await ml_engine_service.ephemeral_repository.ensure_schema()
+    ml_cleanup = asyncio.create_task(ml_engine_service.sweep_ephemeral())
+    try:
+        yield
+    finally:
+        ml_cleanup.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await ml_cleanup
     # Shutdown
     if proxy_server is not None:
         try:
@@ -188,6 +208,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Nova-Run-ID"],
     )
 
     # Exception handlers
@@ -219,9 +240,7 @@ def create_app() -> FastAPI:
     app.include_router(functions_router, prefix=f"{prefix}/functions", tags=["functions"])
     # Dynamic data masking + row access policies (roadmap #3/#4). RBAC-native:
     # every statement runs on the caller's connection.
-    app.include_router(
-        governance_router, prefix=f"{prefix}/governance", tags=["governance"]
-    )
+    app.include_router(governance_router, prefix=f"{prefix}/governance", tags=["governance"])
     # Resource groups / warehouses (roadmap #16). Quota enforcement is the
     # engine's; Nova only configures and reads back its usage.
     app.include_router(
@@ -230,9 +249,7 @@ def create_app() -> FastAPI:
         tags=["resource-groups"],
     )
     # Session/global variables browser + SET (roadmap #8).
-    app.include_router(
-        variables_router, prefix=f"{prefix}/variables", tags=["variables"]
-    )
+    app.include_router(variables_router, prefix=f"{prefix}/variables", tags=["variables"])
     # Backup / restore / recycle bin (roadmap #7). Mutations are gated to
     # backup-admin roles in the router; the engine's REPOSITORY privilege is the
     # second gate because every statement runs on the caller's connection.
@@ -248,9 +265,7 @@ def create_app() -> FastAPI:
     app.include_router(pipes_router, prefix=f"{prefix}/pipes", tags=["pipes"])
     # Phase 10 — bounded agentic assistant (NOVA-61). Thread state is
     # process-local (E5a); see docs/specs/nova-61-agentic-assistant-design.md.
-    app.include_router(
-        assistant_router, prefix=f"{prefix}/assistant", tags=["assistant"]
-    )
+    app.include_router(assistant_router, prefix=f"{prefix}/assistant", tags=["assistant"])
     # Phase 12 — Agent Studio: build-your-own agents, semantic models (Ossie),
     # and user skills, plus the Nova Studio run surface. Composes the Phase 10
     # assistant loop rather than modifying it. See
@@ -272,9 +287,7 @@ def create_app() -> FastAPI:
     # Execute is gated on #7 (backup/restore): the endpoint exists but refuses
     # (403) unless the operator sets MIGRATION_EXECUTE_ENABLED. Data movement is
     # not implemented (11-C).
-    app.include_router(
-        migration_router, prefix=f"{prefix}/migration", tags=["migration"]
-    )
+    app.include_router(migration_router, prefix=f"{prefix}/migration", tags=["migration"])
 
     # Static files for Java UDFs
     udf_dir = os.path.join(os.path.dirname(__file__), "static", "udf")

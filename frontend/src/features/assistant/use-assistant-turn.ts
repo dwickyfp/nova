@@ -27,6 +27,19 @@ import {
  */
 export type ApprovalMode = "ask" | "allow_read_only";
 
+export type UiAction = { method: string; path: string };
+
+export function uiActionFromPreview(
+  toolName: string,
+  preview: string,
+): UiAction | null {
+  if (toolName !== "call_ui_operation") return null;
+  const match = /^(GET|POST|PUT|PATCH|DELETE) (\/api\/v1\/[^\s]+)/.exec(
+    preview,
+  );
+  return match ? { method: match[1], path: match[2] } : null;
+}
+
 const STATUS_TEXT: Partial<Record<AssistantEvent["type"], string>> = {
   tool_call: "The assistant is waiting for your approval.",
   done: "The assistant finished responding.",
@@ -53,6 +66,8 @@ export type AssistantTurnOptions = {
     sql: string;
     messageId: string;
   }) => void;
+  canApproveUiAction?: (action: UiAction) => boolean;
+  onUiActionCompleted?: (action: UiAction) => void;
   /**
    * Transcript store to drive. The provider injects one per conversation
    * binding so switching bindings can restore a previous conversation's
@@ -77,6 +92,8 @@ export function useAssistantTurn({
   context,
   onError,
   onProposedRewrite,
+  canApproveUiAction,
+  onUiActionCompleted,
   transcript: injectedTranscript,
 }: AssistantTurnOptions) {
   const ownTranscript = useAssistantTranscript();
@@ -92,6 +109,7 @@ export function useAssistantTurn({
   const [settlingGrant, setSettlingGrant] = useState(false);
   const [loadingThread, setLoadingThread] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const uiActionsRef = useRef(new Map<string, UiAction>());
 
   const sendMessage = useCallback(
     async (message: string, attachments: AttachedQuery[] = []) => {
@@ -107,6 +125,7 @@ export function useAssistantTurn({
       transcript.addUserMessage(prompt, attachments, message);
       const controller = new AbortController();
       abortRef.current = controller;
+      uiActionsRef.current.clear();
       setStreaming(true);
       setStatusMessage("The assistant is responding.");
       // Accumulated answer text, so a completed turn can be scanned for a
@@ -123,6 +142,26 @@ export function useAssistantTurn({
           providerId: context?.providerId,
           onEvent: (event) => {
             transcript.applyEvent(event);
+            if (event.type === "tool_call") {
+              const action = uiActionFromPreview(
+                event.payload.tool_name,
+                event.payload.sql_preview,
+              );
+              if (action)
+                uiActionsRef.current.set(event.payload.tool_call_id, action);
+            }
+            if (event.type === "tool_status") {
+              const action = uiActionsRef.current.get(event.tool_call_id);
+              if (action && event.status === "done")
+                onUiActionCompleted?.(action);
+              if (event.status !== "running" && event.status !== "pending") {
+                uiActionsRef.current.delete(event.tool_call_id);
+              }
+            }
+            if (event.type === "role_changed") {
+              answer = "";
+              setGrantActive(false);
+            }
             if (event.type === "text_delta") answer += event.text;
             if (event.type === "done") answerMessageId = event.message_id;
             const status = STATUS_TEXT[event.type];
@@ -166,6 +205,7 @@ export function useAssistantTurn({
       ensureThread,
       onError,
       onProposedRewrite,
+      onUiActionCompleted,
       streaming,
       threadId,
       transcript,
@@ -272,10 +312,30 @@ export function useAssistantTurn({
   }, [grantActive, threadId, transcript]);
 
   const decide = useCallback(
-    async ({ toolCallId, decision, alwaysAllow }: ToolCallDecision) => {
+    async ({
+      toolCallId,
+      decision,
+      alwaysAllow,
+      secureInput,
+      uploadFile,
+    }: ToolCallDecision) => {
+      const action = uiActionsRef.current.get(toolCallId);
+      if (
+        decision === "approve" &&
+        action &&
+        canApproveUiAction?.(action) === false
+      ) {
+        return;
+      }
       setDecidingToolCallId(toolCallId);
       try {
-        const result = await decideToolCall(toolCallId, decision, alwaysAllow);
+        const result = await decideToolCall(
+          toolCallId,
+          decision,
+          alwaysAllow,
+          secureInput,
+          uploadFile,
+        );
         setGrantActive(result.grant_active);
       } catch (error) {
         const message =
@@ -288,7 +348,7 @@ export function useAssistantTurn({
         setDecidingToolCallId(null);
       }
     },
-    [onError, transcript],
+    [canApproveUiAction, onError, transcript],
   );
 
   const resetPermissions = useCallback(async () => {

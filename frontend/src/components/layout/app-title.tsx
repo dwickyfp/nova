@@ -26,7 +26,7 @@ export function AppTitle() {
               />
             </span>
             <span className='grid min-w-0 flex-1 gap-1 text-start leading-tight group-data-[collapsible=icon]:hidden'>
-              <span className='truncate font-manrope text-lg font-semibold leading-none text-primary'>
+              <span className='truncate text-lg font-medium leading-none text-primary'>
                 nova
               </span>
               <span className='truncate text-[11px] font-medium leading-none text-muted-foreground'>

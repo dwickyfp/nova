@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plug, Plus, RefreshCw, Trash2, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth-store'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Badge } from '@/components/ui/badge'
@@ -32,7 +33,7 @@ import { mcpApi, toolsApi } from './api'
  * Tools Registry. Two sources in one place:
  *  - Builtin: Nova's own tools, seeded by the backend. Disable to hide; they
  *    cannot be deleted because they are code.
- *  - MCP: servers the user registers; discovery lists the tools a server offers.
+ *  - MCP: the admin-managed internal connector catalog.
  */
 export function ToolsRegistryPage() {
   const [tab, setTab] = useState('tools')
@@ -42,10 +43,9 @@ export function ToolsRegistryPage() {
       <Header fixed />
       <Main>
         <div className='mb-6'>
-          <h1 className='text-2xl font-semibold tracking-tight'>Tools Registry</h1>
+          <h1 className='text-2xl leading-8 font-normal'>Tools Registry</h1>
           <p className='mt-1 text-sm text-muted-foreground'>
-            Everything an agent can call: Nova's builtin tools, and tools discovered
-            from MCP servers you connect.
+            Nova's builtin tools and the internal MCP connector catalog.
           </p>
         </div>
 
@@ -127,6 +127,7 @@ function ToolsList() {
 
 function McpServers() {
   const queryClient = useQueryClient()
+  const canManage = useAuthStore((state) => state.auth.user?.roles.includes('ACCOUNTADMIN') ?? false)
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState({
     name: '',
@@ -185,12 +186,12 @@ function McpServers() {
 
   return (
     <div className='mt-4'>
-      <div className='mb-4 flex justify-end'>
+      {canManage ? <div className='mb-4 flex justify-end'>
         <Button onClick={() => setOpen(true)}>
           <Plus className='size-4' />
           Add MCP server
         </Button>
-      </div>
+      </div> : <p className='mb-4 text-sm text-muted-foreground'>MCP connectors are managed by your Nova administrator.</p>}
 
       {serversQuery.isLoading ? (
         <Skeleton className='h-40 w-full' />
@@ -198,12 +199,12 @@ function McpServers() {
         <EmptyState
           icon={Plug}
           title='No MCP servers'
-          description='Connect a Model Context Protocol server to discover its tools.'
+          description='Internal connectors appear here after an administrator adds them.'
           action={
-            <Button onClick={() => setOpen(true)}>
+            canManage ? <Button onClick={() => setOpen(true)}>
               <Plus className='size-4' />
               Add MCP server
-            </Button>
+            </Button> : undefined
           }
         />
       ) : (
@@ -226,10 +227,10 @@ function McpServers() {
                   ) : null}
                 </div>
                 <p className='mt-1 truncate text-sm text-muted-foreground'>
-                  {server.endpoint || server.command || '—'}
+                  {canManage ? server.endpoint || server.command || server.description : server.description}
                 </p>
               </div>
-              <div className='flex shrink-0 items-center gap-1'>
+              {canManage ? <div className='flex shrink-0 items-center gap-1'>
                 <Button
                   size='sm'
                   variant='outline'
@@ -247,7 +248,7 @@ function McpServers() {
                 >
                   <Trash2 className='size-4' />
                 </Button>
-              </div>
+              </div> : null}
             </div>
           ))}
         </div>

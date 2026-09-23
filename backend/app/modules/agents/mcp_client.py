@@ -133,6 +133,9 @@ async def _handshake(
     try:
         response = await client.post(endpoint, headers=headers, json=init)
         if response.status_code < 400:
+            session_id = response.headers.get("mcp-session-id")
+            if session_id:
+                headers["Mcp-Session-Id"] = session_id
             await client.post(
                 endpoint,
                 headers=headers,
@@ -141,6 +144,40 @@ async def _handshake(
     except httpx.HTTPError:
         # The tools/list call will surface the real error.
         logger.debug("MCP initialize handshake did not complete")
+
+
+async def call_tool(
+    server: dict[str, Any], tool_name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Call one HTTP MCP tool with the same SSRF and response bounds as discovery."""
+    transport = str(server.get("transport") or "http").lower()
+    if transport != "http":
+        raise McpError("Only Streamable HTTP MCP tools can be invoked by Nova.")
+    endpoint = str(server.get("endpoint") or "").strip()
+    if not endpoint:
+        raise McpError("This server has no endpoint URL.")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+    }
+    try:
+        async with guarded_async_client(timeout=_TIMEOUT_SECONDS) as client:
+            await _handshake(client, endpoint, headers)
+            response = await client.post(
+                endpoint, headers=headers,
+                json=_rpc("tools/call", {"name": tool_name, "arguments": arguments}, request_id=3),
+            )
+            _check(response)
+            payload = _read_rpc(response)
+    except BlockedEndpointError as exc:
+        raise McpError("The server endpoint is not allowed.") from exc
+    except httpx.HTTPError as exc:
+        raise McpError(f"Could not reach the server: {type(exc).__name__}") from exc
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise McpError("The server returned no tool result.")
+    return result
 
 
 def _check(response: httpx.Response) -> None:

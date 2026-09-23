@@ -19,20 +19,33 @@ import { readToken } from "@/lib/read-token";
  * Vega is imported lazily so the ~1 MB runtime is only loaded when an agent
  * actually returns a chart, not for every chat answer.
  */
-export function ChartBlock({ spec }: { spec: string }) {
+export function ChartBlock({ spec, fillHeight = false }: { spec: string; fillHeight?: boolean }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{
+    spec: string;
+    message: string;
+  } | null>(null);
   const dark = useIsDark();
+  const error = failure?.spec === spec ? failure.message : null;
 
   useEffect(() => {
     let cancelled = false;
-    let view: { finalize: () => void } | null = null;
+    type ResizableView = {
+      finalize: () => void;
+      width: (width: number) => ResizableView;
+      height: (height: number) => ResizableView;
+      resize: () => { runAsync: () => Promise<unknown> };
+    };
+    let view: ResizableView | null = null;
+    let observer: ResizeObserver | null = null;
+    let resizeFrame = 0;
 
     const parsed = safeParse(spec);
     if (!parsed) {
-      setError("The chart could not be read.");
+      setFailure({ spec, message: "The chart could not be read." });
       return;
     }
+    const responsiveWidth = fillHeight || parsed.width == null || parsed.width === "container";
 
     void (async () => {
       try {
@@ -40,38 +53,78 @@ export function ChartBlock({ spec }: { spec: string }) {
         if (cancelled || !containerRef.current) return;
         const result = await embed(
           containerRef.current,
-          prepareSpec(parsed, dark) as VisualizationSpec,
+          prepareSpec(parsed, dark, fillHeight) as VisualizationSpec,
           {
             actions: false,
             renderer: "svg",
             theme: dark ? "dark" : undefined,
           },
         );
-        view = result.view;
+        if (cancelled) {
+          result.view.finalize();
+          return;
+        }
+        view = result.view as ResizableView;
+        setFailure(null);
+        if ((responsiveWidth || fillHeight) && typeof ResizeObserver !== "undefined") {
+          observer = new ResizeObserver(() => {
+            if (resizeFrame) cancelAnimationFrame(resizeFrame);
+            resizeFrame = requestAnimationFrame(() => {
+              resizeFrame = 0;
+              const width = containerRef.current?.clientWidth ?? 0;
+              const height = containerRef.current?.clientHeight ?? 0;
+              if (!cancelled && width > 0 && (!fillHeight || height > 0) && view) {
+                const resizing = responsiveWidth ? view.width(width) : view;
+                void (fillHeight ? resizing.height(height) : resizing)
+                  .resize()
+                  .runAsync()
+                  .catch(() => {
+                    if (!cancelled) {
+                      setFailure({
+                        spec,
+                        message: "The chart could not be rendered.",
+                      });
+                    }
+                  });
+              }
+            });
+          });
+          observer.observe(containerRef.current);
+        }
       } catch {
-        if (!cancelled) setError("The chart could not be rendered.");
+        if (!cancelled) {
+          setFailure({ spec, message: "The chart could not be rendered." });
+        }
       }
     })();
 
     return () => {
       cancelled = true;
+      observer?.disconnect();
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
       try {
         view?.finalize();
       } catch {
         // A view that never mounted has nothing to finalize.
       }
     };
-  }, [spec, dark]);
+  }, [spec, dark, fillHeight]);
 
-  if (error) {
-    return (
-      <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-        {error}
-      </div>
-    );
-  }
-
-  return <div ref={containerRef} className="w-full min-w-0 overflow-x-auto" />;
+  return (
+    <>
+      <div
+        ref={containerRef}
+        data-testid="vega-chart-container"
+        className={fillHeight ? "h-full w-full min-w-0 overflow-hidden" : "w-full min-w-0 overflow-x-auto"}
+        hidden={Boolean(error)}
+      />
+      {error ? (
+        <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+          {error}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -110,6 +163,7 @@ function useIsDark(): boolean {
 function prepareSpec(
   parsed: Record<string, unknown>,
   dark: boolean,
+  fillHeight = false,
 ): Record<string, unknown> {
   // Read the live token values rather than hardcoding a palette: the theme owns
   // the colors, and this component only borrows them. The fallback is only
@@ -152,8 +206,8 @@ function prepareSpec(
     config,
     // Fill the card instead of Vega's narrow default, and leave room for
     // horizontal category labels a bar chart needs.
-    width: parsed.width ?? "container",
-    height: parsed.height ?? 260,
+    width: fillHeight ? "container" : (parsed.width ?? "container"),
+    height: fillHeight ? "container" : (parsed.height ?? 260),
     autosize: parsed.autosize ?? { type: "fit", contains: "padding" },
     padding: parsed.padding ?? { left: 4, top: 8, right: 8, bottom: 4 },
   };
@@ -163,7 +217,11 @@ function prepareSpec(
 function safeParse(spec: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(spec);
-    return typeof parsed === "object" && parsed !== null ? parsed : null;
+    return typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+      ? parsed
+      : null;
   } catch {
     return null;
   }

@@ -1,4 +1,5 @@
 import { api, apiBase, authHeaders } from "@/lib/api-client";
+import { useAuthStore } from "@/stores/auth-store";
 import { parseAssistantEvent, readSseFrames } from "./events";
 import type {
   AssistantEvent,
@@ -95,6 +96,11 @@ export async function streamAssistantTurn(
       if (event.sequence <= lastSequence) continue;
       lastSequence = event.sequence;
     }
+    if (event.type === "role_changed") {
+      const auth = useAuthStore.getState().auth;
+      if (auth.user)
+        auth.setUser({ ...auth.user, activeRole: event.active_role });
+    }
     onEvent(event);
   }
 }
@@ -128,9 +134,30 @@ export async function decideToolCall(
   toolCallId: string,
   decision: ConsentDecision,
   alwaysAllow = false,
+  secureInput?: { password: string },
+  uploadFile?: File,
 ): Promise<ConsentDecisionResponse> {
+  if (uploadFile && decision === "approve") {
+    const form = new FormData();
+    form.append("file", uploadFile);
+    const response = await fetch(
+      `${apiBase()}/assistant/tool-calls/${encodeURIComponent(toolCallId)}/upload-decision`,
+      { method: "POST", headers: authHeaders(), body: form },
+    );
+    if (!response.ok) {
+      const detail = await response
+        .json()
+        .then((body: { detail?: string }) => body.detail)
+        .catch(() => undefined);
+      throw new Error(detail || "The upload was not approved");
+    }
+    return response.json() as Promise<ConsentDecisionResponse>;
+  }
   return api.post<ConsentDecisionResponse>(
     `/assistant/tool-calls/${encodeURIComponent(toolCallId)}/decision`,
-    { decision: toConsentPayload(decision, alwaysAllow) },
+    {
+      decision: toConsentPayload(decision, alwaysAllow),
+      ...(secureInput ? { secure_input: secureInput } : {}),
+    },
   );
 }

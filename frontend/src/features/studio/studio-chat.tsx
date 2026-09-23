@@ -1,15 +1,26 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ArrowUp,
   ChevronDown,
-  Paperclip,
+  FileText,
+  ImageIcon,
+  Plus,
   RefreshCcw,
   Square,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +49,23 @@ import { ConsentCard } from "./consent-card";
 import { TurnContent } from "./turn-content";
 import { findArtifactSql, type SavableContent } from "./artifact-source";
 import { splitChartTitle } from "./result-cards";
+import {
+  CREATE_SKILL_COMMAND,
+  SKILL_AUTHOR_ID,
+  extractSkillDraft,
+} from "./skill-document";
+import { SkillEditor } from "./skill-editor";
+import { AnswerFooter, type AnswerFeedback } from "./answer-footer";
+import { AgentMemoryDialog } from "./agent-memory-dialog";
+import {
+  ACCEPTED_EXTENSIONS,
+  MAX_FILES,
+  MAX_TOTAL_BYTES,
+  MAX_TEXT_TOTAL_BYTES,
+  readAttachment,
+  type PendingAttachment,
+  type SentAttachment,
+} from "./studio-attachments";
 
 /** A tool call with the id this conversation uses to resolve it. */
 type PendingCall = ToolCallView & { tool_call_id: string };
@@ -83,6 +111,7 @@ export type OrderedContent =
 export type TranscriptTurn = {
   id: string;
   question: string;
+  attachments?: SentAttachment[];
   /** The ordered work trace: thinking frames, tool calls, context notes. */
   steps: RailStep[];
   /** Answer prose, appended as it streams. */
@@ -114,6 +143,10 @@ export type TranscriptTurn = {
   tokens?: number;
   /** The model that answered, when it is known. */
   model?: string;
+  messageId?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  feedback?: AnswerFeedback;
 };
 
 let turnSeq = 0;
@@ -140,6 +173,7 @@ export function StudioChat({
   activeThreadId,
   onThreadChange,
   newChatNonce = 0,
+  initialPrompt = "",
 }: {
   agent: Agent | null;
   agents: Agent[];
@@ -153,6 +187,7 @@ export function StudioChat({
   onThreadChange: (threadId: string | null) => void;
   /** Bumped by the sidebar's "New" control to start a fresh conversation. */
   newChatNonce?: number;
+  initialPrompt?: string;
 }) {
   const queryClient = useQueryClient();
   // `threadId` records the thread whose transcript is actually loaded. It
@@ -161,6 +196,9 @@ export function StudioChat({
   const [threadId, setThreadId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [readingFiles, setReadingFiles] = useState(false);
+  const [skillDraft, setSkillDraft] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [loadingThread, setLoadingThread] = useState(false);
   const [extended, setExtended] = useState(false);
@@ -171,6 +209,8 @@ export function StudioChat({
   );
   const abortRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const composerStartRef = useRef<DOMRect | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const scrollFrameRef = useRef<number | null>(null);
@@ -240,6 +280,7 @@ export function StudioChat({
     setThreadId(null);
     setTurns([]);
     setInput("");
+    setAttachments([]);
     setDeepenTarget(null);
     setSavingContentId(null);
     setSavedContentIds(new Set());
@@ -271,6 +312,7 @@ export function StudioChat({
         if (cancelled) return;
         setThreadId(activeThreadId);
         setTurns(replayThread(detail.messages));
+        setAttachments([]);
         setDeepenTarget(null);
         setSavingContentId(null);
         setSavedContentIds(new Set());
@@ -302,10 +344,18 @@ export function StudioChat({
     setThreadId(null);
     setTurns([]);
     setInput("");
+    setAttachments([]);
     setDeepenTarget(null);
     setSavingContentId(null);
     setSavedContentIds(new Set());
   }, [discardQueuedEvents, newChatNonce]);
+
+  useEffect(() => {
+    if (initialPrompt) {
+      setInput(initialPrompt);
+      textareaRef.current?.focus();
+    }
+  }, [initialPrompt, newChatNonce, agent?.agent_id]);
 
   // Follow the newest content, but only while the user is already at the
   // bottom, so scrolling back to read an earlier step is not yanked away.
@@ -342,6 +392,24 @@ export function StudioChat({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
 
+  useLayoutEffect(() => {
+    if (turns.length === 0 || !composerStartRef.current || !composerRef.current)
+      return;
+    const before = composerStartRef.current;
+    composerStartRef.current = null;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const after = composerRef.current.getBoundingClientRect();
+    const offset = before.top - after.top;
+    if (Math.abs(offset) < 2) return;
+    composerRef.current.animate(
+      [
+        { transform: `translateY(${offset}px)` },
+        { transform: "translateY(0)" },
+      ],
+      { duration: 420, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+    );
+  }, [turns.length]);
+
   const ensureThread = useCallback(
     async (title: string): Promise<string | null> => {
       if (!agent) return null;
@@ -367,19 +435,58 @@ export function StudioChat({
     [activeThreadId, agent, onThreadChange, threadId],
   );
 
+  const addFiles = useCallback(async (files: FileList) => {
+    setReadingFiles(true);
+    try {
+      const added = await Promise.all(Array.from(files, readAttachment));
+      setAttachments((current) => {
+        const next = [...current, ...added];
+        if (next.length > MAX_FILES) {
+          toast.error(`Attach at most ${MAX_FILES} files.`);
+          return current;
+        }
+        if (next.reduce((total, item) => total + item.sizeBytes, 0) > MAX_TOTAL_BYTES) {
+          toast.error("Attachments must be 4 MB or smaller in total.");
+          return current;
+        }
+        if (next.filter((item) => item.mediaType === "text/plain")
+          .reduce((total, item) => total + item.sizeBytes, 0) > MAX_TEXT_TOTAL_BYTES) {
+          toast.error("Text attachments must be 64 KB or smaller in total.");
+          return current;
+        }
+        if (new Set(next.map((item) => item.name)).size !== next.length) {
+          toast.error("A file with that name is already attached.");
+          return current;
+        }
+        return next;
+      });
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setReadingFiles(false);
+    }
+  }, []);
+
   const send = useCallback(
     async (override?: string) => {
       const content = (override ?? input).trim();
-      if (!content || streaming || !agent) return;
-      const thread = await ensureThread(content);
-      if (!thread) return;
+      const pending = attachments;
+      if ((!content && !pending.length) || streaming || readingFiles || abortRef.current || !agent) return;
 
+      if (turns.length === 0) {
+        composerStartRef.current =
+          composerRef.current?.getBoundingClientRect() ?? null;
+      }
+      const controller = new AbortController();
+      abortRef.current = controller;
       const turnId = nextTurnId();
       setTurns((prev) => [
         ...prev,
         {
           id: turnId,
           question: content,
+          attachments: pending.map(({ name, sizeBytes, mediaType }) => ({ name, sizeBytes, mediaType })),
+          model: agent.model_name ?? undefined,
           steps: [],
           answer: "",
           content: [],
@@ -389,20 +496,30 @@ export function StudioChat({
         },
       ]);
       setInput("");
+      setAttachments([]);
       setStreaming(true);
       setDeepenTarget(null);
 
-      const controller = new AbortController();
-      abortRef.current = controller;
-
+      let accepted = false;
       try {
+        const thread = await ensureThread(content || pending[0].name);
+        if (!thread) throw new Error("Could not start the conversation");
+        if (controller.signal.aborted) return;
         await streamAgentTurn(agent.agent_id, thread, content, {
           signal: controller.signal,
           role: currentRole,
+          attachments: pending.map(({ name, content: fileContent, mediaType }) => ({
+            name, content: fileContent, media_type: mediaType,
+          })),
+          onAccepted: () => { accepted = true; },
           onEvent: (event: AssistantEvent) => queueEvent(turnId, event),
         });
       } catch (error) {
-        if ((error as Error).name !== "AbortError") {
+        if ((error as Error).name !== "AbortError" && !controller.signal.aborted) {
+          if (!accepted) {
+            setInput((current) => current || content);
+            setAttachments((current) => current.length ? current : pending);
+          }
           setTurns((prev) =>
             patchTurn(prev, turnId, (turn) => ({
               ...turn,
@@ -429,13 +546,16 @@ export function StudioChat({
     },
     [
       agent,
+      attachments,
       currentRole,
       ensureThread,
       flushEvents,
       input,
       queryClient,
       queueEvent,
+      readingFiles,
       streaming,
+      turns.length,
     ],
   );
 
@@ -517,6 +637,7 @@ export function StudioChat({
           id: deepenTurnId,
           question: "Reconsider the previous answer, step by step.",
           origin: "reconsider",
+          model: agent.model_name ?? undefined,
           steps: [],
           answer: "",
           content: [],
@@ -630,69 +751,133 @@ export function StudioChat({
     );
   }, []);
 
+  const saveFeedback = useCallback(async (turn: TranscriptTurn, feedback: AnswerFeedback) => {
+    if (!agent || !threadId || !turn.messageId) throw new Error("Answer is not saved");
+    const result = await agentsApi.setMessageFeedback(agent.agent_id, threadId, turn.messageId, feedback);
+    setTurns((prev) => patchTurn(prev, turn.id, (current) => ({ ...current, feedback: result.feedback })));
+  }, [agent, threadId]);
+
   const empty = turns.length === 0;
+  const welcome = empty && (!agent || !loadingThread);
+  const creatingSkill =
+    agent?.agent_id === SKILL_AUTHOR_ID ||
+    input.trimStart().startsWith(CREATE_SKILL_COMMAND) ||
+    turns.some(
+      (turn) => turn.question.trim().split(/\s+/)[0] === CREATE_SKILL_COMMAND,
+    );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col",
+        welcome && "overflow-y-auto",
+      )}
+    >
       <div
-        ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto"
-        onScroll={onTranscriptScroll}
+        className={cn(
+          "flex flex-1 flex-col",
+          welcome ? "justify-center pb-4 pt-12" : "min-h-0",
+        )}
       >
-        <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-          {!agent ? (
-            <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-              No agent is available. Create one under AI &amp; ML &gt; Agents to
-              use Studio.
-            </div>
-          ) : loadingThread && empty ? (
-            <p className="pt-20 text-center text-sm text-muted-foreground">
-              Opening the conversation
-            </p>
-          ) : empty ? (
-            <Greeting
-              agent={agent}
-              displayName={displayName}
-              onPick={(text) => void send(text)}
-            />
-          ) : (
-            <div className="flex flex-col gap-8">
-              {turns.map((turn) => (
-                <TurnView
-                  key={turn.id}
-                  turn={turn}
-                  agent={agent}
-                  deepenable={
-                    extended && turn.state === "done" && Boolean(turn.answer)
-                  }
-                  deepening={deepenTarget === turn.id}
-                  onDeepen={deepen}
-                  onDecide={decide}
-                  onSaveArtifact={saveArtifact}
-                  savingContentId={savingContentId}
-                  savedContentIds={savedContentIds}
-                />
-              ))}
-            </div>
+        <div
+          ref={scrollRef}
+          className={cn(
+            "w-full",
+            welcome ? "shrink-0" : "min-h-0 flex-1 overflow-y-auto",
           )}
+          onScroll={onTranscriptScroll}
+        >
+          <div
+            className={cn(
+              "mx-auto w-full max-w-3xl px-4 sm:px-6",
+              welcome ? "pb-5" : "py-8 sm:py-10",
+            )}
+          >
+            {agent && loadingThread && empty ? (
+              <p className="pt-20 text-center text-sm text-muted-foreground">
+                Opening the conversation
+              </p>
+            ) : agent && empty && creatingSkill ? (
+              <div className="py-12">
+                <h1 className="text-2xl leading-8 font-normal">
+                  Create a skill with Nova
+                </h1>
+                <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
+                  Describe a task you repeat, what Nova should ask for, and how
+                  the result should look. You can refine the draft here before
+                  saving it to your skills.
+                </p>
+              </div>
+            ) : empty || !agent ? (
+              <Greeting displayName={displayName} />
+            ) : (
+              <div className="flex flex-col gap-8">
+                {turns.map((turn) => (
+                  <TurnView
+                    key={turn.id}
+                    turn={turn}
+                    agent={agent}
+                    deepenable={
+                      extended && turn.state === "done" && Boolean(turn.answer)
+                    }
+                    deepening={deepenTarget === turn.id}
+                    onDeepen={deepen}
+                    reconsiderDisabled={streaming}
+                    onFeedback={saveFeedback}
+                    onDecide={decide}
+                    onSaveArtifact={saveArtifact}
+                    savingContentId={savingContentId}
+                    savedContentIds={savedContentIds}
+                    onReviewSkill={creatingSkill ? setSkillDraft : undefined}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div
+          ref={composerRef}
+          data-testid="studio-composer"
+          className={cn(
+            "w-full shrink-0 px-4 sm:px-6",
+            welcome ? "pb-2" : "pb-6 pt-2",
+          )}
+        >
+        <Composer
+            ref={textareaRef}
+            value={input}
+            onChange={setInput}
+            onKeyDown={onKeyDown}
+            onSend={() => void send()}
+          onStop={stop}
+          readingFiles={readingFiles}
+          attachments={attachments}
+          onAddFiles={(files) => void addFiles(files)}
+          onRemoveAttachment={(id) => setAttachments((current) => current.filter((item) => item.id !== id))}
+            streaming={streaming}
+            disabled={!agent}
+            agent={agent}
+            agents={agents}
+            onSelectAgent={onSelectAgent}
+          />
         </div>
       </div>
-
-      <div className="px-4 pb-6 pt-2 sm:px-6">
-        <Composer
-          ref={textareaRef}
-          value={input}
-          onChange={setInput}
-          onKeyDown={onKeyDown}
-          onSend={() => void send()}
-          onStop={stop}
-          streaming={streaming}
-          disabled={!agent}
-          agent={agent}
-          agents={agents}
-          onSelectAgent={onSelectAgent}
+      {welcome &&
+      !creatingSkill &&
+      agent &&
+      agent.sample_questions.length > 0 ? (
+        <SuggestedQuestions
+          questions={agent.sample_questions}
+          onPick={(text) => void send(text)}
         />
-      </div>
+      ) : null}
+      {skillDraft ? (
+        <SkillEditor
+          initialDocument={skillDraft}
+          onClose={() => setSkillDraft(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -703,16 +888,21 @@ const TurnView = memo(function TurnView({
   deepenable,
   deepening,
   onDeepen,
+  reconsiderDisabled,
+  onFeedback,
   onDecide,
   onSaveArtifact,
   savingContentId,
   savedContentIds,
+  onReviewSkill,
 }: {
   turn: TranscriptTurn;
   agent: Agent;
   deepenable: boolean;
   deepening: boolean;
   onDeepen: (turn: TranscriptTurn) => Promise<void>;
+  reconsiderDisabled: boolean;
+  onFeedback: (turn: TranscriptTurn, feedback: AnswerFeedback) => Promise<void>;
   onDecide: (
     turnId: string,
     call: PendingCall,
@@ -721,8 +911,16 @@ const TurnView = memo(function TurnView({
   onSaveArtifact: (turn: TranscriptTurn, item: SavableContent) => Promise<void>;
   savingContentId: string | null;
   savedContentIds: ReadonlySet<string>;
+  onReviewSkill?: (document: string) => void;
 }) {
   const running = turn.state === "streaming";
+  const visibleSteps: RailStep[] = running && turn.steps.length === 0 && !turn.answer && turn.content.length === 0
+    ? [{ id: "starting", kind: "thinking", label: "plan", text: "Starting analysis…", status: "running" }]
+    : turn.steps;
+  const draft =
+    onReviewSkill && turn.state === "done"
+      ? extractSkillDraft(turn.answer)
+      : null;
   const runContext = useMemo(
     () => ({ database: agent.database_name ?? undefined }),
     [agent.database_name],
@@ -737,14 +935,28 @@ const TurnView = memo(function TurnView({
         </div>
       ) : (
         <div className="nova-chat-item flex justify-end">
-          <div className="max-w-[85%] rounded-2xl bg-accent px-4 py-2.5 text-sm text-accent-foreground ring-1 ring-input">
-            <p className="break-words whitespace-pre-wrap">{turn.question}</p>
+          <div className="max-w-[85%] rounded-2xl bg-foreground px-4 py-2.5 text-sm text-white ring-1 ring-input dark:bg-accent">
+            {turn.attachments?.length ? (
+              <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Attached files">
+                {turn.attachments.map((item, index) => (
+                  <span key={`${item.name}-${index}`} className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-background/20 px-2 py-1 text-xs">
+                    {item.mediaType.startsWith("image/") ? (
+                      <ImageIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                    ) : (
+                      <FileText aria-hidden="true" className="size-3.5 shrink-0" />
+                    )}
+                    <span className="truncate">{item.name}</span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {turn.question ? <p className="break-words whitespace-pre-wrap">{turn.question}</p> : null}
           </div>
         </div>
       )}
 
       <ProcessRail
-        steps={turn.steps}
+        steps={visibleSteps}
         running={running}
         revealKey={turn.revealKey}
       />
@@ -766,6 +978,13 @@ const TurnView = memo(function TurnView({
         savingContentId={savingContentId}
         savedContentIds={savedContentIds}
       />
+      {draft ? (
+        <div>
+          <Button variant="outline" onClick={() => onReviewSkill?.(draft)}>
+            Review and save skill
+          </Button>
+        </div>
+      ) : null}
 
       {turn.error ? (
         <div
@@ -781,31 +1000,19 @@ const TurnView = memo(function TurnView({
         <StopNotice text="Stopped before the answer finished." />
       ) : null}
 
-      {/* How much the turn cost, and which model answered. Shown only when the
-          provider actually reported it, so it is never an invented figure. */}
-      {turn.tokens || turn.model ? (
-        <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-          {turn.model ? <span>{turn.model}</span> : null}
-          {turn.tokens ? (
-            <span className="tabular-nums">{turn.tokens} tokens</span>
-          ) : null}
-        </p>
-      ) : null}
-
-      {deepenable || deepening ? (
-        <div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="rounded-full"
-            disabled={deepening}
-            onClick={() => void onDeepen(turn)}
-          >
-            <RefreshCcw aria-hidden="true" className="size-3.5" />
-            {deepening ? "Reconsidering" : "Reconsider this answer"}
-          </Button>
-        </div>
+      {!running && (turn.answer || turn.content.length > 0) ? (
+        <AnswerFooter
+          answer={turn.answer}
+          model={turn.model}
+          tokens={turn.tokens}
+          inputTokens={turn.inputTokens}
+          outputTokens={turn.outputTokens}
+          feedback={turn.feedback}
+          onFeedback={turn.messageId ? (feedback) => onFeedback(turn, feedback) : undefined}
+          onReconsider={deepenable || deepening ? () => void onDeepen(turn) : undefined}
+          reconsidering={deepening}
+          reconsiderDisabled={reconsiderDisabled}
+        />
       ) : null}
     </div>
   );
@@ -820,18 +1027,21 @@ function AgentPicker({
   agents: Agent[];
   onSelectAgent: (id: string) => void;
 }) {
+  if (agent?.agent_id === SKILL_AUTHOR_ID) {
+    return <span className="text-xs text-muted-foreground">Skill creator</span>;
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex h-7 min-w-0 items-center gap-1 rounded-full border border-border bg-background px-2.5 text-xs text-foreground shadow-xs transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="flex h-8 min-w-0 items-center gap-1 rounded-full border border-border bg-card px-2.5 text-xs text-card-foreground shadow-xs transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <span className="truncate">{agent?.name ?? "Select an agent"}</span>
           <ChevronDown aria-hidden="true" className="size-3 shrink-0" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
+      <DropdownMenuContent align="start" className="w-56 bg-card text-card-foreground">
         <DropdownMenuLabel>Agents</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {agents.length === 0 ? (
@@ -851,48 +1061,85 @@ function AgentPicker({
   );
 }
 
-function Greeting({
-  agent,
-  displayName,
-  onPick,
-}: {
-  agent: Agent;
-  displayName?: string | null;
-  onPick: (text: string) => void;
-}) {
+function Greeting({ displayName }: { displayName?: string | null }) {
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const name = displayName?.trim();
   return (
-    <div className="flex min-h-[52vh] flex-col justify-center pb-10 text-left sm:min-h-[56vh]">
-      <h1 className="text-3xl leading-tight font-medium tracking-[-0.035em] text-foreground sm:text-5xl">
+    <div className="text-left">
+      <h1 className="text-3xl leading-tight font-normal text-foreground sm:text-4xl">
         {greeting}
         {name ? `, ${name}` : ""}
       </h1>
       <p className="mt-1 bg-[linear-gradient(90deg,#D04738_0%,#F36B5B_55%,#F59E66_100%)] bg-clip-text text-3xl leading-tight font-medium tracking-[-0.04em] text-transparent sm:text-5xl">
         What insights can I help with?
       </p>
-      {agent.description ? (
-        <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
-          {agent.description}
-        </p>
-      ) : null}
-      {agent.sample_questions.length ? (
-        <div className="mt-6 flex flex-wrap gap-2">
-          {agent.sample_questions.map((question) => (
+    </div>
+  );
+}
+
+function SuggestedQuestions({
+  questions,
+  onPick,
+}: {
+  questions: string[];
+  onPick: (text: string) => void;
+}) {
+  const [allOpen, setAllOpen] = useState(false);
+  const pick = (question: string) => {
+    setAllOpen(false);
+    onPick(question);
+  };
+
+  return (
+    <>
+      <section aria-label="Suggested questions" className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4 sm:px-6">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h2 className="text-xs font-medium text-muted-foreground">Suggested questions</h2>
+          {questions.length > 4 ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setAllOpen(true)}>
+              View all ({questions.length})
+            </Button>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {questions.slice(0, 4).map((question) => (
             <button
               key={question}
               type="button"
-              onClick={() => onPick(question)}
-              className="rounded-full border bg-card px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              title={question}
+              onClick={() => pick(question)}
+              className="rounded-lg border bg-card px-3 py-2.5 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {question}
+              <span className="line-clamp-2">{question}</span>
             </button>
           ))}
         </div>
+      </section>
+      {questions.length > 4 ? (
+        <Dialog open={allOpen} onOpenChange={setAllOpen}>
+          <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Suggested questions</DialogTitle>
+              <DialogDescription>Choose a question to start a chat.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {questions.map((question) => (
+                <button
+                  key={question}
+                  type="button"
+                  onClick={() => pick(question)}
+                  className="rounded-lg border bg-card px-3 py-3 text-left text-sm leading-snug text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -907,6 +1154,10 @@ const Composer = ({
   onKeyDown,
   onSend,
   onStop,
+  readingFiles,
+  attachments,
+  onAddFiles,
+  onRemoveAttachment,
   streaming,
   disabled,
   agent,
@@ -919,52 +1170,103 @@ const Composer = ({
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
   onStop: () => void;
+  readingFiles: boolean;
+  attachments: PendingAttachment[];
+  onAddFiles: (files: FileList) => void;
+  onRemoveAttachment: (id: string) => void;
   streaming: boolean;
   disabled: boolean;
   agent: Agent | null;
   agents: Agent[];
   onSelectAgent: (id: string) => void;
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="mx-auto w-full max-w-3xl">
+      {value.startsWith("/") &&
+      !value.includes(" ") &&
+      CREATE_SKILL_COMMAND.startsWith(value) &&
+      value !== CREATE_SKILL_COMMAND ? (
+        <Button
+          variant="outline"
+          className="mb-2 min-h-11 max-w-full whitespace-normal text-left"
+          onClick={() => {
+            onChange(`${CREATE_SKILL_COMMAND} `);
+            ref.current?.focus();
+          }}
+        >
+          {CREATE_SKILL_COMMAND}
+        </Button>
+      ) : null}
       <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-colors focus-within:border-ring">
+        <input
+          ref={fileInputRef}
+          type="file"
+          aria-label="Choose files"
+          className="sr-only"
+          tabIndex={-1}
+          accept={ACCEPTED_EXTENSIONS.join(",")}
+          multiple
+          onChange={(event) => {
+            if (event.currentTarget.files?.length) onAddFiles(event.currentTarget.files);
+            event.currentTarget.value = "";
+          }}
+        />
+        {attachments.length ? (
+          <div className="flex flex-wrap gap-1.5 px-3 pt-3" aria-label="Files ready to send">
+            {attachments.map((item) => (
+              <span key={item.id} className="inline-flex max-w-full items-center gap-1 rounded-lg border bg-muted px-2 py-1 text-xs">
+                {item.mediaType.startsWith("image/") ? (
+                  <ImageIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                ) : (
+                  <FileText aria-hidden="true" className="size-3.5 shrink-0" />
+                )}
+                <span className="max-w-40 truncate" title={item.name}>{item.name}</span>
+                <button type="button" aria-label={`Remove ${item.name}`} disabled={streaming} onClick={() => onRemoveAttachment(item.id)} className="rounded p-0.5 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40">
+                  <X aria-hidden="true" className="size-3.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
         <textarea
           ref={ref}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
+          aria-label="Message Nova"
           placeholder="Ask a question about your data"
           rows={1}
           disabled={disabled}
           className="max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
         />
         <div className="flex items-center gap-1 px-2.5 pb-2.5">
-          <span
-            title="Attachments are not supported yet"
-            className="inline-flex"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-full border border-border bg-card text-muted-foreground hover:bg-accent"
+            disabled={disabled || streaming || readingFiles || attachments.length >= MAX_FILES}
+            aria-label="Add file"
+            title="Add text, PDF, or image (up to 3 files)"
+            onClick={() => fileInputRef.current?.click()}
           >
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 rounded-full text-muted-foreground"
-              disabled
-              aria-label="Attachments are not supported yet"
-            >
-              <Paperclip aria-hidden="true" className="size-4" />
-            </Button>
-          </span>
+            <Plus aria-hidden="true" className="size-4" strokeWidth={1} />
+          </Button>
 
           <AgentPicker
             agent={agent}
             agents={agents}
             onSelectAgent={onSelectAgent}
           />
+          {agent && agent.agent_id !== SKILL_AUTHOR_ID ? (
+            <AgentMemoryDialog agentId={agent.agent_id} />
+          ) : null}
 
           <div className="flex-1" />
           <button
             type="button"
             onClick={streaming ? onStop : onSend}
-            disabled={disabled || (!streaming && !value.trim())}
+            disabled={disabled || readingFiles || (!streaming && !value.trim() && !attachments.length)}
             aria-label={streaming ? "Stop" : "Send"}
             className={cn(
               "flex size-9 items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
@@ -982,7 +1284,7 @@ const Composer = ({
         </div>
       </div>
       <p className="mt-2 text-center text-xs text-muted-foreground">
-        Enter to send, Shift+Enter for a new line
+        Enter to send, Shift+Enter for a new line. Type / for commands.
       </p>
     </div>
   );
@@ -1011,6 +1313,11 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
       open = {
         id: message.message_id,
         question: message.content,
+        attachments: message.attachments?.map((item) => ({
+          name: item.name,
+          sizeBytes: item.size_bytes,
+          mediaType: item.media_type ?? "text/plain",
+        })),
         steps: [],
         answer: "",
         content: [],
@@ -1040,6 +1347,10 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
     open.answer = message.content;
     open.state = "done";
     open.tokens = message.total_tokens ?? undefined;
+    open.messageId = message.message_id;
+    open.feedback = message.feedback ?? null;
+    open.inputTokens = message.prompt_tokens ?? undefined;
+    open.outputTokens = message.completion_tokens ?? undefined;
     open.model = message.model_name ?? undefined;
     let restoredText = false;
 
@@ -1060,10 +1371,15 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
             id: step.tool_call_id || `${step.name}-${open.steps.length}`,
             kind: "tool",
             label: step.name,
-            text: step.status_text || describeTool(step.name),
+            skillName:
+              step.name === "load_skill" ? step.arguments?.name : undefined,
+            text:
+              step.name === "load_skill"
+                ? describeStatus(step.name, step.status, step.arguments?.name)
+                : step.status_text || describeTool(step.name),
             status: step.status === "failed" ? "failed" : "done",
-            preview: step.preview || undefined,
-            detail: step.detail || undefined,
+            preview: step.name === "load_skill" ? undefined : step.preview || undefined,
+            detail: step.name === "load_skill" ? undefined : step.detail || undefined,
           });
           break;
         case "text": {
@@ -1224,6 +1540,18 @@ export function applyEvent(
   turnId: string,
   event: AssistantEvent,
 ): TranscriptTurn[] {
+  if (event.type === "role_changed") {
+    return turns
+      .filter((turn) => turn.id === turnId)
+      .map((turn) => ({
+        ...turn,
+        answer: "",
+        content: [],
+        steps: [],
+        pendingConsent: null,
+        blocks: { tables: [], charts: [], citations: [] },
+      }));
+  }
   return patchTurn(turns, turnId, (turn) => {
     switch (event.type) {
       case "plan": {
@@ -1309,9 +1637,16 @@ export function applyEvent(
           id: payload.tool_call_id,
           kind: "tool",
           label: payload.tool_name,
-          text: describeTool(payload.tool_name),
+          skillName: payload.skill_name || undefined,
+          text:
+            payload.tool_name === "load_skill"
+              ? describeStatus(payload.tool_name, payload.status, payload.skill_name)
+              : describeTool(payload.tool_name),
           status: payload.status,
-          preview: payload.sql_preview || undefined,
+          preview:
+            payload.tool_name === "load_skill"
+              ? undefined
+              : payload.sql_preview || undefined,
         };
         const existing = turn.steps.findIndex(
           (s) => s.id === payload.tool_call_id,
@@ -1353,7 +1688,7 @@ export function applyEvent(
                   ? {
                       ...step,
                       status: event.status,
-                      text: describeStatus(step.label, event.status),
+                       text: describeStatus(step.label, event.status, step.skillName),
                     }
                   : step,
               );
@@ -1374,7 +1709,10 @@ export function applyEvent(
               ? {
                   ...step,
                   text: event.text,
-                  preview: event.sql_preview ?? step.preview,
+                  preview:
+                    step.label === "load_skill"
+                      ? undefined
+                      : event.sql_preview ?? step.preview,
                   status:
                     event.stage === "query_completed"
                       ? ("done" as const)
@@ -1498,7 +1836,7 @@ export function applyEvent(
         return {
           ...turn,
           steps: turn.steps.map((step) =>
-            step.id === event.tool_call_id
+            step.id === event.tool_call_id && step.label !== "load_skill"
               ? { ...step, detail: event.text }
               : step,
           ),
@@ -1538,6 +1876,9 @@ export function applyEvent(
           stopReason:
             event.finish_reason === "stop" ? undefined : event.finish_reason,
           tokens: event.total_tokens ?? turn.tokens,
+          messageId: event.message_id,
+          inputTokens: event.prompt_tokens ?? turn.inputTokens,
+          outputTokens: event.completion_tokens ?? turn.outputTokens,
         };
 
       default:
@@ -1547,12 +1888,12 @@ export function applyEvent(
 }
 
 /** A tool name turned into the line a reader understands. */
-function describeTool(name: string): string {
+function describeTool(name: string, skillName?: string | null): string {
   switch (name) {
     case "query_execute":
       return "Ran a SQL query";
     case "load_skill":
-      return "Loaded a skill";
+      return skillName ? `Loaded a skill: ${skillName}` : "Loaded a skill";
     case "semantic_query":
       return "Queried the semantic model";
     case "semantic_search":
@@ -1564,12 +1905,18 @@ function describeTool(name: string): string {
   }
 }
 
-function describeStatus(name: string, status: string): string {
+function describeStatus(
+  name: string,
+  status: string,
+  skillName?: string | null,
+): string {
   switch (status) {
     case "running":
-      return `Running ${name}`;
+      return name === "load_skill" && skillName
+        ? `Loading skill: ${skillName}`
+        : `Running ${name}`;
     case "done":
-      return describeTool(name);
+      return describeTool(name, skillName);
     case "failed":
       return `${name} failed`;
     case "denied":

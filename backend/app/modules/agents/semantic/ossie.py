@@ -313,6 +313,7 @@ def _normalise(document: dict) -> dict[str, Any]:
                 "additivity": metric.get("additivity") or "additive",
                 "default_time_dimension": metric.get("default_time_dimension"),
                 "allowed_dimensions": metric.get("allowed_dimensions") or [],
+                "non_additive_dimensions": metric.get("non_additive_dimensions") or [],
                 "synonyms": metric.get("synonyms") or [],
                 "format": metric.get("format"),
                 "currency": metric.get("currency"),

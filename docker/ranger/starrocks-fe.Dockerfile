@@ -16,6 +16,7 @@ RUN git init /src \
     && git -C /src sparse-checkout set \
        /conf/ranger/ranger-starrocks-security.xml \
        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java \
+       /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java \
        /fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java \
        /fe/fe-core/src/test/java/com/starrocks/authorization/ranger/RangerInterfaceTest.java \
        /fe/fe-core/src/test/resources/ranger-starrocks-security.xml \
@@ -24,6 +25,9 @@ RUN git init /src \
 COPY patches/starrocks/4.1.4-ranger-active-role.patch /tmp/ranger-active-role.patch
 RUN git -C /src apply --check /tmp/ranger-active-role.patch \
     && git -C /src apply /tmp/ranger-active-role.patch
+COPY patches/starrocks/4.1.4-ranger-rpc-context.patch /tmp/ranger-rpc-context.patch
+RUN git -C /src apply --check /tmp/ranger-rpc-context.patch \
+    && git -C /src apply /tmp/ranger-rpc-context.patch
 COPY --from=upstream /opt/starrocks/fe/lib /opt/starrocks/fe/lib
 RUN curl -fsSLo /opt/starrocks/fe/lib/nashorn-core-${NASHORN_VERSION}.jar \
        https://repo1.maven.org/maven2/org/openjdk/nashorn/nashorn-core/${NASHORN_VERSION}/nashorn-core-${NASHORN_VERSION}.jar \
@@ -35,6 +39,7 @@ RUN mkdir -p /tmp/classes \
     && javac -cp '/opt/starrocks/fe/lib/*' -d /tmp/classes \
        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java \
        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java \
+       /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java \
     && jar uf /opt/starrocks/fe/lib/fe-core-4.1.4.jar -C /tmp/classes com/starrocks/authorization/ranger
 
 FROM starrocks/fe-ubuntu:${STARROCKS_VERSION}

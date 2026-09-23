@@ -65,7 +65,9 @@ class PreparedSQL:
         self.parsed = parsed
 
 
-def guard_user_statement(sql: str, *, confirm_destructive: bool = False) -> None:
+def guard_user_statement(
+    sql: str, *, confirm_destructive: bool = False, allow_stage_export: bool = False
+) -> None:
     """Apply the SQL guard and the destructive-confirmation rule to ``sql``.
 
     Splits first, because the API accepts multi-statement scripts: a guard
@@ -78,7 +80,7 @@ def guard_user_statement(sql: str, *, confirm_destructive: bool = False) -> None
             ``confirm_destructive`` is false.
     """
     for statement in split_sql_statements(sql) or [sql]:
-        guard_sql(statement)
+        guard_sql(statement, allow_stage_export=allow_stage_export)
         if is_destructive_sql(statement) and not confirm_destructive:
             raise ForbiddenSQLError(
                 "Destructive SQL requires confirmation before execution."
@@ -101,6 +103,9 @@ async def prepare_stage_sql(
     stage_configs: dict[str, StorageConfig] | None = None,
     csv_params: dict[str, str] | None = None,
     csv_columns: list[str] | None = None,
+    parsed: ParsedSQL | None = None,
+    stage_configs_by_ref: dict[int, StorageConfig] | None = None,
+    csv_params_by_ref: dict[int, dict[str, str]] | None = None,
 ) -> PreparedSQL:
     """Translate ``@stage`` references and inject credentials into ``sql``.
 
@@ -115,7 +120,9 @@ async def prepare_stage_sql(
     belongs at the edge; ``query.service`` performs that read and passes the
     result in.
     """
-    parsed = parse_sql(sql)
+    parsed = parsed or parse_sql(sql)
+    if parsed.errors and parsed.stage_refs:
+        raise ValueError(f"Invalid stage SQL: {parsed.errors[0]}")
     if not parsed.stage_refs:
         engine_sql = sql
         return PreparedSQL(
@@ -126,32 +133,34 @@ async def prepare_stage_sql(
             parsed=parsed,
         )
 
-    executed_sql, warnings = translate_stage_query(parsed, stage_configs or {})
-
-    if csv_params:
-        executed_sql = _inject_files_params(executed_sql, csv_params)
-
-    # Credential safety net. The translator already emits credentials from each
-    # stage's own config when it has any, so this only fires for a stage the
-    # translator left bare. It must resolve **that stage's** connection, never
-    # the workspace default: injecting the default here is how a stage whose
-    # own resolution was empty silently authenticated as a different principal
-    # (NOVA-68). A stage with no known connection gets nothing, so the FILES()
-    # call fails loudly instead of borrowing a credential.
-    #
-    # Restricted to a single distinct stage on purpose. ``_inject_files_params``
-    # is statement-global, so with two stages it would write stage A's
-    # credentials into stage B's bare ``FILES()`` as well. With more than one
-    # stage the translator is the only injector; a bare call then fails closed
-    # at the engine rather than being handed the wrong principal's credential.
+    credentials_by_stage: dict[str, dict[str, str]] = {}
     stage_names = list(dict.fromkeys(ref.stage_name for ref in parsed.stage_refs))
-    if len(stage_names) == 1:
-        config = (stage_configs or {}).get(stage_names[0])
+    credentials_by_ref: dict[int, dict[str, str]] = {}
+    if stage_configs_by_ref:
+        for ref in parsed.stage_refs:
+            config = stage_configs_by_ref.get(ref.start)
+            if config and not config.access_key and config.storage_connection:
+                credentials = get_credential_params(config.storage_type, config.storage_connection)
+                if credentials:
+                    credentials_by_ref[ref.start] = credentials
+    elif len(stage_names) == 1:
+        stage_name = stage_names[0]
+        config = (stage_configs or {}).get(stage_name)
         connection = getattr(config, "storage_connection", "") if config else ""
-        if connection:
-            credentials = get_credential_params("s3", connection)
+        if config and not config.access_key and connection:
+            credentials = get_credential_params(config.storage_type, connection)
             if credentials:
-                executed_sql = _inject_files_params(executed_sql, credentials)
+                credentials_by_stage[stage_name] = credentials
+
+    executed_sql, warnings = translate_stage_query(
+        parsed,
+        stage_configs or {},
+        files_params=csv_params,
+        files_params_by_ref=csv_params_by_ref,
+        credential_params_by_stage=credentials_by_stage,
+        stage_configs_by_ref=stage_configs_by_ref,
+        credential_params_by_ref=credentials_by_ref,
+    )
 
     return PreparedSQL(
         engine_sql=executed_sql,

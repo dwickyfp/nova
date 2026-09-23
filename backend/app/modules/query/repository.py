@@ -14,6 +14,7 @@ method, router or helper — can forget it.
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import asyncmy
@@ -144,27 +145,26 @@ class QueryRepository:
         whose credentials opened the connection, so RBAC is whatever StarRocks
         granted that session.
 
-        ``database`` applies either way. When this method opens the connection
-        it is a connect parameter; on a supplied connection it is selected with
-        ``select_db`` first, so a caller that tracks the database itself (the
-        proxy does, from ``USE`` and the client handshake) still gets
-        ``DATABASE()``, unqualified table names and ``SHOW TABLES`` resolved
-        against it.
+        ``database`` is selected after ``SET ROLE`` on either connection path.
+        A user may have access through a non-default role, so selecting the
+        database during connection setup would reject an authorized query.
         """
         if settings.RANGER_ENABLED and not role:
             raise StarRocksError("User-data execution requires exactly one explicit active role")
         start = time.monotonic()
         if connected is not None:
-            if database:
-                await connected.select_db(database)
-            return await self._execute_on(connected, sql, role=role, max_rows=max_rows, start=start)
+            return await self._execute_on(
+                connected, sql, role=role, database=database, max_rows=max_rows, start=start
+            )
         try:
             async with db.user_conn(
                 username=username,
                 password=password,
-                database=database,
+                database=None,
             ) as conn:
-                return await self._execute_on(conn, sql, role=role, max_rows=max_rows, start=start)
+                return await self._execute_on(
+                    conn, sql, role=role, database=database, max_rows=max_rows, start=start
+                )
         except asyncmy.errors.OperationalError as e:
             raise StarRocksError(f"Connection error: {e}") from e
         except asyncmy.errors.ProgrammingError as e:
@@ -178,18 +178,24 @@ class QueryRepository:
         role: str | None,
         max_rows: int | None,
         start: float,
+        database: str | None = None,
     ) -> QueryResult:
         try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
+            cursor_type = asyncmy.cursors.SSDictCursor if max_rows else asyncmy.cursors.DictCursor
+            async with conn.cursor(cursor_type) as cur:
                 if role:
                     await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
+                if database:
+                    await conn.select_db(database)
                 await cur.execute(sql)
                 elapsed = (time.monotonic() - start) * 1000
 
                 if cur.description:
                     columns = [desc[0] for desc in cur.description]
                     raw_rows = await cur.fetchmany(max_rows) if max_rows else await cur.fetchall()
-                    rows = [list(r.values()) for r in raw_rows]
+                    rows = [
+                        list(r.values()) if isinstance(r, Mapping) else list(r) for r in raw_rows
+                    ]
                     return QueryResult(
                         columns=columns,
                         rows=rows,

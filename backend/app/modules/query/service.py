@@ -10,10 +10,12 @@ Pipeline:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
+from dataclasses import replace
 from typing import Any
 
 import asyncmy
@@ -24,6 +26,7 @@ from app.common.ml_intercept import (
     MLPredictCall,
     detect_ml_forecast,
     detect_ml_predict,
+    detect_ml_predict_table,
     rewrite_ml_predict_projection,
 )
 from app.common.sql_guard import (
@@ -43,7 +46,7 @@ from app.modules.query.dialect.force_password_change import (
 )
 from app.modules.query.dialect.injector import resolve_storage_credentials
 from app.modules.query.dialect.ml_model import is_create_ml_model, parse_create_ml_model
-from app.modules.query.dialect.parser import parse_sql
+from app.modules.query.dialect.parser import CommandType, parse_sql
 from app.modules.query.dialect.translator import StorageConfig
 from app.modules.query.repository import QueryRepository, QueryResult
 from app.modules.query.sql_pipeline import (
@@ -51,6 +54,7 @@ from app.modules.query.sql_pipeline import (
     prepare_stage_sql,
     redact_for_output,
 )
+from app.modules.stages.access import check_stage_access
 from app.modules.task_orchestration.ddl import TaskDDLError, is_create_task, parse_create_task
 from app.modules.task_orchestration.lowering import TaskLoweringError, persist_lowered_task
 from app.modules.task_orchestration.repository import task_orchestration_repository
@@ -242,6 +246,9 @@ class QueryService:
         confirm_destructive: bool = False,
         file_id: str | None = None,
         connection: asyncmy.Connection | None = None,
+        tenant: str = "default",
+        security_context_version: int = 1,
+        allow_stage_export: bool = False,
     ) -> QueryResult:
         """Execute SQL with full @stage dialect pipeline.
 
@@ -284,12 +291,17 @@ class QueryService:
         # ml_engine applies the identical rule; the audit stays here because it
         # is this service's record of the attempt, not part of the rule.
         try:
-            guard_user_statement(normalized_sql, confirm_destructive=confirm_destructive)
+            guard_user_statement(
+                normalized_sql,
+                confirm_destructive=confirm_destructive,
+                allow_stage_export=allow_stage_export,
+            )
         except ForbiddenSQLError as exc:
             await self._audit_engine_result(
                 status="ERROR",
                 sql=sql,
                 username=username,
+                role=role,
                 database=database,
                 schema=schema,
                 session_id=session_id,
@@ -301,6 +313,7 @@ class QueryService:
         # Nova ML DDL is handled by the Python ML engine, not sent to StarRocks.
         if is_create_ml_model(normalized_sql):
             return await self._execute_create_ml_model(
+                tenant=tenant,
                 sql=sql,
                 normalized_sql=normalized_sql,
                 username=username,
@@ -315,6 +328,7 @@ class QueryService:
         ml_forecast_call = detect_ml_forecast(normalized_sql)
         if ml_forecast_call:
             return await self._execute_ml_forecast(
+                tenant=tenant,
                 sql=sql,
                 normalized_sql=normalized_sql,
                 call=ml_forecast_call,
@@ -325,9 +339,67 @@ class QueryService:
                 schema=schema,
             )
 
+        table_prediction = detect_ml_predict_table(normalized_sql)
+        if table_prediction:
+            from app.modules.ml_engine.service import ml_engine_service
+            from app.modules.ml_engine.spec import MLSecurityContext
+
+            alias, input_sql = table_prediction
+            started = time.monotonic()
+            try:
+                if connection is not None and not encrypted_password:
+                    raise ValueError(
+                        "Materialized ML prediction requires an API session. "
+                        "Use bounded ML_PREDICT for a relayed client connection."
+                    )
+                result = await ml_engine_service.materialize_prediction(
+                    alias,
+                    input_sql,
+                    MLSecurityContext(
+                        username=username,
+                        password=decrypt_password(encrypted_password),
+                        database=database,
+                        schema=schema,
+                        role=role,
+                        tenant=tenant,
+                        security_context_version=security_context_version,
+                    ),
+                )
+                await write_audit_log(
+                    event_type="query",
+                    user_name=username,
+                    action="ml_predict_materialize",
+                    object_type="ml_model",
+                    object_name=alias,
+                    status="SUCCESS",
+                    rows_affected=result["total_rows"],
+                    database_name=database,
+                    schema_name=schema,
+                )
+                return QueryResult(
+                    columns=["result_id", "total_rows", "parts"],
+                    rows=[[result["result_id"], result["total_rows"], result["parts"]]],
+                    row_count=1,
+                    elapsed_ms=(time.monotonic() - started) * 1000,
+                    original_sql=sql,
+                    executed_sql=redact_for_output(normalized_sql),
+                )
+            except Exception as exc:
+                await write_audit_log(
+                    event_type="query",
+                    user_name=username,
+                    action="ml_predict_materialize",
+                    object_type="ml_model",
+                    object_name=alias,
+                    status="ERROR",
+                    error_message=_redact_error_message(str(exc)),
+                )
+                raise
+
         ml_predict_match = detect_ml_predict(normalized_sql)
         if ml_predict_match:
             return await self._execute_ml_predict(
+                tenant=tenant,
                 sql=sql,
                 normalized_sql=normalized_sql,
                 match=ml_predict_match,
@@ -388,17 +460,35 @@ class QueryService:
                 # connection's secret reference is resolved, so it belongs
                 # inside the same try as preparation: a broken reference must be
                 # reported as a query error, not escape as a 500.
-                stage_configs = await self._load_stage_configs(database, schema)
+                parsed, stage_configs_by_ref = await self._resolve_stage_refs(
+                    parsed, database=database, schema=schema, username=username,
+                    password="" if connection is not None else decrypt_password(encrypted_password),
+                    role=role, connection=connection,
+                )
 
                 # 3b. CSV auto-detect: read file header to detect delimiter &
                 # columns. I/O, so it happens here and its result is passed into
                 # the pure preparation step.
-                csv_params, csv_column_names = await self._detect_csv_params(parsed, stage_configs)
+                csv_params_by_ref = {}
+                for index, ref in enumerate(parsed.stage_refs):
+                    if parsed.command_type == CommandType.STAGE_EXPORT and index == 0:
+                        continue
+                    if parsed.command_type == CommandType.STAGE_BROWSE:
+                        continue
+                    params, columns = await self._detect_csv_params(
+                        replace(parsed, stage_refs=[ref]),
+                        {ref.stage_name: stage_configs_by_ref[ref.start]},
+                    )
+                    if params:
+                        csv_params_by_ref[ref.start] = params
+                    if len(parsed.stage_refs) == 1:
+                        csv_column_names = columns
 
                 prepared = await prepare_stage_sql(
                     normalized_sql,
-                    stage_configs=stage_configs,
-                    csv_params=csv_params,
+                    parsed=parsed,
+                    stage_configs_by_ref=stage_configs_by_ref,
+                    csv_params_by_ref=csv_params_by_ref,
                     csv_columns=csv_column_names,
                 )
             except (ValueError, SecretResolutionError) as e:
@@ -423,6 +513,7 @@ class QueryService:
                     status="ERROR",
                     sql=sql,
                     username=username,
+                    role=role,
                     database=database,
                     schema=schema,
                     session_id=session_id,
@@ -501,6 +592,7 @@ class QueryService:
                 file_id=file_id,
                 database_name=database,
                 schema_name=schema,
+                active_role=role,
             )
             return result
         except Exception as exc:
@@ -518,6 +610,7 @@ class QueryService:
                 file_id=file_id,
                 database_name=database,
                 schema_name=schema,
+                active_role=role,
             )
             raise
 
@@ -558,6 +651,7 @@ class QueryService:
         status: str,
         sql: str,
         username: str,
+        role: str | None,
         database: str | None,
         schema: str | None,
         session_id: str | None,
@@ -601,6 +695,7 @@ class QueryService:
                 file_id=file_id,
                 database_name=database,
                 schema_name=schema,
+                active_role=role,
             )
         except Exception:
             logger.exception(
@@ -620,6 +715,9 @@ class QueryService:
         confirm_destructive: bool = False,
         file_id: str | None = None,
         connection: asyncmy.Connection | None = None,
+        tenant: str = "default",
+        security_context_version: int = 1,
+        allow_stage_export: bool = False,
     ) -> list[QueryResult]:
         """Split SQL into statements and execute each sequentially.
 
@@ -633,6 +731,8 @@ class QueryService:
         for stmt_sql in statements:
             try:
                 result = await self.execute(
+                    tenant=tenant,
+                    security_context_version=security_context_version,
                     sql=stmt_sql,
                     username=username,
                     encrypted_password=encrypted_password,
@@ -642,6 +742,7 @@ class QueryService:
                     max_rows=max_rows,
                     session_id=session_id,
                     confirm_destructive=confirm_destructive,
+                    allow_stage_export=allow_stage_export,
                     file_id=file_id,
                     connection=connection,
                 )
@@ -675,6 +776,7 @@ class QueryService:
         session_id: str | None,
         file_id: str | None,
         schema: str | None,
+        tenant: str = "default",
     ) -> QueryResult:
         """Execute Nova CREATE ML_MODEL DDL through the ML engine."""
         start = time.monotonic()
@@ -685,6 +787,7 @@ class QueryService:
             from app.modules.ml_engine.service import ml_engine_service
 
             result = await ml_engine_service.train_model(
+                **({"tenant": tenant} if tenant != "default" else {}),
                 model_name=statement.model_name,
                 model_type=statement.model_type,
                 algorithm=statement.algorithm,
@@ -787,17 +890,21 @@ class QueryService:
         schema: str | None,
         connection: asyncmy.Connection | None,
         max_rows: int | None,
+        tenant: str = "default",
     ) -> QueryResult:
         """Execute Nova ``ML_PREDICT`` as one columnar, vectorized batch."""
         start = time.monotonic()
-        rewrite = rewrite_ml_predict_projection(normalized_sql, match)
-        alias = rewrite.alias
-        feature_sql = rewrite.feature_sql
+        alias = match.group(1)
+        feature_sql = ""
         password = "" if connection is not None else decrypt_password(encrypted_password)
         from app.modules.ml_engine.service import ml_engine_service
 
         try:
+            rewrite = rewrite_ml_predict_projection(normalized_sql, match)
+            alias = rewrite.alias
+            feature_sql = rewrite.feature_sql
             metadata, result_table = await ml_engine_service.batch_predict_projected(
+                **({"tenant": tenant} if tenant != "default" else {}),
                 model_alias=alias,
                 prediction_sql=feature_sql,
                 feature_source_columns=rewrite.feature_columns,
@@ -809,6 +916,7 @@ class QueryService:
                 role=role,
                 connection=connection,
                 max_rows=max_rows,
+                **({"predictions": rewrite.predictions} if len(rewrite.predictions) > 1 else {}),
             )
             del metadata
             columns = result_table.column_names
@@ -840,7 +948,7 @@ class QueryService:
                 elapsed_ms=elapsed_ms,
                 original_sql=sql,
                 executed_sql=feature_sql,
-                warnings=["ML_PREDICT executed as one vectorized Nova batch"],
+                warnings=["ML_PREDICT executed in bounded vectorized Nova batches"],
             )
         except Exception as exc:
             await write_audit_log(
@@ -872,6 +980,7 @@ class QueryService:
         session_id: str | None,
         file_id: str | None,
         schema: str | None,
+        tenant: str = "default",
     ) -> QueryResult:
         """Execute persisted forecast SQL without pretending it is row inference."""
         start = time.monotonic()
@@ -887,6 +996,7 @@ class QueryService:
                     database_name=database,
                     level=call.confidence_level,
                     series=call.series,
+                    **({"tenant": tenant} if tenant != "default" else {}),
                 )
             else:
                 assert call.model_id is not None and call.version is not None
@@ -898,6 +1008,7 @@ class QueryService:
                     database_name=database,
                     level=call.confidence_level,
                     series=call.series,
+                    **({"tenant": tenant} if tenant != "default" else {}),
                 )
             forecast = result["forecast"]
             columns = ["timestamp", "series", "prediction", "lower", "upper"]
@@ -1313,6 +1424,7 @@ class QueryService:
         encrypted_password: str,
         database: str | None = None,
         role: str | None = None,
+        schema: str | None = None,
     ) -> QueryResult:
         """Get EXPLAIN plan for a SQL statement.
 
@@ -1337,8 +1449,13 @@ class QueryService:
                 # so it belongs inside the try: an unresolvable reference must
                 # be reported as a redacted query error, not escape to the
                 # generic handler as an unredacted 500 (NOVA-66).
-                stage_configs = await self._load_stage_configs(database, None)
-                prepared = await prepare_stage_sql(normalized_sql, stage_configs=stage_configs)
+                parsed, stage_configs_by_ref = await self._resolve_stage_refs(
+                    parsed, database=database, schema=schema, username=username,
+                    password=decrypt_password(encrypted_password), role=role,
+                )
+                prepared = await prepare_stage_sql(
+                    normalized_sql, parsed=parsed, stage_configs_by_ref=stage_configs_by_ref
+                )
             except (ValueError, SecretResolutionError) as e:
                 # ``normalized_sql`` is the user's own text and carries no
                 # injected credential, but it is redacted all the same so every
@@ -1362,7 +1479,10 @@ class QueryService:
 
             executed_sql = prepared.engine_sql
 
-        explain_sql = f"EXPLAIN {executed_sql}"
+        explain_sql = (
+            executed_sql if re.match(r"(?is)^\s*EXPLAIN\b", executed_sql)
+            else f"EXPLAIN {executed_sql}"
+        )
         password = decrypt_password(encrypted_password)
 
         result = await self._repo.execute_as_user(
@@ -1399,7 +1519,9 @@ class QueryService:
         default_db = pref_map.get("workspace.last_database") or (
             databases[0] if databases else None
         )
-        schemas = await self.list_schemas(database=default_db)
+        schemas = await self.list_schemas(
+            database=default_db, username=username, password=password, role=active_role
+        )
         # The session's active role wins over the persisted ``last_role`` pref:
         # the UI treats the bottom-left switcher as the one active role, and the
         # engine executes under exactly that role, so the context must not
@@ -1440,7 +1562,9 @@ class QueryService:
             items = await self._list_user_databases(username, password, role)
             return {"items": self._filter_strings(items, prefix, "database")}
         if kind == "schema":
-            items = await self.list_schemas(database)
+            items = await self.list_schemas(
+                database, username=username, password=password, role=role
+            )
             return {"items": self._filter_strings(items, prefix, "schema")}
         if kind == "column" and table and database:
             columns = await self._list_columns(username, password, database, table, role)
@@ -1448,18 +1572,26 @@ class QueryService:
         if kind == "stage":
             if not database:
                 return {"items": []}
-            stages = await self._list_stages(database)
+            stages = await self._list_stages(
+                database, schema=schema, username=username, password=password, role=role
+            )
             return {"items": self._stage_completion_items(stages, prefix)}
         if kind == "stage_file" and stage:
             if not database:
                 return {"items": []}
-            rows = await self._list_stage_files(stage, database, folder=folder)
+            rows = await self._list_stage_files(
+                stage, database, folder=folder, schema=schema,
+                username=username, password=password, role=role,
+            )
             return {"items": self._stage_file_completion_items(rows, prefix)}
 
         objects = await self._list_objects(username, password, database, role)
         return {"items": self._filter_strings(objects, prefix, "object")}
 
-    async def list_schemas(self, database: str | None) -> list[str]:
+    async def list_schemas(
+        self, database: str | None, *, username: str, password: str,
+        role: str | None = None,
+    ) -> list[str]:
         if not database:
             return ["default"]
         result = await db.execute_system(
@@ -1471,88 +1603,95 @@ class QueryService:
             """,
             [database],
         )
-        schemas = [row[0] for row in result["rows"] if row[0]]
+        schemas = []
+        for row in result["rows"]:
+            if not row[0]:
+                continue
+            try:
+                await check_stage_access(
+                    {"database_name": database, "schema_name": row[0]},
+                    action="read", username=username, password=password, active_role=role,
+                )
+            except ValueError:
+                continue
+            schemas.append(row[0])
         return schemas or ["default"]
 
-    async def _load_stage_configs(
+    async def _resolve_stage_refs(
         self,
+        parsed,
+        *,
         database: str | None,
         schema: str | None,
-    ) -> dict[str, StorageConfig]:
-        """Load stage configurations from NOVA_SYSTEM.
-
-        Returns a map of stage_name → StorageConfig.
-        First tries to filter by database/schema context.
-        Falls back to loading ALL stages if none match (cross-database access).
-        """
-        try:
-            # Try with database/schema filter first
-            configs = await self._load_stage_configs_filtered(database, schema)
-            if configs:
-                return configs
-            # Fallback: load all stages (cross-database access)
-            return await self._load_stage_configs_filtered(None, None)
-        except SecretResolutionError:
-            # A configured secret reference that cannot be resolved is a real
-            # configuration failure, not a metadata-DB hiccup. Swallowing it
-            # would surface as a misleading "Stage not found"; fail closed with
-            # the actual cause instead (NOVA-58).
-            raise
-        except Exception:
-            return {}
-
-    async def _load_stage_configs_filtered(
-        self,
-        database: str | None,
-        schema: str | None,
-    ) -> dict[str, StorageConfig]:
-        """Load stages with optional database/schema filter."""
-        sql = (
+        username: str,
+        password: str,
+        role: str | None,
+        connection: asyncmy.Connection | None = None,
+    ) -> tuple[Any, dict[int, StorageConfig]]:
+        """Bind each reference to one authorized metadata row before resolving secrets."""
+        result = await db.execute_system(
             "SELECT name, database_name, schema_name, storage_connection, base_prefix "
             "FROM NOVA_SYSTEM.CONFIG_STAGES"
         )
-        params: list[str] = []
-        filters = []
-        if database:
-            filters.append("database_name = %s")
-            params.append(database)
-        if schema:
-            filters.append("schema_name = %s")
-            params.append(schema)
-        if filters:
-            sql += " WHERE " + " AND ".join(filters)
-        result = await db.execute_system(sql, params or None)
-        configs = {}
-        for row in result["rows"]:
-            name, db_name, schema_name, storage_conn, base_prefix = (
-                row[0],
-                row[1],
-                row[2],
-                row[3],
-                row[4],
+        rows = [
+            {"name": row[0], "database_name": row[1], "schema_name": row[2],
+             "storage_connection": row[3], "base_prefix": row[4]}
+            for row in result["rows"]
+        ]
+        selected = []
+        for index, ref in enumerate(parsed.stage_refs):
+            candidates = [(database, schema, ref.stage_name, 0)]
+            if ref.path_parts:
+                candidates.append((database, ref.stage_name, ref.path_parts[0], 1))
+            if len(ref.path_parts) > 1:
+                candidates.append(
+                    (ref.stage_name, ref.path_parts[0], ref.path_parts[1], 2)
+                )
+            matches = []
+            for db_name, schema_name, name, consumed in candidates:
+                found = [
+                    row for row in rows
+                    if row["name"] == name
+                    and (db_name is None or row["database_name"] == db_name)
+                    and (schema_name is None or row["schema_name"] == schema_name)
+                ]
+                if found:
+                    matches = [(row, consumed) for row in found]
+            if len(matches) != 1:
+                raise ValueError(
+                    f"Stage reference {ref.full_match!r} is "
+                    + ("ambiguous" if matches else "not found")
+                )
+            row, consumed = matches[0]
+            action = (
+                "write" if parsed.command_type == CommandType.STAGE_EXPORT and index == 0
+                else "read"
             )
+            selected.append((ref, row, consumed, action))
+
+        for _, row, _, action in selected:
+            await check_stage_access(
+                row, action=action, username=username, password=password,
+                active_role=role, connection=connection,
+            )
+
+        configs: dict[int, StorageConfig] = {}
+        refs = []
+        for ref, row, consumed, _ in selected:
+            storage_conn = row["storage_connection"]
             conn = get_storage_connection(storage_conn)
-            # Fallback base_prefix: {database_name}/{schema_name}/{stage_name}
-            resolved_prefix = (base_prefix or "").strip("/")
-            if not resolved_prefix:
-                resolved_prefix = f"{db_name}/{schema_name}/{name}"
-            # Resolve against the stage's *own* connection, not the workspace
-            # default: a connection may carry its own secret reference, and
-            # resolving the default would authenticate the stage as the wrong
-            # principal. Fail-closed — a broken reference raises rather than
-            # falling back (NOVA-58).
             access_key, secret_key = resolve_storage_credentials(storage_conn)
-            configs[name] = StorageConfig(
-                storage_type=conn.type,
-                endpoint=to_docker_endpoint(conn.endpoint),
-                bucket=conn.bucket,
-                base_prefix=resolved_prefix,
-                access_key=access_key,
-                secret_key=secret_key,
-                region=conn.region or "us-east-1",
-                storage_connection=storage_conn,
+            prefix = (row["base_prefix"] or "").strip("/")
+            if not prefix:
+                prefix = f"{row['database_name']}/{row['schema_name']}/{row['name']}"
+            refs.append(replace(ref, stage_name=row["name"], path_parts=ref.path_parts[consumed:]))
+            configs[ref.start] = StorageConfig(
+                storage_type=conn.type, endpoint=to_docker_endpoint(conn.endpoint),
+                bucket=conn.bucket, base_prefix=prefix,
+                access_key=access_key, secret_key=secret_key,
+                region=conn.region or "us-east-1", storage_connection=storage_conn,
             )
-        return configs
+        return replace(parsed, stage_refs=refs), configs
 
     async def _detect_csv_params(
         self,
@@ -1598,18 +1737,26 @@ class QueryService:
             parts = ref.path_parts + [ref.file_name] if ref.file_name else ref.path_parts
             s3_key = "/".join([config.base_prefix] + parts)
 
-            s3 = boto3.client(
-                "s3",
-                endpoint_url=settings.S3_ENDPOINT,  # host-side endpoint for boto3
-                aws_access_key_id=config.access_key,
-                aws_secret_access_key=config.secret_key,
-                config=BotoConfig(signature_version="s3v4"),
-                region_name=config.region or "us-east-1",
-            )
+            def read_header() -> str:
+                s3 = boto3.client(
+                    "s3",
+                    endpoint_url=(
+                        get_storage_connection(config.storage_connection).endpoint
+                        if config.storage_connection else config.endpoint
+                    ),
+                    aws_access_key_id=config.access_key,
+                    aws_secret_access_key=config.secret_key,
+                    config=BotoConfig(signature_version="s3v4"),
+                    region_name=config.region or "us-east-1",
+                )
+                resp = s3.get_object(Bucket=config.bucket, Key=s3_key, Range="bytes=0-8191")
+                body = resp["Body"]
+                try:
+                    return body.read(8192).decode("utf-8", errors="replace")
+                finally:
+                    body.close()
 
-            # Read first 8KB of the file
-            resp = s3.get_object(Bucket=config.bucket, Key=s3_key, Range="bytes=0-8191")
-            raw = resp["Body"].read().decode("utf-8", errors="replace")
+            raw = await asyncio.to_thread(read_header)
             lines = raw.split("\n")
             if len(lines) < 2:
                 logger.warning(
@@ -1678,10 +1825,7 @@ class QueryService:
             # endpoint, missing credential) makes the query return typed rows
             # where the caller expected a header, which surfaces as a confusing
             # shape assertion far from the cause. Name it in the log instead.
-            logger.exception(
-                "CSV parameter detection failed for stage %r; falling back to defaults",
-                ref.stage_name,
-            )
+            logger.warning("CSV parameter detection failed for stage %r", ref.stage_name)
             return {}, None
 
     async def _list_user_databases(
@@ -1745,40 +1889,69 @@ class QueryService:
     async def _list_stages(
         self,
         database: str,
+        *,
+        schema: str | None,
+        username: str,
+        password: str,
+        role: str | None,
     ) -> list[str]:
         result = await db.execute_system(
             """
-            SELECT DISTINCT name
+            SELECT name, schema_name
             FROM NOVA_SYSTEM.CONFIG_STAGES
             WHERE database_name = %s
             ORDER BY name
             """,
             [database],
         )
-        return [row[0] for row in result["rows"]]
+        names = []
+        for name, schema_name in result["rows"]:
+            if schema and schema_name != schema:
+                continue
+            try:
+                await check_stage_access(
+                    {"database_name": database, "schema_name": schema_name},
+                    action="read", username=username, password=password, active_role=role,
+                )
+            except ValueError:
+                continue
+            names.append(name)
+        return list(dict.fromkeys(names))
 
     async def _list_stage_files(
         self,
         stage_name: str,
         database: str,
         folder: str | None = None,
+        *,
+        schema: str | None,
+        username: str,
+        password: str,
+        role: str | None,
     ) -> list[dict]:
         from app.modules.stages.service import stage_service
 
         result = await db.execute_system(
             """
-            SELECT id
+            SELECT id, schema_name
             FROM NOVA_SYSTEM.CONFIG_STAGES
             WHERE name = %s AND database_name = %s
             ORDER BY schema_name
-            LIMIT 1
             """,
             [stage_name, database],
         )
-        if not result["rows"]:
+        rows = [row for row in result["rows"] if schema is None or row[1] == schema]
+        if len(rows) != 1:
+            return []
+        try:
+            await check_stage_access(
+                {"database_name": database, "schema_name": rows[0][1]},
+                action="read", username=username, password=password, active_role=role,
+            )
+        except ValueError:
             return []
         storage_prefix = folder.replace(".", "/") if folder else ""
-        return await stage_service.list_files(result["rows"][0][0], prefix=storage_prefix)
+        return await stage_service.list_files(rows[0][0], prefix=storage_prefix)
 
     @staticmethod
     def _filter_strings(items: list[str], prefix: str, item_type: str) -> list[dict]:

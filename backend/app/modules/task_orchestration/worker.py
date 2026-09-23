@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from app.common.audit import write_audit_log
+from app.core.config import settings
 from app.modules.task_orchestration.dag import (
     TERMINAL_NODE_STATES,
     GraphState,
@@ -43,13 +44,16 @@ from app.modules.task_orchestration.execution import (
     DelegateExecutor,
     NodeExecutionError,
     TaskSpec,
+    native_attempt_name,
 )
 from app.modules.task_orchestration.repository import TaskOrchestrationRepository
 
 logger = logging.getLogger(__name__)
 
 #: Node states that mean "this node must be executed now".
-_RUNNABLE = frozenset({NodeState.PENDING, NodeState.ABANDONED})
+# A stale heartbeat cannot prove whether StarRocks accepted the native submit.
+# Replaying an abandoned INSERT could write data twice; hold for inspection.
+_RUNNABLE = frozenset({NodeState.PENDING})
 
 
 class TaskLookup(Protocol):
@@ -85,9 +89,19 @@ class GraphRunWorker:
         self,
         repository: TaskOrchestrationRepository,
         executor: DelegateExecutor,
+        *,
+        max_parallel_nodes: int | None = None,
     ) -> None:
         self._repository = repository
         self._executor = executor
+        configured = (
+            max_parallel_nodes
+            if max_parallel_nodes is not None
+            else settings.WORKER_MAX_PARALLEL_NODES
+        )
+        if configured < 1:
+            raise ValueError("max_parallel_nodes must be positive")
+        self._max_parallel_nodes = configured
 
     async def handle(self, job: GraphRunJob) -> GraphState | None:
         """Process a graph run. Safe to call repeatedly for the same job.
@@ -120,7 +134,11 @@ class GraphRunWorker:
         # check entirely; `skip` never reaches the worker with an active sibling
         # because the scheduler did not enqueue it.
         policy = str(graph_run.get("overlap_policy") or "skip").lower()
-        if policy == "queue" and await self._has_other_active_run(job):
+        if (
+            policy == "queue"
+            and graph_run.get("state") != GraphState.RUNNING.value
+            and await self._has_other_active_run(job)
+        ):
             # Leave the row pending; the scheduler/reconciler re-delivers it
             # once the active run finishes. Nothing is executed here.
             return GraphState.PENDING
@@ -131,7 +149,7 @@ class GraphRunWorker:
         if not already:
             claimed = await self._repository.transition_graph_run(
                 job.graph_run_id,
-                [GraphState.PENDING.value, GraphState.RUNNING.value, "success"],
+                [GraphState.PENDING.value],
                 GraphState.RUNNING.value,
             )
             if not claimed:
@@ -141,14 +159,22 @@ class GraphRunWorker:
         return await self._drive(job)
 
     async def _has_other_active_run(self, job: GraphRunJob) -> bool:
-        """True when a different active run exists for this graph.
-
-        Used only for the ``queue`` policy. The run's own row is excluded: a
-        run that is already ``running`` is not its own blocker (that case is the
-        conditional-claim path). ``pending`` and ``running`` are the active set.
-        """
+        """Wait for running siblings and pending siblings ahead in the queue."""
         active = await self._repository.list_active_graph_runs(job.graph_id)
-        return any(str(run["id"]) != job.graph_run_id for run in active)
+        own_position = next(
+            (index for index, run in enumerate(active) if str(run["id"]) == job.graph_run_id),
+            None,
+        )
+        if own_position is None:
+            return True
+        return any(
+            str(run["id"]) != job.graph_run_id
+            and (
+                str(run.get("state")) == GraphState.RUNNING.value
+                or index < own_position
+            )
+            for index, run in enumerate(active)
+        )
 
     async def _drive(self, job: GraphRunJob) -> GraphState | None:
         """Evaluate and execute until the graph settles."""
@@ -327,6 +353,8 @@ class GraphRunWorker:
             )
             if moved:
                 claimed.append((task, row["id"]))
+                if len(claimed) >= self._max_parallel_nodes:
+                    break
 
         if not claimed:
             return False
@@ -356,6 +384,7 @@ class GraphRunWorker:
             body=task.get("definition") or "",
             database=task.get("database_name"),
             active_role=task.get("owner_role"),
+            schema=task.get("schema_name"),
         )
         try:
             allowed = await self._executor.evaluate_when(expression, spec=spec, owner=owner)
@@ -391,6 +420,8 @@ class GraphRunWorker:
             body=body,
             database=task.get("database_name"),
             active_role=task.get("owner_role"),
+            schema=task.get("schema_name"),
+            native_name=native_attempt_name(run_id),
         )
 
         async def heartbeat() -> None:

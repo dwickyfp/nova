@@ -16,6 +16,8 @@ directly, so the fast local loop catches a regression.
 
 from __future__ import annotations
 
+import pytest
+
 from app.modules.agents import repository
 from app.modules.assistant import repository as assistant_repository
 
@@ -123,6 +125,50 @@ def test_driver_native_json_values_are_accepted() -> None:
     assert repository._as_json('{"k": 1}') == {"k": 1}
     assert repository._as_json(None) is None
     assert repository._as_json("not json") is None
+
+
+@pytest.mark.asyncio
+async def test_agent_lookup_retries_a_malformed_metadata_result(monkeypatch) -> None:
+    class FlakyDB:
+        calls = []
+
+        async def execute_system(self, _sql, params):
+            self.calls.append(params)
+            return {"rows": [[None] * (8 if len(self.calls) == 1 else 28)]}
+
+    db = FlakyDB()
+    monkeypatch.setattr(repository, "db", db)
+    monkeypatch.setattr(repository, "_agent_row", lambda row: {"columns": len(row)})
+
+    result = await repository.AgentRepository().get_agent("agent-1", owner_name="alice")
+
+    assert result == {"columns": 28}
+    assert db.calls == [["agent-1", "alice"], ["agent-1", "alice"]]
+
+
+@pytest.mark.asyncio
+async def test_shared_agent_requires_visibility_and_active_role_grant(monkeypatch) -> None:
+    class FakeDB:
+        async def execute_system(self, sql, params):
+            if "CONFIG_AGENT_ROLES" in sql:
+                if params == ["agent-1", "owner"]:
+                    return {"rows": [["city_reader", "USAGE"]]}
+                return {"rows": [["agent-1"]] if params == ["city_reader"] else []}
+            if "visibility = 'shared'" in sql:
+                return {"rows": [["agent-1", "owner"] + [None] * 26]}
+            return {"rows": []}
+
+    monkeypatch.setattr(repository, "db", FakeDB())
+    monkeypatch.setattr(
+        repository, "_agent_row", lambda row: {"agent_id": row[0], "owner_name": row[1]}
+    )
+    repo = repository.AgentRepository()
+    assert await repo.get_agent("agent-1", owner_name="reader") is None
+    assert await repo.get_shared_agent("agent-1", role_name="other") is None
+    shared = await repo.get_shared_agent("agent-1", role_name="city_reader")
+    assert shared is not None and shared["agent_id"] == "agent-1"
+    assert await repo.list_shared_agents(role_name="other") == []
+    assert len(await repo.list_shared_agents(role_name="city_reader")) == 1
 
 
 def test_assistant_threads_ddl_has_agent_id_and_migration() -> None:

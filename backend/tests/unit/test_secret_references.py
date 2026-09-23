@@ -608,6 +608,10 @@ class TestStageQueryEndToEnd:
         monkeypatch.setattr(service_module, "write_audit_log", fake_write_audit_log)
         monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
         monkeypatch.setattr(service_module.db, "execute_system", fake_execute_system)
+        async def allowed_stage(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(service_module, "check_stage_access", allowed_stage)
 
         # Give the real 'production' connection a secret reference and route its
         # resolution through the mock provider, keeping the real wrapping and
@@ -738,6 +742,10 @@ class TestStageQueryEndToEnd:
         monkeypatch.setattr(service_module, "write_audit_log", fake_write_audit_log)
         monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
         monkeypatch.setattr(service_module.db, "execute_system", fake_execute_system)
+        async def allowed_stage(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(service_module, "check_stage_access", allowed_stage)
         monkeypatch.setattr(injector_module, "get_storage_connection", fake_connection)
 
         await svc.execute(

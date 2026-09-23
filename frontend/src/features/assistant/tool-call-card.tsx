@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AlertTriangle, Ban, Check, Loader2, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import type { ToolCallView, ToolCallStatus } from "./types";
@@ -30,6 +31,8 @@ export type ToolCallDecision = {
   toolCallId: string;
   decision: "approve" | "deny";
   alwaysAllow: boolean;
+  secureInput?: { password: string };
+  uploadFile?: File;
 };
 
 export type ToolCallCardProps = {
@@ -48,17 +51,59 @@ export function ToolCallCard({
   busy,
 }: ToolCallCardProps) {
   const [alwaysAllow, setAlwaysAllow] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const canOfferAlwaysAllow = toolCall.classification === "read_only";
+  const needsPassword =
+    toolCall.tool_name === "call_ui_operation" &&
+    toolCall.sql_preview.startsWith("POST /api/v1/users\n");
+  const needsFile =
+    toolCall.tool_name === "call_ui_operation" &&
+    (/^POST \/api\/v1\/stages\/[^/\n]+\/files\n/.test(toolCall.sql_preview) ||
+      /^POST \/api\/v1\/explorer\/databases\/[^/\n]+\/stages\/[^/\n]+\/files\n/.test(
+        toolCall.sql_preview,
+      ));
   const isDecidable =
     toolCall.status === "pending" && Boolean(onDecide && toolCallId);
 
   const decide = (decision: "approve" | "deny") => {
     if (!toolCallId) return;
+    const passwordField = passwordRef.current;
+    const fileField = fileRef.current;
+    if (
+      decision === "approve" &&
+      needsPassword &&
+      !passwordField?.reportValidity()
+    ) {
+      return;
+    }
+    if (decision === "approve" && needsFile && !fileField?.reportValidity()) {
+      return;
+    }
+    const uploadFile = fileField?.files?.[0];
+    if (
+      decision === "approve" &&
+      needsFile &&
+      uploadFile &&
+      uploadFile.size > 256 * 1024 * 1024
+    ) {
+      fileField.setCustomValidity("Choose a file smaller than 256 MB");
+      fileField.reportValidity();
+      return;
+    }
     onDecide?.({
       toolCallId,
       decision,
       alwaysAllow: alwaysAllow && canOfferAlwaysAllow,
+      ...(decision === "approve" && needsPassword && passwordField
+        ? { secureInput: { password: passwordField.value } }
+        : {}),
+      ...(decision === "approve" && needsFile && uploadFile
+        ? { uploadFile }
+        : {}),
     });
+    if (passwordField) passwordField.value = "";
+    if (fileField) fileField.value = "";
   };
 
   return (
@@ -92,8 +137,9 @@ export function ToolCallCard({
       {toolCall.classification !== "read_only" ? (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-warning-strong">
           <ShieldAlert aria-hidden="true" className="size-3.5 shrink-0" />
-          This statement changes data. It is never covered by an always-allow
-          grant.
+          {toolCall.classification === "session_change"
+            ? "This statement changes your active role and requires approval."
+            : "This statement changes data. It is never covered by an always-allow grant."}
         </p>
       ) : null}
 
@@ -122,6 +168,31 @@ export function ToolCallCard({
 
       {isDecidable ? (
         <div className="mt-3 space-y-2 border-t pt-3">
+          {needsPassword ? (
+            <label className="block space-y-1.5 text-xs text-muted-foreground">
+              Password for the new user
+              <Input
+                ref={passwordRef}
+                type="password"
+                name="nove-new-user-password"
+                autoComplete="new-password"
+                required
+                disabled={busy}
+              />
+            </label>
+          ) : null}
+          {needsFile ? (
+            <label className="block space-y-1.5 text-xs text-muted-foreground">
+              File to upload
+              <Input
+                ref={fileRef}
+                type="file"
+                required
+                disabled={busy}
+                onChange={(event) => event.currentTarget.setCustomValidity("")}
+              />
+            </label>
+          ) : null}
           {canOfferAlwaysAllow ? (
             <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs text-muted-foreground">
               <Checkbox

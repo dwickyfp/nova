@@ -30,6 +30,8 @@ dependencies = [
     "pyod>=2.0.5",
     "pandas>=2.2.3",
     "antlr4-python3-runtime==4.13.2",
+    "pypdf>=6.0,<7.0",
+    "pillow>=12.0,<13.0",
 ]
 
 [dependency-groups]

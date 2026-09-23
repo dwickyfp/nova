@@ -52,9 +52,7 @@ def test_tool_call_is_assembled_across_fragments():
         )
     )
     # Subsequent fragments carry only argument pieces (no id, no name).
-    acc.feed(
-        _chunk({"tool_calls": [{"index": 0, "function": {"arguments": ' "SELECT 1"}'}}]})
-    )
+    acc.feed(_chunk({"tool_calls": [{"index": 0, "function": {"arguments": ' "SELECT 1"}'}}]}))
     acc.feed(_chunk({}, finish_reason="tool_calls"))
 
     message = acc.message()
@@ -85,8 +83,42 @@ def test_multiple_tool_calls_are_kept_by_index():
     assert [c["id"] for c in calls] == ["a", "b"]
 
 
+def test_text_and_tool_call_in_same_delta_are_both_preserved():
+    acc = StreamAccumulator()
+    text = acc.feed(
+        _chunk(
+            {
+                "content": "Checking the data.",
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "mixed-1",
+                        "function": {"name": "query_execute", "arguments": '{"sql":'},
+                    }
+                ],
+            }
+        )
+    )
+    acc.feed(
+        _chunk(
+            {
+                "tool_calls": [{"index": 0, "function": {"arguments": '"SELECT 1"}'}}],
+            }
+        )
+    )
+    assert text == "Checking the data."
+    assert acc.message()["content"] == text
+    assert acc.message()["tool_calls"] == [
+        {
+            "id": "mixed-1",
+            "type": "function",
+            "function": {"name": "query_execute", "arguments": '{"sql":"SELECT 1"}'},
+        }
+    ]
+
+
 def test_parse_sse_data_line():
-    assert parse_sse_data_line("data: {\"a\": 1}") == {"a": 1}
+    assert parse_sse_data_line('data: {"a": 1}') == {"a": 1}
     assert parse_sse_data_line("data: [DONE]") is None
     assert parse_sse_data_line("data:") is None
     assert parse_sse_data_line("event: ping") is None

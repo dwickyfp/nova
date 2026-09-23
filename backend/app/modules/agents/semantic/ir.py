@@ -63,6 +63,7 @@ class SemanticMetricIR:
     additivity: Additivity = Additivity.ADDITIVE
     default_time_dimension: str | None = None
     allowed_dimensions: tuple[str, ...] = ()
+    non_additive_dimensions: tuple[str, ...] = ()
     synonyms: tuple[str, ...] = ()
     format: str | None = None
     unit: str | None = None
@@ -148,7 +149,10 @@ class SemanticModelIR:
                 continue
             expression = str(raw.get("expression") or "")
             base = str(raw.get("base_dataset") or _infer_dataset(expression, dataset_names) or "")
-            raw_additivity = str(raw.get("additivity") or "additive").lower().replace("-", "_")
+            additivity_value = raw.get("additivity") or "additive"
+            if isinstance(additivity_value, dict):
+                additivity_value = additivity_value.get("type") or "additive"
+            raw_additivity = str(additivity_value).lower().replace("-", "_")
             try:
                 additivity = Additivity(raw_additivity)
             except ValueError:
@@ -165,6 +169,15 @@ class SemanticModelIR:
                     additivity=additivity,
                     default_time_dimension=_optional_str(raw.get("default_time_dimension")),
                     allowed_dimensions=tuple(str(x) for x in raw.get("allowed_dimensions") or []),
+                    non_additive_dimensions=tuple(
+                        str(x)
+                        for x in raw.get("non_additive_dimensions")
+                        or (
+                            raw.get("additivity", {}).get("non_additive_dimensions", [])
+                            if isinstance(raw.get("additivity"), dict)
+                            else []
+                        )
+                    ),
                     synonyms=_synonyms(raw),
                     format=_optional_str(raw.get("format")),
                     unit=_optional_str(raw.get("currency") or raw.get("unit")),
@@ -253,11 +266,11 @@ def _field_from(dataset: str, raw: dict[str, Any]) -> SemanticFieldIR:
     raw_kind = str(raw.get("kind") or "").lower()
     kind = (
         FieldKind.DIMENSION
-        if raw_kind == "dimension" or dimension is not None or is_time
+        if raw_kind == "dimension" or (raw_kind != "fact" and (dimension is not None or is_time))
         else FieldKind.FACT
     )
     sample_values = raw.get("sample_values")
-    if sample_values is None and isinstance(dimension, dict):
+    if not sample_values and isinstance(dimension, dict):
         sample_values = dimension.get("sample_values")
     return SemanticFieldIR(
         name=str(raw.get("name") or ""),

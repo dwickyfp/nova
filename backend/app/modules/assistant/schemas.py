@@ -10,12 +10,19 @@ must never place a credential-bearing statement here.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
-ToolClassification = Literal["read_only", "destructive", "denied"]
+from app.modules.assistant.attachments import validate_attachments
+
+
+def utc_datetime(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+ToolClassification = Literal["read_only", "session_change", "destructive", "denied"]
 ToolStatus = Literal[
     "pending",
     "approved",
@@ -38,11 +45,18 @@ class ToolCallView(BaseModel):
 
     tool_call_id: str
     tool_name: str
+    skill_name: str | None = None
     sql_preview: str = ""
     classification: ToolClassification = "read_only"
     status: ToolStatus = "pending"
     result_summary: str | None = None
     error: str | None = None
+
+
+class AttachmentView(BaseModel):
+    name: str
+    size_bytes: int
+    media_type: str = "text/plain"
 
 
 class MessageView(BaseModel):
@@ -60,6 +74,17 @@ class MessageView(BaseModel):
     completion_tokens: int | None = None
     total_tokens: int | None = None
     model_name: str | None = None
+    feedback: Literal["like", "dislike"] | None = None
+    attachments: list[AttachmentView] = Field(default_factory=list)
+
+    @field_validator("created_at")
+    @classmethod
+    def mark_created_at_utc(cls, value: datetime) -> datetime:
+        return utc_datetime(value)
+
+
+class MessageFeedbackRequest(BaseModel):
+    feedback: Literal["like", "dislike"] | None
 
 
 class ThreadView(BaseModel):
@@ -70,6 +95,11 @@ class ThreadView(BaseModel):
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def mark_timestamps_utc(cls, value: datetime) -> datetime:
+        return utc_datetime(value)
 
 
 class ThreadListResponse(BaseModel):
@@ -104,11 +134,43 @@ class MessageRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=32_000)
     database: str | None = Field(default=None, max_length=128)
     schema_name: str | None = Field(default=None, alias="schema", max_length=128)
-    role: str | None = Field(default=None, max_length=128)
+    role: str | None = Field(
+        default=None,
+        max_length=128,
+        deprecated=True,
+        description="Ignored for execution. The authenticated session selects the active role.",
+    )
     model: str | None = Field(default=None, max_length=256)
     provider_id: str | None = Field(default=None, max_length=64)
 
     model_config = {"populate_by_name": True}
+
+
+class AttachmentInput(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    content: str = Field(..., min_length=1, max_length=2_800_000)
+    media_type: str = Field(default="text/plain", max_length=64)
+
+    model_config = {"extra": "forbid"}
+
+
+class AgentMessageRequest(MessageRequest):
+    content: str = Field(default="", max_length=32_000)
+    attachments: list[AttachmentInput] = Field(default_factory=list, max_length=3)
+    _prepared_attachments: list[dict] = PrivateAttr(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_turn(self) -> AgentMessageRequest:
+        if not self.content.strip() and not self.attachments:
+            raise ValueError("Write a message or attach a file.")
+        self._prepared_attachments = validate_attachments(
+            [item.model_dump() for item in self.attachments]
+        )
+        return self
+
+    @property
+    def prepared_attachments(self) -> list[dict]:
+        return self._prepared_attachments
 
 
 class ConsentDecisionRequest(BaseModel):
@@ -119,6 +181,7 @@ class ConsentDecisionRequest(BaseModel):
     """
 
     decision: Literal["allow_once", "allow_session", "deny"]
+    secure_input: dict[str, str] | None = None
 
 
 class ConsentDecisionResponse(BaseModel):

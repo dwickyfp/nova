@@ -67,6 +67,14 @@ const queryClient = new QueryClient({
   }),
 })
 
+useAuthStore.subscribe((state, previous) => {
+  const user = state.auth.user
+  const prior = previous.auth.user
+  if (user && prior && user.username === prior.username && user.activeRole !== prior.activeRole) {
+    void queryClient.resetQueries()
+  }
+})
+
 // Create a new router instance
 const router = createRouter({
   routeTree,

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.common.responses import SanitizingJSONResponse
@@ -11,6 +11,7 @@ from app.common.sql_guard import (
     is_destructive_sql,
     is_unscoped_mutation,
 )
+from app.core.config import settings
 from app.core.deps import get_current_user
 from app.modules.access_control.security_context import SecurityContext, SecurityContextError
 from app.modules.auth.service import auth_service
@@ -32,7 +33,7 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
 __all__ = ["SanitizingJSONResponse", "router"]
 
 
-def _resolve_active_role(user: dict) -> str:
+def _resolve_active_role(user: dict) -> str | None:
     """Return the role the engine must activate for this request.
 
     The session's ``active_role`` (set at login and changed through
@@ -43,13 +44,27 @@ def _resolve_active_role(user: dict) -> str:
     while executing under another (the bottom-left switcher versus the
     workspace tab picker).
 
-    Older or corrupted sessions without an explicit role fail closed. Role
-    ordering is never an authorization policy.
+    Ranger sessions require an assigned active role. Native StarRocks RBAC
+    sessions may have no active role; any named role is still validated against
+    the session's grants.
     """
+    if not settings.RANGER_ENABLED and user.get("active_role") is None:
+        return None
     try:
         return SecurityContext.from_session(user).active_role
     except SecurityContextError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+def _history_subject(user: dict, requested_user: str | None) -> str:
+    if not requested_user or requested_user == user["username"]:
+        return user["username"]
+    if _resolve_active_role(user) != "ACCOUNTADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="ACCOUNTADMIN is required to view another user's history",
+        )
+    return requested_user
 
 
 class QueryRequest(BaseModel):
@@ -128,6 +143,8 @@ async def execute_query(
         ]
 
     results = await query_service.execute_statements(
+        tenant=user.get("tenant", "default"),
+        security_context_version=user.get("security_context_version", 1),
         sql=req.sql,
         username=user["username"],
         encrypted_password=user["encrypted_password"],
@@ -189,6 +206,7 @@ async def explain_query(
         encrypted_password=user["encrypted_password"],
         database=req.database,
         role=_resolve_active_role(user),
+        schema=req.schema_name,
     )
 
     # ``success`` is derived from ``error``, so the marker has to reach the
@@ -237,7 +255,7 @@ async def get_query_completions(
         prefix=prefix,
         database=database,
         schema=schema,
-        role=role,
+        role=_resolve_active_role(user),
         table=table,
         stage=stage,
         folder=folder,
@@ -273,8 +291,8 @@ async def get_query_history(
     user: CurrentUser,
     file_id: str | None = None,
     status: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    offset: Annotated[int, Query(ge=0, le=100000)] = 0,
     search: str | None = None,
     database_name: str | None = None,
     date_from: str | None = None,
@@ -288,7 +306,7 @@ async def get_query_history(
     or omit to get all history. Admin users can pass user_name to
     view another user's history.
     """
-    effective_user = user_name if user_name else user["username"]
+    effective_user = _history_subject(user, user_name)
     result = await query_service.get_history(
         username=effective_user,
         file_id=file_id,
@@ -328,7 +346,7 @@ async def get_query_history_stats(
 
     Uses the same filter parameters as the history endpoint.
     """
-    effective_user = user_name if user_name else user["username"]
+    effective_user = _history_subject(user, user_name)
     result = await query_service.get_history_stats(
         username=effective_user,
         file_id=file_id,

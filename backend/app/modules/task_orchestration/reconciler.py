@@ -39,10 +39,12 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
+from uuid import UUID
 
 from app.common.audit import write_audit_log
 from app.core.config import settings
 from app.modules.task_orchestration.dag import NodeState
+from app.modules.task_orchestration.execution import native_attempt_name
 from app.modules.task_orchestration.native import (
     NativeConfig,
     NativeRun,
@@ -56,6 +58,20 @@ from app.modules.task_orchestration.native import (
 from app.modules.task_orchestration.repository import TaskOrchestrationRepository
 
 logger = logging.getLogger(__name__)
+
+
+def _native_lookup_name(row: dict[str, Any], task: dict[str, Any]) -> str:
+    """Find the attempt-specific native run for a durable UUID node row.
+
+    Older test fixtures and legacy rows with non-UUID IDs retain the logical
+    task name; repository-created node rows always use UUID IDs.
+    """
+    run_id = str(row["id"])
+    try:
+        UUID(run_id)
+    except ValueError:
+        return str(task["name"])
+    return native_attempt_name(run_id)
 
 
 class NativeObserver(Protocol):
@@ -259,11 +275,14 @@ class Reconciler:
         if not running:
             return report
 
-        task_ids = sorted({str(row["task_id"]) for row in running if row.get("task_id")})
         tasks = {str(t["id"]): t for t in await self._repository.list_tasks()}
-        names = [
-            str(tasks[tid]["name"]) for tid in task_ids if tid in tasks and tasks[tid].get("name")
-        ]
+        names = sorted(
+            {
+                _native_lookup_name(row, tasks[str(row["task_id"])])
+                for row in running
+                if row.get("task_id") and str(row["task_id"]) in tasks
+            }
+        )
         if not names:
             return report
 
@@ -280,11 +299,12 @@ class Reconciler:
             if task is None:
                 continue
             name = str(task["name"])
-            observed = runs.get(name)
+            native_name = _native_lookup_name(row, task)
+            observed = runs.get(native_name)
             if observed is None:
                 report.unknown.append(name)
                 continue
-            await self._apply(report, row, task, observed, schedules.get(name))
+            await self._apply(report, row, task, observed, schedules.get(native_name))
 
         return report
 

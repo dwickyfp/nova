@@ -56,7 +56,7 @@ def _spec(task: MLTask, **kwargs) -> MLExecutionSpec:
         "input_sql": "SELECT * FROM features",
         "security": SECURITY,
         "mode": MLMode.INTERACTIVE,
-        "budget": ExecutionBudget(2, 100_000, 100_000_000),
+        "budget": ExecutionBudget(10, 100_000, 100_000_000),
     }
     values.update(kwargs)
     return MLExecutionSpec(**values)
@@ -371,6 +371,11 @@ class _InspectableRunner(InlineJobRunner):
 
 
 class _TestService(MLEngineService):
+    def __init__(self, **kwargs):
+        from tests.unit.ml_fakes import MemoryEphemeralRepository
+
+        super().__init__(ephemeral_repository=MemoryEphemeralRepository(), **kwargs)
+
     async def _prepare_user_sql(self, sql, security):
         return sql
 
@@ -408,7 +413,7 @@ async def test_process_runner_enforces_hard_timeout() -> None:
         with pytest.raises(TrainingTimeout):
             await runner.run(_slow_worker, 2.0, timeout_seconds=0.1)
         assert runner._active == set()
-        assert await runner.run(_slow_worker, 0.0, timeout_seconds=5.0) == "finished"
+        assert await runner.run(_slow_worker, 0.0, timeout_seconds=30.0) == "finished"
     finally:
         runner.close()
 

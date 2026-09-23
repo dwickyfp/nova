@@ -1,0 +1,32 @@
+{
+  "scope": "Intermediate run with corrected fresh-provider samples before the progress wait fix. Only verified tool cases are retained; this was not the final green suite run.",
+  "measurements": [
+    {
+      "benchmark": "tool_round_trip",
+      "iterations": 500.0,
+      "max_us": 153786.625,
+      "mean_us": 102418.150796,
+      "median_us": 101904.042,
+      "min_us": 100646.416,
+      "p95_us": 103954.708
+    },
+    {
+      "benchmark": "consent_auto_approve",
+      "iterations": 500.0,
+      "max_us": 153598.25,
+      "mean_us": 102865.035904,
+      "median_us": 102641.85399999999,
+      "min_us": 100675.083,
+      "p95_us": 103874.959
+    },
+    {
+      "benchmark": "consent_explicit_per_call",
+      "iterations": 500.0,
+      "max_us": 109954.625,
+      "mean_us": 102147.376572,
+      "median_us": 101855.542,
+      "min_us": 100660.292,
+      "p95_us": 103610.5
+    }
+  ]
+}

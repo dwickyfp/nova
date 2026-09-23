@@ -52,7 +52,7 @@ def compile_access_policy(
         service=settings.RANGER_SERVICE_NAME,
         name=managed_name("access", role, catalog, database, table),
         description="Managed by Nova. Object authorization is enforced by Ranger.",
-        resources=table_resources(catalog, database, table),
+        resources=table_resources(catalog, database, table, "*"),
         policyItems=[
             RangerPolicyItem(
                 roles=[role],

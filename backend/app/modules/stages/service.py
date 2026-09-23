@@ -5,14 +5,17 @@ object store (MinIO by default). Files are listed/uploaded/downloaded/deleted
 through the boto3 S3 client.
 """
 
+import asyncio
+import os
+from typing import Any, BinaryIO
 from uuid import uuid4
 
-import asyncmy
 import asyncmy.cursors
 import boto3
 from botocore.client import Config as BotoConfig
 
 from app.core.config import get_storage_connection, settings
+from app.core.database import db
 from app.modules.query.dialect.injector import resolve_storage_credentials
 
 
@@ -28,89 +31,60 @@ class StagePathError(ValueError):
 class StageService:
     """Business logic for stage management and file operations."""
 
-    # ── DB helpers ──────────────────────────────────────────────
-
-    @staticmethod
-    async def _connect() -> asyncmy.Connection:
-        """Create a direct asyncmy connection to StarRocks."""
-        return await asyncmy.connect(
-            host=settings.STARROCKS_HOST,
-            port=settings.STARROCKS_FE_MYSQL_PORT,
-            user="root",
-            password="",
-            autocommit=True,
-        )
-
     # ── Stage CRUD ──────────────────────────────────────────────
 
     async def list_stages(self) -> list[dict]:
         """List all registered stages."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT id, name, database_name, schema_name, "
-                    "storage_connection, base_prefix, created_at, created_by "
-                    "FROM NOVA_SYSTEM.CONFIG_STAGES ORDER BY name"
-                )
-                rows = await cur.fetchall()
-                return list(rows)
-        finally:
-            conn.close()
+        async with db.system_conn() as conn, conn.cursor(asyncmy.cursors.DictCursor) as cur:
+            await cur.execute(
+                "SELECT id, name, database_name, schema_name, "
+                "storage_connection, base_prefix, created_at, created_by "
+                "FROM NOVA_SYSTEM.CONFIG_STAGES ORDER BY name"
+            )
+            rows = await cur.fetchall()
+            return list(rows)
 
     async def get_stage(self, stage_id: str) -> dict | None:
         """Get a single stage by ID."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "SELECT id, name, database_name, schema_name, "
-                    "storage_connection, base_prefix, created_at, created_by "
-                    "FROM NOVA_SYSTEM.CONFIG_STAGES WHERE id = %s",
-                    (stage_id,),
-                )
-                row = await cur.fetchone()
-                return dict(row) if row else None
-        finally:
-            conn.close()
+        async with db.system_conn() as conn, conn.cursor(asyncmy.cursors.DictCursor) as cur:
+            await cur.execute(
+                "SELECT id, name, database_name, schema_name, "
+                "storage_connection, base_prefix, created_at, created_by "
+                "FROM NOVA_SYSTEM.CONFIG_STAGES WHERE id = %s",
+                (stage_id,),
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
 
     async def create_stage(self, data: dict, username: str) -> dict | None:
         """INSERT a new stage into CONFIG_STAGES. Returns the created stage."""
         stage_id = str(uuid4())
-        conn = await self._connect()
-        try:
-            async with conn.cursor(asyncmy.cursors.DictCursor) as cur:
-                await cur.execute(
-                    "INSERT INTO NOVA_SYSTEM.CONFIG_STAGES "
-                    "(id, name, database_name, schema_name, storage_connection, "
-                    "base_prefix, created_at, created_by) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s)",
-                    (
-                        stage_id,
-                        data["name"],
-                        data["database_name"],
-                        data["schema_name"],
-                        data["storage_connection"],
-                        data.get("base_prefix", ""),
-                        username,
-                    ),
-                )
-            return await self.get_stage(stage_id)
-        finally:
-            conn.close()
+        async with db.system_conn() as conn, conn.cursor(asyncmy.cursors.DictCursor) as cur:
+            await cur.execute(
+                "INSERT INTO NOVA_SYSTEM.CONFIG_STAGES "
+                "(id, name, database_name, schema_name, storage_connection, "
+                "base_prefix, created_at, created_by) "
+                "VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s)",
+                (
+                    stage_id,
+                    data["name"],
+                    data["database_name"],
+                    data["schema_name"],
+                    data["storage_connection"],
+                    data.get("base_prefix", ""),
+                    username,
+                ),
+            )
+        return await self.get_stage(stage_id)
 
     async def delete_stage(self, stage_id: str) -> bool:
         """DELETE a stage by ID. Returns True if a row was deleted."""
-        conn = await self._connect()
-        try:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "DELETE FROM NOVA_SYSTEM.CONFIG_STAGES WHERE id = %s",
-                    (stage_id,),
-                )
-                return cur.rowcount > 0
-        finally:
-            conn.close()
+        async with db.system_conn() as conn, conn.cursor() as cur:
+            await cur.execute(
+                "DELETE FROM NOVA_SYSTEM.CONFIG_STAGES WHERE id = %s",
+                (stage_id,),
+            )
+            return cur.rowcount > 0
 
     # ── S3 / MinIO client ──────────────────────────────────────
 
@@ -239,39 +213,37 @@ class StageService:
 
         s3, bucket = self._s3_client_for_stage(stage)
 
-        paginator = s3.get_paginator("list_objects_v2")
-        pages = paginator.paginate(
-            Bucket=bucket,
-            Prefix=s3_prefix,
-            Delimiter="/",
-        )
+        def scan() -> list[dict]:
+            paginator = s3.get_paginator("list_objects_v2")
+            pages = paginator.paginate(Bucket=bucket, Prefix=s3_prefix, Delimiter="/")
+            files: list[dict] = []
+            base_len = len(s3_prefix)
+            for page in pages:
+                for cp in page.get("CommonPrefixes", []):
+                    name = cp["Prefix"][base_len:].rstrip("/")
+                    files.append(
+                        {
+                            "name": name,
+                            "size": 0,
+                            "last_modified": None,
+                            "is_dir": True,
+                        }
+                    )
+                for obj in page.get("Contents", []):
+                    key = obj["Key"]
+                    if key == s3_prefix or not key[base_len:]:
+                        continue
+                    files.append(
+                        {
+                            "name": key[base_len:],
+                            "size": obj["Size"],
+                            "last_modified": obj["LastModified"].isoformat(),
+                            "is_dir": False,
+                        }
+                    )
+            return files
 
-        files: list[dict] = []
-        base_len = len(s3_prefix)
-        for page in pages:
-            # Common prefixes = "directories"
-            for cp in page.get("CommonPrefixes", []):
-                name = cp["Prefix"][base_len:].rstrip("/")
-                files.append({
-                    "name": name,
-                    "size": 0,
-                    "last_modified": None,
-                    "is_dir": True,
-                })
-            # Objects = files
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                # Skip the prefix itself if it appears as an object
-                if key == s3_prefix or not key[base_len:]:
-                    continue
-                files.append({
-                    "name": key[base_len:],
-                    "size": obj["Size"],
-                    "last_modified": obj["LastModified"].isoformat(),
-                    "is_dir": False,
-                })
-
-        return files
+        return await asyncio.to_thread(scan)
 
     async def upload_file(self, stage_id: str, filename: str, content: bytes) -> dict:
         """Upload a file to the stage's S3 path."""
@@ -281,9 +253,38 @@ class StageService:
 
         s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
-        s3.put_object(Bucket=bucket, Key=s3_key, Body=content)
+        await asyncio.to_thread(s3.put_object, Bucket=bucket, Key=s3_key, Body=content)
 
         return {"filename": filename, "size": len(content)}
+
+    async def upload_stream(self, stage_id: str, filename: str, stream: BinaryIO) -> dict:
+        stage = await self.get_stage(stage_id)
+        if not stage:
+            raise ValueError(f"Stage '{stage_id}' not found")
+
+        s3_key = self._build_key(stage, filename)
+        s3, bucket = self._s3_client_for_stage(stage)
+
+        def upload() -> int:
+            position = stream.tell()
+            stream.seek(0, os.SEEK_END)
+            size = stream.tell() - position
+            stream.seek(position)
+            s3.upload_fileobj(stream, bucket, s3_key)
+            return size
+
+        size = await asyncio.to_thread(upload)
+        return {"filename": filename, "size": size}
+
+    async def open_file(self, stage_id: str, filename: str) -> Any:
+        stage = await self.get_stage(stage_id)
+        if not stage:
+            raise ValueError(f"Stage '{stage_id}' not found")
+
+        s3_key = self._build_key(stage, filename)
+        s3, bucket = self._s3_client_for_stage(stage)
+        response = await asyncio.to_thread(s3.get_object, Bucket=bucket, Key=s3_key)
+        return response["Body"]
 
     async def download_file(self, stage_id: str, filename: str) -> bytes:
         """Download a file from the stage's S3 path. Returns raw bytes."""
@@ -293,8 +294,12 @@ class StageService:
 
         s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
-        response = s3.get_object(Bucket=bucket, Key=s3_key)
-        return response["Body"].read()
+        response = await asyncio.to_thread(s3.get_object, Bucket=bucket, Key=s3_key)
+        body = response["Body"]
+        try:
+            return await asyncio.to_thread(body.read)
+        finally:
+            body.close()
 
     async def delete_file(self, stage_id: str, filename: str) -> bool:
         """Delete a file from the stage's S3 path."""
@@ -304,7 +309,7 @@ class StageService:
 
         s3_key = self._build_key(stage, filename)
         s3, bucket = self._s3_client_for_stage(stage)
-        s3.delete_object(Bucket=bucket, Key=s3_key)
+        await asyncio.to_thread(s3.delete_object, Bucket=bucket, Key=s3_key)
         return True
 
 

@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import multiprocessing
 import queue
+import time
 from collections.abc import Callable
 from multiprocessing.process import BaseProcess
 from typing import Any
 
 from app.core.config import settings
-from app.modules.ml_engine.spec import TrainingTimeout
+from app.modules.ml_engine.spec import MLExecutionTimeout
 
 
 class MLJobRunner:
@@ -31,24 +32,32 @@ class MLJobRunner:
         timeout_seconds: float,
         **kwargs: Any,
     ) -> Any:
-        async with self._slots:
+        deadline_at = time.monotonic() + timeout_seconds
+        try:
+            await asyncio.wait_for(self._slots.acquire(), timeout=timeout_seconds)
+        except TimeoutError as exc:
+            raise MLExecutionTimeout("startup") from exc
+        try:
             results = self._context.Queue(maxsize=1)
+            phase = self._context.Value("i", 0)
             process = self._context.Process(
                 target=_worker_entry,
-                args=(results, func, args, kwargs),
+                args=(results, func, args, kwargs, phase),
                 daemon=True,
             )
             process.start()
             self._active.add(process)
             try:
                 try:
-                    status, payload = await _wait_for_result(results, process, timeout_seconds)
+                    status, payload = await _wait_for_result(
+                        results, process, max(0, deadline_at - time.monotonic())
+                    )
                 except queue.Empty as exc:
                     if process.is_alive():
                         await asyncio.to_thread(_terminate, process)
-                        raise TrainingTimeout(
-                            f"ML execution exceeded its {timeout_seconds:g}s budget"
-                        ) from exc
+                        from app.modules.ml_engine.execution.deadline import STAGES
+
+                        raise MLExecutionTimeout(STAGES[phase.value]) from exc
                     raise RuntimeError(
                         f"ML worker exited without a result (exit code {process.exitcode})"
                     ) from exc
@@ -62,11 +71,18 @@ class MLJobRunner:
                 return payload
             except asyncio.CancelledError:
                 await asyncio.to_thread(_terminate, process)
+                cutoff = getattr(args[0], "deadline_at", deadline_at) if args else deadline_at
+                if cutoff and time.monotonic() >= cutoff:
+                    from app.modules.ml_engine.execution.deadline import STAGES
+
+                    raise MLExecutionTimeout(STAGES[phase.value]) from None
                 raise
             finally:
                 self._active.discard(process)
                 results.close()
                 results.join_thread()
+        finally:
+            self._slots.release()
 
     async def run_job(self, job: Any, *, timeout_seconds: float) -> Any:
         """Run the production worker-direct job contract."""
@@ -79,14 +95,26 @@ class MLJobRunner:
             _terminate(process)
 
 
-def _worker_entry(results, func, args, kwargs) -> None:
+def _worker_entry(results, func, args, kwargs, phase) -> None:
+    from app.modules.ml_engine.execution import deadline
+
+    deadline.phase_state = phase
     try:
         results.put(("ok", func(*args, **kwargs)))
     except BaseException as exc:
-        try:
-            results.put(("error", exc))
-        except Exception:
-            results.put(("error", f"{type(exc).__name__}: {exc}"))
+        from app.modules.ml_engine.spec import MLError
+        from app.modules.query.sql_pipeline import redact_for_output
+
+        error: BaseException
+        if isinstance(exc, MLExecutionTimeout):
+            error = exc
+        elif isinstance(exc, MLError):
+            error = type(exc)(redact_for_output(str(exc)))
+        else:
+            error = RuntimeError(
+                f"ML worker failed during {deadline.STAGES[phase.value]} ({type(exc).__name__})"
+            )
+        results.put(("error", error))
 
 
 async def _wait_for_result(results, process: BaseProcess, timeout_seconds: float):

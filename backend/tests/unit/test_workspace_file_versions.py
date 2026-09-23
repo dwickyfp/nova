@@ -47,8 +47,10 @@ class _FakeRepo:
             return None
         return max(self.versions, key=lambda v: v["version"])
 
-    async def list_versions(self, _username, _entry_id, limit=100):
-        return sorted(self.versions, key=lambda v: v["version"], reverse=True)[:limit]
+    async def list_versions(self, _username, _entry_id, limit=100, offset=0):
+        return sorted(self.versions, key=lambda v: v["version"], reverse=True)[
+            offset : offset + limit
+        ]
 
     async def get_version(self, _username, _entry_id, version):
         match = [v for v in self.versions if v["version"] == version]
@@ -80,6 +82,9 @@ class _FakeStorage:
 
             def read(self) -> bytes:
                 return self._data
+
+            def close(self) -> None:
+                pass
 
         return {"Body": _Body(self.objects[Key])}
 

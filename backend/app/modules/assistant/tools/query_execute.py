@@ -70,7 +70,8 @@ _TOOL_PARAMETERS = {
             "type": "string",
             "description": (
                 "A single read-only SQL statement (SELECT, WITH … SELECT, SHOW, "
-                "DESCRIBE, EXPLAIN) to run on the user's connection."
+                "DESCRIBE, EXPLAIN), or a standalone USE ROLE/SET ROLE naming "
+                "one role granted to the user."
             ),
         },
         "purpose": {
@@ -104,6 +105,7 @@ class QueryExecuteTool:
         "Run one read-only StarRocks SELECT/SHOW/DESCRIBE/EXPLAIN on the user's "
         "connection for explicit SQL, schema inspection, or data outside a semantic "
         "model. Do not use for governed metrics defined by semantic_query. "
+        "USE ROLE or SET ROLE switches the session to one granted role after approval. "
         "Destructive and DDL statements are refused."
     )
     parameters = _TOOL_PARAMETERS
@@ -128,8 +130,17 @@ class QueryExecuteTool:
         loop can consult ``classification`` straight after ``preview``.
         """
         sql = _sql_from(invocation)
-        self._classification = policy.tool_classification(sql) if sql else "denied"
+        self._classification = self.classification_for(invocation)
         return _safe_redact(sql)
+
+    def classification_for(self, invocation: ToolInvocation) -> ToolClassification:
+        sql = _sql_from(invocation)
+        try:
+            if _requested_role(sql) is not None:
+                return "session_change"
+        except ValueError:
+            return "denied"
+        return policy.tool_classification(sql) if sql else "denied"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         """Execute the payload on the requesting user's connection."""
@@ -154,6 +165,13 @@ class QueryExecuteTool:
         statements = split_sql_statements(sql)
         if not statements:
             return ToolOutcome(ok=False, summary="", error="No SQL was provided.")
+
+        try:
+            requested_role = _requested_role(sql)
+        except ValueError:
+            requested_role = None
+        if requested_role is not None:
+            return await self._switch_role(requested_role, sql, context)
 
         classification, decisions = policy.classify_statements(statements)
         self._classification = classification
@@ -191,6 +209,8 @@ class QueryExecuteTool:
         )
         try:
             results = await query_service.execute_statements(
+                tenant=user.get("tenant", "default"),
+                security_context_version=user.get("security_context_version", 1),
                 sql=sql,
                 username=username,
                 encrypted_password=encrypted_password,
@@ -290,6 +310,40 @@ class QueryExecuteTool:
             table=_table_from_results(results),
         )
 
+    async def _switch_role(self, role: str, sql: str, context: Any) -> ToolOutcome:
+        from app.modules.auth.service import auth_service
+
+        user = getattr(context, "user", None) or {}
+        session_id = user.get("session_id")
+        target = user.get("default_role") if role.upper() == "DEFAULT" else role
+        try:
+            _active_role(context)
+            if not session_id or not target:
+                raise ValueError("Missing session or role")
+            switched = await auth_service.switch_role(session_id, target)
+        except Exception:
+            await self._audit(
+                context=context, username=user.get("username", ""), sql=_safe_redact(sql),
+                status="DENIED", decision="denied", rows_affected=0,
+                error_message="The requested role could not be activated for this user.",
+            )
+            return ToolOutcome(
+                ok=False, summary="", error_class="ACCESS_DENIED",
+                error="The requested role could not be activated for this user.",
+            )
+        context.user = {**user, **switched}
+        context.role = switched["active_role"]
+        context.last_result = None
+        await self._audit(
+            context=context, username=user["username"], sql=_safe_redact(sql),
+            status="SUCCESS", decision="approved", rows_affected=0, error_message=None,
+        )
+        return ToolOutcome(
+            ok=True,
+            summary=f"Active role changed to {context.role}. Subsequent queries use this role.",
+            metadata={"security_context_changed": True},
+        )
+
     async def _audit(
         self,
         *,
@@ -323,6 +377,7 @@ class QueryExecuteTool:
                 session_id=_context_value(context, "audit_session_id"),
                 database_name=_context_value(context, "database"),
                 schema_name=_context_value(context, "schema_name"),
+                active_role=_active_role(context),
             )
         except Exception:
             logger.exception("Could not write the assistant_tool audit row")
@@ -444,24 +499,29 @@ def _context_value(context: Any, name: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _active_role(context: Any) -> str | None:
-    """The role the assistant tool must execute as.
+def _requested_role(sql: str) -> str | None:
+    from app.common.identifiers import is_identifier
+    from app.common.sql_guard import split_sql_statements, strip_sql_comments
+    from app.proxy.session import parse_role_statement
 
-    The authenticated session's ``active_role`` is the single source of truth
-    (the same value the HTTP query path resolves), so the assistant cannot run
-    under a different role than the one the UI shows as active. Falls back to
-    the workbook context role only when no session is attached — a direct
-    unit-test call — so the tool still has a role in that path.
-    """
-    user = getattr(context, "user", None)
-    if isinstance(user, dict):
-        active = user.get("active_role")
-        if isinstance(active, str) and active:
-            return active
-        granted = user.get("roles") or []
-        if granted:
-            return granted[0]
-    return _context_value(context, "role")
+    statements = split_sql_statements(sql)
+    if len(statements) != 1:
+        if any(parse_role_statement(strip_sql_comments(stmt)) is not None for stmt in statements):
+            raise ValueError("Role changes must be separate statements")
+        return None
+    role = parse_role_statement(strip_sql_comments(statements[0]))
+    if role and role.startswith("`") and role.endswith("`"):
+        role = role[1:-1]
+    if role is not None and not is_identifier(role):
+        raise ValueError("Exactly one role name is required")
+    return role
+
+
+def _active_role(context: Any) -> str:
+    """Resolve execution identity exclusively from the authenticated session."""
+    from app.modules.access_control.security_context import SecurityContext
+
+    return SecurityContext.from_session(getattr(context, "user", None) or {}).active_role
 
 
 def _safe_redact(sql: str) -> str:

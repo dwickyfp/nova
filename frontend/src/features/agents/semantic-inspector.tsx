@@ -92,6 +92,11 @@ export function SemanticInspector({
     },
     onError: (error: Error) => toast.error(error.message),
   });
+  const qualityLab = useMutation({
+    mutationFn: () => agentsApi.runSemanticQualityLab(model!.semantic_model_id),
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const qualityResult = qualityLab.data;
 
   return (
     <Dialog open={Boolean(model)} onOpenChange={onOpenChange}>
@@ -109,11 +114,11 @@ export function SemanticInspector({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="preview" className="min-h-0">
-          <TabsList>
-            <TabsTrigger value="preview">Query preview</TabsTrigger>
-            <TabsTrigger value="quality">Quality</TabsTrigger>
-            <TabsTrigger value="verified">
+        <Tabs defaultValue="preview" className="min-h-0 min-w-0 w-full">
+          <TabsList className="w-full min-w-0 justify-start overflow-x-auto">
+            <TabsTrigger value="preview" className="shrink-0">Query preview</TabsTrigger>
+            <TabsTrigger value="quality" className="shrink-0">Quality</TabsTrigger>
+            <TabsTrigger value="verified" className="shrink-0">
               Verified queries
               {verifiedQuery.data?.count ? (
                 <Badge variant="secondary" className="ml-1.5">
@@ -166,7 +171,7 @@ export function SemanticInspector({
             )}
           </TabsContent>
 
-          <TabsContent value="quality" className="mt-5">
+          <TabsContent value="quality" className="mt-5 space-y-5">
             {lintQuery.isLoading ? (
               <Skeleton className="w-full py-24" />
             ) : lintQuery.data ? (
@@ -176,6 +181,33 @@ export function SemanticInspector({
                 Could not load semantic model quality.
               </p>
             )}
+            <section className="space-y-3 rounded-lg border p-4" aria-label="Verified question checks">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-medium">Verified question checks</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Compare saved questions with the current model. This checks query structure; it does not run data or grade model prose.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  disabled={!verifiedQuery.data?.count || qualityLab.isPending}
+                  onClick={() => qualityLab.mutate()}
+                >
+                  <Play className="size-4" /> Run checks
+                </Button>
+              </div>
+              {qualityResult && qualityResult.semantic_model_id === model?.semantic_model_id ? (
+                <div className="space-y-2 text-sm" aria-live="polite">
+                  <p>{qualityResult.matched}/{qualityResult.total} matched · {qualityResult.changed} need review</p>
+                  {qualityResult.cases.filter((item) => item.status === "changed").map((item) => (
+                    <p key={item.verified_query_id} className="rounded-md bg-warning/5 px-3 py-2 text-xs">
+                      Review: {item.question}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </section>
           </TabsContent>
 
           <TabsContent value="verified" className="mt-5">

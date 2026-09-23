@@ -1,0 +1,278 @@
+--- a/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java
++++ b/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java
+@@ -121,6 +121,12 @@
+     protected void hasPermission(RangerAccessResourceImpl resource, UserIdentity user, Set<String> groups,
+                                  PrivilegeType privilegeType)
+             throws AccessDeniedException {
++        hasPermission(resource, user, groups, privilegeType, ConnectContext.get());
++    }
++
++    protected void hasPermission(RangerAccessResourceImpl resource, UserIdentity user, Set<String> groups,
++                                 PrivilegeType privilegeType, ConnectContext context)
++            throws AccessDeniedException {
+         // root user bypasses Ranger authorization entirely
+         if (UserIdentity.ROOT.equals(user)) {
+             return;
+@@ -134,7 +140,7 @@
+ 
+         RangerStarRocksAccessRequest request =
+                 RangerStarRocksAccessRequest.createAccessRequest(
+-                        resource, user, groups, getRequestRoles(ConnectContext.get()), accessType);
++                        resource, user, groups, getRequestRoles(context), accessType);
+         RangerAccessResult result = rangerPlugin.isAccessAllowed(request);
+         if (result == null || !result.getIsAllowed()) {
+             throw new AccessDeniedException();
+--- a/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java
++++ b/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java
+@@ -47,7 +47,7 @@
+                 RangerStarRocksResource.builder().setSystem().build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -57,7 +57,7 @@
+                 RangerStarRocksResource.builder().setUser(impersonateUser.getUser()).build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -67,7 +67,7 @@
+                 RangerStarRocksResource.builder().setCatalog(catalogName).build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -77,7 +77,7 @@
+                 RangerStarRocksResource.builder().setCatalog(catalogName).build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     @Override
+@@ -87,7 +87,7 @@
+                 RangerStarRocksResource.builder().setCatalog(catalogName).setDatabase(db).build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -97,7 +97,7 @@
+                 RangerStarRocksResource.builder().setCatalog(catalogName).setDatabase(db).build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     @Override
+@@ -113,7 +113,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -129,7 +129,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     @Override
+@@ -146,7 +146,7 @@
+                                 .build(),
+                         context.getCurrentUserIdentity(),
+                         context.getGroups(),
+-                        PrivilegeType.ANY);
++                        PrivilegeType.ANY, context);
+             } catch (AccessDeniedException e) {
+                 continue;
+             }
+@@ -165,7 +165,7 @@
+                         .setColumn(column)
+                         .build(),
+                 context.getCurrentUserIdentity(),
+-                context.getGroups(), privilegeType);
++                context.getGroups(), privilegeType, context);
+     }
+ 
+     @Override
+@@ -179,7 +179,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -193,7 +193,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     @Override
+@@ -209,7 +209,7 @@
+                                 .build(),
+                         context.getCurrentUserIdentity(),
+                         context.getGroups(),
+-                        PrivilegeType.ANY);
++                        PrivilegeType.ANY, context);
+             } catch (AccessDeniedException e) {
+                 continue;
+             }
+@@ -229,7 +229,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -243,7 +243,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     @Override
+@@ -260,7 +260,7 @@
+                                 .build(),
+                         context.getCurrentUserIdentity(),
+                         context.getGroups(),
+-                        PrivilegeType.ANY);
++                        PrivilegeType.ANY, context);
+             } catch (AccessDeniedException e) {
+                 continue;
+             }
+@@ -280,7 +280,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -294,7 +294,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     @Override
+@@ -310,7 +310,7 @@
+                                 .build(),
+                         context.getCurrentUserIdentity(),
+                         context.getGroups(),
+-                        PrivilegeType.ANY);
++                        PrivilegeType.ANY, context);
+             } catch (AccessDeniedException e) {
+                 continue;
+             }
+@@ -328,7 +328,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -340,7 +340,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     /**
+@@ -371,7 +371,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -382,7 +382,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     @Override
+@@ -394,7 +394,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -407,7 +407,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -420,7 +420,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     @Override
+@@ -432,7 +432,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                privilegeType);
++                privilegeType, context);
+     }
+ 
+     @Override
+@@ -444,7 +444,7 @@
+                         .build(),
+                 context.getCurrentUserIdentity(),
+                 context.getGroups(),
+-                PrivilegeType.ANY);
++                PrivilegeType.ANY, context);
+     }
+ 
+     @Override

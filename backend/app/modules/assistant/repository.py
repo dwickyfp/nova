@@ -17,6 +17,7 @@ ephemeral and must not be revived by a restart.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -43,8 +44,7 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 #: agent. StarRocks rejects a duplicate ADD COLUMN, so the caller treats a
 #: "duplicate" error as success (the column already exists).
 THREADS_AGENT_ID_DDL = (
-    "ALTER TABLE NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS "
-    "ADD COLUMN agent_id VARCHAR(64)"
+    "ALTER TABLE NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS ADD COLUMN agent_id VARCHAR(64)"
 )
 
 #: One row per message, ordered by ``seq`` (a per-thread counter) so replay keeps
@@ -66,7 +66,10 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES (
     completion_tokens INT,
     total_tokens      INT,
     steps             JSON,
-    instructions      TEXT
+    instructions      TEXT,
+    security_context  JSON,
+    feedback          VARCHAR(16),
+    attachments       JSON
 ) PRIMARY KEY(message_id)
 DISTRIBUTED BY HASH(message_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -151,6 +154,9 @@ class AssistantRepository:
             ("total_tokens", "INT"),
             ("steps", "JSON"),
             ("instructions", "TEXT"),
+            ("security_context", "JSON"),
+            ("feedback", "VARCHAR(16)"),
+            ("attachments", "JSON"),
         ):
             try:
                 await db.execute_system(
@@ -188,6 +194,13 @@ class AssistantRepository:
                 now,
             ],
         )
+        for attempt in range(20):
+            if await self.get_thread(thread_id, user_name=user_name) is not None:
+                break
+            if attempt < 19:
+                await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError("New conversation did not become readable")
         return {
             "thread_id": thread_id,
             "user_name": user_name,
@@ -198,12 +211,12 @@ class AssistantRepository:
             "updated_at": now,
         }
 
-    async def list_threads(
-        self, *, user_name: str, agent_id: str | None = None
-    ) -> list[dict]:
+    async def list_threads(self, *, user_name: str, agent_id: str | None = None) -> list[dict]:
         clauses = ["t.user_name = %s"]
         params: list = [user_name]
-        if agent_id is not None:
+        if agent_id is None:
+            clauses.append("t.agent_id IS NULL")
+        else:
             clauses.append("t.agent_id = %s")
             params.append(agent_id)
         result = await db.execute_system(
@@ -231,9 +244,7 @@ class AssistantRepository:
             return None
         return _thread_row(result["rows"][0])
 
-    async def rename_thread(
-        self, thread_id: str, title: str, *, user_name: str
-    ) -> dict | None:
+    async def rename_thread(self, thread_id: str, title: str, *, user_name: str) -> dict | None:
         now = _now()
         result = await db.execute_system(
             "UPDATE NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS SET title = %s, updated_at = %s "
@@ -278,7 +289,8 @@ class AssistantRepository:
         """
         result = await db.execute_system(
             "SELECT message_id, role, content, created_at, model_name, "
-            "prompt_tokens, completion_tokens, total_tokens, steps "
+            "prompt_tokens, completion_tokens, total_tokens, steps, "
+            "security_context, feedback, attachments "
             "FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
             "WHERE thread_id = %s AND user_name = %s ORDER BY seq ASC",
             [thread_id, user_name],
@@ -294,9 +306,31 @@ class AssistantRepository:
                 "completion_tokens": row[6] if len(row) > 6 else None,
                 "total_tokens": row[7] if len(row) > 7 else None,
                 "steps": _steps_or_empty(row[8] if len(row) > 8 else None),
+                "security_context": _security_or_none(row[9] if len(row) > 9 else None),
+                "feedback": row[10] if len(row) > 10 else None,
+                "attachments": _steps_or_empty(row[11] if len(row) > 11 else None),
             }
             for row in result["rows"]
         ]
+
+    async def set_feedback(
+        self, thread_id: str, message_id: str, feedback: str | None, *, user_name: str
+    ) -> bool:
+        if feedback not in (None, "like", "dislike"):
+            raise ValueError("Invalid feedback")
+        params = [message_id, thread_id, user_name]
+        scope = "WHERE message_id = %s AND thread_id = %s AND user_name = %s AND role = 'assistant'"
+        existing = await db.execute_system(
+            "SELECT message_id FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES " + scope,
+            params,
+        )
+        if not existing["rows"]:
+            return False
+        await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES SET feedback = %s " + scope,
+            [feedback, *params],
+        )
+        return True
 
     async def append_message(
         self,
@@ -311,6 +345,8 @@ class AssistantRepository:
         usage: dict | None = None,
         steps: list | None = None,
         instructions: str | None = None,
+        security_context: dict | None = None,
+        attachments: list[dict] | None = None,
     ) -> dict:
         """Append one message and bump the thread's ``updated_at``.
 
@@ -342,8 +378,8 @@ class AssistantRepository:
             "INSERT INTO NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
             "(message_id, thread_id, user_name, seq, role, content, created_at, "
             "agent_id, model_name, prompt_tokens, completion_tokens, total_tokens, "
-            "steps, instructions) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "steps, instructions, security_context, attachments) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 mid,
                 thread_id,
@@ -359,6 +395,8 @@ class AssistantRepository:
                 total_tokens,
                 _dump(steps or []),
                 instructions,
+                _dump(security_context) if security_context else None,
+                _dump(attachments or []),
             ],
         )
         await self.touch_thread(thread_id, user_name=user_name)
@@ -374,7 +412,20 @@ class AssistantRepository:
             "total_tokens": total_tokens,
             "steps": steps or [],
             "instructions": instructions,
+            "security_context": security_context,
+            "attachments": attachments or [],
         }
+
+
+def _security_or_none(value: Any) -> dict | None:
+    import json
+
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
+    return value if isinstance(value, dict) else None
 
 
 def _int_or_none(usage: dict | None, key: str) -> int | None:

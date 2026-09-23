@@ -5,7 +5,9 @@ Orchestrates metadata queries for the Snowsight-style sidebar:
 """
 
 from app.core.database import db
+from app.core.security import decrypt_password
 from app.modules.objects.repository import ObjectRepository
+from app.modules.stages.access import StageAccessDenied, check_stage_access
 
 
 class ObjectService:
@@ -238,7 +240,19 @@ class ObjectService:
             """,
             [database],
         )
-        schemas = [{"name": row[0]} for row in result["rows"] if row[0]]
+        password = decrypt_password(encrypted_password)
+        schemas = []
+        for row in result["rows"]:
+            if not row[0]:
+                continue
+            try:
+                await check_stage_access(
+                    {"database_name": database, "schema_name": row[0]},
+                    action="read", username=username, password=password, active_role=role,
+                )
+            except StageAccessDenied:
+                continue
+            schemas.append({"name": row[0]})
         if not schemas:
             schemas.append({"name": "default"})
         return schemas
@@ -272,6 +286,15 @@ class ObjectService:
             """,
             [database, schema],
         )
+        if stage_rows["rows"]:
+            try:
+                await check_stage_access(
+                    {"database_name": database, "schema_name": schema},
+                    action="read", username=username,
+                    password=decrypt_password(encrypted_password), active_role=role,
+                )
+            except StageAccessDenied:
+                stage_rows = {"rows": []}
         tasks = await self._schema_tasks(
             database,
             schema,

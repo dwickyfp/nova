@@ -66,6 +66,8 @@ services:
       RANGER_USERNAME: admin
       RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
       RANGER_TLS_VERIFY: "false"
+      SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
+      FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}
       NOVA_CONFIG_PATH: /opt/nova/config/nova.yaml
       PROXY_ENABLED: "true"
     ports:

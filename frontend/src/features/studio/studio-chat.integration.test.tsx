@@ -5,6 +5,7 @@ import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Agent } from "@/features/agents/api";
 import { StudioChat } from "./studio-chat";
+import "@/styles/index.css";
 
 /**
  * The Studio transcript driven end to end against a scripted SSE stream.
@@ -74,6 +75,10 @@ const PERSISTED_MESSAGES = [
     role: "user",
     content: "Omzet per SKU 3 bulan ke belakang",
     created_at: "2026-01-01T00:00:00",
+    attachments: [
+      { name: "report.pdf", media_type: "application/pdf", size_bytes: 640 },
+      { name: "chart.png", media_type: "image/png", size_bytes: 128 },
+    ],
     steps: [],
   },
   {
@@ -82,6 +87,7 @@ const PERSISTED_MESSAGES = [
     content: "Omzet tertinggi ada di **D. COKLAT 12**.",
     created_at: "2026-01-01T00:00:01",
     total_tokens: 412,
+    feedback: "like",
     model_name: "gpt-4o",
     steps: [
       { kind: "reasoning", phase: "plan", text: "Understanding the request" },
@@ -121,7 +127,7 @@ function mockFetch(
   mode: "read_only" | "ask_every_tool" = "read_only",
   extended = false,
 ) {
-  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
     if (url.includes("/studio/settings")) {
       return new Response(
@@ -144,6 +150,9 @@ function mockFetch(
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
+    }
+    if (url.endsWith("/feedback")) {
+      return new Response(String(init?.body), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.includes("/threads") && url.includes("/messages")) {
       return sseResponse(mode === "ask_every_tool" ? CONSENT_STREAM : STREAM);
@@ -192,11 +201,13 @@ function renderStudio(
   mode: "read_only" | "ask_every_tool" = "read_only",
   extended = false,
   activeThreadId: string | null = null,
+  sampleQuestions = AGENT.sample_questions,
 ) {
-  const agent =
+  const baseAgent =
     mode === "ask_every_tool"
       ? { ...AGENT, policy: "ask_every_tool" as const }
       : AGENT;
+  const agent = { ...baseAgent, sample_questions: sampleQuestions };
   mockFetch(mode, extended);
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -284,7 +295,10 @@ function renderStudioWithStaleThreadAfterNewChat() {
     const [newChatNonce, setNewChatNonce] = useState(0);
     return (
       <>
-        <button type="button" onClick={() => setNewChatNonce((value) => value + 1)}>
+        <button
+          type="button"
+          onClick={() => setNewChatNonce((value) => value + 1)}
+        >
           Start fresh
         </button>
         <StudioChat
@@ -312,11 +326,192 @@ function renderStudioWithStaleThreadAfterNewChat() {
 }
 
 describe("studio transcript click-through", () => {
+  it("attaches a text file, removes it, then sends the selected file to the agent", async () => {
+    renderStudio();
+    const chooser = page.getByLabelText("Choose files");
+    const first = new File(["discard me"], "draft.txt", { type: "text/plain" });
+    await userEvent.upload(chooser, first);
+    await expect.element(page.getByRole("button", { name: "Remove draft.txt" })).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Remove draft.txt" }));
+    await expect.element(page.getByText("draft.txt")).not.toBeInTheDocument();
+
+    const selected = new File(["The answer is 42."], "facts.txt", { type: "text/plain" });
+    await userEvent.upload(chooser, selected);
+    await userEvent.fill(page.getByRole("textbox", { name: "Message Nova" }), "Read the attachment");
+    await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
+    await expect.element(page.getByText("facts.txt")).toBeVisible();
+    await expect.element(page.getByText(/Omzet tertinggi/)).toBeVisible();
+    const messageCall = vi.mocked(globalThis.fetch).mock.calls.find(([url]) =>
+      String(url).includes("/threads/") && String(url).endsWith("/messages"),
+    );
+    expect(JSON.parse(String(messageCall?.[1]?.body))).toMatchObject({
+      content: "Read the attachment",
+      attachments: [{ name: "facts.txt", content: "The answer is 42." }],
+    });
+    expect(String(messageCall?.[1]?.body)).not.toContain("discard me");
+  });
+
+  it("allows a file to be sent without typed text", async () => {
+    renderStudio();
+    await userEvent.upload(
+      page.getByLabelText("Choose files"),
+      new File(["The answer is 42."], "facts.txt", { type: "text/plain" }),
+    );
+    await expect.element(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+    await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
+    const messageCall = vi.mocked(globalThis.fetch).mock.calls.find(([url]) =>
+      String(url).includes("/threads/") && String(url).endsWith("/messages"),
+    );
+    expect(JSON.parse(String(messageCall?.[1]?.body))).toMatchObject({
+      content: "",
+      attachments: [{ name: "facts.txt", content: "The answer is 42." }],
+    });
+  });
+
+  it("attaches PDF and image files and sends their media types to the agent", async () => {
+    renderStudio();
+    const pdf = new File(["%PDF-1.4\n"], "facts.pdf", { type: "application/pdf" });
+    const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+    const pngBytes = Uint8Array.from(atob(pngBase64), (character) => character.charCodeAt(0));
+    const image = new File([pngBytes], "photo.png", { type: "image/png" });
+    await userEvent.upload(page.getByLabelText("Choose files"), [pdf, image]);
+    await expect.element(page.getByRole("button", { name: "Remove facts.pdf" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Remove photo.png" })).toBeVisible();
+    await userEvent.fill(page.getByRole("textbox", { name: "Message Nova" }), "Read both files");
+    await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
+    const messageCall = vi.mocked(globalThis.fetch).mock.calls.find(([url]) =>
+      String(url).includes("/threads/") && String(url).endsWith("/messages"),
+    );
+    expect(JSON.parse(String(messageCall?.[1]?.body))).toMatchObject({
+      content: "Read both files",
+      attachments: [
+        { name: "facts.pdf", media_type: "application/pdf", content: btoa("%PDF-1.4\n") },
+        { name: "photo.png", media_type: "image/png", content: pngBase64 },
+      ],
+    });
+    await expect.element(page.getByText("facts.pdf")).toBeVisible();
+    await expect.element(page.getByText("photo.png")).toBeVisible();
+  });
+
+  it("authors a skill from the slash command and saves only after review", async () => {
+    const draft =
+      "---\nname: weekly-review\ndescription: Review weekly reports\n---\nAsk for the report. Summarize changes.";
+    const fetchMock = mockFetch();
+    const fallback = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/messages"))
+        return sseResponse(
+          `event: text_delta\ndata: ${JSON.stringify({ text: "```skill\n" + draft + "\n```" })}\n\n` +
+            'event: done\ndata: {"message_id":"draft1","finish_reason":"stop"}\n\n',
+        );
+      if (url.endsWith("/studio/skills"))
+        return new Response(
+          JSON.stringify({ skill_id: "s1", name: "weekly-review" }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      return fallback(input, init);
+    });
+    await render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <StudioChat
+          agent={AGENT}
+          agents={[AGENT]}
+          onSelectAgent={() => {}}
+          currentRole={null}
+          activeThreadId={null}
+          onThreadChange={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    await userEvent.fill(
+      page.getByRole("textbox", { name: "Message Nova" }),
+      "/",
+    );
+    await userEvent.click(
+      page.getByRole("button", {
+        name: "/create-skill-with-chat",
+        exact: true,
+      }),
+    );
+    await expect
+      .element(page.getByRole("textbox", { name: "Message Nova" }))
+      .toHaveValue("/create-skill-with-chat ");
+    await userEvent.fill(
+      page.getByRole("textbox", { name: "Message Nova" }),
+      "/create-skill-with-chat Summarize weekly reports",
+    );
+    await userEvent.click(
+      page.getByRole("button", { name: "Send", exact: true }),
+    );
+    await expect
+      .element(page.getByRole("button", { name: "Review and save skill" }))
+      .toBeVisible();
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).endsWith("/studio/skills"),
+      ),
+    ).toBe(false);
+    await userEvent.click(
+      page.getByRole("button", { name: "Review and save skill" }),
+    );
+    await expect
+      .element(page.getByRole("textbox", { name: "SKILL.md" }))
+      .toHaveValue(draft);
+    await userEvent.click(
+      page.getByRole("button", { name: "Save skill", exact: true }),
+    );
+    await expect
+      .poll(() =>
+        fetchMock.mock.calls.some(([input]) =>
+          String(input).endsWith("/studio/skills"),
+        ),
+      )
+      .toBe(true);
+    const saveCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).endsWith("/studio/skills"),
+    );
+    expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual({
+      document: draft,
+    });
+  });
+
+  it("preserves the create-with-chat prefill through initial effects", async () => {
+    mockFetch();
+    await render(
+      <QueryClientProvider client={new QueryClient()}>
+        <StudioChat
+          agent={AGENT}
+          agents={[AGENT]}
+          onSelectAgent={() => {}}
+          currentRole={null}
+          activeThreadId={null}
+          onThreadChange={() => {}}
+          initialPrompt="/create-skill-with-chat "
+        />
+      </QueryClientProvider>,
+    );
+    await expect
+      .element(page.getByRole("textbox", { name: "Message Nova" }))
+      .toHaveValue("/create-skill-with-chat ");
+    await expect
+      .element(page.getByRole("heading", { name: "Create a skill with Nova" }))
+      .toBeVisible();
+  });
+
   it("shows the personalized Nova welcome without a chat header", async () => {
     renderStudio();
 
     await expect
-      .element(page.getByRole("heading", { name: /Good (morning|afternoon|evening), Dwicky/ }))
+      .element(
+        page.getByRole("heading", {
+          name: /Good (morning|afternoon|evening), Dwicky/,
+        }),
+      )
       .toBeVisible();
     await expect
       .element(page.getByText("What insights can I help with?"))
@@ -324,6 +519,112 @@ describe("studio transcript click-through", () => {
     await expect
       .element(page.getByText("Nova Studio", { exact: true }))
       .not.toBeInTheDocument();
+  });
+
+  it("centers the welcome composer above suggestions and moves it down on send", async () => {
+    renderStudio();
+    const greetingLocator = page.getByRole("heading", {
+      name: /Good (morning|afternoon|evening), Dwicky/,
+    });
+    await expect.element(greetingLocator).toBeVisible();
+    const greeting = greetingLocator.element();
+    const composer = page.getByTestId("studio-composer").element();
+    const textarea = page.getByRole("textbox", { name: "Message Nova" }).element();
+    const suggestion = page.getByRole("button", { name: "Top SKUs last quarter" }).element();
+
+    expect(greeting.getBoundingClientRect().bottom).toBeLessThan(
+      composer.getBoundingClientRect().top,
+    );
+    expect(composer.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      suggestion.getBoundingClientRect().top,
+    );
+    const welcomeTop = composer.getBoundingClientRect().top;
+    const animate = vi.spyOn(Element.prototype, "animate");
+
+    await userEvent.fill(
+      page.getByRole("textbox", { name: "Message Nova" }),
+      "Top SKUs",
+    );
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
+    await Promise.all(composer.getAnimations().map((animation) => animation.finished));
+
+    expect(page.getByRole("textbox", { name: "Message Nova" }).element()).toBe(
+      textarea,
+    );
+    expect(composer.getBoundingClientRect().top).toBeGreaterThan(welcomeTop);
+    await expect
+      .element(page.getByRole("button", { name: "Top SKUs last quarter" }))
+      .not.toBeInTheDocument();
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      expect(animate).toHaveBeenCalled();
+    }
+  });
+
+  it("clears the composer and shows progress while a new thread is still being created", async () => {
+    renderStudio();
+    const fetchMock = vi.mocked(globalThis.fetch);
+    const respond = fetchMock.getMockImplementation();
+    if (!respond) throw new Error("Fetch mock is unavailable");
+    let releaseCreate: () => void = () => {};
+    const createGate = new Promise<void>((resolve) => { releaseCreate = resolve; });
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/threads") && init?.method === "POST") await createGate;
+      return respond(input, init);
+    });
+
+    const textbox = page.getByRole("textbox", { name: "Message Nova" });
+    await expect.element(textbox).toBeVisible();
+    await userEvent.fill(textbox, "Top SKUs");
+    await page.getByRole("button", { name: "Send" }).click();
+
+    await expect.element(textbox).toHaveValue("");
+    await expect.element(page.getByTestId("process-rail-toggle")).toBeVisible();
+    expect(page.getByTestId("process-rail-toggle").element().textContent).toContain("Starting analysis…");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/messages"))).toBe(false);
+
+    releaseCreate();
+    await expect.element(page.getByText("Revenue per SKU")).toBeVisible();
+  });
+
+  it("restores the draft if a new conversation cannot be created", async () => {
+    renderStudio();
+    const fetchMock = vi.mocked(globalThis.fetch);
+    const respond = fetchMock.getMockImplementation();
+    if (!respond) throw new Error("Fetch mock is unavailable");
+    let rejectCreate: (reason: Error) => void = () => {};
+    const createGate = new Promise<void>((_, reject) => { rejectCreate = reject; });
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/threads") && init?.method === "POST") await createGate;
+      return respond(input, init);
+    });
+
+    const textbox = page.getByRole("textbox", { name: "Message Nova" });
+    await expect.element(textbox).toBeVisible();
+    await userEvent.fill(textbox, "Top SKUs");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.element(textbox).toHaveValue("");
+
+    rejectCreate(new Error("Conversation unavailable"));
+    await expect.element(textbox).toHaveValue("Top SKUs");
+    await expect.element(page.getByRole("alert")).toHaveTextContent("Conversation unavailable");
+  });
+
+  it("keeps a long question list compact and makes every question available", async () => {
+    const questions = Array.from({ length: 8 }, (_, index) => `Question ${index + 1} about sales performance`);
+    renderStudio("read_only", false, null, questions);
+
+    await expect.element(page.getByRole("textbox", { name: "Message Nova" })).toBeVisible();
+    const composer = page.getByTestId("studio-composer").element();
+    const composerRect = composer.getBoundingClientRect();
+    const composerCenter = composerRect.top + composerRect.height / 2;
+    expect(Math.abs(composerCenter - window.innerHeight / 2)).toBeLessThan(window.innerHeight / 6);
+    await expect.element(page.getByRole("button", { name: questions[4] })).not.toBeInTheDocument();
+
+    await page.getByRole("button", { name: "View all (8)" }).click();
+    await expect.element(page.getByRole("button", { name: questions[7] })).toBeVisible();
+    await page.getByRole("button", { name: questions[7] }).click();
+    await expect.element(page.getByText(questions[7])).toBeVisible();
   });
 
   it("uses a white composer and a bordered text-only agent badge", async () => {
@@ -477,6 +778,9 @@ describe("studio transcript click-through", () => {
   it("rebuilds the process and the data when a stored thread is opened", async () => {
     renderStudio("read_only", false, "t-past");
 
+    await expect.element(page.getByText("report.pdf")).toBeVisible();
+    await expect.element(page.getByText("chart.png")).toBeVisible();
+
     // The answer comes back.
     await expect
       .element(page.getByText(/Omzet tertinggi ada di/))
@@ -502,6 +806,26 @@ describe("studio transcript click-through", () => {
 
     // Nothing is spinning: a replayed turn is finished by definition.
     expect(document.querySelectorAll(".animate-spin")).toHaveLength(0);
+  });
+
+  it("restores saved feedback and sends changes for the persisted assistant message", async () => {
+    renderStudio("read_only", false, "t-past");
+    const like = page.getByRole("button", { name: "Like answer", exact: true });
+    await expect.element(like).toHaveAttribute("aria-pressed", "true");
+    await expect.element(page.getByText("412 tokens")).toBeVisible();
+    await page.getByRole("button", { name: "Dislike answer" }).click();
+    await expect.element(like).toHaveAttribute("aria-pressed", "false");
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/feedback"));
+    expect(String(call?.[0])).toContain("/threads/t-past/messages/m-assistant/feedback");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ feedback: "dislike" });
+    const question = page.getByText("Omzet per SKU 3 bulan ke belakang").element();
+    expect(getComputedStyle(question).color).toBe("rgb(255, 255, 255)");
+    document.documentElement.classList.add("dark");
+    try {
+      expect(getComputedStyle(question).color).toBe("rgb(255, 255, 255)");
+    } finally {
+      document.documentElement.classList.remove("dark");
+    }
   });
 
   it("loads a thread that is selected after mount, without hanging", async () => {
@@ -534,17 +858,15 @@ describe("studio transcript click-through", () => {
       .element(page.getByText(/Omzet tertinggi ada di/))
       .not.toBeInTheDocument();
 
-    await page
-      .getByRole("button", { name: "Top SKUs last quarter" })
-      .click();
+    await page.getByRole("button", { name: "Top SKUs last quarter" }).click();
 
     const messageUrls = vi
       .mocked(globalThis.fetch)
       .mock.calls.map(([input]) => String(input))
       .filter((url) => url.includes("/messages"));
-    expect(messageUrls.some((url) => url.includes("/threads/t1/messages"))).toBe(
-      true,
-    );
+    expect(
+      messageUrls.some((url) => url.includes("/threads/t1/messages")),
+    ).toBe(true);
     expect(
       messageUrls.some((url) => url.includes("/threads/t-past/messages")),
     ).toBe(false);

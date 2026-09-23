@@ -191,6 +191,8 @@ class Scenario:
     history_turns: int = 0
     history_chars: int = 0
     history_messages: list[AssistantMessage] = field(default_factory=list)
+    attachments: list[dict[str, Any]] = field(default_factory=list)
+    routing_content: str | None = None
     system_prompt: str = "eval system prompt"
     context_manager: ContextManager | None = None
     max_iterations: int = 8
@@ -244,7 +246,10 @@ async def run_scenario(scenario: Scenario) -> TurnResult:
     thread.messages.extend(scenario.history_messages)
     thread.consent.always_allow_read_only = scenario.read_only_grant
     thread.messages.append(
-        AssistantMessage(message_id="cur", role="user", content=scenario.content)
+        AssistantMessage(
+            message_id="cur", role="user", content=scenario.content,
+            attachments=scenario.attachments,
+        )
     )
 
     loop = AssistantLoop(
@@ -255,7 +260,10 @@ async def run_scenario(scenario: Scenario) -> TurnResult:
         system_prompt=scenario.system_prompt,
         context_manager=scenario.context_manager,
     )
-    context = LoopContext(user_name="eval", thread_id="eval")
+    context = LoopContext(
+        user_name="eval", thread_id="eval", attachments=scenario.attachments,
+        routing_content=scenario.routing_content,
+    )
 
     resolver = scenario.resolve_consent or _record_and_allow
 

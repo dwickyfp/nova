@@ -21,6 +21,7 @@ type NavLink = BaseNavItem & {
 type NavCollapsible = BaseNavItem & {
   items: (BaseNavItem & {
     url: LinkProps['to'] | (string & {})
+    section?: string
     /** See ``NavLink.newTab``. */
     newTab?: boolean
   })[]

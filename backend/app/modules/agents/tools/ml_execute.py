@@ -90,6 +90,8 @@ class MLExecuteTool:
                         database=getattr(context, "database", None),
                         schema=getattr(context, "schema_name", None),
                         role=user.get("active_role"),
+                        tenant=user.get("tenant", "default"),
+                        security_context_version=user.get("security_context_version", 1),
                     ),
                     mode=MLMode(str(arguments.get("mode") or "interactive")),
                     persist=bool(arguments.get("persist", False)),

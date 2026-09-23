@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.common.audit import write_audit_log
 from app.modules.agents.repository import agent_repository
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
@@ -107,6 +108,13 @@ class CreateAgentTool:
 
         tools = invocation.arguments.get("tools")
         if isinstance(tools, list):
+            invalid = [str(tool) for tool in tools if str(tool) not in _ALLOWED_TOOLS]
+            if invalid:
+                return ToolOutcome(
+                    ok=False,
+                    summary="",
+                    error=f"Unsupported agent tools: {', '.join(invalid)}.",
+                )
             selected = [str(t) for t in tools if str(t) in _ALLOWED_TOOLS]
         else:
             selected = ["load_skill", "semantic_query", "data_to_chart"]
@@ -158,8 +166,6 @@ class CreateAgentTool:
             "visibility": "private",
         }
 
-        # Idempotent by name: update the caller's agent of this name rather than
-        # creating a second one when a model retries the step.
         existing = next(
             (
                 a
@@ -169,18 +175,31 @@ class CreateAgentTool:
             None,
         )
         if existing is not None:
-            created = await agent_repository.update_agent(
-                existing["agent_id"], owner_name=owner, fields=fields
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error=f"Agent {name!r} already exists. Review it before requesting an update.",
             )
-            verb = "Updated"
-        else:
+        audit_fields = {
+            "event_type": "assistant_agent_create",
+            "user_name": owner,
+            "action": "CREATE",
+            "object_type": "AGENT",
+            "object_name": name,
+            "session_id": getattr(context, "audit_session_id", None),
+        }
+        await write_audit_log(**audit_fields, status="PENDING")
+        try:
             created = await agent_repository.create_agent(owner_name=owner, fields=fields)
-            verb = "Created"
+        except Exception:
+            await write_audit_log(**audit_fields, status="FAILED")
+            return ToolOutcome(ok=False, summary="", error="The agent could not be created.")
+        await write_audit_log(**audit_fields, status="SUCCESS")
         assert created is not None
         return ToolOutcome(
             ok=True,
             summary=(
-                f"{verb} agent `{created['name']}` with tools: {', '.join(selected)}"
+                f"Created agent `{created['name']}` with tools: {', '.join(selected)}"
                 + (f", semantic model: {model_name}" if model_name else "")
                 + ". Open AI & ML > Agent to review it, or Nova Studio to chat with it. "
                 "Do not create it again."

@@ -151,6 +151,7 @@ class AccessControlService:
         safe_role = check_identifier(role, field="role")
         safe_user = username.replace("'", "''")
         safe_host = host.replace("'", "''")
+        await self._ranger.put_user_attributes(username, {})
         ranger_role = await self._ranger.get_role(role)
         if not ranger_role:
             raise AccessControlError("Role projection is not healthy")
@@ -366,6 +367,7 @@ class AccessControlService:
         bindings: list[tuple[str, str, list[str]]],
     ) -> dict:
         self.require_security_admin(security)
+        await self._validate_scope(principal, role, catalog, database, table, bindings)
         attributes: dict[str, str] = {}
         for dimension, _, values in bindings:
             if not values:
@@ -411,6 +413,55 @@ class AccessControlService:
             ranger_ids=[result["id"]] if result.get("id") is not None else [],
         )
         return result
+
+    async def _validate_scope(
+        self, principal: str, role: str, catalog: str, database: str, table: str,
+        bindings: list[tuple[str, str, list[str]]],
+    ) -> None:
+        from app.common.identifiers import InvalidIdentifierError
+        from app.modules.users.service import user_service
+
+        try:
+            for field, value in (
+                ("principal", principal), ("role", role), ("catalog", catalog),
+                ("database", database), ("table", table),
+            ):
+                check_identifier(value, field=field)
+            dimensions: set[str] = set()
+            if not bindings:
+                raise AccessControlError("A data scope requires at least one binding")
+            for dimension, column, values in bindings:
+                check_identifier(dimension, field="dimension")
+                check_identifier(column, field="column")
+                if dimension in dimensions:
+                    raise AccessControlError("Each scope dimension must have one binding")
+                dimensions.add(dimension)
+                if not values or any(
+                    not isinstance(value, str) or not value or len(value) > 1024
+                    or value == "__nova_no_scope__" or any(ord(c) < 32 for c in value)
+                    for value in values
+                ):
+                    raise AccessControlError(
+                        "Scope values must be nonempty text without control characters"
+                    )
+        except InvalidIdentifierError as exc:
+            raise AccessControlError("Scope identifiers must be plain names") from exc
+        users = await user_service.list_users()
+        matches = [user for user in users if user.get("username") == principal]
+        if not matches:
+            raise AccessControlError("Scope principal does not exist")
+        if not await self._ranger.get_role(role):
+            raise AccessControlError("Scope role does not exist in Ranger")
+        if not all(role in user.get("roles", []) for user in matches):
+            raise AccessControlError("Scope role must be assigned to the principal")
+        metadata = await db.execute_system(
+            f"SELECT COLUMN_NAME FROM `{catalog}`.information_schema.columns "
+            "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
+            [database, table],
+        )
+        columns = {str(row[0]) for row in metadata["rows"]}
+        if not columns or any(column not in columns for _, column, _ in bindings):
+            raise AccessControlError("Scope table or column does not exist")
 
     async def put_mask(
         self,

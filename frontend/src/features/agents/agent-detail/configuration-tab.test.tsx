@@ -55,11 +55,152 @@ afterEach(() => {
 });
 
 describe("AgentConfigurationTab", () => {
+  it("resets an unsaved custom tool edit when the dialog is reopened", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/custom-tools")) {
+        return response({
+          tools: [
+            {
+              tool_id: "tool-1",
+              owner_name: "nova_admin",
+              name: "LOOKUP",
+              description: "Look up one row",
+              kind: "procedure",
+              database_name: null,
+              function_name: null,
+              definition: {
+                parameters: [],
+                statements: ["SELECT 1"],
+                output_mode: "result",
+              },
+              created_at: "2026-09-22T00:00:00Z",
+              updated_at: "2026-09-22T00:00:00Z",
+            },
+          ],
+          count: 1,
+        });
+      }
+      if (url.endsWith("/tools")) return response({ tools: [] });
+      if (url.endsWith("/semantic-models")) return response({ models: [] });
+      return response(AGENT);
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const screen = await render(
+      <QueryClientProvider client={client}>
+        <AgentConfigurationTab agent={AGENT} onSaved={() => {}} />
+      </QueryClientProvider>,
+    );
+
+    await screen.getByRole("tab", { name: "Tools" }).click();
+    await screen.getByRole("button", { name: "Edit LOOKUP" }).click();
+    const name = screen.getByRole("textbox", { name: "Name" });
+    await name.fill("CHANGED");
+    await screen.getByRole("button", { name: "Cancel" }).click();
+    await screen.getByRole("button", { name: "Edit LOOKUP" }).click();
+    await expect
+      .element(screen.getByRole("textbox", { name: "Name" }))
+      .toHaveValue("LOOKUP");
+  });
+
+  it("saves the selected provider and model and restores the default", async () => {
+    const updates: Record<string, unknown>[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (init?.method === "PUT") {
+        updates.push(JSON.parse(init.body as string));
+        return response(AGENT);
+      }
+      const url = String(input);
+      if (url.endsWith("/ai/providers")) {
+        return response({
+          providers: [
+            { id: "a", name: "Provider A", is_active: true, has_api_key: true },
+            { id: "b", name: "Provider B", is_active: true, has_api_key: true },
+          ],
+        });
+      }
+      const provider = url.includes("/a/models") ? "a" : "b";
+      return response({
+        models: [
+          {
+            id: `model-${provider}`,
+            name: "shared-model",
+            display_name: "Chat model",
+            type: "llm",
+            is_active: true,
+          },
+          {
+            id: `embedding-${provider}`,
+            name: "Embedding",
+            type: "embedding",
+            is_active: true,
+          },
+          {
+            id: `inactive-${provider}`,
+            name: "Inactive",
+            type: "llm",
+            is_active: false,
+          },
+        ],
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const screen = await render(
+      <QueryClientProvider client={client}>
+        <AgentConfigurationTab
+          agent={{
+            ...AGENT,
+            model_provider_id: "a",
+            model_name: "shared-model",
+          }}
+          onSaved={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    await screen.getByRole("tab", { name: "Instructions" }).click();
+    const select = screen.getByRole("combobox", { name: "Model", exact: true });
+    await expect.element(select).toBeEnabled();
+    await expect.element(select).toHaveTextContent("Chat model · Provider A");
+    await select.click();
+    await expect
+      .element(screen.getByRole("option", { name: "Embedding" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("option", { name: "Inactive" }))
+      .not.toBeInTheDocument();
+    await screen
+      .getByRole("option", { name: "Chat model · Provider B" })
+      .click();
+    await screen.getByRole("button", { name: "Save changes" }).click();
+    await vi.waitFor(() =>
+      expect(updates[0]).toMatchObject({
+        model_provider_id: "b",
+        model_name: "shared-model",
+      }),
+    );
+    await select.click();
+    await screen
+      .getByRole("option", { name: "Provider default", exact: true })
+      .click();
+    await screen.getByRole("button", { name: "Save changes" }).click();
+    await vi.waitFor(() =>
+      expect(updates[1]).toMatchObject({
+        model_provider_id: null,
+        model_name: null,
+      }),
+    );
+  });
+
   it("shows runtime mode, compiled contract, and separate skill availability modes", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation(async (input) => {
         const url = String(input);
+        if (url.endsWith("/ai/providers")) return response({ providers: [] });
         if (url.endsWith("/skills")) {
           return response({
             skills: [
@@ -100,11 +241,12 @@ describe("AgentConfigurationTab", () => {
     await screen.getByRole("tab", { name: "Instructions" }).click();
     await expect
       .element(screen.getByText("Compiled agent contract"))
-      .toBeVisible();
+      .not.toBeInTheDocument();
     await expect
-      .element(screen.getByText("Analyze governed revenue metrics"))
+      .element(
+        screen.getByRole("textbox", { name: "Orchestration instructions" }),
+      )
       .toBeVisible();
-    await expect.element(screen.getByText("semantic_query")).toBeVisible();
 
     await screen.getByRole("tab", { name: "Skills" }).click();
     const mode = screen.getByRole("combobox", {
@@ -126,6 +268,36 @@ describe("AgentConfigurationTab", () => {
       expect(body.harness_mode).toBe("auto");
       expect(body.compiled_instructions).toBeUndefined();
     });
+  });
+
+  it("lets the owner explicitly enable an external MCP tool", async () => {
+    const updates: Record<string, unknown>[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (init?.method === "PUT") {
+        updates.push(JSON.parse(init.body as string));
+        return response(AGENT);
+      }
+      const url = String(input);
+      if (url.endsWith("/agents/tools")) return response({ tools: [{
+        tool_id: "tool-1", owner_name: "__nova__", name: "lookup_customer",
+        description: "Look up a customer in CRM", source: "mcp:server-1",
+        input_schema: {}, is_enabled: true,
+      }], count: 1 });
+      if (url.endsWith("/agents/semantic-models")) return response({ models: [], count: 0 });
+      if (url.endsWith("/ai/providers")) return response({ providers: [] });
+      return response({ tools: [], skills: [], servers: [], count: 0 });
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const screen = await render(
+      <QueryClientProvider client={client}>
+        <AgentConfigurationTab agent={AGENT} onSaved={() => {}} />
+      </QueryClientProvider>,
+    );
+    await screen.getByRole("tab", { name: "Tools" }).click();
+    await expect.element(screen.getByText("External calls always require approval.")).toBeVisible();
+    await screen.getByRole("checkbox", { name: /lookup_customer/ }).click();
+    await screen.getByRole("button", { name: "Save changes" }).click();
+    await vi.waitFor(() => expect(updates[0]?.default_tools).toContain("mcp:tool-1"));
   });
 });
 

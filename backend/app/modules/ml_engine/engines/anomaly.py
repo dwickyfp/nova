@@ -11,6 +11,7 @@ from pyod.models.iforest import IForest
 
 from app.core.config import settings
 from app.modules.ml_engine.engines.base import TrainingOutput
+from app.modules.ml_engine.preprocessing.memory import bounded_dense
 from app.modules.ml_engine.preprocessing.preprocessor import FeaturePreprocessor
 from app.modules.ml_engine.preprocessing.profiler import serialize_profiles
 from app.modules.ml_engine.spec import InsufficientTrainingRows, MLExecutionSpec
@@ -24,8 +25,7 @@ def train_anomaly(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         raise InsufficientTrainingRows("Anomaly detection requires at least 10 rows")
     preprocessor = FeaturePreprocessor(features, scale_numeric=True)
     X = preprocessor.fit_transform(table)
-    if hasattr(X, "toarray"):
-        X = X.toarray()
+    X = bounded_dense(X, max_bytes=spec.budget.max_bytes if spec.budget else None)
     contamination = float(spec.parameters.get("contamination", 0.05))
     if not 0 < contamination < 0.5:
         raise ValueError("contamination must be between 0 and 0.5")
@@ -80,6 +80,10 @@ def train_anomaly(table: pa.Table, spec: MLExecutionSpec) -> TrainingOutput:
         "candidate_agreement": {name: score for score, name, _, _ in agreed},
         "selected_agreement": agreement,
         "feature_metadata": serialize_profiles(preprocessor.profiles),
+        "preprocessing_policy": {
+            "categorical_encoding": "bounded_one_hot",
+            "max_categories": preprocessor.max_categories,
+        },
         "arrow_to_pandas_seconds": preprocessor.arrow_to_pandas_seconds,
     }
     return TrainingOutput(

@@ -238,13 +238,13 @@ class TestStagePipelineEndToEnd:
         svc = QueryService()
         svc._repo = repo
 
-        async def fake_configs(database, schema):
-            return {"stage1": self._storage_config()}
+        async def fake_configs(parsed, **kwargs):
+            return parsed, {ref.start: self._storage_config() for ref in parsed.stage_refs}
 
         async def fake_csv(parsed, stage_configs):
             return {}, None
 
-        svc._load_stage_configs = fake_configs
+        svc._resolve_stage_refs = fake_configs
         svc._detect_csv_params = fake_csv
 
         monkeypatch.setattr(service_module, "write_audit_log", sink)
@@ -530,4 +530,3 @@ class TestSanitizingResponseFailsClosedNotOpen:
 
         assert "LEAKME" not in body
         assert "***" in body
-

@@ -17,9 +17,18 @@ from sklearn.ensemble import (
     RandomForestRegressor,
 )
 from sklearn.linear_model import LogisticRegression, Ridge
-from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, r2_score
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    log_loss,
+    mean_absolute_error,
+    r2_score,
+    roc_auc_score,
+)
 
 from app.modules.ml_engine.automl.flaml_engine import train_flaml
+from app.modules.ml_engine.automl.metrics import higher_is_better
+from app.modules.ml_engine.preprocessing.memory import estimator_matrix
 from app.modules.ml_engine.spec import MLMode, MLTask
 
 
@@ -82,7 +91,8 @@ class AutoMLRouter:
                 loss_value=float(metadata["validation_loss"]),
             )
         candidates = self._candidates(task, mode, algorithm, parameters or {})
-        metric = "weighted_f1" if task is MLTask.CLASSIFICATION else "r2"
+        metric = metric or ("weighted_f1" if task is MLTask.CLASSIFICATION else "r2")
+        maximize = higher_is_better(metric)
         best: tuple[float, str, Any, dict[str, Any]] | None = None
         evaluated = 0
         failures: list[str] = []
@@ -90,16 +100,19 @@ class AutoMLRouter:
             if evaluated and time.monotonic() - started >= timeout_seconds:
                 break
             try:
-                fitted = clone(estimator).fit(X_train, y_train)
-                predicted = fitted.predict(X_valid)
-                score = (
-                    float(f1_score(y_valid, predicted, average="weighted", zero_division=0))
-                    if task is MLTask.CLASSIFICATION
-                    else float(r2_score(y_valid, predicted))
+                training = estimator_matrix(X_train, estimator)
+                validation = estimator_matrix(X_valid, estimator)
+                fitted = clone(estimator).fit(training, y_train)
+                predicted = fitted.predict(validation)
+                probabilities = (
+                    fitted.predict_proba(validation) if metric in {"log_loss", "roc_auc"} else None
                 )
+                score = evaluate_predictions(task, y_valid, predicted, probabilities).get(metric)
+                if score is None:
+                    raise ValueError(f"Metric {metric} is not available for {task.value}")
                 evaluated += 1
                 params = fitted.get_params(deep=False)
-                if best is None or score > best[0]:
+                if best is None or (score > best[0] if maximize else score < best[0]):
                     best = (score, name, fitted, params)
             except Exception as exc:
                 failures.append(f"{name}: {type(exc).__name__}")
@@ -172,16 +185,30 @@ class AutoMLRouter:
         return all_candidates[:limit]
 
 
-def evaluate_predictions(task: MLTask, truth, predicted) -> dict[str, float]:
+def evaluate_predictions(task: MLTask, truth, predicted, probabilities=None) -> dict[str, float]:
     if task is MLTask.CLASSIFICATION:
-        return {
+        metrics = {
             "accuracy": float(accuracy_score(truth, predicted)),
             "weighted_f1": float(f1_score(truth, predicted, average="weighted", zero_division=0)),
         }
+        metrics["f1"] = metrics["weighted_f1"]
+        if probabilities is not None:
+            metrics["log_loss"] = float(log_loss(truth, probabilities))
+            values = np.asarray(probabilities)
+            metrics["roc_auc"] = float(
+                roc_auc_score(
+                    truth,
+                    values[:, 1] if values.shape[1] == 2 else values,
+                    multi_class="ovr",
+                    average="weighted",
+                )
+            )
+        return metrics
     return {
         "mae": float(mean_absolute_error(truth, predicted)),
         "r2": float(r2_score(truth, predicted)),
         "rmse": float(np.sqrt(np.mean((np.asarray(truth) - np.asarray(predicted)) ** 2))),
+        "mse": float(np.mean((np.asarray(truth) - np.asarray(predicted)) ** 2)),
     }
 
 

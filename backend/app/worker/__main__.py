@@ -9,9 +9,9 @@ owner (delegate-first), and advances the graph's state in ``NOVA_SYSTEM``.
 
 It initialises the system connection pool (the repository reads and writes
 ``NOVA_SYSTEM`` through it), connects to Redis, then consumes until ``SIGINT``
-or ``SIGTERM``. Credentials are resolved per execution from the live session
-path and discarded when the connection closes; nothing is written to
-``NOVA_SYSTEM`` except ids, states and timings.
+or ``SIGTERM``. A dedicated worker account impersonates each task owner on a
+fresh connection; its credential comes from the worker environment and is never
+written to ``NOVA_SYSTEM``.
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
 from app.modules.task_orchestration.consumer import GraphRunConsumer
-from app.modules.task_orchestration.credentials import SessionCredentialProvider
 from app.modules.task_orchestration.execution import DelegateExecutor
 from app.modules.task_orchestration.process_health import WorkerProcessHeartbeat
 from app.modules.task_orchestration.reconciler import Reconciler
@@ -42,7 +41,12 @@ logger = logging.getLogger(__name__)
 
 def build_worker_service(client: aioredis.Redis) -> WorkerService:
     """Wire the default worker from a Redis client."""
-    executor = DelegateExecutor(SessionCredentialProvider(client))
+    executor = DelegateExecutor(
+        None,
+        impersonation_user=settings.WORKER_IMPERSONATION_USER,
+        impersonation_password=settings.WORKER_IMPERSONATION_PASSWORD,
+        impersonation_role=settings.WORKER_IMPERSONATION_ROLE,
+    )
     return WorkerService(
         repository,
         executor,
@@ -52,12 +56,21 @@ def build_worker_service(client: aioredis.Redis) -> WorkerService:
 
 
 async def _run() -> None:
-    # Fail closed before the first connection: the worker decrypts stored
-    # credentials (SessionCredentialProvider), so a blank/invalid FERNET_KEY
-    # must abort boot rather than fail every task at runtime (NOVA-108).
+    # Validate configured secrets and the worker account before connecting.
     require_configured_secrets()
+    # Validate before opening the system pool or consuming any graph runs.
+    if not settings.WORKER_IMPERSONATION_USER or not settings.WORKER_IMPERSONATION_PASSWORD:
+        raise RuntimeError("worker impersonation credentials must be configured")
+    if settings.WORKER_IMPERSONATION_USER.lower() in {"root", "nova_admin"}:
+        raise RuntimeError("the task worker requires a dedicated unprivileged account")
+    if settings.RANGER_ENABLED and not settings.WORKER_IMPERSONATION_ROLE:
+        raise RuntimeError("Ranger mode requires a dedicated task worker role")
     await db.init_system_pool()
-    await init_task_orchestration()
+    try:
+        await init_task_orchestration()
+    except Exception:
+        await db.close_system_pool()
+        raise
     client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
 
     stop_event = asyncio.Event()

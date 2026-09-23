@@ -26,6 +26,7 @@ class FakeRedis:
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
         self.expiries: dict[str, int] = {}
+        self.renewals = 0
 
     async def set(self, key: str, value: str, *, nx: bool = False, ex: int | None = None):
         if nx and key in self.store:
@@ -43,6 +44,7 @@ class FakeRedis:
                 return 1
             return 0
         if _RENEW_MARKER in script:
+            self.renewals += 1
             if current is not None and current == args[0]:
                 self.expiries[key] = int(args[1])
                 return 1
@@ -109,6 +111,40 @@ class TestLeaderLock:
 
 
 class TestSchedulerServiceSingleton:
+    async def test_long_tick_renews_leadership(self):
+        client = FakeRedis()
+
+        class SlowTick:
+            async def tick(self, now=None):
+                await asyncio.sleep(0.45)
+
+        service = SchedulerService(SlowTick(), LeaderLock(client, key="k", ttl_seconds=1))
+
+        assert await service.run_once() is True
+        assert client.renewals >= 2
+
+    async def test_lost_leadership_cancels_a_long_tick(self):
+        client = FakeRedis()
+        cancelled = asyncio.Event()
+
+        class SlowTick:
+            async def tick(self, now=None):
+                try:
+                    await asyncio.sleep(10)
+                except asyncio.CancelledError:
+                    cancelled.set()
+                    raise
+
+        service = SchedulerService(SlowTick(), LeaderLock(client, key="k", ttl_seconds=1))
+
+        async def replace_owner():
+            await asyncio.sleep(0.05)
+            client.store["k"] = "successor"
+
+        result, _ = await asyncio.gather(service.run_once(), replace_owner())
+        assert result is False
+        assert cancelled.is_set()
+
     async def test_only_the_leader_runs_a_tick(self):
         client = FakeRedis()
         tick_a = RecordingTick()

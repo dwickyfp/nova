@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
   LayoutGrid,
+  LayoutDashboard,
   MessageSquarePlus,
+  MoreHorizontal,
   Package,
   PanelLeft,
   Pencil,
@@ -10,6 +12,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -20,7 +28,7 @@ import {
 import type { AgentThread } from "@/features/agents/api";
 import { relativeUpdatedAt } from "./thread-time";
 
-export type StudioView = "chat" | "artifacts" | "capabilities";
+export type StudioView = "chat" | "artifacts" | "dashboards" | "capabilities";
 
 const NAV: {
   id: Exclude<StudioView, "chat">;
@@ -28,6 +36,7 @@ const NAV: {
   icon: LucideIcon;
 }[] = [
   { id: "artifacts", label: "Artifacts", icon: Package },
+  { id: "dashboards", label: "Dashboard", icon: LayoutDashboard },
   { id: "capabilities", label: "Capabilities", icon: LayoutGrid },
 ];
 
@@ -75,8 +84,8 @@ export function StudioSidebar({
     <aside
       data-state={open ? "expanded" : "collapsed"}
       className={cn(
-        "flex h-full shrink-0 flex-col overflow-hidden border-r bg-muted/20 transition-[width] duration-200 ease-out",
-        open ? "w-72" : "w-14",
+        "studio-sidebar flex h-full shrink-0 flex-col overflow-hidden border-r bg-muted/20 text-foreground transition-[width] duration-200 ease-out motion-reduce:transition-none",
+        open ? "w-64" : "w-14",
       )}
     >
       <div
@@ -95,11 +104,11 @@ export function StudioSidebar({
                 className="size-full"
               />
             </span>
-            <span className="grid min-w-0 flex-1 gap-1 text-start leading-tight">
-              <span className="truncate font-manrope text-lg leading-none font-semibold text-primary">
+            <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-start">
+              <span className="truncate text-lg leading-none font-medium text-primary">
                 nova
               </span>
-              <span className="truncate text-[11px] leading-none font-medium text-muted-foreground">
+              <span className="truncate text-base leading-none font-medium text-foreground">
                 Studio
               </span>
             </span>
@@ -156,7 +165,7 @@ export function StudioSidebar({
       </nav>
 
       {open ? (
-        <ScrollArea className="mt-4 min-h-0 flex-1 px-3">
+        <ScrollArea className="mt-4 min-h-0 min-w-0 flex-1 px-3 [&_[data-slot=scroll-area-viewport]>div]:block!">
           {/* Past conversations. Studio used to open every session empty, so a
               conversation you wanted to return to was unreachable. The row
               carries its own relative date: recency is how you find a
@@ -238,11 +247,11 @@ function SidebarNavButton({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center rounded-md text-sm transition-colors",
+        "flex items-center rounded-sm text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
         open ? "w-full gap-2 px-3 py-2" : "size-9 justify-center",
         active
           ? "bg-accent text-accent-foreground"
-          : "text-muted-foreground hover:bg-accent/50",
+          : "text-foreground hover:bg-accent/50",
       )}
     >
       <Icon aria-hidden="true" className="size-4 shrink-0" />
@@ -285,6 +294,8 @@ function ThreadRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(thread.title);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -328,8 +339,17 @@ function ThreadRow({
   }
 
   return (
-    <li className="group/thread relative">
-      <Tooltip>
+    <li
+      className={cn(
+        "group/thread flex min-w-0 items-center rounded-sm transition-colors hover:bg-accent/50 has-[[data-state=open]]:bg-accent/50",
+        active ? "bg-accent text-accent-foreground" : "text-foreground",
+      )}
+    >
+      <Tooltip
+        open={tooltipOpen && !menuOpen}
+        onOpenChange={setTooltipOpen}
+        delayDuration={400}
+      >
         <TooltipTrigger asChild>
           <button
             type="button"
@@ -344,71 +364,76 @@ function ThreadRow({
             }
             aria-current={active ? "true" : undefined}
             className={cn(
-              "flex w-full flex-col items-start gap-0.5 rounded-md py-2 text-left text-sm transition-colors",
+              "flex min-w-0 flex-1 flex-col items-start gap-0.5 rounded-sm px-2 py-2 text-left text-sm",
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-              canManage ? "ps-2 pe-8" : "px-2",
-              active
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-accent/50",
             )}
           >
             <span className="w-full truncate leading-tight">{label}</span>
             {timestamp ? (
               <span
-                className={cn(
-                  "text-[11px] leading-none",
-                  active
-                    ? "text-accent-foreground/70"
-                    : "text-muted-foreground/70",
-                )}
+                className="text-[11px] leading-none text-muted-foreground"
               >
                 {timestamp}
               </span>
             ) : null}
           </button>
         </TooltipTrigger>
-        <TooltipContent side="right" className="max-w-xs">
+        <TooltipContent
+          side="top"
+          align="start"
+          sideOffset={8}
+          collisionPadding={8}
+          className="max-w-xs break-words"
+        >
           {label}
         </TooltipContent>
       </Tooltip>
 
-      {/* The actions ride the row on hover for a pointer, and are always shown
-          on a touch device, where there is no hover to reveal them. The row
-          reserves their width (`pe-8`) either way, so nothing overlaps the
-          title. */}
       {canManage ? (
-        <div
-          className={cn(
-            "absolute end-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 transition-opacity",
-            "opacity-100 [@media(hover:hover)]:opacity-0",
-            "[@media(hover:hover)]:group-hover/thread:opacity-100",
-            "[@media(hover:hover)]:group-focus-within/thread:opacity-100",
-          )}
+        <DropdownMenu
+          open={menuOpen}
+          onOpenChange={(nextOpen) => {
+            setMenuOpen(nextOpen);
+            setTooltipOpen(false);
+          }}
         >
-          {onRename ? (
-            <button
-              type="button"
-              onClick={() => {
-                setDraft(thread.title);
-                setEditing(true);
-              }}
-              className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label={`Rename ${label}`}
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "me-1 size-7 shrink-0 text-muted-foreground hover:bg-background hover:text-foreground data-[state=open]:bg-background data-[state=open]:opacity-100",
+                "opacity-100 [@media(hover:hover)]:opacity-0",
+                "[@media(hover:hover)]:group-hover/thread:opacity-100",
+                "[@media(hover:hover)]:group-focus-within/thread:opacity-100",
+              )}
+              aria-label={`Actions for ${label}`}
+              onPointerEnter={() => setTooltipOpen(false)}
+              onFocus={() => setTooltipOpen(false)}
             >
-              <Pencil aria-hidden="true" className="size-3.5" />
-            </button>
-          ) : null}
-          {onDelete ? (
-            <button
-              type="button"
-              onClick={onDelete}
-              className="rounded p-1 text-muted-foreground hover:bg-background hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label={`Delete ${label}`}
-            >
-              <Trash2 aria-hidden="true" className="size-3.5" />
-            </button>
-          ) : null}
-        </div>
+              <MoreHorizontal aria-hidden="true" className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="start">
+            {onRename ? (
+              <DropdownMenuItem
+                onSelect={() => {
+                  setDraft(thread.title);
+                  setEditing(true);
+                }}
+              >
+                <Pencil aria-hidden="true" />
+                Rename
+              </DropdownMenuItem>
+            ) : null}
+            {onDelete ? (
+              <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+                <Trash2 aria-hidden="true" />
+                Delete
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       ) : null}
     </li>
   );

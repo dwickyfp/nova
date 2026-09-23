@@ -90,6 +90,14 @@ class Settings(BaseSettings):
     WORKER_PROCESS_STALE_SECONDS: int = 30
     #: How many graph runs a worker reads from the stream per drain.
     WORKER_STREAM_BATCH_SIZE: int = 10
+    WORKER_MAX_CONCURRENT_GRAPH_RUNS: int = 4
+    WORKER_MAX_PARALLEL_NODES: int = 4
+    WORKER_SHUTDOWN_GRACE_SECONDS: float = 30.0
+    # Dedicated StarRocks principal used only by the standalone task worker.
+    # Grant IMPERSONATE on specific task owners; never grant on ALL USERS.
+    WORKER_IMPERSONATION_USER: str = ""
+    WORKER_IMPERSONATION_PASSWORD: str = ""
+    WORKER_IMPERSONATION_ROLE: str = ""
     #: Nova's default for the engine's ``max_task_consecutive_fail_count`` (10).
     #: The reconciler prefers the engine's live value from
     #: ``ADMIN SHOW FRONTEND CONFIG`` and falls back to this when the engine's
@@ -176,12 +184,22 @@ class Settings(BaseSettings):
     ML_ARTIFACT_PREFIX: str = "nova/ml-artifacts"
     ML_MODEL_CACHE_MAX_MODELS: int = 32
     ML_MODEL_CACHE_MAX_BYTES: int = 1024 * 1024 * 1024
+    ML_MODEL_CACHE_MEMORY_MULTIPLIER: float = 4.0
     ML_MODEL_CACHE_TTL_SECONDS: int = 900
     ML_EPHEMERAL_TTL_SECONDS: int = 1800
     ML_EPHEMERAL_MAX_ENTRIES: int = 32
     ML_EPHEMERAL_MAX_MEMORY_BYTES: int = 64 * 1024 * 1024
     ML_SQL_RESULT_MAX_ROWS: int = 100_000
     ML_RANDOM_SEED: int = 42
+    ML_INFERENCE_BATCH_ROWS: int = 4096
+    ML_WORKER_RESULT_MAX_BYTES: int = 1024 * 1024
+    ML_INFERENCE_MAX_BATCH_BYTES: int = 16 * 1024 * 1024
+    ML_RESULT_INLINE_MAX_ROWS: int = 100_000
+    ML_RESULT_INLINE_MAX_BYTES: int = 64 * 1024 * 1024
+    ML_DENSE_MATRIX_MAX_BYTES: int = 256 * 1024 * 1024
+    ML_MAX_CATEGORIES: int = 100
+    ML_FINALIZE_RESERVE_SECONDS: float = 2.0
+    ML_EPHEMERAL_CLEANUP_INTERVAL_SECONDS: float = 60.0
 
     # --- MinIO / S3 (default storage) ---
     S3_ENDPOINT: str = "http://localhost:9000"

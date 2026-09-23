@@ -71,9 +71,6 @@ function PanelHarness({
       onOpenChange={() => {}}
       messages={assistant.messages}
       statusMessage={assistant.statusMessage}
-      grantActive={assistant.grantActive}
-      onResetPermissions={assistant.resetPermissions}
-      resettingPermissions={assistant.resettingGrant}
     />
   );
 }

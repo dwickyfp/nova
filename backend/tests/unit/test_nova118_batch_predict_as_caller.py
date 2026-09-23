@@ -156,10 +156,6 @@ class ProxyConnection:
 
 @pytest.fixture
 def service(monkeypatch):
-    async def no_stage_configs(_self, database_name):
-        return {}
-
-    monkeypatch.setattr(MLEngineService, "_load_stage_configs", no_stage_configs)
     source = RecordingSource()
     instance = MLEngineService(
         data_source=source,

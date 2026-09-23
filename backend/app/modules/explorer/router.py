@@ -129,7 +129,7 @@ async def _audit_create_database(
 @router.get("/databases/{database}")
 async def list_database_objects(
     database: str,
-    _user: CurrentUser,
+    user: CurrentUser,
     catalog: str | None = None,
 ):
     """List all objects in a database (tables, views, MVs, functions, pipes, stages).
@@ -137,7 +137,7 @@ async def list_database_objects(
     ``catalog`` selects an external catalog so its external tables surface in the
     tree; it defaults to ``default_catalog`` for every self-managed database.
     """
-    result = await explorer_service.get_database_objects(database, catalog=catalog)
+    result = await explorer_service.get_database_objects(database, catalog=catalog, user=user)
     return result
 
 
@@ -232,11 +232,12 @@ async def get_pipe_detail(
 async def get_stage_files(
     database: str,
     stage: str,
-    _user: CurrentUser,
+    user: CurrentUser,
     prefix: str = "",
 ):
     """List files in a stage by name + database."""
-    from app.modules.stages.service import stage_service
+    from app.modules.stages.router import _authorized_stage
+    from app.modules.stages.service import StagePathError, stage_service
 
     # Lookup stage ID by name + database
     stage_id = await explorer_service.get_stage_id(database, stage)
@@ -246,7 +247,15 @@ async def get_stage_files(
             detail=f"Stage '{stage}' not found in {database}",
         )
     try:
+        if prefix:
+            stage_service._safe_relative_path(prefix, field="prefix")
+    except StagePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _authorized_stage(stage_id, user, "read")
+    try:
         files = await stage_service.list_files(stage_id, prefix=prefix)
+    except StagePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return {"files": files, "prefix": prefix, "count": len(files)}
@@ -257,11 +266,12 @@ async def upload_stage_file(
     database: str,
     stage: str,
     file: UploadFile,
-    _user: CurrentUser,
+    user: CurrentUser,
     filename: str | None = Form(None),
 ):
     """Upload a file to a stage by name + database."""
-    from app.modules.stages.service import stage_service
+    from app.modules.stages.router import _authorized_stage, _stage_mutation_audit
+    from app.modules.stages.service import StagePathError, stage_service
 
     stage_id = await explorer_service.get_stage_id(database, stage)
     if not stage_id:
@@ -271,9 +281,21 @@ async def upload_stage_file(
         )
     # Use custom filename (with folder prefix) if provided, else original filename
     target_name = filename or file.filename or "unnamed"
-    content = await file.read()
-    await stage_service.upload_file(stage_id, target_name, content)
-    return {"success": True, "filename": target_name, "size": len(content)}
+    try:
+        stage_service._safe_relative_path(target_name)
+    except StagePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    stage_row = await _authorized_stage(stage_id, user, "write")
+    try:
+        async with _stage_mutation_audit(
+            stage_row, user, "UPLOAD_STAGE_FILE", f"{stage_id}/{target_name}"
+        ):
+            result = await stage_service.upload_stream(stage_id, target_name, file.file)
+    except StagePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"success": True, "filename": target_name, "size": result["size"]}
 
 
 @router.delete("/databases/{database}/stages/{stage}/files/{filename}")
@@ -281,10 +303,11 @@ async def delete_stage_file(
     database: str,
     stage: str,
     filename: str,
-    _user: CurrentUser,
+    user: CurrentUser,
 ):
     """Delete a file from a stage by name + database."""
-    from app.modules.stages.service import stage_service
+    from app.modules.stages.router import _authorized_stage, _stage_mutation_audit
+    from app.modules.stages.service import StagePathError, stage_service
 
     stage_id = await explorer_service.get_stage_id(database, stage)
     if not stage_id:
@@ -292,5 +315,18 @@ async def delete_stage_file(
             status_code=404,
             detail=f"Stage '{stage}' not found in {database}",
         )
-    await stage_service.delete_file(stage_id, filename)
+    try:
+        stage_service._safe_relative_path(filename)
+    except StagePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    stage_row = await _authorized_stage(stage_id, user, "delete")
+    try:
+        async with _stage_mutation_audit(
+            stage_row, user, "DELETE_STAGE_FILE", f"{stage_id}/{filename}"
+        ):
+            await stage_service.delete_file(stage_id, filename)
+    except StagePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"success": True, "filename": filename}

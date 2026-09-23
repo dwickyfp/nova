@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEvent, type TranscriptTurn } from "./studio-chat";
+import { applyEvent, replayThread, type TranscriptTurn } from "./studio-chat";
 import { visibleContent } from "./turn-content-order";
 import type { AssistantEvent } from "@/features/assistant/types";
 
@@ -45,6 +45,38 @@ const thinking = (
 ): AssistantEvent => ({ type: "thinking", phase, text, status });
 
 describe("studio transcript reducer", () => {
+  it("restores attached file cards without placing file content in the chat text", () => {
+    const turns = replayThread([
+      {
+        message_id: "u-file",
+        role: "user",
+        content: "What is in this file?",
+        created_at: "2026-09-23T00:00:00Z",
+        attachments: [{ name: "facts.txt", size_bytes: 18 }],
+      },
+      {
+        message_id: "a-file",
+        role: "assistant",
+        content: "It says 42.",
+        created_at: "2026-09-23T00:00:01Z",
+      },
+    ]);
+    expect(turns[0].question).toBe("What is in this file?");
+    expect(turns[0].attachments).toEqual([
+      { name: "facts.txt", sizeBytes: 18, mediaType: "text/plain" },
+    ]);
+    expect(turns[0].answer).toBe("It says 42.");
+  });
+
+  it("clears evidence from the previous role", () => {
+    const turn = run([
+      delta("finance-secret"),
+      { type: "role_changed", active_role: "marketing", security_context_version: 2 },
+      delta("marketing result"),
+    ]);
+    expect(turn.answer).toBe("marketing result");
+    expect(JSON.stringify(turn)).not.toContain("finance-secret");
+  });
   it("appends answer text to the turn", () => {
     const turn = run([delta("Total "), delta("revenue")]);
     expect(turn.answer).toBe("Total revenue");
@@ -125,7 +157,7 @@ describe("studio transcript reducer", () => {
     expect(turn.steps.every((s) => s.status === "done")).toBe(true);
   });
 
-  it("attaches a tool detail to its step", () => {
+  it("shows a result summary for other tools", () => {
     // Opening a step answers "what did this do". The detail is what the panel
     // shows, and it must land on the tool row it belongs to.
     const turn = run([
@@ -133,7 +165,7 @@ describe("studio transcript reducer", () => {
         type: "tool_call",
         payload: {
           tool_call_id: "c1",
-          tool_name: "load_skill",
+          tool_name: "query_execute",
           sql_preview: "",
           classification: "read_only",
           status: "running",
@@ -143,10 +175,65 @@ describe("studio transcript reducer", () => {
       {
         type: "tool_detail",
         tool_call_id: "c1",
-        text: "Playbook: classify it.",
+        text: "1 row returned",
       },
     ]);
-    expect(turn.steps[0].detail).toBe("Playbook: classify it.");
+    expect(turn.steps[0].detail).toBe("1 row returned");
+  });
+
+  it("shows only the skill load in live and saved transcripts", () => {
+    const skillBody = "Playbook: classify it.";
+    const turn = run([
+      {
+        type: "tool_call",
+        payload: {
+          tool_call_id: "c1",
+          tool_name: "load_skill",
+          skill_name: "native-ml",
+          sql_preview: "load skill `native-ml`",
+          classification: "read_only",
+          status: "running",
+        },
+      },
+      { type: "tool_status", tool_call_id: "c1", status: "done" },
+      { type: "tool_detail", tool_call_id: "c1", text: skillBody },
+    ]);
+    expect(turn.steps[0]).toMatchObject({
+      label: "load_skill",
+      text: "Loaded a skill: native-ml",
+      status: "done",
+    });
+    expect(turn.steps[0].preview).toBeUndefined();
+    expect(turn.steps[0].detail).toBeUndefined();
+
+    const saved = replayThread([
+      {
+        message_id: "u1",
+        role: "user",
+        content: "Use native ML",
+        created_at: "2026-09-23T00:00:00Z",
+      },
+      {
+        message_id: "a1",
+        role: "assistant",
+        content: "Done.",
+        created_at: "2026-09-23T00:00:01Z",
+        steps: [
+          {
+            kind: "tool",
+            tool_call_id: "c1",
+            name: "load_skill",
+            preview: "load skill `native-ml`",
+            arguments: { name: "native-ml" },
+            status: "done",
+            detail: skillBody,
+          },
+        ],
+      },
+    ]);
+    expect(saved[0].steps[0].preview).toBeUndefined();
+    expect(saved[0].steps[0].detail).toBeUndefined();
+    expect(saved[0].steps[0].text).toBe("Loaded a skill: native-ml");
   });
 
   it("keeps a body on every reasoning phase so any step can open", () => {

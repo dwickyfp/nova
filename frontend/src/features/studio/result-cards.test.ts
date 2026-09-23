@@ -49,6 +49,16 @@ describe("splitChartTitle", () => {
 });
 
 describe("artifact actions", () => {
+  it("shows a clear empty result without a misleading row-limit note", async () => {
+    const screen = await render(
+      createElement(ResultTable, {
+        block: { title: "City total", columns: ["city", "total_amount"], rows: [] },
+      }),
+    );
+    await expect.element(screen.getByText("The query returned no rows.")).toBeInTheDocument();
+    await expect.element(screen.getByText(/Capped at the engine's row limit/)).not.toBeInTheDocument();
+  });
+
   it("offers a real save action for result tables", async () => {
     const onSave = vi.fn();
     const screen = await render(

@@ -31,7 +31,7 @@ export type CustomToolDraft = {
   output_mode: 'result' | 'run'
 }
 
-const PARAM_TYPES = ['string', 'int', 'float', 'boolean', 'date', 'datetime', 'decimal']
+const PARAM_TYPES = ['string', 'int', 'float', 'boolean', 'date', 'datetime', 'decimal', 'array', 'identifier']
 
 function emptyDraft(): CustomToolDraft {
   return {
@@ -124,13 +124,15 @@ export function CustomToolEditorDialog({
       statements: d.statements.filter((_, i) => i !== index),
     }))
 
-  // A parameter with no name cannot be referenced as {{name}}, so it blocks
-  // submission rather than silently dropping the argument at run time.
-  const unnamedParameter = draft.parameters.some((p) => !p.name.trim())
+  const parameterNames = draft.parameters.map((p) => p.name.trim())
+  const validParameters = draft.parameters.every(
+    (p) => /^[A-Za-z_][A-Za-z0-9_$]*$/.test(p.name.trim()) && Boolean(p.description.trim())
+  ) && new Set(parameterNames).size === parameterNames.length
   const canSubmit =
-    Boolean(draft.name.trim()) &&
+    /^[A-Za-z_][A-Za-z0-9_$]*$/.test(draft.name.trim()) &&
+    Boolean(draft.description.trim()) &&
     draft.statements.some((s) => s.trim()) &&
-    !unnamedParameter
+    validParameters
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

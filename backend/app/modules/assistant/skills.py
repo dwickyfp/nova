@@ -78,7 +78,7 @@ EXCERPT_CLOSE = "[end nova-sql-skill excerpt]"
 #: ``*password``, …) with a non-placeholder value. ``***``, ``'K'``, ``'S'`` and
 #: angle-bracketed placeholders are the docs' convention and are allowed.
 _ASSIGNMENT_RE = re.compile(
-    r"['\"`]?[^'\"`=\s]*?(?:access_key|secret_key|session_token|account_key|"
+    r"['\"`]?(?:access_key|secret_key|session_token|account_key|"
     r"sas_token|service_account_key|private_key|password)['\"`]?\s*(?:=>|=)\s*"
     r"(['\"`]?)([^'\"`\s,)]+)\1",
     re.IGNORECASE,
@@ -293,8 +293,10 @@ _PRIMER_SPECS: tuple[_SectionSpec, ...] = (
             "the user to run, including account and role DDL — `CREATE USER`, "
             "`CREATE ROLE`, `GRANT`, `REVOKE` (on non-ACCOUNTADMIN objects), "
             "`ALTER USER`, `SET PASSWORD` — plus `CREATE TABLE`, `CREATE "
-            "ML_MODEL`, `CREATE TASK`, and DML. You never execute it; the user "
-            "runs it in a worksheet or the Users page.\n"
+            "ML_MODEL`, `CREATE TASK`, and DML. Account DDL and write SQL are "
+            "drafts for the user to run in a worksheet or the Users page. "
+            "Read-only SQL may run through query_execute; other actions require "
+            "their available tool and its consent policy.\n"
             "- Only `query_execute` is restricted, and only to read-only "
             "statements (`SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN`). A write the user "
             "asks to run is not refused — it is handed back as text to run.\n"

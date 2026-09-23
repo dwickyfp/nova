@@ -20,7 +20,10 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from app.modules.assistant.provider import (
@@ -108,12 +111,21 @@ class DataToChartTool:
         except AssistantProviderError as exc:
             logger.warning("data_to_chart model call failed: %s", type(exc).__name__)
 
+        if spec is not None and _has_invalid_encoding(spec, columns):
+            spec = None
+        spec = sanitize_chart_spec(spec, title=title) if spec is not None else None
         if spec is None:
-            spec = _fallback_spec(columns, rows, title, intent)
-
-        spec = sanitize_chart_spec(spec, title=title)
+            spec = sanitize_chart_spec(_fallback_spec(columns, rows, title, intent), title=title)
         if spec is None:
             return ToolOutcome(ok=False, summary="", error="Could not build a valid chart.")
+
+        spec.pop("datasets", None)
+        spec["data"] = {
+            "values": [
+                {column: _chart_value(value) for column, value in zip(columns, row, strict=False)}
+                for row in rows
+            ]
+        }
 
         report_tool_progress(
             context,
@@ -147,7 +159,7 @@ class DataToChartTool:
         sample = rows[:20]
         data_preview = {
             "columns": columns,
-            "rows": [[None if v is None else str(v) for v in row] for row in sample],
+            "rows": [[_chart_value(value) for value in row] for row in sample],
         }
         messages = [
             {
@@ -210,9 +222,14 @@ def sanitize_chart_spec(spec: Any, *, title: str) -> dict[str, Any] | None:
     else:
         return None
 
-    for key in ("encoding", "width", "height"):
-        if key in spec:
-            cleaned[key] = _strip_forbidden(spec[key])
+    if isinstance(spec.get("encoding"), dict):
+        cleaned["encoding"] = _strip_forbidden(spec["encoding"])
+    for key, lower, upper in (("width", 100, 1600), ("height", 100, 800)):
+        value = spec.get(key)
+        if (value == "container" and key == "width") or (
+            type(value) in (int, float) and math.isfinite(value) and lower <= value <= upper
+        ):
+            cleaned[key] = value
 
     return cleaned
 
@@ -223,6 +240,57 @@ def _strip_forbidden(value: Any) -> Any:
     if isinstance(value, list):
         return [_strip_forbidden(v) for v in value]
     return value
+
+
+def _has_invalid_encoding(spec: dict[str, Any], columns: list[str]) -> bool:
+    encoding = spec.get("encoding")
+    if not isinstance(encoding, dict):
+        return True
+    mark = spec.get("mark")
+    if isinstance(mark, dict):
+        mark = mark.get("type")
+    required = ("theta",) if mark == "arc" else () if mark == "tick" else ("x", "y")
+    if any(not isinstance(encoding.get(channel), dict) for channel in required):
+        return True
+    if mark == "tick" and not any(
+        isinstance(encoding.get(channel), dict) for channel in ("x", "y")
+    ):
+        return True
+    known = set(columns)
+
+    def invalid(value: Any) -> bool:
+        if isinstance(value, dict):
+            field = value.get("field")
+            if field is not None and (not isinstance(field, str) or field not in known):
+                return True
+            field_type = value.get("type")
+            if field_type is not None and (
+                not isinstance(field_type, str)
+                or field_type not in {"nominal", "ordinal", "quantitative", "temporal"}
+            ):
+                return True
+            return any(invalid(item) for item in value.values())
+        if isinstance(value, list):
+            return any(invalid(item) for item in value)
+        return False
+
+    return invalid(encoding)
+
+
+def _chart_value(value: Any) -> str | int | float | bool | None:
+    if value is None or isinstance(value, str | bool | int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Decimal):
+        try:
+            number = float(value)
+        except (OverflowError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
 
 
 def _mark_of(spec: dict[str, Any]) -> str:
@@ -313,7 +381,7 @@ def _is_numeric_column(rows: list[list], column: str, columns: list[str]) -> boo
             continue
         if isinstance(value, bool):
             return False
-        if isinstance(value, int | float):
+        if isinstance(value, int | float | Decimal):
             seen += 1
         else:
             return False

@@ -73,7 +73,7 @@ class FakeEngine:
         self.calls.append(sql)
         if self.fail_with is not None:
             raise self.fail_with
-        if sql.strip().upper().startswith("COPY INTO"):
+        if sql.strip().upper().startswith("INSERT INTO"):
             # Load DML: real StarRocks returns no ``description`` (no columns,
             # no rows) and reports progress through ``rowcount`` instead.
             return QueryResult(affected_rows=42, executed_sql=sql)
@@ -91,14 +91,16 @@ def execute_client(monkeypatch):
 
     engine = FakeEngine()
 
-    async def fake_configs(database, schema):
-        return {"stage1": _stage_config()}
+    async def fake_resolve(parsed, **kwargs):
+        if any(ref.stage_name != "stage1" for ref in parsed.stage_refs):
+            raise ValueError("Stage not found")
+        return parsed, {ref.start: _stage_config() for ref in parsed.stage_refs}
 
     async def fake_csv_params(parsed, stage_configs):
         return {}, None
 
     monkeypatch.setattr(query_service, "_repo", engine)
-    monkeypatch.setattr(query_service, "_load_stage_configs", fake_configs)
+    monkeypatch.setattr(query_service, "_resolve_stage_refs", fake_resolve)
     monkeypatch.setattr(query_service, "_detect_csv_params", fake_csv_params)
     monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
 
@@ -222,7 +224,9 @@ class TestSuccessfulAtStageDmlStaysSuccessful:
         assert result["warnings"], "the non-fatal @stage warning must be preserved"
         assert result["columns"] == []
         assert result["row_count"] == 0
-        assert engine.calls and engine.calls[0].startswith("COPY INTO my_table FROM FILES(")
+        assert engine.calls and engine.calls[0].startswith(
+            "INSERT INTO my_table SELECT * FROM FILES("
+        )
 
     def test_non_fatal_warning_alone_never_means_failure(self, execute_client):
         """The class of bug, not just the ``COPY INTO`` site.

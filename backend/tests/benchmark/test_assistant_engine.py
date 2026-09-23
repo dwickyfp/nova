@@ -59,6 +59,10 @@ _ENGINE_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
 _ENGINE_PORT = int(os.getenv("NOVA_ORCH_SR_PORT", "29030"))
 _ENGINE_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
 _ENGINE_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
+_BENCH_USER = os.getenv("NOVA_ORCH_BENCH_USER", "nova_admin")
+_BENCH_PASSWORD = os.getenv(
+    "NOVA_ORCH_BENCH_PASSWORD", os.getenv("NOVA_ADMIN_TEST_PASSWORD", "NovaProxy2026!")
+)
 
 #: The compose file the integration fixtures bring up. Its absence means the
 #: engine suite cannot run here at all.
@@ -87,11 +91,13 @@ def _select_context() -> LoopContext:
     # No active database: ``SELECT 1`` needs none, and naming ``default_catalog``
     # as a database does not exist on the test stack.
     return LoopContext(
-        user_name=_ENGINE_USER,
+        user_name=_BENCH_USER,
         thread_id="bench-engine",
         user={
-            "username": _ENGINE_USER,
-            "encrypted_password": encrypt_password(_ENGINE_PASSWORD),
+            "username": _BENCH_USER,
+            "encrypted_password": encrypt_password(_BENCH_PASSWORD),
+            "active_role": "ACCOUNTADMIN",
+            "assigned_roles": ["ACCOUNTADMIN"],
         },
     )
 

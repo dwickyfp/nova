@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { AssistantPanel } from "./assistant-panel";
 import { MessageList } from "./message-list";
-import { useAssistantTurn } from "./use-assistant-turn";
+import {
+  useAssistantTurn,
+  uiActionFromPreview,
+  type UiAction,
+} from "./use-assistant-turn";
 
 const resetGrant = vi.fn();
 const getThread = vi.fn();
@@ -22,6 +26,8 @@ function Harness({
   ensureThread = async () => "t-1",
   context,
   onError,
+  canApproveUiAction,
+  onUiActionCompleted,
 }: {
   holder: { current: Turn | null };
   ensureThread?: () => Promise<string | null>;
@@ -33,8 +39,16 @@ function Harness({
     providerId?: string | null;
   };
   onError?: (message: string) => void;
+  canApproveUiAction?: (action: UiAction) => boolean;
+  onUiActionCompleted?: (action: UiAction) => void;
 }) {
-  const turn = useAssistantTurn({ ensureThread, context, onError });
+  const turn = useAssistantTurn({
+    ensureThread,
+    context,
+    onError,
+    canApproveUiAction,
+    onUiActionCompleted,
+  });
   holder.current = turn;
   return (
     <MessageList messages={turn.messages} statusMessage={turn.statusMessage} />
@@ -56,9 +70,6 @@ function PanelHarness({
       onOpenChange={() => {}}
       messages={turn.messages}
       statusMessage={turn.statusMessage}
-      grantActive={turn.grantActive}
-      onResetPermissions={turn.resetPermissions}
-      resettingPermissions={turn.resettingGrant}
     />
   );
 }
@@ -85,6 +96,75 @@ afterEach(() => {
 });
 
 describe("useAssistantTurn", () => {
+  it("parses only Nove UI action previews", () => {
+    expect(
+      uiActionFromPreview(
+        "call_ui_operation",
+        'PUT /api/v1/workspaces/files/file-1\n{"body":{}}',
+      ),
+    ).toEqual({ method: "PUT", path: "/api/v1/workspaces/files/file-1" });
+    expect(
+      uiActionFromPreview(
+        "query_execute",
+        "PUT /api/v1/workspaces/files/file-1",
+      ),
+    ).toBeNull();
+  });
+
+  it("reports a completed UI action", async () => {
+    const action = { method: "PUT", path: "/api/v1/workspaces/files/file-1" };
+    const toolCall = `event: tool_call\ndata: ${JSON.stringify({
+      tool_call_id: "call-1",
+      tool_name: "call_ui_operation",
+      sql_preview: `${action.method} ${action.path}\n{}`,
+      classification: "destructive",
+      status: "pending",
+    })}\n\n`;
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      sseResponse([
+        toolCall,
+        'event: tool_status\ndata: {"tool_call_id":"call-1","status":"done"}\n\n',
+        'event: done\ndata: {"message_id":"m1","finish_reason":"stop"}\n\n',
+      ]),
+    );
+    const onUiActionCompleted = vi.fn();
+    const holder: { current: Turn | null } = { current: null };
+    await render(
+      <Harness holder={holder} onUiActionCompleted={onUiActionCompleted} />,
+    );
+    await holder.current!.sendMessage("Edit the SQL file");
+    expect(onUiActionCompleted).toHaveBeenCalledWith(action);
+  });
+
+  it("blocks approval of a UI action while the workspace has local edits", async () => {
+    const action = { method: "PUT", path: "/api/v1/workspaces/files/file-1" };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      sseResponse([
+        `event: tool_call\ndata: ${JSON.stringify({
+          tool_call_id: "call-1",
+          tool_name: "call_ui_operation",
+          sql_preview: `${action.method} ${action.path}\n{}`,
+          classification: "destructive",
+          status: "pending",
+        })}\n\n`,
+        'event: done\ndata: {"message_id":"m1","finish_reason":"stop"}\n\n',
+      ]),
+    );
+    const canApproveUiAction = vi.fn(() => false);
+    const holder: { current: Turn | null } = { current: null };
+    await render(
+      <Harness holder={holder} canApproveUiAction={canApproveUiAction} />,
+    );
+    await holder.current!.sendMessage("Edit the SQL file");
+    await holder.current!.decide({
+      toolCallId: "call-1",
+      decision: "approve",
+      alwaysAllow: false,
+    });
+    expect(canApproveUiAction).toHaveBeenCalledWith(action);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("creates a thread lazily and streams deltas into the transcript", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -279,14 +359,14 @@ describe("useAssistantTurn grant reset", () => {
     await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
     await expect
       .element(getByRole("button", { name: "Reset permissions" }))
-      .toBeInTheDocument();
+      .not.toBeInTheDocument();
   });
 
-  it("revokes the grant through the panel control and stops claiming it is active", async () => {
+  it("revokes the grant and clears its active state", async () => {
     mockTurnThenDecision(true);
     resetGrant.mockResolvedValue(undefined);
     const holder: { current: Turn | null } = { current: null };
-    const { getByRole, getByText, container } = await render(
+    const { getByText, container } = await render(
       <PanelHarness holder={holder} />,
     );
     await holder.current!.sendMessage("hi");
@@ -297,7 +377,7 @@ describe("useAssistantTurn grant reset", () => {
     });
     await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
 
-    await getByRole("button", { name: "Reset permissions" }).click();
+    await holder.current!.resetPermissions();
 
     expect(resetGrant).toHaveBeenCalledWith("t-1");
     await vi.waitFor(() => expect(holder.current!.grantActive).toBe(false));
@@ -312,7 +392,7 @@ describe("useAssistantTurn grant reset", () => {
     resetGrant.mockRejectedValue(new Error("Thread not found"));
     const onError = vi.fn();
     const holder: { current: Turn | null } = { current: null };
-    const { getByRole, getByText } = await render(
+    const { getByText } = await render(
       <PanelHarness holder={holder} onError={onError} />,
     );
     await holder.current!.sendMessage("hi");
@@ -323,7 +403,7 @@ describe("useAssistantTurn grant reset", () => {
     });
     await vi.waitFor(() => expect(holder.current!.grantActive).toBe(true));
 
-    await getByRole("button", { name: "Reset permissions" }).click();
+    await holder.current!.resetPermissions();
 
     await expect.element(getByText("Thread not found")).toBeInTheDocument();
     expect(onError).toHaveBeenCalledWith("Thread not found");

@@ -798,6 +798,9 @@ class UserService:
         mode: str,
         roles: list[str],
     ) -> None:
+        from .schemas import validate_ranger_default
+
+        validate_ranger_default(mode, roles)
         identity = self._user_identity(username, host)
         if mode == "all":
             await db.execute_system(f"SET DEFAULT ROLE ALL TO {identity}")

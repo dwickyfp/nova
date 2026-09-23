@@ -279,12 +279,13 @@ class TaskOrchestrationRepository:
                 params = [graph_id, graph_id, graph_id]
             else:
                 database_name, schema_name = scope
+                root_name = graph_id.rsplit(".", 1)[-1]
                 sql = (
                     f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
                     "WHERE database_name = %s AND schema_name = %s AND "
-                    f"({names_sql}) ORDER BY name"
+                    f"(name = %s OR {names_sql}) ORDER BY name"
                 )
-                params = [database_name, schema_name, graph_id, graph_id]
+                params = [database_name, schema_name, root_name, graph_id, graph_id]
         result = await db.execute_system(sql, params)
         return [self._to_dict(_TASK_COLUMNS, row) for row in result["rows"]]
 
@@ -617,6 +618,20 @@ class TaskOrchestrationRepository:
         row["wal_marks"] = self._decode_wal_marks(row["wal_marks"])
         return row
 
+    async def existing_graph_run_ids(self, run_ids: list[str]) -> set[str]:
+        """Batch idempotency checks for a scheduler tick's bounded due set."""
+        existing: set[str] = set()
+        ids = list(dict.fromkeys(run_ids))
+        for offset in range(0, len(ids), 500):
+            batch = ids[offset : offset + 500]
+            placeholders = ", ".join("%s" for _ in batch)
+            result = await db.execute_system(
+                f"SELECT id FROM {_GRAPH_RUNS} WHERE id IN ({placeholders})",
+                batch,
+            )
+            existing.update(str(row[0]) for row in result["rows"])
+        return existing
+
     async def list_graph_runs(self, graph_id: str) -> list[dict[str, Any]]:
         result = await db.execute_system(
             f"SELECT {_GRAPH_RUN_COLUMNS} FROM {_GRAPH_RUNS} "
@@ -638,7 +653,7 @@ class TaskOrchestrationRepository:
         result = await db.execute_system(
             f"SELECT {_GRAPH_RUN_COLUMNS} FROM {_GRAPH_RUNS} "
             "WHERE graph_id = %s AND state IN ('pending', 'running') "
-            "ORDER BY started_at",
+            "ORDER BY started_at, id",
             [graph_id],
         )
         runs = [self._to_dict(_GRAPH_RUN_COLUMNS, row) for row in result["rows"]]
@@ -807,9 +822,9 @@ class TaskOrchestrationRepository:
     ) -> bool:
         """Conditional node-state write. True only when this caller moved it.
 
-        This is the idempotency point for node execution: a redelivered graph
-        run finds the node already terminal and affects no rows, so the body is
-        never executed twice (design §2, rule 4).
+        This is the intended idempotency point for node execution: a redelivered
+        graph run finds a terminal node and skips it. Verify the affected-row
+        behavior under concurrent FE sessions before relying on it in production.
         """
         if not from_states:
             return False

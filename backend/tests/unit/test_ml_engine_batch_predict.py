@@ -43,10 +43,15 @@ def service(monkeypatch):
         lambda *a, **kw: {"aws.s3.access_key": "PIPE_A", "aws.s3.secret_key": "PIPE_S"},
     )
 
-    async def stage_configs(_self, database_name):
-        return _stage_configs()
+    async def stage_configs(parsed, **kwargs):
+        configs = _stage_configs()
+        if any(ref.stage_name not in configs for ref in parsed.stage_refs):
+            raise ValueError("Stage not found")
+        return parsed, {ref.start: configs[ref.stage_name] for ref in parsed.stage_refs}
 
-    monkeypatch.setattr(MLEngineService, "_load_stage_configs", stage_configs)
+    monkeypatch.setattr(
+        "app.modules.query.service.query_service._resolve_stage_refs", stage_configs
+    )
     return MLEngineService()
 
 

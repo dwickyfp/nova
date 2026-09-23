@@ -1,4 +1,5 @@
 import { api, apiBase, authHeaders } from "@/lib/api-client";
+import { useAuthStore } from "@/stores/auth-store";
 import {
   parseAssistantEvent,
   readSseFrames,
@@ -37,6 +38,42 @@ export type Agent = {
   visibility: "private" | "shared";
   created_at: string;
   updated_at: string;
+};
+
+export type AgentMemory = {
+  memory_id: string;
+  user_name: string;
+  agent_id: string;
+  role_name: string;
+  fact_key: string;
+  fact: string;
+  source_quote: string;
+  source_thread_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RuleProposal = {
+  proposal_id: string;
+  agent_id: string;
+  memory_id: string;
+  semantic_model_id: string;
+  metric_name: string;
+  prior_expression: string;
+  proposed_expression: string;
+  status: "pending" | "approved" | "rejected";
+  previewed_at: string | null;
+  created_at: string;
+};
+
+export type RuleProposalPreview = {
+  proposal_id: string;
+  metric_name: string;
+  prior_sql: string;
+  proposed_sql: string;
+  prior_value: string | null;
+  proposed_value: string | null;
+  model_fingerprint: string;
 };
 
 export type AgentCreateInput = Partial<
@@ -100,6 +137,19 @@ export type SemanticLintResult = {
   quality: Record<string, unknown>;
 };
 
+export type SemanticQualityLabResult = {
+  semantic_model_id: string;
+  model_fingerprint: string;
+  total: number;
+  matched: number;
+  changed: number;
+  cases: Array<{
+    verified_query_id: string;
+    question: string;
+    status: "matched" | "changed";
+  }>;
+};
+
 export type VerifiedQuery = {
   verified_query_id: string;
   semantic_model_id: string;
@@ -139,6 +189,8 @@ export type AgentMessage = {
   completion_tokens?: number | null;
   total_tokens?: number | null;
   model_name?: string | null;
+  feedback?: "like" | "dislike" | null;
+  attachments?: { name: string; size_bytes: number; media_type?: string }[];
 };
 
 export const agentsApi = {
@@ -148,6 +200,38 @@ export const agentsApi = {
   update: (id: string, body: Partial<AgentCreateInput>) =>
     api.put<Agent>(`/agents/${encodeURIComponent(id)}`, body),
   remove: (id: string) => api.delete<void>(`/agents/${encodeURIComponent(id)}`),
+  listMemories: (agentId: string, offset = 0) =>
+    api.get<{ memories: AgentMemory[]; count: number; next_offset: number | null }>(
+      `/agents/${encodeURIComponent(agentId)}/memories?offset=${offset}&limit=100`,
+    ),
+  deleteMemory: (agentId: string, memoryId: string) =>
+    api.delete<void>(
+      `/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
+    ),
+  listRuleProposals: (modelId: string) =>
+    api.get<{ proposals: RuleProposal[]; count: number }>(
+      `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals`,
+    ),
+  createRuleProposal: (modelId: string, body: {
+    agent_id: string;
+    memory_id: string;
+    metric_name: string;
+    proposed_expression: string;
+  }) => api.post<RuleProposal>(
+    `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals`, body,
+  ),
+  previewRuleProposal: (modelId: string, proposalId: string) =>
+    api.post<RuleProposalPreview>(
+      `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/preview`, {},
+    ),
+  approveRuleProposal: (modelId: string, proposalId: string) =>
+    api.post<RuleProposal>(
+      `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/approve`, {},
+    ),
+  rejectRuleProposal: (modelId: string, proposalId: string) =>
+    api.post<RuleProposal>(
+      `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/reject`, {},
+    ),
 
   listSemanticModels: () =>
     api.get<{ models: SemanticModel[]; count: number }>(
@@ -177,6 +261,10 @@ export const agentsApi = {
   lintSemanticModel: (id: string) =>
     api.get<SemanticLintResult>(
       `/agents/semantic-models/${encodeURIComponent(id)}/lint`,
+    ),
+  runSemanticQualityLab: (id: string) =>
+    api.get<SemanticQualityLabResult>(
+      `/agents/semantic-models/${encodeURIComponent(id)}/quality-lab`,
     ),
   listVerifiedQueries: (id: string) =>
     api.get<{ queries: VerifiedQuery[]; count: number }>(
@@ -213,6 +301,16 @@ export const agentsApi = {
     api.delete<void>(
       `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
     ),
+  setMessageFeedback: (
+    agentId: string,
+    threadId: string,
+    messageId: string,
+    feedback: "like" | "dislike" | null,
+  ) =>
+    api.put<{ feedback: "like" | "dislike" | null }>(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/feedback`,
+      { feedback },
+    ),
   renameThread: (agentId: string, threadId: string, title: string) =>
     api.put<AgentThread>(
       `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
@@ -239,18 +337,21 @@ export type StreamAgentTurnOptions = {
   role?: string | null;
   model?: string | null;
   providerId?: string | null;
+  attachments?: { name: string; content: string; media_type: string }[];
+  onAccepted?: () => void;
 };
 
 /**
  * Opens one agent turn as an SSE stream. Same transport as the assistant turn
- * (fetch + ReadableStream, bearer token, no auto-reconnect), against the
- * agent-scoped endpoint.
+ * (fetch + ReadableStream, bearer token) against the agent-scoped endpoint.
+ * A dropped connection replays journaled frames by run ID and sequence without
+ * posting the user message or running a tool a second time.
  */
 export async function streamAgentTurn(
   agentId: string,
   threadId: string,
   content: string,
-  { signal, onEvent, role, model, providerId }: StreamAgentTurnOptions,
+  { signal, onEvent, role, model, providerId, attachments, onAccepted }: StreamAgentTurnOptions,
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/messages`,
@@ -260,7 +361,7 @@ export async function streamAgentTurn(
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       }),
-      body: JSON.stringify({ content, role, model, provider_id: providerId }),
+      body: JSON.stringify({ content, role, model, provider_id: providerId, attachments }),
       signal,
     },
   );
@@ -274,22 +375,51 @@ export async function streamAgentTurn(
     throw new Error(detail || "The agent request failed");
   }
   if (!response.body) throw new Error("The agent returned an empty stream");
+  onAccepted?.();
 
-  let activeRun: string | undefined;
+  let activeRun: string | undefined = response.headers.get("X-Nova-Run-ID") || undefined;
   let lastSequence = -1;
-  for await (const frame of readSseFrames(response.body)) {
-    const event = parseAssistantEvent(frame.event, frame.data);
-    if (!event) continue;
-    if (event.run_id && event.run_id !== activeRun) {
-      activeRun = event.run_id;
-      lastSequence = -1;
+  let finished = false;
+  async function consume(body: ReadableStream<Uint8Array>) {
+    for await (const frame of readSseFrames(body)) {
+      const event = parseAssistantEvent(frame.event, frame.data);
+      if (!event) continue;
+      if (event.run_id && event.run_id !== activeRun) {
+        activeRun = event.run_id;
+        lastSequence = -1;
+      }
+      if (event.sequence !== undefined) {
+        if (event.sequence <= lastSequence) continue;
+        lastSequence = event.sequence;
+      }
+      if (event.type === "role_changed") {
+        const auth = useAuthStore.getState().auth;
+        if (auth.user)
+          auth.setUser({ ...auth.user, activeRole: event.active_role });
+      }
+      if (event.type === "done") finished = true;
+      onEvent(event);
     }
-    if (event.sequence !== undefined) {
-      if (event.sequence <= lastSequence) continue;
-      lastSequence = event.sequence;
-    }
-    onEvent(event);
   }
+  try {
+    await consume(response.body);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+  }
+  for (let retry = 0; !finished && !signal?.aborted && activeRun && retry < 3; retry++) {
+    try {
+      const replay = await fetch(
+        `${apiBase()}/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(activeRun)}/events?after=${lastSequence}`,
+        { headers: authHeaders({ Accept: "text/event-stream" }), signal },
+      );
+      if (!replay.ok || !replay.body) break;
+      await consume(replay.body);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (retry === 2) break;
+    }
+  }
+  if (!finished && !signal?.aborted) throw new Error("The agent run ended before completion");
 }
 
 // ── Tools Registry ─────────────────────────────────────────────
@@ -353,6 +483,13 @@ export type StudioSettings = {
 };
 
 export type StudioCapabilities = {
+  connectors: {
+    server_id: string;
+    name: string;
+    description: string;
+    is_active: boolean;
+    last_status: string | null;
+  }[];
   agents: { name: string; description: string; agent_id: string }[];
   skills: { name: string; description: string; source: "builtin" | "user" }[];
   tools: {
@@ -399,6 +536,46 @@ export type StudioArtifactRefresh = {
   elapsed_ms: number;
 };
 
+export type StudioDashboardTile = {
+  tile_id: string;
+  artifact_id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type StudioDashboard = {
+  dashboard_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StudioDashboardDetail = StudioDashboard & {
+  layout: { tiles: StudioDashboardTile[] };
+};
+
+export type StudioArtifactDraft = {
+  sql_text: string;
+  artifact_type: "chart" | "table";
+  chart_spec: Record<string, unknown> | null;
+};
+
+export type StudioArtifactEditMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type StudioArtifactEditResponse = {
+  message: string;
+  draft: StudioArtifactDraft | null;
+  columns: string[];
+  rows: (string | number | null)[][];
+  row_count: number;
+  elapsed_ms: number;
+};
+
 export const toolsApi = {
   list: () => api.get<{ tools: Tool[]; count: number }>("/agents/tools"),
   create: (body: { name: string; description?: string; source?: string }) =>
@@ -439,6 +616,7 @@ export const mcpApi = {
 };
 
 export const studioApi = {
+  skillAuthor: () => api.post<Agent>("/agents/studio/skill-author"),
   settings: () => api.get<StudioSettings>("/agents/studio/settings"),
   updateSettings: (body: Partial<StudioPreferences>) =>
     api.patch<StudioPreferences>("/agents/studio/settings", body),
@@ -458,8 +636,53 @@ export const studioApi = {
     api.post<StudioArtifactRefresh>(
       `/agents/studio/artifacts/${encodeURIComponent(id)}/refresh`,
     ),
+  editArtifact: (
+    id: string,
+    body: {
+      instruction: string;
+      draft: StudioArtifactDraft | null;
+      columns: string[];
+      history: StudioArtifactEditMessage[];
+    },
+  ) =>
+    api.post<StudioArtifactEditResponse>(
+      `/agents/studio/artifacts/${encodeURIComponent(id)}/edit`,
+      body,
+    ),
+  applyArtifactEdit: (
+    id: string,
+    body: { draft: StudioArtifactDraft; expected_updated_at: string },
+  ) =>
+    api.patch<StudioArtifactRefresh>(
+      `/agents/studio/artifacts/${encodeURIComponent(id)}`,
+      body,
+    ),
   deleteArtifact: (id: string) =>
     api.delete<void>(`/agents/studio/artifacts/${encodeURIComponent(id)}`),
+  listDashboards: () =>
+    api.get<{ dashboards: StudioDashboard[]; count: number }>(
+      "/agents/studio/dashboards",
+    ),
+  createDashboard: (title: string) =>
+    api.post<StudioDashboardDetail>("/agents/studio/dashboards", { title }),
+  getDashboard: (id: string) =>
+    api.get<StudioDashboardDetail>(
+      `/agents/studio/dashboards/${encodeURIComponent(id)}`,
+    ),
+  updateDashboard: (
+    id: string,
+    body: {
+      title: string;
+      layout: { tiles: StudioDashboardTile[] };
+      expected_updated_at: string;
+    },
+  ) =>
+    api.put<StudioDashboardDetail>(
+      `/agents/studio/dashboards/${encodeURIComponent(id)}`,
+      body,
+    ),
+  deleteDashboard: (id: string) =>
+    api.delete<void>(`/agents/studio/dashboards/${encodeURIComponent(id)}`),
 };
 
 // ── Skill Registry ─────────────────────────────────────────────
@@ -478,6 +701,19 @@ export type Skill = {
 };
 
 export const skillsApi = {
+  verify: (document: string) =>
+    api.post<{ name: string; description: string }>(
+      "/agents/studio/skills/verify",
+      { document },
+    ),
+  personal: () =>
+    api.get<{ skills: Skill[]; count: number }>("/agents/studio/skills"),
+  upload: (document: string) =>
+    api.post<Skill>("/agents/studio/skills", { document }),
+  update: (id: string, document: string) =>
+    api.put<Skill>(`/agents/studio/skills/${encodeURIComponent(id)}`, {
+      document,
+    }),
   list: () => api.get<{ skills: Skill[]; count: number }>("/agents/skills"),
   create: (body: {
     name: string;

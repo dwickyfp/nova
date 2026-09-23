@@ -11,6 +11,8 @@ SQL-level scoping without a live StarRocks.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from app.modules.assistant import repository as repo_module
@@ -49,7 +51,17 @@ async def test_list_threads_filters_by_user_in_sql(recording):
 
     sql, params = recording.calls[-1]
     assert "user_name = %s" in sql
+    assert "t.agent_id IS NULL" in sql
     assert params == ["alice"]
+
+
+async def test_studio_threads_are_scoped_to_the_requested_agent(recording):
+    await AssistantRepository().list_threads(user_name="alice", agent_id="agent-1")
+
+    sql, params = recording.calls[-1]
+    assert "t.agent_id = %s" in sql
+    assert "t.agent_id IS NULL" not in sql
+    assert params == ["alice", "agent-1"]
 
 
 async def test_get_thread_filters_by_thread_and_user(recording):
@@ -59,6 +71,19 @@ async def test_get_thread_filters_by_thread_and_user(recording):
     sql, params = recording.calls[-1]
     assert "thread_id = %s" in sql and "user_name = %s" in sql
     assert params == ["t1", "alice"]
+
+
+async def test_new_thread_is_readable_before_create_returns(recording, monkeypatch):
+    repo = AssistantRepository()
+    read = AsyncMock(side_effect=[None, {"thread_id": "visible"}])
+    monkeypatch.setattr(repo, "get_thread", read)
+    monkeypatch.setattr(repo_module.asyncio, "sleep", AsyncMock())
+
+    created = await repo.create_thread(user_name="alice", agent_id="sales")
+
+    assert read.await_count == 2
+    assert all(call.kwargs["user_name"] == "alice" for call in read.await_args_list)
+    assert created["agent_id"] == "sales"
 
 
 async def test_list_messages_filters_by_thread_and_user(recording):

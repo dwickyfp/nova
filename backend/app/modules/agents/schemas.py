@@ -19,14 +19,7 @@ from pydantic import BaseModel, Field
 
 #: Which tools an agent bundles. A tool not in this set is never registered for
 #: the agent, so the model cannot call it.
-AgentToolName = Literal[
-    "load_skill",
-    "query_execute",
-    "semantic_query",
-    "semantic_search",
-    "data_to_chart",
-    "ml_execute",
-]
+AgentToolName = str
 
 #: HITL policy. ``auto_read_only`` runs read-only tools without a prompt;
 #: ``ask_every_tool`` prompts for each. There is deliberately no bypass value in
@@ -229,6 +222,62 @@ class VerifiedQueryListResponse(BaseModel):
     count: int
 
 
+class SemanticQualityCase(BaseModel):
+    verified_query_id: str
+    question: str
+    status: Literal["matched", "changed"]
+
+
+class SemanticQualityLabResponse(BaseModel):
+    semantic_model_id: str
+    model_fingerprint: str
+    total: int
+    matched: int
+    changed: int
+    cases: list[SemanticQualityCase]
+
+
+class RuleProposalCreateRequest(BaseModel):
+    agent_id: str = Field(min_length=1, max_length=64)
+    memory_id: str = Field(min_length=1, max_length=64)
+    metric_name: str = Field(min_length=1, max_length=160)
+    proposed_expression: str = Field(min_length=1, max_length=4000)
+
+
+class RuleProposalView(BaseModel):
+    proposal_id: str
+    owner_name: str
+    agent_id: str
+    role_name: str
+    memory_id: str
+    semantic_model_id: str
+    metric_name: str
+    prior_expression: str
+    proposed_expression: str
+    prior_fingerprint: str
+    proposed_fingerprint: str
+    status: Literal["pending", "approved", "rejected"]
+    previewed_at: datetime | None = None
+    reviewed_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RuleProposalListResponse(BaseModel):
+    proposals: list[RuleProposalView]
+    count: int
+
+
+class RuleProposalPreviewResponse(BaseModel):
+    proposal_id: str
+    prior_sql: str
+    proposed_sql: str
+    prior_value: str | None
+    proposed_value: str | None
+    metric_name: str
+    model_fingerprint: str
+
+
 class SkillView(BaseModel):
     skill_id: str
     owner_name: str
@@ -248,9 +297,9 @@ class SkillListResponse(BaseModel):
 
 
 class SkillCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
     description: str = Field(default="", max_length=1024)
-    body: str = ""
+    body: str = Field(min_length=1, max_length=25 * 1024 * 1024)
     scope: Literal["user", "global"] = "user"
 
 

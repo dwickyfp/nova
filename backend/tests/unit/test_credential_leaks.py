@@ -92,6 +92,10 @@ class TestCredentialParamsFromConfig:
 
 
 class TestResolveStorageCredentials:
+    def test_unknown_named_connection_does_not_fall_back_to_default(self):
+        with pytest.raises(ValueError, match="Storage connection .* not found"):
+            injector.resolve_storage_credentials("missing_connection_for_stage_test")
+
     def test_reads_from_storage_connection(self, monkeypatch):
         conn = StorageConnectionConfig(
             name="production",

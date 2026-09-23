@@ -1,20 +1,18 @@
 """Delegate-first node execution against StarRocks.
 
-A graph node lowers to its own ``SUBMIT TASK`` and is submitted **on the task
-owner's connection** (design D9.4), so the engine checks privileges against the
-submitter and records them in ``CREATOR``. Nova adds no authorization logic; if
-the owner's grants do not cover the body, the engine rejects the submit and the
-node fails.
+A graph node lowers to its own ``SUBMIT TASK`` and is submitted with the task
+owner's StarRocks identity (design D9.4), so the engine checks the owner's
+privileges. A dedicated worker account may impersonate the owner on a fresh
+connection. If the owner's grants do not cover the body, the node fails.
 
 The engine has **no completion hook** and cannot trigger another statement, so
 after submitting, the worker can only learn the outcome by polling
 ``information_schema.task_runs`` (design §1). That polling is unavoidable Nova
 code — see :func:`poll_task_run`.
 
-The connection is opened with the owner's credential, which comes from an
-:class:`~app.modules.task_orchestration.credentials.OwnerCredentialProvider` at
-execution time and is discarded when the connection closes. No credential is
-ever logged or persisted; only the engine's own run identifier is recorded.
+The worker account secret is loaded from its environment. Test and legacy
+callers may use an owner credential provider. No credential is logged or
+persisted; only the engine's run identifier is recorded.
 """
 
 from __future__ import annotations
@@ -23,15 +21,20 @@ import asyncio
 import contextlib
 import importlib
 import logging
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Protocol
+from uuid import NAMESPACE_URL, uuid5
 
 from app.common.identifiers import check_identifier
 from app.core.config import settings
 from app.core.database import db
-from app.modules.task_orchestration.credentials import OwnerCredentialProvider
+from app.modules.task_orchestration.credentials import (
+    CredentialUnavailable,
+    OwnerCredentialProvider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +75,13 @@ class TaskSpec:
     body: str
     database: str | None = None
     active_role: str | None = None
+    schema: str | None = None
+    native_name: str | None = None
+
+
+def native_attempt_name(run_id: str) -> str:
+    """Give each durable node attempt its own StarRocks one-shot task name."""
+    return f"nova_{uuid5(NAMESPACE_URL, f'nova/task-run/{run_id}').hex}"
 
 
 @dataclass(frozen=True)
@@ -81,6 +91,14 @@ class ExecutionResult:
     query_id: str | None
     state: str
     error_message: str | None = None
+
+
+@dataclass(frozen=True)
+class RunWatermark:
+    """Native run IDs observed at the newest pre-submit timestamp."""
+
+    create_time: datetime | None
+    query_ids: frozenset[str]
 
 
 def build_submit_task(spec: TaskSpec) -> str:
@@ -96,7 +114,7 @@ def build_submit_task(spec: TaskSpec) -> str:
     (CTAS / INSERT / CACHE SELECT) before anything runs, so "the body must be
     delegatable" is enforced by the parser, not by Nova (design §1).
     """
-    identifier = _quote_identifier(spec.database, spec.name)
+    identifier = _quote_identifier(spec.database, spec.native_name or spec.name)
     return f"SUBMIT TASK {identifier} AS {spec.body}"
 
 
@@ -128,12 +146,31 @@ class DelegateExecutor:
 
     def __init__(
         self,
-        credentials: OwnerCredentialProvider,
+        credentials: OwnerCredentialProvider | None,
         *,
+        impersonation_user: str | None = None,
+        impersonation_password: str | None = None,
+        impersonation_role: str | None = None,
         poll_interval: float | None = None,
         poll_timeout: float | None = None,
     ) -> None:
+        if bool(impersonation_user) != bool(impersonation_password):
+            raise ValueError("worker impersonation user and password must both be configured")
+        if credentials is None and not impersonation_user:
+            raise ValueError("task executor requires an owner credential source")
+        if impersonation_role and not impersonation_user:
+            raise ValueError("worker impersonation role requires a worker account")
+        if impersonation_user:
+            check_identifier(impersonation_user, field="worker impersonation user")
+            if impersonation_user.lower() in {"root", "nova_admin"}:
+                raise ValueError("the task worker needs a dedicated unprivileged account")
         self._credentials = credentials
+        self._impersonation_user = impersonation_user
+        self._impersonation_password = impersonation_password
+        self._impersonation_role = (
+            check_identifier(impersonation_role, field="worker impersonation role")
+            if impersonation_role else None
+        )
         self._poll_interval = (
             poll_interval
             if poll_interval is not None
@@ -156,18 +193,15 @@ class DelegateExecutor:
         silently treated as "no data": an error is raised so the node is
         recorded as failed rather than skipped (design §6).
         """
-        password = await self._credentials.password_for(owner)
-        async with db.user_conn(owner, password, database=spec.database) as conn:
-            del password
-            async with _dict_cursor(conn) as cur:
-                try:
-                    await self._activate_task_role(cur, spec)
-                    await cur.execute(f"SELECT ({expression}) AS nova_when")
-                    row = await cur.fetchone()
-                except Exception as exc:
-                    raise NodeExecutionError(
-                        f"WHEN evaluation failed for {spec.name!r}: {_redact(str(exc))}"
-                    ) from exc
+        async with self._owner_conn(owner, spec.database) as conn, _dict_cursor(conn) as cur:
+            try:
+                await self._activate_task_role(cur, spec)
+                await cur.execute(f"SELECT ({expression}) AS nova_when")
+                row = await cur.fetchone()
+            except Exception as exc:
+                raise NodeExecutionError(
+                    f"WHEN evaluation failed for {spec.name!r}: {_redact(str(exc))}"
+                ) from exc
         if not isinstance(row, dict) or "nova_when" not in row:
             raise NodeExecutionError(f"WHEN expression for {spec.name!r} did not return a value")
         return _truthy(row["nova_when"])
@@ -182,8 +216,9 @@ class DelegateExecutor:
         """Submit ``spec`` on ``owner``'s connection and wait for the TaskRun.
 
         Raises :class:`NodeExecutionError` on submit failure or a failed run.
-        The plaintext password is resolved inside this call and dropped when the
-        ``async with`` closes the connection.
+        The standalone worker uses its dedicated account to impersonate the
+        owner on a fresh connection. Test and legacy callers may supply the
+        owner's credential directly. The connection closes after submission.
 
         **The owner's connection exists to submit, nothing else.** Its entire
         purpose is that StarRocks checks the body's privileges against the
@@ -209,8 +244,6 @@ class DelegateExecutor:
                 f"task {spec.name!r} has no database; SUBMIT TASK requires one"
             )
 
-        statement = build_submit_task(spec)
-
         # The watermark is read before the submit so the new run can be
         # identified by being strictly newer. It is read on the system
         # connection for the reason in the docstring, and it is **best-effort**:
@@ -220,10 +253,11 @@ class DelegateExecutor:
         # costs precision in identifying the new run — the poll falls back to
         # the newest run — so it must never stop the submit, which is where the
         # owner's RBAC is actually enforced.
-        watermark: datetime | None = None
+        native_name = spec.native_name or spec.name
+        watermark: RunWatermark | None = None
         try:
             async with db.system_conn() as observer:
-                watermark = await self._latest_create_time(observer, spec.name)
+                watermark = await self._latest_create_time(observer, native_name)
         except Exception as exc:
             logger.warning(
                 "could not read the task-run watermark for %s; continuing: %s",
@@ -231,19 +265,31 @@ class DelegateExecutor:
                 _redact(str(exc)),
             )
 
-        password = await self._credentials.password_for(owner)
-        async with db.user_conn(owner, password, database=spec.database) as conn:
-            # Drop the local reference as early as possible; the connection
-            # owns whatever it needs from here on.
-            del password
+        async with self._owner_conn(owner, spec.database) as conn:
             async with _dict_cursor(conn) as cur:
                 await self._activate_task_role(cur, spec)
+            body = spec.body
+            if "@" in body:
+                from app.modules.query.dialect.parser import parse_sql
+
+                parsed = parse_sql(body)
+                if parsed.errors:
+                    raise NodeExecutionError("task body contains invalid stage SQL")
+                if parsed.stage_refs:
+                    raise NodeExecutionError(
+                        "scheduled @stage execution is unavailable because native task "
+                        "definitions would persist storage credentials"
+                    )
+            statement = build_submit_task(replace(spec, body=body))
             await self._submit(conn, statement)
 
-        async with db.system_conn() as observer:
-            result = await self._await_completion(
-                observer, spec.name, watermark=watermark, heartbeat=heartbeat
-            )
+        # Never retain a system-pool connection across the full native run.
+        # Long runs can exceed the pool size and their heartbeats need that pool.
+        result = await self._await_completion(
+            None, native_name, watermark=watermark, heartbeat=heartbeat
+        )
+        if spec.native_name:
+            await self._drop_completed_native_task(spec, owner)
 
         if result.state in _FAILURE_STATES:
             raise NodeExecutionError(
@@ -251,6 +297,93 @@ class DelegateExecutor:
                 query_id=result.query_id,
             )
         return result
+
+    async def _drop_completed_native_task(self, spec: TaskSpec, owner: str) -> None:
+        """Release the one-shot Task template after its run has settled.
+
+        The run history remains queryable after DROP TASK, as verified on the
+        supported FE. A cleanup failure cannot change an observed run result;
+        the FE's own task TTL remains the fallback.
+        """
+        assert spec.native_name is not None
+        try:
+            async with self._owner_conn(owner, spec.database) as conn, conn.cursor() as cur:
+                await cur.execute(
+                    f"DROP TASK IF EXISTS {_quote_identifier(None, spec.native_name)}"
+                )
+        except Exception as exc:
+            logger.warning(
+                "could not drop completed native task %s: %s",
+                spec.native_name,
+                _redact(str(exc)),
+            )
+
+    @asynccontextmanager
+    async def _owner_conn(
+        self, owner: str, database: str | None
+    ) -> AsyncIterator[NodeConnection]:
+        """Open a fresh, verified owner session for one task operation."""
+        if self._impersonation_user:
+            # Only simple StarRocks accounts are eligible. A stored task owner
+            # must never be interpolated into EXECUTE AS without validation.
+            target = check_identifier(owner, field="task owner")
+            password = self._impersonation_password
+            assert password is not None
+            connection = db.user_conn(self._impersonation_user, password)
+            try:
+                conn = await connection.__aenter__()
+            except Exception:
+                # Connector errors can contain connection parameters. Neither
+                # the public failure nor its traceback may include the secret.
+                raise CredentialUnavailable("task worker account connection failed") from None
+            try:
+                async with _dict_cursor(conn) as cur:
+                    if self._impersonation_role:
+                        try:
+                            await cur.execute(f"SET ROLE {self._impersonation_role}")
+                            await cur.execute("SELECT CURRENT_ROLE() AS nova_active_role")
+                            active_role = await cur.fetchone()
+                        except Exception as exc:
+                            raise CredentialUnavailable(
+                                "task worker impersonation role is unavailable "
+                                f"({type(exc).__name__})"
+                            ) from None
+                        actual_role = str(
+                            active_role.get("nova_active_role", "")
+                            if isinstance(active_role, dict) else ""
+                        )
+                        if actual_role.strip("[]`' ") != self._impersonation_role:
+                            raise CredentialUnavailable(
+                                "StarRocks did not confirm the task worker role"
+                            )
+                    try:
+                        await cur.execute(f"EXECUTE AS '{target}'@'%' WITH NO REVERT")
+                        await cur.execute("SELECT CURRENT_USER() AS nova_effective_user")
+                        row = await cur.fetchone()
+                    except Exception:
+                        raise CredentialUnavailable(
+                            f"task worker cannot impersonate owner {target!r}"
+                        ) from None
+                    actual = str(
+                        row.get("nova_effective_user", "") if isinstance(row, dict) else ""
+                    )
+                    if actual.replace("'", "") != f"{target}@%":
+                        raise CredentialUnavailable(
+                            f"StarRocks did not confirm task owner {target!r}"
+                        )
+                    if database:
+                        name = check_identifier(database, field="task database")
+                        await cur.execute(f"USE `{name}`")
+                yield conn
+            finally:
+                await connection.__aexit__(None, None, None)
+            return
+
+        assert self._credentials is not None
+        password = await self._credentials.password_for(owner)
+        async with db.user_conn(owner, password, database=database) as conn:
+            del password
+            yield conn
 
     @staticmethod
     async def _activate_task_role(cur: Any, spec: TaskSpec) -> None:
@@ -263,13 +396,13 @@ class DelegateExecutor:
         role = check_identifier(spec.active_role, field="role")
         try:
             await cur.execute(f"SET ROLE {role}")
-            await cur.execute("SELECT CURRENT_ROLE() AS current_role")
+            await cur.execute("SELECT CURRENT_ROLE() AS nova_active_role")
             row = await cur.fetchone()
         except Exception as exc:
             raise NodeExecutionError(
                 f"task execution role {spec.active_role!r} is no longer available"
             ) from exc
-        actual = str(row.get("current_role") if isinstance(row, dict) else row[0])
+        actual = str(row.get("nova_active_role") if isinstance(row, dict) else row[0])
         active = {
             item.strip().strip("`'")
             for item in actual.replace("[", "").replace("]", "").split(",")
@@ -291,28 +424,39 @@ class DelegateExecutor:
         except Exception as exc:
             raise NodeExecutionError(_redact(str(exc))) from exc
 
-    async def _latest_create_time(self, conn: NodeConnection, task_name: str) -> datetime | None:
-        """Newest native run time for this task, before this submit.
+    async def _latest_create_time(
+        self, conn: NodeConnection, task_name: str
+    ) -> RunWatermark | None:
+        """Newest native timestamp and its run IDs before this submit.
 
         The engine's ``SUBMIT TASK`` result only echoes ``TaskName``/``Status``,
         so the submitted run is identified by being strictly newer than this
         watermark. Times are the engine's own naive ``DATETIME`` values.
         """
         sql = (
-            "SELECT CREATE_TIME FROM information_schema.task_runs "
-            "WHERE TASK_NAME = %s ORDER BY CREATE_TIME DESC LIMIT 1"
+            "SELECT TASK_NAME, QUERY_ID, STATE, ERROR_MESSAGE, CREATE_TIME, FINISH_TIME "
+            "FROM information_schema.task_runs WHERE TASK_NAME = %s "
+            "ORDER BY CREATE_TIME DESC LIMIT 100"
         )
         async with _dict_cursor(conn) as cur:
             await cur.execute(sql, (task_name,))
             rows = _as_dicts(await cur.fetchall())
-        return _as_datetime(rows[0].get("CREATE_TIME")) if rows else None
+        if not rows:
+            return None
+        newest = _as_datetime(rows[0].get("CREATE_TIME"))
+        ids = frozenset(
+            str(row["QUERY_ID"])
+            for row in rows
+            if row.get("QUERY_ID") and _as_datetime(row.get("CREATE_TIME")) == newest
+        )
+        return RunWatermark(create_time=newest, query_ids=ids)
 
     async def _await_completion(
         self,
-        conn: NodeConnection,
+        conn: NodeConnection | None,
         task_name: str,
         *,
-        watermark: datetime | None,
+        watermark: RunWatermark | None,
         heartbeat: Callable[[], Awaitable[None]] | None = None,
     ) -> ExecutionResult:
         """Poll ``information_schema.task_runs`` until the new run settles.
@@ -328,7 +472,11 @@ class DelegateExecutor:
         deadline = asyncio.get_running_loop().time() + self._poll_timeout
         while True:
             try:
-                result = await self._newest_run_after(conn, task_name, watermark)
+                if conn is None:
+                    async with db.system_conn() as observer:
+                        result = await self._newest_run_after(observer, task_name, watermark)
+                else:
+                    result = await self._newest_run_after(conn, task_name, watermark)
             except Exception as exc:
                 logger.warning(
                     "task-run poll for %s failed; retrying: %s",
@@ -354,19 +502,13 @@ class DelegateExecutor:
         self,
         conn: NodeConnection,
         task_name: str,
-        watermark: datetime | None,
+        watermark: RunWatermark | None,
     ) -> ExecutionResult | None:
-        """The newest run strictly newer than ``watermark``, or ``None``.
-
-        ``CREATE_TIME`` has second granularity, so a run submitted in the same
-        second as the watermark ties. A tie is treated as *this* submit only
-        when no older run is being waited on; the worker polls until the state
-        is terminal anyway, so a stale tie resolves on the next tick.
-        """
+        """Find a run absent from the pre-submit snapshot, including tied times."""
         sql = (
             "SELECT TASK_NAME, QUERY_ID, STATE, ERROR_MESSAGE, CREATE_TIME, FINISH_TIME "
             "FROM information_schema.task_runs WHERE TASK_NAME = %s "
-            "ORDER BY CREATE_TIME DESC LIMIT 20"
+            "ORDER BY CREATE_TIME DESC LIMIT 100"
         )
         async with _dict_cursor(conn) as cur:
             await cur.execute(sql, (task_name,))
@@ -374,10 +516,20 @@ class DelegateExecutor:
 
         if not rows:
             return None
-        newest_created = _as_datetime(rows[0].get("CREATE_TIME"))
-        if watermark is not None and newest_created is not None and newest_created <= watermark:
-            return None
-        return _row_to_result(rows[0])
+        for row in rows:
+            created = _as_datetime(row.get("CREATE_TIME"))
+            if watermark is not None:
+                if watermark.create_time is not None and created is not None:
+                    if created < watermark.create_time:
+                        continue
+                    if created == watermark.create_time and (
+                        not row.get("QUERY_ID") or str(row["QUERY_ID"]) in watermark.query_ids
+                    ):
+                        continue
+                elif row.get("QUERY_ID") and str(row["QUERY_ID"]) in watermark.query_ids:
+                    continue
+            return _row_to_result(row)
+        return None
 
 
 _RUN_COLUMNS = (

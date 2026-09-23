@@ -335,6 +335,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODELS (
   created_at  DATETIME NOT NULL,
   created_by  VARCHAR(128),
   current_version INT DEFAULT "0",
+  tenant_name VARCHAR(128) NOT NULL DEFAULT "default",
   updated_at  DATETIME NOT NULL
 ) PRIMARY KEY(model_id)
 DISTRIBUTED BY HASH(model_id) BUCKETS 4
@@ -376,6 +377,16 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_MODEL_ALIASES (
   updated_at  DATETIME NOT NULL
 ) PRIMARY KEY(alias_name, owner_name, database_name)
 DISTRIBUTED BY HASH(alias_name) BUCKETS 2
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_EPHEMERAL_RUNS (
+    run_id VARCHAR(64) NOT NULL,
+    scope_key VARCHAR(2048) NOT NULL,
+    fingerprint VARCHAR(64) NOT NULL,
+    descriptor_json STRING NOT NULL,
+    expires_epoch DOUBLE NOT NULL
+) PRIMARY KEY(run_id)
+DISTRIBUTED BY HASH(run_id) BUCKETS 4
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.ML_RUNS (
@@ -445,7 +456,14 @@ PARTITION BY RANGE(event_time) (
   PARTITION p202612 VALUES LESS THAN ("2027-01-01")
 )
 DISTRIBUTED BY HASH(log_id) BUCKETS 8
-PROPERTIES("replication_num"="1");
+PROPERTIES(
+  "replication_num"="1",
+  "dynamic_partition.enable"="true",
+  "dynamic_partition.time_unit"="MONTH",
+  "dynamic_partition.end"="6",
+  "dynamic_partition.prefix"="p",
+  "dynamic_partition.buckets"="8"
+);
 
 -- ═══════════════════════════════════════
 -- STAGE Schema
@@ -498,7 +516,14 @@ PARTITION BY RANGE(started_at) (
   PARTITION p202612 VALUES LESS THAN ("2027-01-01")
 )
 DISTRIBUTED BY HASH(load_id) BUCKETS 4
-PROPERTIES("replication_num"="1");
+PROPERTIES(
+  "replication_num"="1",
+  "dynamic_partition.enable"="true",
+  "dynamic_partition.time_unit"="MONTH",
+  "dynamic_partition.end"="6",
+  "dynamic_partition.prefix"="p",
+  "dynamic_partition.buckets"="4"
+);
 
 -- ═══════════════════════════════════════
 -- QUALITY Schema
@@ -553,7 +578,14 @@ PARTITION BY RANGE(started_at) (
   PARTITION p202612 VALUES LESS THAN ("2027-01-01")
 )
 DISTRIBUTED BY HASH(stat_id) BUCKETS 8
-PROPERTIES("replication_num"="1");
+PROPERTIES(
+  "replication_num"="1",
+  "dynamic_partition.enable"="true",
+  "dynamic_partition.time_unit"="MONTH",
+  "dynamic_partition.end"="6",
+  "dynamic_partition.prefix"="p",
+  "dynamic_partition.buckets"="8"
+);
 
 SELECT 'Nova init complete! All tables created.' AS status;
 

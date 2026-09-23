@@ -43,7 +43,7 @@ export function ExternalCatalogsPage() {
       <Header fixed>
         <div className='flex min-w-0 flex-1 items-center gap-3'>
           <div className='min-w-0'>
-            <h1 className='truncate text-lg font-semibold'>External Catalogs</h1>
+            <h1 className='truncate text-lg font-heading'>External Catalogs</h1>
             <p className='text-sm text-muted-foreground'>
               Iceberg and Hive catalogs backed by a storage connection
             </p>

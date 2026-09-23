@@ -236,134 +236,133 @@ export function Dashboard() {
         </Button>
       </Header>
 
-      <Main fixed className="min-h-0 py-0">
-        <div className="min-h-0 flex-1 space-y-10 overflow-y-auto py-6 pe-2 pb-12">
-          <section className="space-y-6">
-            <div className="flex flex-col gap-3">
-              <h1 className="text-3xl font-semibold tracking-tight">Home</h1>
-            </div>
-
-            <div className="relative max-w-5xl">
-              <Search className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                className="h-11 rounded-md border-border/80 bg-background ps-11 text-sm shadow-none"
-                placeholder="Search Nova objects and docs"
-              />
-            </div>
-          </section>
-
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">
-              Quick actions
-            </h2>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {quickActions.map((action) => (
-                <Link
-                  key={action.title}
-                  to={action.href}
-                  className="group flex min-h-28 rounded-lg border border-border/75 bg-card p-4 transition-colors hover:border-primary/35 hover:bg-primary/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="flex min-w-0 flex-col gap-3">
-                    <action.icon className="size-4 text-primary" />
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-semibold">
-                          {action.title}
-                        </span>
-                        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                      </div>
-                      <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
-                        {action.description}
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          <section className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold tracking-tight">
-                Recent work
-              </h2>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/workspaces">View all</Link>
-              </Button>
-            </div>
-
-            <Tabs defaultValue="all" className="gap-4">
-              <div className="w-full overflow-x-auto border-b border-border/80">
-                <TabsList className="h-10 rounded-none bg-transparent p-0">
-                  {recentTabs.map((tab) => (
-                    <TabsTrigger
-                      key={tab.value}
-                      value={tab.value}
-                      className="rounded-none border-0 border-b-2 border-transparent bg-transparent px-0 me-7 text-muted-foreground shadow-none transition-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
-                    >
-                      {tab.label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
+      <Main fixed fluid className="min-h-0 p-0">
+        <div className="minimal-scrollbar min-h-0 w-full flex-1 overflow-y-auto">
+          <div className="space-y-10 px-4 py-6 pb-12 @7xl/content:mx-auto @7xl/content:w-full @7xl/content:max-w-7xl">
+            <section className="space-y-6">
+              <div className="flex flex-col gap-3">
+                <h1 className="text-2xl leading-8 font-normal">Home</h1>
               </div>
 
-              {recentTabs.map((tab) => (
-                <TabsContent key={tab.value} value={tab.value}>
-                  <RecentWorkTable
-                    items={filteredRecentWork.filter(
-                      (item) => tab.value === "all" || item.type === tab.value,
-                    )}
-                    hasError={recentWorkHasError}
-                    loading={recentWorkLoading}
-                    onSelect={openRecentWork}
-                  />
-                </TabsContent>
-              ))}
-            </Tabs>
-          </section>
-
-          <section className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold tracking-tight">
-                  Start with a template
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Launch common Nova workflows with the right SQL pattern.
-                </p>
+              <div className="relative max-w-5xl">
+                <Search className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="h-11 rounded-md border-border/80 bg-background ps-11 text-sm shadow-none"
+                  placeholder="Search Nova objects and docs"
+                />
               </div>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/workspaces">Browse templates</Link>
-              </Button>
-            </div>
+            </section>
 
-            <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-              {filteredTemplates.map((template) => (
-                <Link
-                  key={template.title}
-                  to={template.href}
-                  className="group flex min-h-20 items-center justify-between gap-4 rounded-lg border border-border/75 bg-card px-4 py-3 transition-colors hover:border-primary/35 hover:bg-primary/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <template.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
-                    <div className="min-w-0 space-y-2">
-                      <p className="truncate text-sm font-semibold">
-                        {template.title}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span>{template.category}</span>
-                        <span aria-hidden="true">-</span>
-                        <span>{template.topic}</span>
+            <section className="space-y-4">
+              <h2 className="text-lg font-heading">Quick actions</h2>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {quickActions.map((action) => (
+                  <Link
+                    key={action.title}
+                    to={action.href}
+                    className="group flex min-h-28 rounded-lg border border-border/75 bg-card p-4 transition-colors hover:border-primary/35 hover:bg-primary/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <div className="flex min-w-0 flex-col gap-3">
+                      <action.icon className="size-4 text-primary" />
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium">
+                            {action.title}
+                          </span>
+                          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                        </div>
+                        <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                          {action.description}
+                        </p>
                       </div>
                     </div>
-                  </div>
-                  <Plus className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
-                </Link>
-              ))}
-            </div>
-          </section>
+                  </Link>
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-heading">Recent work</h2>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/workspaces">View all</Link>
+                </Button>
+              </div>
+
+              <Tabs defaultValue="all" className="gap-4">
+                <div className="w-full overflow-x-auto border-b border-border/80">
+                  <TabsList className="h-10 rounded-none bg-transparent p-0">
+                    {recentTabs.map((tab) => (
+                      <TabsTrigger
+                        key={tab.value}
+                        value={tab.value}
+                        className="rounded-none border-0 border-b-2 border-transparent bg-transparent px-0 me-7 text-muted-foreground shadow-none transition-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                      >
+                        {tab.label}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
+
+                {recentTabs.map((tab) => (
+                  <TabsContent key={tab.value} value={tab.value}>
+                    <RecentWorkTable
+                      items={filteredRecentWork.filter(
+                        (item) =>
+                          tab.value === "all" || item.type === tab.value,
+                      )}
+                      hasError={recentWorkHasError}
+                      loading={recentWorkLoading}
+                      onSelect={openRecentWork}
+                    />
+                  </TabsContent>
+                ))}
+              </Tabs>
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-heading">
+                    Start with a template
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Launch common Nova workflows with the right SQL pattern.
+                  </p>
+                </div>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/workspaces">Browse templates</Link>
+                </Button>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                {filteredTemplates.map((template) => (
+                  <Link
+                    key={template.title}
+                    to={template.href}
+                    className="group flex min-h-20 items-center justify-between gap-4 rounded-lg border border-border/75 bg-card px-4 py-3 transition-colors hover:border-primary/35 hover:bg-primary/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <div className="flex min-w-0 items-start gap-3">
+                      <template.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                      <div className="min-w-0 space-y-2">
+                        <p className="truncate text-sm font-medium">
+                          {template.title}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span>{template.category}</span>
+                          <span aria-hidden="true">-</span>
+                          <span>{template.topic}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <Plus className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                  </Link>
+                ))}
+              </div>
+            </section>
+          </div>
         </div>
       </Main>
     </>

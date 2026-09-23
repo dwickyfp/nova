@@ -201,5 +201,36 @@ class ArtifactRepository:
         )
         return bool(result.get("affected", 0))
 
+    async def update(
+        self,
+        artifact_id: str,
+        *,
+        owner_name: str,
+        expected_updated_at: datetime,
+        sql_text: str,
+        artifact_type: Literal["chart", "table"],
+        chart_spec: object | None,
+        title: str,
+    ) -> dict[str, Any] | None:
+        stored_sql = validate_artifact_sql(sql_text)
+        stored_chart = chart_template(chart_spec, title=title) if artifact_type == "chart" else None
+        result = await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_STUDIO_ARTIFACTS "
+            "SET sql_text = %s, artifact_type = %s, chart_spec = %s, updated_at = %s "
+            "WHERE artifact_id = %s AND owner_name = %s AND updated_at = %s",
+            [
+                stored_sql,
+                artifact_type,
+                json.dumps(stored_chart, separators=(",", ":")) if stored_chart else None,
+                _now(),
+                artifact_id,
+                owner_name,
+                _datetime(expected_updated_at),
+            ],
+        )
+        if not result.get("affected", 0):
+            return None
+        return await self.get(artifact_id, owner_name=owner_name)
+
 
 artifact_repository = ArtifactRepository()

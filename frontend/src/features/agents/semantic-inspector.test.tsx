@@ -51,7 +51,17 @@ describe("SemanticInspector", () => {
           return json({ verified_query_id: "vq-1" }, 201);
         }
         if (url.endsWith("/verified-queries"))
-          return json({ queries: [], count: 0 });
+          return json({ queries: [{
+            verified_query_id: "vq-1", question: "Revenue by region",
+            verified_sql: "SELECT revenue FROM orders", verified_at: "2026-09-23T00:00:00Z",
+            usage_count: 0, success_count: 0, verified_by: "nova_admin",
+          }], count: 1 });
+        if (url.endsWith("/quality-lab"))
+          return json({
+            semantic_model_id: "sales/model", model_fingerprint: "fingerprint-2",
+            total: 1, matched: 0, changed: 1,
+            cases: [{ verified_query_id: "vq-1", question: "Revenue by region", status: "changed" }],
+          });
         if (url.endsWith("/preview")) {
           return json({
             semantic_model_id: "sales/model",
@@ -99,6 +109,20 @@ describe("SemanticInspector", () => {
     await screen.getByRole("tab", { name: "Quality" }).click();
     await expect.element(screen.getByText("Compiler-ready")).toBeVisible();
     await expect.element(screen.getByText("missing_synonym")).toBeVisible();
+    await screen.getByRole("button", { name: "Run checks" }).click();
+    await expect.element(screen.getByText("0/1 matched · 1 need review")).toBeVisible();
+    await expect.element(screen.getByText("Review: Revenue by region")).toBeVisible();
+    await page.viewport(320, 640);
+    try {
+      const dialog = page.getByRole("dialog").element();
+      expect(dialog.getBoundingClientRect().right).toBeLessThanOrEqual(320);
+      const overflowing = Array.from(dialog.querySelectorAll("*"))
+        .filter((item) => item.getBoundingClientRect().right > dialog.getBoundingClientRect().right + 1)
+        .map((item) => `${item.tagName}:${item.className}:${item.textContent?.slice(0, 30)}`);
+      expect(dialog.scrollWidth, overflowing.join(" | ")).toBeLessThanOrEqual(dialog.clientWidth);
+    } finally {
+      await page.viewport(1280, 800);
+    }
   });
 });
 

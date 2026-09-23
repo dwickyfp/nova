@@ -105,7 +105,10 @@ def test_body_role_cannot_request_an_ungranted_role(make_client):
     assert engine.roles == ["analyst"]
 
 
-def test_missing_active_role_fails_closed(make_client):
+def test_missing_active_role_fails_closed(make_client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     client, engine = make_client(roles=["analyst", "ACCOUNTADMIN"], active_role=None)
 
     response = client.post(EXECUTE_ENDPOINT, json={"sql": SELECT_SQL})
@@ -114,8 +117,11 @@ def test_missing_active_role_fails_closed(make_client):
     assert engine.roles == []
 
 
-def test_forged_active_role_not_in_grants_fails_closed(make_client):
+def test_forged_active_role_not_in_grants_fails_closed(make_client, monkeypatch):
     """A corrupted session cannot choose another granted role by ordering."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     client, engine = make_client(roles=["analyst"], active_role="ACCOUNTADMIN")
 
     response = client.post(EXECUTE_ENDPOINT, json={"sql": SELECT_SQL})

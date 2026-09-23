@@ -1,0 +1,1268 @@
+[
+  {
+    "scenario": "nove_tool_result_cannot_overflow_next_provider_call",
+    "passed": true,
+    "checks": [
+      {
+        "name": "query ran",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "stopped before second call",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "bounded context",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 1,
+    "finish_reason": "context_overflow",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 333,
+      "output_tokens": 333,
+      "budget": 1000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "11111014-3058-480a-874e-37142f869f22",
+      "started_offset_ms": 1.1049170279875398,
+      "duration_ms": 0.037
+    }
+  },
+  {
+    "scenario": "nove_concept_needs_no_database",
+    "passed": true,
+    "checks": [
+      {
+        "name": "no execution",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no consent",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "complete",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 1,
+    "finish_reason": "stop",
+    "tool_runs": [],
+    "context_stats": {
+      "input_tokens": 334,
+      "output_tokens": 334,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "eacfb1d2-b7ec-4dbd-9d69-e339047b6401",
+      "started_offset_ms": 0.20412495359778404,
+      "duration_ms": 0.012
+    }
+  },
+  {
+    "scenario": "nove_sql_authoring_needs_no_execution",
+    "passed": true,
+    "checks": [
+      {
+        "name": "no execution",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "complete",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 1,
+    "finish_reason": "stop",
+    "tool_runs": [],
+    "context_stats": {
+      "input_tokens": 340,
+      "output_tokens": 340,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "56afc60e-d662-411e-b497-819b1d6314ef",
+      "started_offset_ms": 0.061208964325487614,
+      "duration_ms": 0.01
+    }
+  },
+  {
+    "scenario": "nove_schema_then_data_query",
+    "passed": true,
+    "checks": [
+      {
+        "name": "both steps executed",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "read grant respected",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "complete",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 3,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute",
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 347,
+      "output_tokens": 347,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "87f235b4-3218-4bc3-8e82-28e95bd33053",
+      "started_offset_ms": 0.13345805928111076,
+      "duration_ms": 0.015
+    }
+  },
+  {
+    "scenario": "nove_diagnosis_can_retrieve_documentation",
+    "passed": true,
+    "checks": [
+      {
+        "name": "retrieved",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "reference is not a data action",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "source cited",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "complete",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "search_knowledge"
+    ],
+    "context_stats": {
+      "input_tokens": 339,
+      "output_tokens": 339,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "6ceaba70-2822-4e52-8294-0c07c874feb9",
+      "started_offset_ms": 0.06016704719513655,
+      "duration_ms": 0.009
+    }
+  },
+  {
+    "scenario": "nove_documentation_cannot_replace_data_evidence",
+    "passed": true,
+    "checks": [
+      {
+        "name": "retrieved",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no invented total",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "evidence gate",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 3,
+    "finish_reason": "required_capability_incomplete",
+    "tool_runs": [
+      "search_knowledge"
+    ],
+    "context_stats": {
+      "input_tokens": 352,
+      "output_tokens": 352,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "0c8b1ba8-866e-469c-a54a-04f93168e9b3",
+      "started_offset_ms": 0.08100003469735384,
+      "duration_ms": 0.01
+    }
+  },
+  {
+    "scenario": "nove_entity_search_falls_back_to_authorized_query",
+    "passed": true,
+    "checks": [
+      {
+        "name": "query ran",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "consent remains required",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "complete",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 339,
+      "output_tokens": 339,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "95e48bf7-9e9b-4789-9b4b-62a7d691cac6",
+      "started_offset_ms": 0.09137496817857027,
+      "duration_ms": 0.011
+    }
+  },
+  {
+    "scenario": "qualitative_data_claim_requires_execution",
+    "passed": true,
+    "checks": [
+      {
+        "name": "required execution enforced",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no unsupported text or secrets",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no query silently executed",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "one repair only",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "required_capability_incomplete",
+    "tool_runs": [],
+    "context_stats": {
+      "input_tokens": 349,
+      "output_tokens": 349,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "e2afa01b-2557-4fda-b95d-c53176061710",
+      "started_offset_ms": 0.11229200754314661,
+      "duration_ms": 0.012
+    }
+  },
+  {
+    "scenario": "missing_capability_refuses_answer",
+    "passed": true,
+    "checks": [
+      {
+        "name": "unavailable capability",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "provider not called",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no unsupported prose",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 0,
+    "finish_reason": "required_capability_unavailable",
+    "tool_runs": [],
+    "context_stats": {
+      "input_tokens": 335,
+      "output_tokens": 335,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "743b1ad0-2baa-4cda-8a94-d6a900e022bf",
+      "started_offset_ms": 0.06237509660422802,
+      "duration_ms": 0.009
+    }
+  },
+  {
+    "scenario": "delegates_to_query_execute",
+    "passed": true,
+    "checks": [
+      {
+        "name": "query ran",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "read-only auto-approved (no prompt)",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished normally",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no error",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "answer present",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "f5b01535-d132-479c-9feb-b1cfac733071",
+      "started_offset_ms": 0.0613329466432333,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "pure_answer_no_tool",
+    "passed": true,
+    "checks": [
+      {
+        "name": "no tool ran",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no prompt",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "answer present",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 1,
+    "finish_reason": "stop",
+    "tool_runs": [],
+    "context_stats": {
+      "input_tokens": 340,
+      "output_tokens": 340,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "2b5d8609-ddb8-46dd-868f-5768c9bede56",
+      "started_offset_ms": 0.06383296567946672,
+      "duration_ms": 0.009
+    }
+  },
+  {
+    "scenario": "destructive_tool_prompts",
+    "passed": true,
+    "checks": [
+      {
+        "name": "write ran",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "prompted despite grant",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "write_thing"
+    ],
+    "context_stats": {
+      "input_tokens": 342,
+      "output_tokens": 342,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "f578f5ff-d7c2-40f2-957e-82e3fa71e70d",
+      "started_offset_ms": 0.13183301780372858,
+      "duration_ms": 0.009
+    }
+  },
+  {
+    "scenario": "denied_call_continues",
+    "passed": true,
+    "checks": [
+      {
+        "name": "tool did not run",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "prompted",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "turn stopped as denied",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 1,
+    "finish_reason": "denied",
+    "tool_runs": [],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "7708bae3-dfa0-43c3-b2a0-71dadc665632",
+      "started_offset_ms": 0.06183399818837643,
+      "duration_ms": 0.009
+    }
+  },
+  {
+    "scenario": "failed_tool_terminates",
+    "passed": true,
+    "checks": [
+      {
+        "name": "terminates with tool_failed",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished with error",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no second attempt",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 1,
+    "finish_reason": "error",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "406be554-f824-4652-a1f2-4afb81850bc8",
+      "started_offset_ms": 0.06075005512684584,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "recoverable_semantic_error_repairs_once",
+    "passed": true,
+    "checks": [
+      {
+        "name": "exactly one repair call",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished after repair",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "grounded answer present",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 3,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "semantic_query",
+      "semantic_query"
+    ],
+    "context_stats": {
+      "input_tokens": 339,
+      "output_tokens": 339,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "409cb8f3-82e9-4ef8-ad2a-7a63c3f4032b",
+      "started_offset_ms": 0.05933293141424656,
+      "duration_ms": 0.009
+    }
+  },
+  {
+    "scenario": "read_only_grant_auto_approves",
+    "passed": true,
+    "checks": [
+      {
+        "name": "ran",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no prompt",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "announced as running, not pending",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "5c950abd-661f-4334-9a6c-edaf00ef86df",
+      "started_offset_ms": 0.0616670586168766,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "prompted_call_is_announced_as_pending",
+    "passed": true,
+    "checks": [
+      {
+        "name": "prompted",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "announced as pending with a preview",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "write_thing"
+    ],
+    "context_stats": {
+      "input_tokens": 342,
+      "output_tokens": 342,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "8d82bcf9-0e8c-4e3f-9b49-13d1dab4ddf4",
+      "started_offset_ms": 0.06666698027402163,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "trace_is_recorded_for_replay",
+    "passed": true,
+    "checks": [
+      {
+        "name": "the plan phase is recorded",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "the tool step carries its redacted SQL",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "the result grid is recorded for replay",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "the answer is recorded",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished normally",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "f04d3011-c678-4609-b563-d3151fe47456",
+      "started_offset_ms": 0.05770893767476082,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "tool_detail_is_sent_and_recorded",
+    "passed": true,
+    "checks": [
+      {
+        "name": "the detail is sent on the stream",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "the detail is recorded for replay",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "load_skill"
+    ],
+    "context_stats": {
+      "input_tokens": 345,
+      "output_tokens": 345,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "caaf9334-cebb-491f-b2c0-c67c5a6ec3fa",
+      "started_offset_ms": 0.06062502507120371,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "observability_spans_are_recorded",
+    "passed": true,
+    "checks": [
+      {
+        "name": "provider span has timing",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "tool span has timing",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "every process span has timing",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "semantic snapshot persisted",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished normally",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "semantic_query"
+    ],
+    "context_stats": {
+      "input_tokens": 340,
+      "output_tokens": 340,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "c7162548-3788-4cea-a31b-d7dabab84956",
+      "started_offset_ms": 0.052875024266541004,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "no_grant_prompts_every_call",
+    "passed": true,
+    "checks": [
+      {
+        "name": "ran",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "prompted",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "4c98c0f4-0227-4b02-a938-909437a0a462",
+      "started_offset_ms": 0.055999960750341415,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "iteration_cap",
+    "passed": true,
+    "checks": [
+      {
+        "name": "stopped at cap",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished with iteration_cap",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "iteration_cap",
+    "tool_runs": [
+      "query_execute",
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "43460537-e4e9-4e44-a494-042a4fa22519",
+      "started_offset_ms": 0.052999937906861305,
+      "duration_ms": 0.007
+    }
+  },
+  {
+    "scenario": "time_budget",
+    "passed": true,
+    "checks": [
+      {
+        "name": "timed out",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no provider call",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 0,
+    "finish_reason": "timeout",
+    "tool_runs": [],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "9171d2b1-d14a-452b-b250-611b9620e8e9",
+      "started_offset_ms": 0.05479203537106514,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "credential_arguments_redacted",
+    "passed": true,
+    "checks": [
+      {
+        "name": "password argument masked",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "custom_probe"
+    ],
+    "context_stats": {
+      "input_tokens": 338,
+      "output_tokens": 338,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "668b888f-85e8-410f-8a47-5ab8267b23d3",
+      "started_offset_ms": 0.054458039812743664,
+      "duration_ms": 0.007
+    }
+  },
+  {
+    "scenario": "duplicate_call_not_rerun",
+    "passed": true,
+    "checks": [
+      {
+        "name": "tool ran once",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 3,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "ea43ca59-37b7-4167-8b56-70e7bff79e3b",
+      "started_offset_ms": 0.16220798715949059,
+      "duration_ms": 0.022
+    }
+  },
+  {
+    "scenario": "context_is_curated",
+    "passed": true,
+    "checks": [
+      {
+        "name": "turn dropped history",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "within budget",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "curation surfaced to the user",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 1,
+    "finish_reason": "stop",
+    "tool_runs": [],
+    "context_stats": {
+      "input_tokens": 12530,
+      "output_tokens": 1168,
+      "budget": 1200,
+      "dropped_turns": 38,
+      "cleared_tool_results": 0,
+      "summarized": true,
+      "messages_in": 84,
+      "messages_out": 9,
+      "fits": true,
+      "step_id": "a7a8aecb-7da4-4e63-b9c6-de267d55f93e",
+      "started_offset_ms": 0.17658306751400232,
+      "duration_ms": 0.283
+    }
+  },
+  {
+    "scenario": "context_overflow_stops_cleanly",
+    "passed": true,
+    "checks": [
+      {
+        "name": "stopped with context_overflow",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "no provider call",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished with context_overflow",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 0,
+    "finish_reason": "context_overflow",
+    "tool_runs": [],
+    "context_stats": {
+      "input_tokens": 1339,
+      "output_tokens": 1339,
+      "budget": 10,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": false,
+      "step_id": "69e55349-d403-493a-a767-4268c87657bb",
+      "started_offset_ms": 0.06633403245359659,
+      "duration_ms": 0.009
+    }
+  },
+  {
+    "scenario": "text_precedes_result_artifact",
+    "passed": true,
+    "checks": [
+      {
+        "name": "text block is authored first",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "blocks carry stable indexes",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "ordered output is recorded",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "ea3977bf-66bd-4332-af3a-d82def3109df",
+      "started_offset_ms": 0.05437491927295923,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "artifact_can_precede_later_text",
+    "passed": true,
+    "checks": [
+      {
+        "name": "table is authored first",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "layout marker never reaches the user",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "a141f501-80a2-4068-aced-02a1ecb1a788",
+      "started_offset_ms": 0.1474579330533743,
+      "duration_ms": 0.05
+    }
+  },
+  {
+    "scenario": "follow_up_chart_reuses_previous_table",
+    "passed": true,
+    "checks": [
+      {
+        "name": "chart tool ran",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "previous table restored before charting",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished normally",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "data_to_chart"
+    ],
+    "context_stats": {
+      "input_tokens": 372,
+      "output_tokens": 372,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 6,
+      "messages_out": 6,
+      "fits": true,
+      "step_id": "ed5bcef5-cada-4e35-bb36-9d97484ba632",
+      "started_offset_ms": 0.16083300579339266,
+      "duration_ms": 0.01
+    }
+  },
+  {
+    "scenario": "generated_sql_visible_during_tool_run",
+    "passed": true,
+    "checks": [
+      {
+        "name": "SQL progress precedes completion",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "SQL progress is recorded on the tool",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "run envelope is monotonic",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "47b87690-7e03-4b15-86e0-874dc6edeb44",
+      "started_offset_ms": 0.05979102570563555,
+      "duration_ms": 0.008
+    }
+  },
+  {
+    "scenario": "multiple_tool_calls_are_serialized",
+    "passed": true,
+    "checks": [
+      {
+        "name": "both calls ran",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "both calls were announced",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "finished normally",
+        "passed": true,
+        "detail": ""
+      }
+    ],
+    "provider_calls": 2,
+    "finish_reason": "stop",
+    "tool_runs": [
+      "query_execute",
+      "query_execute"
+    ],
+    "context_stats": {
+      "input_tokens": 343,
+      "output_tokens": 343,
+      "budget": 24000,
+      "dropped_turns": 0,
+      "cleared_tool_results": 0,
+      "summarized": false,
+      "messages_in": 4,
+      "messages_out": 4,
+      "fits": true,
+      "step_id": "05f6f5f2-f47e-454c-8a18-478adf7dbb57",
+      "started_offset_ms": 0.06074993871152401,
+      "duration_ms": 0.009
+    }
+  }
+]

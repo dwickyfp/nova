@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import difflib
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from app.modules.agents.semantic.ir import (
     Additivity,
     SemanticFieldIR,
+    SemanticMetricIR,
     SemanticModelIR,
 )
 from app.modules.agents.semantic.planning import SemanticGraph, SemanticPlan
@@ -45,9 +46,7 @@ class SemanticModelRouter:
                     terms |= _words(" ".join((field.name, field.description, *field.synonyms)))
             for named_filter in candidate.model.named_filters:
                 terms |= _words(
-                    " ".join(
-                        (named_filter.name, named_filter.description, *named_filter.synonyms)
-                    )
+                    " ".join((named_filter.name, named_filter.description, *named_filter.synonyms))
                 )
             for example in candidate.model.examples:
                 terms |= _words(example.question)
@@ -71,6 +70,158 @@ class SemanticModelRouter:
             len(tied) > 1,
             tied,
         )
+
+
+def scope_semantic_model(
+    model: SemanticModelIR, authorized_datasets: set[str] | None
+) -> SemanticModelIR:
+    """Return the provider-visible semantic model after authorization filtering."""
+    if authorized_datasets is None:
+        return model
+    allowed = set(authorized_datasets)
+    from app.modules.agents.semantic.expressions import referenced_datasets
+    from app.modules.agents.semantic.planning import SemanticPlanError
+
+    def visible(expression: str, dataset: str) -> bool:
+        try:
+            return referenced_datasets(expression, dataset) <= allowed
+        except SemanticPlanError:
+            return False
+
+    datasets = tuple(
+        replace(
+            item,
+            fields=tuple(field for field in item.fields if visible(field.expression, item.name)),
+        )
+        for item in model.datasets
+        if item.name in allowed
+    )
+    metrics = tuple(
+        item
+        for item in model.metrics
+        if item.base_dataset in allowed
+        and visible(item.expression, item.base_dataset)
+        and all(visible(predicate, item.base_dataset) for predicate in item.filters)
+    )
+    # Remove dependency chains whose upstream metric was filtered out.
+    while True:
+        names = {item.name for item in metrics}
+        retained = tuple(item for item in metrics if set(item.dependencies) <= names)
+        if retained == metrics:
+            break
+        metrics = retained
+    relationships = tuple(
+        item
+        for item in model.relationships
+        if item.from_dataset in allowed and item.to_dataset in allowed
+    )
+    fully_authorized = len(datasets) == len(model.datasets)
+    return replace(
+        model,
+        description=model.description if fully_authorized else "",
+        datasets=datasets,
+        metrics=metrics,
+        relationships=relationships,
+        named_filters=tuple(
+            item
+            for item in model.named_filters
+            if (item.dataset in allowed or (item.dataset is None and fully_authorized))
+            and visible(item.expression, item.dataset or next(iter(allowed), ""))
+        ),
+        examples=model.examples if fully_authorized else (),
+        question_routing_instructions=model.question_routing_instructions
+        if fully_authorized
+        else "",
+        query_generation_instructions=model.query_generation_instructions
+        if fully_authorized
+        else "",
+    )
+
+
+def semantic_ir_to_definition(model: SemanticModelIR) -> dict[str, Any]:
+    """Serialize IR back to the normalized definition shape consumed by Nova."""
+    return {
+        "name": model.name,
+        "description": model.description,
+        "version": model.version,
+        "question_routing_instructions": model.question_routing_instructions,
+        "query_generation_instructions": model.query_generation_instructions,
+        "datasets": [
+            {
+                "name": dataset.name,
+                "source": dataset.source,
+                "description": dataset.description,
+                "grain": {"keys": list(dataset.grain.keys)},
+                "synonyms": list(dataset.synonyms),
+                "fields": [
+                    {
+                        "name": field.name,
+                        "expression": field.expression,
+                        "kind": field.kind.value,
+                        "datatype": field.datatype,
+                        "description": field.description,
+                        "synonyms": list(field.synonyms),
+                        "dimension": {
+                            "is_time": field.is_time,
+                            "sample_values": list(field.sample_values),
+                        },
+                        "search_strategy": field.search_strategy,
+                    }
+                    for field in dataset.fields
+                ],
+            }
+            for dataset in model.datasets
+        ],
+        "metrics": [
+            {
+                "name": metric.name,
+                "expression": metric.expression,
+                "base_dataset": metric.base_dataset,
+                "description": metric.description,
+                "grain": {"keys": list(metric.grain.keys)},
+                "additivity": metric.additivity.value,
+                "default_time_dimension": metric.default_time_dimension,
+                "allowed_dimensions": list(metric.allowed_dimensions),
+                "non_additive_dimensions": list(metric.non_additive_dimensions),
+                "synonyms": list(metric.synonyms),
+                "format": metric.format,
+                "unit": metric.unit,
+                "dependencies": list(metric.dependencies),
+                "filters": list(metric.filters),
+                "visibility": metric.visibility,
+                "preferred_relationship_path": list(metric.preferred_relationship_path),
+            }
+            for metric in model.metrics
+        ],
+        "relationships": [
+            {
+                "name": relationship.name,
+                "from": relationship.from_dataset,
+                "to": relationship.to_dataset,
+                "from_columns": list(relationship.from_columns),
+                "to_columns": list(relationship.to_columns),
+                "cardinality": relationship.cardinality,
+                "preferred": relationship.preferred,
+            }
+            for relationship in model.relationships
+        ],
+        "named_filters": [
+            {
+                "name": item.name,
+                "expression": item.expression,
+                "dataset": item.dataset,
+                "description": item.description,
+                "synonyms": list(item.synonyms),
+            }
+            for item in model.named_filters
+        ],
+        "ai_context": {
+            "examples": [
+                {"question": item.question, "semantic_plan": item.semantic_plan}
+                for item in model.examples
+            ]
+        },
+    }
 
 
 @dataclass(frozen=True)
@@ -97,7 +248,8 @@ class SemanticCatalogRetriever:
         limit: int = 8,
         authorized_datasets: set[str] | None = None,
     ) -> SemanticSlice:
-        allowed = authorized_datasets or {dataset.name for dataset in model.datasets}
+        model = scope_semantic_model(model, authorized_datasets)
+        allowed = {dataset.name for dataset in model.datasets}
         terms = _words(question)
         metric_scores = sorted(
             (
@@ -125,6 +277,14 @@ class SemanticCatalogRetriever:
         permitted_metrics = [metric for metric in model.metrics if metric.base_dataset in allowed]
         if not selected_metrics and len(permitted_metrics) == 1:
             selected_metrics = [permitted_metrics[0]]
+        for metric in selected_metrics:
+            time_field = (
+                model.field(metric.default_time_dimension)
+                if metric.default_time_dimension
+                else None
+            )
+            if time_field is not None and time_field not in selected_fields:
+                selected_fields.append(time_field)
         dataset_names = {metric.base_dataset for metric in selected_metrics if metric.base_dataset}
         dataset_names |= {field.dataset for field in selected_fields}
         graph = SemanticGraph(model)
@@ -226,15 +386,55 @@ class VerifiedQueryRetriever:
         *,
         model_fingerprint: str,
         limit: int = 3,
+        model: SemanticModelIR | None = None,
     ) -> tuple[VerifiedQuery, ...]:
-        words = _words(question)
+        normalized = _vqr_concepts(question, model)
+        words = _words(normalized)
         scored = [
-            (len(words & _words(entry.question)) / max(len(words), 1), entry)
+            (
+                max(
+                    2.0 if normalized == _vqr_concepts(entry.question, model) else 0.0,
+                    len(words & _words(_vqr_concepts(entry.question, model)))
+                    / max(len(words | _words(_vqr_concepts(entry.question, model))), 1),
+                    difflib.SequenceMatcher(
+                        None, normalized, _vqr_concepts(entry.question, model)
+                    ).ratio()
+                    * 0.85,
+                    _plan_term_similarity(words, entry),
+                ),
+                entry,
+            )
             for entry in entries
             if entry.model_fingerprint == model_fingerprint
         ]
         scored.sort(key=lambda item: (-item[0], item[1].verified_query_id))
         return tuple(entry for score, entry in scored[:limit] if score > 0)
+
+
+def _vqr_concepts(text: str, model: SemanticModelIR | None) -> str:
+    normalized = _phrase(text)
+    if model is None:
+        return normalized
+    objects: list[SemanticMetricIR | SemanticFieldIR] = [
+        *model.metrics,
+        *(field for dataset in model.datasets for field in dataset.fields),
+    ]
+    aliases: dict[str, set[str]] = {}
+    for item in objects:
+        for term in (item.name, *item.synonyms):
+            aliases.setdefault(_phrase(term), set()).add(_phrase(item.name))
+    # Ambiguous synonyms stay lexical; they must not collapse distinct concepts.
+    mapping = {
+        term: next(iter(names)) for term, names in aliases.items() if term and len(names) == 1
+    }
+    if not mapping:
+        return normalized
+    pattern = (
+        r"(?<!\w)(?:"
+        + "|".join(re.escape(term) for term in sorted(mapping, key=len, reverse=True))
+        + r")(?!\w)"
+    )
+    return re.sub(pattern, lambda match: mapping[match.group()], normalized)
 
 
 @dataclass(frozen=True)
@@ -533,3 +733,16 @@ def _literal_score(target: str, target_words: set[str], candidate: str) -> float
     overlap = len(target_words & candidate_words) / max(len(target_words), 1)
     sequence = difflib.SequenceMatcher(None, target, _phrase(candidate)).ratio()
     return round((overlap * 0.75) + (sequence * 0.25), 6)
+
+
+def _plan_term_similarity(words: set[str], entry: VerifiedQuery) -> float:
+    plan_terms = _words(
+        " ".join(
+            [
+                *entry.semantic_plan.metrics,
+                *entry.semantic_plan.dimensions,
+                *entry.semantic_plan.named_filters,
+            ]
+        )
+    )
+    return (len(words & plan_terms) / max(len(words), 1)) * 0.9
