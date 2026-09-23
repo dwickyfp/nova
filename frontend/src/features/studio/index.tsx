@@ -27,8 +27,8 @@ export function StudioApp() {
   const queryClient = useQueryClient();
 
   const agentsQuery = useQuery({
-    queryKey: ["agents", "list"],
-    queryFn: () => agentsApi.list(),
+    queryKey: ["studio", "agents", "list"],
+    queryFn: () => agentsApi.listStudio(),
   });
   const agents = agentsQuery.data?.agents ?? [];
   const authorQuery = useQuery({

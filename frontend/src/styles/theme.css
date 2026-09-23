@@ -11,6 +11,7 @@
   --secondary: oklch(0.968 0.007 247.896);
   --secondary-foreground: oklch(0.208 0.042 265.755);
   --muted: oklch(0.968 0.007 247.896);
+  --tooltip-neutral: color-mix(in srgb, var(--foreground) 20%, var(--background));
   /* Darkened from oklch(0.554 0.046 257.417) so muted text clears AA on both
      --background and the warmer --accent surface. */
   --muted-foreground: oklch(0.532 0.046 257.417);
@@ -102,6 +103,7 @@
   --secondary: #171d26;
   --secondary-foreground: #f7f8fa;
   --muted: #171d26;
+  --tooltip-neutral: color-mix(in srgb, var(--foreground) 20%, var(--background));
   --muted-foreground: #9ca8b8;
   --accent: #202833;
   --accent-foreground: #ff8274;
@@ -180,6 +182,7 @@
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
+  --color-tooltip-neutral: var(--tooltip-neutral);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);

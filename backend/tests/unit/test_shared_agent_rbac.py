@@ -23,10 +23,16 @@ async def test_shared_agent_lookup_uses_the_authenticated_active_role(monkeypatc
         return None
 
     async def shared_agent(_agent_id, *, role_name):
-        return {"agent_id": "agent-1"} if role_name == "city_reader" else None
+        if role_name == "city_reader":
+            return {"agent_id": "agent-1", "owner_name": "owner"}
+        return None
 
     monkeypatch.setattr(agent_repository, "get_agent", no_owned_agent)
     monkeypatch.setattr(agent_repository, "get_shared_agent", shared_agent)
+    async def verified(_agent, *, role_name, user):
+        return role_name == "city_reader" and user["username"] == "reader"
+
+    monkeypatch.setattr(agent_router, "has_verified_access", verified)
     user = {
         "username": "reader", "roles": ["city_reader"], "active_role": "city_reader",
     }

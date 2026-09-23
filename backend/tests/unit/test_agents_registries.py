@@ -366,6 +366,10 @@ def _rename_client(monkeypatch):
             return None
 
     monkeypatch.setattr(agents_router, "agent_repository", _Agents(), raising=True)
+    async def verified_agent(_agent, *, role_name, user):
+        return role_name == "analyst" and user["username"] == "alice"
+
+    monkeypatch.setattr(agents_router, "has_verified_access", verified_agent, raising=True)
     monkeypatch.setattr(agents_router, "assistant_repository", _Threads(), raising=True)
     monkeypatch.setattr(agents_router, "thread_store", _Store(), raising=True)
 
@@ -378,8 +382,8 @@ def _rename_client(monkeypatch):
         return {
             "username": current["username"],
             "session_id": "sess-1",
-            "roles": [],
-            "active_role": None,
+            "roles": ["analyst"],
+            "active_role": "analyst",
             "encrypted_password": "",
         }
 

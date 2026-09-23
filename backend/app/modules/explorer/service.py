@@ -5,6 +5,9 @@ from __future__ import annotations
 import logging
 
 from app.core.security import decrypt_password
+from app.modules.intelligence.entities import entity_registry
+from app.modules.intelligence.feature_store import feature_store
+from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.stages.access import StageAccessDenied, check_stage_access
 
 from .repository import explorer_repo
@@ -13,6 +16,8 @@ from .schemas import (
     CatalogsResponse,
     ColumnInfo,
     DatabaseObjectsResponse,
+    EntitySummary,
+    FeatureViewSummary,
     FunctionDetailResponse,
     FunctionSummary,
     MaterializedViewDetailResponse,
@@ -20,6 +25,7 @@ from .schemas import (
     PartitionInfo,
     PipeDetailResponse,
     PipeSummary,
+    SemanticViewSummary,
     StageSummary,
     TableDetailResponse,
     TableProperties,
@@ -81,6 +87,20 @@ class ExplorerService:
             authorized_stages.append(stage)
         stages_raw = authorized_stages
         tasks_raw = await explorer_repo.list_tasks(database)
+        scoped_catalog = catalog or "default_catalog"
+        entities = [
+            entity for entity in await entity_registry.list(user)
+            if entity.catalog == scoped_catalog and entity.database == database
+        ]
+        entity_ids = {entity.id for entity in entities}
+        semantic_views = [
+            view for view in await semantic_view_service.list(user)
+            if view["catalog_name"] == scoped_catalog and view["database_name"] == database
+        ]
+        feature_views = [
+            view for view in await feature_store.list_views(user)
+            if view["entity_id"] in entity_ids
+        ]
 
         return DatabaseObjectsResponse(
             database=database,
@@ -153,6 +173,24 @@ class ExplorerService:
                 )
                 for t in tasks_raw
             ],
+            entities=[
+                EntitySummary(
+                    id=entity.id, name=entity.name, schema_name=entity.schema_name,
+                    relation=entity.relation, key_columns=entity.key_columns,
+                ) for entity in entities
+            ],
+            semantic_views=[
+                SemanticViewSummary(
+                    id=view["id"], name=view["name"], schema_name=view["schema_name"],
+                    status=view["status"], active_version=view["active_version"],
+                ) for view in semantic_views
+            ],
+            feature_views=[
+                FeatureViewSummary(
+                    name=view["name"], entity_id=view["entity_id"],
+                    status=view["status"], active_version=view["active_version"],
+                ) for view in feature_views
+            ],
             summary={
                 "tables": len(tables_raw),
                 "views": len(views_raw),
@@ -161,6 +199,9 @@ class ExplorerService:
                 "pipes": len(pipes_raw),
                 "stages": len(stages_raw),
                 "tasks": len(tasks_raw),
+                "entities": len(entities),
+                "semantic_views": len(semantic_views),
+                "feature_views": len(feature_views),
             },
         )
 

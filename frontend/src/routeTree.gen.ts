@@ -15,11 +15,15 @@ import { Route as authSignInRouteImport } from './routes/(auth)/sign-in'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedAccessControlRouteImport } from './routes/_authenticated/access-control'
 import { Route as AuthenticatedActiveQueryRouteImport } from './routes/_authenticated/active-query'
+import { Route as AuthenticatedAiSearchRouteImport } from './routes/_authenticated/ai-search'
 import { Route as AuthenticatedDatabaseExplorerRouteImport } from './routes/_authenticated/database-explorer'
+import { Route as AuthenticatedEntitiesRouteImport } from './routes/_authenticated/entities'
+import { Route as AuthenticatedFeatureStoreRouteImport } from './routes/_authenticated/feature-store'
 import { Route as AuthenticatedMigrationRouteImport } from './routes/_authenticated/migration'
 import { Route as AuthenticatedMonitoringRouteRouteImport } from './routes/_authenticated/monitoring/route'
 import { Route as AuthenticatedQueryCostRouteImport } from './routes/_authenticated/query-cost'
 import { Route as AuthenticatedQueryHistoryRouteImport } from './routes/_authenticated/query-history'
+import { Route as AuthenticatedSemanticViewsRouteImport } from './routes/_authenticated/semantic-views'
 import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenticated/agents/index'
 import { Route as AuthenticatedAgentsAgentIdRouteImport } from './routes/_authenticated/agents/$agentId'
 import { Route as AuthenticatedAgentsSkillsRouteImport } from './routes/_authenticated/agents/skills'
@@ -79,10 +83,26 @@ const AuthenticatedActiveQueryRoute =
     path: '/active-query',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAiSearchRoute = AuthenticatedAiSearchRouteImport.update({
+  id: '/ai-search',
+  path: '/ai-search',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDatabaseExplorerRoute =
   AuthenticatedDatabaseExplorerRouteImport.update({
     id: '/database-explorer',
     path: '/database-explorer',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedEntitiesRoute = AuthenticatedEntitiesRouteImport.update({
+  id: '/entities',
+  path: '/entities',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedFeatureStoreRoute =
+  AuthenticatedFeatureStoreRouteImport.update({
+    id: '/feature-store',
+    path: '/feature-store',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedMigrationRoute = AuthenticatedMigrationRouteImport.update({
@@ -105,6 +125,12 @@ const AuthenticatedQueryHistoryRoute =
   AuthenticatedQueryHistoryRouteImport.update({
     id: '/query-history',
     path: '/query-history',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSemanticViewsRoute =
+  AuthenticatedSemanticViewsRouteImport.update({
+    id: '/semantic-views',
+    path: '/semantic-views',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAgentsIndexRoute =
@@ -273,10 +299,14 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof authSignInRoute
   '/access-control': typeof AuthenticatedAccessControlRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
+  '/ai-search': typeof AuthenticatedAiSearchRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
+  '/entities': typeof AuthenticatedEntitiesRoute
+  '/feature-store': typeof AuthenticatedFeatureStoreRoute
   '/migration': typeof AuthenticatedMigrationRoute
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
+  '/semantic-views': typeof AuthenticatedSemanticViewsRoute
   '/agents/$agentId': typeof AuthenticatedAgentsAgentIdRoute
   '/agents/skills': typeof AuthenticatedAgentsSkillsRoute
   '/agents/studio': typeof AuthenticatedAgentsStudioRoute
@@ -310,10 +340,14 @@ export interface FileRoutesByTo {
   '/sign-in': typeof authSignInRoute
   '/access-control': typeof AuthenticatedAccessControlRoute
   '/active-query': typeof AuthenticatedActiveQueryRoute
+  '/ai-search': typeof AuthenticatedAiSearchRoute
   '/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
+  '/entities': typeof AuthenticatedEntitiesRoute
+  '/feature-store': typeof AuthenticatedFeatureStoreRoute
   '/migration': typeof AuthenticatedMigrationRoute
   '/query-cost': typeof AuthenticatedQueryCostRoute
   '/query-history': typeof AuthenticatedQueryHistoryRoute
+  '/semantic-views': typeof AuthenticatedSemanticViewsRoute
   '/': typeof AuthenticatedIndexRoute
   '/agents/$agentId': typeof AuthenticatedAgentsAgentIdRoute
   '/agents/skills': typeof AuthenticatedAgentsSkillsRoute
@@ -351,10 +385,14 @@ export interface FileRoutesById {
   '/(auth)/sign-in': typeof authSignInRoute
   '/_authenticated/access-control': typeof AuthenticatedAccessControlRoute
   '/_authenticated/active-query': typeof AuthenticatedActiveQueryRoute
+  '/_authenticated/ai-search': typeof AuthenticatedAiSearchRoute
   '/_authenticated/database-explorer': typeof AuthenticatedDatabaseExplorerRoute
+  '/_authenticated/entities': typeof AuthenticatedEntitiesRoute
+  '/_authenticated/feature-store': typeof AuthenticatedFeatureStoreRoute
   '/_authenticated/migration': typeof AuthenticatedMigrationRoute
   '/_authenticated/query-cost': typeof AuthenticatedQueryCostRoute
   '/_authenticated/query-history': typeof AuthenticatedQueryHistoryRoute
+  '/_authenticated/semantic-views': typeof AuthenticatedSemanticViewsRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/agents/$agentId': typeof AuthenticatedAgentsAgentIdRoute
   '/_authenticated/agents/skills': typeof AuthenticatedAgentsSkillsRoute
@@ -393,10 +431,14 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/access-control'
     | '/active-query'
+    | '/ai-search'
     | '/database-explorer'
+    | '/entities'
+    | '/feature-store'
     | '/migration'
     | '/query-cost'
     | '/query-history'
+    | '/semantic-views'
     | '/agents/$agentId'
     | '/agents/skills'
     | '/agents/studio'
@@ -430,10 +472,14 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/access-control'
     | '/active-query'
+    | '/ai-search'
     | '/database-explorer'
+    | '/entities'
+    | '/feature-store'
     | '/migration'
     | '/query-cost'
     | '/query-history'
+    | '/semantic-views'
     | '/'
     | '/agents/$agentId'
     | '/agents/skills'
@@ -470,10 +516,14 @@ export interface FileRouteTypes {
     | '/(auth)/sign-in'
     | '/_authenticated/access-control'
     | '/_authenticated/active-query'
+    | '/_authenticated/ai-search'
     | '/_authenticated/database-explorer'
+    | '/_authenticated/entities'
+    | '/_authenticated/feature-store'
     | '/_authenticated/migration'
     | '/_authenticated/query-cost'
     | '/_authenticated/query-history'
+    | '/_authenticated/semantic-views'
     | '/_authenticated/'
     | '/_authenticated/agents/$agentId'
     | '/_authenticated/agents/skills'
@@ -554,11 +604,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedActiveQueryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/ai-search': {
+      id: '/_authenticated/ai-search'
+      path: '/ai-search'
+      fullPath: '/ai-search'
+      preLoaderRoute: typeof AuthenticatedAiSearchRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/database-explorer': {
       id: '/_authenticated/database-explorer'
       path: '/database-explorer'
       fullPath: '/database-explorer'
       preLoaderRoute: typeof AuthenticatedDatabaseExplorerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/entities': {
+      id: '/_authenticated/entities'
+      path: '/entities'
+      fullPath: '/entities'
+      preLoaderRoute: typeof AuthenticatedEntitiesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/feature-store': {
+      id: '/_authenticated/feature-store'
+      path: '/feature-store'
+      fullPath: '/feature-store'
+      preLoaderRoute: typeof AuthenticatedFeatureStoreRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/migration': {
@@ -587,6 +658,13 @@ declare module '@tanstack/react-router' {
       path: '/query-history'
       fullPath: '/query-history'
       preLoaderRoute: typeof AuthenticatedQueryHistoryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/semantic-views': {
+      id: '/_authenticated/semantic-views'
+      path: '/semantic-views'
+      fullPath: '/semantic-views'
+      preLoaderRoute: typeof AuthenticatedSemanticViewsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/agents/': {
@@ -811,10 +889,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMonitoringRouteRoute: typeof AuthenticatedMonitoringRouteRouteWithChildren
   AuthenticatedAccessControlRoute: typeof AuthenticatedAccessControlRoute
   AuthenticatedActiveQueryRoute: typeof AuthenticatedActiveQueryRoute
+  AuthenticatedAiSearchRoute: typeof AuthenticatedAiSearchRoute
   AuthenticatedDatabaseExplorerRoute: typeof AuthenticatedDatabaseExplorerRoute
+  AuthenticatedEntitiesRoute: typeof AuthenticatedEntitiesRoute
+  AuthenticatedFeatureStoreRoute: typeof AuthenticatedFeatureStoreRoute
   AuthenticatedMigrationRoute: typeof AuthenticatedMigrationRoute
   AuthenticatedQueryCostRoute: typeof AuthenticatedQueryCostRoute
   AuthenticatedQueryHistoryRoute: typeof AuthenticatedQueryHistoryRoute
+  AuthenticatedSemanticViewsRoute: typeof AuthenticatedSemanticViewsRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAgentsAgentIdRoute: typeof AuthenticatedAgentsAgentIdRoute
   AuthenticatedAgentsSkillsRoute: typeof AuthenticatedAgentsSkillsRoute
@@ -843,10 +925,14 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
     AuthenticatedMonitoringRouteRouteWithChildren,
   AuthenticatedAccessControlRoute: AuthenticatedAccessControlRoute,
   AuthenticatedActiveQueryRoute: AuthenticatedActiveQueryRoute,
+  AuthenticatedAiSearchRoute: AuthenticatedAiSearchRoute,
   AuthenticatedDatabaseExplorerRoute: AuthenticatedDatabaseExplorerRoute,
+  AuthenticatedEntitiesRoute: AuthenticatedEntitiesRoute,
+  AuthenticatedFeatureStoreRoute: AuthenticatedFeatureStoreRoute,
   AuthenticatedMigrationRoute: AuthenticatedMigrationRoute,
   AuthenticatedQueryCostRoute: AuthenticatedQueryCostRoute,
   AuthenticatedQueryHistoryRoute: AuthenticatedQueryHistoryRoute,
+  AuthenticatedSemanticViewsRoute: AuthenticatedSemanticViewsRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAgentsAgentIdRoute: AuthenticatedAgentsAgentIdRoute,
   AuthenticatedAgentsSkillsRoute: AuthenticatedAgentsSkillsRoute,

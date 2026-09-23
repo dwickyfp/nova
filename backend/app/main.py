@@ -33,6 +33,14 @@ from app.modules.external_catalogs.router import router as external_catalogs_rou
 from app.modules.functions.router import router as functions_router
 from app.modules.governance.router import router as governance_router
 from app.modules.indexes.router import router as indexes_router
+from app.modules.intelligence.entities import router as entities_router
+from app.modules.intelligence.feature_schema import ensure_feature_schema
+from app.modules.intelligence.feature_store import router as feature_store_router
+from app.modules.intelligence.search import router as search_router
+from app.modules.intelligence.search import search_service
+from app.modules.intelligence.search_schema import ensure_search_schema
+from app.modules.intelligence.semantic_view_schema import ensure_semantic_view_schema
+from app.modules.intelligence.semantic_views import router as semantic_views_router
 from app.modules.llm_functions.router import router as llm_fn_router
 from app.modules.migration.router import router as migration_router
 from app.modules.ml_engine.internal_router import router as ml_internal_router
@@ -78,6 +86,9 @@ async def lifespan(app: FastAPI):
     await db.apply_global_time_zone()
     await session_store.init()
     await init_nova_system()
+    await ensure_search_schema()
+    await ensure_semantic_view_schema()
+    await ensure_feature_schema()
 
     # Workspace object storage (NOVA-137). Idempotent: creates the configured
     # bucket if absent so the first "create file" does not fail with
@@ -175,6 +186,7 @@ async def lifespan(app: FastAPI):
     from app.modules.ml_engine.service import ml_engine_service
 
     await ml_engine_service.ephemeral_repository.ensure_schema()
+    await search_service.start()
     ml_cleanup = asyncio.create_task(ml_engine_service.sweep_ephemeral())
     try:
         yield
@@ -182,6 +194,7 @@ async def lifespan(app: FastAPI):
         ml_cleanup.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await ml_cleanup
+        await search_service.stop()
     # Shutdown
     if proxy_server is not None:
         try:
@@ -232,6 +245,14 @@ def create_app() -> FastAPI:
         tags=["access-control"],
     )
     app.include_router(ai_router, prefix=f"{prefix}/ai", tags=["ai"])
+    app.include_router(search_router, prefix=f"{prefix}/ai/search", tags=["ai-search"])
+    app.include_router(
+        semantic_views_router,
+        prefix=f"{prefix}/semantic-views",
+        tags=["semantic-views"],
+    )
+    app.include_router(entities_router, prefix=f"{prefix}/entities", tags=["entities"])
+    app.include_router(feature_store_router, prefix=f"{prefix}/features", tags=["features"])
     app.include_router(llm_fn_router, prefix=f"{prefix}/ai", tags=["ai"])
     app.include_router(ml_router, prefix=f"{prefix}/ml", tags=["ml"])
     app.include_router(ml_internal_router, prefix=f"{prefix}/internal/ml", tags=["internal"])

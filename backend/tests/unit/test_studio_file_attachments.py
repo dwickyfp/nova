@@ -22,6 +22,7 @@ from app.modules.assistant.attachments import (
 )
 from app.modules.assistant.context import ContextManager, estimate_message_tokens
 from app.modules.assistant.intelligence import TurnIntent
+from app.modules.assistant.planning import validate_turn_plan
 from app.modules.assistant.provider import ProviderConfig
 from app.modules.assistant.repository import MESSAGES_DDL, AssistantRepository
 from app.modules.assistant.router import _message_view
@@ -140,19 +141,19 @@ def test_pdf_and_image_share_one_provider_turn_without_binary_in_text():
 
 
 def test_attachment_questions_route_to_the_file_unless_database_access_is_explicit():
-    loop = AssistantLoop(provider=_FileAnswerProvider(), registry=ToolRegistry())
     file = validate_attachments([{"name": "brief.txt", "content": "Budget is 12."}])
-    current = LoopContext(user_name="alice", attachments=file)
-    assert loop._route("How many units remain?", current).intent == TurnIntent.DIRECT_ANSWER
-    history = LoopContext(user_name="alice", has_attachment_history=True)
-    assert (
-        loop._route("How many units remain in the attached file?", history).intent
-        == TurnIntent.DIRECT_ANSWER
+    assert file[0]["content"] == "Budget is 12."
+    document_plan = validate_turn_plan(
+        {"intent": "direct_answer", "tools": [], "required_tools": [], "ml_task": None},
+        {"query_execute"},
     )
-    assert (
-        loop._route("Query the sales table using the attached file", current).intent
-        != TurnIntent.DIRECT_ANSWER
+    query_plan = validate_turn_plan(
+        {"intent": "raw_sql_query", "tools": ["query_execute"],
+         "required_tools": ["query_execute"], "ml_task": None},
+        {"query_execute"},
     )
+    assert document_plan.route.intent == TurnIntent.DIRECT_ANSWER
+    assert query_plan.route.intent == TurnIntent.RAW_SQL_QUERY
 
 
 def test_attachment_request_rejects_bad_files_and_allows_file_only():
@@ -230,6 +231,15 @@ class _FileAnswerProvider:
             provider_id="fake", model="file-reader", endpoint="https://example.test/v1",
             api_key="test",
         )
+
+    async def plan_turn(self, *, user_content, available_tools):
+        return {
+            "intent": "direct_answer",
+            "tools": [],
+            "required_tools": [],
+            "skills": [],
+            "ml_task": None,
+        }
 
     async def stream(self, *, messages, tools=None, provider=None):
         self.messages = messages

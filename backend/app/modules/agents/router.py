@@ -39,6 +39,7 @@ from fastapi.responses import StreamingResponse
 
 from app.common.audit import write_audit_log
 from app.core.deps import get_current_user
+from app.modules.agents.access import has_verified_access
 from app.modules.agents.instructions import (
     InstructionCompilationError,
     compile_agent_instructions,
@@ -121,6 +122,9 @@ KNOWN_TOOLS = {
     "query_execute",
     "semantic_query",
     "semantic_search",
+    "ai_search",
+    "semantic_view_query",
+    "feature_lookup",
     "data_to_chart",
     "diagnose_change",
     "ml_execute",
@@ -137,9 +141,8 @@ def _unknown_tools(tools: list) -> list[str]:
     return [
         t
         for t in tools
-        if t not in KNOWN_TOOLS and not (
-            isinstance(t, str) and (t.startswith("custom:") or t.startswith("mcp:"))
-        )
+        if t not in KNOWN_TOOLS
+        and not (isinstance(t, str) and (t.startswith("custom:") or t.startswith("mcp:")))
     ]
 
 
@@ -188,6 +191,10 @@ async def _require_agent(agent_id: str, user: dict | str) -> dict:
         agent = await agent_repository.get_shared_agent(agent_id, role_name=role)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    if isinstance(user, dict):
+        role = session_security(user).active_role
+        if not await has_verified_access(agent, role_name=role, user=user):
+            raise HTTPException(status_code=404, detail="Agent not found")
     return agent
 
 
@@ -356,6 +363,7 @@ def _text_from_frame(frame: str) -> str:
 async def list_agents(
     database: str | None = None,
     search: str | None = None,
+    studio: bool = False,
     user: dict = Depends(get_current_user),
 ):
     agents = await agent_repository.list_agents(
@@ -364,11 +372,16 @@ async def list_agents(
     role = session_security(user).active_role
     shared = await agent_repository.list_shared_agents(role_name=role)
     agents.extend(
-        agent for agent in shared
+        agent
+        for agent in shared
         if agent["owner_name"] != user["username"]
         and (not database or agent.get("database_name") == database)
         and (not search or search.lower() in agent["name"].lower())
     )
+    if studio:
+        agents = [
+            agent for agent in agents if await has_verified_access(agent, role_name=role, user=user)
+        ]
     views = [_agent_view(a) for a in agents]
     return AgentListResponse(agents=views, count=len(views))
 
@@ -465,9 +478,7 @@ async def validate_semantic_model(
         from app.modules.agents.semantic.ir import SemanticModelIR
         from app.modules.agents.semantic.runtime import validate_semantic_model_ir
 
-        ir_validation = validate_semantic_model_ir(
-            SemanticModelIR.from_ossie(result.as_dict())
-        )
+        ir_validation = validate_semantic_model_ir(SemanticModelIR.from_ossie(result.as_dict()))
         result.errors.extend(ir_validation.errors)
         result.warnings.extend(ir_validation.warnings)
         result.valid = result.valid and ir_validation.valid
@@ -548,9 +559,7 @@ async def lint_semantic_model(
     semantic_ir = SemanticModelIR.from_ossie(model.get("definition") or {})
     validation = validate_semantic_model_ir(semantic_ir)
     findings = lint_model(semantic_ir)
-    verified = await agent_repository.list_verified_queries(
-        model_id, owner_name=user["username"]
-    )
+    verified = await agent_repository.list_verified_queries(model_id, owner_name=user["username"])
     return SemanticLintResponse(
         semantic_model_id=model_id,
         model_fingerprint=semantic_ir.fingerprint,
@@ -620,9 +629,7 @@ async def list_verified_queries(
     model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
     if model is None:
         raise HTTPException(status_code=404, detail="Semantic model not found")
-    rows = await agent_repository.list_verified_queries(
-        model_id, owner_name=user["username"]
-    )
+    rows = await agent_repository.list_verified_queries(model_id, owner_name=user["username"])
     views = [VerifiedQueryView(**row) for row in rows]
     return VerifiedQueryListResponse(queries=views, count=len(views))
 
@@ -640,16 +647,18 @@ async def run_semantic_quality_lab(
     model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
     if model is None:
         raise HTTPException(status_code=404, detail="Semantic model not found")
-    queries = await agent_repository.list_verified_queries(
-        model_id, owner_name=user["username"]
-    )
+    queries = await agent_repository.list_verified_queries(model_id, owner_name=user["username"])
     result = SemanticQualityLabResponse(
         semantic_model_id=model_id,
         **evaluate_verified_queries(model.get("definition") or {}, queries),
     )
     await write_audit_log(
-        event_type="SEMANTIC_QUALITY_LAB", user_name=user["username"], action="RUN",
-        object_type="SEMANTIC_MODEL", object_name=model_id, status="SUCCESS",
+        event_type="SEMANTIC_QUALITY_LAB",
+        user_name=user["username"],
+        action="RUN",
+        object_type="SEMANTIC_MODEL",
+        object_name=model_id,
+        status="SUCCESS",
         active_role=session_security(user).active_role,
         session_id=user.get("session_id"),
     )
@@ -701,9 +710,14 @@ async def create_rule_proposal(
         }
     )
     await write_audit_log(
-        event_type="AGENT_RULE_PROPOSAL", user_name=owner, action="CREATE",
-        object_type="SEMANTIC_RULE_PROPOSAL", object_name=created["proposal_id"],
-        status="SUCCESS", active_role=role, session_id=user.get("session_id"),
+        event_type="AGENT_RULE_PROPOSAL",
+        user_name=owner,
+        action="CREATE",
+        object_type="SEMANTIC_RULE_PROPOSAL",
+        object_name=created["proposal_id"],
+        status="SUCCESS",
+        active_role=role,
+        session_id=user.get("session_id"),
     )
     return RuleProposalView(**created)
 
@@ -729,9 +743,7 @@ async def list_rule_proposals(model_id: str, user: dict = Depends(get_current_us
 async def _pending_rule_proposal(model_id: str, proposal_id: str, user: dict) -> tuple[dict, dict]:
     owner = user["username"]
     role = session_security(user).active_role
-    proposal = await rule_proposal_repository.get(
-        proposal_id, owner_name=owner, role_name=role
-    )
+    proposal = await rule_proposal_repository.get(proposal_id, owner_name=owner, role_name=role)
     model = await agent_repository.get_semantic_model(model_id, owner_name=owner)
     if proposal is None or model is None or proposal["semantic_model_id"] != model_id:
         raise HTTPException(status_code=404, detail="Rule proposal not found")
@@ -755,7 +767,8 @@ async def preview_rule_proposal(
     try:
         _, _, prior_fp, proposed_fp, old_sql, new_sql = candidate_definition(
             model.get("definition") or {},
-            proposal["metric_name"], proposal["proposed_expression"],
+            proposal["metric_name"],
+            proposal["proposed_expression"],
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -771,11 +784,15 @@ async def preview_rule_proposal(
             raise HTTPException(status_code=422, detail="Preview SQL must be read-only")
         try:
             results = await query_service.execute_statements(
-                sql=sql, username=user["username"],
+                sql=sql,
+                username=user["username"],
                 encrypted_password=user["encrypted_password"],
                 role=session_security(user).active_role,
-                database=model.get("database_name"), schema=model.get("schema_name"),
-                max_rows=1, session_id=user.get("session_id"), confirm_destructive=False,
+                database=model.get("database_name"),
+                schema=model.get("schema_name"),
+                max_rows=1,
+                session_id=user.get("session_id"),
+                confirm_destructive=False,
             )
         except Exception as exc:
             logger.warning("Rule preview failed: %s", type(exc).__name__)
@@ -789,17 +806,23 @@ async def preview_rule_proposal(
         proposal_id, owner_name=user["username"], role_name=session_security(user).active_role
     )
     await write_audit_log(
-        event_type="AGENT_RULE_PROPOSAL", user_name=user["username"], action="PREVIEW",
-        object_type="SEMANTIC_RULE_PROPOSAL", object_name=proposal_id,
-        status="SUCCESS", active_role=session_security(user).active_role,
+        event_type="AGENT_RULE_PROPOSAL",
+        user_name=user["username"],
+        action="PREVIEW",
+        object_type="SEMANTIC_RULE_PROPOSAL",
+        object_name=proposal_id,
+        status="SUCCESS",
+        active_role=session_security(user).active_role,
         session_id=user.get("session_id"),
     )
     return RuleProposalPreviewResponse(
         proposal_id=proposal_id,
         prior_sql=redact_sql_credentials(old_sql),
         proposed_sql=redact_sql_credentials(new_sql),
-        prior_value=values[0], proposed_value=values[1],
-        metric_name=proposal["metric_name"], model_fingerprint=prior_fp,
+        prior_value=values[0],
+        proposed_value=values[1],
+        metric_name=proposal["metric_name"],
+        model_fingerprint=prior_fp,
     )
 
 
@@ -820,7 +843,8 @@ async def approve_rule_proposal(
     try:
         candidate, _, prior_fp, proposed_fp, _, _ = candidate_definition(
             model.get("definition") or {},
-            proposal["metric_name"], proposal["proposed_expression"],
+            proposal["metric_name"],
+            proposal["proposed_expression"],
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -836,8 +860,11 @@ async def approve_rule_proposal(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="A verified query no longer compiles") from exc
     await rule_proposal_repository.save_version(
-        model_id=model_id, owner_name=user["username"], proposal_id=proposal_id,
-        fingerprint=prior_fp, definition=model["definition"],
+        model_id=model_id,
+        owner_name=user["username"],
+        proposal_id=proposal_id,
+        fingerprint=prior_fp,
+        definition=model["definition"],
     )
     await agent_repository.update_semantic_model(
         model_id, owner_name=user["username"], fields={"definition": candidate}
@@ -847,9 +874,14 @@ async def approve_rule_proposal(
         proposal_id, owner_name=user["username"], role_name=role, status="approved"
     )
     await write_audit_log(
-        event_type="AGENT_RULE_PROPOSAL", user_name=user["username"], action="APPROVE",
-        object_type="SEMANTIC_RULE_PROPOSAL", object_name=proposal_id,
-        status="SUCCESS", active_role=role, session_id=user.get("session_id"),
+        event_type="AGENT_RULE_PROPOSAL",
+        user_name=user["username"],
+        action="APPROVE",
+        object_type="SEMANTIC_RULE_PROPOSAL",
+        object_name=proposal_id,
+        status="SUCCESS",
+        active_role=role,
+        session_id=user.get("session_id"),
     )
     updated = await rule_proposal_repository.get(
         proposal_id, owner_name=user["username"], role_name=role
@@ -870,9 +902,14 @@ async def reject_rule_proposal(
         proposal_id, owner_name=user["username"], role_name=role, status="rejected"
     )
     await write_audit_log(
-        event_type="AGENT_RULE_PROPOSAL", user_name=user["username"], action="REJECT",
-        object_type="SEMANTIC_RULE_PROPOSAL", object_name=proposal_id,
-        status="SUCCESS", active_role=role, session_id=user.get("session_id"),
+        event_type="AGENT_RULE_PROPOSAL",
+        user_name=user["username"],
+        action="REJECT",
+        object_type="SEMANTIC_RULE_PROPOSAL",
+        object_name=proposal_id,
+        status="SUCCESS",
+        active_role=role,
+        session_id=user.get("session_id"),
     )
     updated = await rule_proposal_repository.get(
         proposal_id, owner_name=user["username"], role_name=role
@@ -941,7 +978,9 @@ async def delete_skill(skill_id: str, user: dict = Depends(get_current_user)):
 async def get_agent(agent_id: str, user: dict = Depends(get_current_user)):
     if agent_id == SKILL_AUTHOR_ID:
         raise HTTPException(404, "Agent not found")
-    agent = await _require_agent(agent_id, user)
+    agent = await agent_repository.get_agent(agent_id, owner_name=user["username"])
+    if agent is None:
+        agent = await _require_agent(agent_id, user)
     return _agent_view(agent)
 
 
@@ -996,9 +1035,14 @@ async def delete_agent(agent_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Agent not found")
     await memory_repository.delete_agent(user_name=user["username"], agent_id=agent_id)
     await write_audit_log(
-        event_type="AGENT_MEMORY", user_name=user["username"], action="DELETE_ALL",
-        object_type="AGENT", object_name=agent_id, status="SUCCESS",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
+        event_type="AGENT_MEMORY",
+        user_name=user["username"],
+        action="DELETE_ALL",
+        object_type="AGENT",
+        object_name=agent_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
     )
     return None
 
@@ -1008,39 +1052,53 @@ async def delete_agent(agent_id: str, user: dict = Depends(get_current_user)):
 
 @router.get("/{agent_id}/memories")
 async def list_agent_memories(
-    agent_id: str, limit: int = 100, offset: int = 0,
+    agent_id: str,
+    limit: int = 100,
+    offset: int = 0,
     user: dict = Depends(get_current_user),
 ):
     await _require_agent(agent_id, user)
     page_size = min(max(limit, 1), 100)
     offset = max(offset, 0)
     memories = await memory_repository.list(
-        user_name=user["username"], agent_id=agent_id,
+        user_name=user["username"],
+        agent_id=agent_id,
         role_name=session_security(user).active_role,
-        limit=page_size + 1, offset=offset,
+        limit=page_size + 1,
+        offset=offset,
     )
     has_more = len(memories) > page_size
     return {
-        "memories": memories[:page_size], "count": min(len(memories), page_size),
+        "memories": memories[:page_size],
+        "count": min(len(memories), page_size),
         "next_offset": offset + page_size if has_more else None,
     }
 
 
 @router.delete("/{agent_id}/memories/{memory_id}", status_code=204)
 async def delete_agent_memory(
-    agent_id: str, memory_id: str, user: dict = Depends(get_current_user),
+    agent_id: str,
+    memory_id: str,
+    user: dict = Depends(get_current_user),
 ):
     await _require_agent(agent_id, user)
     deleted = await memory_repository.delete(
-        memory_id, user_name=user["username"], agent_id=agent_id,
+        memory_id,
+        user_name=user["username"],
+        agent_id=agent_id,
         role_name=session_security(user).active_role,
     )
     if not deleted:
         raise HTTPException(status_code=404, detail="Memory not found")
     await write_audit_log(
-        event_type="AGENT_MEMORY", user_name=user["username"], action="DELETE",
-        object_type="AGENT_MEMORY", object_name=memory_id, status="SUCCESS",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
+        event_type="AGENT_MEMORY",
+        user_name=user["username"],
+        action="DELETE",
+        object_type="AGENT_MEMORY",
+        object_name=memory_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
     )
     return None
 
@@ -1109,10 +1167,15 @@ async def update_message_feedback(
     if not updated:
         raise HTTPException(status_code=404, detail="Message not found")
     await write_audit_log(
-        event_type="ASSISTANT", user_name=user["username"], action="FEEDBACK",
-        object_type="ASSISTANT_MESSAGE", object_name=message_id,
-        status="SUCCESS", decision=body.feedback or "clear",
-        session_id=user.get("session_id"), active_role=user.get("active_role"),
+        event_type="ASSISTANT",
+        user_name=user["username"],
+        action="FEEDBACK",
+        object_type="ASSISTANT_MESSAGE",
+        object_name=message_id,
+        status="SUCCESS",
+        decision=body.feedback or "clear",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
     )
     return body
 
@@ -1167,8 +1230,10 @@ async def replay_agent_run(
     await _require_agent_thread(thread_id, agent_id, user["username"])
     role = session_security(user).active_role
     scope = dict(
-        owner_name=user["username"], agent_id=agent_id,
-        thread_id=thread_id, role_name=role,
+        owner_name=user["username"],
+        agent_id=agent_id,
+        thread_id=thread_id,
+        role_name=role,
     )
     if await run_journal.get(run_id, **scope) is None:
         raise HTTPException(status_code=404, detail="Run not found in this role")
@@ -1187,8 +1252,10 @@ async def replay_agent_run(
                 cursor = int(payload["sequence"])
                 terminal_seen = terminal_seen or frame.startswith(f"event: {events.EVENT_DONE}\n")
                 yield frame
-            if state["status"] == "running" and not frames and await run_journal.interrupt_stale(
-                run_id, **scope
+            if (
+                state["status"] == "running"
+                and not frames
+                and await run_journal.interrupt_stale(run_id, **scope)
             ):
                 state = await run_journal.get(run_id, **scope)
             if (
@@ -1197,15 +1264,24 @@ async def replay_agent_run(
                 and not terminal_seen
             ):
                 code = "run_interrupted" if state["status"] == "interrupted" else "run_failed"
-                yield events.format_sse(events.EVENT_ERROR, {
-                    "run_id": run_id, "sequence": cursor + 1,
-                    "code": code,
-                    "message": "The agent run stopped. Review saved steps before retrying.",
-                })
-                yield events.format_sse(events.EVENT_DONE, {
-                    "run_id": run_id, "sequence": cursor + 2,
-                    "message_id": "", "finish_reason": state["status"],
-                })
+                yield events.format_sse(
+                    events.EVENT_ERROR,
+                    {
+                        "run_id": run_id,
+                        "sequence": cursor + 1,
+                        "code": code,
+                        "message": "The agent run stopped. Review saved steps before retrying.",
+                    },
+                )
+                yield events.format_sse(
+                    events.EVENT_DONE,
+                    {
+                        "run_id": run_id,
+                        "sequence": cursor + 2,
+                        "message_id": "",
+                        "finish_reason": state["status"],
+                    },
+                )
                 return
             if state["status"] != "running" and cursor >= state["last_sequence"]:
                 return
@@ -1213,7 +1289,8 @@ async def replay_agent_run(
                 await asyncio.sleep(1)
 
     return StreamingResponse(
-        replay(), media_type=events.SSE_MEDIA_TYPE,
+        replay(),
+        media_type=events.SSE_MEDIA_TYPE,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
@@ -1271,7 +1348,9 @@ async def send_agent_message(
     elif agent_id != SKILL_AUTHOR_ID:
         try:
             memories = await memory_repository.list(
-                user_name=user_name, agent_id=agent_id, role_name=security.active_role,
+                user_name=user_name,
+                agent_id=agent_id,
+                role_name=security.active_role,
             )
             selected = select_memories(memories, body.content)
             if selected:
@@ -1283,7 +1362,8 @@ async def send_agent_message(
             message_id=row["message_id"],
             role=row["role"],
             content=attachment_prompt(row["content"], row.get("attachments") or [])
-            if row["role"] == "user" else row["content"],
+            if row["role"] == "user"
+            else row["content"],
             steps=row.get("steps") or [],
             created_at=row["created_at"],
             security_context=row.get("security_context"),
@@ -1294,24 +1374,38 @@ async def send_agent_message(
 
     run_id = str(uuid4())
     await run_journal.start(
-        run_id=run_id, owner_name=user_name, agent_id=agent_id,
-        thread_id=thread_id, role_name=security.active_role,
+        run_id=run_id,
+        owner_name=user_name,
+        agent_id=agent_id,
+        thread_id=thread_id,
+        role_name=security.active_role,
     )
 
     await assistant_repository.append_message(
-        thread_id, user_name=user_name, role="user", content=body.content,
-        security_context=stamp, attachments=attachments,
+        thread_id,
+        user_name=user_name,
+        role="user",
+        content=body.content,
+        security_context=stamp,
+        attachments=attachments,
     )
     if attachments:
         await write_audit_log(
-            event_type="AGENT_ATTACHMENT", user_name=user_name, action="send",
-            object_type="AGENT_THREAD", object_name=thread_id, status="SUCCESS",
+            event_type="AGENT_ATTACHMENT",
+            user_name=user_name,
+            action="send",
+            object_type="AGENT_THREAD",
+            object_name=thread_id,
+            status="SUCCESS",
             session_id=user.get("session_id"),
         )
     runtime.messages.append(
         AssistantMessage(
-            message_id=str(uuid4()), role="user", content=prompt,
-            security_context=stamp, attachments=attachments,
+            message_id=str(uuid4()),
+            role="user",
+            content=prompt,
+            security_context=stamp,
+            attachments=attachments,
         )
     )
 
@@ -1326,9 +1420,7 @@ async def send_agent_message(
                 provider_id=agent.get("model_provider_id"),
                 model=agent.get("model_name"),
             )
-            await assistant_repository.rename_thread(
-                thread_id, title, user_name=user_name
-            )
+            await assistant_repository.rename_thread(thread_id, title, user_name=user_name)
         except Exception:  # noqa: BLE001 - a title is not worth failing a turn
             logger.warning("Could not set the thread title")
 
@@ -1448,22 +1540,31 @@ async def send_agent_message(
                         steps=steps,
                         instructions=context.instructions,
                         security_context=(
-                            reply_stamp if reply_stamp == observation_context(
-                                session_security(context.user or {})
-                            ) else None
+                            reply_stamp
+                            if reply_stamp
+                            == observation_context(session_security(context.user or {}))
+                            else None
                         ),
                     )
                 except Exception:
                     logger.exception("Could not persist the agent reply")
-            if finish_reason in {
-                "stop", "error", "required_capability_incomplete",
-                "required_capability_unavailable",
-            } and agent_id != SKILL_AUTHOR_ID:
+            if (
+                finish_reason
+                in {
+                    "stop",
+                    "error",
+                    "required_capability_incomplete",
+                    "required_capability_unavailable",
+                }
+                and agent_id != SKILL_AUTHOR_ID
+            ):
                 try:
                     await asyncio.wait_for(
                         remember_user_message(
-                            user_name=user_name, agent_id=agent_id,
-                            role_name=security.active_role, thread_id=thread_id,
+                            user_name=user_name,
+                            agent_id=agent_id,
+                            role_name=security.active_role,
+                            thread_id=thread_id,
                             message=body.content,
                             provider_id=body.provider_id or agent.get("model_provider_id"),
                             model=body.model or agent.get("model_name"),
@@ -1518,10 +1619,15 @@ async def send_agent_message(
                     await run_journal.block_replay_after_role_change(run_id)
                 queue_frame(frame)
                 batch.append(frame)
-                if len(batch) >= 32 or frame.startswith((
-                    "event: tool_call\n", "event: tool_status\n",
-                    "event: role_changed\n", "event: error\n", "event: done\n",
-                )):
+                if len(batch) >= 32 or frame.startswith(
+                    (
+                        "event: tool_call\n",
+                        "event: tool_status\n",
+                        "event: role_changed\n",
+                        "event: error\n",
+                        "event: done\n",
+                    )
+                ):
                     await flush()
                 if frame.startswith(f"event: {events.EVENT_DONE}\n"):
                     payload = json.loads(frame.split("data: ", 1)[1])
@@ -1540,10 +1646,14 @@ async def send_agent_message(
             try:
                 await run_journal.finish(run_id, status)
                 await write_audit_log(
-                    event_type="AGENT_RUN", user_name=user_name, action="FINISH",
-                    object_type="AGENT_RUN", object_name=run_id, status="SUCCESS"
-                    if status == "completed" else "FAILED",
-                    active_role=security.active_role, session_id=user.get("session_id"),
+                    event_type="AGENT_RUN",
+                    user_name=user_name,
+                    action="FINISH",
+                    object_type="AGENT_RUN",
+                    object_name=run_id,
+                    status="SUCCESS" if status == "completed" else "FAILED",
+                    active_role=security.active_role,
+                    session_id=user.get("session_id"),
                 )
             except Exception:
                 logger.exception("Could not finalize agent run")

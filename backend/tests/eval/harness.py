@@ -186,6 +186,7 @@ class Scenario:
     checks: list[tuple[str, Callable[[TurnResult], bool | str]]] = field(default_factory=list)
     content: str = "How many orders are there?"
     tools: list[EvalTool] = field(default_factory=list)
+    turn_plan: dict[str, Any] | None = None
     read_only_grant: bool = False
     resolve_consent: Callable[[ToolInvocation, str], Awaitable[bool | None]] | None = None
     history_turns: int = 0
@@ -232,7 +233,7 @@ async def run_scenario(scenario: Scenario) -> TurnResult:
 
     from tests.benchmark.harness import ScriptedProvider
 
-    provider = ScriptedProvider(script=list(scenario.script))
+    provider = ScriptedProvider(script=list(scenario.script), turn_plan=scenario.turn_plan)
 
     thread = AssistantThread(thread_id="eval", user_name="eval", title="Eval")
     pad = "x" * scenario.history_chars

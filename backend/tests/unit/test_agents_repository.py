@@ -152,7 +152,7 @@ async def test_shared_agent_requires_visibility_and_active_role_grant(monkeypatc
         async def execute_system(self, sql, params):
             if "CONFIG_AGENT_ROLES" in sql:
                 if params == ["agent-1", "owner"]:
-                    return {"rows": [["city_reader", "USAGE"]]}
+                    return {"rows": [["city_reader", "USAGE", None, None]]}
                 return {"rows": [["agent-1"]] if params == ["city_reader"] else []}
             if "visibility = 'shared'" in sql:
                 return {"rows": [["agent-1", "owner"] + [None] * 26]}

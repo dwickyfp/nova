@@ -1,0 +1,13 @@
+# ML Models, AI Providers, and Nove
+
+Keywords: machine learning, ML Models, model training, classification, regression, forecast, anomaly, clustering, AI Providers, LLM, embedding model, Nove, agent, Agent Studio, Nova Studio, Skills, Tools.
+
+ML Models stores persistent model versions and their training lineage. Nova's native ML worker runs classification, regression, forecasting, anomaly detection, and clustering over caller-authorized StarRocks data. The SQL Workspace supports Nova `CREATE ML_MODEL`; `/ml-models` shows the model lifecycle. `ml_execute` is Nove's bounded execution tool when available. Nove plans and explains an analysis; the worker performs numerical training and prediction. Feature Groups can provide pinned feature versions to a model training run. This is separate from the Feature Store, which defines reusable inputs rather than the trained estimator.
+
+AI Providers at `/ai-providers` configures model connections. Model types distinguish LLMs, which generate assistant and AI function responses, from embedding models, which turn text into vectors for semantic or hybrid AI Search. An embedding entry records alias, revision, dimensions, and similarity metric. The provider credential must remain in the existing secret path and must never be placed in an Intelligence object or Nove answer. AI SQL functions use configured LLM providers; they are not native ML training.
+
+Nove is the built-in assistant in Nova. Agent Studio at `/agents` configures specialist agents, instructions, tools, skills, and semantic models; Nova Studio is the separate full-page work surface. Both use the bounded assistant engine. Nove can perform supported Nova UI operations through its action tools, including creating and publishing a Semantic View from authorized tables. The selected tools and the caller's StarRocks privileges determine what actions can run. A feature explanation needs reference knowledge, while a data read or operation needs the corresponding registered tool and its consent policy. An agent configuration never grants database access.
+
+The Skills page at `/agents/skills` manages reusable agent procedures; the Tools page at `/agents/tools` manages capabilities an agent may select. A skill supplies guidance, while a tool performs an action under the assistant's guard, consent, and caller-access rules.
+
+Implementation references: docs/19-machine-learning.md, docs/28-native-ml-runtime.md, docs/28-intelligence-foundation.md, docs/specs/nova-61-agentic-assistant-guide.md; backend/app/modules/ai_ml/service.py and backend/app/modules/assistant/. This is product guidance, not a statement that a particular provider or model is configured.

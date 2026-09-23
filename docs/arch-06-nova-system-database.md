@@ -103,7 +103,7 @@ CREATE TABLE NOVA_SYSTEM.CONFIG_AI_PROVIDERS (
     name            VARCHAR(128) NOT NULL,          -- "OpenAI", "Anthropic", "My vLLM"
     type            VARCHAR(32) NOT NULL,           -- openai, anthropic, openai_compatible
     endpoint        VARCHAR(512) NOT NULL,          -- https://api.openai.com/v1
-    api_key         VARCHAR(512),                   -- API key stored directly (configurable via UI)
+    api_key         VARCHAR(512),                   -- encrypted ciphertext; never returned plaintext
     default_params  TEXT,                            -- JSON: {"temperature": 0.7}
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -123,6 +123,11 @@ CREATE TABLE NOVA_SYSTEM.CONFIG_AI_MODELS (
     display_name    VARCHAR(256),                   -- "GPT-4o (128K context)"
     type            VARCHAR(32) NOT NULL,           -- llm, embedding
     max_tokens      INT DEFAULT 4096,
+    logical_alias   VARCHAR(128),                   -- e.g. nova.embedding.default
+    revision        VARCHAR(128),                   -- pinned provider model revision
+    dimensions      INT,
+    modality        VARCHAR(32),                    -- text
+    metric          VARCHAR(32),                    -- cosine or l2
     default_params  TEXT,                            -- JSON: {"temperature": 0.7}
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,

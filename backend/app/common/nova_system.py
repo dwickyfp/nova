@@ -10,6 +10,34 @@ from asyncmy.errors import ProgrammingError
 
 from app.core.database import db
 
+AI_MODEL_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("logical_alias", "VARCHAR(128)"),
+    ("revision", "VARCHAR(128)"),
+    ("dimensions", "INT"),
+    ("modality", "VARCHAR(32)"),
+    ("metric", "VARCHAR(32)"),
+)
+
+ENTITIES_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ENTITIES (
+    catalog_name VARCHAR(128) NOT NULL,
+    database_name VARCHAR(128) NOT NULL,
+    schema_name VARCHAR(128) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    id VARCHAR(64) NOT NULL,
+    description TEXT,
+    relation_name VARCHAR(512) NOT NULL,
+    key_columns JSON NOT NULL,
+    owner_name VARCHAR(128) NOT NULL,
+    tags JSON,
+    status VARCHAR(32) NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+) PRIMARY KEY(catalog_name, database_name, schema_name, name)
+DISTRIBUTED BY HASH(catalog_name, database_name, schema_name, name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
 WORKSPACE_ENTRIES_DDL = """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_ENTRIES (
     id           VARCHAR(64) NOT NULL,
@@ -333,6 +361,20 @@ async def migrate_task_orchestration_columns() -> None:
                 raise
 
 
+async def migrate_ai_model_columns() -> None:
+    """Add embedding metadata to existing AI model registries."""
+    for column, column_type in AI_MODEL_COLUMN_MIGRATIONS:
+        if await _column_exists("CONFIG_AI_MODELS", column):
+            continue
+        try:
+            await db.execute_system(
+                f"ALTER TABLE NOVA_SYSTEM.CONFIG_AI_MODELS ADD COLUMN {column} {column_type}"
+            )
+        except ProgrammingError:
+            if not await _column_exists("CONFIG_AI_MODELS", column):
+                raise
+
+
 async def migrate_ml_metadata() -> None:
     """Upgrade every mutable ML registry table to its Primary Key shape."""
     await db.execute_system(ML_RUNS_DDL)
@@ -406,6 +448,7 @@ async def init_nova_system() -> None:
     try:
         await db.execute_system(WORKSPACE_ENTRIES_DDL)
         await db.execute_system(WORKSPACE_FILE_VERSIONS_DDL)
+        await db.execute_system(ENTITIES_DDL)
         for ddl in RANGER_CONTROL_PLANE_DDL:
             await db.execute_system(ddl)
         await migrate_ml_metadata()
@@ -422,6 +465,10 @@ async def init_nova_system() -> None:
     except Exception:
         # Tables may not exist yet if init hasn't run
         pass
+    else:
+        # Once the base schema is confirmed, an AI model migration failure
+        # must fail startup rather than leaving model CRUD on a stale schema.
+        await migrate_ai_model_columns()
 
 
 async def is_setup_complete() -> bool:

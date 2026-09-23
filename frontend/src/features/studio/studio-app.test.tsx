@@ -25,7 +25,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 
 vi.mock("@/features/agents/api", () => ({
   agentsApi: {
-    list: vi.fn(async () => ({
+    listStudio: vi.fn(async () => ({
       agents: [
         {
           agent_id: "a1",

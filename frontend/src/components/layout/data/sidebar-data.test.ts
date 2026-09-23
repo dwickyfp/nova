@@ -34,6 +34,25 @@ describe('sidebar navigation', () => {
     expect(urls).toContain('/ml-models')
   })
 
+  it('opens Intelligence workflows from the Nova console sidebar', () => {
+    const urls = navUrls()
+
+    expect(urls).toContain('/feature-store')
+    expect(urls).toContain('/semantic-views')
+    expect(urls).toContain('/ai-search')
+  })
+
+  it('keeps Feature Store and ML Models under one Machine Learning heading', () => {
+    const ai = sidebarData.navGroups.flatMap((group) => group.items)
+      .find((item) => item.title === 'AI & ML')
+    const children = ai && 'items' in ai ? ai.items ?? [] : []
+    const feature = children.find((item) => item.title === 'Feature Store')
+    const models = children.find((item) => item.title === 'ML Models')
+    expect(feature?.section).toBe('Machine Learning')
+    expect(models?.section).toBeUndefined()
+    expect(children.filter((item) => item.section === 'Machine Learning')).toHaveLength(1)
+  })
+
   // Tasks and Task Graphs were merged into one Tasks page (NOVA task UI
   // rework): the flow now lives on the task detail page, so a separate
   // Task Graphs entry would split the navigation again.

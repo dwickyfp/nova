@@ -101,9 +101,8 @@ def scenario_numeric_claim_matches_query_result() -> Scenario:
                     step.get("kind") == "answer_verification"
                     and step.get("status") == "accepted"
                     and step.get("claim_count") == 1
-                    and step.get("evidence_columns") == [
-                        {"evidence_id": "evidence_1", "column": "revenue"}
-                    ]
+                    and step.get("evidence_columns")
+                    == [{"evidence_id": "evidence_1", "column": "revenue"}]
                     and "active_role" in step
                     for step in result.steps
                 ),
@@ -147,34 +146,56 @@ def scenario_change_diagnosis_reconciles_after_data() -> Scenario:
         name="change_diagnosis_reconciles_after_data",
         content="Why did revenue drop between August and September?",
         script=[
-            tool_call_frame("c1", name="semantic_query", arguments={
-                "question": "Revenue in August and September by period"
-            }),
-            tool_call_frame("c2", name="diagnose_change", arguments={
-                "prior_period": "August", "current_period": "September",
-                "revenue_column": "revenue",
-            }),
+            tool_call_frame(
+                "c1",
+                name="semantic_query",
+                arguments={"question": "Revenue in August and September by period"},
+            ),
+            tool_call_frame(
+                "c2",
+                name="diagnose_change",
+                arguments={
+                    "prior_period": "August",
+                    "current_period": "September",
+                    "revenue_column": "revenue",
+                },
+            ),
             text_frame("Net revenue change was -20. The cause is unassigned by this result."),
         ],
         tools=[
             EvalTool(
-                "semantic_query", classification="read_only",
-                parameters={"type": "object", "properties": {"question": {"type": "string"}},
-                            "required": ["question"]},
-                data={"semantic_plan": {"metrics": ["revenue"]},
-                      "sql": "SELECT period, revenue FROM sales"},
-                table={"columns": ["period", "revenue"],
-                       "rows": [["August", 100], ["September", 80]]},
+                "semantic_query",
+                classification="read_only",
+                parameters={
+                    "type": "object",
+                    "properties": {"question": {"type": "string"}},
+                    "required": ["question"],
+                },
+                data={
+                    "semantic_plan": {"metrics": ["revenue"]},
+                    "sql": "SELECT period, revenue FROM sales",
+                },
+                table={
+                    "columns": ["period", "revenue"],
+                    "rows": [["August", 100], ["September", 80]],
+                },
             ),
             EvalTool(
-                "diagnose_change", classification="read_only",
-                parameters={"type": "object", "properties": {
-                    "prior_period": {"type": "string"},
-                    "current_period": {"type": "string"},
-                    "revenue_column": {"type": "string"},
-                }, "required": ["prior_period", "current_period", "revenue_column"]},
-                table={"columns": ["component", "change"],
-                       "rows": [["unassigned", -20], ["net_change", -20]]},
+                "diagnose_change",
+                classification="read_only",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "prior_period": {"type": "string"},
+                        "current_period": {"type": "string"},
+                        "revenue_column": {"type": "string"},
+                    },
+                    "required": ["prior_period", "current_period", "revenue_column"],
+                },
+                table={
+                    "columns": ["component", "change"],
+                    "rows": [["unassigned", -20], ["net_change", -20]],
+                },
             ),
         ],
         read_only_grant=True,
@@ -196,11 +217,18 @@ def scenario_external_mcp_requires_explicit_consent() -> Scenario:
             tool_call_frame("mcp1", name="mcp_tool1", arguments={"id": "account-1"}),
             text_frame("The external CRM returned an account record."),
         ],
-        tools=[EvalTool(
-            "mcp_tool1", classification="destructive", summary="CRM returned an account record",
-            parameters={"type": "object", "properties": {"id": {"type": "string"}},
-                        "required": ["id"]},
-        )],
+        tools=[
+            EvalTool(
+                "mcp_tool1",
+                classification="destructive",
+                summary="CRM returned an account record",
+                parameters={
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                },
+            )
+        ],
         read_only_grant=True,
         resolve_consent=allow,
         checks=[
@@ -232,10 +260,14 @@ def scenario_studio_text_attachment_answers_without_tools() -> Scenario:
 
 def scenario_studio_attachment_math_stays_with_document() -> Scenario:
     question = "According to the attached brief, how many million remain for audit?"
-    files = validate_attachments([{
-        "name": "brief.txt",
-        "content": "Budget is 12 million. Domain costs 2 million. Testing costs 3 million.",
-    }])
+    files = validate_attachments(
+        [
+            {
+                "name": "brief.txt",
+                "content": "Budget is 12 million. Domain costs 2 million. Testing costs 3 million.",
+            }
+        ]
+    )
     return Scenario(
         name="studio_attachment_math_stays_with_document",
         content=attachment_prompt(question, files),
@@ -256,10 +288,15 @@ def scenario_studio_image_attachment_reaches_vision_turn() -> Scenario:
     output = BytesIO()
     Image.new("RGB", (1, 1), (255, 0, 0)).save(output, format="PNG")
     encoded = base64.b64encode(output.getvalue()).decode("ascii")
-    image = validate_attachments([{
-        "name": "photo.png", "media_type": "image/png",
-        "content": encoded,
-    }])
+    image = validate_attachments(
+        [
+            {
+                "name": "photo.png",
+                "media_type": "image/png",
+                "content": encoded,
+            }
+        ]
+    )
     return Scenario(
         name="studio_image_attachment_reaches_vision_turn",
         content=attachment_prompt("Describe this image", image),
@@ -301,34 +338,50 @@ def scenario_destructive_tool_prompts() -> Scenario:
     )
 
 
-def scenario_ui_operation_requires_consent() -> Scenario:
+def scenario_role_access_requires_consent() -> Scenario:
     return Scenario(
-        name="ui_operation_requires_consent",
-        content="Create an analyst role in Nova",
+        name="role_access_requires_consent",
+        content="Grant ACCOUNTADMIN SELECT on NOVA_SALES.fact_sales",
         script=[
             tool_call_frame(
-                "ui-1",
-                name="call_ui_operation",
-                arguments={"operation": "POST /api/v1/access-control/roles"},
+                "grant-1",
+                name="grant_role_access",
+                arguments={
+                    "role": "ACCOUNTADMIN",
+                    "grants": [{"resource": "NOVA_SALES.fact_sales", "access": "SELECT"}],
+                },
             ),
-            text_frame("The role was created."),
+            text_frame("The grant was submitted and still needs verification."),
         ],
         tools=[
             EvalTool(
-                "call_ui_operation",
+                "grant_role_access",
                 classification="destructive",
                 parameters={
                     "type": "object",
-                    "properties": {"operation": {"type": "string"}},
-                    "required": ["operation"],
+                    "properties": {
+                        "role": {"type": "string"},
+                        "grants": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "resource": {"type": "string"},
+                                    "access": {"type": "string"},
+                                },
+                                "required": ["resource", "access"],
+                            },
+                        },
+                    },
+                    "required": ["role", "grants"],
                 },
-                summary="role created",
+                summary="grant submitted",
             )
         ],
         read_only_grant=True,
         checks=[
-            check("UI operation selected", used_tool("call_ui_operation")),
-            check("write still prompts", prompted_for("call_ui_operation")),
+            check("typed role grant selected", used_tool("grant_role_access")),
+            check("write still prompts", prompted_for("grant_role_access")),
             check("normal completion", finished_with("stop")),
         ],
     )
@@ -614,6 +667,135 @@ def scenario_read_only_grant_auto_approves() -> Scenario:
     )
 
 
+def scenario_ai_search_is_bounded_and_requires_consent() -> Scenario:
+    return Scenario(
+        name="ai_search_bounded_consent",
+        content="Use AI Search to find the running shoe document in docs",
+        script=[
+            tool_call_frame(
+                "c1",
+                name="ai_search",
+                arguments={
+                    "index": "docs",
+                    "query": "running shoe",
+                    "top_k": 5,
+                },
+            ),
+            text_frame("I found the running shoe document."),
+        ],
+        tools=[
+            EvalTool(
+                "ai_search",
+                classification="read_only",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "index": {"type": "string"},
+                        "query": {"type": "string"},
+                        "top_k": {"type": "integer"},
+                    },
+                    "required": ["index", "query"],
+                },
+                summary="1 search result",
+                data={
+                    "index": "docs",
+                    "version": 1,
+                    "hits": [{"source_key": "[1]", "content": "running shoe", "rank": 1}],
+                },
+            )
+        ],
+        read_only_grant=False,
+        resolve_consent=allow,
+        checks=[
+            check("selected AI Search", used_tool("ai_search")),
+            check("consent requested", prompted_for("ai_search")),
+            check("finished", finished_with("stop")),
+            check("no error", no_error()),
+        ],
+    )
+
+
+def scenario_semantic_view_query_requires_consent() -> Scenario:
+    return Scenario(
+        name="semantic_view_query_consent",
+        content="Query the revenue metric from this Semantic View",
+        script=[
+            tool_call_frame(
+                "c1",
+                name="semantic_view_query",
+                arguments={
+                    "view_id": "view-1",
+                    "metrics": ["revenue"],
+                },
+            ),
+            text_frame("Revenue is 42."),
+        ],
+        tools=[
+            EvalTool(
+                "semantic_view_query",
+                classification="read_only",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "view_id": {"type": "string"},
+                        "metrics": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["view_id", "metrics"],
+                },
+                table={"columns": ["revenue"], "rows": [[42]]},
+                data={"view_id": "view-1", "version": 1, "rows": [[42]]},
+            )
+        ],
+        read_only_grant=False,
+        resolve_consent=allow,
+        checks=[
+            check("selected Semantic View", used_tool("semantic_view_query")),
+            check("consent requested", prompted_for("semantic_view_query")),
+            check("finished", finished_with("stop")),
+        ],
+    )
+
+
+def scenario_feature_lookup_requires_consent() -> Scenario:
+    return Scenario(
+        name="feature_lookup_consent",
+        content="Use Feature Lookup for customer 1 in the customer Feature Group",
+        script=[
+            tool_call_frame(
+                "c1",
+                name="feature_lookup",
+                arguments={
+                    "group": "customer",
+                    "entity_key": {"customer_id": 1},
+                },
+            ),
+            text_frame("The customer has seven recent orders."),
+        ],
+        tools=[
+            EvalTool(
+                "feature_lookup",
+                classification="read_only",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "group": {"type": "string"},
+                        "entity_key": {"type": "object", "additionalProperties": True},
+                    },
+                    "required": ["group", "entity_key"],
+                },
+                data={"group": "customer", "version": 1, "values": {"orders_7d": 7}},
+            )
+        ],
+        read_only_grant=False,
+        resolve_consent=allow,
+        checks=[
+            check("selected Feature Lookup", used_tool("feature_lookup")),
+            check("consent requested", prompted_for("feature_lookup")),
+            check("finished", finished_with("stop")),
+        ],
+    )
+
+
 def scenario_prompted_call_is_announced_as_pending() -> Scenario:
     """A call that needs approval is announced `pending`, carrying its preview.
 
@@ -709,16 +891,14 @@ def scenario_skill_body_stays_out_of_transcript() -> Scenario:
             check(
                 "the skill name is sent to the panel",
                 lambda result: any(
-                    json.loads(frame.partition("data: ")[2]).get("skill_name")
-                    == "engineering"
+                    json.loads(frame.partition("data: ")[2]).get("skill_name") == "engineering"
                     for frame in result.frames
                     if frame.startswith("event: tool_call\n")
                 ),
             ),
             check(
                 "the skill body is absent from stream and replay",
-                lambda result: body not in "".join(result.frames)
-                and body not in str(result.steps),
+                lambda result: body not in "".join(result.frames) and body not in str(result.steps),
             ),
             check(
                 "the skill step is recorded",
@@ -1117,6 +1297,12 @@ def all_scenarios() -> list[Scenario]:
             content="Which revenue segment leads this month?",
             script=[text_frame("Enterprise leads."), text_frame("Enterprise leads.")],
             tools=[_query_tool()],
+            turn_plan={
+                "intent": "semantic_analytics",
+                "tools": ["query_execute"],
+                "required_tools": ["query_execute"],
+                "ml_task": None,
+            },
             checks=[
                 check(
                     "required execution enforced", finished_with("required_capability_incomplete")
@@ -1130,6 +1316,12 @@ def all_scenarios() -> list[Scenario]:
             name="missing_capability_refuses_answer",
             content="Revenue this month",
             script=[text_frame("Revenue increased.")],
+            turn_plan={
+                "intent": "semantic_analytics",
+                "tools": [],
+                "required_tools": ["semantic_query"],
+                "ml_task": None,
+            },
             checks=[
                 check("unavailable capability", finished_with("required_capability_unavailable")),
                 check("provider not called", lambda result: result.provider_calls == 0),
@@ -1141,6 +1333,12 @@ def all_scenarios() -> list[Scenario]:
             content="visualisasikan tabel sebelumnya",
             script=[text_frame("I can make that chart.")],
             tools=[_query_tool()],
+            turn_plan={
+                "intent": "chart",
+                "tools": ["query_execute"],
+                "required_tools": ["data_to_chart"],
+                "ml_task": None,
+            },
             checks=[
                 check(
                     "unavailable chart capability",
@@ -1168,11 +1366,14 @@ def all_scenarios() -> list[Scenario]:
         scenario_studio_image_attachment_reaches_vision_turn(),
         scenario_pure_answer_no_tool(),
         scenario_destructive_tool_prompts(),
-        scenario_ui_operation_requires_consent(),
+        scenario_role_access_requires_consent(),
         scenario_denied_call_continues(),
         scenario_failed_tool_terminates(),
         scenario_recoverable_semantic_error_repairs_once(),
         scenario_read_only_grant_auto_approves(),
+        scenario_ai_search_is_bounded_and_requires_consent(),
+        scenario_semantic_view_query_requires_consent(),
+        scenario_feature_lookup_requires_consent(),
         scenario_prompted_call_is_announced_as_pending(),
         scenario_trace_is_recorded_for_replay(),
         scenario_skill_body_stays_out_of_transcript(),

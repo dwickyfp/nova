@@ -11,8 +11,6 @@ from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError
 from app.modules.agents.semantic.runtime import scope_semantic_model, semantic_ir_to_definition
 from app.modules.assistant.intelligence import (
     EvidenceTracker,
-    SemanticRoutingIndex,
-    TurnRouter,
     enforce_evidence,
     validate_json_arguments,
 )
@@ -104,9 +102,6 @@ def test_nested_effective_schema_validates_nullable_arrays_and_unknown_keys():
     assert {item.path for item in errors} == {"limit", "filters[0].field", "filters[0].sql"}
 
 
-def test_custom_metric_routes_and_qualitative_claim_requires_evidence():
-    index = SemanticRoutingIndex.from_terms({"retained_arr"})
-    assert TurnRouter().route("retained ARR this month", semantic_index=index).needs_data
-    assert TurnRouter().route("What is revenue this month?").needs_data
+def test_qualitative_claim_requires_evidence():
     answer = "Enterprise is our strongest segment."
     assert enforce_evidence(answer, needs_data=True, evidence=EvidenceTracker()) != answer

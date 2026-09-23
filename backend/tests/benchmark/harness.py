@@ -46,6 +46,12 @@ class ScriptedProvider:
 
     script: list[dict[str, Any]]
     calls: int = 0
+    turn_plan: dict[str, Any] | None = None
+
+    async def plan_turn(
+        self, *, user_content: str, available_tools: list[str]
+    ) -> dict[str, Any]:
+        return self.turn_plan or scripted_turn_plan(self.script)
 
     async def resolve(self, **_: Any) -> Any:
         from app.modules.assistant.provider import ProviderConfig
@@ -93,6 +99,47 @@ class ScriptedProvider:
         if len(self.script) == 1:
             return self.script[0]
         return self.script.pop(0)
+
+
+def scripted_turn_plan(script: list[dict[str, Any]]) -> dict[str, Any]:
+    proposed = [
+        call.get("function", {}).get("name")
+        for message in script
+        for call in message.get("tool_calls", [])
+    ]
+    tools = list(dict.fromkeys(name for name in proposed if isinstance(name, str)))
+    data_tools = {
+        "query_execute",
+        "semantic_query",
+        "semantic_search",
+        "ai_search",
+        "semantic_view_query",
+        "feature_lookup",
+        "ml_execute",
+        "data_to_chart",
+        "diagnose_change",
+    }
+    discovery_tools = {"load_skill", "search_knowledge", "list_ui_operations"}
+    required = [name for name in tools if name in data_tools or name not in discovery_tools]
+    if "ml_execute" in required:
+        intent = "compound_analytics" if "data_to_chart" in required else "machine_learning"
+    elif "data_to_chart" in required:
+        intent = "chart"
+    elif "semantic_search" in required or "ai_search" in required:
+        intent = "semantic_search"
+    elif any(
+        name in required for name in ("semantic_query", "semantic_view_query", "feature_lookup")
+    ):
+        intent = "semantic_analytics"
+    elif "query_execute" in required:
+        intent = "raw_sql_query"
+    elif tools and set(tools) <= {"search_knowledge", "load_skill"}:
+        intent = "capability_help"
+    elif tools:
+        intent = "ui_operation"
+    else:
+        intent = "direct_answer"
+    return {"intent": intent, "tools": tools, "required_tools": required, "ml_task": None}
 
 
 @dataclass

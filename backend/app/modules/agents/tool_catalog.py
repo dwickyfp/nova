@@ -69,6 +69,47 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "required": ["query", "column"],
         },
     ),
+    "ai_search": (
+        "Retrieve governed text from a Nova AI Search index with caller permissions.",
+        {
+            "type": "object",
+            "properties": {
+                "index": {"type": "string"},
+                "query": {"type": "string"},
+                "mode": {"type": "string", "enum": ["LEXICAL", "SEMANTIC", "HYBRID"]},
+                "top_k": {"type": "integer", "minimum": 1, "maximum": 10},
+            },
+            "required": ["index", "query"],
+            "additionalProperties": False,
+        },
+    ),
+    "semantic_view_query": (
+        "Query a published Nova Semantic View using governed metrics and dimensions.",
+        {
+            "type": "object",
+            "properties": {
+                "view_id": {"type": "string"},
+                "metrics": {"type": "array", "items": {"type": "string"}},
+                "dimensions": {"type": "array", "items": {"type": "string"}},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+            "required": ["view_id", "metrics"],
+            "additionalProperties": False,
+        },
+    ),
+    "feature_lookup": (
+        "Look up a governed Nova Feature Group by entity key.",
+        {
+            "type": "object",
+            "properties": {
+                "group": {"type": "string"},
+                "entity_key": {"type": "object"},
+                "version": {"type": "integer", "minimum": 1},
+            },
+            "required": ["group", "entity_key"],
+            "additionalProperties": False,
+        },
+    ),
     "data_to_chart": (
         "Build a sanitized Vega-Lite chart from the latest verified table. Use only when "
         "the user asks for a chart or a trend/comparison materially benefits from one. "
@@ -151,6 +192,50 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "required": ["name", "tables"],
         },
     ),
+    "create_semantic_view": (
+        "Create, validate, and optionally publish a Nova Semantic View from authorized tables.",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "database": {"type": "string"},
+                "schema_name": {"type": "string"},
+                "description": {"type": "string"},
+                "request": {"type": "string"},
+                "tables": {"type": "array", "items": {"type": "string"}},
+                "publish": {"type": "boolean"},
+            },
+            "required": ["name", "tables"],
+            "additionalProperties": False,
+        },
+    ),
+    "list_ui_operations": (
+        "Browse exact Nova UI API resources and operation schemas.",
+        {
+            "type": "object",
+            "properties": {
+                "resource": {"type": "string"},
+                "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]},
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    "call_ui_operation": (
+        "Execute one exact Nova UI API operation under the user's session and approval.",
+        {
+            "type": "object",
+            "properties": {
+                "operation": {"type": "string"},
+                "path_params": {"type": "object"},
+                "query": {"type": "object"},
+                "body": {"type": "object"},
+            },
+            "required": ["operation"],
+            "additionalProperties": False,
+        },
+    ),
     "create_agent": (
         "Create an Agent Studio agent with instructions and tools.",
         {
@@ -167,26 +252,27 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "required": ["name"],
         },
     ),
-    "find_ui_operation": (
-        "Find a Nova UI API operation by task, including its exact path and input fields.",
-        {
-            "type": "object",
-            "properties": {"query": {"type": "string"}},
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-    ),
-    "call_ui_operation": (
-        "Call one discovered Nova UI API operation as the current user, with consent and audit.",
+    "inspect_role_access": (
+        "Check an existing role's effective Ranger access on named resources.",
         {
             "type": "object",
             "properties": {
-                "operation": {"type": "string"},
-                "path_params": {"type": "object", "additionalProperties": True},
-                "query": {"type": "object", "additionalProperties": True},
-                "body": {"type": "object", "additionalProperties": True},
+                "role": {"type": "string"},
+                "grants": {"type": "array", "items": {"type": "object"}},
             },
-            "required": ["operation"],
+            "required": ["role", "grants"],
+            "additionalProperties": False,
+        },
+    ),
+    "grant_role_access": (
+        "Grant approved Ranger access to the exact existing role.",
+        {
+            "type": "object",
+            "properties": {
+                "role": {"type": "string"},
+                "grants": {"type": "array", "items": {"type": "object"}},
+            },
+            "required": ["role", "grants"],
             "additionalProperties": False,
         },
     ),
@@ -200,6 +286,9 @@ AGENT_BUNDLEABLE_TOOLS = (
     "query_execute",
     "semantic_query",
     "semantic_search",
+    "ai_search",
+    "semantic_view_query",
+    "feature_lookup",
     "data_to_chart",
     "diagnose_change",
     "ml_execute",

@@ -3,7 +3,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
-  ArrowDownToLine,
   Bot,
   ChevronRight,
   Clock3,
@@ -18,6 +17,7 @@ import {
   Upload,
   Users,
   WandSparkles,
+  Workflow,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { Header } from "@/components/layout/header";
 import { Main } from "@/components/layout/main";
+import { starterTemplates } from "@/features/workspaces/starter-templates";
 
 type RecentType = "query";
 type RecentTab = "all" | RecentType;
@@ -103,50 +104,14 @@ const quickActions = [
   },
 ];
 
-const starterTemplates = [
-  {
-    title: "Query files from a stage",
-    category: "Worksheets",
-    topic: "Stages",
-    href: "/workspaces",
-    icon: FileSearch,
-  },
-  {
-    title: "Create table from staged files",
-    category: "Worksheets",
-    topic: "Data loading",
-    href: "/workspaces",
-    icon: Table2,
-  },
-  {
-    title: "Analyze query performance",
-    category: "Monitoring",
-    topic: "Operations",
-    href: "/query-history",
-    icon: Clock3,
-  },
-  {
-    title: "Detect anomalies with ML",
-    category: "ML",
-    topic: "Forecasting",
-    href: "/workspaces",
-    icon: WandSparkles,
-  },
-  {
-    title: "Classify text with AI",
-    category: "AI functions",
-    topic: "LLM",
-    href: "/ai-providers",
-    icon: Bot,
-  },
-  {
-    title: "Build a load pipeline",
-    category: "Tasks",
-    topic: "Automation",
-    href: "/tasks",
-    icon: ArrowDownToLine,
-  },
-];
+const starterTemplateIcons = {
+  "query-stage": FileSearch,
+  "demo-sales": Table2,
+  "profile-sales": Clock3,
+  "demo-order-anomalies": WandSparkles,
+  "classify-products": Bot,
+  "daily-sales-task": Workflow,
+};
 
 const recentTabs: { value: RecentTab; label: string }[] = [
   { value: "all", label: "All" },
@@ -293,12 +258,12 @@ export function Dashboard() {
 
               <Tabs defaultValue="all" className="gap-4">
                 <div className="w-full overflow-x-auto border-b border-border/80">
-                  <TabsList className="h-10 rounded-none bg-transparent p-0">
+                  <TabsList indicatorVariant="underline" className="h-10 rounded-none bg-transparent p-0">
                     {recentTabs.map((tab) => (
                       <TabsTrigger
                         key={tab.value}
                         value={tab.value}
-                        className="rounded-none border-0 border-b-2 border-transparent bg-transparent px-0 me-7 text-muted-foreground shadow-none transition-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                        className="rounded-none border-0 bg-transparent px-0 me-7 text-muted-foreground shadow-none data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
                       >
                         {tab.label}
                       </TabsTrigger>
@@ -322,44 +287,48 @@ export function Dashboard() {
               </Tabs>
             </section>
 
-            <section className="space-y-4">
+            <section id="starter-templates" className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="space-y-1">
                   <h2 className="text-lg font-heading">
                     Start with a template
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Launch common Nova workflows with the right SQL pattern.
+                    Explore Nova features with editable SQL and sample data.
                   </p>
                 </div>
                 <Button variant="ghost" size="sm" asChild>
-                  <Link to="/workspaces">Browse templates</Link>
+                  <a href="#starter-templates">Browse templates</a>
                 </Button>
               </div>
 
               <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-                {filteredTemplates.map((template) => (
-                  <Link
-                    key={template.title}
-                    to={template.href}
-                    className="group flex min-h-20 items-center justify-between gap-4 rounded-lg border border-border/75 bg-card px-4 py-3 transition-colors hover:border-primary/35 hover:bg-primary/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <div className="flex min-w-0 items-start gap-3">
-                      <template.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
-                      <div className="min-w-0 space-y-2">
-                        <p className="truncate text-sm font-medium">
-                          {template.title}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <span>{template.category}</span>
-                          <span aria-hidden="true">-</span>
-                          <span>{template.topic}</span>
+                {filteredTemplates.map((template) => {
+                  const Icon = starterTemplateIcons[template.id];
+                  return (
+                    <Link
+                      key={template.id}
+                      to="/workspaces"
+                      search={{ template: template.id }}
+                      className="group flex min-h-20 items-center justify-between gap-4 rounded-lg border border-border/75 bg-card px-4 py-3 transition-colors hover:border-primary/35 hover:bg-primary/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                        <div className="min-w-0 space-y-2">
+                          <p className="truncate text-sm font-medium">
+                            {template.title}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span>{template.category}</span>
+                            <span aria-hidden="true">-</span>
+                            <span>{template.topic}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <Plus className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
-                  </Link>
-                ))}
+                      <Plus className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                    </Link>
+                  );
+                })}
               </div>
             </section>
           </div>

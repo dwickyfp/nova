@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -163,32 +164,18 @@ export function AssistantToggle({ draggable = false }: AssistantToggleProps) {
     [draggable, offsetY, setOffsetY],
   );
 
-  if (open) return null;
+  if (open || typeof document === "undefined") return null;
 
   const label = "Ask Nove";
 
-  return (
+  return createPortal(
     <div
-      className="group fixed right-0 z-50 flex items-center"
+      className="group fixed right-[calc(100%-100vw)] z-50 flex items-center"
       style={{
         bottom: `calc(1rem + ${offsetY}px)`,
         transition: dragging ? undefined : "bottom 200ms ease-out",
       }}
     >
-      {draggable ? (
-        <span
-          aria-hidden="true"
-          className="grid w-0 grid-cols-2 grid-rows-3 gap-0.5 overflow-hidden opacity-0 transition-[width,opacity] duration-200 ease-out group-hover:mr-1 group-hover:w-3 group-hover:opacity-100 group-focus-within:mr-1 group-focus-within:w-3 group-focus-within:opacity-100 motion-reduce:transition-none"
-        >
-          {GRIP_DOTS.map((index) => (
-            <span
-              key={index}
-              className="size-1 rounded-full bg-primary-foreground/70"
-            />
-          ))}
-        </span>
-      ) : null}
-
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -197,8 +184,10 @@ export function AssistantToggle({ draggable = false }: AssistantToggleProps) {
             size="icon"
             variant="default"
             className={
-              "min-h-12 min-w-12 rounded-l-lg rounded-r-none px-3 shadow-lg transition-transform duration-200 motion-reduce:transition-none" +
-              (draggable ? " cursor-row-resize touch-none" : "")
+              "relative min-h-9 min-w-11 rounded-l-lg rounded-r-none px-3 shadow-lg transition-[min-width] duration-200 motion-reduce:transition-none" +
+              (draggable
+                ? " cursor-row-resize touch-none group-hover:min-w-16 group-focus-within:min-w-16"
+                : "")
             }
             aria-label={label}
             aria-pressed={open}
@@ -208,11 +197,31 @@ export function AssistantToggle({ draggable = false }: AssistantToggleProps) {
             onKeyDown={onKeyDown}
             onClick={onClick}
           >
-            <Sparkles aria-hidden="true" className="size-5" />
+            {draggable ? (
+              <span
+                aria-hidden="true"
+                className="absolute left-2.5 grid w-3 grid-cols-2 grid-rows-3 gap-0.5 opacity-0 transition-opacity duration-200 ease-out group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none"
+              >
+                {GRIP_DOTS.map((index) => (
+                  <span
+                    key={index}
+                    className="size-1 rounded-full bg-primary-foreground/70"
+                  />
+                ))}
+              </span>
+            ) : null}
+            <Sparkles aria-hidden="true" className="absolute right-3 size-4.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="left">{label}</TooltipContent>
+        <TooltipContent
+          side="left"
+          className="bg-tooltip-neutral text-foreground"
+          arrowClassName="bg-tooltip-neutral fill-tooltip-neutral"
+        >
+          {label}
+        </TooltipContent>
       </Tooltip>
-    </div>
+    </div>,
+    document.body,
   );
 }

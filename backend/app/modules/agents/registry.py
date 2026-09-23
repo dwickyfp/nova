@@ -28,6 +28,9 @@ KNOWN_TOOLS = frozenset(
         "query_execute",
         "semantic_query",
         "semantic_search",
+        "ai_search",
+        "semantic_view_query",
+        "feature_lookup",
         "data_to_chart",
         "diagnose_change",
         "ml_execute",
@@ -73,6 +76,22 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
             registry.register(semantic_search_tool)
         except ImportError:  # pragma: no cover - stage ordering only
             pass
+
+    if "ai_search" in selected:
+        from app.modules.agents.tools.ai_search import ai_search_tool
+
+        registry.register(ai_search_tool)
+
+    if "semantic_view_query" in selected or "feature_lookup" in selected:
+        from app.modules.agents.tools.intelligence_views import (
+            feature_lookup_tool,
+            semantic_view_query_tool,
+        )
+
+        if "semantic_view_query" in selected:
+            registry.register(semantic_view_query_tool)
+        if "feature_lookup" in selected:
+            registry.register(feature_lookup_tool)
 
     if "data_to_chart" in selected:
         try:

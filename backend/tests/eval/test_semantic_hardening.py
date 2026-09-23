@@ -27,7 +27,13 @@ async def test_text_only_action_executes_with_consent_and_composes_from_evidence
         script=[
             text_frame('{"action":"query_execute","arguments":{"sql":"SELECT 1"}}'),
             text_frame("The query returned one row."),
-        ]
+        ],
+        turn_plan={
+            "intent": "raw_sql_query",
+            "tools": ["query_execute"],
+            "required_tools": ["query_execute"],
+            "ml_task": None,
+        },
     )
     tool = RecordingTool()
     registry = ToolRegistry()
@@ -60,7 +66,13 @@ async def test_invalid_text_only_action_cannot_run_or_answer_with_data():
         script=[
             text_frame('{"action":"query_execute","arguments":{"sql":17}}'),
             text_frame("Revenue rose significantly."),
-        ]
+        ],
+        turn_plan={
+            "intent": "raw_sql_query",
+            "tools": ["query_execute"],
+            "required_tools": ["query_execute"],
+            "ml_task": None,
+        },
     )
     tool = RecordingTool()
     registry = ToolRegistry()

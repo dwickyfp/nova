@@ -184,6 +184,19 @@ def test_seed_prompt_permits_authoring_account_ddl():
     assert "DROP ROLE ACCOUNTADMIN" in prompt
 
 
+def test_accountadmin_grants_are_distinct_from_protected_operations():
+    prompt = _DEFAULT_SYSTEM_PROMPT
+    primer = default_skill.retrieve("refusal-rules")
+    playbook = skill_library.load("accountadmin-guardrail")
+    for text in (prompt, primer, playbook):
+        assert "Ranger access polic" in text
+        assert "ACCOUNTADMIN" in text
+    assert "Adding a Ranger access policy to ACCOUNTADMIN" in playbook
+    assert "allowed." in playbook
+    assert "Do not create or suggest" in playbook
+    assert "Native StarRocks grants do not satisfy Ranger Verify Access gaps" in primer
+
+
 def test_seed_prompt_bounds_the_assistant_to_nova_scope():
     """Off-topic questions (e.g. "siapa jokowi?") must be declined, not answered.
 
@@ -264,7 +277,7 @@ def test_nove_selects_native_ml_without_a_global_skill_catalog():
     assert registry.skill_definitions["native-ml"].trust_level == "platform_skill"
 
     loop = AssistantLoop(provider=_NullProvider(), registry=registry)
-    context = LoopContext(user_name="alice")
+    context = LoopContext(user_name="alice", selected_skills=["native-ml"])
     messages = loop._build_messages(
         AssistantThread(thread_id="t", user_name="alice", title="t"),
         "Forecast revenue for the next 30 days",

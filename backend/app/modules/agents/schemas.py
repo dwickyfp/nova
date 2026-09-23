@@ -390,9 +390,12 @@ class ToolToggleRequest(BaseModel):
 
 # ── Agent access roles ─────────────────────────────────────────
 
+
 class AgentRoleView(BaseModel):
     role_name: str
     grant_type: str = "USAGE"
+    verified: bool = False
+    verified_at: datetime | None = None
 
 
 class AgentRoleListResponse(BaseModel):
@@ -408,7 +411,7 @@ class AgentRoleAddRequest(BaseModel):
 class AccessCheckItem(BaseModel):
     """One thing the agent uses, and whether a role can reach it."""
 
-    kind: str          # function | table | resource_group | agent
+    kind: str  # function | table | resource_group | agent
     name: str
     granted: bool
     detail: str = ""

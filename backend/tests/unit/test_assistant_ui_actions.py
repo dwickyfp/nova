@@ -14,7 +14,7 @@ from app.modules.assistant.tools.ui_actions import (
     _request_parts,
     _safe_value,
     call_ui_operation_tool,
-    find_ui_operation_tool,
+    list_ui_operations_tool,
 )
 
 
@@ -39,51 +39,63 @@ def test_catalog_covers_requested_ui_operations_and_excludes_private_routes() ->
     assert "GET /api/v1/stages/{stage_id}/files/{filename}" not in operations
 
 
+async def _browse(resource: str, method: str) -> dict[str, dict]:
+    offset = 0
+    found = {}
+    while True:
+        outcome = await list_ui_operations_tool.run(
+            ToolInvocation(
+                "browse",
+                "list_ui_operations",
+                {"resource": resource, "method": method, "offset": offset},
+            ),
+            None,
+        )
+        assert outcome.ok
+        found.update({item["operation"]: item for item in outcome.data["operations"]})
+        if outcome.data["next_offset"] is None:
+            return found
+        offset = outcome.data["next_offset"]
+
+
 @pytest.mark.asyncio
-async def test_search_ranks_requested_action_and_supplies_schema() -> None:
-    outcome = await find_ui_operation_tool.run(
-        ToolInvocation("search", "find_ui_operation", {"query": "add scope to role"}),
-        None,
+async def test_browse_lists_exact_resources_and_operation_schema() -> None:
+    resources = await list_ui_operations_tool.run(
+        ToolInvocation("browse", "list_ui_operations", {}), None
     )
-    assert outcome.ok
-    first = outcome.data["operations"][0]
-    assert first["operation"] == "POST /api/v1/access-control/data-scopes"
-    assert "bindings" in first["body_schema"]["properties"]
+    assert resources.ok
+    assert {"semantic-views", "workspaces", "users", "agents"} <= set(
+        resources.data["resources"]
+    )
+    found = await _browse("semantic-views", "POST")
+    create = found["POST /api/v1/semantic-views"]
+    assert "name" in create["body_required"]
+    assert "definition" in create["body_required"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("query", "expected"),
+    ("resource", "method", "expected"),
     [
-        ("edit workspace SQL", "PUT /api/v1/workspaces/files/{entry_id}"),
-        ("create user", "POST /api/v1/users"),
-        ("create agent", "POST /api/v1/agents"),
-        ("create semantic view", "POST /api/v1/agents/semantic-models"),
-        ("connect MCP server", "POST /api/v1/agents/mcp-servers"),
-        ("hubungkan MCP server", "POST /api/v1/agents/mcp-servers"),
-        ("ubah MCP server", "PATCH /api/v1/agents/mcp-servers/{server_id}"),
-        ("tambahkan scope pada role", "POST /api/v1/access-control/data-scopes"),
-        ("run SQL write", "POST /api/v1/query/execute"),
+        ("workspaces", "PUT", "PUT /api/v1/workspaces/files/{entry_id}"),
+        ("users", "POST", "POST /api/v1/users"),
+        ("agents", "POST", "POST /api/v1/agents"),
+        ("agents", "POST", "POST /api/v1/agents/semantic-models"),
+        ("semantic-views", "POST", "POST /api/v1/semantic-views"),
+        ("agents", "POST", "POST /api/v1/agents/mcp-servers"),
+        ("agents", "PATCH", "PATCH /api/v1/agents/mcp-servers/{server_id}"),
+        ("access-control", "POST", "POST /api/v1/access-control/data-scopes"),
+        ("query", "POST", "POST /api/v1/query/execute"),
+        ("stages", "POST", "POST /api/v1/stages/{stage_id}/files"),
+        (
+            "explorer",
+            "POST",
+            "POST /api/v1/explorer/databases/{database}/stages/{stage}/files",
+        ),
     ],
 )
-async def test_search_ranks_primary_ui_action(query: str, expected: str) -> None:
-    outcome = await find_ui_operation_tool.run(
-        ToolInvocation("search", "find_ui_operation", {"query": query}), None
-    )
-    assert outcome.data["operations"][0]["operation"] == expected
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("query", ["upload file to stage", "unggah file ke stage"])
-async def test_search_finds_stage_upload_with_browser_owned_file(query: str) -> None:
-    outcome = await find_ui_operation_tool.run(
-        ToolInvocation("search", "find_ui_operation", {"query": query}),
-        None,
-    )
-    found = {item["operation"]: item for item in outcome.data["operations"]}
-    assert "POST /api/v1/stages/{stage_id}/files" in found
-    assert "POST /api/v1/explorer/databases/{database}/stages/{stage}/files" in found
-    assert found["POST /api/v1/stages/{stage_id}/files"]["body_required"] == ["file"]
+async def test_browse_reaches_supported_action(resource, method, expected):
+    assert expected in await _browse(resource, method)
 
 
 def test_mutations_require_consent_and_preview_exact_payload() -> None:

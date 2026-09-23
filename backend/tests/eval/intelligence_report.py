@@ -1,4 +1,4 @@
-"""Deterministic agent and semantic intelligence scorecard.
+"""Deterministic semantic intelligence scorecard.
 
 Run with::
 
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass
 
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import SemanticPlanner
@@ -20,59 +19,6 @@ from app.modules.agents.semantic.runtime import (
     SemanticModelCandidate,
     SemanticModelRouter,
     scope_semantic_model,
-)
-from app.modules.assistant.intelligence import SemanticRoutingIndex, TurnIntent, TurnRouter
-
-
-@dataclass(frozen=True)
-class RouteCase:
-    question: str
-    intent: TurnIntent
-    tools: tuple[str, ...]
-
-
-ROUTE_CASES = (
-    RouteCase("What is revenue this month?", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
-    RouteCase("Revenue by segment", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
-    RouteCase("Write SQL for revenue by month", TurnIntent.SQL_AUTHORING, ()),
-    RouteCase("Revenue this month", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
-    RouteCase("Omzet Jakarta bulan lalu", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
-    RouteCase("Active customers by city", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
-    RouteCase("Gross margin by quarter", TurnIntent.SEMANTIC_ANALYTICS, ("semantic_query",)),
-    RouteCase("SELECT * FROM sales.orders", TurnIntent.RAW_SQL_QUERY, ("query_execute",)),
-    RouteCase("WITH x AS (SELECT 1) SELECT * FROM x", TurnIntent.RAW_SQL_QUERY, ("query_execute",)),
-    RouteCase("SHOW TABLES", TurnIntent.SCHEMA_INSPECTION, ("query_execute",)),
-    RouteCase("EXPLAIN SELECT * FROM orders", TurnIntent.RAW_SQL_QUERY, ("query_execute",)),
-    RouteCase("Describe table orders", TurnIntent.SCHEMA_INSPECTION, ("query_execute",)),
-    RouteCase("List columns in customers", TurnIntent.SCHEMA_INSPECTION, ("query_execute",)),
-    RouteCase("Struktur tabel orders", TurnIntent.SCHEMA_INSPECTION, ("query_execute",)),
-    RouteCase(
-        "Forecast revenue next 30 days",
-        TurnIntent.MACHINE_LEARNING,
-        ("semantic_query", "ml_execute"),
-    ),
-    RouteCase("Ramalkan penjualan", TurnIntent.MACHINE_LEARNING, ("semantic_query", "ml_execute")),
-    RouteCase("Cluster customers", TurnIntent.MACHINE_LEARNING, ("semantic_query", "ml_execute")),
-    RouteCase("Segment customers", TurnIntent.MACHINE_LEARNING, ("semantic_query", "ml_execute")),
-    RouteCase("Find unusual orders", TurnIntent.MACHINE_LEARNING, ("semantic_query", "ml_execute")),
-    RouteCase("Detect transaction anomalies", TurnIntent.MACHINE_LEARNING, ("ml_execute",)),
-    RouteCase(
-        "Predict customer churn", TurnIntent.MACHINE_LEARNING, ("semantic_query", "ml_execute")
-    ),
-    RouteCase("Classify support tickets", TurnIntent.MACHINE_LEARNING, ("ml_execute",)),
-    RouteCase(
-        "Forecast revenue and chart it",
-        TurnIntent.COMPOUND_ANALYTICS,
-        ("semantic_query", "ml_execute", "data_to_chart"),
-    ),
-    RouteCase("Plot sales by month", TurnIntent.CHART, ("semantic_query", "data_to_chart")),
-    RouteCase("Visualize this query", TurnIntent.CHART, ("query_execute", "data_to_chart")),
-    RouteCase("Search product Aqua", TurnIntent.SEMANTIC_SEARCH, ("semantic_search",)),
-    RouteCase("Cari customer named Sari", TurnIntent.SEMANTIC_SEARCH, ("semantic_search",)),
-    RouteCase("Write SQL for a new role", TurnIntent.SQL_AUTHORING, ()),
-    RouteCase("What tools are available?", TurnIntent.CAPABILITY_HELP, ()),
-    RouteCase("Hello", TurnIntent.DIRECT_ANSWER, ()),
-    RouteCase("Thanks", TurnIntent.DIRECT_ANSWER, ()),
 )
 
 
@@ -129,26 +75,6 @@ SEMANTIC_CASES = (
 
 
 def evaluate() -> dict[str, object]:
-    router = TurnRouter()
-    route_correct = 0
-    tool_correct = 0
-    route_details = []
-    for case in ROUTE_CASES:
-        result = router.route(case.question)
-        route_ok = result.intent == case.intent
-        tool_ok = result.required_capabilities == case.tools
-        route_correct += int(route_ok)
-        tool_correct += int(tool_ok)
-        route_details.append(
-            {
-                "question": case.question,
-                "route_ok": route_ok,
-                "tool_ok": tool_ok,
-                "actual_intent": result.intent.value,
-                "actual_tools": result.required_capabilities,
-            }
-        )
-
     semantic_router = SemanticModelRouter()
     planner = SemanticPlanner()
     model_correct = metric_correct = dimension_correct = 0
@@ -188,20 +114,10 @@ def evaluate() -> dict[str, object]:
         "unknown_constraint_not_high_confidence": unresolved.confidence.level != "high",
         "explicit_empty_authorization_denies_all": not empty_scope.datasets
         and not empty_scope.metrics,
-        "custom_metric_routes_to_data": router.route(
-            "Retained ARR this month",
-            semantic_index=SemanticRoutingIndex.from_terms({"retained_arr"}),
-        ).needs_data,
     }
     return {
         "adversarial": adversarial,
         "scope": "Deterministic offline cases; not a production-quality estimate.",
-        "agent": {
-            "cases": len(ROUTE_CASES),
-            "route_accuracy": route_correct / len(ROUTE_CASES),
-            "tool_accuracy": tool_correct / len(ROUTE_CASES),
-            "details": route_details,
-        },
         "semantic": {
             "cases": len(SEMANTIC_CASES),
             "model_routing_accuracy": model_correct / len(SEMANTIC_CASES),
@@ -216,8 +132,6 @@ def main() -> int:
     report = evaluate()
     print(json.dumps(report, indent=2, default=str))
     scores = [
-        report["agent"]["route_accuracy"],
-        report["agent"]["tool_accuracy"],
         report["semantic"]["model_routing_accuracy"],
         report["semantic"]["metric_accuracy"],
         report["semantic"]["dimension_accuracy"],

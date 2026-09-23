@@ -18,9 +18,12 @@ function Tabs({
 function TabsList({
   className,
   children,
+  indicatorVariant = 'pill',
   ref: forwardedRef,
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.List>) {
+}: React.ComponentProps<typeof TabsPrimitive.List> & {
+  indicatorVariant?: 'pill' | 'underline'
+}) {
   const listRef = React.useRef<HTMLDivElement>(null)
   const [indicator, setIndicator] = React.useState<{
     x: number
@@ -50,10 +53,16 @@ function TabsList({
     const tabRect = activeTab.getBoundingClientRect()
     const nextIndicator = {
       x: tabRect.left - listRect.left + list.scrollLeft,
-      y: tabRect.top - listRect.top + list.scrollTop,
+      y:
+        (indicatorVariant === 'underline' ? tabRect.bottom - 2 : tabRect.top) -
+        listRect.top +
+        list.scrollTop,
       width: tabRect.width,
-      height: tabRect.height,
-      radius: window.getComputedStyle(activeTab).borderRadius,
+      height: indicatorVariant === 'underline' ? 2 : tabRect.height,
+      radius:
+        indicatorVariant === 'underline'
+          ? '0px'
+          : window.getComputedStyle(activeTab).borderRadius,
     }
 
     setIndicator((current) =>
@@ -66,7 +75,7 @@ function TabsList({
         ? current
         : nextIndicator
     )
-  }, [])
+  }, [indicatorVariant])
 
   React.useLayoutEffect(() => {
     const list = listRef.current
@@ -110,7 +119,12 @@ function TabsList({
         <span
           aria-hidden='true'
           data-slot='tabs-indicator'
-          className='pointer-events-none absolute left-0 top-0 z-0 border border-transparent bg-background shadow-sm transition-[transform,width,height] duration-200 ease-out motion-reduce:transition-none dark:border-input dark:bg-input/30'
+          className={cn(
+            'pointer-events-none absolute left-0 top-0 z-0 transition-[transform,width,height] duration-200 ease-out motion-reduce:transition-none',
+            indicatorVariant === 'underline'
+              ? 'bg-primary'
+              : 'border border-transparent bg-background shadow-sm dark:border-input dark:bg-input/30'
+          )}
           style={{
             width: indicator.width,
             height: indicator.height,

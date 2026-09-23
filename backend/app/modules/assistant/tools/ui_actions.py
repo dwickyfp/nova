@@ -28,7 +28,6 @@ from app.modules.assistant.tools.redaction import (
 
 _MAX_INPUT_CHARS = 16_000
 _MAX_RESPONSE_CHARS = 8_000
-_MAX_SEARCH_RESULTS = 8
 _PATH_PARAMETER = re.compile(r"\{([^{}]+)\}")
 _SECRET_QUERY_KEYS = frozenset({"token", "key", "secret", "credential", "signature"})
 _BLOCKED_PREFIXES = (
@@ -42,57 +41,18 @@ _BLOCKED_SUFFIXES = (
     "/messages",
 )
 _BINARY_GET_PATHS = frozenset({"/api/v1/stages/{stage_id}/files/{filename}"})
-_FILE_UPLOAD_PATHS = frozenset({
-    "/api/v1/stages/{stage_id}/files",
-    "/api/v1/explorer/databases/{database}/stages/{stage}/files",
-})
-_THREAD_DETAIL_PATHS = frozenset({
-    "/api/v1/assistant/threads/{thread_id}",
-    "/api/v1/agents/{agent_id}/threads/{thread_id}",
-})
-_SEARCH_ALIASES = {
-    "user": "users pengguna akun create user",
-    "role": "roles peran grant privilege member maintenance",
-    "scope": "access control data scopes ranger row filter role",
-    "workspace": "workspaces files worksheet sql editor folder",
-    "mcp": "agents mcp servers connectors discover tools",
-    "semantic": "agents semantic models views datasets metrics",
-    "agent": "agents studio create configure tools",
-    "sql": "query execute sql worksheet statement starrocks",
-}
-_METHOD_HINTS = {
-    "GET": {"list", "show", "read", "lihat", "tampilkan", "cari"},
-    "POST": {"create", "add", "buat", "tambah", "connect", "hubungkan"},
-    "PUT": {"edit", "update", "ubah", "simpan", "replace"},
-    "PATCH": {"edit", "update", "ubah", "simpan", "configure"},
-    "DELETE": {"delete", "remove", "hapus", "revoke", "cabut"},
-}
-_ACTION_METHODS = {
-    "create": "POST", "add": "POST", "connect": "POST", "upload": "POST",
-    "grant": "POST", "assign": "POST", "buat": "POST", "buatkan": "POST",
-    "tambah": "POST", "tambahkan": "POST", "hubungkan": "POST",
-    "unggah": "POST", "berikan": "POST",
-    "run": "POST", "execute": "POST", "jalankan": "POST", "eksekusi": "POST",
-    "edit": "PUT", "update": "PUT", "ubah": "PUT", "simpan": "PUT", "ganti": "PUT",
-    "rename": "PUT", "delete": "DELETE", "remove": "DELETE", "hapus": "DELETE",
-    "cabut": "DELETE",
-}
-_SEARCH_SYNONYMS = {
-    "add": "create", "connect": "create", "buat": "create", "buatkan": "create",
-    "tambah": "create", "tambahkan": "create", "hubungkan": "create",
-    "edit": "update", "ubah": "update", "simpan": "update", "ganti": "update",
-    "unggah": "upload", "hapus": "delete", "cabut": "delete",
-    "view": "model", "role": "roles", "scope": "scopes",
-    "server": "servers", "agent": "agents", "user": "users",
-}
-_SEARCH_STOPWORDS = {"a", "an", "the", "to", "for", "in", "on", "di", "ke", "untuk"}
-
-
-def _search_word(word: str) -> str:
-    word = _SEARCH_SYNONYMS.get(word, word)
-    return word[:-1] if word.endswith("s") and len(word) > 3 else word
-
-
+_FILE_UPLOAD_PATHS = frozenset(
+    {
+        "/api/v1/stages/{stage_id}/files",
+        "/api/v1/explorer/databases/{database}/stages/{stage}/files",
+    }
+)
+_THREAD_DETAIL_PATHS = frozenset(
+    {
+        "/api/v1/assistant/threads/{thread_id}",
+        "/api/v1/agents/{agent_id}/threads/{thread_id}",
+    }
+)
 @dataclass(frozen=True)
 class UIOperation:
     key: str
@@ -159,7 +119,8 @@ def _catalog() -> dict[str, UIOperation]:
                         "file": {"type": "string", "format": "binary"},
                         **(
                             {"filename": {"type": "string"}}
-                            if path.startswith("/api/v1/explorer/") else {}
+                            if path.startswith("/api/v1/explorer/")
+                            else {}
                         ),
                     },
                     "required": ["file"],
@@ -179,7 +140,11 @@ def _catalog() -> dict[str, UIOperation]:
 
 def _is_sensitive_key(key: str) -> bool:
     return is_credential_column(key) or key.casefold() in {
-        "authorization", "cookie", "set-cookie", "private_key", "endpoint_auth"
+        "authorization",
+        "cookie",
+        "set-cookie",
+        "private_key",
+        "endpoint_auth",
     }
 
 
@@ -252,9 +217,8 @@ def _resolved_path(operation: UIOperation, path_params: dict[str, Any]) -> str:
     path = operation.path
     for name in required:
         value = path_params[name]
-        stage_filename = (
-            name == "filename"
-            and operation.path.startswith("/api/v1/stages/{stage_id}/files/{filename}")
+        stage_filename = name == "filename" and operation.path.startswith(
+            "/api/v1/stages/{stage_id}/files/{filename}"
         )
         if (
             not isinstance(value, str | int)
@@ -325,121 +289,100 @@ def _request_parts(invocation: ToolInvocation) -> tuple[UIOperation, str, dict, 
     return operation, path, path_params, query, body
 
 
-class FindUIOperationTool:
-    name = "find_ui_operation"
+class ListUIOperationsTool:
+    name = "list_ui_operations"
     description = (
-        "Find the exact Nova UI API operation for a requested Nova action. "
-        "Use before call_ui_operation for workspace, user, role, scope, agent, "
-        "semantic model, MCP connector, and other Nova UI tasks."
+        "Browse Nova actions by exact API resource, such as semantic-views, "
+        "workspaces, stages, users, agents, or dashboards. Call with no resource "
+        "to list resources, then with a resource to inspect exact operations "
+        "before call_ui_operation."
     )
     parameters = {
         "type": "object",
-        "properties": {"query": {"type": "string"}},
-        "required": ["query"],
+        "properties": {
+            "resource": {"type": "string"},
+            "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]},
+            "offset": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+        },
         "additionalProperties": False,
     }
     classification: ToolClassification = "read_only"
     requires_consent = False
 
     def preview(self, invocation: ToolInvocation) -> str:
-        return "Find Nova UI operations"
+        return "Browse Nova operations"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
-        query = str(invocation.arguments.get("query") or "").strip()[:200]
-        if not query:
-            return ToolOutcome(ok=False, summary="", error="A search query is required.")
-        query_words = re.findall(r"[a-z0-9]+", query.casefold())
-        original = set(query_words)
-        terms = original | {
-            replacement for term, replacement in _SEARCH_SYNONYMS.items() if term in original
-        }
-        expanded = " ".join(
-            alias for name, alias in _SEARCH_ALIASES.items() if name in terms
-        )
-        secondary = set(re.findall(r"[a-z0-9]+", expanded.casefold()))
-        requested_methods = {
-            method for term, method in _ACTION_METHODS.items() if term in original
-        }
-        if "PUT" in requested_methods:
-            requested_methods.add("PATCH")
-        if "rename" in original:
-            requested_methods.add("POST")
-        primary = next(
-            (
-                _search_word(word) for word in query_words
-                if word not in _ACTION_METHODS and word not in _SEARCH_STOPWORDS
-            ),
-            None,
-        )
-        query_core = {_search_word(word) for word in original - _SEARCH_STOPWORDS}
-        ranked: list[tuple[int, UIOperation]] = []
-        for operation in _catalog().values():
-            if requested_methods and operation.method not in requested_methods:
-                continue
-            summary_words = set(re.findall(r"[a-z0-9]+", operation.summary.casefold()))
-            path_words = set(re.findall(r"[a-z0-9]+", operation.path.casefold()))
-            if "upload" in original and "upload" not in summary_words:
-                continue
-            if "upload" in original and not (
-                (original - {"upload"} - _SEARCH_STOPWORDS) & (summary_words | path_words)
-            ):
-                continue
-            score = 12 * len(terms & summary_words) + 5 * len(terms & path_words)
-            score += len(secondary & (summary_words | path_words))
-            if terms & _METHOD_HINTS[operation.method]:
-                score += 3
-            summary_core = {_search_word(word) for word in summary_words}
-            if summary_core == query_core:
-                score += 25
-            if primary and primary in summary_core:
-                score += 12
-            if "sql" in original and "workspace" in original and "/files" in operation.path:
-                score += 8
-            if (
-                "sql" in original
-                and {"run", "execute", "jalankan", "eksekusi"} & original
-                and operation.path == "/api/v1/query/execute"
-            ):
-                score += 40
-            score -= operation.path.count("{") * 2
-            if score > 0:
-                ranked.append((score, operation))
-        ranked.sort(key=lambda item: (-item[0], item[1].key))
-        matches = []
-        for _, operation in ranked[:_MAX_SEARCH_RESULTS]:
-            schema = operation.body_schema or {}
-            matches.append({
-                "operation": operation.key,
-                "summary": operation.summary,
-                "path_parameters": [
-                    p.get("name") for p in operation.parameters if p.get("in") == "path"
-                ],
-                "query_parameters": [
-                    p.get("name") for p in operation.parameters if p.get("in") == "query"
-                ],
-                "body_properties": list((schema.get("properties") or {}).keys()),
-                "body_required": schema.get("required") or [],
-                "secure_input_required": any(
-                    _is_sensitive_key(field) for field in schema.get("required") or []
-                ),
-                "body_schema": (
-                    schema
-                    if len(matches) == 0 and len(json.dumps(schema)) < 4_000
-                    else None
-                ),
-                "approval_required": operation.method != "GET",
-            })
+        args = invocation.arguments
+        resource = args.get("resource")
+        method = args.get("method")
+        offset = args.get("offset", 0)
+        limit = args.get("limit", 12)
+        if resource is not None and (not isinstance(resource, str) or "/" in resource):
+            return ToolOutcome(ok=False, summary="", error="Choose an exact resource name.")
+        if method is not None and method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+            return ToolOutcome(ok=False, summary="", error="Unsupported HTTP method.")
+        if (
+            not isinstance(offset, int)
+            or offset < 0
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 12
+        ):
+            return ToolOutcome(ok=False, summary="", error="Invalid catalog page.")
+        catalog = _catalog()
+        resources = sorted({item.path.split("/")[3] for item in catalog.values()})
+        if resource is None:
+            return ToolOutcome(
+                ok=True,
+                summary=f"{len(resources)} Nova API resources.",
+                data={"resources": resources},
+            )
+        if resource not in resources:
+            return ToolOutcome(ok=False, summary="", error="Unknown Nova API resource.")
+        matches = [
+            item
+            for item in catalog.values()
+            if item.path.split("/")[3] == resource and (method is None or item.method == method)
+        ]
+        matches.sort(key=lambda item: item.key)
+        page = matches[offset : offset + limit]
+        operations = []
+        for item in page:
+            schema = item.body_schema or {}
+            operations.append(
+                {
+                    "operation": item.key,
+                    "summary": item.summary,
+                    "path_parameters": [
+                        parameter.get("name")
+                        for parameter in item.parameters
+                        if parameter.get("in") == "path"
+                    ],
+                    "query_parameters": [
+                        parameter.get("name")
+                        for parameter in item.parameters
+                        if parameter.get("in") == "query"
+                    ],
+                    "body_required": schema.get("required") or [],
+                    "body_schema": schema if len(json.dumps(schema)) <= 3_000 else None,
+                    "approval_required": item.method != "GET",
+                }
+            )
         return ToolOutcome(
             ok=True,
-            summary=f"Found {len(matches)} matching Nova UI operations.",
-            data={"operations": matches},
+            summary=f"{len(page)} of {len(matches)} {resource} operations.",
+            data={
+                "operations": operations,
+                "next_offset": offset + len(page) if offset + len(page) < len(matches) else None,
+            },
         )
 
 
 class CallUIOperationTool:
     name = "call_ui_operation"
     description = (
-        "Execute one exact Nova UI API operation discovered by find_ui_operation, "
+        "Execute one exact Nova UI API operation discovered by list_ui_operations, "
         "using the current user's authenticated session and normal API gates. "
         "Mutations require explicit approval. Never pass credentials."
     )
@@ -500,11 +443,7 @@ class CallUIOperationTool:
         file_upload = getattr(context, "file_upload", None)
         context.file_upload = None
         if operation.key == "POST /api/v1/users":
-            if (
-                not isinstance(body, dict)
-                or not secure_input
-                or set(secure_input) != {"password"}
-            ):
+            if not isinstance(body, dict) or not secure_input or set(secure_input) != {"password"}:
                 return ToolOutcome(
                     ok=False,
                     summary="",
@@ -522,9 +461,7 @@ class CallUIOperationTool:
                 )
         elif file_upload:
             file_upload[1].close()
-            return ToolOutcome(
-                ok=False, summary="", error="A file is not valid for this action."
-            )
+            return ToolOutcome(ok=False, summary="", error="A file is not valid for this action.")
         sensitive_action = bool(secure_input or file_upload)
 
         from app.core.security import create_access_token
@@ -556,8 +493,7 @@ class CallUIOperationTool:
                 ok=False,
                 summary="",
                 error=(
-                    "The action timed out. Its final state is unknown; "
-                    "verify it before retrying."
+                    "The action timed out. Its final state is unknown; verify it before retrying."
                 ),
             )
         except httpx.HTTPError:
@@ -652,5 +588,5 @@ class CallUIOperationTool:
         )
 
 
-find_ui_operation_tool = FindUIOperationTool()
+list_ui_operations_tool = ListUIOperationsTool()
 call_ui_operation_tool = CallUIOperationTool()

@@ -26,25 +26,26 @@ class ScriptedUIAction(CallUIOperationTool):
 
 @pytest.mark.asyncio
 async def test_ui_action_discovery_then_mutation_requires_consent() -> None:
-    finder = EvalTool(
-        "find_ui_operation",
+    browser = EvalTool(
+        "list_ui_operations",
         parameters={
             "type": "object",
-            "properties": {"query": {"type": "string"}},
-            "required": ["query"],
+            "properties": {"resource": {"type": "string"}},
+            "required": ["resource"],
         },
         summary="Found scope operation",
     )
-    finder.requires_consent = False
+    browser.requires_consent = False
     action = ScriptedUIAction()
     result = await run_scenario(Scenario(
         name="ui_scope_action",
         content="Add a data scope to the analyst role",
-        tools=[finder, action],
+        tools=[browser, action],
         read_only_grant=True,
         script=[
             tool_call_frame(
-                "find-1", name="find_ui_operation", arguments={"query": "add scope role"}
+                "browse-1", name="list_ui_operations",
+                arguments={"resource": "access-control"}
             ),
             tool_call_frame(
                 "act-1",
@@ -65,7 +66,7 @@ async def test_ui_action_discovery_then_mutation_requires_consent() -> None:
             text_frame("Scope policy created; propagation is pending."),
         ],
     ))
-    assert result.tool_runs == ["find_ui_operation", "call_ui_operation"]
+    assert result.tool_runs == ["list_ui_operations", "call_ui_operation"]
     assert result.consent_prompts == [("call_ui_operation", "destructive")]
     assert result.finish_reason == "stop"
 

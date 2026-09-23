@@ -22,16 +22,32 @@ function makeTree(
 
 /** Routes /workspaces/tree to the supplied tree and records every request. */
 function mockTree(tree: WorkspaceTreeResponse) {
-  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-    const url = String(input);
-    if (url.includes("/workspaces/tree")) {
-      return new Response(JSON.stringify(tree), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    return new Response(null, { status: 204 });
-  });
+  let threadCount = 0;
+  return vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/workspaces/tree")) {
+        return new Response(JSON.stringify(tree), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/assistant/threads") && init?.method === "POST") {
+        threadCount += 1;
+        return new Response(
+          JSON.stringify({ thread_id: `grant-thread-${threadCount}` }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (/\/assistant\/threads\/grant-thread-\d+\/messages$/.test(url)) {
+        return new Response("", { status: 200 });
+      }
+      return new Response(null, { status: 204 });
+    });
 }
 
 function makeClient() {
@@ -49,6 +65,8 @@ function Probe() {
     conversation,
     width,
     setWidth,
+    newChat,
+    newChatAndSend,
   } = useAssistant();
   return (
     <div>
@@ -63,6 +81,12 @@ function Probe() {
       </button>
       <span data-testid="thread">{conversation.threadId ?? "none"}</span>
       <span data-testid="messages">{conversation.messages.length}</span>
+      <button type="button" onClick={() => newChatAndSend("Grant role access")}>
+        help grant
+      </button>
+      <button type="button" onClick={newChat}>
+        new chat
+      </button>
       <button type="button" onClick={toggle}>
         toggle
       </button>
@@ -102,6 +126,41 @@ function renderProbe(tree: WorkspaceTreeResponse) {
 describe("AssistantProvider", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("opens a fresh chat and immediately sends the grant request", async () => {
+    const screen = await renderProbe(makeTree({ assistant_collapsed: true }));
+    await expect.element(screen.getByTestId("open")).toHaveTextContent("false");
+
+    await screen.getByRole("button", { name: "send" }).click();
+    await expect
+      .element(screen.getByTestId("thread"))
+      .toHaveTextContent("grant-thread-1");
+
+    await screen.getByRole("button", { name: "help grant" }).click();
+    await expect.element(screen.getByTestId("open")).toHaveTextContent("true");
+    await expect
+      .element(screen.getByTestId("thread"))
+      .toHaveTextContent("grant-thread-2");
+    await expect.element(screen.getByTestId("messages")).toHaveTextContent("1");
+
+    const posted = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(
+        ([input, init]) =>
+          String(input).endsWith(
+            "/assistant/threads/grant-thread-2/messages",
+          ) && init?.method === "POST",
+      );
+    expect(JSON.parse(String(posted?.[1]?.body)).content).toBe(
+      "Grant role access",
+    );
+
+    await screen.getByRole("button", { name: "new chat" }).click();
+    await expect
+      .element(screen.getByTestId("thread"))
+      .toHaveTextContent("none");
+    await expect.element(screen.getByTestId("messages")).toHaveTextContent("0");
   });
 
   it("restores the open panel from the fetched tree without WorkspacesPage", async () => {

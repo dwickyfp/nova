@@ -100,8 +100,8 @@ export function SemanticInspector({
 
   return (
     <Dialog open={Boolean(model)} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-svh max-w-5xl overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[min(720px,calc(100svh-2rem))] flex-col gap-5 overflow-hidden sm:max-w-[calc(100vw-3rem)] xl:max-w-6xl">
+        <DialogHeader className="shrink-0 pe-6">
           <div className="flex flex-wrap items-center gap-2">
             <DialogTitle>{model?.name ?? "Semantic model"}</DialogTitle>
             {model ? (
@@ -114,10 +114,14 @@ export function SemanticInspector({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="preview" className="min-h-0 min-w-0 w-full">
-          <TabsList className="w-full min-w-0 justify-start overflow-x-auto">
-            <TabsTrigger value="preview" className="shrink-0">Query preview</TabsTrigger>
-            <TabsTrigger value="quality" className="shrink-0">Quality</TabsTrigger>
+        <Tabs defaultValue="preview" className="min-h-0 min-w-0 flex-1 gap-0">
+          <TabsList className="mb-4 max-w-full shrink-0 justify-start overflow-x-auto">
+            <TabsTrigger value="preview" className="shrink-0">
+              Query preview
+            </TabsTrigger>
+            <TabsTrigger value="quality" className="shrink-0">
+              Quality
+            </TabsTrigger>
             <TabsTrigger value="verified" className="shrink-0">
               Verified queries
               {verifiedQuery.data?.count ? (
@@ -128,89 +132,120 @@ export function SemanticInspector({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="preview" className="mt-5 space-y-5">
-            <form
-              className="flex flex-col gap-2 sm:flex-row"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (question.trim()) runPreview.mutate();
-              }}
-            >
-              <Input
-                value={question}
-                onChange={(event) => setQuestion(event.target.value)}
-                placeholder="Revenue by region last month"
-                aria-label="Semantic question"
-              />
-              <Button
-                type="submit"
-                disabled={!question.trim() || runPreview.isPending}
+          <TabsContent
+            value="preview"
+            className="mt-0 min-h-0 overflow-y-auto pe-1 pb-1"
+          >
+            <div className="space-y-5">
+              <form
+                className="flex flex-col gap-2 sm:flex-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (question.trim()) runPreview.mutate();
+                }}
               >
-                <Play className="size-4" />
-                Preview
-              </Button>
-            </form>
-
-            {runPreview.isPending ? (
-              <div className="space-y-3">
-                <Skeleton className="w-full py-10" />
-                <Skeleton className="w-full py-16" />
-              </div>
-            ) : preview ? (
-              <PreviewResult
-                preview={preview}
-                saving={saveVerified.isPending}
-                onSave={() => saveVerified.mutate()}
-              />
-            ) : (
-              <EmptyState
-                icon={DatabaseZap}
-                title="Test a business question"
-                description="Nova will show the selected concepts, relationship path, confidence, and compiled StarRocks SQL without executing the query."
-              />
-            )}
-          </TabsContent>
-
-          <TabsContent value="quality" className="mt-5 space-y-5">
-            {lintQuery.isLoading ? (
-              <Skeleton className="w-full py-24" />
-            ) : lintQuery.data ? (
-              <QualityResult result={lintQuery.data} />
-            ) : (
-              <p className="text-sm text-destructive">
-                Could not load semantic model quality.
-              </p>
-            )}
-            <section className="space-y-3 rounded-lg border p-4" aria-label="Verified question checks">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-medium">Verified question checks</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Compare saved questions with the current model. This checks query structure; it does not run data or grade model prose.
-                  </p>
-                </div>
+                <Input
+                  value={question}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  placeholder="Revenue by region last month"
+                  aria-label="Semantic question"
+                />
                 <Button
-                  variant="outline"
-                  disabled={!verifiedQuery.data?.count || qualityLab.isPending}
-                  onClick={() => qualityLab.mutate()}
+                  type="submit"
+                  disabled={!question.trim() || runPreview.isPending}
                 >
-                  <Play className="size-4" /> Run checks
+                  <Play className="size-4" />
+                  Preview
                 </Button>
-              </div>
-              {qualityResult && qualityResult.semantic_model_id === model?.semantic_model_id ? (
-                <div className="space-y-2 text-sm" aria-live="polite">
-                  <p>{qualityResult.matched}/{qualityResult.total} matched · {qualityResult.changed} need review</p>
-                  {qualityResult.cases.filter((item) => item.status === "changed").map((item) => (
-                    <p key={item.verified_query_id} className="rounded-md bg-warning/5 px-3 py-2 text-xs">
-                      Review: {item.question}
-                    </p>
-                  ))}
+              </form>
+
+              {runPreview.isPending ? (
+                <div className="space-y-3">
+                  <Skeleton className="w-full py-10" />
+                  <Skeleton className="w-full py-16" />
                 </div>
-              ) : null}
-            </section>
+              ) : preview ? (
+                <PreviewResult
+                  preview={preview}
+                  saving={saveVerified.isPending}
+                  onSave={() => saveVerified.mutate()}
+                />
+              ) : (
+                <EmptyState
+                  icon={DatabaseZap}
+                  title="Test a business question"
+                  description="Nova will show the selected concepts, relationship path, confidence, and compiled StarRocks SQL without executing the query."
+                />
+              )}
+            </div>
           </TabsContent>
 
-          <TabsContent value="verified" className="mt-5">
+          <TabsContent
+            value="quality"
+            className="mt-0 min-h-0 overflow-y-auto pe-1 pb-1"
+          >
+            <div className="space-y-5">
+              {lintQuery.isLoading ? (
+                <Skeleton className="w-full py-24" />
+              ) : lintQuery.data ? (
+                <QualityResult result={lintQuery.data} />
+              ) : (
+                <p className="text-sm text-destructive">
+                  Could not load semantic model quality.
+                </p>
+              )}
+              <section
+                className="space-y-3 rounded-lg border p-4"
+                aria-label="Verified question checks"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-medium">
+                      Verified question checks
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Compare saved questions with the current model. This
+                      checks query structure; it does not run data or grade
+                      model prose.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    disabled={
+                      !verifiedQuery.data?.count || qualityLab.isPending
+                    }
+                    onClick={() => qualityLab.mutate()}
+                  >
+                    <Play className="size-4" /> Run checks
+                  </Button>
+                </div>
+                {qualityResult &&
+                qualityResult.semantic_model_id === model?.semantic_model_id ? (
+                  <div className="space-y-2 text-sm" aria-live="polite">
+                    <p>
+                      {qualityResult.matched}/{qualityResult.total} matched ·{" "}
+                      {qualityResult.changed} need review
+                    </p>
+                    {qualityResult.cases
+                      .filter((item) => item.status === "changed")
+                      .map((item) => (
+                        <p
+                          key={item.verified_query_id}
+                          className="rounded-md bg-warning/5 px-3 py-2 text-xs"
+                        >
+                          Review: {item.question}
+                        </p>
+                      ))}
+                  </div>
+                ) : null}
+              </section>
+            </div>
+          </TabsContent>
+
+          <TabsContent
+            value="verified"
+            className="mt-0 min-h-0 overflow-y-auto pe-1 pb-1"
+          >
             {verifiedQuery.isLoading ? (
               <Skeleton className="w-full py-20" />
             ) : (verifiedQuery.data?.queries.length ?? 0) === 0 ? (
@@ -220,29 +255,34 @@ export function SemanticInspector({
                 description="Run a query preview, review its plan and SQL, then save it as a known-good example."
               />
             ) : (
-              <div className="divide-y rounded-lg border">
+              <div className="grid gap-3 md:grid-cols-2">
                 {verifiedQuery.data?.queries.map((query) => (
-                  <div
+                  <article
                     key={query.verified_query_id}
-                    className="space-y-2 px-4 py-3"
+                    className="flex min-w-0 flex-col gap-3 rounded-lg border bg-card p-4"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <p className="text-sm font-medium">{query.question}</p>
-                      <span className="text-xs text-muted-foreground">
+                    <div className="min-w-0 space-y-1">
+                      <h3 className="break-words text-sm font-medium leading-snug">
+                        {query.question}
+                      </h3>
+                      <time
+                        dateTime={query.verified_at}
+                        className="block text-xs text-muted-foreground"
+                      >
                         {new Date(query.verified_at).toLocaleString()}
-                      </span>
+                      </time>
                     </div>
-                    <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 font-mono text-xs">
+                    <pre className="max-h-40 min-w-0 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 font-mono text-xs leading-relaxed">
                       {query.verified_sql}
                     </pre>
-                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                    <div className="mt-auto flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                       <span>{query.usage_count.toLocaleString()} uses</span>
                       <span>
                         {query.success_count.toLocaleString()} successful
                       </span>
                       <span>Verified by {query.verified_by}</span>
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
             )}
