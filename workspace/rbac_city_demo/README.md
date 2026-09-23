@@ -53,7 +53,7 @@ Run the live browser check after starting Vite in `frontend/`:
 ```sh
 cd frontend
 npm run dev
-node scripts/verify-city-rbac-ui.cjs
+node scripts/verify-city-rbac-ui.mjs
 ```
 
 Set `NOVA_UI_URL` if Vite chooses a port other than 5173. The verifier tests

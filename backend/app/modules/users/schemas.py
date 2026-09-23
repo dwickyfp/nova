@@ -39,7 +39,9 @@ class UserCreate(BaseModel):
         if self.default_role_mode == "explicit" and not self.default_roles:
             raise ValueError("default_roles is required when default_role_mode is explicit")
         if self.default_role_mode != "explicit" and self.default_roles:
-            raise ValueError("default_roles can only be provided when default_role_mode is explicit")
+            raise ValueError(
+                "default_roles can only be provided when default_role_mode is explicit"
+            )
         return self
 
 
@@ -64,7 +66,9 @@ class UserUpdate(BaseModel):
         if self.default_role_mode == "explicit" and not self.default_roles:
             raise ValueError("default_roles is required when default_role_mode is explicit")
         if self.default_role_mode not in (None, "explicit") and self.default_roles:
-            raise ValueError("default_roles can only be provided when default_role_mode is explicit")
+            raise ValueError(
+                "default_roles can only be provided when default_role_mode is explicit"
+            )
         return self
 
 

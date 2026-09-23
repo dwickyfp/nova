@@ -1,10 +1,10 @@
 """StarRocks-backed user and role administration service."""
 
 import logging
+import re
 import secrets
 import string
 from collections import defaultdict
-import re
 from typing import Literal
 
 import asyncmy
@@ -173,7 +173,8 @@ class UserService:
         allowed = PRIVILEGE_OPTIONS.get(normalized_scope, [])
         if normalized_privilege not in allowed:
             raise ValueError(
-                f"Privilege '{normalized_privilege}' is not supported for scope '{normalized_scope}'"
+                f"Privilege '{normalized_privilege}' is not supported for scope "
+                f"'{normalized_scope}'"
             )
         return normalized_privilege
 
@@ -211,7 +212,8 @@ class UserService:
                 sql = f"{action} {normalized_privilege} ON ALL DATABASES {role_clause}"
             else:
                 sql = (
-                    f"{action} {normalized_privilege} ON DATABASE {self._quote_ident(database or '')} "
+                    f"{action} {normalized_privilege} ON DATABASE "
+                    f"{self._quote_ident(database or '')} "
                     f"{role_clause}"
                 )
         else:
@@ -271,7 +273,9 @@ class UserService:
                 await cur.execute("SHOW ALL AUTHENTICATION")
                 auth_rows = await cur.fetchall()
 
-                await cur.execute("SELECT FROM_ROLE, TO_USER FROM sys.role_edges WHERE TO_USER IS NOT NULL")
+                await cur.execute(
+                    "SELECT FROM_ROLE, TO_USER FROM sys.role_edges WHERE TO_USER IS NOT NULL"
+                )
                 role_edges = await cur.fetchall()
 
                 await cur.execute(
@@ -293,7 +297,9 @@ class UserService:
                 continue
             auth_map[identity_raw] = {
                 "password_enabled": str(row.get("Password") or "").upper() == "YES",
-                "auth_plugin": None if row.get("AuthPlugin") in (None, "NULL") else str(row.get("AuthPlugin")),
+                "auth_plugin": (
+                    None if row.get("AuthPlugin") in (None, "NULL") else str(row.get("AuthPlugin"))
+                ),
                 "plugin_user": None
                 if row.get("UserForAuthPlugin") in (None, "NULL")
                 else str(row.get("UserForAuthPlugin")),
@@ -486,7 +492,9 @@ class UserService:
                 f"WHERE USER = '{safe_user}' AND HOST = '{safe_host}'"
             )
         except Exception:
-            logger.exception("Failed to query information_schema.applicable_roles for %s@%s", username, host)
+            logger.exception(
+                "Failed to query information_schema.applicable_roles for %s@%s", username, host
+            )
             return {
                 "username": username,
                 "host": host,
@@ -656,7 +664,7 @@ class UserService:
             "OBJECT_TYPE, PRIVILEGE_TYPE, IS_GRANTABLE "
             f"FROM sys.grants_to_roles WHERE GRANTEE = '{safe_name}'"
         )
-        return [dict(zip(result["columns"], row)) for row in result["rows"]]
+        return [dict(zip(result["columns"], row, strict=False)) for row in result["rows"]]
 
     async def get_role_members(self, name: str) -> dict:
         safe_name = self._escape(name)
@@ -725,11 +733,15 @@ class UserService:
             f"REVOKE {self._quote_ident(member_role)} FROM ROLE {self._quote_ident(role_name)}"
         )
 
-    async def grant_role_to_member_user(self, role_name: str, username: str, host: str = "%") -> None:
+    async def grant_role_to_member_user(
+        self, role_name: str, username: str, host: str = "%"
+    ) -> None:
         self._protect_role(role_name)
         await self.assign_role(username, role_name, host=host)
 
-    async def revoke_role_from_member_user(self, role_name: str, username: str, host: str = "%") -> None:
+    async def revoke_role_from_member_user(
+        self, role_name: str, username: str, host: str = "%"
+    ) -> None:
         self._protect_role(role_name)
         await self.revoke_role(username, role_name, host=host)
 
