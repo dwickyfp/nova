@@ -17,18 +17,28 @@ async def test_create_agent_cannot_silently_update_existing_name(monkeypatch) ->
     assert _app is not None
     list_agents = AsyncMock(return_value=[{"agent_id": "existing", "name": "analyst"}])
     update_agent = AsyncMock()
+    available_views = AsyncMock(return_value=[])
     monkeypatch.setattr(
         "app.modules.agents.tools.create_agent.agent_repository.list_agents", list_agents
     )
     monkeypatch.setattr(
         "app.modules.agents.tools.create_agent.agent_repository.update_agent", update_agent
     )
+    monkeypatch.setattr(
+        "app.modules.intelligence.semantic_views.semantic_view_service.list_active_for_agent",
+        available_views,
+    )
     outcome = await create_agent_tool.run(
         ToolInvocation("call", "create_agent", {"name": "analyst"}),
-        SimpleNamespace(user_name="alice", database="sales"),
+        SimpleNamespace(
+            user_name="alice",
+            user={"username": "alice", "encrypted_password": "encrypted"},
+            database="sales",
+        ),
     )
     assert not outcome.ok
     assert "already exists" in (outcome.error or "")
+    available_views.assert_not_awaited()
     update_agent.assert_not_awaited()
 
 
@@ -66,10 +76,19 @@ async def test_create_agent_audits_before_and_after_write(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.modules.agents.tools.create_agent.agent_repository.create_agent", create
     )
+    monkeypatch.setattr(
+        "app.modules.intelligence.semantic_views.semantic_view_service.list_active_for_agent",
+        AsyncMock(return_value=[]),
+    )
     monkeypatch.setattr("app.modules.agents.tools.create_agent.write_audit_log", audit)
     outcome = await create_agent_tool.run(
         ToolInvocation("call", "create_agent", {"name": "analyst"}),
-        SimpleNamespace(user_name="alice", database="sales", audit_session_id="thread-1"),
+        SimpleNamespace(
+            user_name="alice",
+            user={"username": "alice", "encrypted_password": "encrypted"},
+            database="sales",
+            audit_session_id="thread-1",
+        ),
     )
     assert outcome.ok
     assert events == ["PENDING", "SUCCESS"]
@@ -109,11 +128,12 @@ async def test_semantic_metadata_uses_callers_query_pipeline(monkeypatch) -> Non
 async def test_semantic_metadata_denial_stops_before_provider(monkeypatch) -> None:
     execute = AsyncMock(return_value=[QueryResult(error="access denied")])
     generate = AsyncMock()
+    create_view = AsyncMock()
     monkeypatch.setattr("app.modules.query.service.query_service.execute_statements", execute)
     monkeypatch.setattr(create_semantic_model_tool, "_generate", generate)
     monkeypatch.setattr(
-        "app.modules.agents.tools.create_semantic_model.agent_repository.list_semantic_models",
-        AsyncMock(return_value=[]),
+        "app.modules.intelligence.semantic_views.semantic_view_service.create",
+        create_view,
     )
     outcome = await create_semantic_model_tool.run(
         ToolInvocation("call", "create_semantic_model", {
@@ -126,21 +146,65 @@ async def test_semantic_metadata_denial_stops_before_provider(monkeypatch) -> No
         ),
     )
     assert not outcome.ok
-    assert "could not be read" in (outcome.error or "")
+    assert "unavailable under your active role" in (outcome.error or "")
+    assert outcome.error_class == "AUTHORIZATION_FAILURE"
     generate.assert_not_awaited()
+    create_view.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_semantic_create_cannot_silently_update_existing_name(monkeypatch) -> None:
-    list_models = AsyncMock(return_value=[{"semantic_model_id": "existing", "name": "sales"}])
-    update_model = AsyncMock()
+    metadata = [{
+        "table": "sales.orders",
+        "columns": [{"name": "order_id"}, {"name": "amount"}],
+    }]
+    spec = {
+        "name": "sales",
+        "datasets": [{
+            "name": "orders",
+            "source": "sales.orders",
+            "primary_key": "order_id",
+            "fields": [
+                {"name": "order_id", "datatype": "Integer"},
+                {"name": "amount", "datatype": "Decimal"},
+            ],
+        }],
+        "metrics": [{
+            "name": "revenue", "expression": "SUM(orders.amount)", "datatype": "Decimal",
+        }],
+    }
+    lookup = AsyncMock(return_value={"rows": [["existing-view"]]})
+    publish_view = AsyncMock()
+    insert_version = AsyncMock()
     monkeypatch.setattr(
-        "app.modules.agents.tools.create_semantic_model.agent_repository.list_semantic_models",
-        list_models,
+        create_semantic_model_tool, "_fetch_metadata", AsyncMock(return_value=metadata),
     )
     monkeypatch.setattr(
-        "app.modules.agents.tools.create_semantic_model.agent_repository.update_semantic_model",
-        update_model,
+        create_semantic_model_tool, "_generate", AsyncMock(return_value=spec),
+    )
+    monkeypatch.setattr(
+        "app.modules.assistant.tools.create_semantic_view.query_service.execute",
+        AsyncMock(return_value=SimpleNamespace(error=None)),
+    )
+    monkeypatch.setattr(
+        "app.modules.intelligence.semantic_views.semantic_view_service._source_access",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "app.modules.intelligence.semantic_views.semantic_view_service._entity_access",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "app.modules.intelligence.semantic_views.db.execute_system",
+        lookup,
+    )
+    monkeypatch.setattr(
+        "app.modules.assistant.tools.create_semantic_view.semantic_view_service.publish",
+        publish_view,
+    )
+    monkeypatch.setattr(
+        "app.modules.intelligence.semantic_views.semantic_view_service._insert_version",
+        insert_version,
     )
     outcome = await create_semantic_model_tool.run(
         ToolInvocation("call", "create_semantic_model", {
@@ -152,5 +216,8 @@ async def test_semantic_create_cannot_silently_update_existing_name(monkeypatch)
         ),
     )
     assert not outcome.ok
-    assert "already exists" in (outcome.error or "")
-    update_model.assert_not_awaited()
+    assert "creation was rejected" in (outcome.error or "")
+    lookup.assert_awaited_once()
+    assert "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS" in lookup.await_args.args[0]
+    publish_view.assert_not_awaited()
+    insert_version.assert_not_awaited()

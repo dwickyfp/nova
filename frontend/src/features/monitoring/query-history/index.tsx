@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { z } from 'zod'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -9,6 +10,9 @@ import {
   User,
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
+import { useNoveSurface } from '@/features/assistant/nove-surface-hook'
+import { defineNoveCapability } from '@/features/assistant/surface-registry'
+import { safeNoveSql } from '@/features/workspaces/nove-feedback'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -86,6 +90,63 @@ export function MonitoringQueryHistory() {
 
   const items = historyQuery.data?.items ?? []
   const total = historyQuery.data?.total ?? 0
+  const selectedQuery = items.find((item) => item.log_id === expandedRow)
+  const { askNove } = useNoveSurface({
+    id: 'monitoring.query_history', route: '/query-history', title: 'Query history',
+    context: () => ({
+      entity: selectedQuery ? {
+        type: 'query', id: selectedQuery.query_id || selectedQuery.log_id,
+        metadata: { status: selectedQuery.status, durationMs: selectedQuery.duration_ms },
+      } : undefined,
+      selection: selectedQuery ? {
+        type: 'query', ids: [selectedQuery.log_id], text: safeNoveSql(selectedQuery.sql_text),
+      } : undefined,
+      execution: selectedQuery ? {
+        type: 'query', executionId: selectedQuery.query_id || selectedQuery.log_id,
+        status: selectedQuery.status === 'ERROR' ? 'error' : 'success',
+        errorMessage: selectedQuery.error_message
+          ? safeNoveSql(selectedQuery.error_message) ?? 'Error details omitted.'
+          : null,
+        elapsedMs: selectedQuery.duration_ms,
+        rowCount: selectedQuery.rows_affected,
+      } : undefined,
+      view: {
+        filters: { status: statusFilter, user: userFilter, database: databaseFilter },
+        search: searchQuery,
+      },
+    }),
+    capabilities: [
+      defineNoveCapability({
+        name: 'surface.refresh', risk: 'safe', argsSchema: z.object({}),
+        execute: () => historyQuery.refetch({ throwOnError: true }),
+      }),
+      defineNoveCapability({
+        name: 'surface.set_filter', risk: 'safe',
+        argsSchema: z.object({ filter: z.enum(['status', 'user', 'database', 'search']), value: z.string().max(160) }),
+        execute: ({ filter, value }) => {
+          if (filter === 'status') {
+            if (!['', 'SUCCESS', 'ERROR', 'FAILED'].includes(value)) throw new Error('Unsupported query status')
+            setStatusFilter(value === 'FAILED' ? 'ERROR' : value)
+          } else if (filter === 'user') setUserFilter(value)
+          else if (filter === 'database') setDatabaseFilter(value)
+          else setSearchQuery(value)
+          setPage(1)
+          setExpandedRow(null)
+        },
+      }),
+      defineNoveCapability({
+        name: 'surface.select', risk: 'safe', argsSchema: z.object({ id: z.string().min(1).max(160) }),
+        execute: ({ id }) => {
+          if (!items.some((item) => item.log_id === id)) throw new Error('Query is not in the current list')
+          setExpandedRow(id)
+        },
+      }),
+    ],
+    suggestedActions: [
+      { label: 'Show failed queries', prompt: 'Show only failed queries here.' },
+      { label: 'Investigate a query', prompt: 'Help me investigate a query in this history.' },
+    ],
+  })
 
   const userOptions = useMemo(() => {
     if (!historyQuery.data?.items) return []
@@ -159,6 +220,11 @@ export function MonitoringQueryHistory() {
         title='Query History'
         description='Browse and search previously executed queries across all workspaces.'
       />
+      <Button variant='outline' size='sm' onClick={() => void askNove(
+        selectedQuery ? 'Explain why this query failed or took so long.' : 'Show only failed queries here.'
+      )}>
+        Ask Nove
+      </Button>
 
       {/* Filter Bar */}
       <SimpleTableToolbar

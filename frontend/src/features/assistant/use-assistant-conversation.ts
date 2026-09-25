@@ -20,6 +20,8 @@ export type AssistantConversationOptions = {
   ensureThread: () => Promise<string | null>;
   /** Active worksheet context for the next turn. */
   context: TurnContext;
+  getAppContext?: () => TurnContext["appContext"];
+  onClientAction?: (action: Extract<AssistantEvent, { type: "client_action" }>, threadId: string, turnContext?: TurnContext["appContext"]) => Promise<void>;
   /**
    * Identity of the current conversation binding. Each retained key keeps its
    * own transcript and thread, so returning to it restores that conversation.
@@ -70,6 +72,8 @@ const EMPTY_TURNS: AssistantTurnSnapshot = {
 export function useAssistantConversation({
   ensureThread,
   context,
+  getAppContext,
+  onClientAction,
   bindingKey,
   retainOnLeave,
   onError,
@@ -155,6 +159,8 @@ export function useAssistantConversation({
   const assistant = useAssistantTurn({
     ensureThread,
     context,
+    getAppContext,
+    onClientAction,
     onError,
     onProposedRewrite,
     canApproveUiAction,

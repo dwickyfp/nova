@@ -143,8 +143,8 @@ _TOOL_DESCRIPTIONS = {
     "load_skill": "load_skill(name) — load a playbook for a task before answering it.",
     "query_execute": "query_execute(sql) — run one read-only SQL statement and read the rows.",
     "semantic_query": (
-        "semantic_query(question) — answer a business question from the semantic "
-        "model; it generates SQL from defined metrics and dimensions."
+        "semantic_query(question) — answer a business question from a bound "
+        "published Semantic View using its metrics and dimensions."
     ),
     "semantic_search": (
         "semantic_search(query) — full-text search over indexed text; results "
@@ -170,12 +170,8 @@ _TOOL_DESCRIPTIONS = {
         "ml_execute(task, input_sql, ...) — run bounded deterministic ML as the "
         "requesting user; keep one-off analysis ephemeral."
     ),
-    "create_semantic_model": (
-        "create_semantic_model(name, tables, request) — create a semantic model "
-        "from real tables, grounded on their columns."
-    ),
     "create_agent": (
-        "create_agent(name, tools, semantic_model_name) — create an Agent Studio "
+        "create_agent(name, tools, semantic_view_names) — create an Agent Studio "
         "agent with instructions and tools."
     ),
 }

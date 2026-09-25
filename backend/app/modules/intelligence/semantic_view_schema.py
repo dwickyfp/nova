@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS (
     name VARCHAR(128) NOT NULL,
     id VARCHAR(64) NOT NULL,
     owner_name VARCHAR(128) NOT NULL,
+    visibility VARCHAR(16),
     active_version INT,
     status VARCHAR(32) NOT NULL,
     created_at DATETIME NOT NULL,
@@ -40,3 +41,11 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 async def ensure_semantic_view_schema() -> None:
     for ddl in SEMANTIC_VIEW_DDL:
         await db.execute_system(ddl)
+    try:
+        await db.execute_system(
+            "ALTER TABLE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS ADD COLUMN visibility VARCHAR(16)"
+        )
+    except Exception as exc:
+        message = str(exc).lower()
+        if "already exists" not in message and "duplicate" not in message:
+            raise

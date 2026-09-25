@@ -14,7 +14,7 @@ function RouteComponent() {
       <Header>
         <Search className='me-auto' />
       </Header>
-      <Main fixed>
+      <Main scroll>
         <FunctionsPage />
       </Main>
     </>

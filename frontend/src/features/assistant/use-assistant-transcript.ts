@@ -163,13 +163,7 @@ function applyToolStatus(
   );
 }
 
-/**
- * The activity block for the current turn: the plan plus the thinking steps.
- *
- * One block per turn, kept at the tail so it sits immediately above the answer
- * the model is writing. A new turn (after a user message) starts a new block, so
- * the trace stays attached to the turn that produced it.
- */
+// A new user message starts a new activity block; later frames update that block.
 function upsertActivity(
   state: TranscriptMessage[],
   update: (
@@ -177,7 +171,14 @@ function upsertActivity(
     plan: PlanStep[],
   ) => Partial<TranscriptMessage>,
 ): TranscriptMessage[] {
-  const index = state.findIndex((message) => message.role === "activity");
+  let index = -1;
+  for (let i = state.length - 1; i >= 0; i -= 1) {
+    if (state[i].role === "user") break;
+    if (state[i].role === "activity") {
+      index = i;
+      break;
+    }
+  }
   if (index === -1) {
     const block: TranscriptMessage = {
       message_id: nextLocalId("activity"),
@@ -200,6 +201,21 @@ function upsertActivity(
     },
     ...state.slice(index + 1),
   ];
+}
+
+function settleActivity(message: TranscriptMessage): TranscriptMessage {
+  if (message.role !== "activity") return message;
+  return {
+    ...message,
+    activity_steps: message.activity_steps?.map((step) =>
+      step.status === "running" ? { ...step, status: "done" } : step,
+    ),
+    activity_plan: message.activity_plan?.map((step) =>
+      step.status === "pending" || step.status === "running"
+        ? { ...step, status: "done" }
+        : step,
+    ),
+  };
 }
 
 function applyEvent(
@@ -282,25 +298,11 @@ function applyEvent(
             turn_state: "done",
           };
         }
-        // No step may be left spinning once the turn ends.
-        if (message.role === "activity" && message.activity_steps) {
-          return {
-            ...message,
-            activity_steps: message.activity_steps.map((step) =>
-              step.status === "running" ? { ...step, status: "done" } : step,
-            ),
-            activity_plan: message.activity_plan?.map((step) =>
-              step.status === "pending" || step.status === "running"
-                ? { ...step, status: "done" }
-                : step,
-            ),
-          };
-        }
-        return message;
+        return settleActivity(message);
       });
     case "error":
       return [
-        ...state,
+        ...state.map(settleActivity),
         {
           message_id: nextLocalId("error"),
           role: "assistant",
@@ -311,6 +313,7 @@ function applyEvent(
         },
       ];
     case "ping":
+    case "client_action":
       return state;
   }
 }
@@ -336,11 +339,12 @@ export function transcriptReducer(
     case "event":
       return applyEvent(state, action.event);
     case "cancelled":
-      return state.map((message) =>
-        message.turn_state === "streaming"
-          ? { ...message, turn_state: "cancelled" }
-          : message,
-      );
+      return state.map((message) => {
+        const settled = settleActivity(message);
+        return settled.turn_state === "streaming"
+          ? { ...settled, turn_state: "cancelled" }
+          : settled;
+      });
     case "reset":
       return [];
   }

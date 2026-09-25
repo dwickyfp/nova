@@ -24,13 +24,15 @@ vi.mock("@/features/agents/api", () => ({
     listMemories: mocks.list,
     deleteMemory: mocks.remove,
     get: mocks.getAgent,
-    getSemanticModel: mocks.getModel,
     listRuleProposals: mocks.listProposals,
     createRuleProposal: mocks.createProposal,
     previewRuleProposal: mocks.previewProposal,
     approveRuleProposal: mocks.approveProposal,
     rejectRuleProposal: mocks.rejectProposal,
   },
+}));
+vi.mock("@/features/intelligence/semantic-views-api", () => ({
+  semanticViewsApi: { get: mocks.getModel },
 }));
 
 beforeEach(() => {
@@ -46,11 +48,12 @@ beforeEach(() => {
   mocks.remove.mockImplementation(async (_agentId: string, memoryId: string) => {
     mocks.memories = mocks.memories.filter((memory) => memory.memory_id !== memoryId);
   });
-  mocks.getAgent.mockResolvedValue({ semantic_model_ids: ["model-1"] });
+  mocks.getAgent.mockResolvedValue({ semantic_view_ids: ["view-1"] });
   mocks.getModel.mockResolvedValue({
-    semantic_model_id: "model-1", name: "Sales", definition: {
+    id: "view-1", name: "Sales", active_version: 1,
+    versions: [{ version: 1, status: "ACTIVE", definition: {
       metrics: [{ name: "revenue", expression: "SUM(orders.amount)" }],
-    },
+    } }],
   });
   mocks.listProposals.mockImplementation(async () => ({
     proposals: mocks.proposals, count: mocks.proposals.length,
@@ -165,7 +168,7 @@ describe("AgentMemoryDialog", () => {
     await page.getByRole("button", { name: "Preview impact" }).click();
     await expect.element(page.getByText("Proposed: 80")).toBeVisible();
     await page.getByRole("button", { name: "Approve rule" }).click();
-    expect(mocks.approveProposal).toHaveBeenCalledWith("model-1", "proposal-1");
+    expect(mocks.approveProposal).toHaveBeenCalledWith("view-1", "proposal-1");
   });
 
   it("keeps the proposal review inside a narrow viewport", async () => {

@@ -577,7 +577,7 @@ export function AccessControlPage() {
       <Header fixed>
         <Search />
       </Header>
-      <Main className="flex flex-1 flex-col gap-6 pb-12">
+      <Main scroll className="flex flex-1 flex-col gap-6 pb-12">
         <PageHeader
           title="Access Control"
           description="Manage Nova authorization roles and policies enforced by Ranger."

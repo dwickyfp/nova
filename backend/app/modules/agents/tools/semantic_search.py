@@ -121,7 +121,7 @@ class SemanticSearchTool:
             return ToolOutcome(
                 ok=False,
                 summary="",
-                error="No semantic model is configured for this agent.",
+                error="No published Semantic View is available to this agent.",
             )
 
         target = _resolve_target(semantic_model.get("definition") or {}, column)
@@ -130,7 +130,7 @@ class SemanticSearchTool:
                 ok=False,
                 summary="",
                 error=(
-                    f"Column {column!r} is not a text field in the semantic model. "
+                    f"Column {column!r} is not a text field in the Semantic View. "
                     "Pick a searchable text column."
                 ),
             )

@@ -45,16 +45,18 @@ const requiredPrivilege: Record<string, string> = {
  * Agent Access — which roles may use the agent, and Verify Access.
  *
  * Verify Access resolves what the agent actually depends on (its custom function
- * tools, the tables behind its semantic model, its database) and checks each
+ * tools, the tables behind its Semantic Views, its database) and checks each
  * against the role's engine grants. A red row is a real gap the engine would
  * refuse at run time.
  */
 export function AgentAccessTab({
   agentId,
   agentName,
+  hasSemanticViews = false,
 }: {
   agentId: string;
   agentName?: string;
+  hasSemanticViews?: boolean;
 }) {
   const queryClient = useQueryClient();
   const { newChatAndSend } = useAssistant();
@@ -147,6 +149,12 @@ export function AgentAccessTab({
         </div>
       </div>
 
+      {hasSemanticViews && roles.some((role) => !role.verified) ? (
+        <p role="status" className="rounded-md border border-warning bg-warning/10 px-4 py-3 text-sm">
+          A bound Semantic View changed or this role has not been checked. Verify access again for each role before the agent runs.
+        </p>
+      ) : null}
+
       {rolesQuery.isLoading ? (
         <Skeleton className="h-48 w-full" />
       ) : roles.length === 0 ? (
@@ -183,7 +191,7 @@ export function AgentAccessTab({
                     >
                       {verify.isPending && verify.variables === role.role_name
                         ? "Checking…"
-                        : "Verify"}
+                        : hasSemanticViews && !role.verified ? "Verify access again" : "Verify"}
                     </Button>
                     <Button
                       size="icon"

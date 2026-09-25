@@ -30,6 +30,7 @@ from app.modules.access_control.role_activation import (
     RoleActivationError,
     role_activation_service,
 )
+from app.observability.metrics import PROXY_QUERIES
 from app.proxy.auth import (
     AuthenticatedUser,
     AuthenticationError,
@@ -382,13 +383,16 @@ class ProxyConnection:
             )
         except Exception:
             logger.exception("[%s] query dispatch failed", self._ctx.connection_id)
+            PROXY_QUERIES.labels(status="error").inc()
             await self._write_error(1064, "Query execution failed")
             return
 
         if result.error is not None:
+            PROXY_QUERIES.labels(status="error").inc()
             await self._write_error(result.error_code, result.error)
             return
 
+        PROXY_QUERIES.labels(status="success").inc()
         if result.is_resultset:
             payloads = build_resultset(
                 result.columns,

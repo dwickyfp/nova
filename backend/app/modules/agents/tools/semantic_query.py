@@ -87,12 +87,12 @@ _SEMANTIC_QUERY_PROMPT_VERSION = "v1"
 
 
 class SemanticQueryTool:
-    """Compiles SQL from a semantic plan and runs it, delegate-first."""
+    """Compiles SQL from an active Semantic View and runs it, delegate-first."""
 
     name = "semantic_query"
     description = (
-        "Answer a governed business metric question. Nova selects the semantic "
-        "model, validates a SemanticPlan, resolves joins and grain, compiles "
+        "Answer a governed business metric question. Nova selects a published "
+        "Semantic View, validates a SemanticPlan, resolves joins and grain, compiles "
         "StarRocks SQL, and runs it read-only. Do not use for explicit SQL or "
         "schema inspection. Returns verified rows and semantic evidence."
     )
@@ -140,8 +140,8 @@ class SemanticQueryTool:
                 ok=False,
                 summary="",
                 error=(
-                    "No semantic model is configured for this agent. "
-                    "Attach one in the agent settings before asking business questions."
+                    "No published Semantic View is available to this agent. "
+                    "Attach an accessible published View in the agent settings."
                 ),
             )
 
@@ -150,32 +150,40 @@ class SemanticQueryTool:
             return ToolOutcome(
                 ok=False,
                 summary="",
-                error="The agent's semantic model defines no datasets.",
+                error="The selected Semantic View defines no datasets.",
             )
 
         semantic_ir = semantic_model.get("_scoped_ir") or SemanticModelIR.from_ossie(definition)
         semantic_slice = self._retriever.retrieve(semantic_ir, question)
         verified_hit: VerifiedQuery | None = None
-        owner = _context_value(context, "agent_owner_name") or _context_value(
-            context, "user_name"
-        )
         model_id = str(semantic_model.get("semantic_model_id") or "")
-        if owner and model_id:
-            rows = await agent_repository.list_verified_queries(model_id, owner_name=owner)
-            entries = [
-                VerifiedQuery(
-                    verified_query_id=str(row["verified_query_id"]),
-                    semantic_model_id=model_id,
-                    model_fingerprint=str(row["model_fingerprint"]),
-                    question=str(row["question"]),
-                    semantic_plan=SemanticPlan.from_dict(row["semantic_plan"]),
-                    verified_sql=str(row["verified_sql"]),
-                    tags=tuple(row.get("tags") or []),
-                    usage_count=int(row.get("usage_count") or 0),
-                    success_count=int(row.get("success_count") or 0),
-                )
-                for row in rows
+        if model_id:
+            rows = [
+                item for item in definition.get("verified_queries") or []
+                if isinstance(item, dict)
             ]
+            entries = []
+            for row in rows:
+                if not (
+                    row.get("question") and row.get("semantic_plan") and row.get("verified_sql")
+                ):
+                    continue
+                try:
+                    entries.append(
+                        VerifiedQuery(
+                            verified_query_id=str(row.get("verified_query_id") or ""),
+                            semantic_model_id=model_id,
+                            model_fingerprint=semantic_ir.fingerprint,
+                            question=str(row["question"]),
+                            semantic_plan=SemanticPlan.from_dict(row["semantic_plan"]),
+                            verified_sql=str(row["verified_sql"]),
+                            tags=tuple(row.get("tags") or []),
+                            usage_count=int(row.get("usage_count") or 0),
+                            success_count=int(row.get("success_count") or 0),
+                        )
+                    )
+                except (TypeError, ValueError):
+                    continue
             hits = self._vqr.retrieve(
                 question,
                 entries,
@@ -449,9 +457,7 @@ class SemanticQueryTool:
                 time_grain=plan.time.grain if plan.time else None,
                 execution_latency_ms=round(execution_duration_ms),
                 succeeded=True,
-                verified_query_id=(
-                    verified_hit.verified_query_id if verified_hit is not None else None
-                ),
+                verified_query_id=None,
             )
         except Exception as exc:  # noqa: BLE001 - telemetry must not fail a query
             logger.warning("semantic usage telemetry failed: %s", type(exc).__name__)
@@ -473,6 +479,9 @@ class SemanticQueryTool:
                 "confidence": confidence,
             },
             evidence={
+                "source": "nova_semantic_view",
+                "view_id": model_id,
+                "version": semantic_model.get("version"),
                 "semantic_model_id": semantic_model.get("semantic_model_id"),
                 "semantic_model_fingerprint": semantic_ir.fingerprint,
                 "metrics": list(plan.metrics),
@@ -498,6 +507,7 @@ class SemanticQueryTool:
             },
             state_patch={
                 "semantic_plan": plan.as_dict(),
+                "active_semantic_view": model_id,
                 "active_semantic_model": str(
                     semantic_model.get("semantic_model_id") or semantic_ir.name
                 ),
@@ -772,6 +782,11 @@ def _semantic_trace(
             "id": str(model.get("semantic_model_id") or ""),
             "name": str(model.get("name") or definition.get("name") or ""),
             "ossie_version": str(model.get("ossie_version") or definition.get("version") or ""),
+        },
+        "semantic_view": {
+            "id": str(model.get("id") or model.get("semantic_model_id") or ""),
+            "version": model.get("version"),
+            "fingerprint": str(model.get("fingerprint") or ""),
         },
         "question": question[:2000],
         "datasets": datasets,

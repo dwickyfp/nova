@@ -222,6 +222,7 @@ class ProxyQueryExecutor:
 
         try:
             results = await query_service.execute_statements(
+                source="mysql_proxy",
                 sql=sql_to_run,
                 username=username,
                 encrypted_password="",
@@ -280,6 +281,7 @@ class ProxyQueryExecutor:
         """
         try:
             results = await query_service.execute_statements(
+                source="mysql_proxy",
                 sql="SHOW DATABASES",
                 username=username,
                 encrypted_password="",

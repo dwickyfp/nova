@@ -52,7 +52,7 @@ export function AgentBuilderPage() {
     return (
       <>
         <Header fixed />
-        <Main>
+        <Main scroll>
           <Skeleton className="h-96 w-full" />
         </Main>
       </>
@@ -64,7 +64,7 @@ export function AgentBuilderPage() {
   return (
     <>
       <Header fixed />
-      <Main>
+      <Main scroll>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -74,11 +74,11 @@ export function AgentBuilderPage() {
               <Badge variant="outline">Draft</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              {agent.semantic_model_ids.length > 0
-                ? `${agent.semantic_model_ids.length} semantic model${
-                    agent.semantic_model_ids.length === 1 ? "" : "s"
+              {(agent.semantic_view_ids ?? []).length > 0
+                ? `${agent.semantic_view_ids?.length} Semantic View${
+                    agent.semantic_view_ids?.length === 1 ? "" : "s"
                   } · `
-                : "No semantic model · "}
+                : "No Semantic View · "}
               Updated {new Date(agent.updated_at).toLocaleString()}
             </p>
           </div>
@@ -121,7 +121,8 @@ export function AgentBuilderPage() {
             />
           </TabsContent>
           <TabsContent value="access" className="mt-6">
-            <AgentAccessTab agentId={agentId} agentName={agent.name} />
+            <AgentAccessTab agentId={agentId} agentName={agent.name}
+              hasSemanticViews={(agent.semantic_view_ids ?? []).length > 0} />
           </TabsContent>
           <TabsContent value="observability" className="mt-6">
             <AgentObservabilityTab agentId={agentId} />

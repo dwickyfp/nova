@@ -88,6 +88,7 @@ class CapabilityRegistry:
 @dataclass
 class ActiveConversationState:
     objective: str = ""
+    surface_id: str | None = None
     active_semantic_model: str | None = None
     time_context: dict[str, str] = field(default_factory=dict)
     filters: dict[str, str] = field(default_factory=dict)

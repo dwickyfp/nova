@@ -1,21 +1,24 @@
-"""Migration Connector schemas — request/response models for assessment + dry-run.
-
-The shapes here are the API contract. Two invariants are enforced by construction:
-
-* No field can carry a credential **value**. A source cluster is registered by
-  address plus a ``secret_ref``; the password is resolved server-side from the
-  configured secret store at call time and never echoed.
-* A ``DryRunItem`` verdict is one of ``migratable`` / ``lossy`` / ``skipped`` and
-  always carries a ``reason``. ``lossy`` and ``skipped`` are not errors — they are
-  the report the operator must see before any future cutover.
-"""
+"""Migration API contracts. Source passwords remain in the secret store."""
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+_SYSTEM_DATABASES = frozenset({"nova_system", "information_schema", "_statistics_", "sys"})
+_DATABASE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _migratable_database(name: str) -> str:
+    value = name.strip()
+    if value.casefold() in _SYSTEM_DATABASES:
+        raise ValueError("System databases cannot be migrated")
+    if not _DATABASE_NAME.fullmatch(value):
+        raise ValueError("Database name must use letters, digits, or underscores")
+    return value
 
 
 class MigrationVerdict(StrEnum):
@@ -57,6 +60,20 @@ class SourceConnectionRequest(BaseModel):
     comment: str = Field(default="", max_length=1024)
 
 
+class SourceConnectionTestRequest(BaseModel):
+    """Test an unsaved source address in the worker without storing a password."""
+
+    source: str = Field(..., min_length=1, max_length=256)
+    host: str = Field(..., min_length=1, max_length=256)
+    port: int = Field(default=9030, ge=1, le=65535)
+    username: str = Field(default="root", min_length=1, max_length=128)
+    secret_ref: str = Field(default="", max_length=1024)
+
+
+class SourceConnectionTestResponse(BaseModel):
+    connected: bool
+
+
 class SourceConnectionResponse(BaseModel):
     """A registered source cluster — address only, never a secret value.
 
@@ -78,6 +95,17 @@ class SourceConnectionResponse(BaseModel):
 class SourceConnectionListResponse(BaseModel):
     connections: list[SourceConnectionResponse]
     count: int
+
+
+class DatabasesRequest(BaseModel):
+    source: str = Field(..., min_length=1, max_length=256)
+
+
+class DatabasesResponse(BaseModel):
+    source: str
+    databases: list[str]
+    count: int
+    unsupported: list[str] = Field(default_factory=list)
 
 
 class EnumerateRequest(BaseModel):
@@ -163,13 +191,7 @@ class PlanStepKind(StrEnum):
 
 
 class PlanRequest(BaseModel):
-    """Build a dependency-ordered apply plan for one database.
-
-    Read-only: planning opens the source, collects definitions, and retargets
-    them, but executes **nothing** on the target. ``target_database`` defaults to
-    the source database name (same name on the Nova target). The apply endpoint
-    that consumes a plan is gated on issue #7 and does not exist yet.
-    """
+    """Plan one database without applying it to the target."""
 
     source: str = Field(..., min_length=1, max_length=256)
     database: str = Field(..., min_length=1, max_length=256)
@@ -198,8 +220,7 @@ class PlanResponse(BaseModel):
     steps: list[PlanStepResponse]
     blocked: list[BlockedObjectResponse]
     step_count: int
-    #: Always False in v1 — there is no execute path. Present so the client does
-    #: not invent one (mirrors ``capabilities.execute_available``).
+    #: Mirrors the operator's execute gate in ``capabilities``.
     execute_available: bool = False
 
 
@@ -227,6 +248,76 @@ class ExecuteRequest(BaseModel):
     #: Named storage connection used as the transfer stage. Empty means the
     #: workspace default.
     stage_connection: str = Field(default="", max_length=256)
+
+    @field_validator("database")
+    @classmethod
+    def valid_source_database(cls, value: str) -> str:
+        return _migratable_database(value)
+
+    @field_validator("target_database")
+    @classmethod
+    def valid_target_database(cls, value: str) -> str:
+        return _migratable_database(value) if value else value
+
+
+class ExecuteBatchRequest(BaseModel):
+    source: str = Field(..., min_length=1, max_length=256)
+    databases: list[str] = Field(..., min_length=1, max_length=50)
+    create_database: bool = True
+    acknowledge_omissions: bool = False
+    confirmation: str = Field(default="", max_length=256)
+    include_data: bool = False
+    stage_connection: str = Field(default="", max_length=256)
+
+    @field_validator("databases")
+    @classmethod
+    def unique_databases(cls, value: list[str]) -> list[str]:
+        cleaned = [_migratable_database(name) for name in value]
+        if any(len(name) > 256 for name in cleaned):
+            raise ValueError("Each database name must be at most 256 characters")
+        if len(set(cleaned)) != len(cleaned):
+            raise ValueError("Database selection contains duplicates")
+        return cleaned
+
+
+class MigrationJobAccepted(BaseModel):
+    job_id: str
+    status: str
+    source: str
+    databases: list[str]
+
+
+class MigrationJobDatabaseResult(BaseModel):
+    database: str
+    status: str
+    succeeded: int = 0
+    failed: int = 0
+    skipped: int = 0
+    rows_moved: int = 0
+    error: str | None = None
+    steps: list[MigrationJobStepResult] = Field(default_factory=list)
+    data: list[TableCopyResult] = Field(default_factory=list)
+
+
+class MigrationJobStepResult(BaseModel):
+    order: int
+    kind: PlanStepKind
+    object_name: str
+    status: str
+    error: str | None = None
+
+
+class MigrationJobStatus(BaseModel):
+    job_id: str
+    source: str
+    databases: list[str]
+    status: str
+    error_code: str | None = None
+    current_database: str | None = None
+    results: list[MigrationJobDatabaseResult] = Field(default_factory=list)
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 class ExecuteStepResult(BaseModel):

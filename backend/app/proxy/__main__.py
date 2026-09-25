@@ -20,6 +20,7 @@ import signal
 from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
+from app.observability.metrics import PROXY_EXPECTED, start_metrics_server
 from app.proxy.server import MySQLProxyServer
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ async def _run() -> None:
     # with SECRET_KEY, so a missing key must abort boot (NOVA-108).
     require_configured_secrets()
     await db.init_system_pool()
+    PROXY_EXPECTED.set(1)
+    start_metrics_server("proxy")
     server = MySQLProxyServer()
 
     stop_event = asyncio.Event()

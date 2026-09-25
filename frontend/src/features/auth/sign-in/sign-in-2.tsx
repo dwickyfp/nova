@@ -5,10 +5,11 @@ import { UserAuthForm } from './components/user-auth-form'
 export function SignIn2() {
   const { redirect } = useSearch({ from: '/(auth)/sign-in' })
   return (
-    <div className='grid min-h-svh bg-background lg:grid-cols-2'>
-      <main className='relative flex min-h-svh items-center justify-center px-6 py-12 sm:px-10 lg:px-16'>
-        <div className='w-full max-w-sm'>
-          <div className='mb-2 flex items-center gap-3'>
+    <div className='grid h-svh min-h-0 overflow-hidden bg-background lg:grid-cols-2'>
+      <main className='relative flex min-h-0 flex-col overflow-y-auto px-6 py-12 sm:px-10 lg:px-16'>
+        <div className='mx-auto my-auto w-full max-w-sm'>
+          <header className='mb-8'>
+            <div className='mb-2 flex items-center gap-3'>
             <img
               src='/images/nova-mark.svg'
               alt=''
@@ -21,13 +22,9 @@ export function SignIn2() {
                 Data warehouse + AI platform
               </p>
             </div>
-          </div>
-
-          <div className='flex flex-col space-y-2 text-start mb-8'>
-            <h2 className='text-2xl font-semibold tracking-tight'>
-              Sign in to Nova
-            </h2>
-          </div>
+            </div>
+            <h2 className='text-2xl font-semibold tracking-tight'>Sign in to Nova</h2>
+          </header>
           <UserAuthForm redirectTo={redirect} />
         </div>
       </main>

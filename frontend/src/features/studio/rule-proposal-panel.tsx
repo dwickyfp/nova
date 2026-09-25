@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { agentsApi, type AgentMemory, type RuleProposalPreview } from "@/features/agents/api";
+import { semanticViewsApi, type SemanticExpression } from "@/features/intelligence/semantic-views-api";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -9,7 +10,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-type MetricChoice = { name: string; expression: string };
+type MetricChoice = { name: string; expression?: SemanticExpression };
+
+function expressionText(value: SemanticExpression | undefined): string {
+  if (typeof value === "string") return value;
+  return value?.dialects?.find((item) => item.dialect === "ANSI_SQL")?.expression ?? "";
+}
 
 export function RuleProposalPanel({ agentId, memory }: {
   agentId: string;
@@ -25,13 +31,11 @@ export function RuleProposalPanel({ agentId, memory }: {
     queryKey: ["agents", agentId, "detail"],
     queryFn: () => agentsApi.get(agentId),
   });
-  const modelIds = agent.data?.semantic_model_ids?.length
-    ? agent.data.semantic_model_ids
-    : agent.data?.semantic_model_id ? [agent.data.semantic_model_id] : [];
+  const modelIds = agent.data?.semantic_view_ids ?? [];
   const activeModelId = modelId || modelIds[0] || "";
   const model = useQuery({
-    queryKey: ["agents", "semantic-model", activeModelId],
-    queryFn: () => agentsApi.getSemanticModel(activeModelId),
+    queryKey: ["intelligence", "semantic", activeModelId],
+    queryFn: () => semanticViewsApi.get(activeModelId),
     enabled: Boolean(activeModelId),
   });
   const proposals = useQuery({
@@ -39,9 +43,12 @@ export function RuleProposalPanel({ agentId, memory }: {
     queryFn: () => agentsApi.listRuleProposals(activeModelId),
     enabled: Boolean(activeModelId),
   });
-  const metrics = Array.isArray(model.data?.definition?.metrics)
-    ? (model.data.definition.metrics as MetricChoice[]).filter(
-      (item) => typeof item?.name === "string" && typeof item?.expression === "string",
+  const activeDefinition = model.data?.versions.find(
+    (item) => item.version === model.data?.active_version,
+  )?.definition;
+  const metrics = Array.isArray(activeDefinition?.metrics)
+    ? (activeDefinition.metrics as MetricChoice[]).filter(
+      (item) => typeof item?.name === "string" && Boolean(expressionText(item.expression)),
     ) : [];
   const activeMetric = metricName || metrics[0]?.name || "";
   const existing = proposals.data?.proposals.find(
@@ -49,9 +56,9 @@ export function RuleProposalPanel({ agentId, memory }: {
   );
 
   useEffect(() => {
-    setExpression(metrics.find((item) => item.name === activeMetric)?.expression || "");
+    setExpression(expressionText(metrics.find((item) => item.name === activeMetric)?.expression));
     setPreview(null);
-  }, [activeMetric, model.data?.semantic_model_id]);
+  }, [activeMetric, model.data?.id]);
 
   async function createProposal() {
     if (!activeModelId || !activeMetric || !expression.trim()) return;
@@ -96,7 +103,7 @@ export function RuleProposalPanel({ agentId, memory }: {
       }
       setPreview(null);
       await queryClient.invalidateQueries({ queryKey: ["agents", "rule-proposals", activeModelId] });
-      await queryClient.invalidateQueries({ queryKey: ["agents", "semantic-model", activeModelId] });
+      await queryClient.invalidateQueries({ queryKey: ["intelligence", "semantic", activeModelId] });
       toast.success(approve ? "Business rule approved" : "Rule proposal rejected");
     } catch {
       toast.error("Review failed. Refresh the model and preview again.");
@@ -106,13 +113,13 @@ export function RuleProposalPanel({ agentId, memory }: {
   }
 
   if (agent.isLoading || model.isLoading || proposals.isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading semantic model…</p>;
+    return <p className="text-sm text-muted-foreground">Loading Semantic View…</p>;
   }
   if (agent.isError || model.isError || proposals.isError) {
     return <p role="alert" className="text-sm text-destructive">Business rules could not be loaded.</p>;
   }
   if (!modelIds.length) {
-    return <p className="text-sm text-muted-foreground">Bind a semantic model to this agent before proposing a business rule.</p>;
+    return <p className="text-sm text-muted-foreground">Bind a published Semantic View to this agent before proposing a business rule.</p>;
   }
 
   return (
@@ -124,9 +131,9 @@ export function RuleProposalPanel({ agentId, memory }: {
         </p>
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="rule-model">Semantic model</Label>
+        <Label htmlFor="rule-model">Semantic View</Label>
         <Select value={activeModelId} onValueChange={(value) => { setModelId(value); setMetricName(""); setPreview(null); }}>
-          <SelectTrigger id="rule-model" className="w-full"><SelectValue placeholder="Choose a model" /></SelectTrigger>
+          <SelectTrigger id="rule-model" className="w-full"><SelectValue placeholder="Choose a View" /></SelectTrigger>
           <SelectContent>{modelIds.map((id) => <SelectItem key={id} value={id}>{id === activeModelId ? model.data?.name || id : id}</SelectItem>)}</SelectContent>
         </Select>
       </div>

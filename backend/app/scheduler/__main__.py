@@ -32,6 +32,7 @@ from app.modules.task_orchestration.transport import (
     LeaderLock,
     RedisGraphRunTransport,
 )
+from app.observability.metrics import start_metrics_server
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,7 @@ async def _run() -> None:
         RedisGraphRunTransport(client),
         LeaderLock(client),
     )
+    start_metrics_server("scheduler")
 
     try:
         await service.run_forever(stop_event)

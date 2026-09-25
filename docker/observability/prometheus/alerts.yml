@@ -1,0 +1,209 @@
+groups:
+  - name: nova-availability
+    rules:
+      - alert: NovaServiceScrapeDown
+        expr: up{job=~"nova-backend|nova-scheduler|nova-worker|nova-agent-worker|nova-proxy|starrocks-fe|starrocks-be|redis|dependency-probe|prometheus|node-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} cannot be scraped"
+          description: "Check the process and its metrics endpoint."
+
+      - alert: NovaLoopStalled
+        expr: time() - nova_service_last_heartbeat_timestamp_seconds{job=~"nova-scheduler|nova-worker|nova-agent-worker"} > 90
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} stopped making progress"
+          description: "The metrics endpoint still responds, but the service loop heartbeat is stale."
+
+      - alert: NovaProxyListenerDown
+        expr: max(nova_proxy_expected{job=~"nova-backend|nova-proxy"}) == 1 and max(nova_proxy_listener_up{job=~"nova-backend|nova-proxy"}) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nova MySQL proxy listener is down"
+          description: "The API process is running, but the MySQL proxy is not accepting sessions."
+
+      - alert: NovaSchedulerNoLeader
+        expr: sum(nova_scheduler_leader{job="nova-scheduler"}) == 0 and count(up{job="nova-scheduler"} == 1) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No active scheduler leader"
+          description: "Check the scheduler process and leader lease in the cache and queue service."
+
+      - alert: NovaDependencyUnavailable
+        expr: (redis_up{job="redis"} == 0) or (probe_success{job="dependency-probe"} == 0)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is unavailable"
+          description: "The dependency health check has failed for more than two minutes."
+
+  - name: nova-performance
+    rules:
+      - alert: NovaHttpServerErrorRateHigh
+        expr: sum(rate(nova_http_requests_total{job="nova-backend",status=~"5.."}[5m])) / clamp_min(sum(rate(nova_http_requests_total{job="nova-backend"}[5m])), 0.001) > 0.05 and sum(rate(nova_http_requests_total{job="nova-backend"}[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API server error rate is above 5%"
+          description: "Inspect API route and status panels to find the affected path."
+
+      - alert: NovaTaskQueueBacklog
+        expr: max(nova_worker_queue_depth{job="nova-worker"}) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Task worker pending deliveries and lag exceed 100"
+          description: "Compare the group backlog with active workers and task duration."
+
+      - alert: NovaHostMemoryPressure
+        expr: 100 * (1 - node_memory_MemAvailable_bytes{job="node-exporter"} / node_memory_MemTotal_bytes{job="node-exporter"}) > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Docker Linux runtime memory usage is above 90%"
+          description: "Inspect the Host system dashboard for the Docker Linux runtime. On macOS this is not host macOS memory."
+
+      - alert: NovaHostCpuPressure
+        expr: 100 * (1 - avg by(instance) (rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m]))) > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Docker Linux runtime CPU usage is above 90%"
+          description: "Inspect CPU per core on the Host system dashboard. On macOS this measures the Docker Linux runtime."
+
+      - alert: NovaHostFilesystemPressure
+        expr: >-
+          (
+            100 * (1 - node_filesystem_avail_bytes{job="node-exporter",mountpoint="/",fstype=~"btrfs|ext4|xfs|zfs|f2fs"}
+            / node_filesystem_size_bytes{job="node-exporter",mountpoint="/",fstype=~"btrfs|ext4|xfs|zfs|f2fs"})
+            or on(instance)
+            100 * (1 - node_filesystem_avail_bytes{job="node-exporter",mountpoint="/var/lib/docker",fstype=~"btrfs|ext4|xfs|zfs|f2fs"}
+            / node_filesystem_size_bytes{job="node-exporter",mountpoint="/var/lib/docker",fstype=~"btrfs|ext4|xfs|zfs|f2fs"})
+          ) > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Docker Linux runtime filesystem usage is above 90%"
+          description: "The Linux root mount is used when present, with Docker data as fallback. This is not overall macOS disk usage."
+
+      - alert: NovaSchedulerEnqueueFailure
+        expr: increase(nova_scheduler_enqueue_failures_total{job="nova-scheduler"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler failed to enqueue a due graph"
+          description: "Inspect partial scheduler ticks and the cache and queue service."
+
+      - alert: NovaWorkerReconciliationPartial
+        expr: increase(nova_worker_reconciliations_total{job="nova-worker",status="partial"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Task worker reconciliation was incomplete"
+          description: "Inspect the worker log and task graph state before retrying."
+
+      - alert: NovaTaskFailureRateHigh
+        expr: sum(rate(nova_worker_jobs_total{job="nova-worker",status=~"failed|error"}[5m])) / clamp_min(sum(rate(nova_worker_jobs_total{job="nova-worker"}[5m])), 0.001) > 0.1 and sum(rate(nova_worker_jobs_total{job="nova-worker"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 10% of task deliveries are failing"
+          description: "Inspect task outcomes and the StarRocks engine panels."
+
+      - alert: NovaAgentFailureRateHigh
+        expr: sum(rate(nova_agent_worker_runs_total{job="nova-agent-worker",status=~"failed|interrupted"}[5m])) / clamp_min(sum(rate(nova_agent_worker_runs_total{job="nova-agent-worker"}[5m])), 0.001) > 0.1 and sum(rate(nova_agent_worker_runs_total{job="nova-agent-worker"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 10% of agent runs are failing or interrupted"
+          description: "Inspect agent outcomes, worker availability, and run duration."
+
+      - alert: NovaAgentWorkerPollErrors
+        expr: sum by(phase) (increase(nova_agent_worker_poll_errors_total{job="nova-agent-worker"}[10m])) > 3
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Studio Auto worker {{ $labels.phase }} errors are recurring"
+          description: "Inspect worker logs, run claims, and the scheduler dependency."
+
+      - alert: NovaMigrationJobIncomplete
+        expr: sum(increase(nova_migration_worker_jobs_total{job="nova-worker",status=~"partial|failed|interrupted|unfinished"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A migration job ended without full success"
+          description: "Inspect migration outcomes and the individual job in Nova."
+
+      - alert: NovaMigrationWorkerPollErrors
+        expr: sum by(phase) (increase(nova_migration_worker_poll_errors_total{job="nova-worker"}[10m])) > 3
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Migration worker {{ $labels.phase }} errors are recurring"
+          description: "Inspect worker logs and job claim or reconciliation state."
+
+      - alert: NovaSearchIndexingLoopErrors
+        expr: (sum(increase(nova_search_poll_errors_total{job="nova-backend"}[10m])) > 3) or (sum(increase(nova_search_reconciliation_errors_total{job="nova-backend"}[10m])) > 3)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Search indexing poll or reconciliation errors are recurring"
+          description: "Inspect the Search indexing panels and backend logs; builds may remain pending or indexes may become stale."
+
+      - alert: NovaSearchPollStale
+        expr: (time() - nova_search_last_successful_poll_timestamp_seconds{job="nova-backend"} > 120) and on(instance) (time() - process_start_time_seconds{job="nova-backend"} > 120)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Search indexing poll has not succeeded recently"
+          description: "The backend is running, but search queue polling has not succeeded for over two minutes. A new process gets a two-minute startup grace period."
+
+      - alert: NovaSearchBuildFailure
+        expr: increase(nova_search_build_errors_total{job="nova-backend"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A search index build failed"
+          description: "Inspect the build outcome and index version in Nova. Polling can remain healthy while an individual build fails."
+
+      - alert: NovaStarRocksQueryLatencyHigh
+        expr: max(starrocks_fe_query_latency_ms{job="starrocks-fe",quantile="0.95"}) > 5000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "StarRocks p95 query latency is above five seconds"
+          description: "Inspect pending queries, CPU, memory, and compaction pressure."
+
+      - alert: NovaBEDiskCapacityHigh
+        expr: 100 * (1 - starrocks_be_disks_avail_capacity{job="starrocks-be"} / starrocks_be_disks_total_capacity{job="starrocks-be"}) > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "StarRocks backend disk usage is above 90%"
+          description: "Inspect disk paths and data growth before the backend runs out of space."

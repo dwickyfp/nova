@@ -1,0 +1,3 @@
+- targets: ["nova-scheduler:9101"]
+  labels:
+    service: nova-scheduler

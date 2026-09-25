@@ -1,0 +1,11 @@
+apiVersion: 1
+datasources:
+  - name: Nova Prometheus
+    type: prometheus
+    uid: nova-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s

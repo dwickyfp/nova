@@ -7,7 +7,8 @@ straight pass-through. The contracts are frozen in
 Nothing here can carry a credential: an agent is configuration (instructions,
 tool names, skill names, a semantic-model id), a semantic model is parsed Ossie
 metadata, and a skill is a Markdown playbook. All three are screened before
-storage.
+storage. Agents bind published Semantic Views by ID; legacy model ID fields are
+read only after migration.
 """
 
 from __future__ import annotations
@@ -55,6 +56,7 @@ class AgentView(BaseModel):
     policy: AgentPolicy = "auto_read_only"
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] = Field(default_factory=list)
+    semantic_view_ids: list[str] = Field(default_factory=list)
     visibility: Visibility = "private"
     created_at: datetime
     updated_at: datetime
@@ -88,6 +90,7 @@ class AgentCreateRequest(BaseModel):
     policy: AgentPolicy = "auto_read_only"
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] = Field(default_factory=list)
+    semantic_view_ids: list[str] = Field(default_factory=list)
     visibility: Visibility = "private"
 
 
@@ -116,6 +119,7 @@ class AgentUpdateRequest(BaseModel):
     policy: AgentPolicy | None = None
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] | None = None
+    semantic_view_ids: list[str] | None = None
     visibility: Visibility | None = None
 
 

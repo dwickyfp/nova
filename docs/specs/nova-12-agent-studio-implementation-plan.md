@@ -9,6 +9,14 @@
 > `frontend/src/features/assistant/`).
 > **Aturan:** tidak ada credential di UI/state/log. Semua invariant AGENTS.md berlaku.
 
+> **Catatan evolusi (Semantic Views 2.0):** bagian yang menyebut menu
+> `/agents/semantic`, tabel semantic model, dan `semantic_model_ids` merekam
+> rancangan Phase 12. Kontrak produk saat ini ada di
+> [Module 28: Intelligence Foundation](../28-intelligence-foundation.md):
+> **Semantic Views** adalah satu-satunya objek semantik yang dibuat, diaktifkan,
+> dan dipilih oleh Agent Studio. Route lama hanya mengarahkan pengguna ke
+> halaman Semantic Views; data lama dimigrasikan tanpa mengubah ID.
+
 ---
 
 ## 0. Ringkasan keputusan

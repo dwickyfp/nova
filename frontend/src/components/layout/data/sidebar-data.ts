@@ -2,12 +2,12 @@ import {
   Bot,
   Brain,
   BrainCircuit,
-  Blocks,
   BookOpen,
   Clock,
   Database,
   Network,
   House,
+  KeyRound,
   ListTodo,
   Shield,
   Sparkles,
@@ -67,11 +67,6 @@ export const sidebarData: SidebarData = {
               section: "AI",
             },
             {
-              title: "Semantic",
-              url: "/agents/semantic",
-              icon: Blocks,
-            },
-            {
               title: "Semantic Views",
               url: "/semantic-views",
               icon: BrainCircuit,
@@ -101,10 +96,15 @@ export const sidebarData: SidebarData = {
               newTab: true,
             },
             {
+              title: "Entities",
+              url: "/entities",
+              icon: KeyRound,
+              section: "Machine Learning",
+            },
+            {
               title: "Feature Store",
               url: "/feature-store",
               icon: Network,
-              section: "Machine Learning",
             },
             {
               title: "ML Models",

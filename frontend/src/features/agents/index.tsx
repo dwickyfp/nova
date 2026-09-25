@@ -65,19 +65,19 @@ export function AgentsPage() {
   return (
     <>
       <Header fixed />
-      <Main>
+      <Main scroll>
         <div className='mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
           <div className='min-w-0'>
             <h1 className='text-2xl leading-8 font-normal'>Agent Studio</h1>
             <p className='mt-1 text-sm text-muted-foreground'>
-              Build agents with instructions, tools, and a semantic model, then
+              Build agents with instructions, tools, and published Semantic Views, then
               chat with them in Nova Studio.
             </p>
           </div>
           <div className='flex shrink-0 items-center gap-2'>
-            <Button variant='outline' onClick={() => navigate({ to: '/agents/semantic' })}>
+            <Button variant='outline' onClick={() => navigate({ to: '/semantic-views' })}>
               <Sparkles className='size-4' />
-              Semantic models
+              Semantic Views
             </Button>
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className='size-4' />
@@ -106,7 +106,7 @@ export function AgentsPage() {
             <EmptyState
               icon={Bot}
               title='No agents yet'
-              description='Create your first agent to answer business questions from a semantic model.'
+              description='Create your first agent to answer business questions from published Semantic Views.'
               action={
                 <Button onClick={() => setCreateOpen(true)}>
                   <Plus className='size-4' />
@@ -138,11 +138,11 @@ export function AgentsPage() {
                       </div>
                     </TableCell>
                     <TableCell className='text-muted-foreground'>
-                      {agent.semantic_model_ids.length > 0
-                        ? `${agent.semantic_model_ids.length} model${
-                            agent.semantic_model_ids.length === 1 ? '' : 's'
+                      {(agent.semantic_view_ids ?? []).length > 0
+                        ? `${agent.semantic_view_ids?.length} View${
+                            agent.semantic_view_ids?.length === 1 ? '' : 's'
                           }`
-                        : 'No semantic model'}
+                        : 'No Semantic View'}
                     </TableCell>
                     <TableCell className='text-muted-foreground'>
                       {new Date(agent.updated_at).toLocaleDateString()}

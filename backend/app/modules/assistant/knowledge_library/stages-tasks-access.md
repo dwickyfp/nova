@@ -13,7 +13,7 @@ playbook for supported scheduling and dependency syntax. A schedule definition
 does not prove a task ran successfully. Verify runtime state before reporting success.
 
 Nova authenticates users against StarRocks. Requests execute with the caller's
-authorized identity and active role. Semantic models define business meaning;
+authorized identity and active role. Semantic Views define business meaning;
 they do not bypass database access checks. A tool approval is not a database grant.
 
 ACCOUNTADMIN is protected against dropping, altering, and revoking its

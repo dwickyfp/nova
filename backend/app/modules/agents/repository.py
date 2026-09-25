@@ -1,7 +1,7 @@
-"""Agent Studio persistence — NOVA_SYSTEM.CONFIG_AGENTS / _SEMANTIC_MODELS / _AGENT_SKILLS.
+"""Agent Studio persistence and read-only legacy semantic migration data.
 
-Every table is a Primary Key table (``AGENTS.md`` §7): agent configuration and
-semantic definitions are low-volume and need UPDATE/DELETE.
+Every table is a Primary Key table (``AGENTS.md`` §7). Published Semantic Views
+are stored by the intelligence module; ``CONFIG_SEMANTIC_MODELS`` is historical.
 
 The credential rule is structural, not conventional. None of these tables has a
 column that can hold a statement, a result set, a password, a token, or an API
@@ -17,12 +17,47 @@ existence does not leak.
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 from app.core.database import db
+
+
+class AgentMetadataUnavailable(RuntimeError):
+    """A scoped StarRocks metadata read could not be trusted."""
+
+
+async def _read_rows(
+    sql: str,
+    params: list[Any],
+    valid_row: Callable[[list[Any]], bool],
+) -> list[list[Any]]:
+    saw_bad_read = False
+    empty_reads = 0
+    for attempt in range(5):
+        try:
+            result = await db.execute_system(sql, params)
+            rows = result.get("rows")
+        except Exception:  # noqa: BLE001 - a later read may recover from a transient FE error
+            rows = None
+        if isinstance(rows, list) and rows and all(
+            isinstance(row, list | tuple) and valid_row(row) for row in rows
+        ):
+            return rows
+        if rows == []:
+            empty_reads += 1
+            if empty_reads >= 2 and not saw_bad_read:
+                return []
+        else:
+            saw_bad_read = True
+            empty_reads = 0
+        if attempt < 4:
+            await asyncio.sleep(0.05 * (attempt + 1))
+    raise AgentMetadataUnavailable("Agent metadata is temporarily unavailable")
 
 #: One row per agent. Only configuration; the behavioral contract is assembled
 #: by ``service``/``prompt`` from these fields at run time.
@@ -53,6 +88,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENTS (
     policy                     VARCHAR(32),
     semantic_model_id          VARCHAR(64),
     semantic_model_ids         JSON,
+    semantic_view_ids          JSON,
     visibility                 VARCHAR(16),
     created_at                 DATETIME NOT NULL,
     updated_at                 DATETIME NOT NULL
@@ -61,10 +97,12 @@ DISTRIBUTED BY HASH(agent_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
-#: Additive migration: an agent predates multi-model support and has only
-#: ``semantic_model_id``. The list column holds all bound models; the scalar is
-#: kept in sync with the first entry for a reader that still expects one.
+#: Historical bindings remain readable for the one-time View migration.
+#: New agent writes use ``semantic_view_ids`` only.
 AGENTS_SEMANTIC_IDS_DDL = "ALTER TABLE NOVA_SYSTEM.CONFIG_AGENTS ADD COLUMN semantic_model_ids JSON"
+AGENTS_SEMANTIC_VIEW_IDS_DDL = (
+    "ALTER TABLE NOVA_SYSTEM.CONFIG_AGENTS ADD COLUMN semantic_view_ids JSON"
+)
 
 AGENT_INTELLIGENCE_COLUMNS = (
     ("discoverable_skills", "JSON"),
@@ -129,7 +167,7 @@ _AGENT_COLUMNS = (
     "instructions_orchestration, response_style, sample_questions, "
     "budget_seconds, budget_tokens, tool_not_accessible, default_tools, "
     "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
-    "policy, semantic_model_id, semantic_model_ids, visibility, "
+    "policy, semantic_model_id, semantic_model_ids, semantic_view_ids, visibility, "
     "created_at, updated_at"
 )
 
@@ -307,33 +345,6 @@ def _as_json(value: object) -> Any:
     return None
 
 
-def _semantic_ids_from_fields(fields: dict) -> list[str]:
-    """The list of bound model ids from a create/update payload.
-
-    Accepts either ``semantic_model_ids`` (a list, preferred) or the legacy
-    scalar ``semantic_model_id``. Returns a de-duplicated list preserving order.
-    """
-    value = fields.get("semantic_model_ids")
-    ids: list[str] = []
-    if isinstance(value, list):
-        ids = [str(x) for x in value if x]
-    elif fields.get("semantic_model_id"):
-        ids = [str(fields["semantic_model_id"])]
-    seen: set[str] = set()
-    unique: list[str] = []
-    for item in ids:
-        if item not in seen:
-            seen.add(item)
-            unique.append(item)
-    return unique
-
-
-def _first_semantic_id(fields: dict) -> str | None:
-    """The scalar model id kept in sync with the list's first entry."""
-    ids = _semantic_ids_from_fields(fields)
-    return ids[0] if ids else None
-
-
 def _semantic_ids(scalar: str | None, stored: Any) -> list[str]:
     """The agent's bound semantic models as a list.
 
@@ -347,11 +358,29 @@ def _semantic_ids(scalar: str | None, stored: Any) -> list[str]:
     return [scalar] if scalar else []
 
 
+def _view_ids_from_fields(fields: dict) -> list[str]:
+    """Canonical binding; old field names are accepted only at the API edge."""
+    value = fields.get("semantic_view_ids")
+    if not isinstance(value, list):
+        return []
+    return list(dict.fromkeys(str(item) for item in value if item))
+
+
+def _view_ids(stored: Any, legacy_ids: list[str]) -> list[str]:
+    """A null new column marks a row that predates the View migration."""
+    parsed = _as_json(stored)
+    if isinstance(parsed, list):
+        return list(dict.fromkeys(str(item) for item in parsed if item))
+    return legacy_ids
+
+
 def _agent_row(row: list[Any]) -> dict:
     # Compatibility for tests and rolling upgrades reading the pre-intelligence
     # 25-column shape. New columns sit after ``default_skills``.
     if len(row) == 25:
         row = [*row[:19], [], {}, "auto", *row[19:]]
+    if len(row) == 28:
+        row = [*row[:25], None, *row[25:]]
     (
         agent_id,
         owner,
@@ -378,10 +407,12 @@ def _agent_row(row: list[Any]) -> dict:
         policy,
         semantic_model_id,
         semantic_model_ids,
+        semantic_view_ids,
         visibility,
         created_at,
         updated_at,
     ) = row
+    legacy_ids = _semantic_ids(semantic_model_id, semantic_model_ids)
     return {
         "agent_id": agent_id,
         "owner_name": owner,
@@ -407,7 +438,8 @@ def _agent_row(row: list[Any]) -> dict:
         "harness_mode": harness_mode or "auto",
         "policy": policy or "auto_read_only",
         "semantic_model_id": semantic_model_id,
-        "semantic_model_ids": _semantic_ids(semantic_model_id, semantic_model_ids),
+        "semantic_model_ids": legacy_ids,
+        "semantic_view_ids": _view_ids(semantic_view_ids, legacy_ids),
         "visibility": visibility or "private",
         "created_at": _iso(created_at),
         "updated_at": _iso(updated_at),
@@ -530,6 +562,12 @@ class AgentRepository:
             message = str(exc).lower()
             if "already exists" not in message and "duplicate" not in message:
                 raise
+        try:
+            await db.execute_system(AGENTS_SEMANTIC_VIEW_IDS_DDL)
+        except Exception as exc:  # noqa: BLE001 - duplicate column is benign
+            message = str(exc).lower()
+            if "already exists" not in message and "duplicate" not in message:
+                raise
         for column, column_type in AGENT_INTELLIGENCE_COLUMNS:
             try:
                 await db.execute_system(
@@ -559,6 +597,31 @@ class AgentRepository:
         await db.execute_system(CUSTOM_TOOLS_DDL)
         await db.execute_system(VERIFIED_QUERIES_DDL)
         await db.execute_system(SEMANTIC_USAGE_DDL)
+
+    async def backfill_semantic_view_ids(self) -> int:
+        """Persist legacy agent bindings after Semantic View IDs have been imported.
+
+        Legacy model UUIDs are retained as View UUIDs, including review drafts.
+        An explicit JSON ``[]`` is a revoked binding and must never be replaced.
+        The guarded update also protects a concurrent agent edit after the scan.
+        """
+        legacy = await db.execute_system(
+            "SELECT agent_id, semantic_model_id, semantic_model_ids "
+            "FROM NOVA_SYSTEM.CONFIG_AGENTS "
+            "WHERE semantic_view_ids IS NULL ORDER BY agent_id"
+        )
+        changed = 0
+        for agent_id, scalar_id, stored_ids in legacy["rows"]:
+            ids = _view_ids_from_fields(
+                {"semantic_view_ids": _semantic_ids(scalar_id, stored_ids)}
+            )
+            result = await db.execute_system(
+                "UPDATE NOVA_SYSTEM.CONFIG_AGENTS SET semantic_view_ids = %s "
+                "WHERE agent_id = %s AND semantic_view_ids IS NULL",
+                [_dump(ids), agent_id],
+            )
+            changed += int(result.get("affected", 0))
+        return changed
 
     # ── Agents ─────────────────────────────────────────────────
 
@@ -610,9 +673,9 @@ class AgentRepository:
             "instructions_orchestration, response_style, sample_questions, "
             "budget_seconds, budget_tokens, tool_not_accessible, default_tools, "
             "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
-            "policy, semantic_model_id, semantic_model_ids, "
+            "policy, semantic_model_id, semantic_model_ids, semantic_view_ids, "
             "visibility, created_at, updated_at"
-            ") VALUES (" + ", ".join(["%s"] * 28) + ")",
+            ") VALUES (" + ", ".join(["%s"] * 29) + ")",
             [
                 agent_id,
                 owner_name,
@@ -637,8 +700,9 @@ class AgentRepository:
                 _dump(fields.get("compiled_instructions") or {}),
                 fields.get("harness_mode", "auto"),
                 fields.get("policy", "auto_read_only"),
-                _first_semantic_id(fields),
-                _dump(_semantic_ids_from_fields(fields)),
+                None,
+                None,
+                _dump(_view_ids_from_fields(fields)),
                 fields.get("visibility", "private"),
                 now,
                 now,
@@ -664,67 +728,63 @@ class AgentRepository:
             clauses.append("name LIKE %s")
             params.append(f"%{search}%")
         where = " AND ".join(clauses)
-        for _ in range(3):
-            result = await db.execute_system(
-                f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
-                f"WHERE {where} ORDER BY updated_at DESC",
-                params,
-            )
-            if result["rows"] and all(len(row) == 28 for row in result["rows"]):
-                break
-        if any(len(row) != 28 for row in result["rows"]):
-            raise RuntimeError("Agent metadata query returned an invalid result")
-        return [_agent_row(row) for row in result["rows"]]
+        rows = await _read_rows(
+            f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
+            f"WHERE {where} ORDER BY updated_at DESC",
+            params,
+            lambda row: (
+                len(row) == 29
+                and row[1] == owner_name
+                and (not database_name or row[2] == database_name)
+                and (not search or search.lower() in str(row[4]).lower())
+            ),
+        )
+        return [_agent_row(row) for row in rows]
 
     async def get_agent(self, agent_id: str, *, owner_name: str) -> dict | None:
-        for _ in range(3):
-            result = await db.execute_system(
-                f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
-                "WHERE agent_id = %s AND owner_name = %s",
-                [agent_id, owner_name],
-            )
-            if result["rows"] and len(result["rows"][0]) == 28:
-                break
-        if not result["rows"]:
+        rows = await _read_rows(
+            f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
+            "WHERE agent_id = %s AND owner_name = %s",
+            [agent_id, owner_name],
+            lambda row: len(row) == 29 and row[0] == agent_id and row[1] == owner_name,
+        )
+        if not rows:
             return None
-        if len(result["rows"][0]) != 28:
-            raise RuntimeError("Agent metadata query returned an invalid result")
-        return _agent_row(result["rows"][0])
+        return _agent_row(rows[0])
 
     async def get_shared_agent(self, agent_id: str, *, role_name: str) -> dict | None:
-        result = await db.execute_system(
+        rows = await _read_rows(
             f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
             "WHERE agent_id = %s AND visibility = 'shared'",
             [agent_id],
+            lambda row: len(row) == 29 and row[0] == agent_id and row[26] == "shared",
         )
-        if not result["rows"]:
+        if not rows:
             return None
-        if len(result["rows"][0]) != 28:
-            raise RuntimeError("Agent metadata query returned an invalid result")
-        agent = _agent_row(result["rows"][0])
+        agent = _agent_row(rows[0])
         grants = await self.list_agent_roles(agent_id, owner_name=agent["owner_name"])
         if not any(grant["role_name"] == role_name for grant in grants):
             return None
         return agent
 
     async def list_shared_agents(self, *, role_name: str) -> list[dict]:
-        grants = await db.execute_system(
-            "SELECT agent_id FROM NOVA_SYSTEM.CONFIG_AGENT_ROLES WHERE role_name = %s",
+        grants = await _read_rows(
+            "SELECT agent_id, role_name FROM NOVA_SYSTEM.CONFIG_AGENT_ROLES WHERE role_name = %s",
             [role_name],
+            lambda row: len(row) == 2 and row[1] == role_name,
         )
-        agent_ids = [str(row[0]) for row in grants["rows"]]
+        agent_ids = [str(row[0]) for row in grants]
         if not agent_ids:
             return []
         placeholders = ", ".join(["%s"] * len(agent_ids))
-        result = await db.execute_system(
+        rows = await _read_rows(
             f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
             f"WHERE visibility = 'shared' AND agent_id IN ({placeholders}) "
             "ORDER BY updated_at DESC",
             agent_ids,
+            lambda row: len(row) == 29 and row[0] in agent_ids and row[26] == "shared",
         )
-        if any(len(row) != 28 for row in result["rows"]):
-            raise RuntimeError("Agent metadata query returned an invalid result")
-        return [_agent_row(row) for row in result["rows"]]
+        return [_agent_row(row) for row in rows]
 
     async def update_agent(self, agent_id: str, *, owner_name: str, fields: dict) -> dict | None:
         """Patch the provided fields only; unknown keys are ignored."""
@@ -752,15 +812,9 @@ class AgentRepository:
             if column in fields:
                 assignments.append(f"{column} = %s")
                 params.append(fields[column])
-        # Semantic models: a list is the source of truth. When the payload
-        # carries either form, write both the list and the scalar-first entry so
-        # a reader that still expects one model stays correct.
-        if "semantic_model_ids" in fields or "semantic_model_id" in fields:
-            ids = _semantic_ids_from_fields(fields)
-            assignments.append("semantic_model_ids = %s")
-            params.append(_dump(ids))
-            assignments.append("semantic_model_id = %s")
-            params.append(ids[0] if ids else None)
+        if "semantic_view_ids" in fields:
+            assignments.append("semantic_view_ids = %s")
+            params.append(_dump(_view_ids_from_fields(fields)))
         for column in (
             "sample_questions",
             "default_tools",
@@ -1272,20 +1326,22 @@ class AgentRepository:
     # ── Agent access roles ─────────────────────────────────────
 
     async def list_agent_roles(self, agent_id: str, *, owner_name: str) -> list[dict]:
-        result = await db.execute_system(
-            "SELECT role_name, grant_type, verified_fingerprint, verified_at "
+        rows = await _read_rows(
+            "SELECT agent_id, owner_name, role_name, grant_type, "
+            "verified_fingerprint, verified_at "
             "FROM NOVA_SYSTEM.CONFIG_AGENT_ROLES "
             "WHERE agent_id = %s AND owner_name = %s ORDER BY role_name ASC",
             [agent_id, owner_name],
+            lambda row: len(row) == 6 and row[0] == agent_id and row[1] == owner_name,
         )
         return [
             {
-                "role_name": row[0],
-                "grant_type": row[1] or "USAGE",
-                "verified_fingerprint": row[2],
-                "verified_at": _iso(row[3]) if row[3] else None,
+                "role_name": row[2],
+                "grant_type": row[3] or "USAGE",
+                "verified_fingerprint": row[4],
+                "verified_at": _iso(row[5]) if row[5] else None,
             }
-            for row in result["rows"]
+            for row in rows
         ]
 
     async def set_agent_role_verification(

@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { getCookie, setCookie } from "@/lib/cookies";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { agentsApi, studioApi } from "@/features/agents/api";
+import { agentsApi, studioApi, AUTO_AGENT_ID, type Agent } from "@/features/agents/api";
 import { StudioChat } from "./studio-chat";
 import { StudioSidebar, type StudioView } from "./studio-sidebar";
 import { StudioAccountMenu } from "./studio-account-menu";
@@ -13,15 +14,39 @@ import { StudioCapabilities } from "./studio-capabilities";
 import { StudioDashboards } from "./studio-dashboards";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
 
-/**
- * Nova Studio app shell — a full-page standalone surface.
- *
- * It deliberately does **not** use Nova's layout: no global sidebar, no header
- * bar. It renders its own left rail and content area, sized to the viewport, so
- * it reads as a separate product the way Snowflake CoWork does. The only shared
- * chrome is the toast host, mounted by the root route.
- */
+const AUTO_WHILE_CATALOG_LOADS: Agent = {
+  agent_id: AUTO_AGENT_ID,
+  owner_name: "",
+  database_name: null,
+  schema_name: null,
+  name: "Auto",
+  description: "Coordinate specialists for a question.",
+  avatar: null,
+  color: null,
+  model_provider_id: null,
+  model_name: null,
+  instructions_response: "",
+  instructions_orchestration: "",
+  response_style: null,
+  sample_questions: [],
+  budget_seconds: null,
+  budget_tokens: null,
+  tool_not_accessible: "deny",
+  default_tools: [],
+  default_skills: [],
+  policy: "auto_read_only",
+  semantic_model_id: null,
+  semantic_model_ids: [],
+  visibility: "private",
+  created_at: "",
+  updated_at: "",
+};
+
 export function StudioApp() {
+  return <StudioAppContent />;
+}
+
+function StudioAppContent() {
   const search = useSearch({ from: "/studio" });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -29,8 +54,15 @@ export function StudioApp() {
   const agentsQuery = useQuery({
     queryKey: ["studio", "agents", "list"],
     queryFn: () => agentsApi.listStudio(),
+    retry: 1,
+    retryDelay: 500,
+    refetchInterval: (query) => query.state.status === "error" ? 5000 : false,
   });
-  const agents = agentsQuery.data?.agents ?? [];
+  const agents = agentsQuery.data?.agents?.length
+    ? agentsQuery.data.agents
+    : agentsQuery.isError || search.agent === AUTO_AGENT_ID
+      ? [AUTO_WHILE_CATALOG_LOADS]
+      : [];
   const authorQuery = useQuery({
     queryKey: ["studio", "skill-author"],
     queryFn: studioApi.skillAuthor,
@@ -266,7 +298,15 @@ export function StudioApp() {
         />
       </div>
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <main aria-label={view === "chat" ? "Nova Studio chat" : view} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {agentsQuery.isError ? (
+          <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+            <span>Specialists are temporarily unavailable. Auto can still try your question.</span>
+            <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void agentsQuery.refetch()}>
+              Retry specialists
+            </Button>
+          </div>
+        ) : null}
         {view === "chat" ? (
           <StudioChat
             agent={agent}

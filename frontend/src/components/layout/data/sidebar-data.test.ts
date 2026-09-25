@@ -38,17 +38,21 @@ describe('sidebar navigation', () => {
     const urls = navUrls()
 
     expect(urls).toContain('/feature-store')
+    expect(urls).toContain('/entities')
     expect(urls).toContain('/semantic-views')
+    expect(urls).not.toContain('/agents/semantic')
     expect(urls).toContain('/ai-search')
   })
 
-  it('keeps Feature Store and ML Models under one Machine Learning heading', () => {
+  it('groups Entities, Feature Store, and ML Models under one Machine Learning heading', () => {
     const ai = sidebarData.navGroups.flatMap((group) => group.items)
       .find((item) => item.title === 'AI & ML')
     const children = ai && 'items' in ai ? ai.items ?? [] : []
+    const entities = children.find((item) => item.title === 'Entities')
     const feature = children.find((item) => item.title === 'Feature Store')
     const models = children.find((item) => item.title === 'ML Models')
-    expect(feature?.section).toBe('Machine Learning')
+    expect(entities?.section).toBe('Machine Learning')
+    expect(feature?.section).toBeUndefined()
     expect(models?.section).toBeUndefined()
     expect(children.filter((item) => item.section === 'Machine Learning')).toHaveLength(1)
   })

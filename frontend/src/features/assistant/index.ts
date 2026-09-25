@@ -25,6 +25,15 @@ export {
   useAssistantPanelProps,
   type SelectedModel,
 } from "./assistant-provider";
+export { useNoveSurface } from "./nove-surface-hook";
+export { defineNoveCapability } from "./surface-registry";
+export type {
+  NoveClientCapability,
+  NoveSurfaceDefinition,
+  NoveSuggestedAction,
+  NoveCapabilityRisk,
+} from "./surface-registry";
+export type { NoveAppContext, NoveSurfaceContext, NoveApplicationEvent, NoveEventInput } from "./app-context";
 export {
   initialAssistantOpen,
   assistantCollapsedToPersist,

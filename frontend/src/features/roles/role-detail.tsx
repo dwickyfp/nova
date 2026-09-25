@@ -1,5 +1,6 @@
 import { type ReactNode, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { z } from 'zod'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, MoreHorizontal, RefreshCw, Shield } from 'lucide-react'
 import { toast } from 'sonner'
@@ -20,6 +21,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/api-client'
+import { useNoveSurface } from '@/features/assistant/nove-surface-hook'
+import { defineNoveCapability } from '@/features/assistant/surface-registry'
 
 // ---------------------------------------------------------------------------
 // Types (mirror the API contract from backend/app/modules/users/router.py)
@@ -92,6 +95,45 @@ export function RoleDetailPage({ name }: { name: string }) {
   })
 
   const detail = detailQuery.data
+  const { askNove } = useNoveSurface({
+    id: 'roles.detail',
+    route: `/roles/${encodeURIComponent(name)}`,
+    title: `Role ${detail?.name ?? name}`,
+    context: () => ({
+      entity: {
+        type: 'role',
+        id: name,
+        name: detail?.name ?? name,
+        metadata: {
+          isProtected: detail?.is_protected ?? false,
+          privilegeCount: detail?.privileges.length ?? 0,
+          memberCount: detail?.members.users.length ?? 0,
+        },
+      },
+      view: { activeTab: 'privileges', filters: { scope: privScopeFilter, grantable: privGrantableFilter }, search: privSearch },
+    }),
+    capabilities: [
+      defineNoveCapability({
+        name: 'surface.refresh', risk: 'safe', argsSchema: z.object({}),
+        execute: () => detailQuery.refetch({ throwOnError: true }),
+      }),
+      defineNoveCapability({
+        name: 'surface.set_filter', risk: 'safe',
+        argsSchema: z.object({ filter: z.enum(['scope', 'grantable', 'search']), value: z.string().max(120) }),
+        execute: ({ filter, value }) => {
+          if (filter === 'scope') setPrivScopeFilter(value)
+          else if (filter === 'grantable') setPrivGrantableFilter(value)
+          else setPrivSearch(value)
+          setPrivPage(1)
+        },
+      }),
+    ],
+    suggestedActions: [
+      { label: 'Explain this role', prompt: 'Explain the access this role currently has.' },
+      { label: 'Find missing access', prompt: 'Help me find why this role cannot access a table.' },
+      { label: 'Compare permissions', prompt: 'Compare this role with another role. Ask me which one.' },
+    ],
+  })
 
   // ---- Privileges filtering + pagination ----
   const filteredPrivileges = useMemo(() => {
@@ -186,10 +228,13 @@ export function RoleDetailPage({ name }: { name: string }) {
         <Search className='me-auto' />
       </Header>
 
-      <Main className='flex flex-1 flex-col gap-6'>
+      <Main scroll className='flex flex-1 flex-col gap-6'>
         {/* ---------- Top bar ---------- */}
         <div className='flex items-start justify-between gap-3'>
           <div className='flex items-center gap-3'>
+            <Button variant='outline' onClick={() => void askNove('Explain the access this role currently has.')}>
+              Ask Nove
+            </Button>
             <Button
               variant='outline'
               size='icon'

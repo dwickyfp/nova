@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { agentsApi } from "@/features/agents/api";
 import { StudioApp } from "./index";
 
 const mocks = vi.hoisted(() => ({
@@ -13,17 +14,13 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@tanstack/react-router", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@tanstack/react-router")>();
-  return {
-    ...actual,
-    useNavigate: () => mocks.navigate,
-    useSearch: () => mocks.search,
-  };
-});
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => mocks.navigate,
+  useSearch: () => mocks.search,
+}));
 
 vi.mock("@/features/agents/api", () => ({
+  AUTO_AGENT_ID: "__auto__",
   agentsApi: {
     listStudio: vi.fn(async () => ({
       agents: [
@@ -137,6 +134,31 @@ describe("StudioApp thread routing", () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
+  it("keeps Auto available while the specialist catalog is temporarily unavailable", async () => {
+    mocks.search = {};
+    const listStudio = vi.mocked(agentsApi.listStudio);
+    const listThreads = vi.mocked(agentsApi.listThreads);
+    const normalStudio = listStudio.getMockImplementation();
+    const normalThreads = listThreads.getMockImplementation();
+    listStudio.mockRejectedValue(new Error("503"));
+    listThreads.mockResolvedValue({ threads: [], count: 0 });
+    try {
+      const screen = await renderStudio();
+
+      await expect.element(screen.getByText("Auto", { exact: true })).toBeVisible();
+      await expect.element(screen.getByText("No agent")).not.toBeInTheDocument();
+      await expect.element(screen.getByRole("status")).toHaveTextContent(
+        "Specialists are temporarily unavailable.",
+      );
+      const calls = listStudio.mock.calls.length;
+      await userEvent.click(screen.getByRole("button", { name: "Retry specialists" }));
+      await expect.poll(() => listStudio.mock.calls.length).toBeGreaterThan(calls);
+    } finally {
+      if (normalStudio) listStudio.mockImplementation(normalStudio);
+      if (normalThreads) listThreads.mockImplementation(normalThreads);
+    }
+  });
+
   it("opens the newest thread once when no thread is selected", async () => {
     mocks.search = { agent: "a1" };
     await renderStudio();
@@ -212,6 +234,13 @@ describe("StudioApp thread routing", () => {
     const screen = await renderStudio();
     await expect.element(screen.getByText("Nova Studio")).toBeVisible();
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps Studio focused on the agent conversation without the Nove panel", async () => {
+    const screen = await renderStudio();
+    await expect.element(screen.getByRole("main", { name: "Nova Studio chat" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "Ask Nove" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "Nova Studio" })).not.toBeInTheDocument();
   });
 
   it("returns to chat and starts fresh from the sidebar action", async () => {

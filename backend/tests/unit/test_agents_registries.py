@@ -31,12 +31,12 @@ def test_builtin_catalog_is_well_formed() -> None:
 
 
 def test_agent_bundleable_tools_exclude_authoring_tools() -> None:
-    # An agent must not be offered the tools that create agents/models.
+    # An agent must not be offered the tools that create agents or Semantic Views.
     assert "create_agent" not in tool_catalog.AGENT_BUNDLEABLE_TOOLS
-    assert "create_semantic_model" not in tool_catalog.AGENT_BUNDLEABLE_TOOLS
+    assert "create_semantic_view" not in tool_catalog.AGENT_BUNDLEABLE_TOOLS
     # ...but they are in the registry catalog (Nove uses them).
     catalog_names = {row["name"] for row in tool_catalog.builtin_rows()}
-    assert {"create_agent", "create_semantic_model"} <= catalog_names
+    assert {"create_agent", "create_semantic_view"} <= catalog_names
 
 
 def test_builtin_skill_catalog_is_read_only_and_reserves_platform_names() -> None:

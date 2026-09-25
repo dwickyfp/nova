@@ -22,7 +22,9 @@ def _user(context: Any) -> dict | None:
         return None
     return {
         **user,
-        "active_role": getattr(context, "active_role", None) or user.get("active_role"),
+        "active_role": getattr(context, "role", None)
+        or getattr(context, "active_role", None)
+        or user.get("active_role"),
         "session_id": getattr(context, "audit_session_id", None) or user.get("session_id"),
     }
 
@@ -62,6 +64,13 @@ class SemanticViewQueryTool:
         view_id = invocation.arguments.get("view_id")
         if not isinstance(view_id, str) or not view_id:
             return ToolOutcome(ok=False, summary="", error="Semantic View is required")
+        if getattr(context, "agent_id", None):
+            from app.modules.agents.semantic.access import _context_ids
+
+            if view_id not in _context_ids(context):
+                return ToolOutcome(
+                    ok=False, summary="", error="Semantic View is not bound to this agent"
+                )
         try:
             request = SemanticViewQuery(
                 metrics=invocation.arguments.get("metrics", []),
@@ -74,7 +83,9 @@ class SemanticViewQueryTool:
         except (ValidationError, ValueError, TypeError):
             return ToolOutcome(ok=False, summary="", error="Invalid semantic query")
         try:
-            result = await semantic_view_service.query(view_id, request, user)
+            result = await semantic_view_service.query(
+                view_id, request, user, agent_id=getattr(context, "agent_id", None)
+            )
         except Exception as exc:
             logger.warning("semantic_view_query failed: %s", type(exc).__name__)
             return ToolOutcome(

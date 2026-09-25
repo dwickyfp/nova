@@ -1,6 +1,7 @@
-import { Sparkles, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ThreadView } from "./thread-client";
+import type { NoveSuggestedAction } from "./surface-registry";
 
 export type AssistantEmptyStateProps = {
   /** First name (or username) the greeting addresses; null falls back to "there". */
@@ -17,10 +18,11 @@ export type AssistantEmptyStateProps = {
   recentThreads?: ThreadView[];
   /** The thread currently open, highlighted in the list. */
   activeThreadId?: string | null;
+  surfaceTitle?: string | null;
+  suggestedActions?: readonly NoveSuggestedAction[];
 };
 
-/** The prompt the CTA sends; also the tour's own subject. */
-export const ASSISTANT_TOUR_PROMPT = "Show me what Nove can do";
+export const ASSISTANT_TOUR_PROMPT = "What can you help me do here?";
 
 const MAX_RECENT_TITLE_LENGTH = 36;
 
@@ -45,42 +47,56 @@ function formatWhen(iso: string): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/**
- * The pre-conversation surface: a large greeting, a single starter action, and
- * the most recent threads. It replaces the generic empty state so a fresh chat
- * reads as an invitation rather than a void. Recent threads come from the same
- * list the header's history popover uses, so the two never disagree.
- */
 export function AssistantEmptyState({
   userName,
   onSendMessage,
   onOpenThread,
   recentThreads,
   activeThreadId,
+  surfaceTitle,
+  suggestedActions,
 }: AssistantEmptyStateProps) {
   const recent = recentThreads ?? [];
   const name = userName?.trim() || "there";
   const canStart = Boolean(onSendMessage);
+  const actions = suggestedActions?.slice(0, 4) ?? [];
 
   return (
     <div className="flex min-h-full min-w-0 w-full flex-col items-start justify-start px-4 pt-10 pb-2">
-      <h2 className="text-4xl leading-tight font-semibold tracking-tight text-foreground">
+      <h2 className="text-2xl leading-tight font-semibold tracking-tight text-foreground">
         Hi {name},
       </h2>
-      <p className="mt-1 text-4xl leading-tight font-semibold tracking-tight text-muted-foreground">
-        How can I help?
+      <p className="mt-1 text-sm text-muted-foreground">
+        {surfaceTitle && actions.length
+          ? `Working in ${surfaceTitle}`
+          : "How can I help?"}
       </p>
 
-      {canStart ? (
+      {canStart && actions.length ? (
+        <div className="mt-8 w-full min-w-0">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">
+            Ask Nove
+          </p>
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={() => onSendMessage?.(action.prompt)}
+              className="block min-h-11 w-full border-b border-border/60 px-1 py-2 text-left text-sm hover:underline hover:underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : canStart ? (
         <button
           type="button"
           onClick={() => onSendMessage?.(ASSISTANT_TOUR_PROMPT)}
           className={cn(
-            "mt-8 inline-flex items-center gap-2 rounded-full border border-primary/50 px-4 py-2 text-sm font-medium text-primary",
-            "transition-colors hover:bg-primary/10 focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
+            "mt-8 inline-flex min-h-11 items-center rounded-sm px-1 text-sm font-medium text-foreground",
+            "hover:underline hover:underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           )}
         >
-          <Sparkles aria-hidden="true" className="size-4" />
           {ASSISTANT_TOUR_PROMPT}
         </button>
       ) : null}

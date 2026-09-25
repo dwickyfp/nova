@@ -85,6 +85,17 @@ class GraphRunConsumer:
     async def ack(self, stream_id: str) -> None:
         await self._client.xack(self._stream_key, self._group, stream_id)
 
+    async def queue_depth(self) -> int | None:
+        """Return undelivered plus pending work when Redis reports exact lag."""
+        groups = await self._client.xinfo_groups(self._stream_key)
+        for group in groups:
+            if group.get("name") == self._group:
+                lag = group.get("lag")
+                if lag is None:
+                    return None
+                return int(lag) + int(group.get("pending", 0))
+        return None
+
     async def claim_stale(
         self, *, min_idle_ms: int = 60000, count: int = 10
     ) -> list[tuple[str, dict[str, str]]]:

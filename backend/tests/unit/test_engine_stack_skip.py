@@ -83,13 +83,14 @@ class TestStackReuseAndCollision:
 
     def test_partial_busy_is_a_collision_with_the_stuck_port(self, monkeypatch):
         # Only the FE port is held -> compose cannot bind it.
+        fe_port = stack_conftest.engine_host_ports()["starrocks-fe"]
         monkeypatch.setattr(
-            stack_conftest, "_port_in_use", _port_busy(29030)
+            stack_conftest, "_port_in_use", _port_busy(fe_port)
         )
         assert stack_conftest._stack_already_reachable() is False
         reason = stack_conftest._partial_collision_failure()
         assert reason is not None
-        assert "29030" in reason
+        assert str(fe_port) in reason
 
     def test_free_ports_are_neither_reuse_nor_collision(self, monkeypatch):
         monkeypatch.setattr(stack_conftest, "_port_in_use", _port_busy())

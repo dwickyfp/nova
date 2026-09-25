@@ -256,7 +256,8 @@ async def test_assistant_reports_persistent_dns_failure_accurately(monkeypatch):
     assert "public http" not in str(exc.value)
 
 
-async def test_assistant_retries_transient_provider_status(monkeypatch):
+@pytest.mark.parametrize("status_code", [503, 520])
+async def test_assistant_retries_transient_provider_status(monkeypatch, status_code):
     _public_dns(monkeypatch)
     attempts = 0
 
@@ -264,7 +265,7 @@ async def test_assistant_retries_transient_provider_status(monkeypatch):
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            return httpx.Response(503, headers={"retry-after": "0"})
+            return httpx.Response(status_code, headers={"retry-after": "0"})
         return httpx.Response(
             200, json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
         )

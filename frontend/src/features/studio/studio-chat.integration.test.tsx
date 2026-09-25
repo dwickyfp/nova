@@ -580,7 +580,7 @@ describe("studio transcript click-through", () => {
 
     await expect.element(textbox).toHaveValue("");
     await expect.element(page.getByTestId("process-rail-toggle")).toBeVisible();
-    expect(page.getByTestId("process-rail-toggle").element().textContent).toContain("Starting analysis…");
+    expect(page.getByTestId("process-rail-toggle").element().textContent).toContain("Starting the agent…");
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/messages"))).toBe(false);
 
     releaseCreate();

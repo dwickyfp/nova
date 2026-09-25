@@ -1,4 +1,5 @@
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -7,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ArrowUp,
@@ -38,6 +39,7 @@ import type {
   ToolCallView,
 } from "@/features/assistant/types";
 import {
+  AUTO_AGENT_ID,
   agentsApi,
   streamAgentTurn,
   studioApi,
@@ -57,6 +59,9 @@ import {
 import { SkillEditor } from "./skill-editor";
 import { AnswerFooter, type AnswerFeedback } from "./answer-footer";
 import { AgentMemoryDialog } from "./agent-memory-dialog";
+import { AutoSubagentCard, AutoSubagentPanel } from "./auto-subagent-card";
+import { AutoTurnRail } from "./auto-turn-rail";
+import { rootRunForTurn } from "./auto-run-timeline";
 import {
   ACCEPTED_EXTENSIONS,
   MAX_FILES,
@@ -200,6 +205,68 @@ export function StudioChat({
   const [readingFiles, setReadingFiles] = useState(false);
   const [skillDraft, setSkillDraft] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
+  const [activeAutoRun, setActiveAutoRun] = useState<{
+    runId: string;
+    threadId: string;
+  } | null>(null);
+  const [selectedChild, setSelectedChild] = useState<{ rootRunId: string; childRunId: string } | null>(null);
+  const childOpenerRef = useRef<HTMLElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const openChild = useCallback((rootRunId: string, childRunId: string) => {
+    childOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSelectedChild({ rootRunId, childRunId });
+  }, []);
+  const closeChild = useCallback(() => {
+    setSelectedChild(null);
+    requestAnimationFrame(() => {
+      if (childOpenerRef.current?.isConnected) childOpenerRef.current.focus();
+      else textareaRef.current?.focus();
+    });
+  }, []);
+  useEffect(() => setSelectedChild(null), [activeThreadId]);
+  const activeAutoRunId = activeAutoRun?.threadId === activeThreadId
+    ? activeAutoRun.runId
+    : null;
+  const refreshedAutoRunsRef = useRef<Set<string>>(new Set());
+  const autoRunsQuery = useQuery({
+    queryKey: ["studio", "auto-runs", activeThreadId],
+    queryFn: () => agentsApi.listAutoThreadRuns(activeThreadId as string),
+    enabled: agent?.agent_id === AUTO_AGENT_ID && Boolean(activeThreadId),
+  });
+  const displayedAutoRunId = activeThreadId && activeThreadId === threadId
+    ? activeAutoRunId ?? autoRunsQuery.data?.runs[0]?.run_id ?? null
+    : null;
+  const autoTreeQuery = useQuery({
+    queryKey: ["studio", "auto-tree", displayedAutoRunId],
+    queryFn: () => agentsApi.getAutoRunTree(displayedAutoRunId as string),
+    enabled: agent?.agent_id === AUTO_AGENT_ID && Boolean(displayedAutoRunId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.runs.find((run) => run.depth === 0)?.status;
+      return streaming || (status && !["completed", "failed", "cancelled", "interrupted"].includes(status)) ? 1000 : false;
+    },
+  });
+  const historicalChildTreeQuery = useQuery({
+    queryKey: ["studio", "auto-tree", selectedChild?.rootRunId],
+    queryFn: () => agentsApi.getAutoRunTree(selectedChild?.rootRunId as string),
+    enabled: agent?.agent_id === AUTO_AGENT_ID && Boolean(selectedChild?.rootRunId && selectedChild.rootRunId !== displayedAutoRunId),
+  });
+  useEffect(() => {
+    if (!streaming && (!activeThreadId || (threadId && activeThreadId !== threadId))) {
+      setActiveAutoRun(null);
+    }
+  }, [activeThreadId, threadId, streaming]);
+  useEffect(() => {
+    const root = autoTreeQuery.data?.runs.find((run) => run.depth === 0);
+    if (!root || !["completed", "failed", "cancelled", "interrupted"].includes(root.status)
+        || streaming || !activeThreadId || activeThreadId !== threadId
+        || refreshedAutoRunsRef.current.has(root.run_id)) return;
+    refreshedAutoRunsRef.current.add(root.run_id);
+    void agentsApi.getThread(AUTO_AGENT_ID, activeThreadId).then((detail) => {
+      if (activeThreadIdRef.current === activeThreadId) setTurns(replayThread(detail.messages));
+    }).catch(() => {
+      refreshedAutoRunsRef.current.delete(root.run_id);
+    });
+  }, [autoTreeQuery.data, activeThreadId, threadId, streaming]);
   const [loadingThread, setLoadingThread] = useState(false);
   const [extended, setExtended] = useState(false);
   const [deepenTarget, setDeepenTarget] = useState<string | null>(null);
@@ -208,7 +275,6 @@ export function StudioChat({
     () => new Set(),
   );
   const abortRef = useRef<AbortController | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
   const composerStartRef = useRef<DOMRect | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -279,6 +345,8 @@ export function StudioChat({
     followOutputRef.current = true;
     setThreadId(null);
     setTurns([]);
+    setActiveAutoRun(null);
+    setSelectedChild(null);
     setInput("");
     setAttachments([]);
     setDeepenTarget(null);
@@ -342,6 +410,7 @@ export function StudioChat({
     discardQueuedEvents();
     followOutputRef.current = true;
     setThreadId(null);
+    setActiveAutoRun(null);
     setTurns([]);
     setInput("");
     setAttachments([]);
@@ -512,6 +581,12 @@ export function StudioChat({
             name, content: fileContent, media_type: mediaType,
           })),
           onAccepted: () => { accepted = true; },
+          onRunId: (runId) => {
+            if (agent.agent_id === AUTO_AGENT_ID) {
+              setActiveAutoRun({ runId, threadId: thread });
+              void queryClient.invalidateQueries({ queryKey: ["studio", "auto-runs", thread] });
+            }
+          },
           onEvent: (event: AssistantEvent) => queueEvent(turnId, event),
         });
       } catch (error) {
@@ -542,6 +617,9 @@ export function StudioChat({
         queryClient.invalidateQueries({
           queryKey: ["agents", "threads", agent.agent_id],
         });
+        if (agent.agent_id === AUTO_AGENT_ID) {
+          void queryClient.invalidateQueries({ queryKey: ["studio", "auto-runs"] });
+        }
       }
     },
     [
@@ -560,6 +638,11 @@ export function StudioChat({
   );
 
   const stop = useCallback(() => {
+    if (agent?.agent_id === AUTO_AGENT_ID && activeAutoRun) {
+      void agentsApi.cancelAutoRun(activeAutoRun.runId).catch(() => {
+        toast.error("Could not cancel the Auto run. Check its activity and try again.");
+      });
+    }
     abortRef.current?.abort();
     flushEvents();
     setStreaming(false);
@@ -568,7 +651,7 @@ export function StudioChat({
         turn.state === "streaming" ? { ...turn, state: "cancelled" } : turn,
       ),
     );
-  }, [flushEvents]);
+  }, [activeAutoRun, agent?.agent_id, flushEvents]);
 
   /**
    * Send the user's decision on a tool call, then clear the card. The closing
@@ -759,6 +842,10 @@ export function StudioChat({
 
   const empty = turns.length === 0;
   const welcome = empty && (!agent || !loadingThread);
+  const showAutoCard = agent?.agent_id === AUTO_AGENT_ID && Boolean(displayedAutoRunId);
+  const selectedTreeQuery = selectedChild?.rootRunId === displayedAutoRunId ? autoTreeQuery : historicalChildTreeQuery;
+  const chronologicalAutoRuns = [...(autoRunsQuery.data?.runs ?? [])].reverse();
+  const autoTurns = turns.filter((turn) => turn.origin !== "reconsider");
   const creatingSkill =
     agent?.agent_id === SKILL_AUTHOR_ID ||
     input.trimStart().startsWith(CREATE_SKILL_COMMAND) ||
@@ -769,10 +856,21 @@ export function StudioChat({
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-1 flex-col",
-        welcome && "overflow-y-auto",
+        "relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
       )}
     >
+      <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", welcome && "overflow-y-auto", selectedChild && "hidden lg:flex")}>
+      {showAutoCard && !selectedChild ? (
+        <AutoSubagentCard
+          key={displayedAutoRunId}
+          runs={autoTreeQuery.data?.runs ?? []}
+          agents={agents}
+          loading={autoTreeQuery.isLoading}
+          error={autoTreeQuery.isError}
+          retry={() => void autoTreeQuery.refetch()}
+          onSelectChild={(childRunId) => openChild(displayedAutoRunId as string, childRunId)}
+        />
+      ) : null}
       <div
         className={cn(
           "flex flex-1 flex-col",
@@ -784,6 +882,7 @@ export function StudioChat({
           className={cn(
             "w-full",
             welcome ? "shrink-0" : "min-h-0 flex-1 overflow-y-auto",
+            showAutoCard && !selectedChild && "xl:pr-[324px]",
           )}
           onScroll={onTranscriptScroll}
         >
@@ -817,6 +916,9 @@ export function StudioChat({
                     key={turn.id}
                     turn={turn}
                     agent={agent}
+                    agents={agents}
+                    autoRunId={agent.agent_id === AUTO_AGENT_ID ? rootRunForTurn(turn, chronologicalAutoRuns, autoTurns, activeAutoRunId) : null}
+                    onOpenChild={openChild}
                     deepenable={
                       extended && turn.state === "done" && Boolean(turn.answer)
                     }
@@ -842,6 +944,7 @@ export function StudioChat({
           className={cn(
             "w-full shrink-0 px-4 sm:px-6",
             welcome ? "pb-2" : "pb-6 pt-2",
+            showAutoCard && !selectedChild && "xl:pr-[324px]",
           )}
         >
         <Composer
@@ -878,6 +981,15 @@ export function StudioChat({
           onClose={() => setSkillDraft(null)}
         />
       ) : null}
+      </div>
+      {selectedChild ? <AutoSubagentPanel
+        selected={selectedChild}
+        runs={selectedTreeQuery.data?.runs ?? []}
+        agents={agents}
+        onSelectChild={(childRunId) => openChild(selectedChild.rootRunId, childRunId)}
+        onClose={closeChild}
+        onRefreshTree={() => void selectedTreeQuery.refetch()}
+      /> : null}
     </div>
   );
 }
@@ -885,6 +997,9 @@ export function StudioChat({
 const TurnView = memo(function TurnView({
   turn,
   agent,
+  agents,
+  autoRunId,
+  onOpenChild,
   deepenable,
   deepening,
   onDeepen,
@@ -898,6 +1013,9 @@ const TurnView = memo(function TurnView({
 }: {
   turn: TranscriptTurn;
   agent: Agent;
+  agents: Agent[];
+  autoRunId: string | null;
+  onOpenChild: (rootRunId: string, childRunId: string) => void;
   deepenable: boolean;
   deepening: boolean;
   onDeepen: (turn: TranscriptTurn) => Promise<void>;
@@ -915,7 +1033,7 @@ const TurnView = memo(function TurnView({
 }) {
   const running = turn.state === "streaming";
   const visibleSteps: RailStep[] = running && turn.steps.length === 0 && !turn.answer && turn.content.length === 0
-    ? [{ id: "starting", kind: "thinking", label: "plan", text: "Starting analysis…", status: "running" }]
+    ? [{ id: "starting", kind: "thinking", label: "plan", text: "Starting the agent…", status: "running" }]
     : turn.steps;
   const draft =
     onReviewSkill && turn.state === "done"
@@ -955,11 +1073,16 @@ const TurnView = memo(function TurnView({
         </div>
       )}
 
-      <ProcessRail
-        steps={visibleSteps}
-        running={running}
-        revealKey={turn.revealKey}
-      />
+      {agent.agent_id === AUTO_AGENT_ID ? (
+        <AutoTurnRail
+          rootRunId={autoRunId}
+          agents={agents}
+          running={running}
+          onOpenChild={(childRunId) => autoRunId && onOpenChild(autoRunId, childRunId)}
+        />
+      ) : (
+        <ProcessRail steps={visibleSteps} running={running} revealKey={turn.revealKey} />
+      )}
 
       {turn.pendingConsent ? (
         <ConsentCard
@@ -1048,12 +1171,12 @@ function AgentPicker({
           <DropdownMenuItem disabled>No agents available</DropdownMenuItem>
         ) : (
           agents.map((a) => (
-            <DropdownMenuItem
-              key={a.agent_id}
-              onSelect={() => onSelectAgent(a.agent_id)}
-            >
-              {a.name}
-            </DropdownMenuItem>
+            <Fragment key={a.agent_id}>
+              <DropdownMenuItem onSelect={() => onSelectAgent(a.agent_id)}>
+                {a.agent_id === AUTO_AGENT_ID ? "✦ Auto" : a.name}
+              </DropdownMenuItem>
+              {a.agent_id === AUTO_AGENT_ID ? <DropdownMenuSeparator /> : null}
+            </Fragment>
           ))
         )}
       </DropdownMenuContent>
@@ -1258,7 +1381,7 @@ const Composer = ({
             agents={agents}
             onSelectAgent={onSelectAgent}
           />
-          {agent && agent.agent_id !== SKILL_AUTHOR_ID ? (
+          {agent && agent.agent_id !== SKILL_AUTHOR_ID && agent.agent_id !== AUTO_AGENT_ID ? (
             <AgentMemoryDialog agentId={agent.agent_id} />
           ) : null}
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
+import { userEvent } from "vitest/browser";
 import { ActivityTrace } from "./activity-trace";
 import type { TranscriptMessage } from "./use-assistant-transcript";
 
@@ -26,7 +27,7 @@ describe("ActivityTrace", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("collapses a settled trace behind a summary row", async () => {
+  it("keeps a settled trace behind a plain activity disclosure", async () => {
     const { getByRole, container } = await render(
       <ActivityTrace
         message={activityMessage({
@@ -47,8 +48,11 @@ describe("ActivityTrace", () => {
     const toggle = getByRole("button");
     await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
     // The detailed lines are hidden until expanded.
-    expect(container.textContent).toContain("Thought for 1 step");
+    expect(container.textContent).toContain("Activity");
     expect(container.textContent).not.toContain("Loading skill: create-table");
+    expect(
+      container.querySelector('[data-role="activity"]')?.className,
+    ).not.toContain("rounded-lg");
   });
 
   it("expands on click to show the plan and steps", async () => {
@@ -82,8 +86,8 @@ describe("ActivityTrace", () => {
       .toBeInTheDocument();
   });
 
-  it("opens itself while the turn is running", async () => {
-    const { getByRole, getByText } = await render(
+  it("shows only a small animated mark while the turn is running", async () => {
+    const { getByRole, container } = await render(
       <ActivityTrace
         message={activityMessage({
           activity_steps: [
@@ -99,7 +103,25 @@ describe("ActivityTrace", () => {
     );
     await expect
       .element(getByRole("button"))
-      .toHaveAttribute("aria-expanded", "true");
-    await expect.element(getByText("Working")).toBeInTheDocument();
+      .toHaveAttribute("aria-expanded", "false");
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    expect(container.textContent).not.toContain(
+      "Reasoning about the next step",
+    );
+    getByRole("button").element().focus();
+    await userEvent.keyboard("{Enter}");
+    expect(container.textContent).toContain("Reasoning about the next step");
+  });
+
+  it("shows the mark as soon as a pending plan arrives", async () => {
+    const { container } = await render(
+      <ActivityTrace
+        message={activityMessage({
+          activity_plan: [{ id: "answer", text: "Answer", status: "pending" }],
+        })}
+      />,
+    );
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    expect(container.textContent).not.toContain("Answer");
   });
 });

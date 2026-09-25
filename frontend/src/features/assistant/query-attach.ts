@@ -46,7 +46,9 @@ export type ProposedRewrite = {
   /** Attachment the rewrite answers, so stale proposals can be discarded. */
   attachmentId: string;
   tabId: string;
-  /** Full proposed SQL document after applying every hunk. */
+  /** Exact editor content used to build the diff. */
+  sourceContent: string;
+  /** Proposed SQL statement to execute if the user chooses Apply & Run. */
   sql: string;
   hunks: RewriteHunk[];
   /** The assistant message that produced it, for tracing. */
@@ -211,6 +213,16 @@ export function applyHunks(before: string, hunks: RewriteHunk[]): string {
     lines.splice(startIndex, deleteCount, ...hunk.lines);
   }
   return lines.join("\n");
+}
+
+/** Reject a proposal if the editor changed after its diff was built. */
+export function applyCurrentRewrite(
+  current: string,
+  proposal: ProposedRewrite,
+): string | null {
+  return current === proposal.sourceContent
+    ? applyHunks(current, proposal.hunks)
+    : null;
 }
 
 /**

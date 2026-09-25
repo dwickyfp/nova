@@ -13,6 +13,7 @@ from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.ossie import parse_ossie
 from app.modules.agents.semantic.planning import SemanticPlanner
 from app.modules.assistant.service import LoopContext
+from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.query.service import query_service
 
 
@@ -55,25 +56,48 @@ async def test_shared_semantic_model_uses_owner_metadata_but_caller_sql(monkeypa
     ).as_dict()
     calls = []
 
-    async def get_model(model_id, *, owner_name):
-        calls.append(("model", model_id, owner_name))
-        return {"semantic_model_id": model_id, "definition": definition}
+    async def get_view(view_id):
+        calls.append(("view", view_id))
+        return {
+            "id": view_id,
+            "name": "city_sales",
+            "owner_name": "nova_admin",
+            "visibility": "PUBLIC",
+            "status": "ACTIVE",
+            "active_version": 1,
+            "database_name": "rbac_city_demo",
+        }
+
+    async def get_version(view_id, version):
+        calls.append(("version", view_id, version))
+        return {
+            "status": "ACTIVE",
+            "definition": definition,
+            "fingerprint": SemanticModelIR.from_ossie(definition).fingerprint,
+        }
+
+    async def entity_access(_ir, _user):
+        return True
 
     async def execute(**kwargs):
         calls.append(("query", kwargs["username"], kwargs["role"]))
         return SimpleNamespace(error=None)
 
-    monkeypatch.setattr(agent_repository, "get_semantic_model", get_model)
+    monkeypatch.setattr(semantic_view_service, "_get", get_view)
+    monkeypatch.setattr(semantic_view_service, "_version", get_version)
+    monkeypatch.setattr(semantic_view_service, "_entity_access", entity_access)
     monkeypatch.setattr(query_service, "execute", execute)
     context = LoopContext(
         user_name="rbac_jakarta", role="city_reader", database="rbac_city_demo",
-        agent_owner_name="nova_admin", semantic_model_id="model-1",
+        agent_owner_name="nova_admin", semantic_view_ids=["model-1"],
         user={"username": "rbac_jakarta", "encrypted_password": "opaque"},
     )
     models = await load_authorized_models(context)
     assert len(models) == 1
+    assert models[0]["owner_name"] == "nova_admin"
     assert calls == [
-        ("model", "model-1", "nova_admin"),
+        ("view", "model-1"),
+        ("version", "model-1", 1),
         ("query", "rbac_jakarta", "city_reader"),
     ]
 

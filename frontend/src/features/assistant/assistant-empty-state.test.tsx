@@ -41,6 +41,24 @@ describe("AssistantEmptyState", () => {
     expect(onSendMessage).toHaveBeenCalledWith(ASSISTANT_TOUR_PROMPT);
   });
 
+  it("shows role-specific starters and sends the selected prompt", async () => {
+    const onSendMessage = vi.fn();
+    const screen = await render(
+      <AssistantEmptyState
+        surfaceTitle="Role ANALYST"
+        suggestedActions={[
+          { label: "Explain this role", prompt: "Explain the access this role currently has." },
+          { label: "Find missing access", prompt: "Why can this role not read orders?" },
+        ]}
+        onSendMessage={onSendMessage}
+      />,
+    );
+    await expect.element(screen.getByText("Working in Role ANALYST")).toBeInTheDocument();
+    await screen.getByRole("button", { name: "Find missing access" }).click();
+    expect(onSendMessage).toHaveBeenCalledWith("Why can this role not read orders?");
+    expect(screen.getByRole("button", { name: ASSISTANT_TOUR_PROMPT }).query()).toBeNull();
+  });
+
   it("omits the starter action when the panel cannot send", async () => {
     const { container } = await render(<AssistantEmptyState />);
     expect(container.querySelector(`button[type="button"]`)).toBeNull();

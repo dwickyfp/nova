@@ -7,6 +7,8 @@ not an invented shape.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -23,6 +25,7 @@ from app.modules.migration.retarget import (
     retarget,
 )
 from app.modules.migration.schemas import MigrationVerdict, ObjectKind
+from tests.unit.migration_inline_worker import install_inline_read_worker
 
 SOURCE = "src_db"
 TARGET = "tgt_db"
@@ -381,6 +384,7 @@ class _FakeRepo:
 
 @pytest.fixture
 def plan_client(monkeypatch):
+    install_inline_read_worker(monkeypatch)
     from contextlib import asynccontextmanager
 
     from app.modules.migration import service as service_module
@@ -482,18 +486,8 @@ def execute_client(monkeypatch):
 
 class TestExecutePath:
     def test_execute_applies_plan_and_reports_per_object(self, execute_client):
-        client, executed = execute_client
-        resp = client.post(
-            "/api/v1/migration/execute",
-            json={
-                "source": "local",
-                "database": SOURCE,
-                "target_database": TARGET,
-                "acknowledge_omissions": True,
-            },
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
+        _, executed = execute_client
+        body = _run_service_execute()
         # database + table + view
         assert body["succeeded"] == 3
         assert body["failed"] == 0
@@ -505,16 +499,8 @@ class TestExecutePath:
         assert len(plan_statements) == 3
 
     def test_object_statements_are_idempotent(self, execute_client):
-        client, executed = execute_client
-        client.post(
-            "/api/v1/migration/execute",
-            json={
-                "source": "local",
-                "database": SOURCE,
-                "target_database": TARGET,
-                "acknowledge_omissions": True,
-            },
-        )
+        _, executed = execute_client
+        _run_service_execute()
         table_sql = next(s for s in executed if s.startswith("CREATE TABLE"))
         view_sql = next(s for s in executed if s.startswith("CREATE VIEW"))
         assert "IF NOT EXISTS" in table_sql
@@ -530,17 +516,29 @@ class TestExecutePath:
             return "audit-id"
 
         monkeypatch.setattr(service_module, "write_audit_log", _audit)
-        client, _ = execute_client
-        client.post(
-            "/api/v1/migration/execute",
-            json={
-                "source": "local",
-                "database": SOURCE,
-                "target_database": TARGET,
-                "acknowledge_omissions": True,
-            },
-        )
+        _run_service_execute()
         assert any(r.get("action") == "execute" for r in rows)
+
+
+def _run_service_execute() -> dict:
+    from app.modules.migration.service import migration_service
+
+    response = asyncio.run(
+        migration_service.execute(
+            "local",
+            SOURCE,
+            target_database=TARGET,
+            objects=[],
+            create_database=True,
+            acknowledge_omissions=True,
+            confirmation="",
+            actor="alice",
+            encrypted_password="enc",
+            session_id="s1",
+            role="ACCOUNTADMIN",
+        )
+    )
+    return response.model_dump(mode="json")
 
 
 class TestPlanEndpoint:

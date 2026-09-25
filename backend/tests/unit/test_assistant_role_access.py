@@ -5,7 +5,12 @@ from types import SimpleNamespace
 import pytest
 
 from app.modules.assistant.registry import build_registry
-from app.modules.assistant.tools import ToolInvocation, invocation_classification, role_access
+from app.modules.assistant.tools import (
+    ToolInvocation,
+    invocation_classification,
+    requires_consent,
+    role_access,
+)
 
 
 def _context(active_role: str = "ACCOUNTADMIN") -> SimpleNamespace:
@@ -43,6 +48,7 @@ def test_default_nove_registry_keeps_typed_role_access_with_api_bridge() -> None
     assert "call_ui_operation" in names
     classification = invocation_classification(role_access.grant_role_access_tool, _invocation())
     assert classification == "destructive"
+    assert requires_consent(role_access.grant_role_access_tool)
     preview = role_access.grant_role_access_tool.preview(_invocation())
     assert "ACCOUNTADMIN" in preview
     assert "SELECT on NOVA_SALES.fact_sales" in preview
@@ -52,6 +58,8 @@ def test_default_nove_registry_keeps_typed_role_access_with_api_bridge() -> None
 @pytest.mark.asyncio
 async def test_grant_role_access_uses_internal_service_and_exact_role(monkeypatch) -> None:
     calls = []
+    reads = []
+    audits = []
 
     class Service:
         async def list_roles(self):
@@ -61,7 +69,14 @@ async def test_grant_role_access_uses_internal_service_and_exact_role(monkeypatc
             calls.append((security, kwargs))
             return {"id": len(calls)}
 
+        async def effective_access(self, *, principal, active_role, resource):
+            reads.append((principal, active_role, resource))
+            return {
+                "object_access": ["SELECT"] if resource.endswith("fact_sales") else ["USAGE"]
+            }
+
     async def audit(**kwargs):
+        audits.append(kwargs["status"])
         return f"audit-{kwargs['status']}"
 
     monkeypatch.setattr(role_access, "access_control_service", Service())
@@ -75,7 +90,124 @@ async def test_grant_role_access_uses_internal_service_and_exact_role(monkeypatc
     assert calls[0][1]["accesses"] == ["SELECT"]
     assert calls[1][1]["table"] == "*"
     assert calls[1][1]["accesses"] == ["USAGE"]
-    assert result.data["status"] == "PROPAGATING"
+    assert reads == [
+        ("nova_admin", "ACCOUNTADMIN", "NOVA_SALES.fact_sales"),
+        ("nova_admin", "ACCOUNTADMIN", "NOVA_SALES.*"),
+    ]
+    assert result.data["status"] == "VERIFIED"
+    assert all(item["granted"] for item in result.data["verified"])
+    assert audits == ["PENDING", "SUCCESS"]
+
+
+@pytest.mark.asyncio
+async def test_grant_role_access_never_reports_success_without_postconditions(monkeypatch) -> None:
+    writes = []
+    reads = []
+    audits = []
+
+    class Service:
+        async def list_roles(self):
+            return [{"name": "ACCOUNTADMIN"}]
+
+        async def grant_access(self, security, **kwargs):
+            writes.append(kwargs)
+            return {"id": len(writes)}
+
+        async def effective_access(self, *, principal, active_role, resource):
+            reads.append(resource)
+            return {"object_access": ["SELECT"] if resource.endswith("fact_sales") else []}
+
+    async def audit(**kwargs):
+        audits.append(kwargs["status"])
+        return f"audit-{kwargs['status']}"
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(role_access, "access_control_service", Service())
+    monkeypatch.setattr(role_access, "write_audit_log", audit)
+    monkeypatch.setattr(role_access.asyncio, "sleep", no_sleep)
+    result = await role_access.grant_role_access_tool.run(_invocation(), _context())
+
+    assert result.ok is False
+    assert result.data["status"] == "UNVERIFIED"
+    assert result.data["unverified"] == [{"resource": "NOVA_SALES.*", "access": "USAGE"}]
+    assert result.error_class == "POSTCONDITION_UNVERIFIED"
+    assert result.recoverable is False
+    assert len(writes) == 2
+    assert len(reads) == 2 * len(role_access._VERIFY_DELAYS_SECONDS)
+    assert audits == ["PENDING", "UNVERIFIED"]
+
+
+@pytest.mark.asyncio
+async def test_grant_role_access_retries_readback_without_repeating_write(monkeypatch) -> None:
+    writes = []
+    reads = []
+    audits = []
+
+    class Service:
+        async def list_roles(self):
+            return [{"name": "ACCOUNTADMIN"}]
+
+        async def grant_access(self, security, **kwargs):
+            writes.append(kwargs)
+            return {"id": len(writes)}
+
+        async def effective_access(self, *, principal, active_role, resource):
+            reads.append(resource)
+            if resource == "NOVA_SALES.*" and reads.count(resource) == 1:
+                return {"object_access": []}
+            return {"object_access": ["SELECT", "USAGE"]}
+
+    async def audit(**kwargs):
+        audits.append(kwargs["status"])
+        return f"audit-{kwargs['status']}"
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(role_access, "access_control_service", Service())
+    monkeypatch.setattr(role_access, "write_audit_log", audit)
+    monkeypatch.setattr(role_access.asyncio, "sleep", no_sleep)
+    result = await role_access.grant_role_access_tool.run(_invocation(), _context())
+
+    assert result.ok is True
+    assert result.data["status"] == "VERIFIED"
+    assert len(writes) == 2
+    assert len(reads) == 4
+    assert audits == ["PENDING", "SUCCESS"]
+
+
+@pytest.mark.asyncio
+async def test_grant_role_access_does_not_expose_readback_failure(monkeypatch) -> None:
+    audits = []
+
+    class Service:
+        async def list_roles(self):
+            return [{"name": "ACCOUNTADMIN"}]
+
+        async def grant_access(self, security, **kwargs):
+            return {"id": 1}
+
+        async def effective_access(self, *, principal, active_role, resource):
+            raise RuntimeError("private-ranger-token")
+
+    async def audit(**kwargs):
+        audits.append(kwargs["status"])
+        return f"audit-{kwargs['status']}"
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(role_access, "access_control_service", Service())
+    monkeypatch.setattr(role_access, "write_audit_log", audit)
+    monkeypatch.setattr(role_access.asyncio, "sleep", no_sleep)
+    result = await role_access.grant_role_access_tool.run(_invocation(), _context())
+
+    assert result.ok is False
+    assert result.data["status"] == "UNVERIFIED"
+    assert "private-ranger-token" not in str(result)
+    assert audits == ["PENDING", "UNVERIFIED"]
 
 
 @pytest.mark.asyncio

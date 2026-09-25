@@ -2,6 +2,7 @@ import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import "@/styles/index.css";
 import { AssistantPanel } from "./assistant-panel";
 import { AssistantToggle } from "./assistant-toggle";
 import { AssistantProvider } from "./assistant-provider";
@@ -51,14 +52,50 @@ describe("AssistantToggle", () => {
 
   it("keeps the primary fill compact while preserving its width", async () => {
     const { getByRole } = await renderToggle();
-    // The browser test runner does not load the Tailwind stylesheet, so the
-    // measured box is the UA default. Assert the sizing contract instead.
+    // Keep the sizing contract alongside the measured viewport checks below.
     const classes = getByRole("button", { name: "Ask Nove" }).element()
       .className;
     expect(classes).toContain("min-h-9");
     expect(classes).toContain("min-w-11");
     expect(classes).toContain("bg-primary");
     expect(classes).toContain("text-primary-foreground");
+  });
+
+  it.each([320, 375, 1440])(
+    "keeps the entire badge attached to the right edge at %ipx",
+    async (width) => {
+      await page.viewport(width, 800);
+      try {
+        const { getByRole } = await renderToggle();
+        const button = getByRole("button", { name: "Ask Nove" }).element();
+        const anchor = button.closest("div[style]") as HTMLElement;
+        const rect = button.getBoundingClientRect();
+
+        expect(anchor.className).toContain("right-0");
+        expect(rect.left).toBeGreaterThanOrEqual(0);
+        expect(rect.right).toBeLessThanOrEqual(window.innerWidth);
+        expect(window.innerWidth - rect.right).toBeLessThanOrEqual(1);
+      } finally {
+        await page.viewport(375, 800);
+      }
+    },
+  );
+
+  it("does not leave a root scrollbar strip beside the badge", async () => {
+    const { getByRole } = await renderToggle();
+    const button = getByRole("button", { name: "Ask Nove" }).element();
+    const previousHeight = document.body.style.minHeight;
+    document.body.style.minHeight = "200vh";
+    try {
+      expect(getComputedStyle(document.documentElement).scrollbarWidth).toBe(
+        "none",
+      );
+      expect(
+        window.innerWidth - button.getBoundingClientRect().right,
+      ).toBeLessThanOrEqual(1);
+    } finally {
+      document.body.style.minHeight = previousHeight;
+    }
   });
 
   it("shows a six-dot grip affordance, hidden until hover", async () => {

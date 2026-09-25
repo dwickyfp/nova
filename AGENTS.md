@@ -206,6 +206,22 @@ tests/benchmark/           ← overhead gate: fake provider + fake tool
 See `docs/benchmarks/nova-124-agentic-harness.md` for the design, findings, and
 measured cost.
 
+### 9. Page Viewport, Header, and Scroll
+
+**Rule:** Every Nova console page has a visible header and a viewport-bounded
+main area. The application shell and the page's content container do not grow
+with long content. Vertical scrolling belongs to the content area inside the
+page, or to a specific card/panel when that panel owns the content. Keep headers,
+toolbars, and adjacent panels outside that scroller.
+
+Use `Main scroll` for simple pages. Use `Main fixed` or `data-layout="fixed"`
+with `min-h-0`, `flex-1`, and an explicit inner scroller for multi-panel pages.
+Follow the Home page as the reference and read
+[`skills/nova-page-layout/SKILL.md`](skills/nova-page-layout/SKILL.md) whenever
+creating, changing, or reviewing a frontend page layout. Verify short and long
+content at desktop and narrow viewport widths, including the assistant panel
+when the page supports it.
+
 ---
 
 ## Coding Conventions

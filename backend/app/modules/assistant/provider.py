@@ -45,7 +45,7 @@ from app.modules.assistant.streaming import StreamAccumulator, parse_sse_data_li
 
 logger = logging.getLogger(__name__)
 
-_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+_RETRYABLE_STATUS_CODES = frozenset({429, *range(500, 600)})
 
 
 def normalize_tool_schema_for_provider(schema: dict[str, Any]) -> tuple[dict[str, Any], bool]:

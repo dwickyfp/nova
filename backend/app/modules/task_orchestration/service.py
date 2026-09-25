@@ -11,11 +11,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 
 from app.core.config import settings
 from app.modules.task_orchestration.repository import task_orchestration_repository
 from app.modules.task_orchestration.scheduler import SchedulerTick
 from app.modules.task_orchestration.transport import GraphRunTransport, LeaderLock
+from app.observability.metrics import (
+    SCHEDULER_LEADER,
+    SCHEDULER_TICK_DURATION,
+    SCHEDULER_TICKS,
+    heartbeat,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +48,23 @@ class SchedulerService:
         The lease is renewed while a tick is in progress. Losing it cancels
         the tick; a persisted but unpublished run is recovered by the worker.
         """
-        if not self._leader_lock.is_leader and not await self._leader_lock.acquire():
-            return False
-        if not await self._leader_lock.renew():
-            logger.info("scheduler leader lock lost; standing by")
-            return False
+        try:
+            if not self._leader_lock.is_leader and not await self._leader_lock.acquire():
+                SCHEDULER_LEADER.set(0)
+                SCHEDULER_TICKS.labels(status="standby").inc()
+                return False
+            if not await self._leader_lock.renew():
+                logger.info("scheduler leader lock lost; standing by")
+                SCHEDULER_LEADER.set(0)
+                SCHEDULER_TICKS.labels(status="leader_lost").inc()
+                return False
+        except Exception:
+            SCHEDULER_LEADER.set(0)
+            SCHEDULER_TICKS.labels(status="error").inc()
+            raise
+        SCHEDULER_LEADER.set(1)
+        started = time.perf_counter()
+        status = "error"
 
         lost_lock = asyncio.Event()
 
@@ -70,10 +89,18 @@ class SchedulerService:
                 with contextlib.suppress(asyncio.CancelledError):
                     await tick_task
                 logger.warning("scheduler leader lock lost during tick; stopping enqueue")
+                SCHEDULER_LEADER.set(0)
+                status = "leader_lost"
                 return False
-            await tick_task
+            plan = await tick_task
+            status = "partial" if getattr(plan, "enqueue_failed", 0) else "success"
             return True
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
         finally:
+            SCHEDULER_TICKS.labels(status=status).inc()
+            SCHEDULER_TICK_DURATION.observe(time.perf_counter() - started)
             renewal.cancel()
             if not tick_task.done():
                 tick_task.cancel()
@@ -92,10 +119,13 @@ class SchedulerService:
             except Exception:
                 logger.exception("scheduler tick failed; continuing")
 
+            heartbeat("scheduler")
+
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop_event.wait(), timeout=self._poll_interval)
 
         await self._leader_lock.release()
+        SCHEDULER_LEADER.set(0)
         logger.info("nova-scheduler stopped")
 
 

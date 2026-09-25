@@ -159,7 +159,7 @@ describe("ToolCallCard", () => {
   });
 
   it("hides approval controls once the call is no longer pending", async () => {
-    const { container } = await render(
+    const { container, getByRole } = await render(
       <ToolCallCard
         toolCall={{ ...readOnly, status: "done", result_summary: "42 rows" }}
         toolCallId="tc-1"
@@ -168,6 +168,10 @@ describe("ToolCallCard", () => {
     );
     expect(container.textContent).toContain("42 rows");
     expect(container.textContent).not.toContain("Deny");
+    expect(container.textContent).not.toContain(readOnly.sql_preview);
+    getByRole("button", { name: "Show Run query details" }).element().focus();
+    await userEvent.keyboard("{Enter}");
+    expect(container.textContent).toContain(readOnly.sql_preview);
   });
 
   it("does not offer a decision while the tool call has no server id", async () => {

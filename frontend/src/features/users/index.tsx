@@ -880,7 +880,7 @@ export function Users() {
         <Search className="me-auto" />
       </Header>
 
-      <Main className="flex flex-1 flex-col gap-6">
+      <Main scroll className="flex flex-1 flex-col gap-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">

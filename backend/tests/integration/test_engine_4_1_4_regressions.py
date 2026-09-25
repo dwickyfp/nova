@@ -36,13 +36,14 @@ import pytest
 import pytest_asyncio
 
 from tests.integration._stack import (
+    engine_port,
     require_shared_stack,
     shared_stack_host_port,
 )
 
 _EXPLICIT_PORT = os.getenv("NOVA_ORCH_SR_PORT")
 SR_HOST = os.getenv("NOVA_ORCH_SR_HOST", "127.0.0.1")
-SR_PORT = _EXPLICIT_PORT or shared_stack_host_port("NOVA_TEST_FE_MYSQL_PORT", 29030)
+SR_PORT = engine_port(_EXPLICIT_PORT, "NOVA_TEST_FE_MYSQL_PORT", 29030)
 SR_USER = os.getenv("NOVA_ORCH_SR_USER", "root")
 SR_PASSWORD = os.getenv("NOVA_ORCH_SR_PASSWORD", "")
 
@@ -79,9 +80,12 @@ async def _connect():
 
 @pytest_asyncio.fixture
 async def engine(request):
+    if _EXPLICIT_PORT is None:
+        request.getfixturevalue("docker_services")
     require_shared_stack(request)
     if not await _sr_reachable():
         pytest.skip("StarRocks not reachable")
+    await _execute("CREATE DATABASE IF NOT EXISTS NOVA_SYSTEM")
     yield
 
 
@@ -118,6 +122,7 @@ def _upload_fixture(connection) -> None:
     handed to StarRocks matches what ``build_s3_path`` would produce.
     """
     import boto3
+    from botocore.exceptions import ClientError
 
     client = boto3.client(
         "s3",
@@ -126,6 +131,13 @@ def _upload_fixture(connection) -> None:
         aws_secret_access_key=connection.secret_key,
         region_name=connection.region or "us-east-1",
     )
+    try:
+        client.head_bucket(Bucket=connection.bucket)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code")
+        if code not in {"404", "NoSuchBucket"}:
+            raise
+        client.create_bucket(Bucket=connection.bucket)
     key = f"NOVA_ANALYTICS/public/fixtures/{PARQUET_FIXTURE.name}"
     with PARQUET_FIXTURE.open("rb") as handle:
         client.put_object(Bucket=connection.bucket, Key=key, Body=handle)
@@ -211,13 +223,18 @@ class TestParquetUtcFlagFalseIsWallClock:
         try:
             # A non-UTC session is the point: before #73674 the loader shifted
             # these values into the session zone.
-            await _execute("SET time_zone = 'Asia/Jakarta'")
-            # ``replication_num=1`` for the single-BE test stack.
-            await _execute(
-                f"CREATE TABLE NOVA_SYSTEM.{table} "
-                "PROPERTIES('replication_num'='1') AS "
-                f"SELECT * FROM {files}"
-            )
+            conn = await _connect()
+            try:
+                async with conn.cursor() as cur:
+                    await cur.execute("SET time_zone = 'Asia/Jakarta'")
+                    # ``replication_num=1`` for the single-BE test stack.
+                    await cur.execute(
+                        f"CREATE TABLE NOVA_SYSTEM.{table} "
+                        "PROPERTIES('replication_num'='1') AS "
+                        f"SELECT * FROM {files}"
+                    )
+            finally:
+                conn.close()
 
             rows = await _fetch_all(
                 f"SELECT ts FROM NOVA_SYSTEM.{table} ORDER BY id"
@@ -231,4 +248,3 @@ class TestParquetUtcFlagFalseIsWallClock:
             )
         finally:
             await _execute(f"DROP TABLE IF EXISTS NOVA_SYSTEM.{table}")
-            await _execute("SET time_zone = 'UTC'")

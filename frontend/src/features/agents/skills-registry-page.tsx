@@ -83,7 +83,7 @@ export function SkillsRegistryPage() {
   return (
     <>
       <Header fixed />
-      <Main>
+      <Main scroll>
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl leading-8 font-normal">Skill Registry</h1>

@@ -17,6 +17,7 @@ from app.modules.migration.preflight import (
     parse_grants,
     required_privileges,
 )
+from tests.unit.migration_inline_worker import install_inline_read_worker
 
 TABLE_DDL = "CREATE TABLE `t` (`id` int) DUPLICATE KEY(`id`) DISTRIBUTED BY HASH(`id`) BUCKETS 1"
 VIEW_DDL = "CREATE VIEW `v` AS SELECT 1"
@@ -275,6 +276,7 @@ class _FakeRepo:
 
 
 def _preflight_client(monkeypatch, grants: list[tuple]):
+    install_inline_read_worker(monkeypatch)
     from app.modules.migration import service as service_module
 
     async def _execute(**kwargs):

@@ -1,41 +1,38 @@
-"""Migration Connector API router — Phase 11 v1 (Assessment + Dry-run).
-
-Endpoints:
-  GET  /migration/engine               → operator binary availability (no execution)
-  GET  /migration/sources              → registered source clusters (address only)
-  POST /migration/sources              → register a source cluster (address + secret_ref)
-  POST /migration/enumerate            → list objects on a registered source
-  POST /migration/dry-run              → per-object verdict (migratable/lossy/skipped)
-  GET  /migration/capabilities         → the surfaces this v1 implements
-
-**There is no Execute endpoint and no execute path behind any flag.** Cutover is
-gated on issue #7 (backup/restore) and is out of scope here. A negative test
-asserts the absence.
-
-Every response class is ``SanitizingJSONResponse`` so an engine statement that
-somehow escaped the service's redaction is stripped at the boundary
-(AGENTS.md §2).
-"""
+"""Migration API. Source and target operations are dispatched to nova-worker."""
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.common.responses import SanitizingJSONResponse
 from app.core.config import settings
 from app.core.deps import get_current_user
 
-from .data_mover import DataMovementError
+from .jobs import (
+    MigrationJobFailed,
+    MigrationJobUnavailable,
+    migration_job_repo,
+    public_status,
+    session_fingerprint,
+    submit_job,
+    wait_for_job,
+)
 from .schemas import (
+    DatabasesRequest,
+    DatabasesResponse,
     DryRunRequest,
     DryRunResponse,
     EngineStatusResponse,
     EnumerateRequest,
     EnumerateResponse,
+    ExecuteBatchRequest,
     ExecuteRequest,
-    ExecuteResponse,
+    MigrationJobAccepted,
+    MigrationJobStatus,
     PlanRequest,
     PlanResponse,
     PreflightRequest,
@@ -43,18 +40,38 @@ from .schemas import (
     SourceConnectionListResponse,
     SourceConnectionRequest,
     SourceConnectionResponse,
+    SourceConnectionTestRequest,
+    SourceConnectionTestResponse,
 )
-from .service import (
-    MigrationExecuteConfirmationError,
-    MigrationExecuteGateError,
-    MigrationPreflightError,
-    migration_service,
-)
-from .source import SourceConnectionError
+from .service import migration_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+
+
+class _EngineRequest(BaseModel):
+    source: str = ""
+
+
+async def _worker_read(operation: str, body: BaseModel, user: dict) -> dict:
+    accepted = await submit_job(operation, body, user)
+    try:
+        return await wait_for_job(accepted.job_id)
+    except MigrationJobUnavailable as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except MigrationJobFailed as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+def _check_execute_gate(confirmation: str, expected: str, acknowledged: bool) -> None:
+    if not settings.MIGRATION_EXECUTE_ENABLED:
+        raise HTTPException(status_code=403, detail="Migration execute is disabled")
+    if not acknowledged:
+        raise HTTPException(status_code=422, detail="Acknowledge the migration omissions")
+    if settings.MIGRATION_EXECUTE_REQUIRE_CONFIRMATION and confirmation != expected:
+        raise HTTPException(status_code=422, detail="Migration confirmation does not match")
 
 
 @router.get(
@@ -62,11 +79,7 @@ CurrentUser = Annotated[dict, Depends(get_current_user)]
     response_class=SanitizingJSONResponse,
 )
 async def capabilities(user: CurrentUser):
-    """Describe what v1 implements, and what it deliberately does not.
-
-    Returning this from the server keeps the client from inventing an Execute
-    action: the only phases listed are ``assess`` and ``dry_run``.
-    """
+    """Expose the operator's execute gate to the client."""
     return {
         "phase": "11",
         "version": "v1",
@@ -89,12 +102,8 @@ async def capabilities(user: CurrentUser):
     response_class=SanitizingJSONResponse,
 )
 async def engine_status(user: CurrentUser):
-    """Report whether the operator-provided ``starrocks-cluster-sync`` exists.
-
-    Nova never bundles the binary; a missing binary is reported, not raised, so
-    assessment and dry-run still work.
-    """
-    return await migration_service.engine_status()
+    """Check the operator-provided binary in the worker environment."""
+    return await _worker_read("engine", _EngineRequest(), user)
 
 
 @router.get(
@@ -105,6 +114,16 @@ async def engine_status(user: CurrentUser):
 async def list_sources(user: CurrentUser):
     """List registered source connections (names, never secrets)."""
     return await migration_service.list_sources()
+
+
+@router.post(
+    "/sources/test",
+    response_model=SourceConnectionTestResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def test_source(body: SourceConnectionTestRequest, user: CurrentUser):
+    """Probe an unsaved source in nova-worker without persisting it."""
+    return await _worker_read("test_source", body, user)
 
 
 @router.post(
@@ -136,20 +155,22 @@ async def create_source(body: SourceConnectionRequest, user: CurrentUser):
 
 
 @router.post(
+    "/databases",
+    response_model=DatabasesResponse,
+    response_class=SanitizingJSONResponse,
+)
+async def databases(body: DatabasesRequest, user: CurrentUser):
+    return await _worker_read("databases", body, user)
+
+
+@router.post(
     "/enumerate",
     response_model=EnumerateResponse,
     response_class=SanitizingJSONResponse,
 )
 async def enumerate_objects(body: EnumerateRequest, user: CurrentUser):
-    """Enumerate tables/views/MVs/functions/tasks/pipes/policies of a database.
-
-    Reads the **registered source** (``body.source``). MVs are read from
-    ``information_schema.materialized_views``.
-    """
-    try:
-        return await migration_service.enumerate(body.source, body.database)
-    except SourceConnectionError as exc:
-        raise _source_http_error(exc) from exc
+    """List objects from the registered source in nova-worker."""
+    return await _worker_read("enumerate", body, user)
 
 
 @router.post(
@@ -158,17 +179,8 @@ async def enumerate_objects(body: EnumerateRequest, user: CurrentUser):
     response_class=SanitizingJSONResponse,
 )
 async def dry_run(body: DryRunRequest, user: CurrentUser):
-    """Classify each selected object on the registered source.
-
-    Verdicts are ``migratable`` / ``lossy`` / ``skipped``. Read-only. This
-    endpoint never materialises or executes a cutover.
-    """
-    try:
-        return await migration_service.dry_run(
-            body.source, body.database, body.objects, actor=user["username"]
-        )
-    except SourceConnectionError as exc:
-        raise _source_http_error(exc) from exc
+    """Classify source objects without applying them."""
+    return await _worker_read("dry_run", body, user)
 
 
 @router.post(
@@ -177,24 +189,8 @@ async def dry_run(body: DryRunRequest, user: CurrentUser):
     response_class=SanitizingJSONResponse,
 )
 async def plan(body: PlanRequest, user: CurrentUser):
-    """Build a dependency-ordered apply plan. Read-only — executes nothing.
-
-    The plan lists the statements a cutover would run, in order, plus the objects
-    that cannot be executed. There is no apply endpoint: execution is gated on
-    #7 (backup/restore). This endpoint exists so an operator can inspect and
-    review exactly what a future execute would do.
-    """
-    try:
-        return await migration_service.plan(
-            body.source,
-            body.database,
-            target_database=body.target_database,
-            objects=body.objects,
-            create_database=body.create_database,
-            actor=user["username"],
-        )
-    except SourceConnectionError as exc:
-        raise _source_http_error(exc) from exc
+    """Return a dependency-ordered plan and blocked objects."""
+    return await _worker_read("plan", body, user)
 
 
 @router.post(
@@ -203,80 +199,65 @@ async def plan(body: PlanRequest, user: CurrentUser):
     response_class=SanitizingJSONResponse,
 )
 async def preflight(body: PreflightRequest, user: CurrentUser):
-    """Check the caller's target privileges and shared storage. Read-only.
-
-    Runs nothing: it reads the caller's own grants and, for data movement,
-    reports whether a transfer stage is configured. Use it to fix grants before
-    execute rather than discovering them per-object.
-    """
-    try:
-        return await migration_service.preflight(
-            body.source,
-            body.database,
-            target_database=body.target_database,
-            objects=body.objects,
-            create_database=body.create_database,
-            include_data=body.include_data,
-            actor=user["username"],
-            encrypted_password=user["encrypted_password"],
-            session_id=user.get("session_id"),
-            role=user.get("active_role"),
-        )
-    except SourceConnectionError as exc:
-        raise _source_http_error(exc) from exc
+    """Check the caller's grants and transfer storage without applying DDL."""
+    return await _worker_read("preflight", body, user)
 
 
 @router.post(
     "/execute",
-    response_model=ExecuteResponse,
+    response_model=MigrationJobAccepted,
+    status_code=202,
     response_class=SanitizingJSONResponse,
 )
 async def execute(body: ExecuteRequest, user: CurrentUser):
-    """Apply a plan to the target database. Gated on #7 (backup/restore).
+    _check_execute_gate(
+        body.confirmation, body.target_database or body.database, body.acknowledge_omissions
+    )
+    return await submit_job("execute", body, user)
 
-    Refuses (403) unless the operator enabled execute; refuses (422) unless the
-    caller acknowledged the omissions and, when required, matched the target
-    database confirmation. Statements run as the authenticated user, so
-    StarRocks RBAC is the real authority. Each object gets its own result.
-    """
+
+@router.post(
+    "/execute-batch",
+    response_model=MigrationJobAccepted,
+    status_code=202,
+    response_class=SanitizingJSONResponse,
+)
+async def execute_batch(body: ExecuteBatchRequest, user: CurrentUser):
+    _check_execute_gate(
+        body.confirmation,
+        f"MIGRATE {len(body.databases)} DATABASES",
+        body.acknowledge_omissions,
+    )
+    return await submit_job("execute_batch", body, user)
+
+
+@router.get(
+    "/jobs/{job_id}",
+    response_model=MigrationJobStatus,
+    response_class=SanitizingJSONResponse,
+)
+async def job_status(job_id: str, user: CurrentUser):
     try:
-        return await migration_service.execute(
-            body.source,
-            body.database,
-            target_database=body.target_database,
-            objects=body.objects,
-            create_database=body.create_database,
-            acknowledge_omissions=body.acknowledge_omissions,
-            confirmation=body.confirmation,
-            actor=user["username"],
-            encrypted_password=user["encrypted_password"],
-            session_id=user.get("session_id"),
-            role=user.get("active_role"),
-            include_data=body.include_data,
-            stage_connection=body.stage_connection,
+        job = await migration_job_repo.get(job_id)
+    except Exception as exc:
+        logger.warning(
+            "migration job status read failed exception=%s.%s",
+            type(exc).__module__,
+            type(exc).__qualname__,
         )
-    except DataMovementError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except MigrationPreflightError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except MigrationExecuteGateError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except MigrationExecuteConfirmationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except SourceConnectionError as exc:
-        raise _source_http_error(exc) from exc
-
-
-def _source_http_error(exc: SourceConnectionError) -> HTTPException:
-    """Map a source-resolution failure to the right status.
-
-    An unknown source is a client error (404); a source that could not be
-    reached or whose secret reference failed to resolve is an upstream failure
-    (502). Neither ever falls back to the local engine. The message is passed
-    through ``SanitizingJSONResponse`` like every other payload, and
-    ``SourceConnectionError`` carries no credential.
-    """
-    message = str(exc)
-    if message.startswith("Unknown migration source"):
-        return HTTPException(status_code=404, detail=message)
-    return HTTPException(status_code=502, detail=message)
+        raise HTTPException(
+            status_code=503, detail="Migration job status is temporarily unavailable"
+        ) from None
+    if job is None or job["actor"] != user["username"]:
+        raise HTTPException(status_code=404, detail="Migration job not found")
+    if job["active_role"] != user.get("active_role"):
+        raise HTTPException(status_code=404, detail="Migration job not found")
+    original_session = job["session_fingerprint"] == session_fingerprint(user["session_id"])
+    if original_session:
+        if int(job["security_context_version"]) != int(user.get("security_context_version") or 1):
+            raise HTTPException(status_code=404, detail="Migration job not found")
+    elif job["active_role"] and job["active_role"] not in (
+        user.get("assigned_roles") or user.get("roles") or []
+    ):
+        raise HTTPException(status_code=404, detail="Migration job not found")
+    return public_status(job)

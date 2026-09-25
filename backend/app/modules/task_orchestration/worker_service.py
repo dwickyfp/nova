@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from typing import Any
 
 from app.core.config import settings
@@ -27,6 +28,15 @@ from app.modules.task_orchestration.execution import DelegateExecutor
 from app.modules.task_orchestration.reconciler import Reconciler
 from app.modules.task_orchestration.repository import TaskOrchestrationRepository
 from app.modules.task_orchestration.worker import GraphRunJob, GraphRunWorker
+from app.observability.metrics import (
+    WORKER_ACTIVE,
+    WORKER_JOB_DURATION,
+    WORKER_JOBS,
+    WORKER_QUEUE_DEPTH,
+    WORKER_RECONCILIATION_DURATION,
+    WORKER_RECONCILIATIONS,
+    heartbeat,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +83,7 @@ class WorkerService:
         processed = await self._process_available(block_ms=block_ms)
         return processed
 
-    async def reconcile_once(self) -> None:
+    async def reconcile_once(self) -> bool:
         """Reconcile native state, settle stale nodes, then re-enqueue.
 
         Three independent recoveries, run in order:
@@ -93,8 +103,8 @@ class WorkerService:
         Re-processing an already-settled run is a no-op, so this is safe to run
         alongside live deliveries.
         """
-        await self._reconcile_native()
-        await self._abandon_stale_nodes()
+        native_ok = await self._reconcile_native()
+        heartbeat_ok = await self._abandon_stale_nodes()
         report = await self._reconciler.scan()
         for graph_run_id in [*report.pending_graph_runs, *report.abandoned_graph_runs]:
             run = await self._repository.get_graph_run(graph_run_id)
@@ -103,8 +113,9 @@ class WorkerService:
             if run.get("state") in {"success", "failed", "cancelled"}:
                 continue
             await self._requeue(run)
+        return native_ok and heartbeat_ok
 
-    async def _reconcile_native(self) -> None:
+    async def _reconcile_native(self) -> bool:
         """Advance running nodes from the engine's native task state.
 
         A NATIVE reconciliation failure must not stop lost-delivery recovery,
@@ -114,7 +125,7 @@ class WorkerService:
             report = await self._reconciler.reconcile_native()
         except Exception:
             logger.exception("native-state reconciliation failed; continuing")
-            return
+            return False
         if report.advanced or report.lost_traces or report.auto_paused:
             logger.info(
                 "native reconcile: %d observed, %d advanced, %d lost traces, "
@@ -124,8 +135,9 @@ class WorkerService:
                 len(report.lost_traces),
                 len(report.auto_paused),
             )
+        return True
 
-    async def _abandon_stale_nodes(self) -> None:
+    async def _abandon_stale_nodes(self) -> bool:
         """Settle nodes whose worker heartbeat lapsed — the durable lost trace.
 
         Isolated like the native pass: a failure here must not stop re-enqueue.
@@ -136,9 +148,10 @@ class WorkerService:
             abandoned = await self._reconciler.abandon_stale_nodes()
         except Exception:
             logger.exception("heartbeat reconciliation failed; continuing")
-            return
+            return False
         if abandoned:
             logger.info("abandoned %d stale node(s)", len(abandoned))
+        return True
 
     async def run_forever(self, stop_event: asyncio.Event) -> None:
         logger.info("nova-worker started; waiting for graph runs")
@@ -155,9 +168,13 @@ class WorkerService:
             self._reconcile_forever(stop_event), name="nova-worker-reconcile"
         )
         active: dict[str, asyncio.Task[None]] = {}
+        last_queue_sample = 0.0
 
         try:
             while not stop_event.is_set():
+                if time.monotonic() - last_queue_sample >= 15:
+                    await self._sample_queue_depth()
+                    last_queue_sample = time.monotonic()
                 for stream_id, task in list(active.items()):
                     if task.done():
                         del active[stream_id]
@@ -172,6 +189,7 @@ class WorkerService:
 
                 capacity = self._max_concurrent_graph_runs - len(active)
                 if capacity <= 0:
+                    heartbeat("worker")
                     with contextlib.suppress(TimeoutError):
                         await asyncio.wait_for(stop_event.wait(), timeout=0.5)
                     continue
@@ -195,6 +213,8 @@ class WorkerService:
                                 )
                 except Exception:
                     logger.exception("worker cycle failed; continuing")
+                else:
+                    heartbeat("worker")
 
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop_event.wait(), timeout=0.1)
@@ -215,12 +235,29 @@ class WorkerService:
     async def _reconcile_forever(self, stop_event: asyncio.Event) -> None:
         """Run reconciliation on its own interval, independently of execution."""
         while not stop_event.is_set():
+            started = time.perf_counter()
+            status = "error"
             try:
-                await self.reconcile_once()
+                complete = await self.reconcile_once()
+                status = "partial" if complete is False else "success"
+            except asyncio.CancelledError:
+                status = "cancelled"
+                raise
             except Exception:
                 logger.exception("reconcile pass failed; continuing")
+            finally:
+                WORKER_RECONCILIATIONS.labels(status=status).inc()
+                WORKER_RECONCILIATION_DURATION.observe(time.perf_counter() - started)
+
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop_event.wait(), timeout=self._reconcile_interval)
+
+    async def _sample_queue_depth(self) -> None:
+        try:
+            depth = await self._consumer.queue_depth()
+            WORKER_QUEUE_DEPTH.set(float(depth) if depth is not None else float("nan"))
+        except Exception:
+            WORKER_QUEUE_DEPTH.set(float("nan"))
 
     async def _process_available(self, *, block_ms: int) -> int:
         processed = 0
@@ -234,9 +271,20 @@ class WorkerService:
         return processed
 
     async def _handle(self, stream_id: str, payload: dict[str, str]) -> None:
+        status = "error"
+        started = time.perf_counter()
         try:
             async with self._execution_slots:
-                state = await self._worker.handle(GraphRunJob.from_payload(payload))
+                WORKER_ACTIVE.inc()
+                try:
+                    state = await self._worker.handle(GraphRunJob.from_payload(payload))
+                finally:
+                    WORKER_ACTIVE.dec()
+            await self._consumer.ack(stream_id)
+            status = state.value if state is not None else "unknown"
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
         except Exception:
             # Leave the job unacked for redelivery. Settled nodes are skipped;
             # a node with an uncertain native outcome stays abandoned.
@@ -244,7 +292,9 @@ class WorkerService:
                 "graph run %s failed; leaving for redelivery", payload.get("graph_run_id")
             )
             return
-        await self._consumer.ack(stream_id)
+        finally:
+            WORKER_JOBS.labels(status=status).inc()
+            WORKER_JOB_DURATION.labels(status=status).observe(time.perf_counter() - started)
         if state is not None:
             logger.info("graph run %s handled -> %s", payload.get("graph_run_id"), state)
         # Only a *settled* run frees the QUEUE slot for a sibling. A run that
@@ -305,7 +355,20 @@ class WorkerService:
             "task_ids": ",".join(task_ids),
         }
         async with self._execution_slots:
-            return await self._worker.handle(GraphRunJob.from_payload(payload))
+            WORKER_ACTIVE.inc()
+            started = time.perf_counter()
+            status = "error"
+            try:
+                state = await self._worker.handle(GraphRunJob.from_payload(payload))
+                status = state.value if state is not None else "unknown"
+                return state
+            except asyncio.CancelledError:
+                status = "cancelled"
+                raise
+            finally:
+                WORKER_ACTIVE.dec()
+                WORKER_JOBS.labels(status=status).inc()
+                WORKER_JOB_DURATION.labels(status=status).observe(time.perf_counter() - started)
 
     async def _requeue(self, run: dict[str, Any]) -> None:
         """Re-run a graph from durable state, without the stream.

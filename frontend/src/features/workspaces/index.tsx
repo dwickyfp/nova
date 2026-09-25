@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { format as formatSql } from "sql-formatter";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 import {
   BarChart3,
   Braces,
@@ -64,11 +65,15 @@ import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { Header } from "@/components/layout/header";
-import { useAssistant } from "@/features/assistant";
+import {
+  defineNoveCapability,
+  useAssistant,
+  useNoveSurface,
+} from "@/features/assistant";
 import type { TurnContext } from "@/features/assistant";
 import { createThread } from "@/features/assistant/thread-client";
 import {
-  applyHunks,
+  applyCurrentRewrite,
   buildRewriteHunks,
   type AttachedQuery,
   type ProposedRewrite,
@@ -91,9 +96,18 @@ import { readToken } from "@/lib/read-token";
 import { applyNovaSqlTheme } from "./monaco-theme";
 import { FileHistoryDialog } from "./file-history-dialog";
 import { WorkspaceTabStrip } from "./workspace-tab-strip";
-import { createStarterTemplateFile, getStarterTemplate } from "./starter-templates";
+import {
+  createStarterTemplateFile,
+  getStarterTemplate,
+} from "./starter-templates";
 import { ExplainTreeView } from "./explain-tree";
 import { QueryHistory } from "./query-history";
+import {
+  replaceAttachedSql,
+  safeNoveSql,
+  summarizeQueryForNove,
+  type WorkspaceExecutionFeedback,
+} from "./nove-feedback";
 import type {
   HistoryResponse,
   QueryContextResponse,
@@ -684,6 +698,9 @@ export function WorkspacesPage() {
       }
     },
   );
+  const [lastExecutionByTab, setLastExecutionByTab] = useState<
+    Record<string, WorkspaceExecutionFeedback>
+  >({});
   const [activeResultIdx, setActiveResultIdx] = useState(0);
   const activeResult = queryResults?.[activeResultIdx] ?? null;
   /**
@@ -699,17 +716,21 @@ export function WorkspacesPage() {
   const [running, setRunning] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+  const currentExecutionIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [renameEntryTarget, setRenameEntryTarget] = useState<WorkspaceEntry | null>(null);
+  const [renameEntryTarget, setRenameEntryTarget] =
+    useState<WorkspaceEntry | null>(null);
   const [renameEntryName, setRenameEntryName] = useState("");
   const [renamingEntry, setRenamingEntry] = useState(false);
-  const [deleteEntryTarget, setDeleteEntryTarget] = useState<WorkspaceEntry | null>(null);
+  const [deleteEntryTarget, setDeleteEntryTarget] =
+    useState<WorkspaceEntry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState(false);
   const [pendingDestructiveSql, setPendingDestructiveSql] = useState<{
     sql: string;
     tabId: string;
+    correlationId?: string;
   } | null>(null);
 
   const activeTab = activeTabId ? tabs[activeTabId] : null;
@@ -744,6 +765,112 @@ export function WorkspacesPage() {
     setProposedRewrite,
     collapsedToPersist,
   } = useAssistant();
+  const noveCapabilities = useMemo(
+    () => [
+      defineNoveCapability({
+        name: "tab.open",
+        risk: "safe",
+        argsSchema: z
+          .object({ tab: z.enum(["results", "history", "chart"]) })
+          .strict(),
+        execute: ({ tab }) => {
+          setResultsTab(tab);
+          setResultsCollapsed(false);
+        },
+      }),
+      defineNoveCapability({
+        name: "editor.focus",
+        risk: "safe",
+        argsSchema: z.object({}).strict(),
+        execute: () => activeSqlEditorInstance?.focus(),
+      }),
+    ],
+    [],
+  );
+  const { publishEvent: publishWorkspaceEvent, askNove: askFromWorkspace } =
+    useNoveSurface({
+      id: "workspace.sql",
+      route: "/workspaces",
+      title: activeTab?.title ?? "SQL Workspace",
+      context: () => {
+        const editor = activeSqlEditorInstance;
+        const selection = editor?.getSelection();
+        const selectedText =
+          selection && !selection.isEmpty()
+            ? safeNoveSql(editor?.getModel()?.getValueInRange(selection) ?? "")
+            : undefined;
+        const cursor = editor?.getPosition();
+        return {
+          ...(activeTab
+            ? {
+                entity: {
+                  type: "workspace_file",
+                  id: activeTab.id,
+                  name: activeTab.title,
+                },
+                editor: {
+                  documentId: activeTab.id,
+                  language: "sql",
+                  selectedText,
+                  cursor: cursor
+                    ? { line: cursor.lineNumber, column: cursor.column }
+                    : undefined,
+                  dirty: activeTab.content !== activeTab.savedContent,
+                },
+              }
+            : {}),
+          ...(selectedText
+            ? { selection: { type: "sql", text: selectedText } }
+            : {}),
+          execution:
+            running && activeTab && currentExecutionIdRef.current
+              ? {
+                  type: "sql",
+                  executionId: currentExecutionIdRef.current,
+                  status: "running",
+                }
+              : activeTab
+                ? lastExecutionByTab[activeTab.id]?.execution
+                : undefined,
+          view: {
+            activeTab: resultsTab,
+            filters: { historyScope: historyFilter, sidebar: sidebarTab },
+          },
+          domain: {
+            database: activeTab?.database ?? null,
+            schema: activeTab?.schema ?? null,
+            role: sessionRole || null,
+          },
+        };
+      },
+      capabilities: activeTab ? noveCapabilities : [],
+      suggestedActions: activeTab
+        ? [
+            {
+              label: "Explain this SQL",
+              prompt: "Explain the SQL in the current editor.",
+            },
+            {
+              label: "Check query performance",
+              prompt: "Help me inspect the current query's performance.",
+            },
+            ...(lastExecutionByTab[activeTab.id]?.execution.status === "error"
+              ? [
+                  {
+                    label: "Fix query error",
+                    prompt:
+                      "Diagnose and fix the last failed query in this workspace.",
+                  },
+                ]
+              : []),
+          ]
+        : [
+            {
+              label: "Get started",
+              prompt: "Help me write my first SQL query in Nova.",
+            },
+          ],
+    });
   const threadsRef = useRef<Record<string, string>>({});
   const ensureThread = useCallback(async () => {
     if (!activeTabId) return null;
@@ -787,11 +914,25 @@ export function WorkspacesPage() {
       const sourceTab = tabs[attachment.tabId];
       if (!sourceTab) return;
       const before = sourceTab.content;
+      const next = replaceAttachedSql(
+        before,
+        attachment.sql,
+        sql,
+        attachment.startLine,
+        attachment.endLine,
+      );
+      if (next === null) {
+        toast.error(
+          "The source SQL changed. Attach the current query to review a new fix.",
+        );
+        return;
+      }
       setProposedRewrite({
         attachmentId: attachment.id,
         tabId: attachment.tabId,
+        sourceContent: before,
         sql,
-        hunks: buildRewriteHunks(before, sql),
+        hunks: buildRewriteHunks(before, next),
         sourceMessageId: messageId,
       });
     },
@@ -820,6 +961,11 @@ export function WorkspacesPage() {
       const id = decodeURIComponent(match[1]);
       if (method === "DELETE") {
         conflictedFilesRef.current.delete(id);
+        setLastExecutionByTab((previous) => {
+          const next = { ...previous };
+          delete next[id];
+          return next;
+        });
         setTabs((prev) => {
           const next = { ...prev };
           delete next[id];
@@ -979,36 +1125,60 @@ export function WorkspacesPage() {
     const template = templateId ? getStarterTemplate(templateId) : undefined;
     const tree = workspaceTreeQuery.data;
     const context = queryContextQuery.data;
-    if (!template || !tree || !context || handledTemplateRef.current === templateId) return;
+    if (
+      !template ||
+      !tree ||
+      !context ||
+      handledTemplateRef.current === templateId
+    )
+      return;
     handledTemplateRef.current = templateId ?? null;
 
-    void createStarterTemplateFile(template, tree.entries).then((response) => {
-      setOpenTabIds((prev) => [...new Set([...prev, response.entry.id])]);
-      setActiveTabId(response.entry.id);
-      setTabs((prev) => ({
-        ...prev,
-        [response.entry.id]: {
-          id: response.entry.id,
-          title: response.entry.name,
-          content: response.content,
-          savedContent: response.content,
-          database: tree.defaults.database ?? context.defaults.database ?? context.databases[0] ?? "",
-          schema: tree.defaults.schema ?? context.defaults.schema ?? "default",
-          role: sessionRole,
-          loaded: true,
-        },
-      }));
-      void queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
-      void navigate({
-        to: "/workspaces",
-        search: { file: response.entry.id },
-        replace: true,
+    void createStarterTemplateFile(template, tree.entries)
+      .then((response) => {
+        setOpenTabIds((prev) => [...new Set([...prev, response.entry.id])]);
+        setActiveTabId(response.entry.id);
+        setTabs((prev) => ({
+          ...prev,
+          [response.entry.id]: {
+            id: response.entry.id,
+            title: response.entry.name,
+            content: response.content,
+            savedContent: response.content,
+            database:
+              tree.defaults.database ??
+              context.defaults.database ??
+              context.databases[0] ??
+              "",
+            schema:
+              tree.defaults.schema ?? context.defaults.schema ?? "default",
+            role: sessionRole,
+            loaded: true,
+          },
+        }));
+        void queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
+        void navigate({
+          to: "/workspaces",
+          search: { file: response.entry.id },
+          replace: true,
+        });
+      })
+      .catch((error) => {
+        handledTemplateRef.current = null;
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Failed to create template worksheet.",
+        );
       });
-    }).catch((error) => {
-      handledTemplateRef.current = null;
-      toast.error(error instanceof Error ? error.message : "Failed to create template worksheet.");
-    });
-  }, [search.template, workspaceTreeQuery.data, queryContextQuery.data, queryClient, navigate, sessionRole]);
+  }, [
+    search.template,
+    workspaceTreeQuery.data,
+    queryContextQuery.data,
+    queryClient,
+    navigate,
+    sessionRole,
+  ]);
 
   // Deep links from Home's Recent work: `?file=<id>` opens that worksheet and
   // `?q=<sql>` selects the matching statement so the user lands on the query,
@@ -1342,7 +1512,9 @@ export function WorkspacesPage() {
       await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
       setRenameEntryTarget(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to rename entry.");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to rename entry.",
+      );
     } finally {
       setRenamingEntry(false);
     }
@@ -1358,6 +1530,11 @@ export function WorkspacesPage() {
     setDeletingEntry(true);
     try {
       await api.delete<{ success: boolean }>(`/workspaces/files/${target.id}`);
+      setLastExecutionByTab((previous) => {
+        const next = { ...previous };
+        delete next[target.id];
+        return next;
+      });
       setOpenTabIds((prev) => prev.filter((id) => id !== target.id));
       if (activeTabId === target.id) {
         setActiveTabId((prev) => openTabIds.find((id) => id !== prev) ?? null);
@@ -1365,13 +1542,18 @@ export function WorkspacesPage() {
       await queryClient.invalidateQueries({ queryKey: ["workspace-tree"] });
       setDeleteEntryTarget(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to delete entry.");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete entry.",
+      );
     } finally {
       setDeletingEntry(false);
     }
   }
 
-  async function renameTabFile(tabId: string, newName: string): Promise<boolean> {
+  async function renameTabFile(
+    tabId: string,
+    newName: string,
+  ): Promise<boolean> {
     const trimmed = newName.trim();
     if (!trimmed) return false;
     const tab = tabs[tabId];
@@ -1403,16 +1585,52 @@ export function WorkspacesPage() {
     }
   }
 
-  async function runQuery(confirmDestructive = false, sqlOverride?: string) {
+  function recordQueryFeedback(
+    tabId: string,
+    executionId: string,
+    sql: string,
+    results: QueryResponse[],
+    elapsed: number,
+    correlationId?: string,
+  ): WorkspaceExecutionFeedback {
+    const feedback = summarizeQueryForNove(executionId, sql, results, elapsed);
+    setLastExecutionByTab((previous) => ({ ...previous, [tabId]: feedback }));
+    publishWorkspaceEvent({
+      source: "execution",
+      type: feedback.eventType,
+      executionId,
+      correlationId,
+      status: feedback.eventType === "query_completed" ? "success" : "failure",
+      payload: { ...feedback.eventPayload, documentId: tabId },
+    });
+    return feedback;
+  }
+
+  async function runQuery(
+    confirmDestructive = false,
+    sqlOverride?: string,
+    correlationId?: string,
+  ): Promise<
+    "success" | "error" | "cancelled" | "pending-confirmation" | undefined
+  > {
     if (!activeTab) return;
     const sql =
       sqlOverride?.trim() ||
       getSqlForExecution(editorContentRef.current || activeTab.content);
     if (!sql) return;
     if (!confirmDestructive && isDestructiveSql(sql)) {
-      setPendingDestructiveSql({ sql, tabId: activeTab.id });
-      return;
+      setPendingDestructiveSql({ sql, tabId: activeTab.id, correlationId });
+      return "pending-confirmation";
     }
+    const executionId = crypto.randomUUID();
+    currentExecutionIdRef.current = executionId;
+    publishWorkspaceEvent({
+      source: "execution",
+      type: "query_started",
+      executionId,
+      correlationId,
+      payload: { documentId: activeTab.id },
+    });
     setRunning(true);
     setQueryResults(null);
     setActiveResultIdx(0);
@@ -1438,16 +1656,29 @@ export function WorkspacesPage() {
         controller.signal,
       );
       setQueryResults(response);
+      const feedback = recordQueryFeedback(
+        activeTab.id,
+        executionId,
+        sql,
+        response,
+        Date.now() - startTime,
+        correlationId,
+      );
       void queryClient.invalidateQueries({ queryKey: ["query-history"] });
       if (activeTab.content !== activeTab.savedContent) {
-        await saveFile(
-          activeTab.id,
-          activeTab.content,
-          activeTab.database,
-          activeTab.schema,
-          sessionRole,
-        );
+        try {
+          await saveFile(
+            activeTab.id,
+            activeTab.content,
+            activeTab.database,
+            activeTab.schema,
+            sessionRole,
+          );
+        } catch {
+          toast.error("The query ran, but the SQL file could not be saved.");
+        }
       }
+      return feedback.execution.status === "success" ? "success" : "error";
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setQueryResults([
@@ -1467,27 +1698,49 @@ export function WorkspacesPage() {
             needs_confirmation: false,
           },
         ]);
+        setLastExecutionByTab((previous) => {
+          const next = { ...previous };
+          delete next[activeTab.id];
+          return next;
+        });
+        publishWorkspaceEvent({
+          source: "execution",
+          type: "query_cancelled",
+          executionId,
+          correlationId,
+          payload: { documentId: activeTab.id },
+        });
+        return "cancelled";
       } else {
-        setQueryResults([
-          {
-            success: false,
-            columns: [],
-            rows: [],
-            row_count: 0,
-            affected_rows: 0,
-            elapsed_ms: 0,
-            original_sql: sql,
-            executed_sql: "",
-            warnings: [error instanceof Error ? error.message : "Query failed"],
-            destructive: false,
-            needs_confirmation: false,
-          },
-        ]);
+        const failedResult: QueryResponse = {
+          success: false,
+          columns: [],
+          rows: [],
+          row_count: 0,
+          affected_rows: 0,
+          elapsed_ms: 0,
+          original_sql: sql,
+          executed_sql: "",
+          warnings: [error instanceof Error ? error.message : "Query failed"],
+          destructive: false,
+          needs_confirmation: false,
+        };
+        setQueryResults([failedResult]);
+        recordQueryFeedback(
+          activeTab.id,
+          executionId,
+          sql,
+          [failedResult],
+          Date.now() - startTime,
+          correlationId,
+        );
+        return "error";
       }
       void queryClient.invalidateQueries({ queryKey: ["query-history"] });
     } finally {
       if (timerRef.current) clearInterval(timerRef.current);
       abortRef.current = null;
+      currentExecutionIdRef.current = null;
       setRunning(false);
     }
   }
@@ -1567,15 +1820,17 @@ export function WorkspacesPage() {
     const selectedSql = selection.isEmpty()
       ? ""
       : model.getValueInRange(selection);
-    const sql = (selectedSql || editor.getValue()).trim();
+    const rawSql = selectedSql || editor.getValue();
+    const sql = rawSql.trim();
     if (!sql) {
       toast.error("Select a query to attach first");
       return;
     }
-    const startLine = selection.isEmpty() ? 1 : selection.startLineNumber;
-    const endLine = selection.isEmpty()
-      ? model.getLineCount()
-      : selection.endLineNumber;
+    const leading = rawSql.indexOf(sql);
+    const startLine =
+      (selection.isEmpty() ? 1 : selection.startLineNumber) +
+      (rawSql.slice(0, leading).match(/\n/g)?.length ?? 0);
+    const endLine = startLine + (sql.match(/\n/g)?.length ?? 0);
     attachQuery({
       sql,
       tabId: activeTab.id,
@@ -1590,8 +1845,57 @@ export function WorkspacesPage() {
     toast.success("Query attached to Nove");
   }
 
-  /** Replaces the target tab's content with the proposed SQL and saves it. */
-  async function approveProposedRewrite() {
+  function askAboutWorkspaceQuery(prompt: string, sourceSql?: string) {
+    if (!activeTab) return;
+    const sql =
+      sourceSql ??
+      getSqlForExecution(editorContentRef.current || activeTab.content);
+    const safeSql = safeNoveSql(sql);
+    if (!safeSql) {
+      void askFromWorkspace(prompt);
+      return;
+    }
+    const content = activeTab.content;
+    const model = activeSqlEditorInstance?.getModel();
+    const liveSelection = activeSqlEditorInstance?.getSelection();
+    const selection =
+      liveSelection && !liveSelection.isEmpty()
+        ? liveSelection
+        : activeSqlSelection && !activeSqlSelection.isEmpty()
+          ? activeSqlSelection
+          : null;
+    const selectedSql =
+      selection && model ? model.getValueInRange(selection) : "";
+    const selectedLine =
+      selectedSql.trim() === safeSql && selection
+        ? selection.startLineNumber +
+          (selectedSql.slice(0, selectedSql.indexOf(safeSql)).match(/\n/g)
+            ?.length ?? 0)
+        : null;
+    const index = content.indexOf(safeSql);
+    const uniqueLine =
+      index >= 0 && content.indexOf(safeSql, index + 1) === -1
+        ? content.slice(0, index).split("\n").length
+        : null;
+    const startLine = selectedLine ?? uniqueLine;
+    if (startLine === null) {
+      void askFromWorkspace(prompt);
+      return;
+    }
+    const endLine = startLine + safeSql.split("\n").length - 1;
+    void askFromWorkspace(prompt, {
+      sql: safeSql,
+      tabId: activeTab.id,
+      fileName: activeTab.title,
+      database: activeTab.database || null,
+      schema: activeTab.schema || null,
+      role: sessionRole || null,
+      startLine,
+      endLine,
+    });
+  }
+
+  async function approveProposedRewrite(runAfter = false) {
     const rewrite = proposedRewrite;
     if (!rewrite) return;
     const tab = tabs[rewrite.tabId];
@@ -1599,24 +1903,69 @@ export function WorkspacesPage() {
       setProposedRewrite(null);
       return;
     }
-    const nextContent = applyHunks(tab.content, rewrite.hunks);
+    const nextContent = applyCurrentRewrite(tab.content, rewrite);
+    if (nextContent === null) {
+      setProposedRewrite(null);
+      toast.error(
+        "The SQL changed after Nove proposed this rewrite. Request a new fix.",
+      );
+      return;
+    }
     editorContentRef.current = nextContent;
     setTabs((prev) => ({
       ...prev,
       [rewrite.tabId]: { ...prev[rewrite.tabId], content: nextContent },
     }));
     setProposedRewrite(null);
-    const saved = await saveFile(
-      rewrite.tabId,
-      nextContent,
-      tab.database,
-      tab.schema,
-      sessionRole,
-    );
-    if (saved) toast.success("Rewrite applied");
+    let saved = false;
+    try {
+      saved = await saveFile(
+        rewrite.tabId,
+        nextContent,
+        tab.database,
+        tab.schema,
+        sessionRole,
+      );
+    } catch {
+      toast.error(
+        "The rewrite is in the editor, but the file could not be saved.",
+      );
+    }
+    publishWorkspaceEvent({
+      source: "assistant",
+      type: "editor_patch_applied",
+      artifactId: rewrite.sourceMessageId,
+      correlationId: rewrite.sourceMessageId,
+      status: "success",
+      payload: { documentId: rewrite.tabId, persisted: saved },
+    });
+    if (saved)
+      toast.success(
+        runAfter ? "Rewrite applied. Running query…" : "Rewrite applied",
+      );
+    if (runAfter) {
+      const outcome = await runQuery(
+        false,
+        rewrite.sql,
+        rewrite.sourceMessageId,
+      );
+      if (outcome === "success" || outcome === "error") {
+        await askFromWorkspace(
+          "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
+        );
+      }
+    }
   }
 
   function denyProposedRewrite() {
+    if (proposedRewrite)
+      publishWorkspaceEvent({
+        source: "user",
+        type: "editor_patch_rejected",
+        artifactId: proposedRewrite.sourceMessageId,
+        correlationId: proposedRewrite.sourceMessageId,
+        payload: { documentId: proposedRewrite.tabId },
+      });
     setProposedRewrite(null);
   }
 
@@ -1940,6 +2289,17 @@ export function WorkspacesPage() {
                   <Braces className="size-4" />
                   Format
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    askAboutWorkspaceQuery(
+                      "Explain the selected SQL, or the current query if nothing is selected.",
+                    )
+                  }
+                >
+                  Explain SQL
+                </Button>
                 <button
                   type="button"
                   aria-label="Version history"
@@ -2030,6 +2390,9 @@ export function WorkspacesPage() {
                         : null
                     }
                     onApproveRewrite={() => void approveProposedRewrite()}
+                    onApproveAndRunRewrite={() =>
+                      void approveProposedRewrite(true)
+                    }
                     onDenyRewrite={denyProposedRewrite}
                   />
                 </div>
@@ -2182,6 +2545,42 @@ export function WorkspacesPage() {
                   </div>
                   {!resultsCollapsed && resultsTab === "results" && (
                     <div className="flex min-h-0 flex-1 flex-col">
+                      {activeResult &&
+                        !activeResult.success &&
+                        lastExecutionByTab[activeTab.id]?.execution.status ===
+                          "error" && (
+                          <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+                            <span className="mr-auto text-xs text-destructive">
+                              Query failed
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                askAboutWorkspaceQuery(
+                                  "Explain why the last query failed using its execution error.",
+                                  activeResult.original_sql,
+                                )
+                              }
+                            >
+                              Explain
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                askAboutWorkspaceQuery(
+                                  "Fix the last failed query. Propose a SQL rewrite for review; verify it only after I apply and run it.",
+                                  activeResult.original_sql,
+                                )
+                              }
+                            >
+                              Fix with Nove
+                            </Button>
+                          </div>
+                        )}
                       {/* Multi-result sub-tabs */}
                       {queryResults && queryResults.length > 1 && (
                         <div className="flex items-center gap-0.5 border-b border-border px-2 py-1">
@@ -2263,11 +2662,20 @@ export function WorkspacesPage() {
       />
       <ConfirmDialog
         open={renameEntryTarget !== null}
-        onOpenChange={(open) => { if (!open) setRenameEntryTarget(null); }}
+        onOpenChange={(open) => {
+          if (!open) setRenameEntryTarget(null);
+        }}
         title="Rename entry"
-        desc={renameEntryTarget ? `Enter a new name for “${renameEntryTarget.name}”.` : "Enter a new name."}
+        desc={
+          renameEntryTarget
+            ? `Enter a new name for “${renameEntryTarget.name}”.`
+            : "Enter a new name."
+        }
         confirmText="Rename"
-        disabled={!renameEntryName.trim() || renameEntryName.trim() === renameEntryTarget?.name}
+        disabled={
+          !renameEntryName.trim() ||
+          renameEntryName.trim() === renameEntryTarget?.name
+        }
         isLoading={renamingEntry}
         handleConfirm={() => void confirmRenameEntry()}
       >
@@ -2286,9 +2694,15 @@ export function WorkspacesPage() {
       </ConfirmDialog>
       <ConfirmDialog
         open={deleteEntryTarget !== null}
-        onOpenChange={(open) => { if (!open) setDeleteEntryTarget(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeleteEntryTarget(null);
+        }}
         title="Delete entry?"
-        desc={deleteEntryTarget ? `“${deleteEntryTarget.name}” will be deleted.` : "This entry will be deleted."}
+        desc={
+          deleteEntryTarget
+            ? `“${deleteEntryTarget.name}” will be deleted.`
+            : "This entry will be deleted."
+        }
         confirmText="Delete entry"
         destructive
         isLoading={deletingEntry}
@@ -2296,7 +2710,9 @@ export function WorkspacesPage() {
       />
       <ConfirmDialog
         open={pendingDestructiveSql !== null}
-        onOpenChange={(open) => { if (!open) setPendingDestructiveSql(null); }}
+        onOpenChange={(open) => {
+          if (!open) setPendingDestructiveSql(null);
+        }}
         title="Run destructive query?"
         desc="This query may change or delete data. Review the SQL before continuing."
         confirmText="Run query"
@@ -2304,8 +2720,22 @@ export function WorkspacesPage() {
         handleConfirm={() => {
           const pending = pendingDestructiveSql;
           setPendingDestructiveSql(null);
-          if (pending && pending.tabId === activeTabId) void runQuery(true, pending.sql);
-          else toast.error("The active SQL file changed. Run the query again from that file.");
+          if (pending && pending.tabId === activeTabId)
+            void runQuery(true, pending.sql, pending.correlationId).then(
+              (outcome) => {
+                if (
+                  pending.correlationId &&
+                  (outcome === "success" || outcome === "error")
+                )
+                  void askFromWorkspace(
+                    "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
+                  );
+              },
+            );
+          else
+            toast.error(
+              "The active SQL file changed. Run the query again from that file.",
+            );
         }}
       />
     </div>
@@ -2848,11 +3278,14 @@ function QueryResults({ queryResult }: { queryResult: QueryResponse | null }) {
     );
   }
 
-  if (queryResult.warnings?.length && !queryResult.columns.length) {
+  if (!queryResult.success) {
+    const errors = [queryResult.error, ...(queryResult.warnings ?? [])].filter(
+      Boolean,
+    );
     return (
       <div className="p-4 text-sm text-destructive">
-        {queryResult.warnings.map((w, i) => (
-          <div key={i}>{w}</div>
+        {(errors.length ? errors : ["Query failed."]).map((message, i) => (
+          <div key={i}>{message}</div>
         ))}
       </div>
     );
@@ -4372,6 +4805,7 @@ function MonacoSqlEditor({
   onAttachSelection,
   proposedRewrite,
   onApproveRewrite,
+  onApproveAndRunRewrite,
   onDenyRewrite,
 }: {
   value: string;
@@ -4383,6 +4817,7 @@ function MonacoSqlEditor({
   onAttachSelection: () => void;
   proposedRewrite: ProposedRewrite | null;
   onApproveRewrite: () => void;
+  onApproveAndRunRewrite: () => void;
   onDenyRewrite: () => void;
 }) {
   const providerRef = useRef<{ dispose(): void } | null>(null);
@@ -4909,10 +5344,18 @@ function MonacoSqlEditor({
                 variant="outline"
                 onClick={onDenyRewrite}
               >
-                Deny
+                Cancel
               </Button>
-              <Button type="button" size="sm" onClick={onApproveRewrite}>
-                Approve
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onApproveRewrite}
+              >
+                Apply
+              </Button>
+              <Button type="button" size="sm" onClick={onApproveAndRunRewrite}>
+                Apply &amp; Run
               </Button>
             </div>
           </div>

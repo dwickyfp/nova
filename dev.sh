@@ -2,10 +2,11 @@
 #
 # dev.sh — run every Nova process on the local machine with one command.
 #
-# Starts the four host-side processes (nothing that belongs in Docker):
+# Starts the five host-side processes (nothing that belongs in Docker):
 #   backend    FastAPI web + embedded MySQL proxy (port 8000, 4406)
 #   scheduler  nova-scheduler (cron/interval tick -> Redis Streams)
-#   worker     nova-worker (consumes graph runs, executes nodes)
+#   worker     nova-worker (runs task graphs and migration jobs)
+#   agent-worker  Studio Auto coordinator and specialist runs
 #   frontend   Vite dev server (port 5173)
 #
 # Docker infrastructure (StarRocks, Ranger, MinIO, Redis) is NOT managed here.
@@ -337,7 +338,8 @@ run backend "$C_BLUE" "$BACKEND_DIR" \
   "${BACKEND_ENV[@]}" PROXY_PORT="$PROXY_PORT" \
   uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT"
 
-# Standalone task-orchestration processes. They share NOVA_SYSTEM + Redis.
+# Standalone workers. They share NOVA_SYSTEM + Redis; migration jobs are
+# claimed by app.worker, never executed in the FastAPI process.
 run scheduler "$C_CYAN" "$BACKEND_DIR" \
   "${BACKEND_ENV[@]}" \
   uv run python -m app.scheduler
@@ -345,6 +347,10 @@ run scheduler "$C_CYAN" "$BACKEND_DIR" \
 run worker "$C_CYAN" "$BACKEND_DIR" \
   "${BACKEND_ENV[@]}" \
   uv run python -m app.worker
+
+run agent-worker "$C_CYAN" "$BACKEND_DIR" \
+  "${BACKEND_ENV[@]}" \
+  uv run python -m app.agent_worker
 
 if [[ "$RUN_FRONTEND" -eq 1 ]]; then
   # `pnpm dev` in package.json already passes `--port 5173`; use this to

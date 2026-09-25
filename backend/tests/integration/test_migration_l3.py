@@ -30,7 +30,9 @@ import uuid
 import asyncmy
 import pytest
 import pytest_asyncio
+import redis.asyncio as aioredis
 
+from app.modules.migration.job_worker import MigrationJobWorker
 from app.storage.secrets import SecretValue
 from tests.integration._nova_system_ddl import ensure_audit_log
 from tests.integration._stack import (
@@ -68,6 +70,37 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
 pytestmark = pytest.mark.engine
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def migration_worker(app):
+    """Run the worker dispatcher alongside the in-process API for L3 tests."""
+    from app.core.config import settings
+
+    redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    stop = asyncio.Event()
+    task = asyncio.create_task(MigrationJobWorker(redis).run_forever(stop))
+    try:
+        yield
+    finally:
+        stop.set()
+        await task
+        await redis.aclose()
+
+
+async def _await_execute(client, response, *, timeout_seconds: float = 120) -> dict:
+    assert response.status_code == 202, response.text
+    job_id = response.json()["job_id"]
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while asyncio.get_running_loop().time() < deadline:
+        status = await client.get(f"/api/v1/migration/jobs/{job_id}")
+        assert status.status_code == 200, status.text
+        body = status.json()
+        if body["status"] in {"succeeded", "partial", "failed", "interrupted"}:
+            return body
+        await asyncio.sleep(0.25)
+    pytest.fail(f"migration job {job_id} did not settle")
+
 
 #: A suite-local admin so the test does not depend on a seeded credential.
 L3_ADMIN_USER = f"nova_l3_mig_{uuid.uuid4().hex[:8]}"
@@ -524,10 +557,11 @@ class TestExecuteGateOnRealEngine:
                 "acknowledge_omissions": True,
             },
         )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["failed"] == 0, body
-        assert body["succeeded"] >= 3  # database + table + view + MV
+        body = await _await_execute(admin_client, resp)
+        assert body["status"] == "succeeded", body
+        result = body["results"][0]
+        assert result["failed"] == 0, body
+        assert result["succeeded"] >= 3  # database + table + view + MV
 
         try:
             dbs = await _admin_execute("SHOW DATABASES")
@@ -633,8 +667,9 @@ class TestExecuteGateOnRealEngine:
                 "acknowledge_omissions": True,
             },
         )
-        assert resp.status_code == 409, resp.text
-        assert "preflight" in resp.json()["detail"].lower()
+        body = await _await_execute(admin_client, resp)
+        assert body["status"] == "failed", body
+        assert body["results"][0]["error"] == "preflight_failed"
 
     async def test_execute_moves_data_with_verification(
         self, admin_client, source, namespace, monkeypatch, transfer_bucket
@@ -672,11 +707,11 @@ class TestExecuteGateOnRealEngine:
                 "include_data": True,
             },
         )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
+        body = await _await_execute(admin_client, resp)
+        result = body["results"][0]
         try:
-            copy = next((c for c in body["data"] if c["table"] == table), None)
-            assert copy is not None, f"no copy result for {table}: {body['data']}"
+            copy = next((c for c in result["data"] if c["table"] == table), None)
+            assert copy is not None, f"no copy result for {table}: {result['data']}"
             if copy["errors"] and any(
                 "endpoint" in e.lower() or "connect" in e.lower() or "s3" in e.lower()
                 for e in copy["errors"]
@@ -685,7 +720,7 @@ class TestExecuteGateOnRealEngine:
             assert copy["verified"] is True, copy
             assert copy["digest_match"] is True, copy
             assert copy["rows_imported"] == 3
-            assert body["rows_moved"] == 3
+            assert result["rows_moved"] == 3
 
             # Independent check straight on the target.
             target_count = await _admin_execute(f"SELECT COUNT(*) FROM {target}.{table}")
@@ -717,12 +752,12 @@ class TestExecuteGateOnRealEngine:
         }
         try:
             first = await admin_client.post("/api/v1/migration/execute", json=payload)
-            assert first.status_code == 200, first.text
-            assert first.json()["failed"] == 0
+            first_body = await _await_execute(admin_client, first)
+            assert first_body["results"][0]["failed"] == 0
             second = await admin_client.post("/api/v1/migration/execute", json=payload)
-            assert second.status_code == 200, second.text
+            second_body = await _await_execute(admin_client, second)
             # Second run creates nothing new but must not fail.
-            assert second.json()["failed"] == 0
+            assert second_body["results"][0]["failed"] == 0
         finally:
             with contextlib.suppress(Exception):
                 await _admin_execute(f"DROP DATABASE IF EXISTS {target}")

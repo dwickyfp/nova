@@ -123,6 +123,22 @@ export function parseAssistantEvent(
           : null;
       case "ping":
         return { type: "ping" };
+      case "client_action": {
+        if (
+          typeof record.capability !== "string" ||
+          typeof record.correlation_id !== "string" ||
+          !record.args ||
+          typeof record.args !== "object" ||
+          Array.isArray(record.args)
+        ) return null;
+        return {
+          type: "client_action",
+          capability: record.capability,
+          args: record.args as Record<string, unknown>,
+          correlation_id: record.correlation_id,
+          surface_id: typeof record.surface_id === "string" ? record.surface_id : undefined,
+        };
+      }
       default:
         return null;
     }

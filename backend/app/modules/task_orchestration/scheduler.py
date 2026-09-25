@@ -34,6 +34,13 @@ from app.modules.task_orchestration.schedule import (
     resolve_timezone,
 )
 from app.modules.task_orchestration.transport import GraphRunTransport
+from app.observability.metrics import (
+    SCHEDULER_DUE_GRAPHS,
+    SCHEDULER_ENQUEUE_FAILURES,
+    SCHEDULER_ENQUEUED_GRAPHS,
+    SCHEDULER_INVALID_SCHEDULES,
+    SCHEDULER_OVERLAP_SKIPS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +111,7 @@ class SchedulerPlan:
     #: an active run (``skip``). Reported separately so the two kinds of skip
     #: are never conflated in logs or tests.
     overlap_skipped: int = 0
+    enqueue_failed: int = 0
 
 
 def naive_engine_time_to_utc(value: datetime, engine_timezone: str) -> datetime:
@@ -352,6 +360,7 @@ class SchedulerTick:
         tasks = await self._repository.list_tasks()
         edges = await self._repository.list_all_edges()
         plan = plan_tick(tasks, edges, moment, engine_timezone)
+        SCHEDULER_INVALID_SCHEDULES.inc(plan.skipped)
         existing_ids: set[str] | None = None
         if plan.due:
             batch_lookup = getattr(self._repository, "existing_graph_run_ids", None)
@@ -371,12 +380,15 @@ class SchedulerTick:
                     continue
                 await self._enqueue(due, plan, skip_existing_lookup=existing_ids is not None)
             except Exception:
+                plan.enqueue_failed += 1
+                SCHEDULER_ENQUEUE_FAILURES.inc()
                 logger.exception(
                     "failed to enqueue due graph %s (root %s); continuing",
                     due.graph_id,
                     due.root_task or "-",
                 )
 
+        SCHEDULER_OVERLAP_SKIPS.inc(plan.overlap_skipped)
         return plan
 
     async def _enqueue(
@@ -434,4 +446,6 @@ class SchedulerTick:
             # A concurrent tick created it between our read and our write. It
             # owns the publish; we must not double-publish.
             return
+        SCHEDULER_DUE_GRAPHS.inc()
         await self._transport.publish_graph_run(created, due.task_ids)
+        SCHEDULER_ENQUEUED_GRAPHS.inc()

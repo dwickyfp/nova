@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
@@ -14,6 +15,14 @@ import { useAuthStore } from "@/stores/auth-store";
 import type { WorkspaceTreeResponse } from "@/features/workspaces/types";
 import { createThread, listThreads } from "./thread-client";
 import type { TurnContext } from "./stream-client";
+import type { NoveAppContext, NoveEventInput } from "./app-context";
+import { NoveSurfaceContext } from "./nove-surface-hook";
+import {
+  NoveApplicationEvents,
+  NoveSurfaceRegistry,
+  type NoveSurfaceDefinition,
+  type NoveSuggestedAction,
+} from "./surface-registry";
 import { useAssistantConversation } from "./use-assistant-conversation";
 import type { ApprovalMode, UiAction } from "./use-assistant-turn";
 import type { AssistantPanelProps } from "./assistant-panel";
@@ -66,6 +75,10 @@ type AssistantContextType = {
   collapsedToPersist: () => boolean;
   /** Registers the active surface binding; call with null to clear it. */
   setBinding: (binding: AssistantBinding | null) => void;
+  registerNoveSurface: (get: () => NoveSurfaceDefinition) => () => void;
+  refreshNoveSurface: () => void;
+  publishApplicationEvent: (input: NoveEventInput) => void;
+  askNove: (prompt: string, attachment?: AttachContext) => Promise<void>;
   conversation: ReturnType<typeof useAssistantConversation>;
   /**
    * Sends a message with the pending attachments, then clears them. This is
@@ -120,6 +133,8 @@ type AssistantContextType = {
   activeContext: TurnContext;
   /** Label the header shows, e.g. the open worksheet's name; "Nove" when none. */
   headerTitle?: string;
+  suggestedActions: readonly NoveSuggestedAction[];
+  clientActionStatus: string | null;
 };
 
 const AssistantContext = createContext<AssistantContextType | null>(null);
@@ -134,10 +149,18 @@ const EMPTY_CONTEXT: TurnContext = { database: null, schema: null, role: null };
  */
 export const GLOBAL_ASSISTANT_BINDING_KEY = "__global__";
 
-export function AssistantProvider({ children }: { children: React.ReactNode }) {
+export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
+  children: React.ReactNode;
+  loadWorkspaceDefaults?: boolean;
+}) {
   const queryClient = useQueryClient();
   const [open, setOpenState] = useState(false);
   const [binding, setBindingState] = useState<AssistantBinding | null>(null);
+  const [surfaceRegistry] = useState(() => new NoveSurfaceRegistry());
+  const [applicationEvents] = useState(() => new NoveApplicationEvents());
+  const [clientActionStatus, setClientActionStatus] = useState<string | null>(null);
+  const surfaceVersion = useSyncExternalStore(surfaceRegistry.subscribe, surfaceRegistry.getSnapshot, surfaceRegistry.getSnapshot);
+  const eventVersion = useSyncExternalStore(applicationEvents.subscribe, applicationEvents.getSnapshot, applicationEvents.getSnapshot);
   const [selectedModel, setSelectedModel] = useState<SelectedModel>(null);
   const [pendingNewChatMessage, setPendingNewChatMessage] = useState<
     string | null
@@ -161,6 +184,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
     queryKey: ["workspace-tree"],
     queryFn: () => api.get<WorkspaceTreeResponse>("/workspaces/tree"),
+    enabled: loadWorkspaceDefaults,
   });
 
   const tree = workspaceTreeQuery.data;
@@ -190,6 +214,63 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   );
 
   const activeBinding = binding ?? defaultBinding;
+  const getAppContext = useCallback(
+    () => surfaceRegistry.buildContext(activeBinding.context, applicationEvents.getRecent()),
+    [activeBinding.context, applicationEvents, surfaceRegistry],
+  );
+  const activeAppContext = useMemo<NoveAppContext>(
+    () => getAppContext(),
+    // Versions notify the panel when another page or application event changes.
+    [getAppContext, surfaceVersion, eventVersion],
+  );
+  useEffect(() => setClientActionStatus(null), [activeAppContext.surface.id, activeAppContext.surface.route]);
+  const activeSurface = surfaceRegistry.getActive();
+  const onClientAction = useCallback(async (action: { capability: string; args: Record<string, unknown>; correlation_id: string; surface_id?: string }, threadId: string, turnContext?: NoveAppContext) => {
+    const surfaceId = action.surface_id ?? surfaceRegistry.getActive()?.id;
+    setClientActionStatus("Applying the page action…");
+    let outcome: "success" | "failure" = "success";
+    let reason: string | undefined;
+    try {
+      const current = getAppContext();
+      if (turnContext && (
+        current.surface.id !== turnContext.surface.id ||
+        current.surface.route !== turnContext.surface.route ||
+        current.entity?.id !== turnContext.entity?.id
+      )) throw new Error("The page context changed before the action arrived.");
+      await surfaceRegistry.executeAction({
+        capability: action.capability,
+        args: action.args,
+        surfaceId,
+      });
+    } catch (error) {
+      outcome = "failure";
+      reason = error instanceof Error ? error.message : "The page action failed.";
+    }
+    const event = applicationEvents.publish({
+      source: "assistant",
+      type: outcome === "success" ? "ui_action_completed" : "ui_action_failed",
+      surfaceId,
+      correlationId: action.correlation_id,
+      status: outcome,
+      payload: { capability: action.capability, ...(reason ? { reason } : {}) },
+    });
+    try {
+      const acknowledgment = await api.post<{ recorded: boolean; verification: "verified" | "failed" | "unmatched" }>(
+        `/assistant/threads/${encodeURIComponent(threadId)}/application-events`,
+        event,
+      );
+      setClientActionStatus(outcome === "failure"
+        ? reason ?? "The page action failed."
+        : acknowledgment.verification === "verified"
+          ? "Page action applied."
+          : "Page action applied; Nove could not verify it yet.");
+    } catch {
+      // The bounded turn context will carry this evidence on the next request.
+      setClientActionStatus(outcome === "failure"
+        ? reason ?? "The page action failed."
+        : "Page action applied; Nove could not record it yet.");
+    }
+  }, [applicationEvents, getAppContext, surfaceRegistry]);
   const onUiActionCompleted = useCallback(
     (action: UiAction) => {
       if (action.method !== "GET") void queryClient.invalidateQueries();
@@ -205,14 +286,17 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ...activeBinding.context,
       model: selectedModel?.model ?? null,
-      providerId: selectedModel?.providerId ?? null,
-    }),
-    [activeBinding.context, selectedModel],
+       providerId: selectedModel?.providerId ?? null,
+       appContext: activeAppContext,
+     }),
+    [activeBinding.context, activeAppContext, selectedModel],
   );
 
   const conversation = useAssistantConversation({
     ensureThread: activeBinding.ensureThread,
     context,
+    getAppContext,
+    onClientAction,
     bindingKey: activeBinding.key,
     // The global conversation survives navigation; a workspace file does not,
     // so leaving it still revokes its grant and starts the next file fresh.
@@ -247,6 +331,22 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     return attachment;
   }, []);
 
+  const askNove = useCallback((prompt: string, attachContext?: AttachContext) => {
+    setOpenState(true);
+    const attachment: AttachedQuery | undefined = attachContext ? {
+      ...attachContext,
+      id: nextAttachmentId(),
+      createdAt: Date.now(),
+    } : undefined;
+    return conversation.sendMessage(prompt, attachment ? [attachment] : []);
+  }, [conversation]);
+
+  const registerNoveSurface = useCallback((get: () => NoveSurfaceDefinition) => surfaceRegistry.register(get), [surfaceRegistry]);
+  const refreshNoveSurface = useCallback(() => surfaceRegistry.refresh(), [surfaceRegistry]);
+  const publishApplicationEvent = useCallback((input: NoveEventInput) => {
+    applicationEvents.publish(input);
+  }, [applicationEvents]);
+
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
   }, []);
@@ -279,6 +379,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     [conversation],
   );
   const newChat = useCallback(() => {
+    setClientActionStatus(null);
     setAttachments([]);
     setProposedRewriteState(null);
     setPendingNewChatMessage(null);
@@ -347,6 +448,10 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       toggle,
       collapsedToPersist,
       setBinding,
+      registerNoveSurface,
+      refreshNoveSurface,
+      publishApplicationEvent,
+      askNove,
       conversation,
       sendMessage,
       attachments,
@@ -370,6 +475,8 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       setOffsetY,
       activeContext: context,
       headerTitle: activeBinding.title,
+      suggestedActions: activeSurface?.suggestedActions ?? [],
+      clientActionStatus,
     }),
     [
       open,
@@ -377,6 +484,10 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       toggle,
       collapsedToPersist,
       setBinding,
+      registerNoveSurface,
+      refreshNoveSurface,
+      publishApplicationEvent,
+      askNove,
       conversation,
       sendMessage,
       attachments,
@@ -395,10 +506,20 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       setOffsetY,
       context,
       activeBinding.title,
+      activeSurface?.suggestedActions,
+      clientActionStatus,
     ],
   );
 
-  return <AssistantContext value={value}>{children}</AssistantContext>;
+  const surfaceServices = useMemo(() => ({
+    register: registerNoveSurface,
+    refresh: refreshNoveSurface,
+    publish: publishApplicationEvent,
+    ask: askNove,
+  }), [registerNoveSurface, refreshNoveSurface, publishApplicationEvent, askNove]);
+  return <AssistantContext value={value}>
+    <NoveSurfaceContext value={surfaceServices}>{children}</NoveSurfaceContext>
+  </AssistantContext>;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -430,6 +551,10 @@ export function useAssistantPanelProps(): AssistantPanelProps {
     setOffsetY,
     activeContext,
     headerTitle,
+    suggestedActions,
+    clientActionStatus,
+    publishApplicationEvent,
+    askNove,
   } = useAssistant();
   // The greeting addresses the signed-in user by name; until `/auth/me` lands
   // the store is empty and the empty state falls back to a neutral salutation.
@@ -475,6 +600,10 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       offsetY,
       onOffsetYChange: setOffsetY,
       activeContext,
+      suggestedActions,
+      clientActionStatus,
+      onExecutionEvent: publishApplicationEvent,
+      onFixWithNove: (prompt: string) => { void askNove(prompt); },
     }),
     [
       open,
@@ -493,6 +622,10 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       offsetY,
       setOffsetY,
       activeContext,
+      suggestedActions,
+      clientActionStatus,
+      publishApplicationEvent,
+      askNove,
       headerTitle,
       userName,
       recentThreads,
