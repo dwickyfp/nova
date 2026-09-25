@@ -69,12 +69,55 @@ services:
       SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
       FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}
       NOVA_CONFIG_PATH: /opt/nova/config/nova.yaml
+      MIGRATION_EXECUTE_ENABLED: ${MIGRATION_EXECUTE_ENABLED:-false}
       PROXY_ENABLED: "true"
     ports:
       - "127.0.0.1:${NOVA_API_PORT:-8000}:8000"
       - "${NOVA_MYSQL_PORT:-4406}:4406"
     volumes:
       - ./nova.yaml:/opt/nova/config/nova.yaml:ro
+    networks:
+      - nova
+
+  nova-worker:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    container_name: nova-worker
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      starrocks-init:
+        condition: service_completed_successfully
+      ranger-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      STARROCKS_HOST: starrocks-fe
+      STARROCKS_FE_MYSQL_PORT: 9030
+      REDIS_URL: redis://:${REDIS_PASSWORD:-novaredis}@redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ACCESS_KEY:-nova}
+      S3_SECRET_KEY: ${MINIO_SECRET_KEY:-novasecret}
+      RANGER_ENABLED: "true"
+      RANGER_ADMIN_URL: http://ranger-admin:6080
+      RANGER_SERVICE_NAME: ${RANGER_SERVICE_NAME:-nova_starrocks}
+      RANGER_USERNAME: admin
+      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_TLS_VERIFY: "false"
+      SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
+      FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}
+      NOVA_CONFIG_PATH: /opt/nova/config/nova.yaml
+      MIGRATION_EXECUTE_ENABLED: ${MIGRATION_EXECUTE_ENABLED:-false}
+      WORKER_IMPERSONATION_USER: ${WORKER_IMPERSONATION_USER:-}
+      WORKER_IMPERSONATION_PASSWORD: ${WORKER_IMPERSONATION_PASSWORD:-}
+      WORKER_IMPERSONATION_ROLE: ${WORKER_IMPERSONATION_ROLE:-}
+    volumes:
+      - ./nova.yaml:/opt/nova/config/nova.yaml:ro
+    restart: unless-stopped
     networks:
       - nova
 

@@ -1,0 +1,3 @@
+- targets: ["nova-worker:9102"]
+  labels:
+    service: nova-worker

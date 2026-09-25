@@ -4,6 +4,7 @@ import { ActivityTrace } from "./activity-trace";
 import { Markdown } from "./markdown";
 import type { AttachedQuery } from "./query-attach";
 import type { TurnContext } from "./stream-client";
+import type { NoveEventInput } from "./app-context";
 import { ToolCallCard, type ToolCallCardProps } from "./tool-call-card";
 import type { TranscriptMessage } from "./use-assistant-transcript";
 
@@ -16,6 +17,8 @@ export type MessageListProps = {
   statusMessage?: string | null;
   /** Context a SQL code card's Run button executes against. */
   activeContext?: TurnContext;
+  onExecutionEvent?: (event: NoveEventInput) => void;
+  onFixWithNove?: (prompt: string) => void;
 };
 
 export function MessageList({
@@ -24,6 +27,8 @@ export function MessageList({
   decidingToolCallId,
   statusMessage,
   activeContext,
+  onExecutionEvent,
+  onFixWithNove,
 }: MessageListProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -37,6 +42,8 @@ export function MessageList({
           onDecide={onDecide}
           busy={decidingToolCallId === message.tool_call_id}
           runContext={activeContext}
+          onExecutionEvent={onExecutionEvent}
+          onFixWithNove={onFixWithNove}
         />
       ))}
     </div>
@@ -88,11 +95,15 @@ function MessageBubble({
   onDecide,
   busy,
   runContext,
+  onExecutionEvent,
+  onFixWithNove,
 }: {
   message: TranscriptMessage;
   onDecide?: ToolCallCardProps["onDecide"];
   busy?: boolean;
   runContext?: TurnContext;
+  onExecutionEvent?: (event: NoveEventInput) => void;
+  onFixWithNove?: (prompt: string) => void;
 }) {
   if (message.role === "activity") {
     return <ActivityTrace message={message} />;
@@ -145,7 +156,7 @@ function MessageBubble({
         {isUser ? (
           text
         ) : (
-          <Markdown runContext={runContext}>{message.content}</Markdown>
+          <Markdown runContext={runContext} onExecutionEvent={onExecutionEvent} onFixWithNove={onFixWithNove}>{message.content}</Markdown>
         )}
         {message.turn_state === "streaming" && !isUser ? (
           <span className="mt-1 inline-block h-3 w-1.5 animate-pulse bg-foreground/60 align-middle" />

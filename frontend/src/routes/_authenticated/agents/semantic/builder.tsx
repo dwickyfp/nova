@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { SemanticBuilderPage } from '@/features/agents/semantic-builder-page'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/agents/semantic/builder')({
-  component: SemanticBuilderPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/semantic-views/builder' })
+  },
 })

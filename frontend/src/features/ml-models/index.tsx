@@ -17,7 +17,7 @@ export function MLModels() {
         <Search />
       </Header>
 
-      <Main>
+      <Main scroll>
         <div className='mb-2'>
           <h1 className='text-2xl leading-8 font-normal'>
             ML Models

@@ -201,11 +201,12 @@ def test_seed_prompt_bounds_the_assistant_to_nova_scope():
     """Off-topic questions (e.g. "siapa jokowi?") must be declined, not answered.
 
     The boundary is a standing instruction, not advisory: the seed must scope
-    the assistant to the Nova warehouse, name the out-of-scope classes, and say
+    the assistant to the Nova platform, name the out-of-scope classes, and say
     the boundary is not bypassable.
     """
     prompt = _DEFAULT_SYSTEM_PROMPT
-    assert "Nova data-warehouse work only" in prompt
+    assert "Nova data and AI platform" in prompt
+    assert "Nova Studio agents are user-created domain agents" in prompt
     assert "not bypassable" in prompt
     # The classic jailbreak framings are named so the model recognises them.
     assert "pretend" in prompt
@@ -237,6 +238,8 @@ def test_seed_prompt_carries_the_writing_style_rules():
     # Empty hype vocabulary is named so the model can recognise and avoid it.
     assert "seamless" in prompt
     assert "empower" in prompt
+    assert "one to three short sentences" in prompt
+    assert "Do not dump a feature catalog" in prompt
     # A fabricated result is a defect, not just a style miss.
     assert "never invent a number" in prompt
 

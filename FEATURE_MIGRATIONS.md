@@ -5,10 +5,8 @@
 > report of what will move cleanly, what will move lossily, and what cannot move
 > at all.
 
-This document is the working checklist for the Migration feature. It is
-deliberately blunt about what is **done** versus what is **not**: the feature is
-currently an *assessment + dry-run* tool, **not** a migration tool. Read the
-"Current status" section before assuming anything moves.
+This document tracks the supported migration flow and its limits. Read the
+"Current status" section before starting a cutover.
 
 Related docs: `docs/28-migration-connector.md` (module spec),
 `docs/21-backup-recovery.md` (#7 gate), `README.md` Phase 11 + Decision Log.
@@ -17,14 +15,11 @@ Related docs: `docs/28-migration-connector.md` (module spec),
 
 ## 1. Current status (one paragraph)
 
-An operator can register a **source** StarRocks cluster, enumerate its objects
-(tables, views, materialized views, SQL functions, tasks, pipes, policies),
-run a **read-only dry-run** that classifies each object as
-`migratable` / `lossy` / `skipped`, build a **dependency-ordered apply plan**, and
-— when the operator opens the gate — **execute** that plan against the target
-database, optionally **copying table data** through a shared stage. Database,
-schema, and data migration are now end-to-end; execute is gated on issue **#7
-(backup/restore)** and off by default.
+An operator connects to a **source** StarRocks cluster, chooses the source
+databases, reviews a dry-run and ordered plan, and can execute the migration
+after opening the backup gate. Schema application and optional table-data copy
+run in `nova-worker`; the API accepts the request and reports job progress.
+Execution remains gated on issue **#7 (backup/restore)** and is off by default.
 
 | Dimension | State |
 |---|---|
@@ -40,6 +35,7 @@ schema, and data migration are now end-to-end; execute is gated on issue **#7
 | Acknowledgement + target confirmation gates | ✅ Done |
 | Data movement (export → stage → import → verify) | ✅ Done |
 | Database-level migration (schema + data) | ✅ Done |
+| Worker execution and per-database job status | ✅ Done |
 | **Preflight (privilege + shared-storage check)** | ✅ Done |
 | **Task reconstruction (from `information_schema.tasks`)** | ✅ Done |
 | RBAC / roles / grants migration | ❌ Out of scope (by design) |
@@ -50,15 +46,55 @@ Legend: ✅ done · 🟡 partial · ❌ not done.
 
 ## 2. What "easy migration" requires
 
-The user-facing goal decomposes into six capabilities. Only the first is
-implemented.
+The user-facing goal decomposes into six capabilities:
 
 1. **Discover** — connect to the source and know what exists. ✅
 2. **Assess** — tell the operator what will move and what will not. ✅
 3. **Reconstruct** — obtain faithful, replayable DDL for every object. 🟡
-4. **Apply** — create the objects on the Nova target. ❌
-5. **Move data** — copy rows for tables. ❌
-6. **Verify** — prove schema and data match after the move. 🟡 (test harness only)
+4. **Apply** — create the objects on the Nova target. ✅ (gated)
+5. **Move data** — copy rows for tables. ✅ (requires shared storage)
+6. **Verify** — compare row counts and numeric digests after the move. 🟡
+
+### Asynchronous batch flow
+
+1. Enter the source host, MySQL port, user, and an optional configured secret
+   reference.
+   Nova does not accept a password value in the form or store one in
+   `NOVA_SYSTEM`.
+2. Use **Test connection** before saving the source. The worker authenticates
+   to the unsaved address and runs `SELECT 1`; the test does not register the
+   source. Saving is enabled only for the tested form values.
+3. Save the source and list the databases visible to that source user. Select one or
+    more databases to migrate. Review each database's dry-run, blocked objects,
+    plan, and preflight before execution.
+4. Submit `POST /api/v1/migration/execute-batch` with `databases: string[]`
+   (1–50 unique names).
+   The API responds `202` with a job identifier; `nova-worker` claims the job,
+   applies each database, and persists per-database results. Poll
+   `GET /api/v1/migration/jobs/{id}` to see completion, failures, and rows
+   verified.
+
+The backend does not apply DDL or copy rows in the HTTP request. Start
+`python -m app.worker` alongside the backend, or enable the Compose `app`
+profile. The backend and worker must share StarRocks, Redis, `SECRET_KEY`,
+`FERNET_KEY`, and `nova.yaml`. For a password-protected source, configure the same secret
+provider and access on the worker so it can resolve the source's `secret_ref`.
+The job can only execute while the originating user session
+is valid, and the worker rechecks that user's active role and StarRocks grants.
+
+Current limits: the target is Nova's local StarRocks cluster; data copy requires
+a stage reachable by both source and target; pipes, masking policies, and row
+access policies remain blocked or skipped; roles and grants are not migrated.
+Whole-database dry-run, plan, and execute omit global functions by default,
+because they are cluster-wide objects. Enumeration still lists them; select a
+global function explicitly to include it in a single-database operation.
+There is no continuous sync or source-to-source target selection. Count and
+digest verification are useful checks, not a byte-for-byte proof of every data
+type. The `starrocks-cluster-sync` adapter only reports binary availability;
+Nova's execution path uses its own SQL planner and data mover.
+Jobs depend on a live originating session. If the session expires, the user
+logs out, or the active security context changes before the worker claims the
+job, the worker must refuse execution and report the failure.
 
 ---
 
@@ -79,7 +115,8 @@ implemented.
       every DDL passes through it before reaching a response.
 - [x] `SanitizingJSONResponse` on every endpoint.
 - [x] Engine adapter is **status-only** — no `subprocess`, no shell-out.
-- [x] No execute endpoint exists (negative tests enforce it).
+- [x] Execute remains behind `MIGRATION_EXECUTE_ENABLED` and explicit operator
+      acknowledgement.
 
 ### 3.2 Object enumeration
 
@@ -124,7 +161,7 @@ implemented.
       and reports objects with no usable definition as **blocked**, never
       silently dropped.
 - [x] **`POST /api/v1/migration/plan`** — read-only; returns the ordered
-      statements plus the blocked list, with `execute_available: false`.
+      statements plus the blocked list and the current execute gate state.
 - [x] **Target replication probe** — reads the local engine's alive-backend count
       (`repository.target_replication_num`).
 
@@ -233,20 +270,20 @@ implemented.
       missing privilege, and blocks execute with 409.
 - [x] **Task reconstruction unit tests** — DDL shape, properties, and the
       missing-definition refusal.
-- [x] **Data-fidelity harness** — row-count + order-independent digest checks,
-      hand-run today as the acceptance criteria for the future mover.
+- [x] **Data-fidelity harness** — row-count + order-independent digest checks
+      for the current data mover.
 - [x] Credential non-leak assertions (response, audit, registry).
-- [x] No-execute-path negative tests.
+- [x] Execute-gate refusal tests.
 
 ### 3.11 Frontend
 
-- [x] Migration page: engine status, source registration, enumerate, dry-run
-      table, skipped-object warning banner.
+- [x] Migration page: source connection form, database discovery and selection,
+      per-database review, acknowledgement, and job progress.
 - [ ] Source deletion / edit UI.
-- [ ] Database picker (enumerate needs a typed DB name today).
+- [x] Database picker with multiple selection.
 - [ ] Object-selection UI (dry-run currently assesses everything).
 - [ ] DDL preview pane per object.
-- [ ] Progress + acknowledgement UI for a future execute.
+- [x] Progress and acknowledgement UI for batch execute.
 
 ---
 
@@ -280,11 +317,9 @@ what exists.
 - [ ] **Backup gate wiring beyond the flag** — the flag is the operator's
       acknowledgement; wiring it to an actual snapshot inventory (#7) is pending
       #7 landing.
-- [ ] **Privilege preflight** — execute runs as the caller and surfaces engine
-      RBAC denials per object (correct, but late). A preflight that checks the
-      caller has `CREATE DATABASE`/`CREATE TABLE`/… on the target would fail
-      fast. Note `GRANT ALL ON *.*` does **not** include `CREATE DATABASE`; that
-      needs `GRANT CREATE DATABASE ON CATALOG default_catalog`.
+- [x] **Privilege preflight** — checks required target grants before executing;
+      `GRANT ALL ON *.*` does not include `CREATE DATABASE`, which needs a
+      catalog-scope grant.
 
 ### 11-C — Data movement
 
@@ -305,9 +340,8 @@ what exists.
 
 ### DDL coverage gaps
 
-- [ ] **Task DDL reconstruction** — currently `lossy` with no detail; the body
-      and schedule are reconstructable from `information_schema.tasks` but the
-      code does not build the `CREATE TASK` statement.
+- [x] **Task DDL reconstruction** — builds `CREATE TASK` from the schedule and
+      body in `information_schema.tasks` when both are available; still lossy.
 - [ ] **Pipe DDL reconstruction** — same; the `SELECT` body is unavailable, so
       this may stay lossy.
 - [ ] **Materialized view dependencies** — MV DDL references base tables; apply
@@ -326,7 +360,8 @@ what exists.
 ### Multi-source / UX
 
 - [ ] **Source delete + edit** endpoints and UI.
-- [ ] **List databases on a source** (`list_databases` exists but is unused).
+- [x] **List databases on a source** through the worker and present multiple
+      selection in the UI.
 - [ ] **Cross-source migration** (source A → target B where target is another
       registered source, not just the local engine).
 - [ ] **Migration history** — a first-class record of what was migrated, when,
@@ -434,10 +469,25 @@ cd backend && uv run pytest tests/unit/test_migration_connector.py \
 
 # L3 against a real engine on port 29030
 cd backend && NOVA_ORCH_SR_PORT=29030 uv run pytest tests/integration/test_migration_l3.py -q
+
+# Opt-in: source cluster 29030, separate target test stack on 39030
+cd backend && NOVA_MIGRATION_SOURCE_PORT=29030 \
+  NOVA_TEST_FE_MYSQL_PORT=39030 NOVA_TEST_FE_HTTP_PORT=38030 \
+  NOVA_TEST_FE_ARROW_PORT=39408 NOVA_TEST_MINIO_PORT=39000 \
+  NOVA_TEST_REDIS_PORT=36379 \
+  uv run pytest tests/integration/test_migration_worker_cross_cluster.py -q
 ```
 
 The L3 schema round-trip tests are the acceptance gate for 11-B: a `migratable`
 verdict that cannot be replayed to a target is a false positive in the report.
+The existing `test_migration_l3.py` registers the test engine as both source
+and target. `test_migration_worker_cross_cluster.py` starts a separate
+`app.worker` process, submits one two-database batch, and verifies schema and
+copied rows on a distinct target cluster. It skips unless
+`NOVA_MIGRATION_SOURCE_PORT` is set, so a skipped run is not evidence of a
+working cross-cluster transfer.
+Report skipped tests explicitly, especially the data-copy case that skips when
+the test object store cannot be reached.
 The data-fidelity tests are the acceptance gate for 11-C.
 
 > **Test-stack note:** if the shared stack's BE is not running

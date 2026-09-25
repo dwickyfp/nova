@@ -54,6 +54,8 @@ export type AssistantTurnOptions = {
   ensureThread: () => Promise<string | null>;
   /** Active worksheet context for this turn. */
   context?: TurnContext;
+  getAppContext?: () => TurnContext["appContext"];
+  onClientAction?: (action: Extract<AssistantEvent, { type: "client_action" }>, threadId: string, turnContext?: TurnContext["appContext"]) => Promise<void>;
   onError?: (message: string) => void;
   /**
    * Called when a completed turn ends with a single attached query and the
@@ -90,6 +92,8 @@ export type AssistantTurnSnapshot = {
 export function useAssistantTurn({
   ensureThread,
   context,
+  getAppContext,
+  onClientAction,
   onError,
   onProposedRewrite,
   canApproveUiAction,
@@ -132,6 +136,7 @@ export function useAssistantTurn({
       // proposed SQL rewrite without reading back through transcript state.
       let answer = "";
       let answerMessageId = "";
+      const turnAppContext = getAppContext?.() ?? context?.appContext;
       try {
         await streamAssistantTurn(thread, prompt, {
           signal: controller.signal,
@@ -139,9 +144,15 @@ export function useAssistantTurn({
           schema: context?.schema,
           role: context?.role,
           model: context?.model,
-          providerId: context?.providerId,
-          onEvent: (event) => {
-            transcript.applyEvent(event);
+           providerId: context?.providerId,
+           appContext: turnAppContext,
+           onEvent: (event) => {
+             transcript.applyEvent(event);
+             if (event.type === "client_action") {
+               void onClientAction?.(event, thread, turnAppContext).catch((error) => {
+                 onError?.(error instanceof Error ? error.message : "The page action failed.");
+               });
+             }
             if (event.type === "tool_call") {
               const action = uiActionFromPreview(
                 event.payload.tool_name,
@@ -204,6 +215,8 @@ export function useAssistantTurn({
       context?.schema,
       ensureThread,
       onError,
+      getAppContext,
+      onClientAction,
       onProposedRewrite,
       onUiActionCompleted,
       streaming,

@@ -165,6 +165,58 @@ describe("transcriptReducer", () => {
     expect(state[0].activity_steps).toHaveLength(2);
   });
 
+  it("places each turn's loading activity after its own user message", () => {
+    const firstUser = transcriptReducer([], {
+      type: "user_message",
+      content: "What can Nove do?",
+    });
+    const firstTurn = reduce(
+      firstUser,
+      {
+        type: "plan",
+        steps: [{ id: "first", text: "First plan", status: "pending" }],
+      },
+      {
+        type: "thinking",
+        phase: "plan",
+        text: "First work",
+        status: "running",
+      },
+      { type: "text_delta", text: "First answer" },
+      { type: "done", message_id: "answer-1", finish_reason: "stop" },
+    );
+    const secondUser = transcriptReducer(firstTurn, {
+      type: "user_message",
+      content: "Create a task example",
+    });
+    const secondTurn = reduce(
+      secondUser,
+      {
+        type: "plan",
+        steps: [{ id: "second", text: "Second plan", status: "pending" }],
+      },
+      {
+        type: "thinking",
+        phase: "plan",
+        text: "Second work",
+        status: "running",
+      },
+    );
+
+    expect(secondTurn.map((message) => message.role)).toEqual([
+      "user",
+      "activity",
+      "assistant",
+      "user",
+      "activity",
+    ]);
+    expect(secondTurn[1].activity_plan?.[0].text).toBe("First plan");
+    expect(secondTurn[1].activity_plan?.[0].status).toBe("done");
+    expect(secondTurn[4].activity_plan?.[0].text).toBe("Second plan");
+    expect(secondTurn[4].activity_steps?.[0].text).toBe("Second work");
+    expect(secondTurn[4].activity_steps?.[0].status).toBe("running");
+  });
+
   it("settles any running activity step when the turn ends", () => {
     const state = reduce(
       [],
@@ -176,4 +228,28 @@ describe("transcriptReducer", () => {
       true,
     );
   });
+
+  it.each(["cancelled", "error"] as const)(
+    "stops the loading mark when a turn ends with %s",
+    (ending) => {
+      const running = reduce(
+        transcriptReducer([], { type: "user_message", content: "Check this" }),
+        {
+          type: "plan",
+          steps: [{ id: "check", text: "Checking", status: "pending" }],
+        },
+        { type: "thinking", phase: "plan", text: "Working", status: "running" },
+      );
+      const state =
+        ending === "cancelled"
+          ? transcriptReducer(running, { type: "cancelled" })
+          : reduce(running, {
+              type: "error",
+              code: "transport",
+              message: "Connection failed",
+            });
+      expect(state[1].activity_plan?.[0].status).toBe("done");
+      expect(state[1].activity_steps?.[0].status).toBe("done");
+    },
+  );
 });

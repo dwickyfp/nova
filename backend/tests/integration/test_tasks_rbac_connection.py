@@ -78,6 +78,17 @@ async def _ensure_audit_log() -> None:
     await ensure_audit_log(SR_HOST, SR_PORT, SR_USER, SR_PASSWORD)
 
 
+async def _uses_ranger_access_control() -> bool:
+    conn = await asyncmy.connect(host=SR_HOST, port=SR_PORT, user=SR_USER, password=SR_PASSWORD)
+    try:
+        async with conn.cursor() as cur:
+            await cur.execute("ADMIN SHOW FRONTEND CONFIG LIKE 'access_control'")
+            row = await cur.fetchone()
+            return bool(row and str(row[2]).lower() == "ranger")
+    finally:
+        conn.close()
+
+
 @pytest_asyncio.fixture
 async def rbac_users(request):
     """Create a privileged user (with a grant) and a low-privilege user.
@@ -86,9 +97,13 @@ async def rbac_users(request):
     role_name)``. The privileged user owns a task in a database the low-privilege
     user has no grant on — exactly the leak ``GET /tasks`` used to expose.
     """
+    if _USE_SHARED_STACK:
+        request.getfixturevalue("docker_services")
     require_shared_stack(request, enabled=_USE_SHARED_STACK)
     if not await _reachable():
         pytest.skip("StarRocks not reachable")
+    if await _uses_ranger_access_control():
+        pytest.skip("SQL-grant RBAC test requires native StarRocks access control")
     await _ensure_audit_log()
 
     suffix = uuid4().hex[:8]
@@ -110,6 +125,8 @@ async def rbac_users(request):
     # the database grant without an explicit SET ROLE.
     await _admin_execute(f"SET DEFAULT ROLE {role_name} TO '{priv_user}'")
     await _admin_execute(f"CREATE DATABASE IF NOT EXISTS {db_name}")
+    # StarRocks separates database privileges needed by USE from table access.
+    await _admin_execute(f"GRANT ALL ON DATABASE {db_name} TO ROLE {role_name}")
     await _admin_execute(f"GRANT ALL ON {db_name}.* TO ROLE {role_name}")
     await _admin_execute(
         f"CREATE TABLE IF NOT EXISTS {db_name}.t (id INT) "
@@ -269,4 +286,3 @@ class TestGetTasksIsFilteredByCallerPrivilege:
             assert opened, "get_user_connection was never called for GET /tasks"
         finally:
             app.dependency_overrides.clear()
-

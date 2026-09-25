@@ -27,6 +27,9 @@ from app.common.nova_system import init_task_orchestration
 from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
+from app.core.redis import session_store
+from app.modules.migration.job_worker import MigrationJobWorker
+from app.modules.migration.repository import migration_repo
 from app.modules.task_orchestration.consumer import GraphRunConsumer
 from app.modules.task_orchestration.execution import DelegateExecutor
 from app.modules.task_orchestration.process_health import WorkerProcessHeartbeat
@@ -35,6 +38,7 @@ from app.modules.task_orchestration.repository import (
     task_orchestration_repository as repository,
 )
 from app.modules.task_orchestration.worker_service import WorkerService
+from app.observability.metrics import start_metrics_server
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +72,12 @@ async def _run() -> None:
     await db.init_system_pool()
     try:
         await init_task_orchestration()
+        await migration_repo.ensure_schema()
     except Exception:
         await db.close_system_pool()
         raise
     client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    await session_store.init()
 
     stop_event = asyncio.Event()
 
@@ -89,9 +95,13 @@ async def _run() -> None:
             signal.signal(signal_number, lambda *_: _request_stop())
 
     service = build_worker_service(client)
+    start_metrics_server("worker")
     heartbeat = WorkerProcessHeartbeat(client)
     heartbeat_task = asyncio.create_task(
         heartbeat.run(stop_event), name="nova-worker-process-heartbeat"
+    )
+    migration_task = asyncio.create_task(
+        MigrationJobWorker(client).run_forever(stop_event), name="nova-worker-migration"
     )
     try:
         await service.run_forever(stop_event)
@@ -99,7 +109,10 @@ async def _run() -> None:
         stop_event.set()
         with contextlib.suppress(asyncio.CancelledError):
             await heartbeat_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await migration_task
         await heartbeat.close()
+        await session_store.close()
         await client.aclose()
         await db.close_system_pool()
 

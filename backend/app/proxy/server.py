@@ -24,6 +24,11 @@ import logging
 from collections.abc import Callable
 
 from app.core.config import settings
+from app.observability.metrics import (
+    PROXY_CONNECTIONS_ACTIVE,
+    PROXY_CONNECTIONS_REJECTED,
+    PROXY_LISTENER_UP,
+)
 from app.proxy.connection import ProxyConnection
 
 logger = logging.getLogger(__name__)
@@ -74,6 +79,7 @@ class MySQLProxyServer:
             host=self._host,
             port=self._port,
         )
+        PROXY_LISTENER_UP.set(1)
         logger.info(
             "Nova MySQL proxy listening on %s:%s (max_connections=%d)",
             self._host,
@@ -92,6 +98,7 @@ class MySQLProxyServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        PROXY_LISTENER_UP.set(0)
 
         if self._connections:
             await asyncio.gather(*tuple(self._connections), return_exceptions=True)
@@ -110,6 +117,7 @@ class MySQLProxyServer:
             # closed before a handshake is written, so the client sees a
             # connection error rather than a login that hangs.
             logger.warning("Connection limit (%d) reached; refusing client", self._max_connections)
+            PROXY_CONNECTIONS_REJECTED.inc()
             writer.close()
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
@@ -125,9 +133,11 @@ class MySQLProxyServer:
         task = asyncio.current_task()
         if task is not None:
             self._connections.add(task)
+        PROXY_CONNECTIONS_ACTIVE.inc()
         try:
             await connection.run()
         finally:
+            PROXY_CONNECTIONS_ACTIVE.dec()
             if task is not None:
                 self._connections.discard(task)
 
@@ -141,15 +151,14 @@ async def serve(
     """Run the proxy until cancelled. ``ready`` receives the bound port."""
     server = MySQLProxyServer(host=host, port=port)
     await server.start()
-    if ready is not None:
-        ready(server.bound_port)
     try:
+        if ready is not None:
+            ready(server.bound_port)
         assert server._server is not None
         async with server._server:
             await server._server.serve_forever()
-    except asyncio.CancelledError:
+    finally:
         await server.stop()
-        raise
 
 
 __all__ = ["MySQLProxyServer", "serve"]

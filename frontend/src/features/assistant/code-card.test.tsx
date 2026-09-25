@@ -110,6 +110,27 @@ describe("CodeCard", () => {
     await expect.element(getByText("Table already exists")).toBeInTheDocument();
   });
 
+  it("returns assistant artifact failure evidence and offers a repair request", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([{
+      success: false, error: "Table does not exist", row_count: 0,
+      elapsed_ms: 5, columns: [], warnings: [],
+    }]), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const onExecutionEvent = vi.fn();
+    const onFixWithNove = vi.fn();
+    const screen = await renderCard({ onExecutionEvent, onFixWithNove });
+    await screen.getByRole("button", { name: "Run statement" }).click();
+    await expect.element(screen.getByText("Failed")).toBeInTheDocument();
+    expect(onExecutionEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: "query_started", source: "execution",
+    }));
+    expect(onExecutionEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: "query_failed", status: "failure",
+      payload: expect.objectContaining({ sql: "CREATE TABLE t (id BIGINT);", errorMessage: "Table does not exist" }),
+    }));
+    await screen.getByRole("button", { name: "Fix with Nove" }).click();
+    expect(onFixWithNove).toHaveBeenCalledWith(expect.stringContaining("Fix the failed SQL"));
+  });
+
   it("runs without a native confirmation prompt", async () => {
     const confirm = vi.spyOn(window, "confirm");
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(

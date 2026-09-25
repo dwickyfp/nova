@@ -1,0 +1,90 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: nova-local
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: starrocks-fe
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["starrocks-fe:8030"]
+        labels:
+          service: starrocks-fe
+
+  - job_name: starrocks-be
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["starrocks-be:8040"]
+        labels:
+          service: starrocks-be
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: cache-queue
+
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+        labels:
+          service: docker-linux-runtime
+
+  - job_name: dependency-probe
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ["http://minio:9000/minio/health/live"]
+        labels:
+          service: stage-storage
+      - targets: ["http://ranger-policy-proxy:6081/healthz"]
+        labels:
+          service: policy-service
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [service]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: nova-backend
+    metrics_path: /metrics
+    honor_labels: true
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/backend.yml]
+
+  - job_name: nova-scheduler
+    metrics_path: /metrics
+    honor_labels: true
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/scheduler.yml]
+
+  - job_name: nova-worker
+    metrics_path: /metrics
+    honor_labels: true
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/worker.yml]
+
+  - job_name: nova-agent-worker
+    metrics_path: /metrics
+    honor_labels: true
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/agent-worker.yml]
+
+  # Empty by default because the backend embeds the MySQL proxy. Populate
+  # proxy.yml only when running app.proxy as a separate process.
+  - job_name: nova-proxy
+    metrics_path: /metrics
+    honor_labels: true
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/proxy.yml]

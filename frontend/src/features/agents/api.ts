@@ -33,11 +33,67 @@ export type Agent = {
   harness_mode?: "auto" | "fast" | "guided" | "strict";
   policy: "auto_read_only" | "ask_every_tool";
   semantic_model_id: string | null;
-  /** All bound semantic models. The scalar mirrors the first entry. */
+  /** Legacy bindings retained for responses created before Semantic Views. */
   semantic_model_ids: string[];
+  /** Published Semantic Views available to this agent. */
+  semantic_view_ids?: string[];
   visibility: "private" | "shared";
   created_at: string;
   updated_at: string;
+};
+
+export const AUTO_AGENT_ID = "__auto__";
+
+export type AutoRun = {
+  run_id: string;
+  root_run_id: string;
+  parent_run_id: string | null;
+  agent_id: string;
+  agent_name?: string;
+  objective: string;
+  status: string;
+  depth: number;
+  summary: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  started_at: string;
+  updated_at: string;
+  error_class: string | null;
+};
+
+export type AutoRunEvent = {
+  event_id: number;
+  run_id: string;
+  type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AutoChildTimeline = {
+  run: {
+    run_id: string;
+    root_run_id: string;
+    agent_id: string;
+    agent_name: string;
+    objective: string;
+    status: string;
+    result_summary: string | null;
+    error_class: string | null;
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+  };
+  events: AutoRunEvent[];
+  next_cursor: number;
+  has_more: boolean;
+};
+
+export type AutoThreadRun = {
+  run_id: string;
+  status: string;
+  objective: string;
+  started_at: string;
+  final_message_id?: string;
+  user_message_id?: string | null;
 };
 
 export type AgentMemory = {
@@ -89,82 +145,6 @@ export type AgentCreateInput = Partial<
   name: string;
 };
 
-export type SemanticModel = {
-  semantic_model_id: string;
-  owner_name: string;
-  name: string;
-  description: string;
-  database_name: string | null;
-  schema_name: string | null;
-  ossie_version: string;
-  definition: Record<string, unknown>;
-  source_file_id: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type SemanticValidateResult = {
-  valid: boolean;
-  ossie_version: string | null;
-  errors: string[];
-  warnings: string[];
-  dataset_count: number;
-  metric_count: number;
-  relationship_count: number;
-};
-
-export type SemanticPreview = {
-  semantic_model_id: string;
-  model_fingerprint: string;
-  semantic_plan: Record<string, unknown>;
-  generated_sql: string;
-  confidence: Record<string, unknown>;
-  relationship_path: string[];
-  warnings: string[];
-};
-
-export type SemanticLintResult = {
-  semantic_model_id: string;
-  model_fingerprint: string;
-  valid: boolean;
-  errors: string[];
-  findings: Array<{
-    code: string;
-    severity: string;
-    message: string;
-    object_name: string | null;
-  }>;
-  quality: Record<string, unknown>;
-};
-
-export type SemanticQualityLabResult = {
-  semantic_model_id: string;
-  model_fingerprint: string;
-  total: number;
-  matched: number;
-  changed: number;
-  cases: Array<{
-    verified_query_id: string;
-    question: string;
-    status: "matched" | "changed";
-  }>;
-};
-
-export type VerifiedQuery = {
-  verified_query_id: string;
-  semantic_model_id: string;
-  model_fingerprint: string;
-  question: string;
-  semantic_plan: Record<string, unknown>;
-  verified_sql: string;
-  expected_result_signature: string | null;
-  verified_by: string;
-  verified_at: string;
-  tags: string[];
-  usage_count: number;
-  success_count: number;
-};
-
 export type AgentThread = {
   thread_id: string;
   title: string;
@@ -196,6 +176,34 @@ export type AgentMessage = {
 export const agentsApi = {
   list: () => api.get<{ agents: Agent[]; count: number }>("/agents"),
   listStudio: () => api.get<{ agents: Agent[]; count: number }>("/agents?studio=true"),
+  getAutoRunTree: (rootRunId: string) =>
+    api.get<{ runs: AutoRun[] }>(`/agents/auto/runs/${encodeURIComponent(rootRunId)}`),
+  getAutoRunEvents: (rootRunId: string, after = -1) =>
+    api.get<{ events: AutoRunEvent[] }>(
+      `/agents/auto/runs/${encodeURIComponent(rootRunId)}/events?after=${after}`,
+    ),
+  getAutoChildTimeline: (rootRunId: string, childRunId: string, after = -1) =>
+    api.get<AutoChildTimeline>(
+      `/agents/auto/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/timeline?after=${after}&limit=100`,
+    ),
+  listAutoThreadRuns: (threadId: string) =>
+    api.get<{ runs: AutoThreadRun[] }>(
+      `/agents/auto/threads/${encodeURIComponent(threadId)}/runs`,
+    ),
+  cancelAutoRun: (rootRunId: string) =>
+    api.post<{ status: string }>(`/agents/auto/runs/${encodeURIComponent(rootRunId)}/cancel`, {}),
+  cancelAutoChild: (rootRunId: string, childRunId: string) =>
+    api.post<{ status: string }>(
+      `/agents/auto/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/cancel`, {},
+    ),
+  sendAutoChildMessage: (rootRunId: string, childRunId: string, body: {
+    operation_id: string;
+    content: string;
+    correlation_id?: string;
+    reply_to?: string;
+  }) => api.post<{ message_id: string; status: string }>(
+    `/agents/auto/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/messages`, body,
+  ),
   get: (id: string) => api.get<Agent>(`/agents/${encodeURIComponent(id)}`),
   create: (body: AgentCreateInput) => api.post<Agent>("/agents", body),
   update: (id: string, body: Partial<AgentCreateInput>) =>
@@ -211,7 +219,7 @@ export const agentsApi = {
     ),
   listRuleProposals: (modelId: string) =>
     api.get<{ proposals: RuleProposal[]; count: number }>(
-      `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals`,
+      `/semantic-views/${encodeURIComponent(modelId)}/rule-proposals`,
     ),
   createRuleProposal: (modelId: string, body: {
     agent_id: string;
@@ -219,71 +227,19 @@ export const agentsApi = {
     metric_name: string;
     proposed_expression: string;
   }) => api.post<RuleProposal>(
-    `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals`, body,
+    `/semantic-views/${encodeURIComponent(modelId)}/rule-proposals`, body,
   ),
   previewRuleProposal: (modelId: string, proposalId: string) =>
     api.post<RuleProposalPreview>(
-      `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/preview`, {},
+      `/semantic-views/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/preview`, {},
     ),
   approveRuleProposal: (modelId: string, proposalId: string) =>
     api.post<RuleProposal>(
-      `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/approve`, {},
+      `/semantic-views/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/approve`, {},
     ),
   rejectRuleProposal: (modelId: string, proposalId: string) =>
     api.post<RuleProposal>(
-      `/agents/semantic-models/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/reject`, {},
-    ),
-
-  listSemanticModels: () =>
-    api.get<{ models: SemanticModel[]; count: number }>(
-      "/agents/semantic-models",
-    ),
-  getSemanticModel: (id: string) =>
-    api.get<SemanticModel>(`/agents/semantic-models/${encodeURIComponent(id)}`),
-  createSemanticModel: (body: {
-    name: string;
-    description?: string;
-    database_name?: string | null;
-    schema_name?: string | null;
-    definition: string;
-    source_file_id?: string | null;
-  }) => api.post<SemanticModel>("/agents/semantic-models", body),
-  deleteSemanticModel: (id: string) =>
-    api.delete<void>(`/agents/semantic-models/${encodeURIComponent(id)}`),
-  validateSemanticModel: (definition: string) =>
-    api.post<SemanticValidateResult>("/agents/semantic-models/validate", {
-      definition,
-    }),
-  previewSemanticQuestion: (id: string, question: string) =>
-    api.post<SemanticPreview>(
-      `/agents/semantic-models/${encodeURIComponent(id)}/preview`,
-      { question },
-    ),
-  lintSemanticModel: (id: string) =>
-    api.get<SemanticLintResult>(
-      `/agents/semantic-models/${encodeURIComponent(id)}/lint`,
-    ),
-  runSemanticQualityLab: (id: string) =>
-    api.get<SemanticQualityLabResult>(
-      `/agents/semantic-models/${encodeURIComponent(id)}/quality-lab`,
-    ),
-  listVerifiedQueries: (id: string) =>
-    api.get<{ queries: VerifiedQuery[]; count: number }>(
-      `/agents/semantic-models/${encodeURIComponent(id)}/verified-queries`,
-    ),
-  createVerifiedQuery: (
-    id: string,
-    body: {
-      question: string;
-      semantic_plan: Record<string, unknown>;
-      verified_sql: string;
-      expected_result_signature?: string | null;
-      tags?: string[];
-    },
-  ) =>
-    api.post<VerifiedQuery>(
-      `/agents/semantic-models/${encodeURIComponent(id)}/verified-queries`,
-      body,
+      `/semantic-views/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/reject`, {},
     ),
 
   listThreads: (agentId: string) =>
@@ -340,6 +296,7 @@ export type StreamAgentTurnOptions = {
   providerId?: string | null;
   attachments?: { name: string; content: string; media_type: string }[];
   onAccepted?: () => void;
+  onRunId?: (runId: string) => void;
 };
 
 /**
@@ -352,7 +309,7 @@ export async function streamAgentTurn(
   agentId: string,
   threadId: string,
   content: string,
-  { signal, onEvent, role, model, providerId, attachments, onAccepted }: StreamAgentTurnOptions,
+  { signal, onEvent, role, model, providerId, attachments, onAccepted, onRunId }: StreamAgentTurnOptions,
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/messages`,
@@ -379,6 +336,7 @@ export async function streamAgentTurn(
   onAccepted?.();
 
   let activeRun: string | undefined = response.headers.get("X-Nova-Run-ID") || undefined;
+  if (activeRun) onRunId?.(activeRun);
   let lastSequence = -1;
   let finished = false;
   async function consume(body: ReadableStream<Uint8Array>) {
@@ -850,6 +808,7 @@ export type TraceStep =
       selected_tools: string[];
       selected_skills: string[];
       semantic_model_ids: string[];
+      semantic_view_ids?: string[];
       prompt_telemetry: Record<string, number>;
       status: "done";
       started_offset_ms?: number;

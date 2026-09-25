@@ -6,6 +6,7 @@ orchestration with the source connection and query pipeline faked. No engine.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
@@ -342,19 +343,8 @@ def data_client(monkeypatch):
 
 class TestDataMovementExecute:
     def test_include_data_exports_imports_and_verifies(self, data_client):
-        client, source_conn, target_calls = data_client
-        resp = client.post(
-            "/api/v1/migration/execute",
-            json={
-                "source": "local",
-                "database": "src",
-                "target_database": "tgt",
-                "acknowledge_omissions": True,
-                "include_data": True,
-            },
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
+        _, source_conn, target_calls = data_client
+        body = _run_service_execute(include_data=True)
         assert body["data"], "expected a per-table copy result"
         copy = body["data"][0]
         assert copy["table"] == "t"
@@ -369,25 +359,14 @@ class TestDataMovementExecute:
         assert any(s.startswith("INSERT INTO `tgt`.`t`") and "FILES(" in s for s in target_calls)
 
     def test_schema_only_by_default(self, data_client):
-        client, source_conn, _ = data_client
-        resp = client.post(
-            "/api/v1/migration/execute",
-            json={
-                "source": "local",
-                "database": "src",
-                "target_database": "tgt",
-                "acknowledge_omissions": True,
-            },
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
+        _, source_conn, _ = data_client
+        body = _run_service_execute()
         assert body["data"] == []
         assert body["rows_moved"] == 0
         # No export happened.
         assert not any("INSERT INTO FILES(" in s for s in source_conn.executed)
 
     def test_count_mismatch_is_reported_not_hidden(self, data_client, monkeypatch):
-        client, *_ = data_client
         from app.modules.migration import service as sm
 
         GRANTS = [
@@ -416,18 +395,30 @@ class TestDataMovementExecute:
             return _FakeResult()
 
         monkeypatch.setattr(sm.query_service, "execute", _bad)
-        resp = client.post(
-            "/api/v1/migration/execute",
-            json={
-                "source": "local",
-                "database": "src",
-                "target_database": "tgt",
-                "acknowledge_omissions": True,
-                "include_data": True,
-            },
-        )
-        assert resp.status_code == 200, resp.text
-        copy = resp.json()["data"][0]
+        body = _run_service_execute(include_data=True)
+        copy = body["data"][0]
         assert copy["verified"] is False
         assert any("mismatch" in e for e in copy["errors"])
-        assert resp.json()["rows_moved"] == 0
+        assert body["rows_moved"] == 0
+
+
+def _run_service_execute(*, include_data: bool = False) -> dict:
+    from app.modules.migration.service import migration_service
+
+    response = asyncio.run(
+        migration_service.execute(
+            "local",
+            "src",
+            target_database="tgt",
+            objects=[],
+            create_database=True,
+            acknowledge_omissions=True,
+            confirmation="",
+            actor="alice",
+            encrypted_password="enc",
+            session_id="s1",
+            role="ACCOUNTADMIN",
+            include_data=include_data,
+        )
+    )
+    return response.model_dump(mode="json")

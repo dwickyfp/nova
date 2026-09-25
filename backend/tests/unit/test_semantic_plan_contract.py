@@ -3,7 +3,6 @@
 import json
 from copy import deepcopy
 from dataclasses import replace
-from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -184,55 +183,88 @@ def test_uncompilable_or_malicious_guidance_never_becomes_sql():
         SemanticPlanner().plan(model, "Revenue")
 
 
-async def test_verified_query_endpoint_rejects_contradiction_before_persistence(monkeypatch):
-    from app.modules.agents.router import agent_repository, create_verified_query
-    from app.modules.agents.schemas import VerifiedQueryCreateRequest
+def _verified_query_view(monkeypatch):
     from app.modules.agents.semantic.runtime import semantic_ir_to_definition
+    from app.modules.intelligence.semantic_views import SemanticViewService
 
-    getter = AsyncMock(return_value={"definition": semantic_ir_to_definition(sales_model())})
-    saver = AsyncMock()
-    monkeypatch.setattr(agent_repository, "get_semantic_model", getter)
-    monkeypatch.setattr(agent_repository, "create_verified_query", saver)
-    body = VerifiedQueryCreateRequest(
+    service = SemanticViewService()
+    view = {"id": "view-1", "name": "sales", "owner_name": "alice"}
+    definition = semantic_ir_to_definition(sales_model())
+    user = {"username": "alice", "encrypted_password": "encrypted"}
+    insert_version = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr(service, "_owned", AsyncMock(return_value=view))
+    monkeypatch.setattr(
+        service,
+        "_readable_version",
+        AsyncMock(return_value=(view, {"version": 1, "definition": definition})),
+    )
+    monkeypatch.setattr(
+        "app.modules.intelligence.semantic_views.db.execute_system",
+        AsyncMock(return_value={"rows": [[1]]}),
+    )
+    monkeypatch.setattr(service, "_insert_version", insert_version)
+    monkeypatch.setattr(service, "_audit", audit)
+    monkeypatch.setattr(
+        service,
+        "_version",
+        AsyncMock(return_value={"view_id": "view-1", "version": 2}),
+    )
+    return service, user, insert_version, audit
+
+
+async def test_verified_query_view_rejects_contradiction_before_new_version(monkeypatch):
+    from app.modules.intelligence.semantic_views import SemanticViewVerifiedQueryCreate
+
+    service, user, insert_version, audit = _verified_query_view(monkeypatch)
+    body = SemanticViewVerifiedQueryCreate(
         question="Revenue",
         semantic_plan={"metrics": ["total_revenue"]},
         verified_sql="SELECT COUNT(*) FROM analytics.sales.orders",
     )
     with pytest.raises(HTTPException) as error:
-        await create_verified_query("sales", body, {"username": "alice"})
+        await service.add_verified_query("view-1", 1, body, user)
     assert error.value.status_code == 422
-    getter.assert_awaited_once_with("sales", owner_name="alice")
-    saver.assert_not_awaited()
+    insert_version.assert_not_awaited()
+    audit.assert_not_awaited()
 
 
-async def test_verified_query_endpoint_saves_owner_and_model_fingerprint(monkeypatch):
-    from app.modules.agents.router import agent_repository, create_verified_query
-    from app.modules.agents.schemas import VerifiedQueryCreateRequest
-    from app.modules.agents.semantic.runtime import semantic_ir_to_definition
+async def test_verified_query_view_saves_owner_and_new_version_fingerprint(monkeypatch):
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.intelligence.semantic_views import SemanticViewVerifiedQueryCreate
 
-    getter = AsyncMock(return_value={"definition": semantic_ir_to_definition(sales_model())})
-
-    async def save(*, owner_name, fields):
-        return {
-            **fields,
-            "verified_query_id": "verified-1",
-            "verified_by": owner_name,
-            "verified_at": datetime.now(UTC),
-        }
-
-    saver = AsyncMock(side_effect=save)
-    monkeypatch.setattr(agent_repository, "get_semantic_model", getter)
-    monkeypatch.setattr(agent_repository, "create_verified_query", saver)
-    body = VerifiedQueryCreateRequest(
+    service, user, insert_version, audit = _verified_query_view(monkeypatch)
+    body = SemanticViewVerifiedQueryCreate(
         question="Revenue",
         semantic_plan={"metrics": ["total_revenue"]},
         verified_sql="SELECT SUM(o.amount) AS revenue FROM analytics.sales.orders o",
     )
-    result = await create_verified_query("sales", body, {"username": "alice"})
-    assert result.verified_by == "alice"
-    assert result.semantic_model_id == "sales"
-    assert result.model_fingerprint
-    assert result.verified_at
+    result = await service.add_verified_query("view-1", 1, body, user)
+    assert result == {"view_id": "view-1", "version": 2}
+    view_id, version, definition, fingerprint = insert_version.await_args.args
+    assert (view_id, version) == ("view-1", 2)
+    verified = definition["verified_queries"]
+    assert len(verified) == 1
+    assert verified[0]["verified_by"] == "alice"
+    assert verified[0]["question"] == "Revenue"
+    assert verified[0]["verified_sql"] == body.verified_sql
+    assert fingerprint == SemanticModelIR.from_ossie(definition).fingerprint
+    audit.assert_awaited_once_with("ALTER", "sales", user)
+
+
+async def test_legacy_verified_query_endpoint_points_to_semantic_view_draft():
+    from app.modules.agents.router import create_verified_query
+    from app.modules.agents.schemas import VerifiedQueryCreateRequest
+
+    body = VerifiedQueryCreateRequest(
+        question="Revenue",
+        semantic_plan={"metrics": ["total_revenue"]},
+        verified_sql="SELECT SUM(o.amount) FROM analytics.sales.orders o",
+    )
+    with pytest.raises(HTTPException) as error:
+        await create_verified_query("sales", body, {"username": "alice"})
+    assert error.value.status_code == 410
+    assert "Semantic View draft" in error.value.detail
 
 
 @pytest.mark.parametrize("supports_schema", [True, False])

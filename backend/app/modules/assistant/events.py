@@ -49,6 +49,7 @@ EVENT_CONTENT_BLOCK_DONE = "content_block_done"
 EVENT_DONE = "done"
 EVENT_ERROR = "error"
 EVENT_PING = "ping"
+EVENT_CLIENT_ACTION = "client_action"
 #: Agent Studio additions (Phase 12): structured content blocks a business answer
 #: can carry (a result grid, a chart, a source citation), rendered by the chat.
 EVENT_TABLE = "table"
@@ -154,6 +155,11 @@ def tool_call(view: ToolCallView) -> str:
 
 def tool_status(tool_call_id: str, status: str) -> str:
     return format_sse(EVENT_TOOL_STATUS, {"tool_call_id": tool_call_id, "status": status})
+
+
+def client_action(action: dict[str, Any]) -> str:
+    """Request one typed action on the active Nova surface."""
+    return format_sse(EVENT_CLIENT_ACTION, action)
 
 
 def tool_progress(

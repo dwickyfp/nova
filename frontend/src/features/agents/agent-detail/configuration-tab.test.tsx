@@ -45,6 +45,7 @@ const AGENT: Agent = {
   policy: "auto_read_only",
   semantic_model_id: null,
   semantic_model_ids: [],
+  semantic_view_ids: [],
   visibility: "private",
   created_at: "2026-09-22T00:00:00Z",
   updated_at: "2026-09-22T00:00:00Z",
@@ -82,7 +83,8 @@ describe("AgentConfigurationTab", () => {
         });
       }
       if (url.endsWith("/tools")) return response({ tools: [] });
-      if (url.endsWith("/semantic-models")) return response({ models: [] });
+      if (url.endsWith("/semantic-views")) return response([]);
+      if (url.endsWith("/semantic-views")) return response([]);
       return response(AGENT);
     });
     const client = new QueryClient({
@@ -113,6 +115,7 @@ describe("AgentConfigurationTab", () => {
         return response(AGENT);
       }
       const url = String(input);
+      if (url.endsWith("/semantic-views")) return response([]);
       if (url.endsWith("/ai/providers")) {
         return response({
           providers: [
@@ -200,6 +203,7 @@ describe("AgentConfigurationTab", () => {
       .spyOn(globalThis, "fetch")
       .mockImplementation(async (input) => {
         const url = String(input);
+        if (url.endsWith("/semantic-views")) return response([]);
         if (url.endsWith("/ai/providers")) return response({ providers: [] });
         if (url.endsWith("/skills")) {
           return response({
@@ -278,26 +282,75 @@ describe("AgentConfigurationTab", () => {
         return response(AGENT);
       }
       const url = String(input);
-      if (url.endsWith("/agents/tools")) return response({ tools: [{
-        tool_id: "tool-1", owner_name: "__nova__", name: "lookup_customer",
-        description: "Look up a customer in CRM", source: "mcp:server-1",
-        input_schema: {}, is_enabled: true,
-      }], count: 1 });
-      if (url.endsWith("/agents/semantic-models")) return response({ models: [], count: 0 });
+      if (url.endsWith("/semantic-views")) return response([]);
+      if (url.endsWith("/agents/tools"))
+        return response({
+          tools: [
+            {
+              tool_id: "tool-1",
+              owner_name: "__nova__",
+              name: "lookup_customer",
+              description: "Look up a customer in CRM",
+              source: "mcp:server-1",
+              input_schema: {},
+              is_enabled: true,
+            },
+          ],
+          count: 1,
+        });
       if (url.endsWith("/ai/providers")) return response({ providers: [] });
       return response({ tools: [], skills: [], servers: [], count: 0 });
     });
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     const screen = await render(
       <QueryClientProvider client={client}>
         <AgentConfigurationTab agent={AGENT} onSaved={() => {}} />
       </QueryClientProvider>,
     );
     await screen.getByRole("tab", { name: "Tools" }).click();
-    await expect.element(screen.getByText("External calls always require approval.")).toBeVisible();
+    await expect
+      .element(screen.getByText("External calls always require approval."))
+      .toBeVisible();
     await screen.getByRole("checkbox", { name: /lookup_customer/ }).click();
     await screen.getByRole("button", { name: "Save changes" }).click();
-    await vi.waitFor(() => expect(updates[0]?.default_tools).toContain("mcp:tool-1"));
+    await vi.waitFor(() =>
+      expect(updates[0]?.default_tools).toContain("mcp:tool-1"),
+    );
+  });
+
+  it("binds only published Semantic Views using semantic_view_ids", async () => {
+    const updates: Record<string, unknown>[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (init?.method === "PUT") {
+        updates.push(JSON.parse(init.body as string));
+        return response(AGENT);
+      }
+      const url = String(input);
+      if (url.endsWith("/semantic-views")) return response([
+        { id: "view-active", name: "Sales", database_name: "SALES",
+          status: "ACTIVE", active_version: 2 },
+        { id: "view-draft", name: "Forecast", database_name: "SALES",
+          status: "DRAFT", active_version: null },
+      ]);
+      if (url.endsWith("/agents/tools")) return response({ tools: [] });
+      return response({ tools: [], servers: [], count: 0 });
+    });
+    const screen = await render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <AgentConfigurationTab agent={AGENT} onSaved={() => {}} />
+      </QueryClientProvider>,
+    );
+    await screen.getByRole("tab", { name: "Tools" }).click();
+    await screen.getByRole("combobox", { name: "Select a semantic view" }).click();
+    await expect.element(screen.getByRole("option", { name: /Sales/ })).toBeVisible();
+    await expect.element(screen.getByRole("option", { name: /Forecast/ })).not.toBeInTheDocument();
+    await screen.getByRole("option", { name: /Sales/ }).click();
+    await screen.getByRole("button", { name: "Add Semantic View" }).click();
+    await screen.getByRole("button", { name: "Save changes" }).click();
+    await vi.waitFor(() => expect(updates[0]?.semantic_view_ids).toEqual(["view-active"]));
+    expect(updates[0]?.semantic_model_ids).toBeUndefined();
   });
 });
 

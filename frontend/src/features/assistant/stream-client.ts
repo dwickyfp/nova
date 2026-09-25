@@ -1,6 +1,7 @@
 import { api, apiBase, authHeaders } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import { parseAssistantEvent, readSseFrames } from "./events";
+import type { NoveAppContext } from "./app-context";
 import type {
   AssistantEvent,
   ConsentDecision,
@@ -23,6 +24,8 @@ export type TurnContext = {
    */
   model?: string | null;
   providerId?: string | null;
+  /** Versioned, bounded application state for contextual references. */
+  appContext?: NoveAppContext;
 };
 
 /**
@@ -47,6 +50,7 @@ export async function streamAssistantTurn(
     role,
     model,
     providerId,
+    appContext,
   }: StreamTurnOptions & TurnContext,
 ): Promise<void> {
   const response = await fetch(
@@ -64,6 +68,7 @@ export async function streamAssistantTurn(
         role,
         model,
         provider_id: providerId,
+        app_context: appContext,
       }),
       signal,
     },

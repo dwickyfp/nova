@@ -1,5 +1,5 @@
 /**
- * Client-side Ossie semantic-model draft and its YAML serializer.
+ * Client-side Ossie Semantic View draft and its YAML serializer.
  *
  * The builder edits a structured draft (datasets, fields, metrics,
  * relationships) in the UI. The backend's source of truth is the Ossie YAML, so

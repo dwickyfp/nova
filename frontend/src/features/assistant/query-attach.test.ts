@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyHunks,
+  applyCurrentRewrite,
   buildRewriteHunks,
   diffLines,
   extractSqlCodeBlock,
@@ -116,6 +117,20 @@ describe("applyHunks", () => {
     const onlyFirst: RewriteHunk[] = [hunks[0]];
     expect(applyHunks(before, onlyFirst)).toBe("SELECT b\nFROM t\nWHERE a > 0");
   });
+});
+
+it("rejects a SQL rewrite when the editor changed after the proposal", () => {
+  const sourceContent = "SELECT broken FROM orders";
+  const proposal = {
+    attachmentId: "att-1",
+    tabId: "tab-1",
+    sourceContent,
+    sql: "SELECT order_id FROM orders",
+    hunks: buildRewriteHunks(sourceContent, "SELECT order_id FROM orders"),
+    sourceMessageId: "message-1",
+  };
+  expect(applyCurrentRewrite(sourceContent, proposal)).toBe(proposal.sql);
+  expect(applyCurrentRewrite("SELECT edited FROM orders", proposal)).toBeNull();
 });
 
 describe("extractSqlCodeBlock", () => {

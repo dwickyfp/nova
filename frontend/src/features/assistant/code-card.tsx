@@ -9,9 +9,15 @@ import {
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { QueryResponse } from "@/features/workspaces/types";
+import {
+  safeNoveSql,
+  summarizeQueryForNove,
+} from "@/features/workspaces/nove-feedback";
+import type { NoveEventInput } from "./app-context";
 import type { TurnContext } from "./stream-client";
 
 export type CodeCardStatus = "idle" | "running" | "success" | "error";
+let codeCardSequence = 0;
 
 export type CodeCardProps = {
   code: string;
@@ -22,6 +28,8 @@ export type CodeCardProps = {
   runContext?: TurnContext;
   /** Whether this is a SQL card (the only kind that can be run). */
   runnable?: boolean;
+  onExecutionEvent?: (event: NoveEventInput) => void;
+  onFixWithNove?: (prompt: string) => void;
 };
 
 function useCopy() {
@@ -45,27 +53,21 @@ const STATUS_LABEL: Record<CodeCardStatus, string> = {
   error: "Failed",
 };
 
-/**
- * A fenced code block rendered as a card with a header. SQL cards get a Run
- * button (execute on the conversation's database/schema/role) and a status
- * badge that starts neutral and turns green on success or red on failure; every
- * card gets Copy. The status is per-card, so two SQL blocks in one answer each
- * report their own outcome.
- *
- * Running is explicit: it happens only on a click, and the statement still
- * passes through the backend's destructive guard. A native confirm on top of
- * the click adds a second prompt the user has already opted into.
- */
 export function CodeCard({
   code,
   language,
   highlighted,
   runContext,
   runnable,
+  onExecutionEvent,
+  onFixWithNove,
 }: CodeCardProps) {
   const { copied, copy } = useCopy();
   const [status, setStatus] = useState<CodeCardStatus>("idle");
   const [detail, setDetail] = useState<string | null>(null);
+  const [artifactId] = useState(
+    () => `nove-code-${Date.now()}-${++codeCardSequence}`,
+  );
 
   const canRun = Boolean(runnable && runContext);
 
@@ -74,6 +76,32 @@ export function CodeCard({
 
     setStatus("running");
     setDetail(null);
+    const startedAt = Date.now();
+    const executionId = `nove-card-${startedAt}`;
+    const surfaceId = runContext?.appContext?.surface.id ?? "nova.global";
+    const documentId = runContext?.appContext?.editor?.documentId;
+    const safeSql = safeNoveSql(code);
+    const evidence = {
+      executionId,
+      ...(documentId ? { documentId } : {}),
+      ...(safeSql ? { sql: safeSql } : { sqlOmitted: true }),
+    };
+    onExecutionEvent?.({
+      source: "user",
+      type: "assistant_artifact_run",
+      surfaceId,
+      artifactId,
+      executionId,
+      payload: evidence,
+    });
+    onExecutionEvent?.({
+      source: "execution",
+      type: "query_started",
+      surfaceId,
+      artifactId,
+      executionId,
+      payload: evidence,
+    });
     try {
       const results = await api.post<QueryResponse[]>("/query/execute", {
         sql: code,
@@ -84,20 +112,55 @@ export function CodeCard({
         confirm_destructive: false,
       });
       const first = results?.[0];
-      if (!first || !first.success) {
+      const feedback = summarizeQueryForNove(
+        executionId,
+        code,
+        results ?? [],
+        Date.now() - startedAt,
+      );
+      onExecutionEvent?.({
+        source: "execution",
+        type: feedback.eventType,
+        surfaceId,
+        artifactId,
+        executionId,
+        status: feedback.execution.status === "success" ? "success" : "failure",
+        payload: {
+          ...feedback.eventPayload,
+          ...(documentId ? { documentId } : {}),
+        },
+      });
+      const failed = results?.find((result) => !result.success);
+      if (!first || failed) {
         setStatus("error");
-        setDetail(first?.error ?? "The statement failed.");
+        setDetail(
+          failed?.error
+            ? (safeNoveSql(failed.error) ?? "Error details omitted.")
+            : "The statement failed.",
+        );
         return;
       }
       setStatus("success");
       setDetail(summarize(first));
     } catch (error) {
-      setStatus("error");
-      setDetail(
+      const message =
         error instanceof Error
           ? error.message
-          : "The statement could not be run.",
-      );
+          : "The statement could not be run.";
+      onExecutionEvent?.({
+        source: "execution",
+        type: "query_failed",
+        surfaceId,
+        artifactId,
+        executionId,
+        status: "failure",
+        payload: {
+          ...evidence,
+          errorMessage: safeNoveSql(message) ?? "Error details omitted.",
+        },
+      });
+      setStatus("error");
+      setDetail(safeNoveSql(message) ?? "Error details omitted.");
     }
   }, [
     canRun,
@@ -105,17 +168,33 @@ export function CodeCard({
     runContext?.database,
     runContext?.role,
     runContext?.schema,
+    runContext?.appContext?.surface.id,
+    runContext?.appContext?.editor?.documentId,
+    onExecutionEvent,
+    artifactId,
     status,
   ]);
 
   return (
-    <div className="my-2 overflow-hidden rounded-md border bg-surface-1">
-      <div className="flex items-center gap-1 border-b bg-surface-2 px-2 py-1">
-        <span className="flex-1 truncate font-mono text-[0.7rem] uppercase text-muted-foreground">
+    <div className="my-2 overflow-hidden rounded-md border border-border/70 bg-surface-1">
+      <pre className="overflow-x-auto p-3 text-xs">
+        {highlighted ? (
+          <code
+            className="hljs font-mono"
+            // Highlighted markup comes from the fixed language grammars.
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        ) : (
+          <code className="font-mono">{code}</code>
+        )}
+      </pre>
+
+      <div className="flex items-center gap-1 border-t border-border/60 px-2 py-1">
+        <span className="flex-1 truncate font-mono text-[11px] text-muted-foreground">
           {language || "text"}
         </span>
 
-        <StatusBadge status={status} />
+        {canRun ? <StatusText status={status} /> : null}
 
         <Tooltip>
           <TooltipTrigger asChild>
@@ -123,7 +202,7 @@ export function CodeCard({
               type="button"
               size="icon"
               variant="ghost"
-              className="size-7"
+              className="size-11 sm:size-7"
               aria-label="Copy code"
               onClick={() => void copy(code)}
             >
@@ -147,7 +226,7 @@ export function CodeCard({
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="size-7"
+                className="size-11 sm:size-7"
                 aria-label="Run statement"
                 disabled={status === "running"}
                 onClick={() => void run()}
@@ -167,44 +246,45 @@ export function CodeCard({
         ) : null}
       </div>
 
-      <pre className="overflow-x-auto p-2 text-xs">
-        {highlighted ? (
-          <code
-            className="hljs font-mono"
-            // highlight.js output is generated from the model's text with a
-            // fixed set of language grammars; it emits only span elements and
-            // class names, never script, so the HTML is inert markup.
-            dangerouslySetInnerHTML={{ __html: highlighted }}
-          />
-        ) : (
-          <code className="font-mono">{code}</code>
-        )}
-      </pre>
-
       {detail ? (
-        <p
+        <div
           className={cn(
             "border-t px-2 py-1 text-xs",
             status === "error" ? "text-destructive" : "text-muted-foreground",
           )}
         >
-          {detail}
-        </p>
+          <p>{detail}</p>
+          {status === "error" && onFixWithNove && safeNoveSql(code) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-1"
+              onClick={() =>
+                onFixWithNove(
+                  "Fix the failed SQL from this Nove code card. Explain the proposed change and verify it after I run it.",
+                )
+              }
+            >
+              Fix with Nove
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: CodeCardStatus }) {
+function StatusText({ status }: { status: CodeCardStatus }) {
   return (
     <span
       data-status={status}
       className={cn(
-        "rounded-full px-2 py-0.5 text-[0.65rem] font-medium",
-        status === "idle" && "bg-muted text-muted-foreground",
-        status === "running" && "bg-info/15 text-info-strong",
-        status === "success" && "bg-success/15 text-success-strong",
-        status === "error" && "bg-destructive/15 text-destructive",
+        "text-[11px]",
+        status === "idle" && "text-muted-foreground",
+        status === "running" && "text-info-strong",
+        status === "success" && "text-success-strong",
+        status === "error" && "text-destructive",
       )}
     >
       {STATUS_LABEL[status]}

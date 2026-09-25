@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { z } from 'zod'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Eye,
@@ -39,6 +40,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api-client'
+import { useNoveSurface } from '@/features/assistant/nove-surface-hook'
+import { defineNoveCapability } from '@/features/assistant/surface-registry'
 import { cn } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
@@ -118,6 +121,39 @@ export function RolesPage() {
   })
 
   const roles = rolesData ?? []
+  const { askNove } = useNoveSurface({
+    id: 'roles.list', route: '/roles', title: 'Roles',
+    context: () => ({ view: { filters: { type: typeFilter }, search } }),
+    capabilities: [
+      defineNoveCapability({
+        name: 'surface.refresh', risk: 'safe', argsSchema: z.object({}),
+        execute: () => refetch({ throwOnError: true }),
+      }),
+      defineNoveCapability({
+        name: 'surface.set_filter', risk: 'safe',
+        argsSchema: z.object({ filter: z.enum(['type', 'search']), value: z.string().max(120) }),
+        execute: ({ filter, value }) => {
+          if (filter === 'type') {
+            if (!['', 'Built-in', 'Custom'].includes(value)) throw new Error('Unsupported role filter')
+            setTypeFilter(value)
+          } else setSearch(value)
+          setPage(1)
+        },
+      }),
+      defineNoveCapability({
+        name: 'surface.select', risk: 'safe', mayChangeSurface: true,
+        argsSchema: z.object({ id: z.string().min(1).max(160) }),
+        execute: ({ id }) => {
+          if (!roles.some((role) => role.name === id)) throw new Error('Role is not in the current list')
+          return navigate({ to: '/roles/$name', params: { name: id } })
+        },
+      }),
+    ],
+    suggestedActions: [
+      { label: 'Explain role access', prompt: 'How do roles and grants work in Nova?' },
+      { label: 'Find a role', prompt: 'Help me find the right role for a user.' },
+    ],
+  })
 
   // -------------------------------------------------------------------------
   // Batch-fetch detail for every role (members count + privileges count)
@@ -230,7 +266,7 @@ export function RolesPage() {
         <Search className='me-auto' />
       </Header>
 
-      <Main className='flex flex-1 flex-col gap-6'>
+      <Main scroll className='flex flex-1 flex-col gap-6'>
         {/* Page header */}
         <div className='flex flex-wrap items-end justify-between gap-3'>
           <div className='space-y-1'>
@@ -244,6 +280,9 @@ export function RolesPage() {
             </p>
           </div>
           <div className='flex items-center gap-2'>
+            <Button variant='outline' onClick={() => void askNove('Help me find the right role for a user.')}>
+              Ask Nove
+            </Button>
             <Button
               variant='outline'
               onClick={() => void refetch()}

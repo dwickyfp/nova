@@ -3,18 +3,25 @@
 Keywords: assistant, bantuan, panduan, worksheet, SQL, query, agent, studio, skill.
 
 Nove is the built-in assistant for Nova warehouse work. Nova Studio configures
-specialist agents with selected tools, skills, instructions, and semantic models.
+specialist agents with selected tools, skills, instructions, and published Semantic Views.
 Both use the assistant engine. A tool must be available for the current turn
 before the assistant can use it. Agent configuration does not grant database access.
 
-For SQL help, attach the relevant worksheet query and describe the desired result
-or error. Nove receives attached SQL and the active database/schema context.
-Do not assume it can see every open page, unsent editor change, or error.
-Ask for missing SQL or error text when needed; never ask for credentials.
+For SQL help, a Nove-aware page sends a bounded description of its active surface.
+The SQL Workspace can include selected SQL, the current execution status and
+error, and a recent matching execution event with safe SQL text. Nove does not
+receive the whole editor, full query result rows, or every open page. When a
+failed statement or error is unavailable, ask for that detail; never ask for
+credentials. A proposed editor rewrite is not a verified fix until the patch is
+applied and a correlated rerun succeeds.
+
+In Nova Studio, Nove can inspect the current agent's owner-scoped configuration
+to explain selected tools, skills, and Semantic Views. It does not become that
+Studio agent or read the agent's conversation to answer configuration questions.
 
 Nove can author SQL, execute permitted read-only queries through query_execute,
 run available ML tasks, and chart verified results. Account DDL and write SQL
-are drafts for the user to run. Creating a Studio agent or semantic model uses
+are drafts for the user to run. Creating a Studio agent or Semantic View uses
 separate tools and requires their consent policy.
 
 A conversation read-only grant applies only to read-only actions. A write tool

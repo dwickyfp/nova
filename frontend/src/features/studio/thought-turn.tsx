@@ -12,6 +12,7 @@ import {
   Search,
   ShieldQuestion,
   Square,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -39,7 +40,7 @@ import { TextShimmer } from "./text-shimmer";
 /** One row on the rail. */
 export type RailStep = {
   id: string;
-  kind: "thinking" | "tool" | "consent" | "note";
+  kind: "thinking" | "tool" | "consent" | "note" | "delegate";
   /** Phase label, tool name, or note kind, used for the icon and the verb. */
   label: string;
   /** Name of a loaded skill, when this is a skill tool row. */
@@ -55,6 +56,8 @@ export type RailStep = {
   body?: string;
   /** A tool result summary, shown when the row is open. */
   detail?: string;
+  /** Open this specialist's own work timeline. */
+  childRunId?: string;
 };
 
 const PHASE_ICON: Record<ThinkingPhase, LucideIcon> = {
@@ -76,6 +79,7 @@ const TOOL_ICON: Record<string, LucideIcon> = {
 };
 
 function stepIcon(step: RailStep): LucideIcon {
+  if (step.kind === "delegate") return Workflow;
   if (step.kind === "consent") return ShieldQuestion;
   if (step.kind === "tool") return TOOL_ICON[step.label] ?? Database;
   if (step.kind === "note") return CircleAlert;
@@ -101,7 +105,7 @@ function isFailed(step: RailStep): boolean {
  * A live group says what it is doing now instead of summarising.
  */
 export function processSummary(steps: RailStep[], running: boolean): string {
-  const live = steps.find(isRunning);
+  const live = [...steps].reverse().find(isRunning);
   if (running && live) {
     return live.text;
   }
@@ -110,12 +114,20 @@ export function processSummary(steps: RailStep[], running: boolean): string {
     const verb =
       step.kind === "tool"
         ? `ran ${step.label}`
+        : step.kind === "delegate"
+          ? "worked with a specialist"
         : step.kind === "consent"
           ? "asked for approval"
           : step.kind === "note"
             ? step.label === "plan"
               ? "planned the run"
-              : "noted a context change"
+              : step.label === "queued" || step.label === "started"
+                ? "started the run"
+                : step.label === "waiting"
+                  ? "waited for specialists"
+                  : step.label === "completed"
+                    ? "finished the answer"
+                    : "noted a context change"
             : step.label === "plan"
               ? "planned the run"
               : step.label === "skill"
@@ -149,11 +161,13 @@ export function ProcessRail({
   defaultOpen = true,
   /** Bumped by the parent to force the rail open, e.g. after a decision. */
   revealKey = 0,
+  onOpenChild,
 }: {
   steps: RailStep[];
   running: boolean;
   defaultOpen?: boolean;
   revealKey?: number;
+  onOpenChild?: (childRunId: string) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen || running);
   // Once the user touches the header, their choice wins over the auto state.
@@ -211,6 +225,7 @@ export function ProcessRail({
               key={step.id}
               step={step}
               last={i === steps.length - 1}
+              onOpenChild={onOpenChild}
             />
           ))}
         </div>
@@ -219,7 +234,7 @@ export function ProcessRail({
   );
 }
 
-function ProcessStepRow({ step, last }: { step: RailStep; last: boolean }) {
+function ProcessStepRow({ step, last, onOpenChild }: { step: RailStep; last: boolean; onOpenChild?: (childRunId: string) => void }) {
   const Icon = stepIcon(step);
   const running = isRunning(step);
   const failed = isFailed(step);
@@ -235,12 +250,31 @@ function ProcessStepRow({ step, last }: { step: RailStep; last: boolean }) {
       : undefined;
   const hasDetail = Boolean(step.preview || body || detail);
 
-  // SQL is evidence, not a hidden implementation detail. When a running tool
-  // publishes its generated statement, open that row once so the query is
-  // visible during execution. The reader can still collapse it afterwards.
   useEffect(() => {
     if (step.kind === "tool" && running && step.preview) setOpen(true);
   }, [running, step.kind, step.preview]);
+
+  if (step.childRunId && onOpenChild) {
+    return (
+      <div className={cn("relative py-1", !last && "pb-2")}>
+        <button
+          type="button"
+          onClick={() => onOpenChild(step.childRunId as string)}
+          aria-label={`${step.text}. Open subagent conversation`}
+          className="group flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-1 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            {running ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin text-muted-foreground" />
+              : failed ? <span aria-hidden="true" className="size-2 rounded-full bg-destructive" />
+                : <Check aria-hidden="true" className="size-3.5 text-muted-foreground" />}
+          </span>
+          <Icon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className={cn("min-w-0 flex-1 truncate", failed && "text-destructive")}>{step.text}</span>
+          <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <Collapsible

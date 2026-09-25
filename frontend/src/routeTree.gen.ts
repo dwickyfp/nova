@@ -42,6 +42,8 @@ import { Route as AuthenticatedMonitoringLoadsRouteImport } from './routes/_auth
 import { Route as AuthenticatedMonitoringTasksRouteImport } from './routes/_authenticated/monitoring/tasks'
 import { Route as AuthenticatedRolesIndexRouteImport } from './routes/_authenticated/roles/index'
 import { Route as AuthenticatedRolesNameRouteImport } from './routes/_authenticated/roles/$name'
+import { Route as AuthenticatedSemanticViewsViewIdRouteImport } from './routes/_authenticated/semantic-views_.$viewId'
+import { Route as AuthenticatedSemanticViewsBuilderRouteImport } from './routes/_authenticated/semantic-views_.builder'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedStagesIndexRouteImport } from './routes/_authenticated/stages/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
@@ -239,6 +241,18 @@ const AuthenticatedRolesNameRoute = AuthenticatedRolesNameRouteImport.update({
   path: '/roles/$name',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSemanticViewsViewIdRoute =
+  AuthenticatedSemanticViewsViewIdRouteImport.update({
+    id: '/semantic-views_/$viewId',
+    path: '/semantic-views/$viewId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSemanticViewsBuilderRoute =
+  AuthenticatedSemanticViewsBuilderRouteImport.update({
+    id: '/semantic-views_/builder',
+    path: '/semantic-views/builder',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSettingsIndexRoute =
   AuthenticatedSettingsIndexRouteImport.update({
     id: '/settings/',
@@ -318,6 +332,8 @@ export interface FileRoutesByFullPath {
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
   '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/roles/$name': typeof AuthenticatedRolesNameRoute
+  '/semantic-views/$viewId': typeof AuthenticatedSemanticViewsViewIdRoute
+  '/semantic-views/builder': typeof AuthenticatedSemanticViewsBuilderRoute
   '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/agents/': typeof AuthenticatedAgentsIndexRoute
@@ -360,6 +376,8 @@ export interface FileRoutesByTo {
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
   '/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/roles/$name': typeof AuthenticatedRolesNameRoute
+  '/semantic-views/$viewId': typeof AuthenticatedSemanticViewsViewIdRoute
+  '/semantic-views/builder': typeof AuthenticatedSemanticViewsBuilderRoute
   '/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/agents': typeof AuthenticatedAgentsIndexRoute
@@ -405,6 +423,8 @@ export interface FileRoutesById {
   '/_authenticated/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
   '/_authenticated/monitoring/tasks': typeof AuthenticatedMonitoringTasksRoute
   '/_authenticated/roles/$name': typeof AuthenticatedRolesNameRoute
+  '/_authenticated/semantic-views_/$viewId': typeof AuthenticatedSemanticViewsViewIdRoute
+  '/_authenticated/semantic-views_/builder': typeof AuthenticatedSemanticViewsBuilderRoute
   '/_authenticated/tasks/$graphId': typeof AuthenticatedTasksGraphIdRoute
   '/_authenticated/users/$username': typeof AuthenticatedUsersUsernameRoute
   '/_authenticated/agents/': typeof AuthenticatedAgentsIndexRoute
@@ -450,6 +470,8 @@ export interface FileRouteTypes {
     | '/monitoring/loads'
     | '/monitoring/tasks'
     | '/roles/$name'
+    | '/semantic-views/$viewId'
+    | '/semantic-views/builder'
     | '/tasks/$graphId'
     | '/users/$username'
     | '/agents/'
@@ -492,6 +514,8 @@ export interface FileRouteTypes {
     | '/monitoring/loads'
     | '/monitoring/tasks'
     | '/roles/$name'
+    | '/semantic-views/$viewId'
+    | '/semantic-views/builder'
     | '/tasks/$graphId'
     | '/users/$username'
     | '/agents'
@@ -536,6 +560,8 @@ export interface FileRouteTypes {
     | '/_authenticated/monitoring/loads'
     | '/_authenticated/monitoring/tasks'
     | '/_authenticated/roles/$name'
+    | '/_authenticated/semantic-views_/$viewId'
+    | '/_authenticated/semantic-views_/builder'
     | '/_authenticated/tasks/$graphId'
     | '/_authenticated/users/$username'
     | '/_authenticated/agents/'
@@ -793,6 +819,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRolesNameRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/semantic-views_/$viewId': {
+      id: '/_authenticated/semantic-views_/$viewId'
+      path: '/semantic-views/$viewId'
+      fullPath: '/semantic-views/$viewId'
+      preLoaderRoute: typeof AuthenticatedSemanticViewsViewIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/semantic-views_/builder': {
+      id: '/_authenticated/semantic-views_/builder'
+      path: '/semantic-views/builder'
+      fullPath: '/semantic-views/builder'
+      preLoaderRoute: typeof AuthenticatedSemanticViewsBuilderRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/settings/': {
       id: '/_authenticated/settings/'
       path: '/settings'
@@ -903,6 +943,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgentsStudioRoute: typeof AuthenticatedAgentsStudioRoute
   AuthenticatedAgentsToolsRoute: typeof AuthenticatedAgentsToolsRoute
   AuthenticatedRolesNameRoute: typeof AuthenticatedRolesNameRoute
+  AuthenticatedSemanticViewsViewIdRoute: typeof AuthenticatedSemanticViewsViewIdRoute
+  AuthenticatedSemanticViewsBuilderRoute: typeof AuthenticatedSemanticViewsBuilderRoute
   AuthenticatedTasksGraphIdRoute: typeof AuthenticatedTasksGraphIdRoute
   AuthenticatedUsersUsernameRoute: typeof AuthenticatedUsersUsernameRoute
   AuthenticatedAgentsIndexRoute: typeof AuthenticatedAgentsIndexRoute
@@ -939,6 +981,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAgentsStudioRoute: AuthenticatedAgentsStudioRoute,
   AuthenticatedAgentsToolsRoute: AuthenticatedAgentsToolsRoute,
   AuthenticatedRolesNameRoute: AuthenticatedRolesNameRoute,
+  AuthenticatedSemanticViewsViewIdRoute: AuthenticatedSemanticViewsViewIdRoute,
+  AuthenticatedSemanticViewsBuilderRoute:
+    AuthenticatedSemanticViewsBuilderRoute,
   AuthenticatedTasksGraphIdRoute: AuthenticatedTasksGraphIdRoute,
   AuthenticatedUsersUsernameRoute: AuthenticatedUsersUsernameRoute,
   AuthenticatedAgentsIndexRoute: AuthenticatedAgentsIndexRoute,

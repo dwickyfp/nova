@@ -41,6 +41,7 @@ def is_legacy_skill_author(agent: dict) -> bool:
                 "compiled_instructions",
                 "semantic_model_id",
                 "semantic_model_ids",
+                "semantic_view_ids",
                 "default_skills",
                 "discoverable_skills",
                 "sample_questions",

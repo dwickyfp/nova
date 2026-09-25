@@ -30,9 +30,13 @@
   }
   html {
     @apply overflow-x-hidden;
+    scrollbar-width: none;
     font-family: var(--font-plex);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+  html::-webkit-scrollbar {
+    display: none;
   }
   body {
     @apply min-h-svh w-full bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar;

@@ -143,6 +143,7 @@ async def execute_query(
         ]
 
     results = await query_service.execute_statements(
+        source="web",
         tenant=user.get("tenant", "default"),
         security_context_version=user.get("security_context_version", 1),
         sql=req.sql,

@@ -585,14 +585,42 @@ cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
 uv run python -m app.scheduler
 ```
 
-### Terminal 5 — nova-worker (opsional)
+### Terminal 5 — nova-worker (wajib untuk migrasi)
 
 ```bash
 cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
 uv run python -m app.worker
 ```
 
-Boleh dijalankan beberapa instance sekaligus; semuanya berbagi stream yang sama.
+Boleh dijalankan beberapa instance sekaligus. Job task berbagi Redis Stream;
+job migrasi diklaim dari `NOVA_SYSTEM`. API menerima
+`POST /api/v1/migration/execute-batch` dengan respons `202` dan ID job; pantau hasil
+per database lewat `GET /api/v1/migration/jobs/{id}`. Pemindahan skema dan data
+berjalan di worker. Jika worker tidak hidup, job tetap menunggu. Pastikan
+backend dan worker memakai nilai
+`FERNET_KEY`, `REDIS_URL`, `NOVA_CONFIG_PATH`, dan `MIGRATION_EXECUTE_ENABLED`
+yang sama. Eksekusi migrasi memerlukan `MIGRATION_EXECUTE_ENABLED=true` setelah
+backup target yang dapat dipulihkan tersedia; nilai bawaan adalah `false`.
+Jika koneksi sumber memakai `secret_ref`, worker juga harus memiliki konfigurasi
+dan akses ke penyedia secret yang sama dengan backend. Worker membuka koneksi
+ke cluster sumber dan menyelesaikan referensi secret saat job berjalan.
+
+Untuk deployment Compose dengan profil `app`, `docker-compose-engine.yml`
+menjalankan `nova-worker` bersama backend. Isi kredensial akun worker khusus
+(`WORKER_IMPERSONATION_USER`, `WORKER_IMPERSONATION_PASSWORD`, dan, jika Ranger
+aktif, `WORKER_IMPERSONATION_ROLE`) di `docker/.env` sebelum mengaktifkan profil
+tersebut. Jangan gunakan akun `root` atau `nova_admin`.
+
+### Terminal 6 — Studio Auto agent worker
+
+Studio Auto requires a separate worker process. It claims queued runs from
+`NOVA_SYSTEM`, checks the originating session and active role in Redis, and
+executes specialist runs independently of the API process.
+
+```bash
+cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
+uv run python -m app.agent_worker
+```
 
 Kemudian buka:
 

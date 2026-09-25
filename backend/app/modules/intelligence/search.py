@@ -31,6 +31,15 @@ from app.modules.intelligence.retrieval import SearchCandidate, evaluate_relevan
 from app.modules.intelligence.vector_backend import SearchProjection, vector_backend
 from app.modules.query.service import query_service
 from app.modules.users.router import ADMIN_ROLES
+from app.observability.metrics import (
+    SEARCH_BUILD_DURATION,
+    SEARCH_BUILD_ERRORS,
+    SEARCH_BUILDS,
+    SEARCH_BUILDS_ACTIVE,
+    SEARCH_LAST_SUCCESSFUL_POLL,
+    SEARCH_POLL_ERRORS,
+    SEARCH_RECONCILIATION_ERRORS,
+)
 
 router = APIRouter()
 CurrentUser = Annotated[dict, Depends(get_current_user)]
@@ -385,10 +394,15 @@ class SearchService:
                     key = f"search:{name}:{version}"
                     if key not in scheduled:
                         self._schedule(name, version)
+                SEARCH_LAST_SUCCESSFUL_POLL.set(time.time())
                 ticks += 1
                 if ticks % 4 == 0:
-                    await self._reconcile()
+                    try:
+                        await self._reconcile()
+                    except Exception as exc:
+                        logger.warning("Search reconciliation failed: %s", type(exc).__name__)
             except Exception as exc:
+                SEARCH_POLL_ERRORS.inc()
                 logger.warning("Search build poll failed: %s", type(exc).__name__)
             await asyncio.sleep(15)
 
@@ -419,10 +433,14 @@ class SearchService:
         return digest.hexdigest()
 
     async def _reconcile(self) -> None:
-        result = await db.execute_system(
-            "SELECT name,active_version FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES "
-            "WHERE status='ACTIVE' AND active_version IS NOT NULL LIMIT 100"
-        )
+        try:
+            result = await db.execute_system(
+                "SELECT name,active_version FROM NOVA_SYSTEM.CONFIG_AI_SEARCH_INDEXES "
+                "WHERE status='ACTIVE' AND active_version IS NOT NULL LIMIT 100"
+            )
+        except Exception:
+            SEARCH_RECONCILIATION_ERRORS.inc()
+            raise
         for name, active_version in result["rows"]:
             try:
                 definition = await self._get(name)
@@ -465,9 +483,12 @@ class SearchService:
                     )
                 self._schedule(name, number + 1)
             except Exception as exc:
+                SEARCH_RECONCILIATION_ERRORS.inc()
                 logger.warning("Search reconciliation failed: %s", type(exc).__name__)
 
     async def build(self, name: str, version: int) -> None:
+        started = time.monotonic()
+        status = "skipped"
         try:
             async with self._lock(name):
                 definition = await self._get(name)
@@ -479,11 +500,27 @@ class SearchService:
                     not in {"PENDING", "BUILDING", "AUTO_PENDING", "AUTO_BUILDING"}
                 ):
                     return
-                await self._build_locked(definition, version_row)
+                SEARCH_BUILDS_ACTIVE.inc()
+                try:
+                    built = await self._build_locked(definition, version_row)
+                    status = "success" if built else "failed"
+                finally:
+                    SEARCH_BUILDS_ACTIVE.dec()
         except HTTPException:
             return
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
+        except Exception:
+            status = "failed"
+            raise
+        finally:
+            if status == "failed":
+                SEARCH_BUILD_ERRORS.inc()
+            SEARCH_BUILDS.labels(status=status).inc()
+            SEARCH_BUILD_DURATION.labels(status=status).observe(time.monotonic() - started)
 
-    async def _build_locked(self, definition: dict, version: dict) -> None:
+    async def _build_locked(self, definition: dict, version: dict) -> bool:
         name = definition["name"]
         number = version["version"]
         model = None
@@ -658,6 +695,7 @@ class SearchService:
             )
             if automatic or definition["active_version"] is None:
                 await self._activate_locked(name, number)
+            return True
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -673,6 +711,7 @@ class SearchService:
                 "WHERE index_name=%s AND version=%s",
                 [name, number],
             )
+            return False
 
     @staticmethod
     async def _activate_locked(name: str, version: int) -> None:

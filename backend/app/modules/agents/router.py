@@ -1,4 +1,4 @@
-"""Agent Studio API router — agent CRUD, semantic models, skills, Nova Studio runs.
+"""Agent Studio API router — agent CRUD, skills, and Nova Studio runs.
 
 Endpoints under ``/api/v1/agents``:
   GET    /agents                                  → list the caller's agents
@@ -6,11 +6,7 @@ Endpoints under ``/api/v1/agents``:
   GET    /agents/{agent_id}                       → agent detail
   PUT    /agents/{agent_id}                       → update an agent
   DELETE /agents/{agent_id}                       → delete an agent
-  GET    /agents/semantic-models                  → list semantic models
-  POST   /agents/semantic-models                  → create (Ossie document)
-  GET    /agents/semantic-models/{model_id}       → detail
-  DELETE /agents/semantic-models/{model_id}       → delete
-  POST   /agents/semantic-models/validate         → validate without saving
+  /agents/semantic-models/*                       → hidden legacy compatibility
   GET    /agents/skills                           → list built-in + user skills
   POST   /agents/skills                           → create a SKILL.md-compatible skill
   DELETE /agents/skills/{skill_id}                → delete a user skill
@@ -18,8 +14,8 @@ Endpoints under ``/api/v1/agents``:
 Every route requires ``get_current_user`` and is scoped to the caller. An
 unknown or foreign id answers **404**, never 403, so existence does not leak.
 
-Stage status: agent CRUD is N12-B2. Semantic models and skills are N12-C/G; this
-router wires them, and the semantic parser is added in N12-C1.
+Agents bind published Semantic Views. The legacy model routes cannot mutate
+the retired catalog; rule proposal aliases under /semantic-views remain active.
 """
 
 # ruff: noqa: B008 — `Depends(...)` in a default is FastAPI's dependency
@@ -31,15 +27,28 @@ import asyncio
 import contextlib
 import json
 import logging
-from collections.abc import AsyncIterator
-from uuid import uuid4
+from collections.abc import AsyncIterator, Awaitable, Callable
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.common.audit import write_audit_log
 from app.core.deps import get_current_user
 from app.modules.agents.access import has_verified_access
+from app.modules.agents.auto_planner import (
+    AgentDiscoveryUnavailable,
+    authorized_candidates,
+    rank_candidates,
+    semantic_matches,
+)
+from app.modules.agents.capabilities import CapabilityManifest, capability_repository
+from app.modules.agents.harness_repository import (
+    TERMINAL,
+    AutoAdmissionUnavailable,
+    harness_repository,
+)
 from app.modules.agents.instructions import (
     InstructionCompilationError,
     compile_agent_instructions,
@@ -50,7 +59,7 @@ from app.modules.agents.memory import (
     remember_user_message,
     select_memories,
 )
-from app.modules.agents.repository import agent_repository
+from app.modules.agents.repository import AgentMetadataUnavailable, agent_repository
 from app.modules.agents.rule_proposals import candidate_definition, rule_proposal_repository
 from app.modules.agents.run_journal import run_journal
 from app.modules.agents.schemas import (
@@ -63,7 +72,6 @@ from app.modules.agents.schemas import (
     RuleProposalPreviewResponse,
     RuleProposalView,
     SemanticLintResponse,
-    SemanticLintView,
     SemanticModelCreateRequest,
     SemanticModelListResponse,
     SemanticModelView,
@@ -79,6 +87,7 @@ from app.modules.agents.schemas import (
     VerifiedQueryListResponse,
     VerifiedQueryView,
 )
+from app.modules.agents.semantic.access import bound_view_ids
 from app.modules.agents.service import agent_service
 from app.modules.agents.skill_author import SKILL_AUTHOR_ID, skill_author_config
 from app.modules.agents.skill_catalog import is_builtin_skill_id, merge_skill_rows
@@ -87,7 +96,10 @@ from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.consent import consent_broker
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.provider import assistant_provider
-from app.modules.assistant.repository import assistant_repository
+from app.modules.assistant.repository import (
+    AssistantThreadListUnavailable,
+    assistant_repository,
+)
 from app.modules.assistant.schemas import (
     AgentMessageRequest,
     AttachmentView,
@@ -114,6 +126,29 @@ logger = logging.getLogger(__name__)
 _active_run_tasks: set[asyncio.Task[None]] = set()
 
 router = APIRouter()
+AUTO_AGENT_ID = "__auto__"
+
+
+class AutoMessageRequest(BaseModel):
+    operation_id: str = Field(min_length=1, max_length=123)
+    content: str = Field(min_length=1, max_length=4000)
+    correlation_id: str | None = Field(default=None, max_length=64)
+    reply_to: str | None = Field(default=None, max_length=64)
+
+
+def _auto_agent(owner_name: str) -> dict:
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    return {
+        "agent_id": AUTO_AGENT_ID,
+        "owner_name": owner_name,
+        "name": "Auto",
+        "description": "Coordinate specialists for a question.",
+        "created_at": now,
+        "updated_at": now,
+    }
+
 
 #: The v1 tool surface an agent may bundle. A name outside this set is rejected
 #: before storage so a typo cannot silently grant nothing.
@@ -183,48 +218,75 @@ def _skill_view(row: dict) -> SkillView:
 
 async def _require_agent(agent_id: str, user: dict | str) -> dict:
     user_name = user if isinstance(user, str) else user["username"]
+    if agent_id == AUTO_AGENT_ID and isinstance(user, dict):
+        return _auto_agent(user_name)
     if agent_id == SKILL_AUTHOR_ID:
         return skill_author_config(user_name)
-    agent = await agent_repository.get_agent(agent_id, owner_name=user_name)
-    if agent is None and isinstance(user, dict):
-        role = session_security(user).active_role
-        agent = await agent_repository.get_shared_agent(agent_id, role_name=role)
+    try:
+        agent = await agent_repository.get_agent(agent_id, owner_name=user_name)
+        if agent is None and isinstance(user, dict):
+            role = session_security(user).active_role
+            agent = await agent_repository.get_shared_agent(agent_id, role_name=role)
+        if agent is not None and isinstance(user, dict):
+            role = session_security(user).active_role
+            if not await has_verified_access(agent, role_name=role, user=user):
+                raise HTTPException(status_code=404, detail="Agent not found")
+    except AgentMetadataUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Agent metadata is temporarily unavailable"
+        ) from None
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
-    if isinstance(user, dict):
-        role = session_security(user).active_role
-        if not await has_verified_access(agent, role_name=role, user=user):
-            raise HTTPException(status_code=404, detail="Agent not found")
     return agent
 
 
-async def _resolve_database(agent: dict) -> str | None:
+async def _resolve_database(agent: dict, user: dict) -> str | None:
     """The default database a turn's SQL runs against.
 
     An explicit ``database_name`` wins. Otherwise it is derived from the first
-    bound semantic model's datasets, so the user never types a database name:
-    the model already knows which database its tables live in. ``None`` means
+    bound published View, so the user never types a database name. ``None`` means
     the caller's session default applies.
     """
     explicit = agent.get("database_name")
     if explicit:
         return explicit
-    owner = agent.get("owner_name")
-    if not owner:
-        return None
-    ids = agent.get("semantic_model_ids") or (
-        [agent["semantic_model_id"]] if agent.get("semantic_model_id") else []
-    )
-    for model_id in ids:
-        model = await agent_repository.get_semantic_model(model_id, owner_name=owner)
-        if not model:
-            continue
-        datasets = (model.get("definition") or {}).get("datasets") or []
-        for dataset in datasets:
-            source = dataset.get("source")
-            if isinstance(source, str) and "." in source:
-                return source.split(".")[0]
+    from app.modules.intelligence.semantic_views import semantic_view_service
+
+    for view_id in bound_view_ids(agent):
+        view = await semantic_view_service.get_active_for_agent(
+            view_id, user, agent_id=agent.get("agent_id")
+        )
+        if view:
+            return view.get("database_name")
     return None
+
+
+async def _normalize_view_binding(
+    fields: dict, *, provided: set[str], user: dict
+) -> None:
+    """Accept old field names at the edge, then persist only the View binding."""
+    if "semantic_view_ids" in provided:
+        ids = fields.get("semantic_view_ids") or []
+    elif "semantic_model_ids" in provided:
+        ids = fields.get("semantic_model_ids") or []
+    elif "semantic_model_id" in provided:
+        ids = [fields["semantic_model_id"]] if fields.get("semantic_model_id") else []
+    else:
+        ids = None
+    fields.pop("semantic_model_id", None)
+    fields.pop("semantic_model_ids", None)
+    if ids is None:
+        fields.pop("semantic_view_ids", None)
+        return
+    if len(ids) > 16 or any(not isinstance(item, str) or not item.strip() for item in ids):
+        raise HTTPException(status_code=422, detail="Select at most 16 Semantic Views")
+    unique = list(dict.fromkeys(item.strip() for item in ids))
+    from app.modules.intelligence.semantic_views import semantic_view_service
+
+    for view_id in unique:
+        if await semantic_view_service.get_active_for_agent(view_id, user) is None:
+            raise HTTPException(status_code=422, detail="A selected Semantic View is unavailable")
+    fields["semantic_view_ids"] = unique
 
 
 async def _require_agent_thread(thread_id: str, agent_id: str, user_name: str) -> dict:
@@ -356,6 +418,110 @@ def _text_from_frame(frame: str) -> str:
     return ""
 
 
+def _auto_frame(kind: str, payload: dict) -> str:
+    return f"event: {kind}\ndata: {json.dumps(payload, default=str)}\n\n"
+
+
+async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str]:
+    """Replay a unified tree in session order; the worker never waits on SSE."""
+    cursor = max(-1, after // 3 - 1) if after >= 0 else -1
+    deadline = asyncio.get_running_loop().time() + 3690
+    final_id = str(uuid5(NAMESPACE_URL, f"nova:auto:final:{root_run_id}"))
+    while asyncio.get_running_loop().time() < deadline:
+        batch = await harness_repository.events_page(
+            root_run_id, cursor, ensure_complete=True
+        )
+        for item in batch:
+            cursor = int(item["event_id"])
+            base = cursor * 3
+            payload = {
+                **item["payload"],
+                "run_id": root_run_id,
+                "sequence": base,
+                "child_run_id": item["run_id"],
+            }
+            if base > after:
+                yield _auto_frame(item["type"], payload)
+            if item["run_id"] == root_run_id and item["type"] == "agent_completed":
+                answer = str(item["payload"].get("answer") or "")
+                if base + 1 > after:
+                    yield _auto_frame(
+                        "text_delta",
+                        {
+                            "text": answer,
+                            "run_id": root_run_id,
+                            "sequence": base + 1,
+                        },
+                    )
+                if base + 2 > after:
+                    yield _auto_frame(
+                        "done",
+                        {
+                            "message_id": final_id,
+                            "finish_reason": "stop",
+                            "run_id": root_run_id,
+                            "sequence": base + 2,
+                        },
+                    )
+                return
+            if item["run_id"] == root_run_id and item["type"] in {
+                "agent_failed",
+                "agent_cancelled",
+            }:
+                if base + 1 > after:
+                    yield _auto_frame(
+                        "error",
+                        {
+                            "code": item["type"],
+                            "message": "The Auto run did not complete.",
+                            "run_id": root_run_id,
+                            "sequence": base + 1,
+                        },
+                    )
+                if base + 2 > after:
+                    yield _auto_frame(
+                        "done",
+                        {
+                            "message_id": final_id,
+                            "finish_reason": "error",
+                            "run_id": root_run_id,
+                            "sequence": base + 2,
+                        },
+                    )
+                return
+        if not batch:
+            yield "event: ping\ndata: {}\n\n"
+        await asyncio.sleep(0.5)
+
+
+async def _scoped_auto_root(root_run_id: str, user: dict) -> dict:
+    root = await harness_repository.get(root_run_id)
+    invalid = (
+        not root
+        or root["depth"] != 0
+        or root["agent_id"] != AUTO_AGENT_ID
+        or root["owner_name"] != user["username"]
+        or root["role_name"] != session_security(user).active_role
+    )
+    if invalid:
+        raise HTTPException(status_code=404, detail="Run not found in this role")
+    await _require_agent_thread(root["thread_id"], AUTO_AGENT_ID, user["username"])
+    return root
+
+
+@contextlib.asynccontextmanager
+async def _auto_admission(
+    thread_id: str, owner_name: str
+) -> AsyncIterator[Callable[[], Awaitable[None]]]:
+    try:
+        async with harness_repository.admission_lock(thread_id, owner_name) as assert_owned:
+            yield assert_owned
+    except AutoAdmissionUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Auto admission is temporarily unavailable"
+        ) from exc
+
+
 # ── Agents ─────────────────────────────────────────────────────
 
 
@@ -366,24 +532,76 @@ async def list_agents(
     studio: bool = False,
     user: dict = Depends(get_current_user),
 ):
-    agents = await agent_repository.list_agents(
-        owner_name=user["username"], database_name=database, search=search
-    )
-    role = session_security(user).active_role
-    shared = await agent_repository.list_shared_agents(role_name=role)
-    agents.extend(
-        agent
-        for agent in shared
-        if agent["owner_name"] != user["username"]
-        and (not database or agent.get("database_name") == database)
-        and (not search or search.lower() in agent["name"].lower())
-    )
-    if studio:
-        agents = [
-            agent for agent in agents if await has_verified_access(agent, role_name=role, user=user)
-        ]
+    try:
+        agents = await agent_repository.list_agents(
+            owner_name=user["username"], database_name=database, search=search
+        )
+        role = session_security(user).active_role
+        shared = await agent_repository.list_shared_agents(role_name=role)
+        agents.extend(
+            agent
+            for agent in shared
+            if agent["owner_name"] != user["username"]
+            and (not database or agent.get("database_name") == database)
+            and (not search or search.lower() in agent["name"].lower())
+        )
+        if studio:
+            agents = [
+                agent
+                for agent in agents
+                if await has_verified_access(agent, role_name=role, user=user)
+            ]
+            agents.insert(0, _auto_agent(user["username"]))
+    except AgentMetadataUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Agent metadata is temporarily unavailable"
+        ) from None
     views = [_agent_view(a) for a in agents]
     return AgentListResponse(agents=views, count=len(views))
+
+
+@router.get("/capabilities")
+async def discover_agent_capabilities(query: str = "", user: dict = Depends(get_current_user)):
+    """Compact manifests only for agents the current role can execute."""
+    try:
+        candidates = await authorized_candidates(user)
+    except AgentDiscoveryUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Agent discovery is temporarily unavailable"
+        ) from None
+    ranked = rank_candidates(query[:400], candidates, semantic_matches(query[:400], candidates))
+    return {
+        "agents": [
+            {"agent_id": item.agent_id, "name": item.name, "manifest": item.manifest.model_dump()}
+            for item in ranked[:32]
+        ]
+    }
+
+
+@router.put("/capabilities/{agent_id}")
+async def update_agent_capabilities(
+    agent_id: str,
+    body: CapabilityManifest,
+    user: dict = Depends(get_current_user),
+):
+    agent = await agent_repository.get_agent(agent_id, owner_name=user["username"])
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    try:
+        await capability_repository.put(agent, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await write_audit_log(
+        event_type="AGENT_CAPABILITY",
+        user_name=user["username"],
+        action="UPDATE",
+        object_type="AGENT",
+        object_name=agent_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=session_security(user).active_role,
+    )
+    return body
 
 
 @router.post("", response_model=AgentView, status_code=201)
@@ -392,6 +610,7 @@ async def create_agent(
     user: dict = Depends(get_current_user),
 ):
     fields = body.model_dump()
+    await _normalize_view_binding(fields, provided=body.model_fields_set, user=user)
     # Keep accepting legacy clients that send a mode, but never persist a
     # user-selected strategy. Provider capabilities and turn risk decide it.
     fields["harness_mode"] = "auto"
@@ -426,46 +645,26 @@ async def create_agent(
 # dynamic route would capture it as an agent id.
 
 
-@router.get("/semantic-models", response_model=SemanticModelListResponse)
+@router.get("/semantic-models", response_model=SemanticModelListResponse, include_in_schema=False)
 async def list_semantic_models(user: dict = Depends(get_current_user)):
-    models = await agent_repository.list_semantic_models(owner_name=user["username"])
-    views = [_semantic_view(m) for m in models]
-    return SemanticModelListResponse(models=views, count=len(views))
+    raise HTTPException(status_code=410, detail="Use /api/v1/semantic-views")
 
 
-@router.post("/semantic-models", response_model=SemanticModelView, status_code=201)
+@router.post(
+    "/semantic-models", response_model=SemanticModelView,
+    status_code=201, include_in_schema=False,
+)
 async def create_semantic_model(
     body: SemanticModelCreateRequest,
     user: dict = Depends(get_current_user),
 ):
-    from app.modules.agents.semantic.ossie import OssieParseError, parse_ossie
-
-    try:
-        parsed = parse_ossie(body.definition)
-    except OssieParseError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    from app.modules.agents.semantic.ir import SemanticModelIR
-    from app.modules.agents.semantic.runtime import validate_semantic_model_ir
-
-    ir_validation = validate_semantic_model_ir(SemanticModelIR.from_ossie(parsed.as_dict()))
-    if not ir_validation.valid:
-        raise HTTPException(status_code=422, detail="; ".join(ir_validation.errors))
-    created = await agent_repository.create_semantic_model(
-        owner_name=user["username"],
-        fields={
-            "name": body.name,
-            "description": body.description,
-            "database_name": body.database_name,
-            "schema_name": body.schema_name,
-            "ossie_version": parsed.version,
-            "definition": parsed.as_dict(),
-            "source_file_id": body.source_file_id,
-        },
-    )
-    return _semantic_view(created)
+    raise HTTPException(status_code=410, detail="Create a Semantic View instead")
 
 
-@router.post("/semantic-models/validate", response_model=SemanticValidateResponse)
+@router.post(
+    "/semantic-models/validate", response_model=SemanticValidateResponse,
+    include_in_schema=False,
+)
 async def validate_semantic_model(
     body: SemanticValidateRequest,
     user: dict = Depends(get_current_user),
@@ -496,179 +695,71 @@ async def validate_semantic_model(
 @router.post(
     "/semantic-models/{model_id}/preview",
     response_model=SemanticPreviewResponse,
+    include_in_schema=False,
 )
 async def preview_semantic_question(
     model_id: str,
     body: SemanticPreviewRequest,
     user: dict = Depends(get_current_user),
 ):
-    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
-    if model is None:
-        raise HTTPException(status_code=404, detail="Semantic model not found")
-    from app.modules.agents.semantic.compiler import SemanticCompiler
-    from app.modules.agents.semantic.ir import SemanticModelIR
-    from app.modules.agents.semantic.planning import SemanticPlanner
-
-    semantic_ir = SemanticModelIR.from_ossie(model.get("definition") or {})
-    planned = SemanticPlanner().plan(semantic_ir, body.question)
-    if planned.plan is None:
-        raise HTTPException(
-            status_code=422,
-            detail=planned.clarification or "The semantic question is ambiguous.",
-        )
-    try:
-        compiled = SemanticCompiler().compile(semantic_ir, planned.plan)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return SemanticPreviewResponse(
-        semantic_model_id=model_id,
-        model_fingerprint=semantic_ir.fingerprint,
-        semantic_plan=planned.plan.as_dict(),
-        generated_sql=compiled.sql,
-        confidence={
-            "score": planned.confidence.score,
-            "level": planned.confidence.level,
-            "signals": planned.confidence.signals,
-            "unresolved": list(planned.confidence.unresolved),
-        },
-        relationship_path=list(compiled.relationship_path),
-        warnings=list(compiled.warnings),
-    )
+    raise HTTPException(status_code=410, detail="Use Semantic View preview")
 
 
 @router.get(
     "/semantic-models/{model_id}/lint",
     response_model=SemanticLintResponse,
+    include_in_schema=False,
 )
 async def lint_semantic_model(
     model_id: str,
     user: dict = Depends(get_current_user),
 ):
-    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
-    if model is None:
-        raise HTTPException(status_code=404, detail="Semantic model not found")
-    from app.modules.agents.semantic.ir import SemanticModelIR
-    from app.modules.agents.semantic.runtime import (
-        lint_semantic_model as lint_model,
-    )
-    from app.modules.agents.semantic.runtime import (
-        semantic_quality,
-        validate_semantic_model_ir,
-    )
-
-    semantic_ir = SemanticModelIR.from_ossie(model.get("definition") or {})
-    validation = validate_semantic_model_ir(semantic_ir)
-    findings = lint_model(semantic_ir)
-    verified = await agent_repository.list_verified_queries(model_id, owner_name=user["username"])
-    return SemanticLintResponse(
-        semantic_model_id=model_id,
-        model_fingerprint=semantic_ir.fingerprint,
-        valid=validation.valid,
-        errors=list(validation.errors),
-        findings=[SemanticLintView(**item.__dict__) for item in findings],
-        quality=semantic_quality(semantic_ir, verified_query_count=len(verified)),
-    )
+    raise HTTPException(status_code=410, detail="Use Semantic View quality")
 
 
 @router.post(
     "/semantic-models/{model_id}/verified-queries",
     response_model=VerifiedQueryView,
     status_code=201,
+    include_in_schema=False,
 )
 async def create_verified_query(
     model_id: str,
     body: VerifiedQueryCreateRequest,
     user: dict = Depends(get_current_user),
 ):
-    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
-    if model is None:
-        raise HTTPException(status_code=404, detail="Semantic model not found")
-    from app.common.sql_guard import split_sql_statements
-    from app.modules.agents.semantic.compiler import SemanticCompiler
-    from app.modules.agents.semantic.ir import SemanticModelIR
-    from app.modules.agents.semantic.planning import SemanticPlan
-    from app.modules.agents.semantic.verification import verify_sql_compatibility
-    from app.modules.assistant.skills import contains_credential_shape
-    from app.modules.assistant.tools import policy
-
-    try:
-        semantic_ir = SemanticModelIR.from_ossie(model.get("definition") or {})
-        plan = SemanticPlan.from_dict(body.semantic_plan)
-        compiled = SemanticCompiler().compile(semantic_ir, plan)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    statements = split_sql_statements(body.verified_sql)
-    if contains_credential_shape(body.verified_sql):
-        raise HTTPException(status_code=422, detail="Verified SQL cannot contain credentials.")
-    classification, decisions = policy.classify_statements(statements)
-    if classification != "read_only" or len(statements) != 1 or len(decisions) != 1:
-        raise HTTPException(status_code=422, detail="Verified SQL must be one read-only query.")
-    try:
-        verify_sql_compatibility(compiled.sql, body.verified_sql)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    created = await agent_repository.create_verified_query(
-        owner_name=user["username"],
-        fields={
-            **body.model_dump(),
-            "semantic_model_id": model_id,
-            "model_fingerprint": semantic_ir.fingerprint,
-        },
-    )
-    return VerifiedQueryView(**created)
+    raise HTTPException(status_code=410, detail="Add the verified query to a Semantic View draft")
 
 
 @router.get(
     "/semantic-models/{model_id}/verified-queries",
     response_model=VerifiedQueryListResponse,
+    include_in_schema=False,
 )
 async def list_verified_queries(
     model_id: str,
     user: dict = Depends(get_current_user),
 ):
-    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
-    if model is None:
-        raise HTTPException(status_code=404, detail="Semantic model not found")
-    rows = await agent_repository.list_verified_queries(model_id, owner_name=user["username"])
-    views = [VerifiedQueryView(**row) for row in rows]
-    return VerifiedQueryListResponse(queries=views, count=len(views))
+    raise HTTPException(status_code=410, detail="Use Semantic View quality")
 
 
 @router.get(
     "/semantic-models/{model_id}/quality-lab",
     response_model=SemanticQualityLabResponse,
+    include_in_schema=False,
 )
 async def run_semantic_quality_lab(
     model_id: str,
     user: dict = Depends(get_current_user),
 ):
-    from app.modules.agents.semantic.quality_lab import evaluate_verified_queries
-
-    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
-    if model is None:
-        raise HTTPException(status_code=404, detail="Semantic model not found")
-    queries = await agent_repository.list_verified_queries(model_id, owner_name=user["username"])
-    result = SemanticQualityLabResponse(
-        semantic_model_id=model_id,
-        **evaluate_verified_queries(model.get("definition") or {}, queries),
-    )
-    await write_audit_log(
-        event_type="SEMANTIC_QUALITY_LAB",
-        user_name=user["username"],
-        action="RUN",
-        object_type="SEMANTIC_MODEL",
-        object_name=model_id,
-        status="SUCCESS",
-        active_role=session_security(user).active_role,
-        session_id=user.get("session_id"),
-    )
-    return result
+    raise HTTPException(status_code=410, detail="Use Semantic View quality")
 
 
 @router.post(
     "/semantic-models/{model_id}/rule-proposals",
     response_model=RuleProposalView,
     status_code=201,
+    include_in_schema=False,
 )
 async def create_rule_proposal(
     model_id: str,
@@ -677,13 +768,14 @@ async def create_rule_proposal(
 ):
     owner = user["username"]
     role = session_security(user).active_role
-    model = await agent_repository.get_semantic_model(model_id, owner_name=owner)
+    from app.modules.intelligence.semantic_views import semantic_view_service
+
+    model = await semantic_view_service.get_active_for_agent(model_id, user)
     agent = await agent_repository.get_agent(body.agent_id, owner_name=owner)
-    if model is None or agent is None:
-        raise HTTPException(status_code=404, detail="Semantic model or agent not found")
-    bound_ids = agent.get("semantic_model_ids") or [agent.get("semantic_model_id")]
-    if model_id not in bound_ids:
-        raise HTTPException(status_code=422, detail="The agent is not bound to this model.")
+    if model is None or model.get("owner_name") != owner or agent is None:
+        raise HTTPException(status_code=404, detail="Semantic View or agent not found")
+    if model_id not in bound_view_ids(agent):
+        raise HTTPException(status_code=422, detail="The agent is not bound to this View.")
     memory = await memory_repository.get(
         body.memory_id, user_name=owner, agent_id=body.agent_id, role_name=role
     )
@@ -725,12 +817,15 @@ async def create_rule_proposal(
 @router.get(
     "/semantic-models/{model_id}/rule-proposals",
     response_model=RuleProposalListResponse,
+    include_in_schema=False,
 )
 async def list_rule_proposals(model_id: str, user: dict = Depends(get_current_user)):
     owner = user["username"]
-    model = await agent_repository.get_semantic_model(model_id, owner_name=owner)
-    if model is None:
-        raise HTTPException(status_code=404, detail="Semantic model not found")
+    from app.modules.intelligence.semantic_views import semantic_view_service
+
+    model = await semantic_view_service.get_active_for_agent(model_id, user)
+    if model is None or model.get("owner_name") != owner:
+        raise HTTPException(status_code=404, detail="Semantic View not found")
     role = session_security(user).active_role
     rows = await rule_proposal_repository.list(
         owner_name=owner, role_name=role, semantic_model_id=model_id
@@ -744,8 +839,13 @@ async def _pending_rule_proposal(model_id: str, proposal_id: str, user: dict) ->
     owner = user["username"]
     role = session_security(user).active_role
     proposal = await rule_proposal_repository.get(proposal_id, owner_name=owner, role_name=role)
-    model = await agent_repository.get_semantic_model(model_id, owner_name=owner)
-    if proposal is None or model is None or proposal["semantic_model_id"] != model_id:
+    from app.modules.intelligence.semantic_views import semantic_view_service
+
+    model = await semantic_view_service.get_active_for_agent(model_id, user)
+    if (
+        proposal is None or model is None or model.get("owner_name") != owner
+        or proposal["semantic_model_id"] != model_id
+    ):
         raise HTTPException(status_code=404, detail="Rule proposal not found")
     if proposal["status"] != "pending":
         raise HTTPException(status_code=409, detail="Rule proposal is no longer pending")
@@ -755,6 +855,7 @@ async def _pending_rule_proposal(model_id: str, proposal_id: str, user: dict) ->
 @router.post(
     "/semantic-models/{model_id}/rule-proposals/{proposal_id}/preview",
     response_model=RuleProposalPreviewResponse,
+    include_in_schema=False,
 )
 async def preview_rule_proposal(
     model_id: str, proposal_id: str, user: dict = Depends(get_current_user)
@@ -829,6 +930,7 @@ async def preview_rule_proposal(
 @router.post(
     "/semantic-models/{model_id}/rule-proposals/{proposal_id}/approve",
     response_model=RuleProposalView,
+    include_in_schema=False,
 )
 async def approve_rule_proposal(
     model_id: str, proposal_id: str, user: dict = Depends(get_current_user)
@@ -836,10 +938,28 @@ async def approve_rule_proposal(
     from app.modules.agents.semantic.compiler import SemanticCompiler
     from app.modules.agents.semantic.ir import SemanticModelIR
     from app.modules.agents.semantic.planning import SemanticPlan
+    from app.modules.intelligence.semantic_views import (
+        SemanticViewVersionCreate,
+        semantic_view_service,
+    )
 
     proposal, model = await _pending_rule_proposal(model_id, proposal_id, user)
     if proposal["previewed_at"] is None:
         raise HTTPException(status_code=409, detail="Preview the impact before approval")
+    active_fingerprint = SemanticModelIR.from_ossie(model["definition"]).fingerprint
+    if active_fingerprint == proposal["proposed_fingerprint"]:
+        await rule_proposal_repository.set_status(
+            proposal_id,
+            owner_name=user["username"],
+            role_name=session_security(user).active_role,
+            status="approved",
+        )
+        updated = await rule_proposal_repository.get(
+            proposal_id,
+            owner_name=user["username"],
+            role_name=session_security(user).active_role,
+        )
+        return RuleProposalView(**updated)
     try:
         candidate, _, prior_fp, proposed_fp, _, _ = candidate_definition(
             model.get("definition") or {},
@@ -850,25 +970,47 @@ async def approve_rule_proposal(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if prior_fp != proposal["prior_fingerprint"] or proposed_fp != proposal["proposed_fingerprint"]:
         raise HTTPException(
-            status_code=409, detail="The semantic model changed. Create a new proposal."
+            status_code=409, detail="The Semantic View changed. Create a new proposal."
         )
     candidate_ir = SemanticModelIR.from_ossie(candidate)
-    verified = await agent_repository.list_verified_queries(model_id, owner_name=user["username"])
+    verified = candidate.get("verified_queries") or []
     try:
         for item in verified:
             SemanticCompiler().compile(candidate_ir, SemanticPlan.from_dict(item["semantic_plan"]))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="A verified query no longer compiles") from exc
-    await rule_proposal_repository.save_version(
-        model_id=model_id,
-        owner_name=user["username"],
-        proposal_id=proposal_id,
-        fingerprint=prior_fp,
-        definition=model["definition"],
-    )
-    await agent_repository.update_semantic_model(
-        model_id, owner_name=user["username"], fields={"definition": candidate}
-    )
+    described = await semantic_view_service.describe(model_id, user)
+    latest = max(described.get("versions") or [], key=lambda item: item["version"])
+    if latest["version"] > model["version"]:
+        if latest.get("fingerprint") != proposed_fp or latest.get("status") not in {
+            "DRAFT", "VALIDATED"
+        }:
+            raise HTTPException(
+                status_code=409, detail="Review the newer Semantic View draft first"
+            )
+        version = latest["version"]
+    else:
+        draft = await semantic_view_service.add_version(
+            model_id,
+            SemanticViewVersionCreate(definition=json.dumps(candidate, ensure_ascii=False)),
+            user,
+        )
+        version = draft["version"]
+    report = await semantic_view_service.validate(model_id, version, user)
+    if not report.get("valid"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Semantic View draft v{version} failed validation; review its quality report",
+        )
+    if (report.get("regression") or {}).get("changed", 0):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Semantic View draft v{version} needs explicit regression review "
+                "and acknowledgement before publish"
+            ),
+        )
+    await semantic_view_service.publish(model_id, version, user)
     role = session_security(user).active_role
     await rule_proposal_repository.set_status(
         proposal_id, owner_name=user["username"], role_name=role, status="approved"
@@ -892,6 +1034,7 @@ async def approve_rule_proposal(
 @router.post(
     "/semantic-models/{model_id}/rule-proposals/{proposal_id}/reject",
     response_model=RuleProposalView,
+    include_in_schema=False,
 )
 async def reject_rule_proposal(
     model_id: str, proposal_id: str, user: dict = Depends(get_current_user)
@@ -917,19 +1060,17 @@ async def reject_rule_proposal(
     return RuleProposalView(**updated)
 
 
-@router.get("/semantic-models/{model_id}", response_model=SemanticModelView)
+@router.get(
+    "/semantic-models/{model_id}", response_model=SemanticModelView,
+    include_in_schema=False,
+)
 async def get_semantic_model(model_id: str, user: dict = Depends(get_current_user)):
-    model = await agent_repository.get_semantic_model(model_id, owner_name=user["username"])
-    if model is None:
-        raise HTTPException(status_code=404, detail="Semantic model not found")
-    return _semantic_view(model)
+    raise HTTPException(status_code=410, detail="Use /api/v1/semantic-views")
 
 
-@router.delete("/semantic-models/{model_id}", status_code=204)
+@router.delete("/semantic-models/{model_id}", status_code=204, include_in_schema=False)
 async def delete_semantic_model(model_id: str, user: dict = Depends(get_current_user)):
-    if not await agent_repository.delete_semantic_model(model_id, owner_name=user["username"]):
-        raise HTTPException(status_code=404, detail="Semantic model not found")
-    return None
+    raise HTTPException(status_code=410, detail="Use Semantic View lifecycle actions")
 
 
 # ── Skills ─────────────────────────────────────────────────────
@@ -974,6 +1115,207 @@ async def delete_skill(skill_id: str, user: dict = Depends(get_current_user)):
 # captured as an agent id.
 
 
+@router.get("/auto/runs/{root_run_id}")
+async def get_auto_run_tree(root_run_id: str, user: dict = Depends(get_current_user)):
+    root = await _scoped_auto_root(root_run_id, user)
+    tree = await harness_repository.tree(
+        root_run_id, owner_name=user["username"], role_name=root["role_name"]
+    )
+    return {
+        "runs": [
+            {
+                "run_id": item["run_id"],
+                "root_run_id": root_run_id,
+                "parent_run_id": item["parent_run_id"],
+                "agent_id": item["agent_id"],
+                "agent_name": str((item.get("payload") or {}).get("agent_name") or ""),
+                "objective": item["objective"],
+                "status": item["status"],
+                "depth": item["depth"],
+                "summary": item["result_summary"],
+                "prompt_tokens": item["prompt_tokens"],
+                "completion_tokens": item["completion_tokens"],
+                "started_at": item["started_at"],
+                "updated_at": item["updated_at"],
+                "error_class": item["error_class"],
+            }
+            for item in tree
+        ]
+    }
+
+
+@router.get("/auto/threads/{thread_id}/runs")
+async def list_auto_thread_runs(thread_id: str, user: dict = Depends(get_current_user)):
+    await _require_agent_thread(thread_id, AUTO_AGENT_ID, user["username"])
+    roots = await harness_repository.roots_for_thread(
+        thread_id,
+        owner_name=user["username"],
+        role_name=session_security(user).active_role,
+    )
+    return {
+        "runs": [
+            {
+                "run_id": item["run_id"],
+                "status": item["status"],
+                "objective": item["objective"],
+                "started_at": item["started_at"],
+                "user_message_id": (item.get("payload") or {}).get("user_message_id"),
+                "final_message_id": str(
+                    uuid5(NAMESPACE_URL, f"nova:auto:final:{item['run_id']}")
+                ),
+            }
+            for item in roots
+        ]
+    }
+
+
+@router.get("/auto/runs/{root_run_id}/messages")
+async def get_auto_messages(root_run_id: str, user: dict = Depends(get_current_user)):
+    await _scoped_auto_root(root_run_id, user)
+    return {"messages": await harness_repository.messages_for_tree(root_run_id)}
+
+
+@router.get("/auto/runs/{root_run_id}/children/{child_run_id}/timeline")
+async def get_auto_child_timeline(
+    root_run_id: str,
+    child_run_id: str,
+    after: int = Query(default=-1, ge=-1, le=2**53 - 1),
+    limit: int = Query(default=100, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
+    root = await _scoped_auto_root(root_run_id, user)
+    child = await harness_repository.get(child_run_id)
+    if (
+        not child
+        or child["run_id"] != child_run_id
+        or child["root_run_id"] != root_run_id
+        or child["parent_run_id"] != root_run_id
+        or child["depth"] != 1
+        or child["owner_name"] != root["owner_name"]
+        or child["role_name"] != root["role_name"]
+        or child["thread_id"] != root["thread_id"]
+    ):
+        raise HTTPException(status_code=404, detail="Child run not found in this role")
+    if child["status"] in TERMINAL:
+        await harness_repository.ensure_terminal_event(root_run_id, child)
+    try:
+        agent = await agent_repository.get_agent(
+            child["agent_id"], owner_name=user["username"]
+        )
+        if agent is None:
+            agent = await agent_repository.get_shared_agent(
+                child["agent_id"], role_name=root["role_name"]
+            )
+    except AgentMetadataUnavailable:
+        agent = None
+    events_page, next_cursor, has_more = await harness_repository.child_events_page(
+        root_run_id, child_run_id, after, limit=limit
+    )
+    return {
+        "run": {
+            "run_id": child_run_id,
+            "root_run_id": root_run_id,
+            "agent_id": child["agent_id"],
+            "agent_name": str((child.get("payload") or {}).get("agent_name") or "")
+            or (agent["name"] if agent else "Specialist"),
+            "objective": child["objective"],
+            "status": child["status"],
+            "result_summary": child["result_summary"],
+            "error_class": child["error_class"],
+            "prompt_tokens": child["prompt_tokens"],
+            "completion_tokens": child["completion_tokens"],
+        },
+        "events": events_page,
+        "next_cursor": next_cursor,
+        "has_more": has_more,
+    }
+
+
+@router.post("/auto/runs/{root_run_id}/children/{child_run_id}/messages")
+async def send_auto_child_message(
+    root_run_id: str,
+    child_run_id: str,
+    body: AutoMessageRequest,
+    user: dict = Depends(get_current_user),
+):
+    root = await _scoped_auto_root(root_run_id, user)
+    child = await harness_repository.get(child_run_id)
+    if not child or child["root_run_id"] != root_run_id or child["status"] in TERMINAL:
+        raise HTTPException(status_code=404, detail="Active child not found")
+    try:
+        message_id = await harness_repository.send(
+            sender=root,
+            recipient=child,
+            operation_id=f"user:{body.operation_id}",
+            message_type="message",
+            content=body.content,
+            correlation_id=body.correlation_id,
+            reply_to=body.reply_to,
+            origin="user",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"message_id": message_id, "status": "queued"}
+
+
+@router.get("/auto/runs/{root_run_id}/events")
+async def get_auto_events(
+    root_run_id: str,
+    after: str = "",
+    user: dict = Depends(get_current_user),
+):
+    await _scoped_auto_root(root_run_id, user)
+    return {
+        "events": await harness_repository.events_after(
+            root_run_id, after, ensure_complete=True
+        )
+    }
+
+
+@router.post("/auto/runs/{root_run_id}/cancel")
+async def cancel_auto_run(root_run_id: str, user: dict = Depends(get_current_user)):
+    await _scoped_auto_root(root_run_id, user)
+    if not await harness_repository.cancel_tree(root_run_id):
+        raise HTTPException(status_code=409, detail="Auto run is already terminal")
+    await harness_repository.reconcile_cancelled_children(root_run_id)
+    await harness_repository.event(root_run_id, root_run_id, "agent_cancelled", {})
+    await write_audit_log(
+        event_type="AGENT_RUN",
+        user_name=user["username"],
+        action="CANCEL",
+        object_type="AGENT_RUN",
+        object_name=root_run_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=session_security(user).active_role,
+    )
+    return {"status": "cancelled"}
+
+
+@router.post("/auto/runs/{root_run_id}/children/{child_run_id}/cancel")
+async def cancel_auto_child(
+    root_run_id: str,
+    child_run_id: str,
+    user: dict = Depends(get_current_user),
+):
+    await _scoped_auto_root(root_run_id, user)
+    if not await harness_repository.cancel_child(root_run_id, child_run_id):
+        raise HTTPException(status_code=404, detail="Active child not found")
+    await harness_repository.event(root_run_id, child_run_id, "agent_cancelled", {})
+    await harness_repository.wake_parent(root_run_id)
+    await write_audit_log(
+        event_type="AGENT_RUN",
+        user_name=user["username"],
+        action="CANCEL",
+        object_type="AGENT_RUN",
+        object_name=child_run_id,
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=session_security(user).active_role,
+    )
+    return {"status": "cancelled"}
+
+
 @router.get("/{agent_id}", response_model=AgentView)
 async def get_agent(agent_id: str, user: dict = Depends(get_current_user)):
     if agent_id == SKILL_AUTHOR_ID:
@@ -994,6 +1336,7 @@ async def update_agent(
         raise HTTPException(404, "Agent not found")
     existing = await _require_agent(agent_id, user["username"])
     fields = body.model_dump(exclude_unset=True)
+    await _normalize_view_binding(fields, provided=body.model_fields_set, user=user)
     fields["harness_mode"] = "auto"
     unknown = _unknown_tools(fields.get("default_tools") or [])
     if unknown:
@@ -1033,6 +1376,7 @@ async def update_agent(
 async def delete_agent(agent_id: str, user: dict = Depends(get_current_user)):
     if not await agent_repository.delete_agent(agent_id, owner_name=user["username"]):
         raise HTTPException(status_code=404, detail="Agent not found")
+    await capability_repository.delete(agent_id, user["username"])
     await memory_repository.delete_agent(user_name=user["username"], agent_id=agent_id)
     await write_audit_log(
         event_type="AGENT_MEMORY",
@@ -1106,7 +1450,14 @@ async def delete_agent_memory(
 @router.get("/{agent_id}/threads", response_model=ThreadListResponse)
 async def list_agent_threads(agent_id: str, user: dict = Depends(get_current_user)):
     await _require_agent(agent_id, user)
-    threads = await assistant_repository.list_threads(user_name=user["username"], agent_id=agent_id)
+    try:
+        threads = await assistant_repository.list_threads(
+            user_name=user["username"], agent_id=agent_id
+        )
+    except AssistantThreadListUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Conversation history is temporarily unavailable"
+        ) from exc
     views = [_thread_view(t) for t in threads]
     return ThreadListResponse(threads=views, count=len(views))
 
@@ -1141,7 +1492,11 @@ async def get_agent_thread(
 ):
     await _require_agent(agent_id, user)
     thread = await _require_agent_thread(thread_id, agent_id, user["username"])
-    messages = await assistant_repository.list_messages(thread_id, user_name=user["username"])
+    messages = await assistant_repository.list_messages(
+        thread_id,
+        user_name=user["username"],
+        synchronize=agent_id == AUTO_AGENT_ID,
+    )
     return ThreadDetailResponse(
         thread=_thread_view(thread),
         messages=[_message_view(m) for m in messages],
@@ -1188,7 +1543,17 @@ async def delete_agent_thread(
 ):
     await _require_agent(agent_id, user)
     await _require_agent_thread(thread_id, agent_id, user["username"])
-    if not await assistant_repository.delete_thread(thread_id, user_name=user["username"]):
+    if agent_id == AUTO_AGENT_ID:
+        async with _auto_admission(thread_id, user["username"]) as assert_owned:
+            await _require_agent_thread(thread_id, agent_id, user["username"])
+            if await harness_repository.active_for_thread(thread_id, user["username"]):
+                raise HTTPException(status_code=409, detail="Cancel the active Auto run first")
+            await assert_owned()
+            await harness_repository.delete_thread(thread_id, owner_name=user["username"])
+            await assert_owned()
+            if not await assistant_repository.delete_thread(thread_id, user_name=user["username"]):
+                raise HTTPException(status_code=404, detail="Thread not found")
+    elif not await assistant_repository.delete_thread(thread_id, user_name=user["username"]):
         raise HTTPException(status_code=404, detail="Thread not found")
     await run_journal.delete_thread(thread_id, owner_name=user["username"])
     thread_store.remove(thread_id, user_name=user["username"])
@@ -1229,6 +1594,21 @@ async def replay_agent_run(
     await _require_agent(agent_id, user)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     role = session_security(user).active_role
+    if agent_id == AUTO_AGENT_ID:
+        root = await harness_repository.get(run_id)
+        if (
+            not root
+            or root["depth"] != 0
+            or root["thread_id"] != thread_id
+            or root["owner_name"] != user["username"]
+            or root["role_name"] != role
+        ):
+            raise HTTPException(status_code=404, detail="Run not found in this role")
+        return StreamingResponse(
+            _stream_auto_events(run_id, after),
+            media_type=events.SSE_MEDIA_TYPE,
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
     scope = dict(
         owner_name=user["username"],
         agent_id=agent_id,
@@ -1316,6 +1696,51 @@ async def send_agent_message(
     agent = await _require_agent(agent_id, user)
     user_name = user["username"]
     thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
+    if agent_id == AUTO_AGENT_ID:
+        if attachments:
+            raise HTTPException(status_code=422, detail="Auto does not yet support attachments")
+        from app.modules.assistant.skills import contains_credential_shape
+
+        if not body.content.strip() or contains_credential_shape(body.content):
+            raise HTTPException(status_code=422, detail="Invalid Auto message")
+        async with _auto_admission(thread_id, user_name) as assert_owned:
+            thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
+            if await harness_repository.active_for_thread(thread_id, user_name):
+                raise HTTPException(status_code=409, detail="An Auto run is already active")
+            await assert_owned()
+            user_message = await assistant_repository.append_message(
+                thread_id,
+                user_name=user_name,
+                role="user",
+                content=body.content,
+                security_context=stamp,
+            )
+            if thread_row["title"] in {"New chat", "New conversation"}:
+                await assistant_repository.rename_thread(
+                    thread_id, _thread_title(body.content), user_name=user_name
+                )
+            await assert_owned()
+            root = await harness_repository.create_root(
+                owner_name=user_name,
+                thread_id=thread_id,
+                role_name=security.active_role,
+                session_id=user["session_id"],
+                security_version=int(user.get("security_context_version") or 1),
+                objective=body.content,
+                provider_id=body.provider_id,
+                model=body.model,
+                user_message_id=user_message["message_id"],
+            )
+            await assert_owned()
+        return StreamingResponse(
+            _stream_auto_events(root["run_id"], -1),
+            media_type=events.SSE_MEDIA_TYPE,
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "X-Nova-Run-ID": root["run_id"],
+            },
+        )
 
     registry, system_prompt, budget, token_budget = await agent_service.build_loop_inputs(agent)
 
@@ -1426,7 +1851,7 @@ async def send_agent_message(
 
     context = LoopContext(
         user_name=user_name,
-        database=await _resolve_database(agent),
+        database=await _resolve_database(agent, user),
         schema_name=agent.get("schema_name"),
         role=security.active_role,
         workspace_file_id=thread_row.get("workspace_file_id"),
@@ -1440,6 +1865,7 @@ async def send_agent_message(
         agent_owner_name=agent.get("owner_name"),
         semantic_model_id=agent.get("semantic_model_id"),
         semantic_model_ids=agent.get("semantic_model_ids") or [],
+        semantic_view_ids=bound_view_ids(agent),
         model_provider_id=agent.get("model_provider_id"),
         model_name=agent.get("model_name"),
         harness_mode="auto",

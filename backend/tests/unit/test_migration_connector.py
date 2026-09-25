@@ -42,6 +42,7 @@ from app.modules.migration.verdicts import (
     REASON_TASK_RECONSTRUCTED,
     classify,
 )
+from tests.unit.migration_inline_worker import install_inline_read_worker
 
 #: A value that must never appear in a response. It is shaped like a credential
 #: so the redactor's rules are exercised, and it is written into fake source
@@ -222,7 +223,8 @@ def stub_source_connection(monkeypatch):
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    install_inline_read_worker(monkeypatch)
     app = FastAPI()
     app.include_router(migration_router.router, prefix="/api/v1/migration")
     app.dependency_overrides[migration_router.get_current_user] = lambda: {
@@ -506,10 +508,17 @@ class TestDryRun:
         summary = response.summary
         # orders + v_orders + mv_async.
         assert summary.migratable == 3
-        # mv_sync + t1 + p1 + add_one + g_upper (UDF arg names inferred → lossy).
-        assert summary.lossy == 5
+        # Global functions are reported only when explicitly selected.
+        assert summary.lossy == 4
         assert summary.skipped == 2  # mask_email, rap_region
-        assert summary.total == 10
+        assert summary.total == 9
+
+    async def test_global_function_requires_explicit_selection(self, fake_repo, fake_audit):
+        _seed_all(fake_repo)
+        default = await migration_service.dry_run(SOURCE, "db1", [], actor="alice")
+        selected = await migration_service.dry_run(SOURCE, "db1", ["g_upper"], actor="alice")
+        assert "g_upper" not in {item.name for item in default.items}
+        assert [item.name for item in selected.items] == ["g_upper"]
 
     async def test_selection_narrows_items(self, fake_repo, fake_audit):
         _seed_all(fake_repo)
@@ -691,7 +700,7 @@ class TestHttpContract:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["summary"]["skipped"] == 2
-        assert body["summary"]["lossy"] == 5
+        assert body["summary"]["lossy"] == 4
 
     def test_dry_run_unknown_source_is_404(self, fake_repo, fake_audit, client):
         resp = client.post(

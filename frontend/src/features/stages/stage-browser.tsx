@@ -140,7 +140,7 @@ export function StageBrowser({ stage, onBack }: StageBrowserProps) {
   }
 
   return (
-    <div className='flex min-h-0 flex-1 flex-col gap-6'>
+    <div className='flex min-h-0 flex-1 flex-col gap-6 overflow-hidden'>
       <div>
         <Button variant='ghost' size='sm' className='-ms-2 mb-2' onClick={onBack}>
           <ArrowLeft className='me-1.5 size-4' />
@@ -216,7 +216,7 @@ export function StageBrowser({ stage, onBack }: StageBrowserProps) {
         {filesQuery.isFetching && !filesQuery.isLoading ? (
           <RefreshBanner label='Refreshing files...' />
         ) : null}
-        <div className='min-h-0 overflow-auto rounded-lg border border-border bg-background'>
+        <div className='h-full min-h-0 overflow-auto rounded-lg border border-border bg-background'>
           <table className='w-full'>
             <thead className='sticky top-0 z-10 border-b border-border bg-muted'>
               <tr>

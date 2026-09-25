@@ -10,6 +10,7 @@ import bash from "highlight.js/lib/languages/bash";
 import { cn } from "@/lib/utils";
 import { CodeCard } from "./code-card";
 import type { TurnContext } from "./stream-client";
+import type { NoveEventInput } from "./app-context";
 
 /**
  * Markdown renderer for assistant answers. GFM is enabled so the tables and
@@ -35,10 +36,14 @@ function CodeBlock({
   code,
   language,
   runContext,
+  onExecutionEvent,
+  onFixWithNove,
 }: {
   code: string;
   language: string;
   runContext?: TurnContext;
+  onExecutionEvent?: (event: NoveEventInput) => void;
+  onFixWithNove?: (prompt: string) => void;
 }) {
   const normalized = language.toLowerCase();
   const html = useMemo(() => {
@@ -59,6 +64,8 @@ function CodeBlock({
       highlighted={html}
       runContext={runContext}
       runnable={RUNNABLE_LANGUAGES.has(normalized)}
+      onExecutionEvent={onExecutionEvent}
+      onFixWithNove={onFixWithNove}
     />
   );
 }
@@ -121,11 +128,15 @@ export const Markdown = memo(function Markdown({
   children,
   className,
   runContext,
+  onExecutionEvent,
+  onFixWithNove,
 }: {
   children: string;
   className?: string;
   /** Context a SQL code card's Run button executes against. */
   runContext?: TurnContext;
+  onExecutionEvent?: (event: NoveEventInput) => void;
+  onFixWithNove?: (prompt: string) => void;
 }) {
   // The `code` override closes over the run context so a fenced SQL block can
   // offer Run. Only that one entry differs, so the rest of the map is reused.
@@ -141,6 +152,8 @@ export const Markdown = memo(function Markdown({
               code={text}
               language={match?.[1] ?? ""}
               runContext={runContext}
+              onExecutionEvent={onExecutionEvent}
+              onFixWithNove={onFixWithNove}
             />
           );
         }
@@ -154,7 +167,7 @@ export const Markdown = memo(function Markdown({
         );
       },
     }),
-    [runContext],
+    [runContext, onExecutionEvent, onFixWithNove],
   );
 
   return (

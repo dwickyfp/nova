@@ -1,0 +1,3 @@
+- targets: ["nova-backend:8000"]
+  labels:
+    service: nova-backend

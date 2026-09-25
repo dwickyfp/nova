@@ -132,6 +132,13 @@ export type AssistantEvent = (
     }
   | { type: "error"; code: string; message: string }
   | { type: "ping" }
+  | {
+      type: "client_action";
+      capability: string;
+      args: Record<string, unknown>;
+      correlation_id: string;
+      surface_id?: string;
+    }
 ) & {
   /** Stable identity shared by every event in one turn. */
   run_id?: string;

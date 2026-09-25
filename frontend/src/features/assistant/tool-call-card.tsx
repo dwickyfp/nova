@@ -1,21 +1,17 @@
 import { useRef, useState } from "react";
-import { AlertTriangle, Ban, Check, Loader2, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  Ban,
+  Check,
+  ChevronRight,
+  Loader2,
+  ShieldAlert,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import type { ToolCallView, ToolCallStatus } from "./types";
-
-const STATUS_TONE: Record<ToolCallStatus, StatusTone> = {
-  pending: "warning",
-  approved: "info",
-  denied: "neutral",
-  running: "info",
-  done: "success",
-  failed: "danger",
-  cancelled: "neutral",
-};
 
 const STATUS_LABEL: Record<ToolCallStatus, string> = {
   pending: "Awaiting approval",
@@ -25,6 +21,14 @@ const STATUS_LABEL: Record<ToolCallStatus, string> = {
   done: "Done",
   failed: "Failed",
   cancelled: "Cancelled",
+};
+
+const TOOL_LABEL: Record<string, string> = {
+  query_execute: "Run query",
+  semantic_query: "Query data",
+  search_knowledge: "Check guidance",
+  call_ui_operation: "Apply action",
+  invoke_client_capability: "Update view",
 };
 
 export type ToolCallDecision = {
@@ -51,6 +55,7 @@ export function ToolCallCard({
   busy,
 }: ToolCallCardProps) {
   const [alwaysAllow, setAlwaysAllow] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const canOfferAlwaysAllow = toolCall.classification === "read_only";
@@ -65,6 +70,9 @@ export function ToolCallCard({
       ));
   const isDecidable =
     toolCall.status === "pending" && Boolean(onDecide && toolCallId);
+  const detailsVisible = toolCall.status === "pending" || showDetails;
+  const title =
+    TOOL_LABEL[toolCall.tool_name] ?? toolCall.tool_name.replace(/_/g, " ");
 
   const decide = (decision: "approve" | "deny") => {
     if (!toolCallId) return;
@@ -111,31 +119,69 @@ export function ToolCallCard({
       data-slot="tool-call-card"
       data-classification={toolCall.classification}
       className={cn(
-        "rounded-lg border bg-surface-2 p-3",
-        toolCall.classification === "denied" && "border-destructive/35",
+        "min-w-0 border-l pl-3 text-xs text-muted-foreground",
+        toolCall.status === "failed" && "border-destructive/60",
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <code className="truncate font-mono text-xs text-foreground">
-          {toolCall.tool_name}
-        </code>
-        <StatusBadge
-          tone={STATUS_TONE[toolCall.status]}
-          dot={toolCall.status === "running"}
+      <div className="flex min-h-11 min-w-0 items-center gap-1.5 sm:min-h-7">
+        {toolCall.status === "running" ? (
+          <Loader2
+            aria-hidden="true"
+            className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+          />
+        ) : toolCall.status === "failed" ? (
+          <AlertTriangle
+            aria-hidden="true"
+            className="size-3.5 shrink-0 text-destructive"
+          />
+        ) : toolCall.status === "done" ? (
+          <Check
+            aria-hidden="true"
+            className="size-3.5 shrink-0 text-success-strong"
+          />
+        ) : null}
+        <span className="shrink-0 font-medium text-foreground">{title}</span>
+        <span aria-hidden="true">·</span>
+        <span
+          className={cn(
+            "shrink-0",
+            toolCall.status === "failed" && "text-destructive",
+          )}
         >
-          {toolCall.status === "running" ? (
-            <Loader2 aria-hidden="true" className="size-3 animate-spin" />
-          ) : null}
           {STATUS_LABEL[toolCall.status]}
-        </StatusBadge>
+        </span>
+        {toolCall.status !== "pending" ? (
+          <button
+            type="button"
+            aria-label={`${detailsVisible ? "Hide" : "Show"} ${title} details`}
+            aria-expanded={detailsVisible}
+            onClick={() => setShowDetails((value) => !value)}
+            className="ml-auto inline-flex size-11 shrink-0 items-center justify-center rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-8"
+          >
+            <ChevronRight
+              aria-hidden="true"
+              className={cn(
+                "size-3.5 transition-transform",
+                detailsVisible && "rotate-90",
+              )}
+            />
+          </button>
+        ) : null}
       </div>
 
-      <pre className="mt-2 max-h-40 overflow-auto rounded-md border bg-surface-1 p-2 text-xs whitespace-pre-wrap text-foreground">
-        {toolCall.sql_preview}
-      </pre>
+      {detailsVisible ? (
+        <div className="mt-1.5 space-y-1.5">
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-foreground">
+            {toolCall.sql_preview}
+          </pre>
+          {!isDecidable ? (
+            <p className="font-mono text-[11px]">{toolCall.tool_name}</p>
+          ) : null}
+        </div>
+      ) : null}
 
-      {toolCall.classification !== "read_only" ? (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-warning-strong">
+      {isDecidable && toolCall.classification !== "read_only" ? (
+        <p className="mt-1.5 flex items-center gap-1.5 text-warning-strong">
           <ShieldAlert aria-hidden="true" className="size-3.5 shrink-0" />
           {toolCall.classification === "session_change"
             ? "This statement changes your active role and requires approval."
@@ -144,19 +190,13 @@ export function ToolCallCard({
       ) : null}
 
       {toolCall.result_summary ? (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Check
-            aria-hidden="true"
-            className="size-3.5 shrink-0 text-success-strong"
-          />
-          {toolCall.result_summary}
-        </p>
+        <p className="mt-1 text-muted-foreground">{toolCall.result_summary}</p>
       ) : null}
 
       {toolCall.error ? (
         <p
           role="alert"
-          className="mt-2 flex items-start gap-1.5 text-xs text-destructive"
+          className="mt-1 flex items-start gap-1.5 text-destructive"
         >
           <AlertTriangle
             aria-hidden="true"
@@ -167,7 +207,7 @@ export function ToolCallCard({
       ) : null}
 
       {isDecidable ? (
-        <div className="mt-3 space-y-2 border-t pt-3">
+        <div className="mt-2 space-y-2">
           {needsPassword ? (
             <label className="block space-y-1.5 text-xs text-muted-foreground">
               Password for the new user
@@ -208,6 +248,7 @@ export function ToolCallCard({
               type="button"
               size="sm"
               variant="outline"
+              className="min-h-11 sm:min-h-0"
               disabled={busy}
               onClick={() => decide("deny")}
             >
@@ -217,6 +258,7 @@ export function ToolCallCard({
             <Button
               type="button"
               size="sm"
+              className="min-h-11 sm:min-h-0"
               disabled={busy}
               onClick={() => decide("approve")}
             >

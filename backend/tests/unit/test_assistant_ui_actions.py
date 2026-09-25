@@ -28,7 +28,8 @@ def test_catalog_covers_requested_ui_operations_and_excludes_private_routes() ->
     assert "POST /api/v1/users" in operations
     assert "POST /api/v1/access-control/data-scopes" in operations
     assert "POST /api/v1/agents/mcp-servers" in operations
-    assert "POST /api/v1/agents/semantic-models" in operations
+    assert "POST /api/v1/semantic-views" in operations
+    assert "POST /api/v1/agents/semantic-models" not in operations
     assert "POST /api/v1/stages/{stage_id}/files" in operations
     assert "POST /api/v1/explorer/databases/{database}/stages/{stage}/files" in operations
     assert "PATCH /api/v1/assistant/threads/{thread_id}" in operations
@@ -80,7 +81,6 @@ async def test_browse_lists_exact_resources_and_operation_schema() -> None:
         ("workspaces", "PUT", "PUT /api/v1/workspaces/files/{entry_id}"),
         ("users", "POST", "POST /api/v1/users"),
         ("agents", "POST", "POST /api/v1/agents"),
-        ("agents", "POST", "POST /api/v1/agents/semantic-models"),
         ("semantic-views", "POST", "POST /api/v1/semantic-views"),
         ("agents", "POST", "POST /api/v1/agents/mcp-servers"),
         ("agents", "PATCH", "PATCH /api/v1/agents/mcp-servers/{server_id}"),

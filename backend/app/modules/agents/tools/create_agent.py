@@ -55,11 +55,16 @@ _PARAMETERS = {
             "type": "string",
             "description": "How the agent should choose tools and work the request.",
         },
+        "semantic_view_names": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Names or IDs of published Semantic Views to bind to this agent.",
+        },
         "semantic_model_name": {
             "type": "string",
             "description": (
-                "Name of one of the user's existing semantic models to bind. "
-                "Omit if the agent should not use a semantic model."
+                "Legacy input for one published Semantic View name. "
+                "Use semantic_view_names for new calls."
             ),
         },
         "tools": {
@@ -87,7 +92,7 @@ class CreateAgentTool:
     name = "create_agent"
     description = (
         "Create an Agent Studio agent with instructions, tools, and an optional "
-        "semantic model. Requires your approval before it writes."
+        "published Semantic Views. Requires your approval before it writes."
     )
     parameters = _PARAMETERS
     classification: ToolClassification = "destructive"
@@ -95,10 +100,13 @@ class CreateAgentTool:
 
     def preview(self, invocation: ToolInvocation) -> str:
         name = str(invocation.arguments.get("name") or "").strip()
-        model = str(invocation.arguments.get("semantic_model_name") or "").strip()
+        names = invocation.arguments.get("semantic_view_names")
+        if not isinstance(names, list):
+            names = [invocation.arguments.get("semantic_model_name")]
+        views = ", ".join(str(name) for name in names if name)
         tools = invocation.arguments.get("tools") or []
         tool_list = ", ".join(str(t) for t in tools) if isinstance(tools, list) else ""
-        suffix = f" (semantic model: {model})" if model else ""
+        suffix = f" (Semantic Views: {views})" if views else ""
         return f"create agent `{name}`{suffix} with tools: {tool_list or 'default'}"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
@@ -125,21 +133,40 @@ class CreateAgentTool:
         if not selected:
             selected = ["load_skill"]
 
-        semantic_model_id = None
-        model_name = str(invocation.arguments.get("semantic_model_name") or "").strip()
-        if model_name:
-            models = await agent_repository.list_semantic_models(owner_name=owner)
-            match = next((m for m in models if m["name"] == model_name), None)
-            if match is None:
-                available = ", ".join(m["name"] for m in models) or "none"
+        names = invocation.arguments.get("semantic_view_names")
+        if names is None:
+            old_name = str(invocation.arguments.get("semantic_model_name") or "").strip()
+            names = [old_name] if old_name else []
+        if not isinstance(names, list) or len(names) > 16 or any(
+            not isinstance(item, str) or not item.strip() for item in names
+        ):
+            return ToolOutcome(ok=False, summary="", error="Select at most 16 Semantic Views.")
+        user = getattr(context, "user", None) or {}
+        if names and not user.get("encrypted_password"):
+            return ToolOutcome(ok=False, summary="", error="No user connection is available.")
+        from app.modules.intelligence.semantic_views import semantic_view_service
+
+        available_views = (
+            await semantic_view_service.list_active_for_agent(user) if names else []
+        )
+        selected_views = []
+        for requested in names:
+            matches = [
+                view for view in available_views
+                if requested.strip() in {str(view.get("id")), str(view.get("name"))}
+            ]
+            if len(matches) != 1:
                 return ToolOutcome(
                     ok=False,
                     summary="",
-                    error=(f"No semantic model named {model_name!r}. Available: {available}."),
+                    error=f"Published Semantic View {requested!r} is unavailable or ambiguous.",
                 )
-            semantic_model_id = match["semantic_model_id"]
+            selected_views.append(matches[0])
+        view_ids = list(dict.fromkeys(str(view["id"]) for view in selected_views))
 
-        database_name = getattr(context, "database", None) or None
+        database_name = getattr(context, "database", None) or (
+            selected_views[0].get("database_name") if selected_views else None
+        )
 
         sample_questions = invocation.arguments.get("sample_questions")
         questions = (
@@ -166,7 +193,7 @@ class CreateAgentTool:
             "default_tools": selected,
             "default_skills": [],
             "policy": "auto_read_only",
-            "semantic_model_id": semantic_model_id,
+            "semantic_view_ids": view_ids,
             "visibility": "private",
         }
 
@@ -204,7 +231,7 @@ class CreateAgentTool:
             ok=True,
             summary=(
                 f"Created agent `{created['name']}` with tools: {', '.join(selected)}"
-                + (f", semantic model: {model_name}" if model_name else "")
+                + (f", Semantic Views: {', '.join(names)}" if names else "")
                 + ". Open AI & ML > Agent to review it, or Nova Studio to chat with it. "
                 "Do not create it again."
             ),

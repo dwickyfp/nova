@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -12,6 +11,7 @@ import {
   clampAssistantOffsetY,
 } from "./assistant-panel-state";
 import { useAssistant } from "./assistant-provider";
+import { NoveMark } from "./nove-mark";
 
 type DragState = {
   pointerId: number;
@@ -170,7 +170,7 @@ export function AssistantToggle({ draggable = false }: AssistantToggleProps) {
 
   return createPortal(
     <div
-      className="group fixed right-[calc(100%-100vw)] z-50 flex items-center"
+      className="group fixed right-0 z-50 flex items-center"
       style={{
         bottom: `calc(1rem + ${offsetY}px)`,
         transition: dragging ? undefined : "bottom 200ms ease-out",
@@ -184,7 +184,7 @@ export function AssistantToggle({ draggable = false }: AssistantToggleProps) {
             size="icon"
             variant="default"
             className={
-              "relative min-h-9 min-w-11 rounded-l-lg rounded-r-none px-3 shadow-lg transition-[min-width] duration-200 motion-reduce:transition-none" +
+              "relative min-h-11 min-w-11 rounded-l-lg rounded-r-none px-3 shadow-lg transition-[min-width] duration-200 motion-reduce:transition-none sm:min-h-9" +
               (draggable
                 ? " cursor-row-resize touch-none group-hover:min-w-16 group-focus-within:min-w-16"
                 : "")
@@ -210,7 +210,7 @@ export function AssistantToggle({ draggable = false }: AssistantToggleProps) {
                 ))}
               </span>
             ) : null}
-            <Sparkles aria-hidden="true" className="absolute right-3 size-4.5" />
+            <NoveMark className="absolute right-3 size-4.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent

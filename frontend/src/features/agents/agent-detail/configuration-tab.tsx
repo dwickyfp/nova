@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentModelSelect } from "./model-select";
+import { semanticViewsApi, type SemanticView } from "@/features/intelligence/semantic-views-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -194,9 +195,9 @@ function ToolsConfig({
     queryKey: ["tools"],
     queryFn: () => toolsApi.list(),
   });
-  const modelsQuery = useQuery({
-    queryKey: ["agents", "semantic-models"],
-    queryFn: () => agentsApi.listSemanticModels(),
+  const viewsQuery = useQuery({
+    queryKey: ["semantic-views"],
+    queryFn: semanticViewsApi.list,
   });
 
   const toggle = (name: string) => {
@@ -284,25 +285,25 @@ function ToolsConfig({
         </div>
 
         <AddSemanticView
-          models={modelsQuery.data?.models ?? []}
-          selected={draft.semantic_model_ids ?? []}
-          onChange={(ids) => set("semantic_model_ids", ids)}
+          views={(viewsQuery.data ?? []).filter((view) =>
+            view.status === "ACTIVE" && view.active_version !== null)}
+          selected={draft.semantic_view_ids ?? []}
+          onChange={(ids) => set("semantic_view_ids", ids)}
         />
 
-        {(draft.semantic_model_ids ?? []).length === 0 ? (
+        {viewsQuery.isPending ? <p className="text-xs text-muted-foreground">Loading Semantic Views…</p> : null}
+        {viewsQuery.isError ? <p role="alert" className="text-xs text-destructive">Could not load Semantic Views. Try reopening this tab.</p> : null}
+
+        {(draft.semantic_view_ids ?? []).length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No semantic views added.
+            No Semantic Views added. <Link to="/semantic-views" className="underline underline-offset-2">Publish a View</Link> before binding it to an agent.
           </p>
         ) : (
           <div className="space-y-2">
-            {(draft.semantic_model_ids ?? []).map((id) => {
-              const model = modelsQuery.data?.models.find(
-                (m) => m.semantic_model_id === id,
+            {(draft.semantic_view_ids ?? []).map((id) => {
+              const view = viewsQuery.data?.find(
+                (item) => item.id === id,
               );
-              if (!model) return null;
-              const datasets = Array.isArray(model.definition.datasets)
-                ? (model.definition.datasets as unknown[]).length
-                : 0;
               return (
                 <div
                   key={id}
@@ -310,28 +311,24 @@ function ToolsConfig({
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{model.name}</span>
+                      <span className="font-medium">{view?.name ?? id}</span>
                       <Badge variant="outline">
-                        Ossie {model.ossie_version}
+                        {view?.status ?? "Unavailable"}
                       </Badge>
                     </div>
-                    {model.description ? (
-                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                        {model.description}
-                      </p>
-                    ) : null}
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {model.database_name ?? "—"} · {datasets} datasets
+                      {view?.database_name ?? "View is no longer accessible"}
+                      {view?.active_version ? ` · v${view.active_version}` : ""}
                     </p>
                   </div>
                   <Button
                     size="icon"
                     variant="ghost"
-                    aria-label={`Remove ${model.name}`}
+                    aria-label={`Remove ${view?.name ?? id}`}
                     onClick={() =>
                       set(
-                        "semantic_model_ids",
-                        (draft.semantic_model_ids ?? []).filter(
+                        "semantic_view_ids",
+                        (draft.semantic_view_ids ?? []).filter(
                           (x) => x !== id,
                         ),
                       )
@@ -352,37 +349,37 @@ function ToolsConfig({
 }
 
 function AddSemanticView({
-  models,
+  views,
   selected,
   onChange,
 }: {
-  models: { semantic_model_id: string; name: string }[];
+  views: SemanticView[];
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
   const [pick, setPick] = useState<string>("");
-  const available = models.filter(
-    (m) => !selected.includes(m.semantic_model_id),
+  const available = views.filter(
+    (view) => !selected.includes(view.id),
   );
 
   return (
     <div className="flex items-center gap-2">
-      <Select value={pick || undefined} onValueChange={setPick}>
-        <SelectTrigger className="max-w-xs">
+      <Select value={pick} onValueChange={setPick}>
+        <SelectTrigger className="max-w-xs" aria-label="Select a semantic view">
           <SelectValue placeholder="Select a semantic view" />
         </SelectTrigger>
         <SelectContent>
           {available.length === 0 ? (
             <SelectItem value="__none__" disabled>
-              No more models
+              No more published Views
             </SelectItem>
           ) : (
-            available.map((model) => (
+            available.map((view) => (
               <SelectItem
-                key={model.semantic_model_id}
-                value={model.semantic_model_id}
+                key={view.id}
+                value={view.id}
               >
-                {model.name}
+                {view.name} · {view.database_name} · v{view.active_version}
               </SelectItem>
             ))
           )}
@@ -390,6 +387,7 @@ function AddSemanticView({
       </Select>
       <Button
         variant="outline"
+        aria-label="Add Semantic View"
         disabled={!pick || pick === "__none__"}
         onClick={() => {
           onChange([...selected, pick]);
@@ -670,9 +668,11 @@ function toAgentDraft(agent: Agent): AgentCreateInput {
     created_at: _createdAt,
     updated_at: _updatedAt,
     compiled_instructions: _compiledInstructions,
+    semantic_model_id: _semanticModelId,
+    semantic_model_ids: _semanticModelIds,
     ...draft
   } = agent;
-  return { ...draft, harness_mode: "auto" };
+  return { ...draft, semantic_view_ids: agent.semantic_view_ids ?? [], harness_mode: "auto" };
 }
 
 function McpConfig() {

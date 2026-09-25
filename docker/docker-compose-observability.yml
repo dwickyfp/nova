@@ -1,0 +1,144 @@
+# Add to docker-compose-engine.yml for Prometheus and Grafana.
+# NOVA_METRICS_MODE=host scrapes processes started by ../dev.sh.
+# NOVA_METRICS_MODE=container scrapes the application services below.
+services:
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    container_name: nova-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./observability/prometheus/targets/${NOVA_METRICS_MODE:-host}:/etc/prometheus/targets:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - nova
+
+  grafana:
+    image: grafana/grafana:13.2.2-ubuntu
+    container_name: nova-grafana
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in docker/.env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    restart: unless-stopped
+    networks:
+      - nova
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.89.0-alpine
+    container_name: nova-redis-exporter
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-novaredis}
+    restart: unless-stopped
+    networks:
+      - nova
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: nova-blackbox-exporter
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./observability/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    restart: unless-stopped
+    networks:
+      - nova
+      - ranger-policy
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    container_name: nova-node-exporter
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+
+  nova-scheduler:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    container_name: nova-scheduler
+    command: ["python", "-m", "app.scheduler"]
+    depends_on:
+      starrocks-init:
+        condition: service_completed_successfully
+      ranger-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment: &nova-runtime-env
+      STARROCKS_HOST: starrocks-fe
+      STARROCKS_FE_MYSQL_PORT: 9030
+      REDIS_URL: redis://:${REDIS_PASSWORD:-novaredis}@redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ACCESS_KEY:-nova}
+      S3_SECRET_KEY: ${MINIO_SECRET_KEY:-novasecret}
+      RANGER_ENABLED: "true"
+      RANGER_ADMIN_URL: http://ranger-admin:6080
+      RANGER_SERVICE_NAME: ${RANGER_SERVICE_NAME:-nova_starrocks}
+      RANGER_USERNAME: admin
+      RANGER_PASSWORD: ${RANGER_DB_PASSWORD:-rangerR0cks!}
+      RANGER_TLS_VERIFY: "false"
+      SECRET_KEY: ${NOVA_SECRET_KEY:?set NOVA_SECRET_KEY in docker/.env}
+      FERNET_KEY: ${NOVA_FERNET_KEY:?set NOVA_FERNET_KEY in docker/.env}
+      NOVA_CONFIG_PATH: /opt/nova/config/nova.yaml
+      MIGRATION_EXECUTE_ENABLED: ${MIGRATION_EXECUTE_ENABLED:-false}
+      NOVA_METRICS_HOST: 0.0.0.0
+    volumes:
+      - ./nova.yaml:/opt/nova/config/nova.yaml:ro
+    restart: unless-stopped
+    networks:
+      - nova
+
+  nova-agent-worker:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    container_name: nova-agent-worker
+    command: ["python", "-m", "app.agent_worker"]
+    depends_on:
+      starrocks-init:
+        condition: service_completed_successfully
+      ranger-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      <<: *nova-runtime-env
+    volumes:
+      - ./nova.yaml:/opt/nova/config/nova.yaml:ro
+    restart: unless-stopped
+    networks:
+      - nova
+
+volumes:
+  prometheus_data:
+  grafana_data:

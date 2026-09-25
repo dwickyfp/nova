@@ -197,6 +197,8 @@ async def test_attachment_survives_starrocks_message_roundtrip(monkeypatch):
         inserted = None
 
         async def execute_system(self, sql, params=None):
+            if "COUNT(*) AS n" in sql and "CONFIG_ASSISTANT_MESSAGES" in sql:
+                return {"rows": [[params[0], params[1], 0]]}
             if "SELECT COUNT" in sql:
                 return {"rows": [[0]]}
             if "INSERT INTO NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES" in sql:

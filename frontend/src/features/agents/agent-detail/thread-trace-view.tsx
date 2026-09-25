@@ -766,13 +766,13 @@ function SemanticDetail({
           </p>
         </DetailField>
       </Panel>
-      <Panel title="Semantic model">
+      <Panel title="Semantic View">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
           <dt className="text-muted-foreground">Name</dt>
           <dd className="text-right">
             {stringValue(model?.name) || "Not recorded"}
           </dd>
-          <dt className="text-muted-foreground">Model ID</dt>
+          <dt className="text-muted-foreground">View ID</dt>
           <dd className="truncate text-right font-mono">
             {stringValue(model?.id) || "—"}
           </dd>
@@ -945,9 +945,9 @@ function RuntimeDecisionDetail({
           <dd className="text-right font-mono">{step.intent}</dd>
           <dt className="text-muted-foreground">Effective strategy</dt>
           <dd className="text-right capitalize">{step.harness_mode}</dd>
-          <dt className="text-muted-foreground">Semantic models</dt>
+          <dt className="text-muted-foreground">Semantic Views</dt>
           <dd className="text-right tabular-nums">
-            {step.semantic_model_ids.length}
+            {(step.semantic_view_ids ?? step.semantic_model_ids).length}
           </dd>
         </dl>
       </Panel>

@@ -13,12 +13,13 @@ closed — the local engine is never used as a silent fallback. QA Finding 2
 (Medium): source registration and dry-run write ``NOVA_SYSTEM.AUDIT_LOG`` rows
 through the existing ``app.common.audit`` writer; no new audit path is added.
 
-Execute is not part of this module. The only engine interaction is
-``engine.status()``, which is a filesystem check.
+Worker-side execution also uses this service to plan, apply DDL, copy table
+data, and verify results. The HTTP router only enqueues that work.
 """
 
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 from app.common.audit import write_audit_log
@@ -42,6 +43,7 @@ from app.modules.migration.preflight import (
 from app.modules.migration.repository import migration_repo
 from app.modules.migration.schemas import (
     BlockedObjectResponse,
+    DatabasesResponse,
     DryRunItem,
     DryRunResponse,
     DryRunSummary,
@@ -58,8 +60,10 @@ from app.modules.migration.schemas import (
     PreflightResponse,
     SourceConnectionListResponse,
     SourceConnectionResponse,
+    SourceConnectionTestResponse,
     SourceObject,
     TableCopyResult,
+    _migratable_database,
 )
 from app.modules.migration.source import (
     SourceConnection,
@@ -98,7 +102,7 @@ _KIND_BY_NAME: dict[str, ObjectKind] = {
 
 
 class MigrationService:
-    """Assessment + dry-run. Never executes a migration."""
+    """Worker-side source assessment, planning, execution, and data copy."""
 
     # ── Source connections ──────────────────────────────────────
 
@@ -155,6 +159,49 @@ class MigrationService:
             raise SourceConnectionError(f"Unknown migration source '{name}'")
         return connection_from_row(row)
 
+    async def test_source_connection(
+        self, *, name: str, host: str, port: int, username: str, secret_ref: str
+    ) -> SourceConnectionTestResponse:
+        """Authenticate and run a read-only probe without registering the source."""
+        source = SourceConnection(
+            name=name,
+            host=host,
+            port=port,
+            username=username,
+            secret_ref=secret_ref,
+        )
+        try:
+            async with asyncio.timeout(15):
+                async with open_source_connection(source) as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute("SELECT 1")
+                        row = await cur.fetchone()
+        except SourceConnectionError:
+            raise
+        except Exception as exc:
+            raise SourceConnectionError("Could not validate source connection") from exc
+        if row != (1,):
+            raise SourceConnectionError("Source connection test returned an unexpected result")
+        return SourceConnectionTestResponse(connected=True)
+
+    async def databases(self, source_name: str) -> DatabasesResponse:
+        source = await self.resolve_source(source_name)
+        async with open_source_connection(source) as conn:
+            discovered = await migration_repo.list_databases(conn)
+        databases: list[str] = []
+        unsupported: list[str] = []
+        for name in discovered:
+            try:
+                databases.append(_migratable_database(name))
+            except ValueError:
+                unsupported.append(name)
+        return DatabasesResponse(
+            source=source_name,
+            databases=databases,
+            count=len(databases),
+            unsupported=unsupported,
+        )
+
     # ── Enumeration ─────────────────────────────────────────────
 
     async def enumerate(self, source_name: str, database: str) -> EnumerateResponse:
@@ -171,14 +218,22 @@ class MigrationService:
             objects = await self._enumerate_over_connection(conn, database)
         return EnumerateResponse(database=database, objects=objects, count=len(objects))
 
-    async def _enumerate_over_connection(self, conn, database: str) -> list[SourceObject]:
-        """Read all object families over an already-open source connection."""
+    async def _enumerate_over_connection(
+        self, conn, database: str, *, include_global_functions: bool = True
+    ) -> list[SourceObject]:
+        """Read object families over an already-open source connection.
+
+        Global functions are visible during discovery, but a whole-database
+        migration must not copy the same cluster-wide functions for every
+        selected database.
+        """
         raw: list[dict] = []
         raw.extend(await migration_repo.list_tables(conn, database))
         raw.extend(await migration_repo.list_views(conn, database))
         raw.extend(await migration_repo.list_materialized_views(conn, database))
         raw.extend(await migration_repo.list_functions(conn, database))
-        raw.extend(await migration_repo.list_global_functions(conn))
+        if include_global_functions:
+            raw.extend(await migration_repo.list_global_functions(conn))
         raw.extend(await migration_repo.list_tasks(conn, database))
         raw.extend(await migration_repo.list_pipes(conn, database))
         raw.extend(await migration_repo.list_masking_policies(conn, database))
@@ -193,14 +248,17 @@ class MigrationService:
         """Classify each object on ``source``. Read-only; never touches the engine.
 
         ``objects`` narrows the selection by name; an empty list assesses
-        everything enumeration finds. Objects that are not found are reported as
+        database-scoped objects. Global functions require explicit selection.
+        Objects that are not found are reported as
         ``skipped`` with an explicit reason so an operator never mistakes a typo
         for a clean run. An audit row records the assessment without any
         credential.
         """
         source = await self.resolve_source(source_name)
         async with open_source_connection(source) as conn:
-            enumerated = await self._enumerate_over_connection(conn, database)
+            enumerated = await self._enumerate_over_connection(
+                conn, database, include_global_functions=bool(objects)
+            )
 
             selected = {name for name in objects}
             candidates = [obj for obj in enumerated if not selected or obj.name in selected]
@@ -305,7 +363,9 @@ class MigrationService:
         """
         source = await self.resolve_source(source_name)
         async with open_source_connection(source) as conn:
-            enumerated = await self._enumerate_over_connection(conn, database)
+            enumerated = await self._enumerate_over_connection(
+                conn, database, include_global_functions=bool(objects)
+            )
             selected = {name for name in objects}
             plan_candidates: list[PlanCandidate] = []
             for obj in enumerated:

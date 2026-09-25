@@ -30,10 +30,12 @@ from io import BytesIO
 
 from PIL import Image
 
+from app.modules.assistant.app_context import NoveAppContext
 from app.modules.assistant.attachments import attachment_prompt, validate_attachments
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.state import AssistantMessage
 from app.modules.assistant.tools import ToolOutcome
+from app.modules.assistant.tools.client_capability import InvokeClientCapabilityTool
 from tests.benchmark.harness import text_frame, tool_call_frame
 from tests.eval.harness import (
     EvalTool,
@@ -56,6 +58,37 @@ from tests.eval.harness import (
 
 def _query_tool(**kwargs) -> EvalTool:
     return EvalTool("query_execute", classification="read_only", **kwargs)
+
+
+def scenario_surface_filter_avoids_planner() -> Scenario:
+    class ClientTool(InvokeClientCapabilityTool):
+        def __init__(self) -> None:
+            self.runs = []
+
+        async def run(self, invocation, context):
+            self.runs.append(invocation)
+            return await super().run(invocation, context)
+
+    app = NoveAppContext.model_validate({
+        "version": 1,
+        "surface": {"id": "monitoring.query_history", "route": "/query-history"},
+        "capabilities": ["surface.set_filter"],
+    })
+    return Scenario(
+        name="surface_filter_avoids_planner",
+        content="show only failed queries",
+        script=[],
+        tools=[ClientTool()],
+        app_context=app,
+        checks=[
+            check("typed client capability dispatched", used_tool("invoke_client_capability")),
+            check("no planner call", lambda result: result.provider_calls == 0),
+            check("no consent prompt", did_not_prompt()),
+            check("awaiting outcome", finished_with("client_action_pending")),
+            check("client action frame", lambda result: "client_action" in result.events),
+            check("does not claim success", lambda result: "completed" not in result.text.lower()),
+        ],
+    )
 
 
 def scenario_delegates_to_query_execute() -> Scenario:
@@ -842,6 +875,14 @@ def scenario_trace_is_recorded_for_replay() -> Scenario:
         read_only_grant=True,
         checks=[
             check(
+                "selected capability is visible without private model text",
+                lambda result: any(
+                    frame.startswith("event: thinking\n")
+                    and "Selected actions: query_execute" in frame
+                    for frame in result.frames
+                ),
+            ),
+            check(
                 "the plan phase is recorded",
                 recorded_step("reasoning", phase="plan"),
             ),
@@ -1357,6 +1398,7 @@ def all_scenarios() -> list[Scenario]:
             ],
         ),
         scenario_delegates_to_query_execute(),
+        scenario_surface_filter_avoids_planner(),
         scenario_numeric_claim_matches_query_result(),
         scenario_unsupported_numeric_claim_is_withheld(),
         scenario_change_diagnosis_reconciles_after_data(),

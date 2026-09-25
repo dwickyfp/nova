@@ -15,8 +15,10 @@ import json
 import logging
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import Any
+from functools import wraps
+from typing import Any, ParamSpec
 
 import asyncmy
 
@@ -58,12 +60,38 @@ from app.modules.stages.access import check_stage_access
 from app.modules.task_orchestration.ddl import TaskDDLError, is_create_task, parse_create_task
 from app.modules.task_orchestration.lowering import TaskLoweringError, persist_lowered_task
 from app.modules.task_orchestration.repository import task_orchestration_repository
+from app.observability.metrics import SQL_QUERIES, SQL_QUERY_DURATION, SQL_SOURCE
 from app.storage.secrets import (
     SecretResolutionError,
     drain_secret_resolution_facts,
 )
 
 logger = logging.getLogger(__name__)
+_P = ParamSpec("_P")
+
+
+def _observe_sql_execution(
+    execute: Callable[_P, Awaitable[QueryResult]],
+) -> Callable[_P, Awaitable[QueryResult]]:
+    @wraps(execute)
+    async def observed(*args: _P.args, **kwargs: _P.kwargs) -> QueryResult:
+        started = time.perf_counter()
+        status = "error"
+        source = SQL_SOURCE.get()
+        try:
+            result = await execute(*args, **kwargs)
+            status = "error" if result.error else "success"
+            return result
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
+        finally:
+            SQL_QUERIES.labels(source=source, status=status).inc()
+            SQL_QUERY_DURATION.labels(source=source, status=status).observe(
+                time.perf_counter() - started
+            )
+
+    return observed
 
 
 def _redact_error_message(message: str) -> str:
@@ -233,6 +261,7 @@ class QueryService:
     def __init__(self):
         self._repo = QueryRepository()
 
+    @_observe_sql_execution
     async def execute(
         self,
         sql: str,
@@ -718,6 +747,7 @@ class QueryService:
         tenant: str = "default",
         security_context_version: int = 1,
         allow_stage_export: bool = False,
+        source: str = "internal",
     ) -> list[QueryResult]:
         """Split SQL into statements and execute each sequentially.
 
@@ -727,8 +757,10 @@ class QueryService:
         if not statements:
             return [QueryResult(original_sql=sql, warnings=["Empty SQL"], error="Empty SQL")]
 
+        metric_source = source if source in {"web", "mysql_proxy", "internal"} else "internal"
         results: list[QueryResult] = []
         for stmt_sql in statements:
+            metric_token = SQL_SOURCE.set(metric_source)
             try:
                 result = await self.execute(
                     tenant=tenant,
@@ -762,6 +794,8 @@ class QueryService:
                 )
                 results.append(error_result)
                 break
+            finally:
+                SQL_SOURCE.reset(metric_token)
         return results
 
     async def _execute_create_ml_model(

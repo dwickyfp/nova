@@ -101,7 +101,7 @@ export function UserDetailPage({ username }: { username: string }) {
         <Search className="me-auto" />
       </Header>
 
-      <Main className="flex flex-1 flex-col gap-6">
+      <Main scroll className="flex flex-1 flex-col gap-6">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <Button

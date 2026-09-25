@@ -17,6 +17,30 @@ from typing import Any
 
 #: name -> (description, input_schema)
 BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
+    "send_agent_message": (
+        "Send a finding or question to Auto during a specialist run.",
+        {
+            "type": "object",
+            "properties": {
+                "message_type": {"type": "string", "enum": ["finding", "question"]},
+                "content": {"type": "string"},
+            },
+            "required": ["message_type", "content"],
+            "additionalProperties": False,
+        },
+    ),
+    "request_specialist": (
+        "Ask Auto to discover an additional specialist by capability.",
+        {
+            "type": "object",
+            "properties": {
+                "capability": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["capability", "reason"],
+            "additionalProperties": False,
+        },
+    ),
     "search_knowledge": (
         "Search packaged Nova product guidance and playbooks with source revisions; "
         "documentation does not establish runtime database facts.",
@@ -179,19 +203,6 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "required": ["name"],
         },
     ),
-    "create_semantic_model": (
-        "Create a semantic model from real tables, grounded on their columns.",
-        {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "description": {"type": "string"},
-                "request": {"type": "string"},
-                "tables": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["name", "tables"],
-        },
-    ),
     "create_semantic_view": (
         "Create, validate, and optionally publish a Nova Semantic View from authorized tables.",
         {
@@ -273,6 +284,30 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
                 "grants": {"type": "array", "items": {"type": "object"}},
             },
             "required": ["role", "grants"],
+            "additionalProperties": False,
+        },
+    ),
+    "inspect_agent_configuration": (
+        "Inspect an Agent Studio agent's owner-scoped configuration and chart tool setting.",
+        {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "minLength": 1, "maxLength": 128},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    "inspect_query_error": (
+        "Inspect the current failed SQL execution and matching redacted query event.",
+        {"type": "object", "properties": {}, "additionalProperties": False},
+    ),
+    "verify_query_repair": (
+        "Verify a Nove editor patch against a correlated successful SQL rerun.",
+        {
+            "type": "object",
+            "properties": {
+                "correlation_id": {"type": "string", "minLength": 1, "maxLength": 128},
+            },
             "additionalProperties": False,
         },
     ),

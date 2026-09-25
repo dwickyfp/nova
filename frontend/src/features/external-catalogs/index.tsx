@@ -39,7 +39,7 @@ export function ExternalCatalogsPage() {
   }, [load])
 
   return (
-    <div className='flex h-full min-h-0 flex-col'>
+    <div data-layout='fixed' className='flex h-full min-h-0 min-w-0 flex-col overflow-hidden'>
       <Header fixed>
         <div className='flex min-w-0 flex-1 items-center gap-3'>
           <div className='min-w-0'>
@@ -67,8 +67,8 @@ export function ExternalCatalogsPage() {
         </div>
       </Header>
 
-      <div className='min-h-0 flex-1 overflow-auto p-4'>
-        <div className='rounded-lg border border-border bg-background'>
+      <div className='min-h-0 flex-1 overflow-hidden p-4'>
+        <div className='h-full min-h-0 overflow-auto rounded-lg border border-border bg-background'>
           <table className='w-full text-sm'>
             <thead className='bg-muted'>
               <tr className='text-left text-xs text-muted-foreground'>

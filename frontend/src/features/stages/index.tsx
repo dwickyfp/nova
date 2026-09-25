@@ -110,7 +110,7 @@ export function StagesPage() {
     !form.name.trim() || !form.database_name.trim() || !form.schema_name.trim()
 
   return (
-    <div className='flex min-h-0 flex-1 flex-col gap-6'>
+    <div className='flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-hidden'>
       <PageHeader
         title='Stage Manager'
         description='Named folders backed by object storage. Browse, upload, and query files through @stage references.'
@@ -128,7 +128,7 @@ export function StagesPage() {
         }
       />
 
-      <SimpleTableViewport>
+      <SimpleTableViewport className='min-h-0 flex-1 max-h-none'>
         {stagesQuery.isFetching && !stagesQuery.isLoading ? (
           <div className='border-b border-border bg-muted px-4 py-2 text-xs text-muted-foreground'>
             Refreshing stages...

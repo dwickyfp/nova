@@ -241,6 +241,15 @@ def _validate_metrics(metrics: Any, result: ParseResult) -> None:
                 f"metric {metric['name']!r} is missing a usable 'expression' "
                 f"({', '.join(_PREFERRED_DIALECTS)})."
             )
+        for key in ("owner_domain", "authority"):
+            if key in metric and not isinstance(metric[key], str):
+                result.errors.append(f"metric {metric['name']!r}: '{key}' must be text.")
+        for key in ("supporting_domains", "synonyms"):
+            if key in metric and not (
+                isinstance(metric[key], list)
+                and all(isinstance(value, str) for value in metric[key])
+            ):
+                result.errors.append(f"metric {metric['name']!r}: '{key}' must be text values.")
 
 
 def _expression_has_dialect(expression: dict) -> bool:
@@ -276,9 +285,7 @@ def _normalise(document: dict) -> dict[str, Any]:
                 "description": dataset.get("description", ""),
                 "primary_key": dataset.get("primary_key") or [],
                 "unique_keys": dataset.get("unique_keys") or [],
-                "grain": dataset.get("grain") or {
-                    "keys": dataset.get("primary_key") or []
-                },
+                "grain": dataset.get("grain") or {"keys": dataset.get("primary_key") or []},
                 "synonyms": dataset.get("synonyms") or [],
                 "ai_context": dataset.get("ai_context"),
                 "fields": [_normalise_field(f) for f in dataset.get("fields") or []],
@@ -315,6 +322,9 @@ def _normalise(document: dict) -> dict[str, Any]:
                 "allowed_dimensions": metric.get("allowed_dimensions") or [],
                 "non_additive_dimensions": metric.get("non_additive_dimensions") or [],
                 "synonyms": metric.get("synonyms") or [],
+                "owner_domain": metric.get("owner_domain"),
+                "supporting_domains": metric.get("supporting_domains") or [],
+                "authority": metric.get("authority"),
                 "format": metric.get("format"),
                 "currency": metric.get("currency"),
                 "unit": metric.get("unit"),
@@ -348,12 +358,8 @@ def _normalise(document: dict) -> dict[str, Any]:
             for item in document.get("named_filters") or []
             if isinstance(item, dict)
         ],
-        "question_routing_instructions": document.get(
-            "question_routing_instructions", ""
-        ),
-        "query_generation_instructions": document.get(
-            "query_generation_instructions", ""
-        ),
+        "question_routing_instructions": document.get("question_routing_instructions", ""),
+        "query_generation_instructions": document.get("query_generation_instructions", ""),
     }
 
 

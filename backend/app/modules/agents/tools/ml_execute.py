@@ -7,6 +7,7 @@ from typing import Any
 from app.core.security import decrypt_password
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, report_tool_progress
+from app.modules.assistant.tools.redaction import redact_rows
 from app.modules.ml_engine.service import ml_engine_service
 from app.modules.ml_engine.spec import MLExecutionSpec, MLMode, MLSecurityContext, MLTask
 from app.modules.query.sql_pipeline import redact_for_output
@@ -121,12 +122,20 @@ class MLExecuteTool:
             )
         report_tool_progress(context, stage="ml_completed", text="ML execution completed")
         table = None
+        safe_results: list[dict[str, Any]] = []
         if result.results:
-            columns = list(result.results[0])
+            columns = list(dict.fromkeys(
+                column for row in result.results[:1000] for column in row
+            ))
+            safe_rows = redact_rows(
+                columns,
+                [[row.get(column) for column in columns] for row in result.results[:1000]],
+            )
+            safe_results = [dict(zip(columns, row, strict=True)) for row in safe_rows]
             table = {
                 "title": f"{result.task} results",
                 "columns": columns,
-                "rows": [[row.get(column) for column in columns] for row in result.results[:1000]],
+                "rows": safe_rows,
             }
         return ToolOutcome(
             ok=True,
@@ -140,7 +149,7 @@ class MLExecuteTool:
                 "task": result.task,
                 "algorithm": result.selected_algorithm,
                 "training_rows": result.training_rows,
-                "results": result.results[:1000],
+                "results": safe_results,
             },
             evidence={
                 "run_id": result.run_id,

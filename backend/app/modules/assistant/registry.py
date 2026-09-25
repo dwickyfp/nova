@@ -41,8 +41,16 @@ def build_registry() -> ToolRegistry:
         semantic_view_query_tool,
     )
     from app.modules.agents.tools.ml_execute import ml_execute_tool
+    from app.modules.assistant.tools.client_capability import invoke_client_capability_tool
     from app.modules.assistant.tools.create_semantic_view import create_semantic_view_tool
+    from app.modules.assistant.tools.inspect_agent_configuration import (
+        inspect_agent_configuration_tool,
+    )
     from app.modules.assistant.tools.load_skill import load_skill_tool
+    from app.modules.assistant.tools.query_context import (
+        inspect_query_error_tool,
+        verify_query_repair_tool,
+    )
     from app.modules.assistant.tools.query_execute import query_execute_tool
     from app.modules.assistant.tools.role_access import (
         grant_role_access_tool,
@@ -67,6 +75,10 @@ def build_registry() -> ToolRegistry:
     registry.register(grant_role_access_tool)
     registry.register(list_ui_operations_tool)
     registry.register(call_ui_operation_tool)
+    registry.register(invoke_client_capability_tool)
+    registry.register(inspect_agent_configuration_tool)
+    registry.register(inspect_query_error_tool)
+    registry.register(verify_query_repair_tool)
     registry.register(create_semantic_view_tool)
 
     from app.modules.assistant.intelligence import SkillDefinition
@@ -82,18 +94,11 @@ def build_registry() -> ToolRegistry:
         )
     registry.discoverable_skills = tuple(skill_library.names())
 
-    # Agent Studio authoring tools (Phase 12). Nove can draft a semantic model or
-    # an agent from a request. Both are write tools: classified ``destructive``
-    # so they always require explicit approval and are never auto-approved by the
-    # read-only grant. Imported lazily so a deployment without the agents module
-    # still builds the base registry.
+    # Agent creation remains separate from Semantic View authoring. Both write
+    # operations require consent; the legacy semantic-model creator is hidden.
     try:
         from app.modules.agents.tools.create_agent import create_agent_tool
-        from app.modules.agents.tools.create_semantic_model import (
-            create_semantic_model_tool,
-        )
 
-        registry.register(create_semantic_model_tool)
         registry.register(create_agent_tool)
     except ImportError:  # pragma: no cover - module always present in this tree
         pass

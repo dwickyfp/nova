@@ -36,8 +36,8 @@ def test_tools_are_opt_in_and_consent_gated():
 async def test_semantic_view_tool_redacts_caller_rows(monkeypatch):
     observed = {}
 
-    async def query(view_id, body, user):
-        observed.update(view_id=view_id, body=body, user=user)
+    async def query(view_id, body, user, *, agent_id=None):
+        observed.update(view_id=view_id, body=body, user=user, agent_id=agent_id)
         return {"version": 2, "columns": ["revenue", "api_key"], "rows": [[42, "sensitive"]]}
 
     monkeypatch.setattr(semantic_view_service, "query", query)
@@ -56,6 +56,7 @@ async def test_semantic_view_tool_redacts_caller_rows(monkeypatch):
     )
     assert outcome.ok
     assert observed["user"]["active_role"] == "analyst"
+    assert observed["agent_id"] is None
     assert observed["body"].named_filters == ["completed"]
     assert observed["body"].version == 2
     assert outcome.table["rows"] == [[42, "***"]]

@@ -30,6 +30,7 @@ from uuid import uuid4
 
 import asyncmy
 import asyncmy.cursors
+from asyncmy.errors import ProgrammingError
 
 from app.core.config import settings
 
@@ -49,6 +50,29 @@ DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
+CONFIG_MIGRATION_JOBS_DDL = """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_MIGRATION_JOBS (
+    id                       VARCHAR(64) NOT NULL,
+    operation                VARCHAR(32) NOT NULL,
+    actor                    VARCHAR(128) NOT NULL,
+    session_fingerprint      VARCHAR(64) NOT NULL DEFAULT "",
+    active_role              VARCHAR(128),
+    security_context_version INT NOT NULL DEFAULT "1",
+    source_name              VARCHAR(256) NOT NULL,
+    request_json             STRING NOT NULL,
+    status                   VARCHAR(16) NOT NULL,
+    current_database         VARCHAR(256),
+    result_json              STRING,
+    error_code               VARCHAR(64),
+    created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at               DATETIME,
+    heartbeat_at             DATETIME,
+    finished_at              DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+"""
+
 #: Columns added after the first revision shipped. ``CREATE TABLE IF NOT EXISTS``
 #: cannot evolve an existing table, so they are added explicitly when absent
 #: (StarRocks rejects ``ADD COLUMN IF NOT EXISTS``; idempotency is the caller's
@@ -58,6 +82,10 @@ SOURCE_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("port", 'INT NOT NULL DEFAULT "9030"'),
     ("username", 'VARCHAR(128) NOT NULL DEFAULT "root"'),
     ("secret_ref", "VARCHAR(1024)"),
+)
+
+JOB_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("session_fingerprint", 'VARCHAR(64) NOT NULL DEFAULT ""'),
 )
 
 
@@ -79,6 +107,7 @@ class MigrationRepository:
         try:
             async with conn.cursor() as cur:
                 await cur.execute(CONFIG_MIGRATION_SOURCES_DDL)
+                await cur.execute(CONFIG_MIGRATION_JOBS_DDL)
                 for column, column_type in SOURCE_COLUMN_MIGRATIONS:
                     if await self._column_exists(cur, column):
                         continue
@@ -86,6 +115,29 @@ class MigrationRepository:
                         f"ALTER TABLE NOVA_SYSTEM.CONFIG_MIGRATION_SOURCES "
                         f"ADD COLUMN {column} {column_type}"
                     )
+                for column, column_type in JOB_COLUMN_MIGRATIONS:
+                    await cur.execute(
+                        "SELECT COLUMN_NAME FROM information_schema.columns "
+                        "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' "
+                        "AND TABLE_NAME = 'CONFIG_MIGRATION_JOBS' AND COLUMN_NAME = %s",
+                        (column,),
+                    )
+                    if await cur.fetchall():
+                        continue
+                    try:
+                        await cur.execute(
+                            f"ALTER TABLE NOVA_SYSTEM.CONFIG_MIGRATION_JOBS "
+                            f"ADD COLUMN {column} {column_type}"
+                        )
+                    except ProgrammingError:
+                        await cur.execute(
+                            "SELECT COLUMN_NAME FROM information_schema.columns "
+                            "WHERE TABLE_SCHEMA = 'NOVA_SYSTEM' "
+                            "AND TABLE_NAME = 'CONFIG_MIGRATION_JOBS' AND COLUMN_NAME = %s",
+                            (column,),
+                        )
+                        if not await cur.fetchall():
+                            raise
         finally:
             conn.close()
 
@@ -216,8 +268,8 @@ class MigrationRepository:
 
     async def list_databases(self, conn: asyncmy.Connection) -> list[str]:
         rows = await self._query(conn, "SHOW DATABASES")
-        system = {"_statistics_", "information_schema", "sys"}
-        return [row[0] for row in rows if row[0] not in system]
+        system = {"_statistics_", "information_schema", "sys", "nova_system"}
+        return [row[0] for row in rows if str(row[0]).casefold() not in system]
 
     async def list_tables(self, conn: asyncmy.Connection, database: str) -> list[dict]:
         """Base tables via ``information_schema.tables`` (TABLE_TYPE filter)."""

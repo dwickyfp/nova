@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
@@ -7,7 +8,6 @@ import {
   Sigma,
   Table2,
   Trash2,
-  Wand2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
@@ -24,7 +24,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
   SelectContent,
@@ -33,7 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { agentsApi } from './api'
+import { semanticViewsApi } from '@/features/intelligence/semantic-views-api'
 import { metadataApi } from './metadata-api'
 import {
   draftToOssieYaml,
@@ -46,7 +45,7 @@ import {
 } from './semantic-draft'
 
 /**
- * Visual semantic-model builder.
+ * Visual Semantic View builder.
  *
  * The user edits datasets, fields, metrics, and relationships as forms; the
  * Ossie YAML is generated from that draft and shown live. Nothing here writes
@@ -54,6 +53,7 @@ import {
  * backend validator remains the final gate.
  */
 export function SemanticBuilderPage() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState<SemanticDraft>(emptyDraft)
   const [saveOpen, setSaveOpen] = useState(false)
@@ -65,28 +65,21 @@ export function SemanticBuilderPage() {
 
   const yaml = useMemo(() => draftToOssieYaml(draft), [draft])
 
-  const validate = useMutation({
-    mutationFn: () => agentsApi.validateSemanticModel(yaml),
-  })
-
   const create = useMutation({
     mutationFn: () =>
-      agentsApi.createSemanticModel({
+      semanticViewsApi.create({
         name: draft.name.trim(),
-        description: draft.description.trim(),
-        database_name: draft.datasets[0]?.source.split('.')[0] ?? null,
+        database: draft.datasets[0]?.source.split('.').slice(-2)[0] ?? '',
         definition: yaml,
       }),
-    onSuccess: (model) => {
-      toast.success(`Semantic model "${model.name}" created`)
+    onSuccess: (view) => {
+      toast.success(`Semantic View "${view.name}" created as draft`)
       setSaveOpen(false)
-      setDraft(emptyDraft())
-      queryClient.invalidateQueries({ queryKey: ['agents', 'semantic-models'] })
+      queryClient.invalidateQueries({ queryKey: ['intelligence', 'semantic'] })
+      void navigate({ to: '/semantic-views' })
     },
     onError: (error: Error) => toast.error(error.message),
   })
-
-  const validation = validate.data
 
   const addDataset = (dataset: DraftDataset) => {
     setDraft((d) => ({ ...d, datasets: [...d.datasets, dataset] }))
@@ -104,42 +97,47 @@ export function SemanticBuilderPage() {
   return (
     <>
       <Header fixed />
-      <Main>
+      <Main scroll>
         <div className='mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
           <div className='min-w-0'>
-            <h1 className='text-2xl font-semibold tracking-tight'>Build semantic model</h1>
-            <p className='mt-1 text-sm text-muted-foreground'>
-              Pick tables and columns, define metrics and relationships. Nova writes the
-              Ossie YAML for you.
+            <h1 className='text-2xl font-semibold tracking-tight'>Build Semantic View</h1>
+            <p className='mt-1 max-w-2xl text-sm text-muted-foreground'>
+              Choose a source table and name the values people will ask about. Save a draft, then check and publish it from Semantic Views.
             </p>
           </div>
           <div className='flex shrink-0 items-center gap-2'>
-            <Button variant='outline' onClick={() => validate.mutate()}>
-              <Wand2 className='size-4' />
-              Validate
-            </Button>
+            <Button variant='outline' asChild><Link to='/semantic-views'>Semantic Views</Link></Button>
             <Button
-              disabled={!draft.name.trim() || draft.datasets.length === 0}
+              disabled={!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(draft.name.trim()) || draft.datasets.length === 0}
               onClick={() => setSaveOpen(true)}
             >
-              Save model
+              Create draft
             </Button>
           </div>
         </div>
 
-        <div className='grid min-h-0 gap-6 lg:grid-cols-[minmax(0,1fr)_380px]'>
-          <ScrollArea className='min-h-0'>
-            <div className='space-y-6 pb-10 pe-3'>
+        <ol className='mb-6 grid gap-3 rounded-lg border bg-surface-1 p-4 text-sm sm:grid-cols-3'>
+          <li><b>1. Name the view</b><p className='text-muted-foreground'>Describe the business topic.</p></li>
+          <li><b>2. Add data</b><p className='text-muted-foreground'>Select a table; its columns are added automatically.</p></li>
+          <li><b>3. Save a draft</b><p className='text-muted-foreground'>Validate and publish it from the view page.</p></li>
+        </ol>
+        <div className='min-h-0 space-y-6'>
+            <div className='space-y-6'>
               <section className='space-y-4 rounded-lg border p-4'>
+                <div>
+                  <h2 className='font-medium'>1. Name this view</h2>
+                  <p className='text-sm text-muted-foreground'>Choose a short name and explain what questions it should answer.</p>
+                </div>
                 <div className='grid gap-4 sm:grid-cols-2'>
                   <div className='space-y-2'>
-                    <Label htmlFor='m-name'>Model name</Label>
+                    <Label htmlFor='m-name'>View name</Label>
                     <Input
                       id='m-name'
                       value={draft.name}
                       onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
                       placeholder='sales_analytics'
                     />
+                    <p className='text-xs text-muted-foreground'>Use letters, numbers, and underscores; start with a letter or underscore.</p>
                   </div>
                   <div className='space-y-2'>
                     <Label htmlFor='m-desc'>Description</Label>
@@ -153,6 +151,8 @@ export function SemanticBuilderPage() {
                 </div>
               </section>
 
+              {databasesQuery.isPending ? <p role='status' className='text-sm text-muted-foreground'>Loading databases…</p> : null}
+              {databasesQuery.isError ? <p role='alert' className='text-sm text-destructive'>Could not load databases. <Button variant='link' onClick={() => void databasesQuery.refetch()}>Retry</Button></p> : null}
               <DatasetsSection
                 datasets={draft.datasets}
                 databases={databasesQuery.data ?? []}
@@ -172,47 +172,20 @@ export function SemanticBuilderPage() {
                 onChange={(relationships) => setDraft((d) => ({ ...d, relationships }))}
               />
             </div>
-          </ScrollArea>
 
-          <aside className='min-h-0 lg:sticky lg:top-4 lg:h-[calc(100vh-8rem)]'>
-            <div className='flex h-full min-h-0 flex-col rounded-lg border'>
-              <div className='flex items-center justify-between border-b px-3 py-2'>
-                <span className='text-sm font-medium'>Ossie YAML</span>
-                <Badge variant='outline'>{yaml.split('\n').length} lines</Badge>
-              </div>
-              <ScrollArea className='min-h-0 flex-1'>
-                <pre className='p-3 text-xs leading-relaxed'>{yaml}</pre>
-              </ScrollArea>
-              {validation ? (
-                <div className='border-t p-3 text-xs'>
-                  {validation.valid ? (
-                    <p className='text-success'>
-                      Valid: {validation.dataset_count} datasets, {validation.metric_count}{' '}
-                      metrics, {validation.relationship_count} relationships.
-                    </p>
-                  ) : (
-                    validation.errors.map((error, i) => (
-                      <p key={i} className='text-destructive'>
-                        {error}
-                      </p>
-                    ))
-                  )}
-                  {validation.warnings.map((warning, i) => (
-                    <p key={i} className='text-warning-strong'>
-                      {warning}
-                    </p>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </aside>
+          <details className='rounded-lg border p-4'>
+            <summary className='cursor-pointer font-medium'>Preview generated Ossie YAML (advanced)</summary>
+            <p className='mt-2 text-sm text-muted-foreground'>Nova creates this definition from the fields above. You do not need to edit it to save the view.</p>
+            <Badge variant='outline' className='mt-3'>{yaml.split('\n').length} lines</Badge>
+            <pre className='mt-3 max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs leading-relaxed'>{yaml}</pre>
+          </details>
         </div>
       </Main>
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Save semantic model</DialogTitle>
+            <DialogTitle>Create Semantic View draft</DialogTitle>
           </DialogHeader>
           <p className='text-sm text-muted-foreground'>
             Save <span className='font-medium'>{draft.name}</span> with{' '}
@@ -224,7 +197,7 @@ export function SemanticBuilderPage() {
               Cancel
             </Button>
             <Button disabled={create.isPending} onClick={() => create.mutate()}>
-              Save model
+              Create draft
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -289,12 +262,13 @@ function DatasetsSection({
     <section className='space-y-4 rounded-lg border p-4'>
       <div className='flex items-center gap-2'>
         <Table2 className='size-4' />
-        <h2 className='font-medium'>Datasets</h2>
+        <h2 className='font-medium'>2. Add a source table</h2>
       </div>
+      <p className='text-sm text-muted-foreground'>Select a database and table. Nova imports its columns so you can choose which ones describe the business topic.</p>
 
       <div className='grid gap-3 sm:grid-cols-[1fr_1fr_auto]'>
         <Select value={database || undefined} onValueChange={(v) => { setDatabase(v); setTable('') }}>
-          <SelectTrigger>
+          <SelectTrigger aria-label='Source database'>
             <SelectValue placeholder='Database' />
           </SelectTrigger>
           <SelectContent>
@@ -306,7 +280,7 @@ function DatasetsSection({
           </SelectContent>
         </Select>
         <Select value={table || undefined} onValueChange={setTable} disabled={!database}>
-          <SelectTrigger>
+          <SelectTrigger aria-label='Source table'>
             <SelectValue placeholder={tablesQuery.isLoading ? 'Loading…' : 'Table'} />
           </SelectTrigger>
           <SelectContent>
@@ -319,9 +293,11 @@ function DatasetsSection({
         </Select>
         <Button onClick={importTable} disabled={!table || detailQuery.isLoading}>
           <Plus className='size-4' />
-          Add
+          Add table
         </Button>
       </div>
+      {tablesQuery.isError ? <p role='alert' className='text-sm text-destructive'>Could not load tables. <Button variant='link' onClick={() => void tablesQuery.refetch()}>Retry</Button></p> : null}
+      {detailQuery.isError ? <p role='alert' className='text-sm text-destructive'>Could not load columns for this table. <Button variant='link' onClick={() => void detailQuery.refetch()}>Retry</Button></p> : null}
 
       {datasets.length === 0 ? (
         <p className='text-sm text-muted-foreground'>
@@ -473,13 +449,14 @@ function MetricsSection({
       <div className='flex items-center justify-between'>
         <div className='flex items-center gap-2'>
           <Sigma className='size-4' />
-          <h2 className='font-medium'>Metrics</h2>
+          <h2 className='font-medium'>3. Add measures (optional)</h2>
         </div>
         <Button size='sm' variant='outline' onClick={add}>
           <Plus className='size-3.5' />
           Add metric
         </Button>
       </div>
+      <p className='text-sm text-muted-foreground'>A measure is a number people ask for, such as total revenue or order count. Add one if your view needs calculations.</p>
       {metrics.length === 0 ? (
         <p className='text-sm text-muted-foreground'>
           Define business measures like total_revenue = SUM(orders.total_amount).
@@ -545,13 +522,14 @@ function RelationshipsSection({
       <div className='flex items-center justify-between'>
         <div className='flex items-center gap-2'>
           <ArrowRight className='size-4' />
-          <h2 className='font-medium'>Relationships</h2>
+          <h2 className='font-medium'>4. Connect tables (optional)</h2>
         </div>
         <Button size='sm' variant='outline' onClick={add} disabled={datasets.length < 2}>
           <Plus className='size-3.5' />
           Add relationship
         </Button>
       </div>
+      <p className='text-sm text-muted-foreground'>If you added more than one table, connect their matching key columns so questions can use both.</p>
       {datasets.length < 2 ? (
         <p className='text-sm text-muted-foreground'>
           Add at least two datasets to define a join.

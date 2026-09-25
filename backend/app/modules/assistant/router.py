@@ -38,10 +38,15 @@ from fastapi.responses import StreamingResponse
 
 from app.core.deps import get_current_user
 from app.modules.assistant import events
+from app.modules.assistant.app_context import NoveApplicationEvent
+from app.modules.assistant.application_events import application_event_broker
 from app.modules.assistant.consent import ConsentApproval, consent_broker
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.registry import tool_registry
-from app.modules.assistant.repository import assistant_repository
+from app.modules.assistant.repository import (
+    AssistantThreadListUnavailable,
+    assistant_repository,
+)
 from app.modules.assistant.schemas import (
     AttachmentView,
     ConsentDecisionRequest,
@@ -133,9 +138,27 @@ def _text_from_frame(frame: str) -> str:
     return ""
 
 
+def _frame_data(frame: str) -> dict:
+    import json
+
+    for line in frame.splitlines():
+        if line.startswith("data:"):
+            try:
+                value = json.loads(line[5:].strip())
+                return value if isinstance(value, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+    return {}
+
+
 @router.get("/threads", response_model=ThreadListResponse)
 async def list_threads(user: dict = Depends(get_current_user)):
-    threads = await assistant_repository.list_threads(user_name=user["username"])
+    try:
+        threads = await assistant_repository.list_threads(user_name=user["username"])
+    except AssistantThreadListUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Conversation history is temporarily unavailable"
+        ) from exc
     views = [_thread_view(t) for t in threads]
     return ThreadListResponse(threads=views, count=len(views))
 
@@ -175,6 +198,23 @@ async def get_thread(
     )
 
 
+@router.post("/threads/{thread_id}/application-events")
+async def publish_application_event(
+    thread_id: str,
+    body: NoveApplicationEvent,
+    user: dict = Depends(get_current_user),
+):
+    """Acknowledge an application action and retain bounded outcome evidence."""
+    await _require_thread(thread_id, user["username"])
+    verification = application_event_broker.publish(thread_id, user["username"], body)
+    return {
+        "recorded": verification != "unmatched"
+        or body.type not in {"ui_action_completed", "ui_action_failed"},
+        "correlation_id": body.correlation_id,
+        "verification": verification,
+    }
+
+
 @router.patch("/threads/{thread_id}", response_model=ThreadView)
 async def rename_thread(
     thread_id: str,
@@ -204,6 +244,7 @@ async def delete_thread(
         raise HTTPException(status_code=404, detail="Thread not found")
     # Drop the runtime entry too, so a lingering grant cannot outlive the thread.
     thread_store.remove(thread_id, user_name=user["username"])
+    application_event_broker.remove(thread_id, user["username"])
     return None
 
 
@@ -306,15 +347,27 @@ async def send_message(
         )
     )
 
+    app_domain = body.app_context.domain if body.app_context else None
+    app_context = body.app_context
+    if app_context is not None:
+        merged_events = {
+            event.id: event for event in app_context.current_events()
+        }
+        for event in application_event_broker.recent_events(
+            thread_id, user_name, app_context.surface.id
+        ):
+            merged_events[event.id] = event
+        app_context = app_context.model_copy(update={"events": list(merged_events.values())[-12:]})
     context = LoopContext(
         user_name=user_name,
-        database=body.database,
-        schema_name=body.schema_name,
+        database=body.database or (app_domain.database if app_domain else None),
+        schema_name=body.schema_name or (app_domain.schema_name if app_domain else None),
         role=security.active_role,
         workspace_file_id=thread_row.get("workspace_file_id"),
         session_id=user.get("session_id"),
         thread_id=thread_id,
         user=user,
+        app_context=app_context,
     )
 
     async def resolve_consent(
@@ -378,6 +431,10 @@ async def send_message(
                     break
                 if frame.startswith(f"event: {events.EVENT_TEXT_DELTA}"):
                     reply_parts.append(_text_from_frame(frame))
+                if frame.startswith(f"event: {events.EVENT_CLIENT_ACTION}"):
+                    application_event_broker.register_action(
+                        thread_id, user_name, _frame_data(frame)
+                    )
                 if frame.startswith("event: role_changed\n"):
                     reply_parts.clear()
                     reply_stamp = observation_context(session_security(context.user or {}))

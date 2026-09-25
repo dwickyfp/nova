@@ -59,6 +59,8 @@ from app.modules.users.router import router as users_router
 from app.modules.variables.router import router as variables_router
 from app.modules.views.router import router as views_router
 from app.modules.workspaces.router import router as workspaces_router
+from app.observability.http import HTTPMetricsMiddleware, metrics_response
+from app.observability.metrics import PROXY_EXPECTED, SERVICE_UP
 
 logger = logging.getLogger(__name__)
 # from app.modules.query.router import router as query_router
@@ -133,7 +135,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Could not ensure assistant conversation schema: %s", e)
 
-    # Agent Studio storage (Phase 12): agents, semantic models, user skills.
+    # Agent Studio storage (Phase 12): agents, legacy semantic metadata, user skills.
     # Best-effort in the same way: without it the routes answer 500 rather than
     # taking the whole web service down at boot.
     try:
@@ -145,14 +147,49 @@ async def lifespan(app: FastAPI):
         from app.modules.agents.run_journal import run_journal
 
         await agent_repository.ensure_schema()
+        from app.modules.agents.capabilities import capability_repository
+        await capability_repository.ensure_schema()
         await memory_repository.ensure_schema()
         await rule_proposal_repository.ensure_schema()
         await run_journal.ensure_schema()
+        from app.modules.agents.harness_repository import harness_repository
+        await harness_repository.ensure_schema()
         await agent_repository.migrate_legacy_skill_authors()
         await artifact_repository.ensure_schema()
         await dashboard_repository.ensure_schema()
     except Exception as e:
         logger.warning("Could not ensure Agent Studio schema: %s", e)
+
+    # Import legacy semantic metadata after both View and Agent tables exist.
+    # The importer keeps old IDs, so saved agent bindings resolve the same View.
+    try:
+        from app.modules.intelligence.semantic_migration import migrate_legacy_semantic_models
+
+        migration = await migrate_legacy_semantic_models()
+        logger.info(
+            "Semantic View migration: %d imported, %d already present",
+            migration["imported"],
+            migration["already_present"],
+        )
+        if migration["drafts_needing_review"] or migration["unresolved"]:
+            logger.warning(
+                "Semantic View migration needs review: %d drafts, %d unresolved",
+                len(migration["drafts_needing_review"]),
+                len(migration["unresolved"]),
+            )
+    except Exception as exc:
+        logger.warning("Could not migrate legacy semantic metadata: %s", type(exc).__name__)
+    else:
+        try:
+            from app.modules.agents.repository import agent_repository
+
+            backfilled = await agent_repository.backfill_semantic_view_ids()
+            logger.info("Agent Semantic View bindings backfilled: %d", backfilled)
+        except Exception as exc:
+            logger.warning(
+                "Could not backfill agent Semantic View bindings: %s",
+                type(exc).__name__,
+            )
 
     # Register LLM function UDFs (AI_COMPLETE, AI_SENTIMENT, etc.)
     # so they are available as SQL functions from the start.
@@ -173,6 +210,7 @@ async def lifespan(app: FastAPI):
     # same server standalone. A proxy that cannot bind (port already taken by a
     # standalone proxy, most likely) must not take the web service down with it.
     proxy_server = None
+    PROXY_EXPECTED.set(1 if settings.PROXY_ENABLED else 0)
     if settings.PROXY_ENABLED:
         try:
             from app.proxy.server import MySQLProxyServer
@@ -188,9 +226,11 @@ async def lifespan(app: FastAPI):
     await ml_engine_service.ephemeral_repository.ensure_schema()
     await search_service.start()
     ml_cleanup = asyncio.create_task(ml_engine_service.sweep_ephemeral())
+    SERVICE_UP.labels(service="backend").set(1)
     try:
         yield
     finally:
+        SERVICE_UP.labels(service="backend").set(0)
         ml_cleanup.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await ml_cleanup
@@ -223,6 +263,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["X-Nova-Run-ID"],
     )
+    app.add_middleware(HTTPMetricsMiddleware)
 
     # Exception handlers
     register_exception_handlers(app)
@@ -325,6 +366,8 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok", "version": "0.1.0"}
+
+    app.add_api_route("/metrics", metrics_response, methods=["GET"], include_in_schema=False)
 
     return app
 
