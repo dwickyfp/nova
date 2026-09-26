@@ -5,6 +5,7 @@ import {
   readSseFrames,
 } from "@/features/assistant/events";
 import type { AssistantEvent } from "@/features/assistant/types";
+import { historyQuery } from "@/features/assistant/thread-client";
 
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
 
@@ -42,9 +43,15 @@ export type Agent = {
   updated_at: string;
 };
 
-export const AUTO_AGENT_ID = "__auto__";
+export const SMART_AGENT_ID = "__smart__";
+export const AUTO_AGENT_ID = SMART_AGENT_ID;
+export const isSmartAgent = (id: string) => id === SMART_AGENT_ID || id === "__auto__";
 
 export type AutoRun = {
+  agent_session_id?: string;
+  parent_agent_session_id?: string | null;
+  agent_path?: string;
+  turn_number?: number;
   run_id: string;
   root_run_id: string;
   parent_run_id: string | null;
@@ -177,24 +184,24 @@ export const agentsApi = {
   list: () => api.get<{ agents: Agent[]; count: number }>("/agents"),
   listStudio: () => api.get<{ agents: Agent[]; count: number }>("/agents?studio=true"),
   getAutoRunTree: (rootRunId: string) =>
-    api.get<{ runs: AutoRun[] }>(`/agents/auto/runs/${encodeURIComponent(rootRunId)}`),
+    api.get<{ runs: AutoRun[] }>(`/agents/smart/runs/${encodeURIComponent(rootRunId)}`),
   getAutoRunEvents: (rootRunId: string, after = -1) =>
     api.get<{ events: AutoRunEvent[] }>(
-      `/agents/auto/runs/${encodeURIComponent(rootRunId)}/events?after=${after}`,
+      `/agents/smart/runs/${encodeURIComponent(rootRunId)}/events?after=${after}`,
     ),
   getAutoChildTimeline: (rootRunId: string, childRunId: string, after = -1) =>
     api.get<AutoChildTimeline>(
-      `/agents/auto/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/timeline?after=${after}&limit=100`,
+      `/agents/smart/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/timeline?after=${after}&limit=100`,
     ),
   listAutoThreadRuns: (threadId: string) =>
     api.get<{ runs: AutoThreadRun[] }>(
-      `/agents/auto/threads/${encodeURIComponent(threadId)}/runs`,
+      `/agents/smart/threads/${encodeURIComponent(threadId)}/runs`,
     ),
   cancelAutoRun: (rootRunId: string) =>
-    api.post<{ status: string }>(`/agents/auto/runs/${encodeURIComponent(rootRunId)}/cancel`, {}),
+    api.post<{ status: string }>(`/agents/smart/runs/${encodeURIComponent(rootRunId)}/cancel`, {}),
   cancelAutoChild: (rootRunId: string, childRunId: string) =>
     api.post<{ status: string }>(
-      `/agents/auto/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/cancel`, {},
+      `/agents/smart/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/cancel`, {},
     ),
   sendAutoChildMessage: (rootRunId: string, childRunId: string, body: {
     operation_id: string;
@@ -202,7 +209,14 @@ export const agentsApi = {
     correlation_id?: string;
     reply_to?: string;
   }) => api.post<{ message_id: string; status: string }>(
-    `/agents/auto/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/messages`, body,
+    `/agents/smart/runs/${encodeURIComponent(rootRunId)}/children/${encodeURIComponent(childRunId)}/messages`, body,
+  ),
+  interruptSmartAgent: (rootRunId: string, target: string) => api.post(
+    `/agents/smart/runs/${encodeURIComponent(rootRunId)}/participants/${encodeURIComponent(target)}/interrupt`, {},
+  ),
+  followupSmartAgent: (rootRunId: string, target: string, content: string, operationId: string) => api.post(
+    `/agents/smart/runs/${encodeURIComponent(rootRunId)}/participants/${encodeURIComponent(target)}/followup`,
+    { content, operation_id: operationId },
   ),
   get: (id: string) => api.get<Agent>(`/agents/${encodeURIComponent(id)}`),
   create: (body: AgentCreateInput) => api.post<Agent>("/agents", body),
@@ -242,17 +256,17 @@ export const agentsApi = {
       `/semantic-views/${encodeURIComponent(modelId)}/rule-proposals/${encodeURIComponent(proposalId)}/reject`, {},
     ),
 
-  listThreads: (agentId: string) =>
-    api.get<{ threads: AgentThread[]; count: number }>(
-      `/agents/${encodeURIComponent(agentId)}/threads`,
+  listThreads: (agentId?: string, cursor?: string) =>
+    api.get<{ threads: AgentThread[]; count: number; next_cursor?: string | null }>(
+      (agentId ? `/agents/${encodeURIComponent(agentId)}/threads` : "/agents/threads") + historyQuery(cursor),
     ),
   createThread: (agentId: string, title?: string) =>
     api.post<AgentThread>(`/agents/${encodeURIComponent(agentId)}/threads`, {
       title,
     }),
-  getThread: (agentId: string, threadId: string) =>
-    api.get<{ thread: AgentThread; messages: AgentMessage[] }>(
-      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
+  getThread: (agentId: string, threadId: string, cursor?: string) =>
+    api.get<{ thread: AgentThread; messages: AgentMessage[]; next_cursor?: string | null }>(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}${historyQuery(cursor)}`,
     ),
   deleteThread: (agentId: string, threadId: string) =>
     api.delete<void>(

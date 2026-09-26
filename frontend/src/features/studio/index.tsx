@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,8 +19,8 @@ const AUTO_WHILE_CATALOG_LOADS: Agent = {
   owner_name: "",
   database_name: null,
   schema_name: null,
-  name: "Auto",
-  description: "Coordinate specialists for a question.",
+  name: "Smart",
+  description: "Solve a request with tools and governed specialists.",
   avatar: null,
   color: null,
   model_provider_id: null,
@@ -74,7 +74,10 @@ function StudioAppContent() {
     queryFn: () => studioApi.settings(),
   });
 
-  const [agentId, setAgentId] = useState<string | null>(null);
+  const requestedAgentId = search.agent === "__auto__" ? AUTO_AGENT_ID : search.agent;
+  const agentId = requestedAgentId && (
+    requestedAgentId === SKILL_AUTHOR_ID || agents.some((agent) => agent.agent_id === requestedAgentId)
+  ) ? requestedAgentId : (agents[0]?.agent_id ?? null);
   const [view, setView] = useState<StudioView>(search.view ?? "chat");
   // The open thread lives in the URL, not in component state: a refresh has to
   // come back to the same conversation, and losing it made the transcript (and
@@ -108,17 +111,6 @@ function StudioAppContent() {
     });
   };
 
-  useEffect(() => {
-    const requested = search.agent;
-    const nextAgent =
-      requested &&
-      (requested === SKILL_AUTHOR_ID ||
-        agents.some((a) => a.agent_id === requested))
-        ? requested
-        : (agents[0]?.agent_id ?? null);
-    if (nextAgent !== agentId) setAgentId(nextAgent);
-  }, [agents, agentId, search.agent]);
-
   const agent = useMemo(
     () =>
       agentId === SKILL_AUTHOR_ID
@@ -127,16 +119,21 @@ function StudioAppContent() {
     [agents, agentId, authorQuery.data],
   );
 
-  const threadsQuery = useQuery({
-    queryKey: ["agents", "threads", agentId],
-    queryFn: () => agentsApi.listThreads(agentId as string),
-    enabled: Boolean(agentId),
+  const threadsQuery = useInfiniteQuery({
+    queryKey: ["agents", "threads", "all", settingsQuery.data?.identity.username, settingsQuery.data?.identity.active_role],
+    queryFn: ({ pageParam }) => pageParam ? agentsApi.listThreads(undefined, pageParam) : agentsApi.listThreads(),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: settingsQuery.isSuccess,
   });
-  const threads = threadsQuery.data?.threads ?? [];
+  const threads = [...new Map(threadsQuery.data?.pages.flatMap((page) => page.threads).map((thread) => [thread.thread_id, thread]) ?? []).values()];
 
-  // On a refresh the URL can name an agent with no thread. Open the newest
-  // conversation rather than an empty pane: the history is right there, and a
-  // reader following a bookmark expects the conversation they left.
+  const threadAgentId = (id: string) => {
+    const owner = threads.find((thread) => thread.thread_id === id)?.agent_id;
+    return owner === "__auto__" ? AUTO_AGENT_ID : owner;
+  };
+
+  // Restore the newest conversation with its original agent.
   useEffect(() => {
     if (
       view !== "chat" ||
@@ -146,14 +143,13 @@ function StudioAppContent() {
     )
       return;
     const newest = threads[0];
-    if (!newest) return;
+    if (!newest?.agent_id) return;
     navigate({
       to: "/studio",
-      search: { agent: agentId ?? undefined, thread: newest.thread_id },
+      search: { agent: newest.agent_id === "__auto__" ? AUTO_AGENT_ID : newest.agent_id, thread: newest.thread_id },
       replace: true,
     });
   }, [
-    agentId,
     freshChat,
     navigate,
     search.thread,
@@ -165,7 +161,6 @@ function StudioAppContent() {
   const selectAgent = (id: string) => {
     setMobileSidebarOpen(false);
     setInitialPrompt("");
-    setAgentId(id);
     setNewChatNonce(0);
     setView("chat");
     // A new agent starts a fresh conversation, so the thread is dropped.
@@ -174,12 +169,14 @@ function StudioAppContent() {
   };
 
   const selectThread = (id: string) => {
+    const owner = threadAgentId(id);
+    if (!owner) return;
     setMobileSidebarOpen(false);
     setInitialPrompt("");
     setView("chat");
     navigate({
       to: "/studio",
-      search: { agent: agentId ?? undefined, thread: id },
+      search: { agent: owner, thread: id },
       replace: true,
     });
   };
@@ -198,11 +195,14 @@ function StudioAppContent() {
   };
 
   const removeThread = useMutation({
-    mutationFn: (threadId: string) =>
-      agentsApi.deleteThread(agentId as string, threadId),
+    mutationFn: (threadId: string) => {
+      const owner = threadAgentId(threadId);
+      if (!owner) throw new Error("Conversation is no longer available. Refresh history.");
+      return agentsApi.deleteThread(owner, threadId);
+    },
     onSuccess: (_result, threadId) => {
       queryClient.invalidateQueries({
-        queryKey: ["agents", "threads", agentId],
+        queryKey: ["agents", "threads"],
       });
       // Deleting the open conversation leaves the URL pointing at a thread that
       // no longer exists. Close it rather than render a dead transcript.
@@ -227,11 +227,14 @@ function StudioAppContent() {
   });
 
   const renameThread = useMutation({
-    mutationFn: ({ threadId, title }: { threadId: string; title: string }) =>
-      agentsApi.renameThread(agentId as string, threadId, title),
+    mutationFn: ({ threadId, title }: { threadId: string; title: string }) => {
+      const owner = threadAgentId(threadId);
+      if (!owner) throw new Error("Conversation is no longer available. Refresh history.");
+      return agentsApi.renameThread(owner, threadId, title);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["agents", "threads", agentId],
+        queryKey: ["agents", "threads"],
       });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -282,11 +285,17 @@ function StudioAppContent() {
             renameThread.mutate({ threadId, title })
           }
           threadsLoading={threadsQuery.isLoading}
+          threadsError={threadsQuery.isError}
+          onRetryThreads={() => void threadsQuery.refetch()}
+          hasMoreThreads={threadsQuery.hasNextPage}
+          loadingMoreThreads={threadsQuery.isFetchingNextPage}
+          onLoadMoreThreads={() => void threadsQuery.fetchNextPage()}
           open={visibleSidebarOpen}
           onToggle={toggleSidebar}
           footer={
             <StudioAccountMenu
               identity={settingsQuery.data?.identity}
+              memoryAgentId={agent && agent.agent_id !== AUTO_AGENT_ID && agent.agent_id !== SKILL_AUTHOR_ID ? agent.agent_id : null}
               onIdentityChange={() =>
                 queryClient.invalidateQueries({
                   queryKey: ["studio", "settings"],
@@ -301,7 +310,7 @@ function StudioAppContent() {
       <main aria-label={view === "chat" ? "Nova Studio chat" : view} className="flex min-h-0 min-w-0 flex-1 flex-col">
         {agentsQuery.isError ? (
           <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
-            <span>Specialists are temporarily unavailable. Auto can still try your question.</span>
+            <span>Specialists are temporarily unavailable. Smart can still try your question.</span>
             <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => void agentsQuery.refetch()}>
               Retry specialists
             </Button>

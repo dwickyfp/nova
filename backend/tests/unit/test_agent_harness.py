@@ -514,11 +514,16 @@ async def test_planner_caps_total_children_and_depth(monkeypatch) -> None:
 
     plan = await AutoPlanner(Provider()).plan(question="Compare all domains", user={})
     assert len(plan.assignments) == 4
-    with pytest.raises(ValueError, match="Auto root"):
-        await HarnessRepository().spawn(
-            parent=_run("finance", depth=1), agent_id="nested",
-            objective="Run nested task", operation_id="nested",
-        )
+    repository = HarnessRepository()
+    repository.get = AsyncMock(return_value=None)
+    repository._create = AsyncMock(side_effect=lambda **fields: fields)
+    child = await repository.spawn(
+        parent=_run("finance", depth=1), agent_id="nested",
+        objective="Run nested task", operation_id="nested",
+    )
+    assert child["depth"] == 2
+    assert child["root_run_id"] == "root"
+    assert child["parent_run_id"] == "finance"
 
 
 def test_session_wall_budget_expires() -> None:
@@ -587,7 +592,7 @@ async def test_message_is_durable_and_consumed_once(monkeypatch) -> None:
         params = params or []
         if sql.startswith("SELECT message_id, recipient_run_id, message_type"):
             row = rows.get(params[0])
-            existing = [row[0], row[6], row[2], row[4], row[5], row[3], row[8]] if row else None
+            existing = [row[0], row[6], row[2], row[4], row[5], row[3], row[8], "QUEUE_ONLY"] if row else None
             return {"rows": [existing] if existing else []}
         if sql.startswith("INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_MESSAGES"):
             rows[params[0]] = [
@@ -1604,10 +1609,10 @@ async def test_cancel_tree_only_cancels_children_after_active_root_changes(
         "status": "completed",
     })
     assert await repo.cancel_tree("root") is bool(root_affected)
-    assert "run_id = %s AND agent_id = '__auto__' AND depth = 0" in updates[0][0]
+    assert "run_id = %s AND agent_id IN ('__auto__', '__smart__') AND depth = 0" in updates[0][0]
     assert len(updates) == (2 if root_affected else 1)
     if root_affected:
-        assert "root_run_id = %s AND depth = 1" in updates[1][0]
+        assert "root_run_id = %s AND depth > 0" in updates[1][0]
 
 
 @pytest.mark.asyncio
@@ -1630,8 +1635,8 @@ async def test_cancel_tree_continues_when_update_applies_with_zero_affected(monk
     ])
     assert await repo.cancel_tree("root")
     assert len(updates) == 3
-    assert all("run_id = %s AND agent_id = '__auto__'" in sql for sql in updates[:2])
-    assert "root_run_id = %s AND depth = 1" in updates[2]
+    assert all("run_id = %s AND agent_id IN ('__auto__', '__smart__')" in sql for sql in updates[:2])
+    assert "root_run_id = %s AND depth > 0" in updates[2]
 
 
 @pytest.mark.asyncio
@@ -1653,7 +1658,7 @@ async def test_cancel_child_accepts_verified_zero_affected_and_rejects_other_tre
         "status": "cancelled",
     })
     assert await repo.cancel_child("root", "child")
-    assert "run_id = %s AND root_run_id = %s AND depth = 1" in updates[0][0]
+    assert "run_id = %s AND root_run_id = %s AND depth > 0" in updates[0][0]
     assert updates[0][1][1:] == ["child", "root"]
 
     repo.get = AsyncMock(return_value={
@@ -1967,7 +1972,7 @@ async def test_message_replay_retries_a_short_starrocks_row(monkeypatch) -> None
         [
             {"rows": [["root", "message-1"]]},
             {"rows": [["root", "message-1", "child", "root", "finding", None,
-                       None, "A bounded finding", now, now, "agent"]]},
+                       None, "A bounded finding", now, now, "agent", "QUEUE_ONLY"]]},
         ]
     )
     monkeypatch.setattr(module.db, "execute_system", AsyncMock(side_effect=lambda *_: next(reads)))
@@ -1995,6 +2000,7 @@ async def test_stale_recovery_requeues_root_but_never_replays_child_tools(monkey
     repo = HarnessRepository()
     repo.event = AsyncMock(return_value="0")
     repo.wake_parent = AsyncMock(return_value=True)
+    repo.get = AsyncMock(side_effect=lambda run_id: _run(run_id, depth=0 if run_id == "root" else 1))
     assert await repo.recover_stale() == ["root", "finance"]
     assert updates == [("root", "queued"), ("finance", "interrupted")]
     repo.wake_parent.assert_awaited_once_with("root")
@@ -2028,6 +2034,7 @@ async def test_stale_recovery_survives_a_deleted_root(monkeypatch) -> None:
     monkeypatch.setattr(module.session_store, "_redis", _EventRedis())
     repo = HarnessRepository()
     repo.wake_parent = AsyncMock(return_value=False)
+    repo.get = AsyncMock(return_value=_run("orphan", depth=1))
     assert await repo.recover_stale() == ["orphan"]
     assert await repo.recover_stale() == []
     assert len(updates) == 1
@@ -2050,6 +2057,7 @@ async def test_stale_recovery_does_not_hide_other_event_errors(monkeypatch) -> N
     monkeypatch.setattr(module.db, "execute_system", execute)
     repo = HarnessRepository()
     repo.event = AsyncMock(side_effect=ValueError("Unsupported Auto session event type"))
+    repo.get = AsyncMock(return_value=_run("child", depth=1))
     with pytest.raises(ValueError, match="Unsupported Auto session event type"):
         await repo.recover_stale()
 
@@ -2067,12 +2075,12 @@ async def test_root_cancellation_cascades_and_child_cancel_is_scoped(monkeypatch
     monkeypatch.setattr(module.db, "execute_system", execute)
     repo = HarnessRepository()
     assert await repo.cancel_tree("root")
-    assert "run_id = %s AND agent_id = '__auto__'" in calls[0][0]
+    assert "run_id = %s AND agent_id IN ('__auto__', '__smart__')" in calls[0][0]
     assert calls[0][1][1:] == ["root"]
-    assert "root_run_id = %s AND depth = 1" in calls[1][0]
+    assert "root_run_id = %s AND depth > 0" in calls[1][0]
     assert calls[1][1][1:] == ["root"]
     assert await repo.cancel_child("root", "finance")
-    assert "depth = 1" in calls[2][0]
+    assert "depth > 0" in calls[2][0]
     assert calls[2][1][1:] == ["finance", "root"]
 
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -399,6 +400,7 @@ def spy(monkeypatch) -> _SpyAIService:
     from app.modules.ai_ml import router as ai_router
 
     service = _SpyAIService()
+    monkeypatch.setattr(ai_router, "write_audit_log", AsyncMock(return_value="audit-1"))
     for name in ("create_provider", "update_provider", "delete_provider"):
         monkeypatch.setattr(ai_router.ai_service, name, getattr(service, name))
     return service

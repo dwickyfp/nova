@@ -159,7 +159,7 @@ function mockFetch(
     }
     // GET one thread returns the thread plus its messages, each carrying the
     // trace the loop recorded.
-    if (/\/threads\/t-past$/.test(url)) {
+    if (/\/threads\/t-past(?:\?|$)/.test(url)) {
       return new Response(
         JSON.stringify({
           thread: {

@@ -28,6 +28,7 @@ EXPECTED_SKILLS = {
     "debug-sql",
     "native-ml",
     "scope-boundary",
+    "sql-reference",
     "stage-query",
     "writing-style",
 }

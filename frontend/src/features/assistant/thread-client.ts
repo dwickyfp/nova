@@ -1,10 +1,6 @@
 import { ApiError, api } from "@/lib/api-client";
 
-/**
- * Thread CRUD, mirroring `backend/app/modules/assistant/router.py`.
- * Threads and their messages live in process memory on the backend (E5a), so a
- * restart empties this list; the UI treats an empty list as "no conversations".
- */
+// History is persisted in StarRocks; list and detail reads request bounded pages.
 
 export type ThreadView = {
   thread_id: string;
@@ -18,6 +14,7 @@ export type ThreadView = {
 export type ThreadListResponse = {
   threads: ThreadView[];
   count: number;
+  next_cursor?: string | null;
 };
 
 /** A stored message as returned by the thread detail endpoint. */
@@ -31,6 +28,7 @@ export type ThreadMessageView = {
 export type ThreadDetailResponse = {
   thread: ThreadView;
   messages: ThreadMessageView[];
+  next_cursor?: string | null;
 };
 
 export async function createThread(
@@ -41,15 +39,22 @@ export async function createThread(
   });
 }
 
-export async function listThreads(): Promise<ThreadListResponse> {
-  return api.get<ThreadListResponse>("/assistant/threads");
+export async function listThreads(cursor?: string): Promise<ThreadListResponse> {
+  return api.get<ThreadListResponse>(`/assistant/threads${historyQuery(cursor)}`);
+}
+
+export function historyQuery(cursor?: string): string {
+  const params = new URLSearchParams({ limit: "50" });
+  if (cursor) params.set("cursor", cursor);
+  return `?${params}`;
 }
 
 export async function getThread(
   threadId: string,
+  cursor?: string,
 ): Promise<ThreadDetailResponse> {
   return api.get<ThreadDetailResponse>(
-    `/assistant/threads/${encodeURIComponent(threadId)}`,
+    `/assistant/threads/${encodeURIComponent(threadId)}${historyQuery(cursor)}`,
   );
 }
 

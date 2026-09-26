@@ -29,12 +29,6 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { mcpApi, toolsApi } from './api'
 
-/**
- * Tools Registry. Two sources in one place:
- *  - Builtin: Nova's own tools, seeded by the backend. Disable to hide; they
- *    cannot be deleted because they are code.
- *  - MCP: the admin-managed internal connector catalog.
- */
 export function ToolsRegistryPage() {
   const [tab, setTab] = useState('tools')
 
@@ -45,7 +39,7 @@ export function ToolsRegistryPage() {
         <div className='mb-6'>
           <h1 className='text-2xl leading-8 font-normal'>Tools Registry</h1>
           <p className='mt-1 text-sm text-muted-foreground'>
-            Nova's builtin tools and the internal MCP connector catalog.
+            Tools and the internal MCP connector catalog.
           </p>
         </div>
 
@@ -85,13 +79,15 @@ function ToolsList() {
 
   if (toolsQuery.isLoading) return <Skeleton className='mt-4 h-64 w-full' />
 
-  const tools = toolsQuery.data?.tools ?? []
+  const tools = (toolsQuery.data?.tools ?? []).filter(
+    (tool) => tool.source !== 'builtin'
+  )
   if (tools.length === 0) {
     return (
       <EmptyState
         icon={Wrench}
         title='No tools registered'
-        description='Builtin tools appear here automatically.'
+        description='Connect an MCP server and discover its tools to add them here.'
       />
     )
   }
@@ -106,8 +102,8 @@ function ToolsList() {
           <div className='min-w-0'>
             <div className='flex items-center gap-2'>
               <span className='font-mono text-sm font-medium'>{tool.name}</span>
-              <Badge variant={tool.source === 'builtin' ? 'secondary' : 'outline'}>
-                {tool.source === 'builtin' ? 'builtin' : 'MCP'}
+              <Badge variant='outline'>
+                {tool.source === 'mcp' ? 'MCP' : tool.source}
               </Badge>
             </div>
             <p className='mt-1 text-sm text-muted-foreground'>{tool.description}</p>

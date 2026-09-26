@@ -1,4 +1,4 @@
-"""Unit tests for the read-only orchestration API (NOVA-54 / PR 4a).
+"""Unit tests for orchestration reads and manual runs.
 
 The endpoints read `CONFIG_TASK*` through the repository, which is replaced here
 with an in-memory fake, and the authenticated user is supplied through a
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -20,6 +21,13 @@ from fastapi.testclient import TestClient
 from app.modules.task_orchestration import router as orch_router
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def engine_role_check(monkeypatch):
+    check = AsyncMock()
+    monkeypatch.setattr(orch_router, "verify_active_role", check)
+    return check
 
 
 def _qualified(task: dict[str, Any]) -> str:
@@ -140,15 +148,11 @@ class FakeRepository:
     async def list_graph_ids(self) -> list[str]:
         graph_ids = sorted({str(e["graph_id"]) for e in self.edges})
         referenced = {
-            str(endpoint)
-            for e in self.edges
-            for endpoint in (e["parent_task"], e["child_task"])
+            str(endpoint) for e in self.edges for endpoint in (e["parent_task"], e["child_task"])
         }
         # A standalone task's graph id is its qualified name, matching the repo.
         standalone = sorted(
-            _qualified(t)
-            for t in self.tasks.values()
-            if str(t["name"]) not in referenced
+            _qualified(t) for t in self.tasks.values() if str(t["name"]) not in referenced
         )
         return [*graph_ids, *[gid for gid in standalone if gid not in graph_ids]]
 
@@ -197,9 +201,7 @@ class FakeRepository:
         return [r for r in self.task_runs if r["graph_run_id"] == graph_run_id]
 
     async def list_task_runs_for_graph(self, graph_id: str):
-        run_ids = {
-            r["id"] for r in self.graph_runs.values() if r["graph_id"] == graph_id
-        }
+        run_ids = {r["id"] for r in self.graph_runs.values() if r["graph_id"] == graph_id}
         return [r for r in self.task_runs if r["graph_run_id"] in run_ids]
 
     async def list_node_runs(self, graph_run_id: str):
@@ -222,7 +224,13 @@ def make_client(repo: FakeRepository, user: dict[str, Any]):
 
 
 def alice() -> dict[str, Any]:
-    return {"username": "alice", "roles": [], "session_id": "s", "encrypted_password": "e"}
+    return {
+        "username": "alice",
+        "roles": ["analyst"],
+        "active_role": "analyst",
+        "session_id": "s",
+        "encrypted_password": "e",
+    }
 
 
 def bob() -> dict[str, Any]:
@@ -233,6 +241,7 @@ def admin() -> dict[str, Any]:
     return {
         "username": "root",
         "roles": ["ACCOUNTADMIN"],
+        "active_role": "ACCOUNTADMIN",
         "session_id": "s",
         "encrypted_password": "e",
     }
@@ -355,9 +364,9 @@ class TestOwnershipScoping:
         client = make_client(repo, bob())
 
         assert client.get("/api/v1/task-orchestration/graphs").json()["count"] == 0
-        assert (
-            client.get("/api/v1/task-orchestration/graphs/db1.default.g1").status_code == 404
-        ), "an unauthorized graph must 404, not reveal that it exists"
+        assert client.get("/api/v1/task-orchestration/graphs/db1.default.g1").status_code == 404, (
+            "an unauthorized graph must 404, not reveal that it exists"
+        )
 
     def test_the_owner_sees_their_graph(self) -> None:
         repo = FakeRepository()
@@ -509,9 +518,7 @@ class TestRunPagination:
         repo = FakeRepository()
         repo.add_task("a")
         client = make_client(repo, alice())
-        response = client.get(
-            "/api/v1/task-orchestration/graphs/db1.default.a/runs?limit=0"
-        )
+        response = client.get("/api/v1/task-orchestration/graphs/db1.default.a/runs?limit=0")
         assert response.status_code == 422
 
 
@@ -545,9 +552,7 @@ class TestStandaloneGraph:
         repo.add_task_run("tr1", "run1", "id_solo", state="success")
         client = make_client(repo, alice())
 
-        detail = client.get(
-            "/api/v1/task-orchestration/graphs/db1.default.solo"
-        ).json()
+        detail = client.get("/api/v1/task-orchestration/graphs/db1.default.solo").json()
         assert detail["node_count"] == 1
         assert detail["nodes"][0]["last_state"] == "success"
 
@@ -571,10 +576,7 @@ class TestStandaloneGraph:
 
         listed = client.get("/api/v1/task-orchestration/graphs").json()
         assert listed["count"] == 0
-        assert (
-            client.get("/api/v1/task-orchestration/graphs/db1.default.ghost").status_code
-            == 404
-        )
+        assert client.get("/api/v1/task-orchestration/graphs/db1.default.ghost").status_code == 404
 
     def test_an_admin_does_not_see_an_orphan_graph_either(self) -> None:
         # "Admin sees every graph" means every graph that exists, not every
@@ -645,9 +647,182 @@ class TestCredentialInvisibility:
                 assert bad not in serialized, f"{bad} in {path}"
 
 
-class TestReadOnly:
-    def test_no_mutating_methods_are_exposed(self) -> None:
-        methods = set()
-        for route in orch_router.router.routes:
-            methods.update(getattr(route, "methods", set()))
-        assert methods == {"GET"}, f"the orchestration API must be read-only, got {methods}"
+class TestTaskSQL:
+    def test_owner_can_read_original_body(self) -> None:
+        repo = FakeRepository()
+        task_id = repo.add_task("sql_task")
+        body = "INSERT INTO destination SELECT id, amount FROM source"
+        repo.tasks["sql_task"]["definition"] = body
+        response = make_client(repo, alice()).get(
+            f"/api/v1/task-orchestration/graphs/db1.default.sql_task/nodes/{task_id}/sql"
+        )
+        assert response.status_code == 200
+        assert response.json()["sql"] == body
+
+    @pytest.mark.parametrize(
+        "user", [{"username": "outsider", "roles": []}, {"username": "", "roles": []}]
+    )
+    def test_unowned_sql_is_not_exposed(self, user) -> None:
+        repo = FakeRepository()
+        task_id = repo.add_task("sql_task")
+        response = make_client(repo, user).get(
+            f"/api/v1/task-orchestration/graphs/db1.default.sql_task/nodes/{task_id}/sql"
+        )
+        assert response.status_code == 404
+
+    def test_node_must_belong_to_authorized_graph(self) -> None:
+        repo = FakeRepository()
+        repo.add_task("mine")
+        other = repo.add_task("other", owner="bob")
+        response = make_client(repo, alice()).get(
+            f"/api/v1/task-orchestration/graphs/db1.default.mine/nodes/{other}/sql"
+        )
+        assert response.status_code == 404
+
+    def test_legacy_credential_values_are_redacted(self) -> None:
+        repo = FakeRepository()
+        task_id = repo.add_task("sql_task")
+        repo.tasks["sql_task"]["definition"] = (
+            "INSERT INTO t SELECT * FROM FILES('aws.s3.secret_key'='private-value', 'format'='csv')"
+        )
+        response = make_client(repo, alice()).get(
+            f"/api/v1/task-orchestration/graphs/db1.default.sql_task/nodes/{task_id}/sql"
+        )
+        assert response.status_code == 200
+        assert "private-value" not in response.text
+        assert "***" in response.json()["sql"]
+
+
+class TestManualRuns:
+    @pytest.mark.parametrize("role", [None, "unassigned"])
+    def test_manual_run_requires_assigned_active_role(self, manual, role):
+        repo, publish, _ = manual
+        response = make_client(repo, {**alice(), "active_role": role}).post(
+            "/api/v1/task-orchestration/graphs/db1.default.g1/runs"
+        )
+        assert response.status_code == 404
+        repo.create_graph_run.assert_not_awaited()
+        publish.assert_not_awaited()
+
+    def test_admin_run_uses_caller_not_task_owner_or_request_body(self, manual):
+        repo, _, _ = manual
+        for task in repo.tasks.values():
+            task["owner_role"] = "ACCOUNTADMIN"
+        caller = {
+            "username": "dwicky.f.putra",
+            "session_id": "session-dwicky",
+            "roles": ["ACCOUNTADMIN"],
+            "active_role": "ACCOUNTADMIN",
+        }
+        response = make_client(repo, caller).post(
+            "/api/v1/task-orchestration/graphs/db1.default.g1/runs",
+            json={"execution_user": "root", "execution_role": "root"},
+        )
+        assert response.status_code == 202
+        saved = repo.create_graph_run.call_args.args[0]
+        assert saved["execution_user"] == "dwicky.f.putra"
+        assert saved["execution_role"] == "ACCOUNTADMIN"
+
+    @pytest.fixture
+    def manual(self, monkeypatch):
+        repo = FakeRepository()
+        graph_with_finalizer(repo)
+        for task in repo.tasks.values():
+            task["owner_role"] = "analyst"
+        repo.list_active_graph_runs = AsyncMock(return_value=[])
+        repo.create_graph_run = AsyncMock(
+            return_value={
+                "id": "manual1",
+                "graph_id": "db1.default.g1",
+                "state": "pending",
+                "trigger_type": "manual",
+                "overlap_policy": "skip",
+                "started_at": NOW,
+            }
+        )
+        publish = AsyncMock()
+        audit = AsyncMock()
+        monkeypatch.setattr(orch_router, "_publish_manual_run", publish)
+        monkeypatch.setattr(orch_router, "write_audit_log", audit)
+        return repo, publish, audit
+
+    def test_owner_queues_all_nodes_and_audits(self, manual):
+        repo, publish, audit = manual
+        response = make_client(repo, alice()).post(
+            "/api/v1/task-orchestration/graphs/db1.default.g1/runs"
+        )
+        assert response.status_code == 202
+        assert response.json()["trigger_type"] == "manual"
+        repo.create_graph_run.assert_awaited_once_with(
+            {
+                "graph_id": "db1.default.g1",
+                "trigger_type": "manual",
+                "state": "pending",
+                "overlap_policy": "skip",
+                "execution_user": "alice",
+                "execution_role": "analyst",
+                "execution_session_id": "s",
+            }
+        )
+        assert set(publish.call_args.args[1]) == {task["id"] for task in repo.tasks.values()}
+        assert [call.kwargs["status"] for call in audit.call_args_list] == ["ATTEMPTED", "SUCCESS"]
+
+    @pytest.mark.parametrize("graph_id", ["db1.default.g1", "missing"])
+    def test_unknown_or_unowned_graph_cannot_run(self, manual, graph_id):
+        repo, publish, audit = manual
+        response = make_client(repo, {"username": "outsider", "roles": []}).post(
+            f"/api/v1/task-orchestration/graphs/{graph_id}/runs"
+        )
+        assert response.status_code == 404
+        repo.create_graph_run.assert_not_awaited()
+        publish.assert_not_awaited()
+
+    def test_skip_policy_rejects_active_run(self, manual):
+        repo, publish, audit = manual
+        repo.list_active_graph_runs.return_value = [{"id": "active"}]
+        response = make_client(repo, alice()).post(
+            "/api/v1/task-orchestration/graphs/db1.default.g1/runs"
+        )
+        assert response.status_code == 409
+        repo.create_graph_run.assert_not_awaited()
+        publish.assert_not_awaited()
+
+    @pytest.mark.parametrize("policy", ["queue", "allow"])
+    def test_other_overlap_policies_accept_active_run(self, manual, policy):
+        repo, publish, audit = manual
+        for task in repo.tasks.values():
+            task["overlap_policy"] = policy
+        repo.list_active_graph_runs.return_value = [{"id": "active"}]
+        response = make_client(repo, alice()).post(
+            "/api/v1/task-orchestration/graphs/db1.default.g1/runs"
+        )
+        assert response.status_code == 202
+        assert repo.create_graph_run.call_args.args[0]["overlap_policy"] == policy
+
+    def test_transport_failure_keeps_durable_run_accepted(self, manual):
+        repo, publish, audit = manual
+        publish.side_effect = RuntimeError("private connection details")
+        response = make_client(repo, alice()).post(
+            "/api/v1/task-orchestration/graphs/db1.default.g1/runs"
+        )
+        assert response.status_code == 202
+        assert "private" not in response.text
+
+    def test_persistence_failure_does_not_publish(self, manual):
+        repo, publish, audit = manual
+        repo.create_graph_run.side_effect = RuntimeError("private connection details")
+        response = make_client(repo, alice()).post(
+            "/api/v1/task-orchestration/graphs/db1.default.g1/runs"
+        )
+        assert response.status_code == 503
+        assert "private" not in response.text
+        publish.assert_not_awaited()
+
+    def test_only_manual_run_mutation_is_exposed(self):
+        mutations = [
+            (route.path, method)
+            for route in orch_router.router.routes
+            for method in getattr(route, "methods", set())
+            if method != "GET"
+        ]
+        assert mutations == [("/graphs/{graph_id}/runs", "POST")]

@@ -57,6 +57,9 @@ export type AssistantPanelProps = {
   activeThreadId?: string | null;
   /** True while an existing thread's messages are being fetched. */
   loadingThread?: boolean;
+  hasOlderMessages?: boolean;
+  loadingOlderMessages?: boolean;
+  onLoadOlderMessages?: () => Promise<void>;
   /** Panel width in px (wide mode). Defaults to the standard width when absent. */
   width?: number;
   /** Commits a new panel width after a resize gesture. */
@@ -92,6 +95,9 @@ function AssistantBody({
   onStop,
   statusMessage,
   loadingThread,
+  hasOlderMessages,
+  loadingOlderMessages,
+  onLoadOlderMessages,
   selectedModel,
   onSelectModel,
   approvalMode,
@@ -111,6 +117,7 @@ function AssistantBody({
 }: AssistantPanelProps) {
   const hasTranscript = Boolean(children) || Boolean(messages?.length);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const prependScrollRef = useRef<{ height: number; top: number } | null>(null);
   const lastMessage = messages?.[messages.length - 1];
   // Signature of the transcript's visible state, so auto-scroll follows both a
   // new message and each streamed delta appended to the last one.
@@ -124,8 +131,19 @@ function AssistantBody({
     const viewport = scrollRef.current?.querySelector<HTMLElement>(
       "[data-slot=scroll-area-viewport]",
     );
-    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    if (viewport) {
+      const previous = prependScrollRef.current;
+      if (previous) {
+        viewport.scrollTop = previous.top + viewport.scrollHeight - previous.height;
+        prependScrollRef.current = null;
+      } else {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
+    }
   }, [transcriptSignal, loadingThread]);
+  useEffect(() => {
+    if (!loadingOlderMessages) prependScrollRef.current = null;
+  }, [loadingOlderMessages]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -134,6 +152,16 @@ function AssistantBody({
           page growing taller. */}
       <ScrollArea ref={scrollRef} className="h-0 min-h-0 flex-1">
         <div className="flex min-h-full w-0 min-w-full flex-col p-3">
+          {hasOlderMessages && !loadingThread ? (
+            <Button type="button" variant="ghost" size="sm" className="mb-2 h-auto self-center py-3 sm:py-2"
+              disabled={loadingOlderMessages || streaming} onClick={async () => {
+                const viewport = scrollRef.current?.querySelector<HTMLElement>("[data-slot=scroll-area-viewport]");
+                if (viewport) prependScrollRef.current = { height: viewport.scrollHeight, top: viewport.scrollTop };
+                await onLoadOlderMessages?.();
+              }}>
+              {loadingOlderMessages ? "Loading…" : "Load older messages"}
+            </Button>
+          ) : null}
           {loadingThread ? (
             <p className="p-4 text-center text-xs text-muted-foreground">
               Loading conversation…

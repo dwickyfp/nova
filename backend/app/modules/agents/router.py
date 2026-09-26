@@ -28,6 +28,7 @@ import contextlib
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Annotated
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -37,6 +38,7 @@ from pydantic import BaseModel, Field
 from app.common.audit import write_audit_log
 from app.core.deps import get_current_user
 from app.modules.agents.access import has_verified_access
+from app.modules.agents.agent_control import AgentControl, session_views
 from app.modules.agents.auto_planner import (
     AgentDiscoveryUnavailable,
     authorized_candidates,
@@ -48,6 +50,12 @@ from app.modules.agents.harness_repository import (
     TERMINAL,
     AutoAdmissionUnavailable,
     harness_repository,
+)
+from app.modules.agents.identity import (
+    SMART_AGENT_ID,
+    SMART_AGENT_IDS,
+    participant_id,
+    participant_path,
 )
 from app.modules.agents.instructions import (
     InstructionCompilationError,
@@ -95,6 +103,7 @@ from app.modules.assistant import events
 from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.consent import consent_broker
 from app.modules.assistant.context import ContextManager
+from app.modules.assistant.history import history_repository
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.repository import (
     AssistantThreadListUnavailable,
@@ -126,7 +135,8 @@ logger = logging.getLogger(__name__)
 _active_run_tasks: set[asyncio.Task[None]] = set()
 
 router = APIRouter()
-AUTO_AGENT_ID = "__auto__"
+
+AUTO_AGENT_ID = SMART_AGENT_ID
 
 
 class AutoMessageRequest(BaseModel):
@@ -143,8 +153,8 @@ def _auto_agent(owner_name: str) -> dict:
     return {
         "agent_id": AUTO_AGENT_ID,
         "owner_name": owner_name,
-        "name": "Auto",
-        "description": "Coordinate specialists for a question.",
+        "name": "Smart",
+        "description": "Solve a request with tools and governed specialists.",
         "created_at": now,
         "updated_at": now,
     }
@@ -218,7 +228,7 @@ def _skill_view(row: dict) -> SkillView:
 
 async def _require_agent(agent_id: str, user: dict | str) -> dict:
     user_name = user if isinstance(user, str) else user["username"]
-    if agent_id == AUTO_AGENT_ID and isinstance(user, dict):
+    if agent_id in SMART_AGENT_IDS and isinstance(user, dict):
         return _auto_agent(user_name)
     if agent_id == SKILL_AUTHOR_ID:
         return skill_author_config(user_name)
@@ -296,7 +306,10 @@ async def _require_agent_thread(thread_id: str, agent_id: str, user_name: str) -
     path, so a run cannot be pointed at a different agent's conversation.
     """
     thread = await assistant_repository.get_thread(thread_id, user_name=user_name)
-    if thread is None or thread.get("agent_id") != agent_id:
+    matches = thread and (thread.get("agent_id") == agent_id or (
+        agent_id in SMART_AGENT_IDS and thread.get("agent_id") in SMART_AGENT_IDS
+    ))
+    if not matches:
         raise HTTPException(status_code=404, detail="Thread not found")
     return thread
 
@@ -473,7 +486,7 @@ async def _stream_auto_events(root_run_id: str, after: int) -> AsyncIterator[str
                         "error",
                         {
                             "code": item["type"],
-                            "message": "The Auto run did not complete.",
+                            "message": "The Smart run did not complete.",
                             "run_id": root_run_id,
                             "sequence": base + 1,
                         },
@@ -499,7 +512,7 @@ async def _scoped_auto_root(root_run_id: str, user: dict) -> dict:
     invalid = (
         not root
         or root["depth"] != 0
-        or root["agent_id"] != AUTO_AGENT_ID
+        or root["agent_id"] not in SMART_AGENT_IDS
         or root["owner_name"] != user["username"]
         or root["role_name"] != session_security(user).active_role
     )
@@ -518,7 +531,7 @@ async def _auto_admission(
             yield assert_owned
     except AutoAdmissionUnavailable as exc:
         raise HTTPException(
-            status_code=503, detail="Auto admission is temporarily unavailable"
+            status_code=503, detail="Smart admission is temporarily unavailable"
         ) from exc
 
 
@@ -1116,21 +1129,36 @@ async def delete_skill(skill_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.get("/auto/runs/{root_run_id}")
+@router.get("/smart/runs/{root_run_id}")
 async def get_auto_run_tree(root_run_id: str, user: dict = Depends(get_current_user)):
     root = await _scoped_auto_root(root_run_id, user)
     tree = await harness_repository.tree(
         root_run_id, owner_name=user["username"], role_name=root["role_name"]
     )
+    sessions = session_views(tree)
+    cancelled_sessions = {
+        item["agent_session_id"] for item in sessions if item["status"] == "cancelled"
+    }
     return {
+        "sessions": sessions,
         "runs": [
             {
+                "agent_session_id": participant_id(item),
+                "agent_path": participant_path(item).value,
+                "parent_agent_session_id": item.get("payload", {}).get("parent_agent_session_id")
+                or item["parent_run_id"],
+                "turn_number": item.get("payload", {}).get("turn_number", 1),
                 "run_id": item["run_id"],
                 "root_run_id": root_run_id,
                 "parent_run_id": item["parent_run_id"],
                 "agent_id": item["agent_id"],
                 "agent_name": str((item.get("payload") or {}).get("agent_name") or ""),
                 "objective": item["objective"],
-                "status": item["status"],
+                "status": "cancelled"
+                if participant_id(item) in cancelled_sessions
+                else "waiting_for_agent"
+                if item["status"] == "running" and item.get("checkpoint", {}).get("waiting")
+                else item["status"],
                 "depth": item["depth"],
                 "summary": item["result_summary"],
                 "prompt_tokens": item["prompt_tokens"],
@@ -1140,11 +1168,12 @@ async def get_auto_run_tree(root_run_id: str, user: dict = Depends(get_current_u
                 "error_class": item["error_class"],
             }
             for item in tree
-        ]
+        ],
     }
 
 
 @router.get("/auto/threads/{thread_id}/runs")
+@router.get("/smart/threads/{thread_id}/runs")
 async def list_auto_thread_runs(thread_id: str, user: dict = Depends(get_current_user)):
     await _require_agent_thread(thread_id, AUTO_AGENT_ID, user["username"])
     roots = await harness_repository.roots_for_thread(
@@ -1170,12 +1199,14 @@ async def list_auto_thread_runs(thread_id: str, user: dict = Depends(get_current
 
 
 @router.get("/auto/runs/{root_run_id}/messages")
+@router.get("/smart/runs/{root_run_id}/messages")
 async def get_auto_messages(root_run_id: str, user: dict = Depends(get_current_user)):
     await _scoped_auto_root(root_run_id, user)
     return {"messages": await harness_repository.messages_for_tree(root_run_id)}
 
 
 @router.get("/auto/runs/{root_run_id}/children/{child_run_id}/timeline")
+@router.get("/smart/runs/{root_run_id}/children/{child_run_id}/timeline")
 async def get_auto_child_timeline(
     root_run_id: str,
     child_run_id: str,
@@ -1188,15 +1219,13 @@ async def get_auto_child_timeline(
     if (
         not child
         or child["run_id"] != child_run_id
-        or child["root_run_id"] != root_run_id
-        or child["parent_run_id"] != root_run_id
-        or child["depth"] != 1
+        or (child["root_run_id"] or child["run_id"]) != root_run_id
         or child["owner_name"] != root["owner_name"]
         or child["role_name"] != root["role_name"]
         or child["thread_id"] != root["thread_id"]
     ):
         raise HTTPException(status_code=404, detail="Child run not found in this role")
-    if child["status"] in TERMINAL:
+    if child["status"] in TERMINAL and child["depth"] > 0:
         await harness_repository.ensure_terminal_event(root_run_id, child)
     try:
         agent = await agent_repository.get_agent(
@@ -1208,8 +1237,16 @@ async def get_auto_child_timeline(
             )
     except AgentMetadataUnavailable:
         agent = None
+    timeline_options = {}
+    if child.get("payload", {}).get("agent_session_id"):
+        tree = await harness_repository.tree(
+            root_run_id, owner_name=root["owner_name"], role_name=root["role_name"]
+        )
+        timeline_options["turn_ids"] = {
+            item["run_id"] for item in tree if participant_id(item) == participant_id(child)
+        }
     events_page, next_cursor, has_more = await harness_repository.child_events_page(
-        root_run_id, child_run_id, after, limit=limit
+        root_run_id, child_run_id, after, limit=limit, **timeline_options
     )
     return {
         "run": {
@@ -1232,6 +1269,8 @@ async def get_auto_child_timeline(
 
 
 @router.post("/auto/runs/{root_run_id}/children/{child_run_id}/messages")
+@router.post("/smart/runs/{root_run_id}/children/{child_run_id}/messages")
+@router.post("/smart/runs/{root_run_id}/participants/{child_run_id}/messages")
 async def send_auto_child_message(
     root_run_id: str,
     child_run_id: str,
@@ -1239,13 +1278,26 @@ async def send_auto_child_message(
     user: dict = Depends(get_current_user),
 ):
     root = await _scoped_auto_root(root_run_id, user)
+    if root["agent_id"] == SMART_AGENT_ID:
+        try:
+            result = await AgentControl(harness_repository, root, user).send_message(
+                target=child_run_id, content=body.content, operation_id=f"user:{body.operation_id}",
+                origin="user", correlation_id=body.correlation_id, reply_to=body.reply_to,
+            )
+            return {**result, "status": "queued"}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     child = await harness_repository.get(child_run_id)
-    if not child or child["root_run_id"] != root_run_id or child["status"] in TERMINAL:
+    if (
+        not child
+        or (child["root_run_id"] or child["run_id"]) != root_run_id
+        or child["status"] == "cancelled"
+    ):
         raise HTTPException(status_code=404, detail="Active child not found")
     try:
         message_id = await harness_repository.send(
             sender=root,
-            recipient=child,
+            recipient={**child, "run_id": participant_id(child)},
             operation_id=f"user:{body.operation_id}",
             message_type="message",
             content=body.content,
@@ -1259,6 +1311,7 @@ async def send_auto_child_message(
 
 
 @router.get("/auto/runs/{root_run_id}/events")
+@router.get("/smart/runs/{root_run_id}/events")
 async def get_auto_events(
     root_run_id: str,
     after: str = "",
@@ -1273,10 +1326,11 @@ async def get_auto_events(
 
 
 @router.post("/auto/runs/{root_run_id}/cancel")
+@router.post("/smart/runs/{root_run_id}/cancel")
 async def cancel_auto_run(root_run_id: str, user: dict = Depends(get_current_user)):
     await _scoped_auto_root(root_run_id, user)
     if not await harness_repository.cancel_tree(root_run_id):
-        raise HTTPException(status_code=409, detail="Auto run is already terminal")
+        raise HTTPException(status_code=409, detail="Smart run is already terminal")
     await harness_repository.reconcile_cancelled_children(root_run_id)
     await harness_repository.event(root_run_id, root_run_id, "agent_cancelled", {})
     await write_audit_log(
@@ -1293,12 +1347,20 @@ async def cancel_auto_run(root_run_id: str, user: dict = Depends(get_current_use
 
 
 @router.post("/auto/runs/{root_run_id}/children/{child_run_id}/cancel")
+@router.post("/smart/runs/{root_run_id}/children/{child_run_id}/cancel")
 async def cancel_auto_child(
     root_run_id: str,
     child_run_id: str,
     user: dict = Depends(get_current_user),
 ):
-    await _scoped_auto_root(root_run_id, user)
+    root = await _scoped_auto_root(root_run_id, user)
+    if root["agent_id"] == SMART_AGENT_ID:
+        try:
+            return await AgentControl(harness_repository, root, user).interrupt_agent(
+                target=child_run_id, cancel=True
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not await harness_repository.cancel_child(root_run_id, child_run_id):
         raise HTTPException(status_code=404, detail="Active child not found")
     await harness_repository.event(root_run_id, child_run_id, "agent_cancelled", {})
@@ -1314,6 +1376,69 @@ async def cancel_auto_child(
         active_role=session_security(user).active_role,
     )
     return {"status": "cancelled"}
+
+
+@router.post("/smart/runs/{root_run_id}/participants/{target}/followup")
+async def followup_smart_agent(
+    root_run_id: str, target: str, body: AutoMessageRequest,
+    user: dict = Depends(get_current_user),
+):
+    root = await _scoped_auto_root(root_run_id, user)
+    try:
+        return await AgentControl(harness_repository, root, user).followup_task(
+            target=target, task=body.content, operation_id=f"user:{body.operation_id}"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/smart/runs/{root_run_id}/participants/{target}/interrupt")
+async def interrupt_smart_agent(
+    root_run_id: str, target: str, subtree: bool = False, cancel: bool = False,
+    user: dict = Depends(get_current_user),
+):
+    root = await _scoped_auto_root(root_run_id, user)
+    try:
+        return await AgentControl(harness_repository, root, user).interrupt_agent(
+            target=target, subtree=subtree, cancel=cancel
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/threads", response_model=ThreadListResponse)
+async def list_studio_threads(
+    user: dict = Depends(get_current_user),
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    cursor: Annotated[str | None, Query(max_length=1024)] = None,
+) -> ThreadListResponse:
+    next_cursor = None
+    try:
+        if limit is not None or cursor is not None:
+            threads, next_cursor = await history_repository.threads(
+                user_name=user["username"], all_agents=True, limit=limit or 50, cursor=cursor,
+            )
+        else:
+            threads = await assistant_repository.list_threads(
+                user_name=user["username"], all_agents=True
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except AssistantThreadListUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Conversation history is temporarily unavailable"
+        ) from exc
+    accessible: set[str] = set()
+    for agent_id in dict.fromkeys(thread["agent_id"] for thread in threads):
+        try:
+            await _require_agent(agent_id, user)
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                continue
+            raise
+        accessible.add(agent_id)
+    views = [_thread_view(thread) for thread in threads if thread["agent_id"] in accessible]
+    return ThreadListResponse(threads=views, count=len(views), next_cursor=next_cursor)
 
 
 @router.get("/{agent_id}", response_model=AgentView)
@@ -1448,12 +1573,33 @@ async def delete_agent_memory(
 
 
 @router.get("/{agent_id}/threads", response_model=ThreadListResponse)
-async def list_agent_threads(agent_id: str, user: dict = Depends(get_current_user)):
+async def list_agent_threads(
+    agent_id: str, user: dict = Depends(get_current_user),
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    cursor: Annotated[str | None, Query(max_length=1024)] = None,
+):
     await _require_agent(agent_id, user)
     try:
+        if limit is not None or cursor is not None:
+            agent_ids = ("__auto__", SMART_AGENT_ID) if agent_id in SMART_AGENT_IDS else (agent_id,)
+            threads, next_cursor = await history_repository.threads(
+                user_name=user["username"], agent_ids=agent_ids, limit=limit or 50, cursor=cursor,
+            )
+            return ThreadListResponse(
+                threads=[_thread_view(t) for t in threads], count=len(threads),
+                next_cursor=next_cursor,
+            )
         threads = await assistant_repository.list_threads(
             user_name=user["username"], agent_id=agent_id
         )
+        if agent_id in SMART_AGENT_IDS:
+            other = "__auto__" if agent_id == SMART_AGENT_ID else SMART_AGENT_ID
+            historical = await assistant_repository.list_threads(
+                user_name=user["username"], agent_id=other
+            )
+            threads = list({row["thread_id"]: row for row in [*threads, *historical]}.values())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except AssistantThreadListUnavailable as exc:
         raise HTTPException(
             status_code=503, detail="Conversation history is temporarily unavailable"
@@ -1469,6 +1615,8 @@ async def create_agent_thread(
     user: dict = Depends(get_current_user),
 ):
     await _require_agent(agent_id, user)
+    if agent_id in SMART_AGENT_IDS:
+        agent_id = SMART_AGENT_ID
     thread = await assistant_repository.create_thread(
         user_name=user["username"],
         title=body.title,
@@ -1489,13 +1637,31 @@ async def get_agent_thread(
     agent_id: str,
     thread_id: str,
     user: dict = Depends(get_current_user),
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    cursor: Annotated[str | None, Query(max_length=1024)] = None,
 ):
     await _require_agent(agent_id, user)
     thread = await _require_agent_thread(thread_id, agent_id, user["username"])
+    if limit is not None or cursor is not None:
+        try:
+            messages, next_cursor = await history_repository.messages(
+                thread_id, user_name=user["username"], limit=limit or 50, cursor=cursor,
+                synchronize=agent_id in SMART_AGENT_IDS,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except AssistantThreadListUnavailable as exc:
+            raise HTTPException(
+                status_code=503, detail="Conversation history is temporarily unavailable"
+            ) from exc
+        return ThreadDetailResponse(
+            thread=_thread_view(thread), messages=[_message_view(m) for m in messages],
+            next_cursor=next_cursor,
+        )
     messages = await assistant_repository.list_messages(
         thread_id,
         user_name=user["username"],
-        synchronize=agent_id == AUTO_AGENT_ID,
+        synchronize=agent_id in SMART_AGENT_IDS,
     )
     return ThreadDetailResponse(
         thread=_thread_view(thread),
@@ -1543,11 +1709,11 @@ async def delete_agent_thread(
 ):
     await _require_agent(agent_id, user)
     await _require_agent_thread(thread_id, agent_id, user["username"])
-    if agent_id == AUTO_AGENT_ID:
+    if agent_id in SMART_AGENT_IDS:
         async with _auto_admission(thread_id, user["username"]) as assert_owned:
             await _require_agent_thread(thread_id, agent_id, user["username"])
             if await harness_repository.active_for_thread(thread_id, user["username"]):
-                raise HTTPException(status_code=409, detail="Cancel the active Auto run first")
+                raise HTTPException(status_code=409, detail="Cancel the active Smart run first")
             await assert_owned()
             await harness_repository.delete_thread(thread_id, owner_name=user["username"])
             await assert_owned()
@@ -1594,7 +1760,7 @@ async def replay_agent_run(
     await _require_agent(agent_id, user)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     role = session_security(user).active_role
-    if agent_id == AUTO_AGENT_ID:
+    if agent_id in SMART_AGENT_IDS:
         root = await harness_repository.get(run_id)
         if (
             not root
@@ -1696,17 +1862,17 @@ async def send_agent_message(
     agent = await _require_agent(agent_id, user)
     user_name = user["username"]
     thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
-    if agent_id == AUTO_AGENT_ID:
+    if agent_id in SMART_AGENT_IDS:
         if attachments:
-            raise HTTPException(status_code=422, detail="Auto does not yet support attachments")
+            raise HTTPException(status_code=422, detail="Smart does not yet support attachments")
         from app.modules.assistant.skills import contains_credential_shape
 
         if not body.content.strip() or contains_credential_shape(body.content):
-            raise HTTPException(status_code=422, detail="Invalid Auto message")
+            raise HTTPException(status_code=422, detail="Invalid Smart message")
         async with _auto_admission(thread_id, user_name) as assert_owned:
             thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
             if await harness_repository.active_for_thread(thread_id, user_name):
-                raise HTTPException(status_code=409, detail="An Auto run is already active")
+                raise HTTPException(status_code=409, detail="A Smart run is already active")
             await assert_owned()
             user_message = await assistant_repository.append_message(
                 thread_id,

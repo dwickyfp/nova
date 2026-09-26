@@ -56,6 +56,39 @@ afterEach(() => {
 });
 
 describe("AgentConfigurationTab", () => {
+  it("keeps business tools and removes legacy free-form SQL on save", async () => {
+    const updates: Record<string, unknown>[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (init?.method === "PUT") {
+        updates.push(JSON.parse(init.body as string));
+        return response(AGENT);
+      }
+      const url = String(input);
+      if (url.endsWith("/tools")) return response({ tools: [
+        { name: "query_execute", source: "builtin", description: "Free-form SQL" },
+        { name: "semantic_query", source: "builtin", description: "Business metrics" },
+      ] });
+      if (url.endsWith("/custom-tools")) return response({ tools: [] });
+      if (url.endsWith("/semantic-views")) return response([]);
+      return response({});
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const screen = await render(
+      <QueryClientProvider client={client}>
+        <AgentConfigurationTab
+          agent={{ ...AGENT, default_tools: ["query_execute", "semantic_query"] }}
+          onSaved={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    await screen.getByRole("tab", { name: "Tools" }).click();
+    await expect.element(screen.getByText("semantic_query", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("query_execute", { exact: true })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("checkbox", { name: /semantic_query/ })).toBeChecked();
+    await screen.getByRole("button", { name: "Save changes" }).click();
+    await vi.waitFor(() => expect(updates[0]?.default_tools).toEqual(["semantic_query"]));
+  });
+
   it("resets an unsaved custom tool edit when the dialog is reopened", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);

@@ -1,9 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AgentMemoryDialog } from "./agent-memory-dialog";
+import { StudioAccountMenu } from "./studio-account-menu";
 import "@/styles/index.css";
+
+vi.mock("@/components/sign-out-dialog", () => ({ SignOutDialog: () => null }));
+vi.mock("@/context/theme-provider", () => ({
+  useTheme: () => ({ theme: "dark", setTheme: vi.fn() }),
+}));
+
+function MemoryMenu() {
+  return <StudioAccountMenu
+    identity={{ username: "memory_owner", roles: ["analyst"], active_role: "analyst", warehouses: [], active_warehouse: null }}
+    memoryAgentId="sales"
+    collapsed
+    onIdentityChange={() => {}}
+  />;
+}
+
+async function openMemory() {
+  await page.getByRole("button", { name: "memory_owner", exact: true }).click();
+  await expect.element(page.getByRole("menuitem", { name: "Information", exact: true })).not.toBeInTheDocument();
+  await page.getByRole("menuitem", { name: "Memory", exact: true }).click();
+  await expect.element(page.getByRole("dialog", { name: "Agent memory", exact: true })).toBeVisible();
+}
 
 const mocks = vi.hoisted(() => ({
   memories: [] as Array<Record<string, string>>,
@@ -88,16 +109,20 @@ describe("AgentMemoryDialog", () => {
   it("shows a sourced memory and lets its owner delete it", async () => {
     await render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <AgentMemoryDialog agentId="sales" />
+        <MemoryMenu />
       </QueryClientProvider>,
     );
-    await page.getByRole("button", { name: "View agent memory" }).click();
+    await openMemory();
     await expect.element(page.getByText("Omzet adalah invoice lunas dikurangi retur.")).toBeVisible();
     await expect.element(page.getByText(/From your message:/)).toBeVisible();
     await page.getByRole("button", { name: /Delete memory:/ }).click();
     await page.getByRole("button", { name: "Delete memory", exact: true }).click();
     expect(mocks.remove).toHaveBeenCalledWith("sales", "m1");
     await expect.element(page.getByText(/No memories yet/)).toBeVisible();
+    await expect.poll(() => document.querySelector('[role="alertdialog"]')).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    await expect.poll(() => document.querySelector('[role="dialog"]')).toBeNull();
+    await expect.element(page.getByRole("button", { name: "memory_owner", exact: true })).toHaveFocus();
   });
 
   it("keeps the memory dialog inside a narrow viewport", async () => {
@@ -105,10 +130,10 @@ describe("AgentMemoryDialog", () => {
     try {
       await render(
         <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-          <AgentMemoryDialog agentId="sales" />
+          <MemoryMenu />
         </QueryClientProvider>,
       );
-      await page.getByRole("button", { name: "View agent memory" }).click();
+      await openMemory();
       const dialog = page.getByRole("dialog").element();
       expect(dialog.getBoundingClientRect().right).toBeLessThanOrEqual(320);
       expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth);
@@ -126,10 +151,10 @@ describe("AgentMemoryDialog", () => {
     );
     await render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <AgentMemoryDialog agentId="sales" />
+        <MemoryMenu />
       </QueryClientProvider>,
     );
-    await page.getByRole("button", { name: "View agent memory" }).click();
+    await openMemory();
     await page.getByRole("button", { name: "Load more memories" }).click();
     await expect.element(page.getByText("Retur mengurangi omzet.")).toBeVisible();
     expect(mocks.list).toHaveBeenCalledWith("sales", 100);
@@ -142,10 +167,10 @@ describe("AgentMemoryDialog", () => {
     });
     await render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <AgentMemoryDialog agentId="sales" />
+        <MemoryMenu />
       </QueryClientProvider>,
     );
-    await page.getByRole("button", { name: "View agent memory" }).click();
+    await openMemory();
     await page.getByRole("button", { name: "Load more memories" }).click();
     await expect.element(page.getByText("Omzet adalah invoice lunas dikurangi retur.")).toBeVisible();
     await expect.element(page.getByText(/More memories could not be loaded/)).toBeVisible();
@@ -154,10 +179,10 @@ describe("AgentMemoryDialog", () => {
   it("requires a preview before approving a remembered rule", async () => {
     await render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <AgentMemoryDialog agentId="sales" />
+        <MemoryMenu />
       </QueryClientProvider>,
     );
-    await page.getByRole("button", { name: "View agent memory" }).click();
+    await openMemory();
     await page.getByRole("button", { name: "Propose as business rule" }).click();
     await expect.element(page.getByLabelText("Proposed metric expression")).toBeVisible();
     await page.getByLabelText("Proposed metric expression").fill(
@@ -176,10 +201,10 @@ describe("AgentMemoryDialog", () => {
     try {
       await render(
         <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-          <AgentMemoryDialog agentId="sales" />
+          <MemoryMenu />
         </QueryClientProvider>,
       );
-      await page.getByRole("button", { name: "View agent memory" }).click();
+      await openMemory();
       await page.getByRole("button", { name: "Propose as business rule" }).click();
       await expect.element(page.getByLabelText("Proposed metric expression")).toBeVisible();
       const dialog = page.getByRole("dialog").element();

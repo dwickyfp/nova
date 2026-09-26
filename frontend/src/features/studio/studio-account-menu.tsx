@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
+  BookOpen,
   Check,
   ChevronsUpDown,
-  Info,
   LogOut,
   Monitor,
   Moon,
@@ -27,8 +27,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SignOutDialog } from "@/components/sign-out-dialog";
-import { ConnectionInfoDialog } from "@/components/connection-info-dialog";
 import type { StudioIdentity } from "@/features/agents/api";
+import { AgentMemoryDialog } from "./agent-memory-dialog";
 
 function getInitials(username: string): string {
   const parts = username.split(/[_\s.-]+/).filter(Boolean);
@@ -55,14 +55,17 @@ export function StudioAccountMenu({
   identity,
   onIdentityChange,
   collapsed = false,
+  memoryAgentId,
 }: {
   identity: StudioIdentity | undefined;
   onIdentityChange: () => void;
   /** Icon-only mode, for the collapsed rail. */
   collapsed?: boolean;
+  memoryAgentId?: string | null;
 }) {
   const [roleOpen, setRoleOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [roleSearch, setRoleSearch] = useState("");
   const { theme, setTheme } = useTheme();
 
@@ -87,6 +90,7 @@ export function StudioAccountMenu({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            ref={triggerRef}
             type="button"
             aria-label={collapsed ? username : undefined}
             className={cn(
@@ -117,6 +121,7 @@ export function StudioAccountMenu({
           side="top"
           align="start"
           sideOffset={4}
+          onCloseAutoFocus={(event) => { if (memoryOpen) event.preventDefault(); }}
         >
           <DropdownMenuLabel className="p-0 font-normal">
             <div className="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
@@ -211,9 +216,13 @@ export function StudioAccountMenu({
           </DropdownMenuSub>
 
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setInfoOpen(true)}>
-            <Info />
-            Information
+          <DropdownMenuItem
+            disabled={!memoryAgentId}
+            title={!memoryAgentId ? "Select a specialist agent to view its memory" : undefined}
+            onSelect={() => setMemoryOpen(true)}
+          >
+            <BookOpen />
+            Memory
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
@@ -228,7 +237,16 @@ export function StudioAccountMenu({
       </DropdownMenu>
 
       <SignOutDialog open={roleOpen} onOpenChange={setRoleOpen} />
-      <ConnectionInfoDialog open={infoOpen} onOpenChange={setInfoOpen} />
+      {memoryAgentId ? <AgentMemoryDialog
+        key={memoryAgentId}
+        agentId={memoryAgentId}
+        open={memoryOpen}
+        onOpenChange={setMemoryOpen}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          triggerRef.current?.focus();
+        }}
+      /> : null}
     </>
   );
 }

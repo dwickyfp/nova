@@ -24,6 +24,7 @@ _TOOL_PARAMETERS = {
     "properties": {
         "name": {
             "type": "string",
+            "enum": skill_library.names(),
             "description": (
                 "Skill name to load, e.g. create-table, debug-sql, create-ml-model. "
                 "Use a name from the available-skills catalog."
@@ -31,6 +32,7 @@ _TOOL_PARAMETERS = {
         },
     },
     "required": ["name"],
+    "additionalProperties": False,
 }
 
 

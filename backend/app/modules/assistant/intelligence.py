@@ -21,6 +21,7 @@ class TurnIntent(StrEnum):
     SQL_AUTHORING = "sql_authoring"
     UI_OPERATION = "ui_operation"
     CAPABILITY_HELP = "capability_help"
+    AGENT_CATALOG = "agent_catalog"
     CLARIFICATION = "clarification"
 
 
@@ -177,6 +178,18 @@ class EvidenceTracker:
         self._items: list[Evidence] = []
         self._tables: dict[str, dict[str, Any]] = {}
 
+    def snapshot(self) -> dict[str, Any]:
+        from app.modules.assistant.events import _json_default
+
+        return json.loads(json.dumps(
+            {"items": [asdict(item) for item in self._items], "tables": self._tables},
+            default=_json_default,
+        ))
+
+    def restore(self, state: dict[str, Any]) -> None:
+        self._items = [Evidence(**item) for item in state.get("items", [])[:64]]
+        self._tables = dict(list(state.get("tables", {}).items())[-8:])
+
     def add(
         self,
         tool: str,
@@ -199,6 +212,7 @@ class EvidenceTracker:
             self._tables[evidence.evidence_id] = {
                 "columns": list(table.get("columns") or [])[:100],
                 "rows": list(table.get("rows") or [])[:200],
+                "truncated": bool(table.get("truncated")),
             }
             if len(self._tables) > 8:
                 self._tables.pop(next(iter(self._tables)))
@@ -211,6 +225,34 @@ class EvidenceTracker:
     @property
     def tables(self) -> dict[str, dict[str, Any]]:
         return dict(self._tables)
+
+    @property
+    def business_tables(self) -> dict[str, dict[str, Any]]:
+        from app.modules.assistant.data_evidence import catalog_table
+
+        catalog_ids = {item.evidence_id for item in self._items
+                       if item.metadata.get("evidence_kind") == "catalog"}
+        return {key: table for key, table in self._tables.items()
+                if key not in catalog_ids and not catalog_table(table)}
+
+    def import_results(self, participant: dict[str, Any]) -> None:
+        if participant.get("status") not in {"idle", "completed"} or not participant.get("depth"):
+            return
+        source = participant.get("evidence") or {}
+        tables = source.get("tables") or {}
+        for item in source.get("items", [])[-8:]:
+            table = tables.get(item["evidence_id"])
+            source_key = f"{participant['current_turn_id']}:{item['evidence_id']}"
+            if table is None or any(
+                e.metadata.get("source_key") == source_key for e in self._items
+            ):
+                continue
+            self.add(
+                item["tool"], item["summary"], table=table,
+                metadata={**item.get("metadata", {}), "source_key": source_key,
+                          "source_turn_id": participant["current_turn_id"],
+                          "source_agent_id": participant["agent_id"]},
+            )
 
     def composer_context(self) -> str:
         payload = [asdict(item) for item in self._items]

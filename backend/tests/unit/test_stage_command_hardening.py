@@ -220,6 +220,9 @@ async def test_task_stage_body_never_submits_injected_credentials(monkeypatch) -
         async def __aexit__(self, *args):
             return False
 
+        async def execute(self, statement, params=None):
+            assert statement == "USE `db`"
+
     async def watermark(*args, **kwargs):
         return None
 

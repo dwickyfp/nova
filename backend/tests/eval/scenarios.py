@@ -479,6 +479,7 @@ def scenario_recoverable_semantic_error_repairs_once() -> Scenario:
             ToolOutcome(
                 ok=True,
                 summary="total_revenue = 42",
+                table={"columns": ["total_revenue"], "rows": [[42]]},
                 data={
                     "semantic_plan": {"metrics": ["total_revenue"]},
                     "sql": "SELECT SUM(amount) AS total_revenue FROM orders",
@@ -976,6 +977,8 @@ def scenario_observability_spans_are_recorded() -> Scenario:
                 "semantic_query",
                 classification="read_only",
                 summary="4 rows",
+                table={"columns": ["category", "revenue"],
+                       "rows": [["Electronics", 40], ["Books", 30], ["Clothes", 20], ["Food", 10]]},
                 parameters={
                     "type": "object",
                     "properties": {"question": {"type": "string"}},

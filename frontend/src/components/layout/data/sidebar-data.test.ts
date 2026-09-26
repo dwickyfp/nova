@@ -48,9 +48,11 @@ describe('sidebar navigation', () => {
     const ai = sidebarData.navGroups.flatMap((group) => group.items)
       .find((item) => item.title === 'AI & ML')
     const children = ai && 'items' in ai ? ai.items ?? [] : []
+    const agent = children.find((item) => item.title === 'Agent')
     const entities = children.find((item) => item.title === 'Entities')
     const feature = children.find((item) => item.title === 'Feature Store')
     const models = children.find((item) => item.title === 'ML Models')
+    expect(agent?.section).toBe('Nova AI')
     expect(entities?.section).toBe('Machine Learning')
     expect(feature?.section).toBeUndefined()
     expect(models?.section).toBeUndefined()

@@ -75,6 +75,10 @@ class AgentService:
         await add_custom_tools(registry, agent)
         await add_mcp_tools(registry, agent)
 
+        from app.modules.agents.tools.describe_agent import DescribeAgentTool
+
+        registry.register(DescribeAgentTool(registry, name=str(agent.get("name") or "")))
+
         requested_skills = [s for s in (agent.get("default_skills") or []) if s]
         discoverable_skills = [s for s in (agent.get("discoverable_skills") or []) if s]
         # Every ML-capable agent gets the trusted ML procedure on demand. It is

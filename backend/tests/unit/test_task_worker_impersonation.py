@@ -5,7 +5,6 @@ from datetime import datetime
 
 import pytest
 
-from app.common.identifiers import InvalidIdentifierError
 from app.modules.task_orchestration import execution as execution_module
 from app.modules.task_orchestration.credentials import CredentialUnavailable
 from app.modules.task_orchestration.execution import (
@@ -33,6 +32,10 @@ class _Cursor:
         self.statements.append(statement)
         if statement.startswith("SET ROLE "):
             self.current_role = statement.removeprefix("SET ROLE ")
+        elif statement.startswith("EXECUTE AS "):
+            self.current_role = "NONE"
+        elif statement.startswith("USE ") and self.current_role == "NONE":
+            raise PermissionError("Database access requires the task owner's active role")
 
     async def fetchone(self):
         if "CURRENT_USER" in self.last:
@@ -50,6 +53,18 @@ class _Conn:
 
     def cursor(self, *_):
         return self._cursor
+
+
+@pytest.mark.asyncio
+async def test_dotted_execution_account_is_preserved(monkeypatch):
+    statements, _ = _install_conn(monkeypatch, confirmed_user="dwicky.f.putra@%")
+    executor = DelegateExecutor(
+        None, impersonation_user="nova_task_worker", impersonation_password="private-secret"
+    )
+    assert await executor.evaluate_when(
+        "1=1", spec=TaskSpec("t", "SELECT 1", "warehouse", "analyst"), owner="dwicky.f.putra"
+    )
+    assert statements[0] == "EXECUTE AS 'dwicky.f.putra'@'%' WITH NO REVERT"
 
 
 def _install_conn(monkeypatch, *, confirmed_user: str = "bob@%"):
@@ -98,9 +113,9 @@ async def test_impersonation_precedes_role_when_and_submit(monkeypatch):
     assert statements[:6] == [
         "EXECUTE AS 'bob'@'%' WITH NO REVERT",
         "SELECT CURRENT_USER() AS nova_effective_user",
-        "USE `warehouse`",
         "SET ROLE analyst",
         "SELECT CURRENT_ROLE() AS nova_active_role",
+        "USE `warehouse`",
         "SELECT (1 = 1) AS nova_when",
     ]
     assert statements[-1] == "SUBMIT TASK `warehouse`.`daily_load` AS INSERT INTO x SELECT 1"
@@ -118,7 +133,8 @@ async def test_worker_role_activates_before_impersonation(monkeypatch):
     )
 
     assert await executor.evaluate_when(
-        "1 = 1", spec=TaskSpec("daily_load", "SELECT 1", "warehouse", "analyst"),
+        "1 = 1",
+        spec=TaskSpec("daily_load", "SELECT 1", "warehouse", "analyst"),
         owner="bob",
     )
     assert statements[:4] == [
@@ -154,7 +170,7 @@ async def test_invalid_owner_never_opens_worker_connection(monkeypatch):
         None, impersonation_user="nova_task_worker", impersonation_password="private-secret"
     )
 
-    with pytest.raises(InvalidIdentifierError):
+    with pytest.raises(CredentialUnavailable):
         await executor.evaluate_when(
             "1 = 1", spec=TaskSpec("daily_load", "SELECT 1", "warehouse"), owner="x' OR 1=1"
         )

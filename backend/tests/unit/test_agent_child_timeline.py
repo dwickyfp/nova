@@ -72,10 +72,12 @@ async def test_child_mailbox_rejects_token_before_persistence(monkeypatch) -> No
     sender = {
         "run_id": "root", "root_run_id": None, "owner_name": "alice",
         "role_name": "analyst", "depth": 0,
+        "thread_id": "chat", "session_id": "login", "security_version": 1,
     }
     recipient = {
         "run_id": "child", "root_run_id": "root", "owner_name": "alice",
         "role_name": "analyst", "depth": 1,
+        "thread_id": "chat", "session_id": "login", "security_version": 1,
     }
 
     with pytest.raises(ValueError, match="Invalid agent message"):

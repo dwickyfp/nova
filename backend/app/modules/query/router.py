@@ -1,15 +1,17 @@
 """Query API router — execute SQL, explain, query history."""
 
 from datetime import datetime
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from app.common.responses import SanitizingJSONResponse
 from app.common.sql_guard import (
     is_destructive_sql,
     is_unscoped_mutation,
+    split_sql_statements,
 )
 from app.core.config import settings
 from app.core.deps import get_current_user
@@ -77,6 +79,38 @@ class QueryRequest(BaseModel):
     max_rows: int = Field(500, ge=1, le=5000)
     file_id: str | None = None
     confirm_destructive: bool = False
+    temporary_password: SecretStr | None = Field(None, exclude=True, repr=False)
+
+
+def _bind_temporary_password(req: QueryRequest) -> str:
+    placeholder = "'<temporary_password>'"
+    if req.temporary_password is None:
+        if placeholder in req.sql:
+            raise HTTPException(status_code=400, detail="Enter a temporary password in protected input.")
+        return req.sql
+    secret = req.temporary_password.get_secret_value()
+    if not secret or len(secret) > 4096:
+        raise HTTPException(status_code=400, detail="A temporary password of 1 to 4096 characters is required.")
+    statements = split_sql_statements(req.sql)
+    if req.sql.count(placeholder) != 1:
+        raise HTTPException(status_code=400, detail="Protected input requires exactly one CREATE USER placeholder.")
+    bound = []
+    for statement in statements:
+        if placeholder not in statement:
+            bound.append(statement)
+            continue
+        match = re.fullmatch(
+            r"CREATE\s+USER\s+(?P<identity>'(?:''|[^'])*'(?:\s*@\s*'(?:''|[^'])*')?)"
+            r"\s+IDENTIFIED\s+BY\s+'<temporary_password>'", statement, re.I,
+        )
+        if not match:
+            raise HTTPException(status_code=400, detail="Protected input is only supported for CREATE USER password placeholders.")
+        escaped = secret.replace("\\", "\\\\").replace("'", "\\'")
+        bound.append(statement.replace(placeholder, f"'{escaped}'"))
+        requirement = f"ALTER USER {match.group('identity')} REQUIRE PASSWORD CHANGE"
+        if not any(s.casefold() == requirement.casefold() for s in statements):
+            bound.append(requirement)
+    return ";\n".join(bound)
 
 
 class QueryResponse(BaseModel):
@@ -122,6 +156,11 @@ async def execute_query(
     Stops on first error — returns results collected so far plus an error result.
     Always returns a list (single statement → list with one element).
     """
+    sql = _bind_temporary_password(req)
+    if req.temporary_password is not None and _resolve_active_role(user) not in {
+        "ACCOUNTADMIN", "SECURITYADMIN", "user_admin", "security_admin",
+    }:
+        raise HTTPException(status_code=403, detail="Activate a security-admin role before creating a temporary-password account.")
     try:
         requested_role = parse_role_statement(req.sql)
     except ValueError as exc:
@@ -146,7 +185,7 @@ async def execute_query(
         source="web",
         tenant=user.get("tenant", "default"),
         security_context_version=user.get("security_context_version", 1),
-        sql=req.sql,
+        sql=sql,
         username=user["username"],
         encrypted_password=user["encrypted_password"],
         database=req.database,

@@ -40,7 +40,7 @@ SELECT AI_EXTRACT(doc, '{"type":"object","properties":{"total":{"type":"number"}
 Combine with a stage read:
 
 ```sql
-SELECT AI_SENTIMENT($1) FROM @reviews.batch.csv;
+SELECT AI_SENTIMENT(review_text) FROM @reviews.batch.csv LIMIT 10;
 ```
 
 ## Caveats

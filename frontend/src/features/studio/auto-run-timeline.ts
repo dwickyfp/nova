@@ -90,7 +90,7 @@ export function autoRunSteps(
         break;
       }
       case "agent_waiting":
-        rows.push({ ...base, kind: "note", label: "waiting", text: "Main waiting for specialists", status: settledAfter(event, ["agent_started", ...TERMINAL]) ? "done" : "running" });
+        rows.push({ ...base, kind: "note", label: "waiting", text: `${name} waiting for specialists`, status: settledAfter(event, ["agent_started", ...TERMINAL]) ? "done" : "running" });
         break;
       case "agent_resumed":
         rows.push({ ...base, kind: "note", label: "resumed", text: "Main resumed after specialist updates" });
@@ -100,7 +100,9 @@ export function autoRunSteps(
         const recipient = string(payload.recipient_run_id);
         const author = payload.origin === "user" ? "You" : nameOf(sender);
         const destination = nameOf(recipient);
-        rows.push({ ...base, kind: "delegate", label: "message", text: `${author} messaged ${destination}`, body: string(payload.content), childRunId: sender === rootRunId ? recipient : sender });
+        const teammate = sender === rootRunId ? recipient : sender;
+        const delegated = childNames.has(teammate);
+        rows.push({ ...base, kind: delegated ? "delegate" : "note", label: "message", text: `${author} messaged ${destination}`, body: string(payload.content), childRunId: delegated ? teammate : undefined });
         break;
       }
       case "tool_activity": {
@@ -109,17 +111,20 @@ export function autoRunSteps(
           item.run_id === event.run_id && item.type === "child_activity" &&
           item.payload.event_type === "tool_call" && item.payload.tool_name === tool,
         );
-        if (tool && !hasDetailedEvent) rows.push({ ...base, kind: "delegate", label: "tool", text: `${name} called ${tool}` });
+        if (tool && !hasDetailedEvent) rows.push({ ...base, kind: "tool", label: tool, text: `${name} called ${tool}` });
         break;
       }
       case "child_activity": {
         const kind = string(payload.event_type);
         if (kind === "tool_call") {
           const tool = string(payload.tool_name);
-          rows.push({ ...base, kind: "delegate", label: "tool", text: `${name} called ${tool || "a tool"}`, preview: string(payload.sql_preview) || undefined });
+          rows.push({ ...base, kind: "tool", label: tool || "tool", text: `${name} called ${tool || "a tool"}`, preview: string(payload.sql_preview) || undefined });
         } else if (kind === "tool_progress" || kind === "thinking" || kind === "plan") {
           const detail = string(payload.text);
-          if (detail) rows.push({ ...base, kind: "delegate", label: kind, text: `${name}: ${short(detail)}`, body: detail });
+          if (detail) rows.push({ ...base, kind: childRunId ? "delegate" : "note", label: kind, text: `${name}: ${short(detail)}`, body: detail });
+        } else if (kind === "error") {
+          const detail = string(payload.message);
+          if (detail) rows.push({ ...base, kind: "note", label: "error", text: `${name}: ${short(detail)}`, body: detail, status: "failed" });
         }
         break;
       }

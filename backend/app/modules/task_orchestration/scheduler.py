@@ -93,6 +93,7 @@ class DueGraph:
     overlap_policy: str = "skip"
     #: The root task whose schedule anchored this occurrence.
     root_task: str = ""
+    owner_role: str | None = None
 
     @property
     def run_id(self) -> str:
@@ -308,6 +309,7 @@ def plan_tick(
                         task_names=task_names,
                         overlap_policy=policy,
                         root_task=name,
+                        owner_role=task.get("owner_role"),
                     )
                 )
 
@@ -433,6 +435,11 @@ class SchedulerTick:
             plan.overlap_skipped += 1
             return
 
+        execution_user = (
+            await self._repository.get_role_execution_user(due.owner_role)
+            if due.owner_role
+            else None
+        )
         created, is_new = await self._repository.create_graph_run_once(
             {
                 "id": due.run_id,
@@ -440,6 +447,8 @@ class SchedulerTick:
                 "trigger_type": "schedule",
                 "state": "pending",
                 "overlap_policy": due.overlap_policy,
+                "execution_role": due.owner_role,
+                "execution_user": execution_user,
             }
         )
         if not is_new:

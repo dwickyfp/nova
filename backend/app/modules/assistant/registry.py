@@ -57,10 +57,9 @@ def build_registry() -> ToolRegistry:
         inspect_role_access_tool,
     )
     from app.modules.assistant.tools.search_knowledge import search_knowledge_tool
-    from app.modules.assistant.tools.ui_actions import (
-        call_ui_operation_tool,
-        list_ui_operations_tool,
-    )
+    from app.modules.assistant.tools.provision_user import provision_user_tool
+    from app.modules.assistant.tools.query_mutate import query_mutate_tool
+    from app.modules.assistant.tools.validate_sql import validate_sql_tool
 
     registry = ToolRegistry()
     registry.register(load_skill_tool)
@@ -73,8 +72,9 @@ def build_registry() -> ToolRegistry:
     registry.register(feature_lookup_tool)
     registry.register(inspect_role_access_tool)
     registry.register(grant_role_access_tool)
-    registry.register(list_ui_operations_tool)
-    registry.register(call_ui_operation_tool)
+    registry.register(provision_user_tool)
+    registry.register(query_mutate_tool)
+    registry.register(validate_sql_tool)
     registry.register(invoke_client_capability_tool)
     registry.register(inspect_agent_configuration_tool)
     registry.register(inspect_query_error_tool)

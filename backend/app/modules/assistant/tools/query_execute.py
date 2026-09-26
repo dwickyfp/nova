@@ -25,10 +25,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from app.common.audit import write_audit_log
-from app.common.sql_guard import redact_sql_credentials
+from app.common.sql_guard import redact_sql_credentials, strip_sql_comments
+from app.modules.assistant.data_evidence import sql_evidence_kind
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import (
     ToolInvocation,
@@ -105,6 +107,9 @@ class QueryExecuteTool:
         "Run one read-only StarRocks SELECT/SHOW/DESCRIBE/EXPLAIN on the user's "
         "connection for explicit SQL, schema inspection, or data outside a semantic "
         "model. Do not use for governed metrics defined by semantic_query. "
+        "To list SQL views, SELECT TABLE_NAME FROM information_schema.views with "
+        "TABLE_SCHEMA filtered to the requested database; SHOW VIEWS is unsupported. "
+        "Use SHOW CREATE VIEW db.view_name to inspect a view definition. "
         "USE ROLE or SET ROLE switches the session to one granted role after approval. "
         "Destructive and DDL statements are refused."
     )
@@ -160,6 +165,19 @@ class QueryExecuteTool:
                 error="No user connection is available for this tool call.",
             )
 
+        if getattr(context, "agent_id", None):
+            detail = (
+                "Free-form SQL is unavailable in Studio business agents. Use describe_agent "
+                "for available data, a bound Semantic View for business metrics, or a "
+                "configured business tool. Use Nove for database exploration."
+            )
+            await self._audit(
+                context=context, username=username, sql=_safe_redact(sql), status="DENIED",
+                decision="denied", error_message=detail, rows_affected=0,
+            )
+            return ToolOutcome(ok=False, summary="", error=detail,
+                               error_class="POLICY_VIOLATION")
+
         from app.common.sql_guard import split_sql_statements
 
         statements = split_sql_statements(sql)
@@ -198,6 +216,23 @@ class QueryExecuteTool:
                 rows_affected=0,
             )
             return ToolOutcome(ok=False, summary="", error=reason)
+
+        if len(statements) == 1 and re.match(
+            r"SHOW\s+VIEWS\b", strip_sql_comments(statements[0]).strip(), re.IGNORECASE
+        ):
+            detail = (
+                "StarRocks does not support SHOW VIEWS. Query TABLE_NAME from "
+                "information_schema.views, filtering TABLE_SCHEMA to the requested database. "
+                "For one view's definition, use SHOW CREATE VIEW db.view_name."
+            )
+            await self._audit(
+                context=context, username=username, sql=safe_sql, status="ERROR",
+                decision="approved", error_message=detail, rows_affected=0,
+            )
+            return ToolOutcome(
+                ok=False, summary="", error=detail,
+                error_class="UNSUPPORTED_SQL", recoverable=True,
+            )
 
         from app.modules.query.service import query_service
 
@@ -308,6 +343,7 @@ class QueryExecuteTool:
             ok=True,
             summary=summary,
             table=_table_from_results(results),
+            metadata={"evidence_kind": sql_evidence_kind(sql)},
         )
 
     async def _switch_role(self, role: str, sql: str, context: Any) -> ToolOutcome:

@@ -1,4 +1,4 @@
-"""Durable state for Auto runs; the existing direct-run journal remains readable."""
+"""Durable collaboration turns, messages, and ordered events in StarRocks."""
 
 from __future__ import annotations
 
@@ -15,6 +15,12 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from app.common.audit import write_audit_log
 from app.core.database import db
 from app.core.redis import session_store
+from app.modules.agents.identity import (
+    SMART_AGENT_ID,
+    SMART_AGENT_IDS,
+    participant_id,
+    participant_path,
+)
 from app.modules.agents.run_journal import run_journal
 from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.skills import contains_credential_shape
@@ -51,7 +57,8 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_MESSAGES (
     content TEXT NOT NULL,
     created_at DATETIME NOT NULL,
     consumed_at DATETIME,
-    origin VARCHAR(16) NOT NULL
+    origin VARCHAR(16) NOT NULL,
+    delivery_mode VARCHAR(16) NOT NULL DEFAULT 'QUEUE_ONLY'
 ) PRIMARY KEY(message_id)
 DISTRIBUTED BY HASH(message_id) BUCKETS 4
 ORDER BY (recipient_run_id, created_at)
@@ -92,6 +99,7 @@ SESSION_EVENT_TYPES = frozenset(
         "agent_completed",
         "agent_failed",
         "agent_cancelled",
+        "agent_session_cancelled",
         "delegation_plan",
         "tool_activity",
         "child_activity",
@@ -221,6 +229,9 @@ class HarnessRepository:
         await self._ensure_column(
             "CONFIG_AGENT_MESSAGES", "origin", "VARCHAR(16) NOT NULL DEFAULT 'agent'"
         )
+        await self._ensure_column(
+            "CONFIG_AGENT_MESSAGES", "delivery_mode", "VARCHAR(16) NOT NULL DEFAULT 'QUEUE_ONLY'"
+        )
         await db.execute_system(SESSION_EVENTS_DDL)
         await self._ensure_column("CONFIG_AGENT_SESSION_EVENTS", "session_sequence", "BIGINT")
         await self._backfill_event_sequences()
@@ -292,13 +303,22 @@ class HarnessRepository:
         model: str | None = None,
         user_message_id: str | None = None,
     ) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        from app.core.config import settings
+        from app.modules.agents.agent_control import CollaborationLimits
+
+        limits = {
+            name: max(1, min(getattr(settings, f"SMART_{name.upper()}"), ceiling))
+            for name, ceiling in asdict(CollaborationLimits()).items()
+        }
         if not objective.strip() or len(objective) > 8000 or contains_credential_shape(objective):
             raise ValueError("Invalid Auto objective")
         return await self._create(
             run_id=str(uuid4()),
             root_run_id=None,
             parent_run_id=None,
-            agent_id="__auto__",
+            agent_id=SMART_AGENT_ID,
             owner_name=owner_name,
             thread_id=thread_id,
             role_name=role_name,
@@ -307,6 +327,10 @@ class HarnessRepository:
             depth=0,
             objective=objective,
             payload={
+                "agent_path": "/root",
+                "agent_name": "Smart",
+                "turn_number": 1,
+                "limits": limits,
                 "provider_id": provider_id,
                 "model": model,
                 "user_message_id": user_message_id,
@@ -323,9 +347,11 @@ class HarnessRepository:
         operation_id: str,
         context: str = "",
         agent_name: str = "",
+        agent_path: str | None = None,
+        context_mode: str = "fresh",
     ) -> dict[str, Any]:
-        if parent["depth"] != 0 or parent["agent_id"] != "__auto__":
-            raise ValueError("Only the Auto root may spawn a specialist")
+        if parent["status"] in TERMINAL:
+            raise ValueError("A finished turn cannot spawn an agent")
         if not operation_id or len(operation_id) > 128:
             raise ValueError("Invalid spawn operation id")
         if (
@@ -348,7 +374,7 @@ class HarnessRepository:
             return existing
         return await self._create(
             run_id=run_id,
-            root_run_id=parent["run_id"],
+            root_run_id=parent["root_run_id"] or parent["run_id"],
             parent_run_id=parent["run_id"],
             agent_id=agent_id,
             owner_name=parent["owner_name"],
@@ -356,11 +382,114 @@ class HarnessRepository:
             role_name=parent["role_name"],
             session_id=parent["session_id"],
             security_version=parent["security_version"],
-            depth=1,
+            depth=parent["depth"] + 1,
             objective=objective[:4000],
-            payload={"context": context[:8000], "agent_name": agent_name[:128]},
+            payload={
+                "context": context[:8000], "agent_name": agent_name[:128],
+                "agent_session_id": run_id,
+                "parent_agent_session_id": participant_id(parent),
+                "agent_path": agent_path or participant_path(parent).child(run_id).value,
+                "context_mode": context_mode, "turn_number": 1,
+            },
             checkpoint={"phase": "execute"},
         )
+
+    async def create_followup(
+        self, recipient: dict, *, turn_id: str, objective: str, turn_number: int,
+        trigger_turn_id: str, blocked: bool,
+        trigger_message_id: str | None = None,
+    ) -> dict:
+        return await self._create(
+            **{key: recipient[key] for key in (
+                "root_run_id", "parent_run_id", "agent_id", "owner_name", "thread_id",
+                "role_name", "session_id", "security_version", "depth",
+            )},
+            run_id=turn_id, objective=objective,
+            status="waiting_for_turn" if blocked else "queued",
+            payload={
+                **recipient["payload"], "agent_session_id": participant_id(recipient),
+                "turn_number": turn_number, "trigger_turn_id": trigger_turn_id,
+                "trigger_message_id": trigger_message_id,
+                "previous_turn_id": recipient["run_id"], "delivery_mode": "TRIGGER_TURN",
+                "context": (recipient.get("result_summary") or "")[:8000],
+            },
+            checkpoint={"phase": "execute"},
+        )
+
+    async def release_followups(self, root_id: str) -> None:
+        from app.modules.agents.agent_control import CollaborationLimits
+        root = await self.get(root_id)
+        if not root:
+            return
+        async with self.admission_lock(root_id, root["owner_name"]) as owned:
+            tree = await self.tree(
+                root_id, owner_name=root["owner_name"], role_name=root["role_name"]
+            )
+            busy = {participant_id(row) for row in tree if row["status"] not in TERMINAL
+                    and row["status"] != "waiting_for_turn"}
+            capacity = CollaborationLimits.from_root(root).max_concurrent_agents
+            pending = sorted(tree, key=lambda row: int(row["payload"].get("turn_number", 1)))
+            for row in pending:
+                if row["status"] == "waiting_for_turn" and participant_id(row) not in busy:
+                    if len(busy - {root_id}) >= capacity and root["status"] not in TERMINAL:
+                        break
+                    await owned()
+                    target = "cancelled" if root["status"] in TERMINAL else "queued"
+                    await self.transition(
+                        row["run_id"], from_status="waiting_for_turn", to_status=target
+                    )
+                    busy.add(participant_id(row))
+
+    async def cancel_session(self, anchor: dict) -> None:
+        await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET payload = %s WHERE run_id = %s",
+            [json.dumps({**anchor["payload"], "session_cancelled": True}), anchor["run_id"]],
+        )
+
+    async def audit_interrupt(self, caller: dict, target: dict, *, cancel: bool) -> None:
+        await write_audit_log(
+            event_type="AGENT_RUN", user_name=caller["owner_name"],
+            action="CANCEL" if cancel else "INTERRUPT", object_type="AGENT_RUN",
+            object_name=participant_id(target), status="SUCCESS",
+            session_id=caller["session_id"], active_role=caller["role_name"],
+            security_context_version=caller["security_version"],
+        )
+
+    async def reconcile_collaboration(self, root: dict, tree: list[dict]) -> None:
+        if root["agent_id"] != SMART_AGENT_ID:
+            return
+        by_id = {row["run_id"]: row for row in tree}
+        for turn in tree:
+            parent = by_id.get(turn.get("parent_run_id"))
+            if parent and turn["status"] in TERMINAL:
+                await self.ensure_terminal_event(root["run_id"], turn)
+                async with self.admission_lock(root["run_id"], root["owner_name"]) as owned:
+                    await owned()
+                    await self.send(
+                        sender=turn,
+                        recipient={**parent, "run_id": participant_id(parent)},
+                        operation_id="completion",
+                        message_type="final",
+                        content=(turn.get("result_summary") or f"Turn ended: {turn['status']}")[
+                            :8000
+                        ],
+                    )
+
+    @asynccontextmanager
+    async def notifications(self, root_id: str):
+        client = session_store._redis
+        if client is None:
+            raise RuntimeError("Collaboration notification service is unavailable")
+        async with client.pubsub() as subscription:
+            await subscription.subscribe(f"nova:smart:wake:{root_id}")
+
+            async def wake(timeout: float) -> None:
+                # The durable state is rechecked after a bounded wait even if a publish was lost.
+                await subscription.get_message(
+                    ignore_subscribe_messages=True, timeout=min(timeout, 30)
+                )
+
+            yield wake
 
     async def _create(self, **fields: Any) -> dict[str, Any]:
         now = _now()
@@ -370,7 +499,7 @@ class HarnessRepository:
             "last_sequence, started_at, updated_at, session_id, root_run_id, "
             "parent_run_id, depth, objective, payload, checkpoint, "
             "prompt_tokens, completion_tokens, generation, security_version) "
-            "VALUES (%s, %s, %s, %s, %s, 'queued', -1, %s, %s, "
+            "VALUES (%s, %s, %s, %s, %s, %s, -1, %s, %s, "
             "%s, %s, %s, %s, %s, %s, %s, 0, 0, 0, %s)",
             [
                 fields["run_id"],
@@ -378,6 +507,7 @@ class HarnessRepository:
                 fields["agent_id"],
                 fields["thread_id"],
                 fields["role_name"],
+                fields.get("status", "queued"),
                 now,
                 now,
                 fields["session_id"],
@@ -432,7 +562,7 @@ class HarnessRepository:
                         await asyncio.sleep(0.1)
                         continue
                     raise RuntimeError("Agent run lookup returned a different run")
-                if run["root_run_id"] is not None or run["agent_id"] == "__auto__":
+                if run["root_run_id"] is not None or run["agent_id"] in SMART_AGENT_IDS:
                     return run
                 return None
             if attempt < 19:
@@ -475,7 +605,8 @@ class HarnessRepository:
     async def queued(self, *, limit: int = 32) -> list[dict]:
         rows = await self._run_rows(
             f"SELECT {RUN_SELECT} FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "WHERE status = 'queued' AND (root_run_id IS NOT NULL OR agent_id = '__auto__') "
+            "WHERE status = 'queued' AND (root_run_id IS NOT NULL OR agent_id IN ('__auto__', "
+            "'__smart__')) "
             "ORDER BY started_at LIMIT %s",
             [limit],
         )
@@ -485,7 +616,7 @@ class HarnessRepository:
         sql = (
             "SELECT %s AS scoped_thread, %s AS scoped_owner, COUNT(*) "
             "FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "WHERE thread_id = %s AND owner_name = %s AND agent_id = '__auto__' "
+            "WHERE thread_id = %s AND owner_name = %s AND agent_id IN ('__auto__', '__smart__') "
             "AND status IN ('queued', 'running', 'waiting_for_agent', "
             "'waiting_for_message', 'waiting_for_auth')"
         )
@@ -535,7 +666,7 @@ class HarnessRepository:
                 rows = await self._run_rows(
                     f"SELECT {RUN_SELECT} FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
                     "WHERE thread_id = %s AND owner_name = %s AND role_name = %s "
-                    "AND agent_id = '__auto__' ORDER BY started_at DESC LIMIT %s",
+                    "AND agent_id IN ('__auto__', '__smart__') ORDER BY started_at DESC LIMIT %s",
                     [thread_id, owner_name, role_name, min(max(limit, 1), 100)],
                 )
             except RuntimeError as exc:
@@ -555,7 +686,7 @@ class HarnessRepository:
                     run["thread_id"] != thread_id
                     or run["owner_name"] != owner_name
                     or run["role_name"] != role_name
-                    or run["agent_id"] != "__auto__"
+                    or run["agent_id"] not in SMART_AGENT_IDS
                     or run["depth"] != 0
                     or run["root_run_id"] is not None
                 ):
@@ -620,6 +751,7 @@ class HarnessRepository:
             raise ValueError("A run transition must fence both lease owner and generation")
         allowed = {
             "running": {
+                "running",
                 "queued",
                 "waiting_for_agent",
                 "waiting_for_message",
@@ -627,11 +759,13 @@ class HarnessRepository:
                 "failed",
                 "cancelled",
                 "waiting_for_auth",
+                "interrupted",
             },
-            "waiting_for_agent": {"queued", "cancelled", "failed"},
-            "waiting_for_message": {"queued", "cancelled", "failed"},
-            "waiting_for_auth": {"queued", "cancelled", "failed"},
-            "queued": {"cancelled"},
+            "waiting_for_agent": {"queued", "cancelled", "failed", "interrupted"},
+            "waiting_for_message": {"queued", "cancelled", "failed", "interrupted"},
+            "waiting_for_auth": {"queued", "cancelled", "failed", "interrupted"},
+            "waiting_for_turn": {"queued", "cancelled", "interrupted"},
+            "queued": {"cancelled", "interrupted"},
         }
         if to_status not in allowed.get(from_status, set()):
             raise ValueError(f"Invalid run transition: {from_status} -> {to_status}")
@@ -694,14 +828,24 @@ class HarnessRepository:
         result = await db.execute_system(
             "SELECT run_id, root_run_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
             "WHERE status = 'running' AND updated_at < %s "
-            "AND (root_run_id IS NOT NULL OR agent_id = '__auto__')",
+            "AND (root_run_id IS NOT NULL OR agent_id IN ('__auto__', '__smart__'))",
             [cutoff],
         )
         recovered = []
         for run_id, root_id in result["rows"]:
             # A coordinator checkpoint is replayable: spawn and message operation
             # ids are stable. A child may have run a mutating tool; never replay it.
-            target = "queued" if str(root_id or run_id) == str(run_id) else "interrupted"
+            current_run = await self.get(str(run_id))
+            smart = bool(current_run and current_run.get("payload", {}).get("agent_path"))
+            replayable = bool(
+                current_run
+                and current_run.get("checkpoint", {}).get("loop", {}).get("safe_to_resume")
+            )
+            target = (
+                "queued"
+                if (replayable or (not smart and str(root_id or run_id) == str(run_id)))
+                else "interrupted"
+            )
             changed = await db.execute_system(
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
                 "SET status = %s, error_class = 'worker_lost', updated_at = %s "
@@ -809,7 +953,7 @@ class HarnessRepository:
         cutoff = _now() - timedelta(seconds=max_age_seconds)
         result = await db.execute_system(
             "SELECT run_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "WHERE agent_id = '__auto__' AND started_at < %s "
+            "WHERE agent_id IN ('__auto__', '__smart__') AND started_at < %s "
             "AND status IN ('waiting_for_agent', 'waiting_for_message', 'waiting_for_auth')",
             [cutoff],
         )
@@ -853,6 +997,7 @@ class HarnessRepository:
         correlation_id: str | None = None,
         reply_to: str | None = None,
         origin: str = "agent",
+        delivery_mode: str = "QUEUE_ONLY",
     ) -> str:
         root_id = sender["root_run_id"] or sender["run_id"]
         if root_id != (recipient["root_run_id"] or recipient["run_id"]):
@@ -860,14 +1005,17 @@ class HarnessRepository:
         if (
             sender["owner_name"] != recipient["owner_name"]
             or sender["role_name"] != recipient["role_name"]
+            or sender["thread_id"] != recipient["thread_id"]
+            or sender["session_id"] != recipient["session_id"]
+            or sender["security_version"] != recipient["security_version"]
         ):
             raise ValueError("Message crosses a security boundary")
-        if sender["run_id"] == recipient["run_id"]:
+        if sender["run_id"] == recipient["run_id"] and origin != "user":
             raise ValueError("A run cannot message itself")
-        if not (sender["depth"] == 0 or recipient["depth"] == 0):
-            raise ValueError("Specialists communicate through Auto")
         if message_type not in {"message", "question", "answer", "finding", "final", "control"}:
             raise ValueError("Invalid message type")
+        if delivery_mode not in {"QUEUE_ONLY", "TRIGGER_TURN"}:
+            raise ValueError("Invalid delivery mode")
         if origin not in {"agent", "user"}:
             raise ValueError("Invalid message origin")
         if not operation_id or len(operation_id) > 128:
@@ -883,14 +1031,14 @@ class HarnessRepository:
         for attempt in range(5):
             existing = await db.execute_system(
                 "SELECT message_id, recipient_run_id, message_type, correlation_id, "
-                "reply_to, content, origin "
+                "reply_to, content, origin, delivery_mode "
                 "FROM NOVA_SYSTEM.CONFIG_AGENT_MESSAGES WHERE message_id = %s",
                 [message_id],
             )
             if not existing["rows"]:
                 break
             old = existing["rows"][0]
-            if len(old) != 7 or str(old[0]) != message_id:
+            if len(old) != 8 or str(old[0]) != message_id:
                 if attempt == 4:
                     raise RuntimeError("Message id lookup returned inconsistent metadata")
                 await asyncio.sleep(0.05)
@@ -902,8 +1050,12 @@ class HarnessRepository:
                 old[4] != reply_to,
                 old[5] != content,
                 old[6] != origin,
+                old[7] != delivery_mode,
             )
             if not any(mismatch):
+                await self._emit_message(sender, recipient, message_id, message_type, content,
+                                         origin, delivery_mode, correlation_id, reply_to)
+                await self._audit_message(sender, recipient, message_id)
                 return message_id
             if attempt == 4:
                 logger.warning("Message operation id collision fields: %s", mismatch)
@@ -912,8 +1064,8 @@ class HarnessRepository:
         await db.execute_system(
             "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_MESSAGES "
             "(message_id, root_run_id, sender_run_id, recipient_run_id, message_type, "
-            "correlation_id, reply_to, content, created_at, origin) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "correlation_id, reply_to, content, created_at, origin, delivery_mode) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 message_id,
                 root_id,
@@ -925,10 +1077,29 @@ class HarnessRepository:
                 content,
                 _now(),
                 origin,
+                delivery_mode,
             ],
         )
+        await self._emit_message(sender, recipient, message_id, message_type, content,
+                                 origin, delivery_mode, correlation_id, reply_to)
+        if recipient["depth"] == 0 and recipient["agent_id"] == "__auto__":
+            await self.wake_parent(root_id)
+        elif recipient["status"] == "waiting_for_message" and not recipient.get("payload", {}).get(
+            "agent_path"
+        ):
+            await self.transition(
+                recipient["run_id"], from_status="waiting_for_message", to_status="queued"
+            )
+        await self._audit_message(sender, recipient, message_id)
+        return message_id
+
+    async def _emit_message(
+        self, sender: dict, recipient: dict, message_id: str, message_type: str,
+        content: str, origin: str, delivery_mode: str,
+        correlation_id: str | None, reply_to: str | None,
+    ) -> None:
         await self.event(
-            root_id,
+            sender["root_run_id"] or sender["run_id"],
             sender["run_id"],
             "agent_message",
             {
@@ -938,16 +1109,15 @@ class HarnessRepository:
                 "message_type": message_type,
                 "content": content,
                 "origin": origin,
+                "delivery_mode": delivery_mode,
+                "correlation_id": correlation_id,
+                "reply_to": reply_to,
+                "sender_agent_session_id": participant_id(sender),
+                "recipient_agent_session_id": participant_id(recipient),
+                "sender_agent_path": participant_path(sender).value,
+                "recipient_agent_path": participant_path(recipient).value,
             },
         )
-        if recipient["depth"] == 0:
-            await self.wake_parent(root_id)
-        elif recipient["status"] == "waiting_for_message":
-            await self.transition(
-                recipient["run_id"], from_status="waiting_for_message", to_status="queued"
-            )
-        await self._audit_message(sender, recipient, message_id)
-        return message_id
 
     @staticmethod
     async def _audit_message(sender: dict, recipient: dict, message_id: str) -> None:
@@ -974,7 +1144,8 @@ class HarnessRepository:
                 "SELECT recipient_run_id, message_id, sender_run_id, message_type, "
                 "content, correlation_id, reply_to, origin "
                 "FROM NOVA_SYSTEM.CONFIG_AGENT_MESSAGES "
-                "WHERE recipient_run_id = %s AND consumed_at IS NULL "
+                "WHERE recipient_run_id = %s AND consumed_at IS NULL AND delivery_mode = "
+                "'QUEUE_ONLY' "
                 "ORDER BY created_at, message_id LIMIT %s",
                 [recipient_run_id, limit],
             )
@@ -1051,6 +1222,21 @@ class HarnessRepository:
                 else str(uuid4())
             )
             sequence = None
+            if kind == "agent_message" and payload.get("message_id"):
+                event_id = str(uuid5(NAMESPACE_URL, f"nova:message:event:{payload['message_id']}"))
+                async with db.system_conn() as conn, conn.cursor() as cursor:
+                    await cursor.execute("SYNC")
+                    await cursor.execute(
+                        "SELECT root_run_id, session_sequence FROM "
+                        "NOVA_SYSTEM.CONFIG_AGENT_SESSION_EVENTS "
+                        "WHERE event_id = %s",
+                        [event_id],
+                    )
+                    existing = await cursor.fetchall()
+                if existing:
+                    if len(existing) != 1 or existing[0][0] != root_run_id:
+                        raise RuntimeError("Message event crossed a collaboration boundary")
+                    return str(existing[0][1])
             if terminal:
                 cached = await client.hget(terminal_key, run_id)
                 cached_sequence = None
@@ -1118,11 +1304,13 @@ class HarnessRepository:
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 [event_id, root_run_id, sequence, run_id, kind, json.dumps(payload), _now()],
             )
+            if hasattr(client, "publish"):
+                await client.publish(f"nova:smart:wake:{root_run_id}", str(sequence))
             return str(sequence)
 
     async def reconcile_terminal_children(self, root_run_id: str, children: list[dict]) -> None:
         for child in children:
-            if child.get("root_run_id") != root_run_id or child.get("depth") != 1:
+            if child.get("root_run_id") != root_run_id or child.get("depth", 0) < 1:
                 raise ValueError("Auto reconciliation crossed a run boundary")
             kind = TERMINAL_STATUS_EVENTS.get(child["status"])
             if kind is None:
@@ -1141,7 +1329,7 @@ class HarnessRepository:
     async def ensure_terminal_event(self, root_run_id: str, run: dict) -> None:
         run_id = run["run_id"]
         if run_id != root_run_id and (
-            run.get("root_run_id") != root_run_id or run.get("depth") != 1
+            run.get("root_run_id") != root_run_id or run.get("depth", 0) < 1
         ):
             raise ValueError("Auto terminal reconciliation crossed a run boundary")
         kind = TERMINAL_STATUS_EVENTS.get(run["status"])
@@ -1174,7 +1362,11 @@ class HarnessRepository:
         root = None
         for attempt in range(10):
             current = await self.get(root_run_id)
-            if current and current["agent_id"] == "__auto__" and current["status"] == "cancelled":
+            if (
+                current
+                and current["agent_id"] in SMART_AGENT_IDS
+                and current["status"] == "cancelled"
+            ):
                 root = current
                 break
             if attempt < 9:
@@ -1186,10 +1378,10 @@ class HarnessRepository:
             tree = await self.tree(
                 root_run_id, owner_name=root["owner_name"], role_name=root["role_name"]
             )
-            children = {item["run_id"]: item for item in tree if item["depth"] == 1}
+            children = {item["run_id"]: item for item in tree if item["depth"] > 0}
             for child_id in known_ids - children.keys():
                 child = await self.get(child_id)
-                if child and child["root_run_id"] == root_run_id and child["depth"] == 1:
+                if child and child["root_run_id"] == root_run_id and child["depth"] > 0:
                     children[child_id] = child
             if known_ids <= children.keys() and all(
                 child["status"] in TERMINAL for child in children.values()
@@ -1203,7 +1395,7 @@ class HarnessRepository:
 
     async def _ensure_completed_terminals(self, root_run_id: str) -> dict[str, str]:
         root = await self.get(root_run_id)
-        if not root or root["agent_id"] != "__auto__" or root["status"] != "completed":
+        if not root or root["agent_id"] not in SMART_AGENT_IDS or root["status"] != "completed":
             return {}
         checkpoint = root.get("checkpoint") or {}
         known_ids = set(checkpoint.get("child_run_ids") or [])
@@ -1226,10 +1418,10 @@ class HarnessRepository:
             tree = await self.tree(
                 root_run_id, owner_name=root["owner_name"], role_name=root["role_name"]
             )
-            children = {item["run_id"]: item for item in tree if item["depth"] == 1}
+            children = {item["run_id"]: item for item in tree if item["depth"] > 0}
             for child_id in known_ids - children.keys():
                 child = await self.get(child_id)
-                if child and child["root_run_id"] == root_run_id and child["depth"] == 1:
+                if child and child["root_run_id"] == root_run_id and child["depth"] > 0:
                     children[child_id] = child
             if known_ids <= children.keys() and all(
                 child["status"] in TERMINAL for child in children.values()
@@ -1287,7 +1479,7 @@ class HarnessRepository:
 
     async def _ensure_replay_terminals(self, root_run_id: str) -> dict[str, str]:
         root = await self.get(root_run_id)
-        if not root or root["agent_id"] != "__auto__":
+        if not root or root["agent_id"] not in SMART_AGENT_IDS:
             return {}
         if root["status"] == "completed":
             return await self._ensure_completed_terminals(root_run_id)
@@ -1306,7 +1498,9 @@ class HarnessRepository:
         after: int,
         *,
         limit: int = 100,
+        turn_ids: set[str] | None = None,
     ) -> tuple[list[dict], int, bool]:
+        selected_ids = turn_ids or {child_run_id}
         selected: list[dict] = []
         cursor = after
         for _ in range(20):
@@ -1336,9 +1530,9 @@ class HarnessRepository:
                 raise RuntimeError("Auto child timeline is missing its start event")
             for item in batch:
                 cursor = int(item["event_id"])
-                if item["run_id"] == child_run_id or (
+                if item["run_id"] in selected_ids or (
                     item["type"] == "agent_message"
-                    and item["payload"].get("recipient_run_id") == child_run_id
+                    and item["payload"].get("recipient_run_id") in selected_ids
                 ):
                     selected.append(item)
                     if len(selected) >= limit:
@@ -1477,18 +1671,19 @@ class HarnessRepository:
             "created_at",
             "consumed_at",
             "origin",
+            "delivery_mode",
         )
         for attempt in range(5):
             result = await db.execute_system(
                 "SELECT root_run_id, message_id, sender_run_id, recipient_run_id, "
                 "message_type, correlation_id, reply_to, content, created_at, "
-                "consumed_at, origin FROM NOVA_SYSTEM.CONFIG_AGENT_MESSAGES "
+                "consumed_at, origin, delivery_mode FROM NOVA_SYSTEM.CONFIG_AGENT_MESSAGES "
                 "WHERE root_run_id = %s ORDER BY created_at, message_id LIMIT 500",
                 [root_run_id],
             )
             rows = result["rows"]
             if all(
-                len(row) == 11
+                len(row) == 12
                 and row[0] == root_run_id
                 and row[4] in {"message", "question", "answer", "finding", "final", "control"}
                 and row[10] in {"agent", "user"}
@@ -1504,7 +1699,7 @@ class HarnessRepository:
             result = await db.execute_system(
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
                 "SET status = 'cancelled', updated_at = %s "
-                "WHERE run_id = %s AND agent_id = '__auto__' AND depth = 0 "
+                "WHERE run_id = %s AND agent_id IN ('__auto__', '__smart__') AND depth = 0 "
                 "AND status IN ('queued', 'running', 'waiting_for_agent', "
                 "'waiting_for_message', 'waiting_for_auth')",
                 [_now(), root_run_id],
@@ -1512,7 +1707,7 @@ class HarnessRepository:
             if result.get("affected", 0) == 1:
                 break
             root = await self.get(root_run_id)
-            if not root or root["agent_id"] != "__auto__" or root["depth"] != 0:
+            if not root or root["agent_id"] not in SMART_AGENT_IDS or root["depth"] != 0:
                 return False
             if root["status"] == "cancelled":
                 break
@@ -1523,8 +1718,9 @@ class HarnessRepository:
             await asyncio.sleep(0.1)
         await db.execute_system(
             "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS SET status = 'cancelled', updated_at = %s "
-            "WHERE root_run_id = %s AND depth = 1 "
-            "AND status IN ('queued', 'running', 'waiting_for_message', 'waiting_for_auth')",
+            "WHERE root_run_id = %s AND depth > 0 "
+            "AND status IN ('queued', 'running', 'waiting_for_message', 'waiting_for_agent', "
+            "'waiting_for_auth', 'waiting_for_turn')",
             [_now(), root_run_id],
         )
         return True
@@ -1534,14 +1730,14 @@ class HarnessRepository:
             result = await db.execute_system(
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENT_RUNS "
                 "SET status = 'cancelled', updated_at = %s "
-                "WHERE run_id = %s AND root_run_id = %s AND depth = 1 "
+                "WHERE run_id = %s AND root_run_id = %s AND depth > 0 "
                 "AND status IN ('queued', 'running', 'waiting_for_message', 'waiting_for_auth')",
                 [_now(), child_run_id, root_run_id],
             )
             if result.get("affected", 0) == 1:
                 return True
             child = await self.get(child_run_id)
-            if not child or child["root_run_id"] != root_run_id or child["depth"] != 1:
+            if not child or child["root_run_id"] != root_run_id or child["depth"] < 1:
                 return False
             if child["status"] == "cancelled":
                 return True
@@ -1555,7 +1751,7 @@ class HarnessRepository:
     async def delete_thread(self, thread_id: str, *, owner_name: str) -> None:
         roots = await db.execute_system(
             "SELECT run_id FROM NOVA_SYSTEM.CONFIG_AGENT_RUNS "
-            "WHERE thread_id = %s AND owner_name = %s AND agent_id = '__auto__'",
+            "WHERE thread_id = %s AND owner_name = %s AND agent_id IN ('__auto__', '__smart__')",
             [thread_id, owner_name],
         )
         for row in roots["rows"]:

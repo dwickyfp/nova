@@ -31,9 +31,10 @@ import asyncio
 import logging
 import tempfile
 from collections.abc import AsyncIterator
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core.deps import get_current_user
@@ -41,6 +42,7 @@ from app.modules.assistant import events
 from app.modules.assistant.app_context import NoveApplicationEvent
 from app.modules.assistant.application_events import application_event_broker
 from app.modules.assistant.consent import ConsentApproval, consent_broker
+from app.modules.assistant.history import history_repository
 from app.modules.assistant.provider import assistant_provider
 from app.modules.assistant.registry import tool_registry
 from app.modules.assistant.repository import (
@@ -152,9 +154,23 @@ def _frame_data(frame: str) -> dict:
 
 
 @router.get("/threads", response_model=ThreadListResponse)
-async def list_threads(user: dict = Depends(get_current_user)):
+async def list_threads(
+    user: dict = Depends(get_current_user),
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    cursor: Annotated[str | None, Query(max_length=1024)] = None,
+):
     try:
+        if limit is not None or cursor is not None:
+            threads, next_cursor = await history_repository.threads(
+                user_name=user["username"], limit=limit or 50, cursor=cursor,
+            )
+            return ThreadListResponse(
+                threads=[_thread_view(t) for t in threads], count=len(threads),
+                next_cursor=next_cursor,
+            )
         threads = await assistant_repository.list_threads(user_name=user["username"])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except AssistantThreadListUnavailable as exc:
         raise HTTPException(
             status_code=503, detail="Conversation history is temporarily unavailable"
@@ -187,8 +203,25 @@ async def create_thread(
 async def get_thread(
     thread_id: str,
     user: dict = Depends(get_current_user),
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    cursor: Annotated[str | None, Query(max_length=1024)] = None,
 ):
     thread = await _require_thread(thread_id, user["username"])
+    if limit is not None or cursor is not None:
+        try:
+            messages, next_cursor = await history_repository.messages(
+                thread_id, user_name=user["username"], limit=limit or 50, cursor=cursor,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except AssistantThreadListUnavailable as exc:
+            raise HTTPException(
+                status_code=503, detail="Conversation history is temporarily unavailable"
+            ) from exc
+        return ThreadDetailResponse(
+            thread=_thread_view(thread), messages=[_message_view(m) for m in messages],
+            next_cursor=next_cursor,
+        )
     messages = await assistant_repository.list_messages(
         thread_id, user_name=user["username"]
     )
@@ -382,16 +415,8 @@ async def send_message(
             classification=classification,
             secure_fields=(
                 ("password",)
-                if invocation.tool_name == "call_ui_operation"
-                and invocation.arguments.get("operation") == "POST /api/v1/users"
+                if invocation.tool_name == "provision_user"
                 else ()
-            ),
-            upload_required=(
-                invocation.tool_name == "call_ui_operation"
-                and invocation.arguments.get("operation") in {
-                    "POST /api/v1/stages/{stage_id}/files",
-                    "POST /api/v1/explorer/databases/{database}/stages/{stage}/files",
-                }
             ),
         )
 

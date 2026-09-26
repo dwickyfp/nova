@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 #: The tools an agent may bundle. Mirrors the router's allow-list.
 _ALLOWED_TOOLS = {
     "load_skill",
-    "query_execute",
     "semantic_query",
     "semantic_search",
     "ai_search",
@@ -73,7 +72,7 @@ _PARAMETERS = {
             "description": (
                 "Tools to bundle. Valid: load_skill, semantic_query, "
                 "semantic_search, ai_search, semantic_view_query, feature_lookup, "
-                "query_execute, data_to_chart, ml_execute."
+                "data_to_chart, ml_execute. Free-form SQL is available in Nove only."
             ),
         },
         "sample_questions": {

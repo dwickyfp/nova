@@ -34,11 +34,6 @@ Write the playbook here: what to do, the exact SQL shapes to use, and the
 guardrails to respect. The model loads this when a task matches a trigger.
 `
 
-/**
- * Skill Registry. Two kinds in one place:
- *  - Builtin: playbooks packaged with Nova (read-only; they ship as files).
- *  - Yours: SKILL.md-compatible playbooks you add, available to your agents.
- */
 export function SkillsRegistryPage() {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -78,7 +73,9 @@ export function SkillsRegistryPage() {
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const skills = skillsQuery.data?.skills ?? []
+  const skills = (skillsQuery.data?.skills ?? []).filter(
+    (skill) => skill.source !== 'builtin'
+  )
 
   return (
     <>
@@ -125,7 +122,7 @@ export function SkillsRegistryPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm font-medium">{skill.name}</span>
                         <Badge variant="outline">
-                          {skill.source === 'builtin' ? 'Built-in' : skill.scope}
+                          {skill.scope}
                         </Badge>
                       </div>
                       {skill.description ? (

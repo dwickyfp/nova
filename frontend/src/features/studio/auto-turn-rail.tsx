@@ -32,7 +32,7 @@ export function AutoTurnRail({
   }, [running, rootRunId, queryClient]);
 
   if (!rootRunId) {
-    return running ? <p className="nova-chat-item text-sm text-muted-foreground">Connecting to Auto…</p> : null;
+    return running ? <p className="nova-chat-item text-sm text-muted-foreground">Connecting to Smart…</p> : null;
   }
 
   if (query.isError && !query.data) {

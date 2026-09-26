@@ -47,8 +47,8 @@ import { cn } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────────
 
-type ProviderType = 'openai' | 'anthropic' | 'openai_compatible'
-type ModelType = 'llm' | 'embedding'
+type ProviderType = 'openai' | 'anthropic' | 'openai_compatible' | 'decision'
+type ModelType = 'llm' | 'embedding' | 'decision'
 
 type AIProvider = {
   id: string
@@ -92,11 +92,13 @@ const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'openai_compatible', label: 'OpenAI Compatible' },
+  { value: 'decision', label: 'Decision' },
 ]
 
 const MODEL_TYPES: { value: ModelType; label: string }[] = [
   { value: 'llm', label: 'LLM' },
   { value: 'embedding', label: 'Embedding' },
+  { value: 'decision', label: 'Decision' },
 ]
 
 const emptyProviderForm = {
@@ -300,7 +302,10 @@ export function ProvidersTab() {
 
   const openCreateModelDialog = (provider: ProviderWithModels) => {
     setModelDialogProvider(provider)
-    setModelForm({ ...emptyModelForm })
+    setModelForm({
+      ...emptyModelForm,
+      type: provider.type === 'decision' ? 'decision' : 'llm',
+    })
     setModelEditMode('create')
     setEditingModelId(null)
     setModelDialogOpen(true)
@@ -390,6 +395,7 @@ export function ProvidersTab() {
   // ── Test Connection ───────────────────────────────────────────
 
   const handleTestConnection = async () => {
+    if (providerForm.type === 'decision') return
     if (!providerForm.endpoint.trim()) {
       toast.error('Endpoint is required to test connection')
       return
@@ -691,11 +697,13 @@ export function ProvidersTab() {
                                     </td>
                                     <td className='py-2 pr-4 text-xs text-muted-foreground'>
                                       <div>{model.display_name ?? '—'}</div>
-                                      {model.type === 'embedding' && model.logical_alias && (
-                                        <div className='font-mono text-[11px]'>
-                                          {model.logical_alias} · {model.revision}
-                                        </div>
-                                      )}
+                                      {model.type === 'embedding' &&
+                                        model.logical_alias && (
+                                          <div className='font-mono text-[11px]'>
+                                            {model.logical_alias} ·{' '}
+                                            {model.revision}
+                                          </div>
+                                        )}
                                     </td>
                                     <td className='py-2 pr-4'>
                                       <Badge
@@ -709,8 +717,10 @@ export function ProvidersTab() {
                                     </td>
                                     <td className='py-2 pr-4 text-right font-mono text-xs'>
                                       {model.type === 'embedding'
-                                        ? model.dimensions?.toLocaleString() ?? '—'
-                                        : model.max_tokens?.toLocaleString() ?? '—'}
+                                        ? (model.dimensions?.toLocaleString() ??
+                                          '—')
+                                        : (model.max_tokens?.toLocaleString() ??
+                                          '—')}
                                     </td>
                                     <td className='py-2 pr-4 text-center'>
                                       <Badge
@@ -804,7 +814,7 @@ export function ProvidersTab() {
             <DialogDescription>
               {providerEditMode === 'edit'
                 ? 'Update provider connection settings.'
-                : 'Register a new LLM provider connection. API key should be set as an environment variable in the backend .env file.'}
+                : 'Register an AI provider and configure its endpoint.'}
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-4 py-2'>
@@ -823,12 +833,13 @@ export function ProvidersTab() {
               <Label htmlFor='provider-type'>Type</Label>
               <Select
                 value={providerForm.type}
-                onValueChange={(v) =>
+                onValueChange={(v) => {
+                  setTestResult(null)
                   setProviderForm((f) => ({
                     ...f,
                     type: v as ProviderType,
                   }))
-                }
+                }}
               >
                 <SelectTrigger id='provider-type'>
                   <SelectValue />
@@ -843,10 +854,23 @@ export function ProvidersTab() {
               </Select>
             </div>
             <div className='space-y-2'>
-              <Label htmlFor='provider-endpoint'>Endpoint</Label>
+              <Label htmlFor='provider-endpoint'>
+                {providerForm.type === 'decision'
+                  ? 'Inference Endpoint'
+                  : 'Endpoint'}
+              </Label>
               <Input
                 id='provider-endpoint'
-                placeholder='https://api.openai.com/v1'
+                placeholder={
+                  providerForm.type === 'decision'
+                    ? 'https://api.example.com/custom/inference'
+                    : 'https://api.openai.com/v1'
+                }
+                aria-describedby={
+                  providerForm.type === 'decision'
+                    ? 'decision-endpoint-help'
+                    : undefined
+                }
                 value={providerForm.endpoint}
                 onChange={(e) =>
                   setProviderForm((f) => ({
@@ -855,6 +879,15 @@ export function ProvidersTab() {
                   }))
                 }
               />
+              {providerForm.type === 'decision' && (
+                <p
+                  id='decision-endpoint-help'
+                  className='text-xs text-muted-foreground'
+                >
+                  Enter the full System One inference URL. Nova uses it as
+                  entered, without adding a path.
+                </p>
+              )}
             </div>
             <div className='space-y-2'>
               <Label htmlFor='provider-apikey'>API Key</Label>
@@ -871,8 +904,7 @@ export function ProvidersTab() {
                 }
               />
               <p className='text-xs text-muted-foreground'>
-                The API key is stored in the Nova system database and used for
-                LLM API calls.
+                Leave blank when editing to keep the existing API key.
               </p>
             </div>
             <div className='space-y-2'>
@@ -881,7 +913,11 @@ export function ProvidersTab() {
               </Label>
               <Input
                 id='provider-params'
-                placeholder='{"temperature": 0.7}'
+                placeholder={
+                  providerForm.type === 'decision'
+                    ? '{}'
+                    : '{"temperature": 0.7}'
+                }
                 value={providerForm.default_params}
                 onChange={(e) =>
                   setProviderForm((f) => ({
@@ -894,69 +930,76 @@ export function ProvidersTab() {
           </div>
 
           {/* Test Connection */}
-          <div className='space-y-2'>
-            <Button
-              variant='outline'
-              size='sm'
-              className='gap-1.5'
-              onClick={handleTestConnection}
-              disabled={testing || !providerForm.endpoint.trim()}
-            >
-              {testing ? (
-                <Loader2 className='size-3.5 animate-spin' />
-              ) : (
-                <Plug className='size-3.5' />
-              )}
-              {testing ? 'Testing...' : 'Test Connection'}
-            </Button>
-
-            {testResult && (
-              <div
-                className={cn(
-                  'flex items-start gap-2 rounded-md border px-3 py-2 text-sm',
-                  testResult.success
-                    ? 'border-success/30 bg-success/5'
-                    : 'border-destructive/30 bg-destructive/5'
-                )}
+          {providerForm.type === 'decision' ? (
+            <p className='text-sm text-muted-foreground'>
+              Configure this model in the Decision tab to use it in Nova Studio.
+              Connection discovery is not supported for this provider type.
+            </p>
+          ) : (
+            <div className='space-y-2'>
+              <Button
+                variant='outline'
+                size='sm'
+                className='gap-1.5'
+                onClick={handleTestConnection}
+                disabled={testing || !providerForm.endpoint.trim()}
               >
-                {testResult.success ? (
-                  <CheckCircle2 className='mt-0.5 size-4 shrink-0 text-success-strong' />
+                {testing ? (
+                  <Loader2 className='size-3.5 animate-spin' />
                 ) : (
-                  <XCircle className='mt-0.5 size-4 shrink-0 text-destructive' />
+                  <Plug className='size-3.5' />
                 )}
-                <div className='min-w-0'>
-                  <p
-                    className={cn(
-                      'font-medium',
-                      testResult.success
-                        ? 'text-success-strong'
-                        : 'text-destructive'
-                    )}
-                  >
-                    {testResult.message}
-                  </p>
-                  {testResult.success && testResult.models.length > 0 && (
-                    <div className='mt-1.5 flex flex-wrap gap-1'>
-                      {testResult.models.slice(0, 15).map((m) => (
-                        <Badge
-                          key={m}
-                          variant='secondary'
-                          className='font-mono text-[10px] font-normal'
-                        >
-                          {m}
-                        </Badge>
-                      ))}
-                      {testResult.models.length > 15 && (
-                        <span className='text-xs text-muted-foreground'>
-                          +{testResult.models.length - 15} more
-                        </span>
-                      )}
-                    </div>
+                {testing ? 'Testing...' : 'Test Connection'}
+              </Button>
+
+              {testResult && (
+                <div
+                  className={cn(
+                    'flex items-start gap-2 rounded-md border px-3 py-2 text-sm',
+                    testResult.success
+                      ? 'border-success/30 bg-success/5'
+                      : 'border-destructive/30 bg-destructive/5'
                   )}
+                >
+                  {testResult.success ? (
+                    <CheckCircle2 className='mt-0.5 size-4 shrink-0 text-success-strong' />
+                  ) : (
+                    <XCircle className='mt-0.5 size-4 shrink-0 text-destructive' />
+                  )}
+                  <div className='min-w-0'>
+                    <p
+                      className={cn(
+                        'font-medium',
+                        testResult.success
+                          ? 'text-success-strong'
+                          : 'text-destructive'
+                      )}
+                    >
+                      {testResult.message}
+                    </p>
+                    {testResult.success && testResult.models.length > 0 && (
+                      <div className='mt-1.5 flex flex-wrap gap-1'>
+                        {testResult.models.slice(0, 15).map((m) => (
+                          <Badge
+                            key={m}
+                            variant='secondary'
+                            className='font-mono text-[10px] font-normal'
+                          >
+                            {m}
+                          </Badge>
+                        ))}
+                        {testResult.models.length > 15 && (
+                          <span className='text-xs text-muted-foreground'>
+                            +{testResult.models.length - 15} more
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           <DialogFooter>
             <Button
@@ -990,7 +1033,7 @@ export function ProvidersTab() {
             <DialogDescription>
               {modelEditMode === 'edit'
                 ? 'Update model configuration.'
-                : 'Register a model under this provider. Models can be LLMs or embedding models.'}
+                : 'Register an LLM, embedding, or decision model under this provider.'}
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-4 py-2'>
@@ -998,7 +1041,11 @@ export function ProvidersTab() {
               <Label htmlFor='model-name'>Model Name</Label>
               <Input
                 id='model-name'
-                placeholder='e.g. gpt-4o, claude-sonnet-4'
+                placeholder={
+                  modelForm.type === 'decision'
+                    ? 'e.g. jev-1.13.0'
+                    : 'e.g. gpt-4o, claude-sonnet-4'
+                }
                 value={modelForm.name}
                 onChange={(e) =>
                   setModelForm((f) => ({ ...f, name: e.target.value }))

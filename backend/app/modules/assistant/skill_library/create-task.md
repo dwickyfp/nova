@@ -16,13 +16,19 @@ metadata row. The worker builds the engine's `SUBMIT TASK` per node at run time.
 
 ```sql
 CREATE TASK <name>
-  [SCHEDULE = 'CRON <expr>' | 'INTERVAL <n> <unit>']
   [AFTER <parent_task>[, <parent_task>...]]
   [FINALIZE = <finalizer_task>]
-  [WHEN = <condition>]
+  [WHEN <condition>]
   [OVERLAP_POLICY = skip | queue | allow]
-  AS <select-or-insert-statement>;
+  [SCHEDULE = 'USING CRON <five-field-expr> [IANA-timezone]']
+  AS <insert-or-ctas-or-cache-select-statement>;
 ```
+
+Clause order is AFTER, FINALIZE, WHEN, OVERLAP_POLICY, SCHEDULE. Duplicate or
+out-of-order clauses are rejected. Cron strings may also be five bare fields;
+a lone `CRON` prefix is invalid. Interval form is `SCHEDULE EVERY (INTERVAL 1 HOUR)`,
+not `SCHEDULE = 'INTERVAL 1 HOUR'`. START is not supported. A bare AS SELECT is
+not a task body; use INSERT SELECT, CTAS, or the supported CACHE SELECT form.
 
 ## Runtime semantics
 
@@ -32,13 +38,13 @@ CREATE TASK <name>
 - `WHEN` — false skips the node **and its descendants**; an evaluation error
   fails the node rather than silently skipping it.
 - `OVERLAP_POLICY` — `skip` (default) rejects a new run while one is active;
-  `queue` defers it; `allow` runs concurrently. Unknown values behave as `skip`.
+  `queue` defers it; `allow` runs concurrently. Unknown values are rejected.
 
 ## Template
 
 ```sql
 CREATE TASK refresh_orders
-  SCHEDULE = 'CRON 0 3 * * *'
+  SCHEDULE = 'USING CRON 0 3 * * * Asia/Jakarta'
   AS INSERT INTO analytics.order_facts SELECT * FROM NOVA_DEMO.orders;
 ```
 
@@ -49,5 +55,6 @@ CREATE TASK refresh_orders
 - The owner must have an active login session for the worker to run nodes
   (delegate-first RBAC); a task owned by a logged-out user fails with a clear
   error.
-- Verify the schedule with `SELECT id, graph_id, state, overlap_policy FROM
-  NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS;` — but you only author; the user runs.
+- Draft without execution when requested. For explicit execution use query_mutate
+  with approval. Inspect Tasks for the saved schedule and authorized run history;
+  a successful DDL response proves metadata creation, not a completed task run.

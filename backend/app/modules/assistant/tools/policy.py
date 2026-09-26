@@ -276,6 +276,17 @@ def is_allowed_statement(sql: str) -> bool:
     if has_write_clause(stripped):
         return False
     keyword = _leading_keyword(stripped)
+    if keyword == "LIST":
+        from app.modules.query.dialect.parser import CommandType, parse_sql
+
+        parsed = parse_sql(stripped)
+        return (
+            parsed.command_type == CommandType.STAGE_BROWSE
+            and len(parsed.stage_refs) == 1
+            and not parsed.errors
+            and re.fullmatch(r"LIST(?:\s+FILES)?\s+" + re.escape(parsed.stage_refs[0].full_match),
+                             strip_sql_comments(stripped).strip().rstrip(";"), re.I) is not None
+        )
     if keyword == "WITH":
         return _leading_keyword(cte_body(stripped)) == "SELECT"
     if keyword == "EXPLAIN":

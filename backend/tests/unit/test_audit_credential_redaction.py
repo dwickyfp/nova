@@ -199,12 +199,14 @@ class TestResponseIsRedacted:
         assert "aws.s3.access_key" in result.executed_sql
         assert "'aws.s3.access_key'='***'" in result.executed_sql
 
-    async def test_original_sql_is_untouched(self, wired):
-        """The user's own text never contained credentials and is preserved."""
+    async def test_original_sql_redacts_explicit_credentials(self, wired):
+        """Direct SQL can contain secrets too; both response fields must redact."""
         svc, _repo, _sink = wired()
         result = await _execute_stage_query(svc)
 
-        assert result.original_sql == _credential_sql()
+        for secret in CREDENTIAL_PARAMS.values():
+            assert secret not in result.original_sql
+        assert "'aws.s3.access_key'='***'" in result.original_sql
 
 
 class TestStagePipelineEndToEnd:

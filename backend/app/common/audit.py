@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 from app.core.database import db
+from app.common.sql_guard import redact_sql_credentials
 
 
 async def write_audit_log(
@@ -32,6 +33,9 @@ async def write_audit_log(
 ) -> str:
     """Write an audit log entry. Returns the query_id (UUID) for the entry."""
     qid = query_id or str(uuid.uuid4())
+    sql_text = redact_sql_credentials(sql_text) if sql_text else sql_text
+    rewritten_sql = redact_sql_credentials(rewritten_sql) if rewritten_sql else rewritten_sql
+    error_message = redact_sql_credentials(error_message) if error_message else error_message
     await db.execute_system(
         """
         INSERT INTO NOVA_SYSTEM.AUDIT_LOG

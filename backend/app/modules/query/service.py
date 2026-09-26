@@ -472,6 +472,7 @@ class QueryService:
                 session_id=session_id,
                 file_id=file_id,
                 schema=schema,
+                role=role,
             )
 
         # 2. Parse: detect @stage references
@@ -597,7 +598,7 @@ class QueryService:
                 connected=connection,
             )
 
-            result.original_sql = sql
+            result.original_sql = redact_for_output(sql)
             result.executed_sql = redacted_sql
             result.warnings = warnings
 
@@ -779,6 +780,8 @@ class QueryService:
                     connection=connection,
                 )
                 results.append(result)
+                if result.error:
+                    break
             except Exception as exc:
                 # Return error result for this statement and stop.
                 #
@@ -1116,7 +1119,7 @@ class QueryService:
         """
         start = time.monotonic()
         try:
-            if settings.RANGER_ENABLED and not role:
+            if not role:
                 raise TaskLoweringError("CREATE TASK requires an explicit execution role")
             timezone = await task_orchestration_repository.get_engine_timezone()
             if not timezone:
@@ -1223,6 +1226,7 @@ class QueryService:
         session_id: str | None,
         file_id: str | None,
         schema: str | None,
+        role: str | None,
     ) -> QueryResult:
         """Record the first-login password-change flag for a user.
 
@@ -1233,7 +1237,16 @@ class QueryService:
         start = time.monotonic()
         try:
             parsed = parse_force_password_change(normalized_sql)
-        except ValueError as exc:
+            from app.modules.users.service import user_service
+
+            if role not in {"ACCOUNTADMIN", "SECURITYADMIN", "user_admin", "security_admin"}:
+                raise ForbiddenSQLError("An active security-admin role is required for password-change policy.")
+            if parsed.username.casefold() == "root":
+                raise ForbiddenSQLError("The root account is protected.")
+            if not await user_service.user_exists(parsed.username):
+                raise ValueError("The target user does not exist.")
+            await set_must_change_password(parsed.username, required=parsed.required)
+        except Exception as exc:
             elapsed_ms = round((time.monotonic() - start) * 1000, 2)
             await write_audit_log(
                 event_type="query",
@@ -1244,7 +1257,7 @@ class QueryService:
                 status="ERROR",
                 sql_text=sql,
                 rewritten_sql=normalized_sql,
-                error_message=str(exc),
+                error_message=_redact_error_message(str(exc)),
                 duration_ms=int(elapsed_ms),
                 session_id=session_id,
                 file_id=file_id,
@@ -1252,13 +1265,12 @@ class QueryService:
                 schema_name=schema,
             )
             return QueryResult(
-                error=str(exc),
+                error=_redact_error_message(str(exc)),
                 elapsed_ms=elapsed_ms,
                 original_sql=sql,
                 executed_sql=normalized_sql,
             )
 
-        await set_must_change_password(parsed.username, required=parsed.required)
         elapsed_ms = round((time.monotonic() - start) * 1000, 2)
         await write_audit_log(
             event_type="query",
@@ -1526,7 +1538,7 @@ class QueryService:
             database=database,
             role=role,
         )
-        result.original_sql = sql
+        result.original_sql = redact_for_output(sql)
         return result
 
     async def get_context(

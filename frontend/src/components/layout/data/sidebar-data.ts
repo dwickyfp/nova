@@ -64,7 +64,7 @@ export const sidebarData: SidebarData = {
               title: "Agent",
               url: "/agents",
               icon: Bot,
-              section: "AI",
+              section: "Nova AI",
             },
             {
               title: "Semantic Views",
@@ -167,6 +167,11 @@ export const sidebarData: SidebarData = {
           title: "Monitoring",
           icon: Activity,
           items: [
+            {
+              title: "AI Monitoring",
+              url: "/monitoring/ai",
+              icon: TrendingUp,
+            },
             {
               title: "Query History",
               url: "/query-history",

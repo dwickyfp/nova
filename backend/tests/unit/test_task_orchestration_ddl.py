@@ -25,6 +25,7 @@ from app.modules.task_orchestration import repository as repo
 CREDENTIAL_SUBSTRINGS = ("password", "secret", "token", "credential")
 
 EXPECTED_TABLES = {
+    "CONFIG_TASK_ROLE_BINDINGS",
     "CONFIG_TASKS",
     "CONFIG_TASK_EDGES",
     "CONFIG_TASK_GRAPH_RUNS",
@@ -118,6 +119,7 @@ class TestRepositoryNeverSelectsCredentialColumns:
         source = inspect.getsource(repo)
         tables = set(re.findall(r"NOVA_SYSTEM\.CONFIG_TASK\w*", source))
         assert tables <= {
+            "NOVA_SYSTEM.CONFIG_TASK_ROLE_BINDINGS",
             "NOVA_SYSTEM.CONFIG_TASKS",
             "NOVA_SYSTEM.CONFIG_TASK_EDGES",
             "NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS",

@@ -31,6 +31,8 @@ class Candidate:
     metrics: tuple[dict[str, Any], ...]
     model_provider_id: str | None = None
     model_name: str | None = None
+    dimensions: tuple[dict[str, Any], ...] = ()
+    semantic_views: tuple[dict[str, Any], ...] = ()
 
     def prompt_view(self) -> dict[str, Any]:
         return {
@@ -68,24 +70,22 @@ def _terms(text: str) -> set[str]:
     return set(re.findall(r"\w+", text.casefold(), flags=re.UNICODE))
 
 
+def matched_alias(question: str, field: dict[str, Any]) -> str | None:
+    def normalize(value: str) -> str:
+        return " ".join(re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE))
+
+    normalized = " " + normalize(question) + " "
+    return next((alias for alias in [field.get("name"), *(field.get("synonyms") or [])]
+                 if isinstance(alias, str) and normalize(alias)
+                 and " " + normalize(alias) + " " in normalized), None)
+
+
 def semantic_matches(question: str, candidates: list[Candidate]) -> list[dict[str, Any]]:
     """Resolve only aliases declared by the semantic model; no domain keyword map."""
-    lowered = question.casefold()
-    words = _terms(question)
     matches: dict[tuple[str, str], dict[str, Any]] = {}
     for candidate in candidates:
         for metric in candidate.metrics:
-            aliases = [metric.get("name"), *(metric.get("synonyms") or [])]
-            found = next(
-                (
-                    str(a)
-                    for a in aliases
-                    if isinstance(a, str)
-                    and a
-                    and (a.casefold() in lowered if " " in a else a.casefold() in words)
-                ),
-                None,
-            )
+            found = matched_alias(question, metric)
             if found:
                 key = (candidate.agent_id, str(metric.get("name")))
                 matches[key] = {
@@ -156,12 +156,27 @@ async def authorized_candidates(user: dict) -> list[Candidate]:
                 if not manifest.available_to_auto:
                     continue
                 metrics: list[dict[str, Any]] = []
+                dimensions: list[dict[str, Any]] = []
+                views: list[dict[str, Any]] = []
                 for view_id in bound_view_ids(agent):
                     view = await semantic_view_service.get_active_for_agent(
                         view_id, user, agent_id=agent.get("agent_id")
                     )
                     if view:
+                        from app.modules.agents.tools.describe_agent import _text
+
+                        views.append({
+                            "name": _text(view.get("name"), 128),
+                            "version": _text(view.get("version"), 64),
+                        })
                         metrics.extend((view.get("definition") or {}).get("metrics") or [])
+                        dimensions.extend(
+                            field
+                            for dataset in (view.get("definition") or {}).get("datasets") or []
+                            for field in dataset.get("fields") or []
+                            if field.get("kind") == "dimension"
+                            or field.get("dimension") is not None
+                        )
                 result.append(
                     Candidate(
                         agent_id=agent["agent_id"],
@@ -170,6 +185,8 @@ async def authorized_candidates(user: dict) -> list[Candidate]:
                         metrics=tuple(metrics),
                         model_provider_id=agent.get("model_provider_id"),
                         model_name=agent.get("model_name"),
+                        dimensions=tuple(dimensions),
+                        semantic_views=tuple(views),
                     )
                 )
             if result or attempt == 2:

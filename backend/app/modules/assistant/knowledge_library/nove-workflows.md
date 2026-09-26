@@ -21,7 +21,10 @@ Studio agent or read the agent's conversation to answer configuration questions.
 
 Nove can author SQL, execute permitted read-only queries through query_execute,
 run available ML tasks, and chart verified results. Account DDL and write SQL
-are drafts for the user to run. Creating a Studio agent or Semantic View uses
+are drafts when the user asks for SQL. Explicit execution uses query_mutate
+with approval; account provisioning uses provision_user with protected
+temporary-password input and mandatory first-login change. Tools call built-in
+functions or the SQL service, never generic API routes. Creating a Studio agent or Semantic View uses
 separate tools and requires their consent policy.
 
 A conversation read-only grant applies only to read-only actions. A write tool

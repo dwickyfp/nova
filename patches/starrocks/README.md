@@ -22,8 +22,22 @@ Verify against a clean checkout:
 ```
 
 The integration image in `docker/ranger/starrocks-fe.Dockerfile` applies the
-same patch and replaces only the two compiled Ranger bridge classes in the
+Ranger patches and the task active-role patch, replacing the compiled classes in the
 official runtime `fe-core-4.1.4.jar`. It also pins Nashorn 15.4 and ASM Commons
 9.4 (with SHA-256 verification), because Ranger 2.8's dynamic user-attribute
 expressions need a JSR-223 JavaScript engine that Java 17 no longer bundles.
 The build does not vendor the StarRocks source tree.
+
+## Task execution role
+
+`4.1.4-task-active-role.patch` fixes upstream `TaskRun.switchUser`, which normally
+activates every role assigned to the creator. The async builder now captures the submitting context. A caller-submitted task
+snapshots that caller's selected role set and intersects it with current assignments, so a
+revoked role cannot be resurrected. The user identity must match the submitting
+context. Internal runs without a matching caller keep upstream behavior; Nova
+uses one-shot submissions for its scheduled graphs under the bound service role.
+
+This is an engine build patch, not a Java application component. The Python
+worker still submits SQL through the authenticated user connection. Live
+multi-role acceptance results are in
+`docs/benchmarks/task-role-ownership-2026-09-26/`.

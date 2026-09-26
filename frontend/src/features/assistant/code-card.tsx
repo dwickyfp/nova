@@ -1,6 +1,15 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Check, Copy, Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Tooltip,
   TooltipContent,
@@ -65,115 +74,154 @@ export function CodeCard({
   const { copied, copy } = useCopy();
   const [status, setStatus] = useState<CodeCardStatus>("idle");
   const [detail, setDetail] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [table, setTable] = useState<QueryResponse | null>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const runningRef = useRef(false);
+  const needsPassword = code.includes("'<temporary_password>'");
+  const needsConfirmation = /\b(DROP|TRUNCATE|DELETE|UPDATE|REVOKE)\b/i.test(
+    code,
+  );
   const [artifactId] = useState(
     () => `nove-code-${Date.now()}-${++codeCardSequence}`,
   );
 
   const canRun = Boolean(runnable && runContext);
 
-  const run = useCallback(async () => {
-    if (!canRun || status === "running") return;
-
-    setStatus("running");
-    setDetail(null);
-    const startedAt = Date.now();
-    const executionId = `nove-card-${startedAt}`;
-    const surfaceId = runContext?.appContext?.surface.id ?? "nova.global";
-    const documentId = runContext?.appContext?.editor?.documentId;
-    const safeSql = safeNoveSql(code);
-    const evidence = {
-      executionId,
-      ...(documentId ? { documentId } : {}),
-      ...(safeSql ? { sql: safeSql } : { sqlOmitted: true }),
-    };
-    onExecutionEvent?.({
-      source: "user",
-      type: "assistant_artifact_run",
-      surfaceId,
-      artifactId,
-      executionId,
-      payload: evidence,
-    });
-    onExecutionEvent?.({
-      source: "execution",
-      type: "query_started",
-      surfaceId,
-      artifactId,
-      executionId,
-      payload: evidence,
-    });
-    try {
-      const results = await api.post<QueryResponse[]>("/query/execute", {
-        sql: code,
-        database: runContext?.database ?? null,
-        schema: runContext?.schema ?? null,
-        role: runContext?.role ?? null,
-        max_rows: 500,
-        confirm_destructive: false,
-      });
-      const first = results?.[0];
-      const feedback = summarizeQueryForNove(
-        executionId,
-        code,
-        results ?? [],
-        Date.now() - startedAt,
-      );
-      onExecutionEvent?.({
-        source: "execution",
-        type: feedback.eventType,
-        surfaceId,
-        artifactId,
-        executionId,
-        status: feedback.execution.status === "success" ? "success" : "failure",
-        payload: {
-          ...feedback.eventPayload,
-          ...(documentId ? { documentId } : {}),
-        },
-      });
-      const failed = results?.find((result) => !result.success);
-      if (!first || failed) {
-        setStatus("error");
-        setDetail(
-          failed?.error
-            ? (safeNoveSql(failed.error) ?? "Error details omitted.")
-            : "The statement failed.",
-        );
+  const run = useCallback(
+    async (confirmed = false, password?: string) => {
+      if (!canRun || runningRef.current) return;
+      if ((needsPassword || needsConfirmation) && !confirmed) {
+        setConfirmOpen(true);
         return;
       }
-      setStatus("success");
-      setDetail(summarize(first));
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "The statement could not be run.";
-      onExecutionEvent?.({
-        source: "execution",
-        type: "query_failed",
-        surfaceId,
-        artifactId,
+      if (needsPassword && !password) return;
+      if (
+        /<[A-Za-z_][\w. -]*>/.test(
+          needsPassword
+            ? code.split("'<temporary_password>'").join("''")
+            : code,
+        )
+      ) {
+        setStatus("error");
+        setDetail("Replace the remaining SQL placeholders before running.");
+        return;
+      }
+      runningRef.current = true;
+
+      setStatus("running");
+      setDetail(null);
+      setTable(null);
+      const startedAt = Date.now();
+      const executionId = `nove-card-${startedAt}`;
+      const surfaceId = runContext?.appContext?.surface.id ?? "nova.global";
+      const documentId = runContext?.appContext?.editor?.documentId;
+      const safeSql = safeNoveSql(code);
+      const evidence = {
         executionId,
-        status: "failure",
-        payload: {
-          ...evidence,
-          errorMessage: safeNoveSql(message) ?? "Error details omitted.",
-        },
-      });
-      setStatus("error");
-      setDetail(safeNoveSql(message) ?? "Error details omitted.");
-    }
-  }, [
-    canRun,
-    code,
-    runContext?.database,
-    runContext?.role,
-    runContext?.schema,
-    runContext?.appContext?.surface.id,
-    runContext?.appContext?.editor?.documentId,
-    onExecutionEvent,
-    artifactId,
-    status,
-  ]);
+        ...(documentId ? { documentId } : {}),
+        ...(safeSql ? { sql: safeSql } : { sqlOmitted: true }),
+      };
+      try {
+        onExecutionEvent?.({
+          source: "user",
+          type: "assistant_artifact_run",
+          surfaceId,
+          artifactId,
+          executionId,
+          payload: evidence,
+        });
+        onExecutionEvent?.({
+          source: "execution",
+          type: "query_started",
+          surfaceId,
+          artifactId,
+          executionId,
+          payload: evidence,
+        });
+        const results = await api.post<QueryResponse[]>("/query/execute", {
+          sql: code,
+          ...(needsPassword ? { temporary_password: password } : {}),
+          database: runContext?.database ?? null,
+          schema: runContext?.schema ?? null,
+          role: runContext?.role ?? null,
+          max_rows: 500,
+          confirm_destructive: confirmed,
+        });
+        const first = results?.[0];
+        const feedback = summarizeQueryForNove(
+          executionId,
+          code,
+          results ?? [],
+          Date.now() - startedAt,
+        );
+        onExecutionEvent?.({
+          source: "execution",
+          type: feedback.eventType,
+          surfaceId,
+          artifactId,
+          executionId,
+          status:
+            feedback.execution.status === "success" ? "success" : "failure",
+          payload: {
+            ...feedback.eventPayload,
+            ...(documentId ? { documentId } : {}),
+          },
+        });
+        const failed = results?.find((result) => !result.success);
+        if (!first || failed) {
+          setStatus("error");
+          setDetail(
+            failed?.error
+              ? (safeNoveSql(failed.error) ?? "Error details omitted.")
+              : "The statement failed.",
+          );
+          return;
+        }
+        setStatus("success");
+        setDetail(
+          results.length > 1
+            ? `${results.length} statements completed. ${summarize(results[results.length - 1])}`
+            : summarize(first),
+        );
+        setTable(results.find((result) => result.columns?.length > 0) ?? null);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "The statement could not be run.";
+        onExecutionEvent?.({
+          source: "execution",
+          type: "query_failed",
+          surfaceId,
+          artifactId,
+          executionId,
+          status: "failure",
+          payload: {
+            ...evidence,
+            errorMessage: safeNoveSql(message) ?? "Error details omitted.",
+          },
+        });
+        setStatus("error");
+        setDetail(safeNoveSql(message) ?? "Error details omitted.");
+      } finally {
+        runningRef.current = false;
+      }
+    },
+    [
+      canRun,
+      code,
+      runContext?.database,
+      runContext?.role,
+      runContext?.schema,
+      runContext?.appContext?.surface.id,
+      runContext?.appContext?.editor?.documentId,
+      onExecutionEvent,
+      artifactId,
+      needsPassword,
+      needsConfirmation,
+    ],
+  );
 
   return (
     <div className="my-2 overflow-hidden rounded-md border border-border/70 bg-surface-1">
@@ -248,6 +296,7 @@ export function CodeCard({
 
       {detail ? (
         <div
+          role={status === "error" ? "alert" : "status"}
           className={cn(
             "border-t px-2 py-1 text-xs",
             status === "error" ? "text-destructive" : "text-muted-foreground",
@@ -271,6 +320,88 @@ export function CodeCard({
           ) : null}
         </div>
       ) : null}
+      {table ? (
+        <div className="overflow-x-auto border-t p-2">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr>
+                {table.columns.slice(0, 12).map((column, index) => (
+                  <th key={index} className="px-2 py-1 font-medium">
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.slice(0, 20).map((row, index) => (
+                <tr key={index}>
+                  {row.slice(0, 12).map((value, column) => (
+                    <td key={column} className="border-t px-2 py-1">
+                      {value === null ? "NULL" : String(value)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {table.rows.length > 20 || table.columns.length > 12 ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Preview limited to 20 rows and 12 columns.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {needsPassword
+                ? "Create user with a temporary password"
+                : "Confirm SQL execution"}
+            </DialogTitle>
+            <DialogDescription>
+              {needsPassword
+                ? "Enter the temporary password privately. It is sent only for execution and is not added to the conversation."
+                : "This SQL changes or removes data. Completed statements cannot be automatically undone."}
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const password = passwordRef.current?.value;
+              if (passwordRef.current) passwordRef.current.value = "";
+              setConfirmOpen(false);
+              void run(true, password);
+            }}
+          >
+            {needsPassword ? (
+              <div className="space-y-2">
+                <Label htmlFor={`${artifactId}-password`}>
+                  Temporary password
+                </Label>
+                <Input
+                  id={`${artifactId}-password`}
+                  ref={passwordRef}
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                />
+              </div>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setConfirmOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">Confirm and run</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

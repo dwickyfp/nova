@@ -207,7 +207,8 @@ async def test_build_loop_inputs_returns_a_token_budget() -> None:
         "default_skills": [],
     }
     registry, _prompt, seconds, tokens = await AgentService().build_loop_inputs(agent)
-    assert registry.get("query_execute") is not None
+    assert registry.get("query_execute") is None
+    assert registry.get("describe_agent") is not None
     assert seconds == 60
     assert tokens == 48_000
 

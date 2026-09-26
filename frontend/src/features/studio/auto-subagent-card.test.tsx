@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { agentsApi, type Agent, type AutoChildTimeline, type AutoRun } from "@/features/agents/api";
 import { AutoSubagentCard, AutoSubagentPanel } from "./auto-subagent-card";
+import { latestParticipants } from "./smart-agent-tree";
 import { AutoTurnRail } from "./auto-turn-rail";
 import "@/styles/index.css";
 
@@ -14,6 +15,13 @@ const runs = [
   { run_id: "marketing", agent_id: "marketing", depth: 1, status: "running", objective: "Check campaign attribution", summary: null, prompt_tokens: null, completion_tokens: null },
 ] as AutoRun[];
 const agents = [{ agent_id: "finance", name: "Finance" }, { agent_id: "marketing", name: "Marketing" }] as Agent[];
+
+const smartRuns = [
+  { ...runs[0], agent_id: "__smart__", agent_session_id: "root", agent_path: "/root" },
+  { ...runs[1], agent_session_id: "finance", parent_agent_session_id: "root", agent_path: "/root/finance", turn_number: 1 },
+  { ...runs[2], agent_session_id: "marketing", parent_agent_session_id: "root", agent_path: "/root/marketing", turn_number: 1 },
+  { ...runs[2], run_id: "cohort", agent_id: "cohort", agent_name: "Customer Analytics", agent_session_id: "cohort", parent_agent_session_id: "marketing", depth: 2, agent_path: "/root/marketing/cohort", turn_number: 1 },
+] as AutoRun[];
 
 const finishedTimeline: AutoChildTimeline = {
   run: { run_id: "finance", root_run_id: "root", agent_id: "finance", agent_name: "Finance", objective: "Quantify revenue", status: "completed", result_summary: "Revenue fell 22%", error_class: null, prompt_tokens: 100, completion_tokens: 50 },
@@ -34,11 +42,11 @@ function Fixture({ data = runs, catalog = agents, loading = false, error = false
   const [selectedChild, setSelectedChild] = useState<{ rootRunId: string; childRunId: string } | null>(null);
   return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <div className="relative flex h-[700px] min-w-0 overflow-hidden bg-background">
-      <div data-testid="main-chat-column" className={selectedChild ? "relative hidden min-w-0 flex-1 lg:flex" : "relative flex min-w-0 flex-1"}>
+      <div data-testid="main-chat-column" className={selectedChild ? "relative hidden min-h-0 min-w-0 flex-1 flex-col lg:flex" : "relative flex min-h-0 min-w-0 flex-1 flex-col"}>
         {!selectedChild ? <AutoSubagentCard runs={data} agents={catalog} loading={loading} error={error} retry={retry} onSelectChild={(childRunId) => setSelectedChild({ rootRunId: "root", childRunId })} /> : null}
         <button type="button" className="self-end" onClick={() => {}}>Main composer</button>
       </div>
-      {selectedChild ? <AutoSubagentPanel selected={selectedChild} runs={data} agents={catalog} onSelectChild={(childRunId) => setSelectedChild({ rootRunId: "root", childRunId })} onClose={() => setSelectedChild(null)} onRefreshTree={retry} /> : null}
+      {selectedChild ? <AutoSubagentPanel selected={selectedChild} runs={data} agents={catalog} onClose={() => setSelectedChild(null)} onRefreshTree={retry} /> : null}
     </div>
   </QueryClientProvider>;
 }
@@ -48,6 +56,75 @@ afterEach(async () => {
   document.documentElement.classList.remove("dark");
   await page.viewport(1440, 900);
 });
+
+it("renders a nested participant and opens its own timeline", async () => {
+  const timeline = vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue({ ...finishedTimeline, run: { ...finishedTimeline.run, run_id: "cohort", agent_id: "cohort", agent_name: "Customer Analytics" } });
+  render(<Fixture data={smartRuns} />);
+  await page.getByRole("button", { name: "Open Customer Analytics conversation" }).click();
+  await expect.element(page.getByRole("heading", { name: "Customer Analytics" })).toBeVisible();
+  expect(timeline).toHaveBeenCalledWith("root", "cohort", -1);
+});
+
+it("groups follow-up turns under the same participant", () => {
+  const next = { ...smartRuns[1], run_id: "finance-turn-2", turn_number: 2, status: "running" };
+  const participants = latestParticipants([...smartRuns, next]);
+  expect(participants).toHaveLength(4);
+  expect(participants.find((run) => run.agent_session_id === "finance")?.run_id).toBe("finance-turn-2");
+});
+
+it("keeps the active turn visible while its follow-up waits", () => {
+  const active = { ...smartRuns[1], status: "running" };
+  const queued = { ...active, run_id: "finance-turn-2", turn_number: 2, status: "waiting_for_turn" };
+  expect(latestParticipants([active, queued])[0].run_id).toBe("finance");
+});
+
+it("steers Smart itself without offering a self-interrupt", async () => {
+  vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue({ ...finishedTimeline, run: { ...finishedTimeline.run, run_id: "root", agent_id: "__smart__", agent_name: "Smart", status: "running" } });
+  const send = vi.spyOn(agentsApi, "sendAutoChildMessage").mockResolvedValue({ message_id: "steering", status: "queued" });
+  render(<Fixture data={smartRuns} />);
+  await page.getByRole("button", { name: "Open Smart conversation" }).click();
+  await page.getByRole("textbox", { name: "Message subagent" }).fill("Prioritize enterprise customers");
+  await page.getByRole("button", { name: "Send to subagent" }).click();
+  expect(send).toHaveBeenCalledWith("root", "root", expect.objectContaining({ content: "Prioritize enterprise customers" }));
+  await expect.element(page.getByRole("button", { name: "Interrupt", exact: true })).not.toBeInTheDocument();
+});
+
+it("starts a follow-up for an idle Smart participant", async () => {
+  vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue(finishedTimeline);
+  const followup = vi.spyOn(agentsApi, "followupSmartAgent").mockResolvedValue({});
+  render(<Fixture data={smartRuns} />);
+  await page.getByRole("button", { name: "Open Finance conversation" }).click();
+  await page.getByRole("textbox", { name: "Message subagent" }).fill("Correlate the campaign evidence");
+  await page.getByRole("button", { name: "Start follow-up" }).click();
+  expect(followup).toHaveBeenCalledWith("root", "finance", "Correlate the campaign evidence", expect.any(String));
+});
+
+it("interrupts only the selected nested participant", async () => {
+  vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue({ ...finishedTimeline, run: { ...finishedTimeline.run, run_id: "cohort", agent_name: "Customer Analytics", status: "running" } });
+  const interrupt = vi.spyOn(agentsApi, "interruptSmartAgent").mockResolvedValue({});
+  render(<Fixture data={smartRuns} />);
+  await page.getByRole("button", { name: "Open Customer Analytics conversation" }).click();
+  await page.getByRole("button", { name: "Interrupt", exact: true }).click();
+  expect(interrupt).toHaveBeenCalledWith("root", "cohort");
+});
+
+for (const width of [320, 1440]) {
+  for (const dark of [false, true]) {
+    it(`keeps a long tree inside the viewport at ${width}px in ${dark ? "dark" : "light"} mode`, async () => {
+      await page.viewport(width, 900);
+      document.documentElement.classList.toggle("dark", dark);
+      const many = Array.from({ length: 25 }, (_, index) => ({ ...smartRuns[1], run_id: `agent-${index}`, agent_session_id: `agent-${index}`, agent_name: `Specialist ${index}` }));
+      render(<Fixture data={[smartRuns[0], ...many]} />);
+      const region = page.getByRole("region", { name: "Smart agent activity" });
+      await expect.element(region).toBeVisible();
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      expect(region.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(900);
+      expect(region.element().getBoundingClientRect().height).toBeLessThanOrEqual(700 / 3 + 1);
+      await expect.element(page.getByRole("button", { name: "Main composer" })).toBeVisible();
+      await page.screenshot({ path: `__screenshots__/smart-tree-${dark ? "dark" : "light"}-${width}.png` });
+    });
+  }
+}
 
 it("uses the name saved on the child run when the catalog cannot load", async () => {
   vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue(finishedTimeline);
@@ -62,16 +139,16 @@ it("opens the specialist's complete replay with both directions of agent message
   document.documentElement.classList.add("dark");
   vi.spyOn(agentsApi, "getAutoChildTimeline").mockResolvedValue(finishedTimeline);
   render(<Fixture />);
-  const card = page.getByRole("region", { name: "Auto agent activity" });
+  const card = page.getByRole("region", { name: "Smart agent activity" });
   await expect.element(card).toBeVisible();
   await expect.element(card.getByText("1 working · 1 done")).toBeVisible();
   await card.getByRole("button", { name: "Open Finance conversation" }).click();
   const panel = page.getByRole("complementary", { name: /Subagent conversation/ });
   await expect.element(panel).toBeVisible();
   expect(panel.element().getBoundingClientRect().width).toBeGreaterThan(500);
-  await expect.element(panel.getByText("Main assigned a task")).toBeVisible();
-  await expect.element(panel.getByText("Main to Finance")).toBeVisible();
-  await expect.element(panel.getByText("Finance to Main")).toBeVisible();
+  await expect.element(panel.getByText("Assigned task")).toBeVisible();
+  await expect.element(panel.getByText("Smart to Finance")).toBeVisible();
+  await expect.element(panel.getByText("finance to root")).toBeVisible();
   await expect.element(panel.getByText("Query channel totals")).toBeVisible();
   await expect.element(panel.getByText("SELECT revenue FROM sales")).toBeVisible();
   expect(panel.element().textContent?.match(/Revenue fell 22%/g)?.length).toBe(1);
@@ -81,9 +158,11 @@ it("opens the specialist's complete replay with both directions of agent message
   await mainComposer.click();
   expect(document.activeElement).toBe(mainComposer.element());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
-  await panel.getByRole("button", { name: "Back to subagents" }).click();
-  await expect.element(panel.getByRole("heading", { name: "All subagents" })).toBeVisible();
-  await panel.getByRole("button", { name: "Open Finance conversation" }).click();
+  await panel.getByRole("button", { name: "Back to conversation" }).click();
+  await expect.element(page.getByTestId("subagent-panel")).not.toBeInTheDocument();
+  await expect.element(card).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "All subagents" })).not.toBeInTheDocument();
+  await card.getByRole("button", { name: "Open Finance conversation" }).click();
   await expect.element(panel.getByRole("heading", { name: "Finance" })).toBeVisible();
   await userEvent.keyboard("{Escape}");
   await expect.element(page.getByTestId("subagent-panel")).not.toBeInTheDocument();
@@ -195,5 +274,5 @@ it("recovers the child conversation after a timeline request fails", async () =>
   const panel = page.getByRole("complementary", { name: /Subagent conversation/ });
   await expect.element(panel.getByRole("alert")).toHaveTextContent("Could not load the conversation.");
   await panel.getByRole("button", { name: "Retry" }).click();
-  await expect.element(panel.getByText("Main to Finance")).toBeVisible();
+  await expect.element(panel.getByText("Smart to Finance")).toBeVisible();
 });

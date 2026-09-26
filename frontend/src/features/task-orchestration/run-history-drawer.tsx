@@ -33,20 +33,40 @@ export function RunHistoryDrawer({
 }: {
   graphId: string;
   containerRef: React.RefObject<HTMLDivElement | null>;
-  /** Called with the height the drawer currently occupies (0 when collapsed). */
+  /** Visible footprint, including the collapsed header and bottom margin. */
   onInsetChange?: (inset: number) => void;
 }) {
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [collapsed, setCollapsed] = useState(false);
   const [resizing, setResizing] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
-  // Report the footprint the flow must avoid. A collapsed drawer still shows a
-  // header strip, so it reports that strip rather than nothing; the flow's fit
-  // needs the visible overlay height, not just the open height.
   useEffect(() => {
-    onInsetChange?.(collapsed ? COLLAPSED_HEIGHT : height);
-  }, [collapsed, height, onInsetChange]);
+    const drawer = drawerRef.current;
+    const container = containerRef.current;
+    if (!drawer || !container) return;
+    const report = () =>
+      onInsetChange?.(
+        Math.max(
+          0,
+          container.getBoundingClientRect().bottom -
+            drawer.getBoundingClientRect().top,
+        ),
+      );
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(report);
+    });
+    observer.observe(drawer);
+    observer.observe(container);
+    report();
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, [containerRef, onInsetChange]);
 
   const maxHeight = useCallback(() => {
     const available = containerRef.current?.clientHeight ?? 0;
@@ -95,11 +115,25 @@ export function RunHistoryDrawer({
 
   // A shrinking viewport must not leave the open drawer taller than the space.
   useEffect(() => {
-    setHeight((current) => Math.min(current, maxHeight()));
-  }, [maxHeight]);
+    const container = containerRef.current;
+    if (!container) return;
+    const clamp = () => setHeight((current) => Math.min(current, maxHeight()));
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(clamp);
+    });
+    observer.observe(container);
+    clamp();
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, [containerRef, maxHeight]);
 
   return (
     <div
+      ref={drawerRef}
       style={
         {
           height: `${collapsed ? COLLAPSED_HEIGHT : height}px`,

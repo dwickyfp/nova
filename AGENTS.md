@@ -443,12 +443,17 @@ NOVA_SYSTEM
 <!-- antislop:start -->
 ## antislop
 For UI, copy, people, mobile layout, or code comments work, load the antislop skill for the task:
-- Core filter, always on: `antislop`
-- UI / visual: `antislop-ui`
-- Copy & text: `antislop-copywriting`
-- People: `antislop-human`
-- Mobile / responsive: `antislop-layoutmobile`
-- Code comments: `antislop-code`
+- Core filter, always on: [antislop](.agents/skills/antislop/SKILL.md)
+- UI / visual: [antislop-ui](.agents/skills/antislop-ui/SKILL.md)
+- Copy & text: [antislop-copywriting](.agents/skills/antislop-copywriting/SKILL.md)
+- People: [antislop-human](.agents/skills/antislop-human/SKILL.md)
+- Mobile / responsive: [antislop-layoutmobile](.agents/skills/antislop-layoutmobile/SKILL.md)
+- Code comments: [antislop-code](.agents/skills/antislop-code/SKILL.md)
+
+These project skills live in `.agents/skills/` for Codex discovery. Within the
+bundled instructions, `antislop.md` refers to `.agents/skills/antislop/SKILL.md`,
+and `skills/antislop-*/` refers to the corresponding folder in `.agents/skills/`.
+
 Before starting, ask the user when antislop applies: during the work, or after it is done.
 <!-- antislop:end -->
 

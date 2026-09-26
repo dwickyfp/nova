@@ -32,9 +32,7 @@ def audit(monkeypatch):
         captured.append(kwargs)
         return "audit-id"
 
-    monkeypatch.setattr(
-        "app.modules.task_orchestration.worker.write_audit_log", fake_audit
-    )
+    monkeypatch.setattr("app.modules.task_orchestration.worker.write_audit_log", fake_audit)
     return captured
 
 
@@ -47,6 +45,7 @@ def _row_from_create_task(sql: str, *, task_id: str) -> dict:
         "definition": lowered.body,
         "database_name": lowered.database_name,
         "created_by": "alice",
+        "owner_role": "analyst",
         "schedule_kind": lowered.schedule_kind,
         "schedule_expr": lowered.schedule_expr,
         "when_expr": lowered.when_expr,
@@ -62,6 +61,7 @@ def _row_from_submit_task(name: str, body: str, *, task_id: str) -> dict:
         "definition": body,
         "database_name": "db1",
         "created_by": "alice",
+        "owner_role": "analyst",
         "schedule_kind": "manual",
         "schedule_expr": None,
         "when_expr": None,

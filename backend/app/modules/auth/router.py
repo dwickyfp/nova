@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 
 from app.common.user_flags import is_must_change_password
 from app.core.deps import get_current_user
+from app.modules.auth.profile import ProfileFields, ProfileResponse, get_profile, save_profile
 from app.modules.auth.schemas import (
     ChangePasswordRequest,
     LoginRequest,
@@ -22,6 +23,16 @@ router = APIRouter()
 #: ``Annotated`` dependency alias (the tree's convention; a ``Depends()`` in an
 #: argument default trips ruff B008).
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+
+
+@router.get("/profile", response_model=ProfileResponse)
+async def read_profile(user: CurrentUser) -> ProfileResponse:
+    return await get_profile(user["username"])
+
+
+@router.put("/profile", response_model=ProfileResponse)
+async def update_profile(req: ProfileFields, user: CurrentUser) -> ProfileResponse:
+    return await save_profile(user, req)
 
 
 @router.post("/login", response_model=LoginResponse)

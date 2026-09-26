@@ -202,10 +202,16 @@ async def test_query_service_records_password_change_requirement(monkeypatch):
     monkeypatch.setattr("app.modules.query.service.write_audit_log", fake_audit_log)
     monkeypatch.setattr(service._repo, "execute_as_user", fail_execute_as_user)
 
+    async def existing_user(username):
+        return username == "dwicky.f.putra"
+
+    monkeypatch.setattr("app.modules.users.service.user_service.user_exists", existing_user)
+
     result = await service.execute(
         sql="ALTER USER 'dwicky.f.putra' REQUIRE PASSWORD CHANGE;",
         username="admin",
         encrypted_password="encrypted",
+        role="ACCOUNTADMIN",
     )
 
     assert isinstance(result, QueryResult)

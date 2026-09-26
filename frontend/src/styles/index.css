@@ -332,6 +332,21 @@ input:-webkit-autofill:active {
   animation: nova-chat-in 0.22s ease-out both;
 }
 
+.nova-subagent-panel {
+  animation: nova-subagent-open 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes nova-subagent-open {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 /* Observability keeps three equally useful panes visible at once. Compact the
    replay through local typography and spacing instead of CSS zoom: zoom changes
    ScrollArea layout metrics and can create a large empty band above the panes. */
@@ -460,6 +475,7 @@ input:-webkit-autofill:active {
 @media (prefers-reduced-motion: reduce) {
   .nova-shimmer,
   .nova-chat-item,
+  .nova-subagent-panel,
   .nova-rail-body {
     animation: none;
   }

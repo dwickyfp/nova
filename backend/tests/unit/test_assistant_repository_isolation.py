@@ -87,6 +87,33 @@ async def test_studio_threads_are_scoped_to_the_requested_agent(recording):
     assert count_params == ["alice", "agent-1", "alice", "agent-1"]
 
 
+async def test_unified_studio_history_keeps_user_scope_and_excludes_unbound_threads(recording):
+    recording._select_rows = [
+        [f"thread-{i}", "alice", "Title", None, agent,
+         "2026-09-25 00:00:00", "2026-09-25 00:00:00", 1]
+        for i, agent in enumerate(["sales", "support", "__smart__", "__auto__"])
+    ]
+    threads = await AssistantRepository().list_threads(user_name="alice", all_agents=True)
+    assert [thread["agent_id"] for thread in threads] == [
+        "sales", "support", "__smart__", "__auto__",
+    ]
+    sql, params = recording.calls[-2]
+    assert "t.user_name = %s AND t.agent_id IS NOT NULL" in sql
+    assert "ORDER BY t.updated_at DESC, t.thread_id DESC" in sql
+    assert params == ["alice"]
+
+
+@pytest.mark.parametrize("owner,agent", [("bob", "sales"), ("alice", None), ("alice", "")])
+async def test_unified_history_rejects_out_of_scope_rows(recording, monkeypatch, owner, agent):
+    recording._select_rows = [[
+        "thread", owner, "Title", None, agent,
+        "2026-09-25 00:00:00", "2026-09-25 00:00:00", 0,
+    ]]
+    monkeypatch.setattr(repo_module.asyncio, "sleep", AsyncMock())
+    with pytest.raises(AssistantThreadListUnavailable):
+        await AssistantRepository().list_threads(user_name="alice", all_agents=True)
+
+
 @pytest.mark.parametrize(
     "bad_rows",
     [

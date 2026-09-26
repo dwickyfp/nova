@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.role_gates import require_active_role
+from app.modules.monitoring.ai_usage import AIUsageUnavailable, ai_usage_service
 from app.modules.monitoring.runtime_health import RuntimeHealthResponse
 from app.modules.monitoring.service import monitoring_service
 from app.modules.users.router import ADMIN_ROLES as ADMIN_ROLES
@@ -56,6 +57,25 @@ KILL_ROLES = ADMIN_ROLES
 # ``Depends(...)`` in argument defaults (ruff B008).
 require_read = Depends(require_active_role(*READ_ROLES))
 require_kill = Depends(require_active_role(*KILL_ROLES))
+
+
+@router.get("/ai/usage")
+async def get_ai_usage(
+    days: int = Query(7, ge=1, le=30),
+    source: str | None = Query(None, pattern="^(assistant|smart|functions)$"),
+    model: str | None = Query(None, max_length=128),
+    user_name: str | None = Query(None, max_length=128),
+    offset: int = Query(0, ge=0, le=30000),
+    limit: int = Query(25, ge=1, le=100),
+    user: dict = require_read,
+) -> dict:
+    try:
+        return await ai_usage_service.dashboard(
+            days=days, source=source, model=model, user_name=user_name,
+            offset=offset, limit=limit,
+        )
+    except AIUsageUnavailable:
+        raise HTTPException(503, "AI usage history is temporarily unavailable") from None
 
 
 # ── Response Models ──────────────────────────────────────────────────

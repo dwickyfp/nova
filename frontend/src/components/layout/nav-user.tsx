@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   ChevronsUpDown,
   LogOut,
@@ -9,6 +10,7 @@ import {
   SquareUser,
   Search,
   Info,
+  Settings,
 } from "lucide-react";
 import useDialogState from "@/hooks/use-dialog-state";
 import { api } from "@/lib/api-client";
@@ -41,7 +43,7 @@ type NavUserProps = {
 };
 
 export function NavUser({ user }: NavUserProps) {
-  const { isMobile } = useSidebar();
+  const { isMobile, setOpenMobile } = useSidebar();
   const [open, setOpen] = useDialogState();
   const [infoOpen, setInfoOpen] = useDialogState();
   const { theme, setTheme } = useTheme();
@@ -205,6 +207,15 @@ export function NavUser({ user }: NavUserProps) {
               <DropdownMenuItem onClick={() => setInfoOpen(true)}>
                 <Info />
                 Information
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link
+                  to="/settings/profile"
+                  onClick={() => setOpenMobile(false)}
+                >
+                  <Settings />
+                  Settings
+                </Link>
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />

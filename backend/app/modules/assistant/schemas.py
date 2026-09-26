@@ -106,11 +106,13 @@ class ThreadView(BaseModel):
 class ThreadListResponse(BaseModel):
     threads: list[ThreadView]
     count: int
+    next_cursor: str | None = None
 
 
 class ThreadDetailResponse(BaseModel):
     thread: ThreadView
     messages: list[MessageView]
+    next_cursor: str | None = None
 
 
 class ThreadCreateRequest(BaseModel):

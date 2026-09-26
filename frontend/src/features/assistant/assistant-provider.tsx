@@ -559,11 +559,10 @@ export function useAssistantPanelProps(): AssistantPanelProps {
   // The greeting addresses the signed-in user by name; until `/auth/me` lands
   // the store is empty and the empty state falls back to a neutral salutation.
   const userName = useAuthStore((state) => state.auth.user?.username ?? null);
-  // Same key and fetcher as the header's history popover, so both read one
-  // cached list instead of issuing a second GET when the panel is empty.
+  // Keep the recent-list cache separate from the popover's infinite-query pages.
   const threadsQuery = useQuery({
-    queryKey: ["assistant-threads"],
-    queryFn: listThreads,
+    queryKey: ["assistant-threads", "recent"],
+    queryFn: () => listThreads(),
     staleTime: 0,
   });
   const recentThreads = useMemo(
@@ -595,6 +594,9 @@ export function useAssistantPanelProps(): AssistantPanelProps {
       onOpenThread: openThread,
       activeThreadId: conversation.threadId,
       loadingThread,
+      hasOlderMessages: Boolean(conversation.olderCursor),
+      loadingOlderMessages: conversation.loadingOlder,
+      onLoadOlderMessages: conversation.loadOlderMessages,
       width,
       onResize: setWidth,
       offsetY,

@@ -6,7 +6,7 @@ import { api } from "@/lib/api-client";
  * StarRocks' native `information_schema.tasks`, this one reads Nova's
  * `CONFIG_TASK*` metadata through `/api/v1/task-orchestration`.
  *
- * Every call is a `GET`; the backend is read-only and enforces ownership. A
+ * The backend enforces ownership for reads and manual runs. A
  * graph or run the caller may not see answers `404`, which callers must render
  * as "no access", not as an application error.
  */
@@ -76,6 +76,8 @@ export interface RunCounts {
 }
 
 export interface GraphSummary {
+  owner_role?: string | null;
+  can_run?: boolean;
   graph_id: string;
   root_task: string | null;
   database_name: string | null;
@@ -122,6 +124,8 @@ export interface GraphDetailResponse {
 }
 
 export interface GraphRunResponse {
+  execution_user?: string | null;
+  execution_role?: string | null;
   id: string;
   graph_id: string;
   trigger_type: TriggerType;
@@ -157,6 +161,21 @@ export interface GraphRunDetailResponse {
 }
 
 const BASE = "/task-orchestration";
+
+export const runGraph = (graphId: string): Promise<GraphRunResponse> =>
+  api.post<GraphRunResponse>(
+    `${BASE}/graphs/${encodeURIComponent(graphId)}/runs`,
+  );
+
+export const fetchTaskSQL = (
+  graphId: string,
+  taskId: string,
+  signal?: AbortSignal,
+) =>
+  api.get<{ task_id: string; name: string; sql: string | null }>(
+    `${BASE}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(taskId)}/sql`,
+    signal,
+  );
 
 export const fetchGraphs = async (
   signal?: AbortSignal,

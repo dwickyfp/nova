@@ -1,6 +1,10 @@
-# Architecture 8: Studio Auto Agent Harness
+# Architecture 8: Legacy Studio Auto Agent Harness
 
 > A durable coordinator runs authorized specialists in parallel while direct agent chat keeps its existing path.
+
+This describes persisted `__auto__` runs. New conversations use Smart and the
+shared participant engine described in [Architecture 11](arch-11-smart-collaboration.md).
+The depth-one planner below remains only for recovery of legacy roots.
 
 ---
 

@@ -10,13 +10,14 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { LoadingLines, RefreshBanner } from "@/components/ui/loading-overlay";
+import { LoadingLines } from "@/components/ui/loading-overlay";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   SimpleTablePagination,
   SimpleTableViewport,
 } from "@/components/data-table/simple-table-controls";
 import { fetchGraphRun, fetchGraphRunsPage } from "./api";
+import { RunErrorDialog } from "./run-error-dialog";
 import {
   formatDuration,
   formatTimestamp,
@@ -90,9 +91,6 @@ export function RunHistory({ graphId }: { graphId: string }) {
     <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="relative min-h-0 flex-1">
         <SimpleTableViewport className="max-h-full h-full">
-          {runsQuery.isFetching && !runsQuery.isLoading ? (
-            <RefreshBanner label="Loading runs..." />
-          ) : null}
           <table className="w-full">
             <thead>
               <tr>
@@ -155,9 +153,17 @@ export function RunHistory({ graphId }: { graphId: string }) {
                           {formatTimestamp(run.finished_at)}
                         </td>
                         <td className="px-4 py-3">
-                          <StatusBadge tone={graphRunTone(run.state)} dot>
-                            {run.state}
-                          </StatusBadge>
+                          <div className="flex items-center gap-2">
+                            <StatusBadge tone={graphRunTone(run.state)} dot>
+                              {run.state}
+                            </StatusBadge>
+                            {run.state === "failed" ? (
+                              <RunErrorDialog
+                                runId={run.id}
+                                taskName={graphId}
+                              />
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">
                           {run.trigger_type}
@@ -235,54 +241,64 @@ function RunNodes({ runId }: { runId: string }) {
   }
 
   return (
-    <ul className="space-y-3">
-      {nodes.map((node) => (
-        <li
-          key={node.id}
-          className="rounded-md border border-border bg-background p-3"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">
-              {node.task_id ?? node.id}
-            </span>
-            <StatusBadge tone={taskRunTone(node.state)}>
-              {node.state}
-            </StatusBadge>
-            <StatusBadge tone={node.delegated ? "primary" : "neutral"}>
-              {node.delegated ? "delegated" : "local"}
-            </StatusBadge>
-          </div>
-          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
-            <div>
-              <dt className="font-medium text-foreground">Attempt</dt>
-              <dd>{node.attempt}</dd>
+    <div className="space-y-3">
+      {runQuery.data?.run.execution_user ? (
+        <p className="break-words text-sm text-muted-foreground">
+          Executed as {runQuery.data.run.execution_user}
+          {runQuery.data.run.execution_role
+            ? ` · ${runQuery.data.run.execution_role}`
+            : ""}
+        </p>
+      ) : null}
+      <ul className="space-y-3">
+        {nodes.map((node) => (
+          <li
+            key={node.id}
+            className="rounded-md border border-border bg-background p-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {node.task_id ?? node.id}
+              </span>
+              <StatusBadge tone={taskRunTone(node.state)}>
+                {node.state}
+              </StatusBadge>
+              <StatusBadge tone={node.delegated ? "primary" : "neutral"}>
+                {node.delegated ? "delegated" : "local"}
+              </StatusBadge>
             </div>
-            <div>
-              <dt className="font-medium text-foreground">Started</dt>
-              <dd>{formatTimestamp(node.started_at)}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-foreground">Finished</dt>
-              <dd>{formatTimestamp(node.finished_at)}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-foreground">Duration</dt>
-              <dd>{formatDuration(node.started_at, node.finished_at)}</dd>
-            </div>
-          </dl>
-          {node.error_message ? (
-            <div className="mt-2">
-              <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-destructive">
-                <AlertCircle aria-hidden="true" className="size-3" />
-                Error
-              </p>
-              <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-destructive/10 p-2 text-xs font-mono text-destructive">
-                {node.error_message}
-              </pre>
-            </div>
-          ) : null}
-        </li>
-      ))}
-    </ul>
+            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
+              <div>
+                <dt className="font-medium text-foreground">Attempt</dt>
+                <dd>{node.attempt}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-foreground">Started</dt>
+                <dd>{formatTimestamp(node.started_at)}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-foreground">Finished</dt>
+                <dd>{formatTimestamp(node.finished_at)}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-foreground">Duration</dt>
+                <dd>{formatDuration(node.started_at, node.finished_at)}</dd>
+              </div>
+            </dl>
+            {node.error_message ? (
+              <div className="mt-2">
+                <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-destructive">
+                  <AlertCircle aria-hidden="true" className="size-3" />
+                  Error
+                </p>
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-destructive/10 p-2 text-xs font-mono text-destructive">
+                  {node.error_message}
+                </pre>
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

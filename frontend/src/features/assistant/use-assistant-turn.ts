@@ -82,6 +82,7 @@ export type AssistantTurnOptions = {
 export type AssistantTurnSnapshot = {
   threadId: string | null;
   grantActive: boolean;
+  olderCursor?: string | null;
 };
 
 /**
@@ -112,6 +113,11 @@ export function useAssistantTurn({
   const [resettingGrant, setResettingGrant] = useState(false);
   const [settlingGrant, setSettlingGrant] = useState(false);
   const [loadingThread, setLoadingThread] = useState(false);
+  const [olderCursor, setOlderCursor] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const historyRequestRef = useRef(0);
+  const transcriptRef = useRef(transcript);
+  transcriptRef.current = transcript;
   const abortRef = useRef<AbortController | null>(null);
   const uiActionsRef = useRef(new Map<string, UiAction>());
 
@@ -273,6 +279,8 @@ export function useAssistantTurn({
    */
   const loadThread = useCallback(
     async (targetThreadId: string) => {
+      const request = ++historyRequestRef.current;
+      setLoadingOlder(false);
       abortRef.current?.abort();
       abortRef.current = null;
       setStreaming(false);
@@ -281,6 +289,7 @@ export function useAssistantTurn({
       setLoadingThread(true);
       try {
         const detail = await getThread(targetThreadId);
+        if (request !== historyRequestRef.current) return;
         const restored: TranscriptMessage[] = detail.messages
           .filter((message) => message.role !== "tool")
           .map((message) => ({
@@ -292,6 +301,7 @@ export function useAssistantTurn({
             turn_state: "done",
           }));
         transcript.replace(restored);
+        setOlderCursor(detail.next_cursor ?? null);
         setThreadId(detail.thread.thread_id);
         setGrantActive(false);
       } catch (error) {
@@ -301,11 +311,34 @@ export function useAssistantTurn({
             : "The thread could not be opened";
         onError?.(message);
       } finally {
-        setLoadingThread(false);
+        if (request === historyRequestRef.current) setLoadingThread(false);
       }
     },
     [onError, transcript],
   );
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!threadId || !olderCursor || loadingOlder || streaming || loadingThread) return;
+    const request = historyRequestRef.current;
+    setLoadingOlder(true);
+    try {
+      const page = await getThread(threadId, olderCursor);
+      if (request !== historyRequestRef.current) return;
+      const restored: TranscriptMessage[] = page.messages
+        .filter((message) => message.role !== "tool")
+        .map((message) => ({
+          message_id: message.message_id, role: message.role, content: message.content,
+          tool_call: null, created_at: message.created_at, turn_state: "done",
+        }));
+      const current = transcriptRef.current;
+      current.replace([...new Map([...restored, ...current.messages].map((m) => [m.message_id, m])).values()]);
+      setOlderCursor(page.next_cursor ?? null);
+    } catch {
+      if (request === historyRequestRef.current) onError?.("Could not load older messages. Try again.");
+    } finally {
+      if (request === historyRequestRef.current) setLoadingOlder(false);
+    }
+  }, [threadId, olderCursor, loadingOlder, streaming, loadingThread, onError]);
 
   /**
    * Clears the conversation so the next message starts a fresh thread. The
@@ -313,6 +346,10 @@ export function useAssistantTurn({
    * dropped, matching how a binding switch closes a conversation.
    */
   const startNewThread = useCallback(() => {
+    historyRequestRef.current += 1;
+    setOlderCursor(null);
+    setLoadingOlder(false);
+    setLoadingThread(false);
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(false);
@@ -391,10 +428,14 @@ export function useAssistantTurn({
   const snapshot = useCallback((): AssistantTurnSnapshot => {
     abortRef.current?.abort();
     abortRef.current = null;
-    return { threadId, grantActive };
-  }, [grantActive, threadId]);
+    return { threadId, grantActive, ...(olderCursor ? { olderCursor } : {}) };
+  }, [grantActive, threadId, olderCursor]);
 
   const restore = useCallback((snapshot: AssistantTurnSnapshot) => {
+    historyRequestRef.current += 1;
+    setOlderCursor(snapshot.olderCursor ?? null);
+    setLoadingOlder(false);
+    setLoadingThread(false);
     abortRef.current?.abort();
     abortRef.current = null;
     setThreadId(snapshot.threadId);
@@ -421,6 +462,9 @@ export function useAssistantTurn({
     resettingGrant,
     streaming,
     loadingThread,
+    olderCursor,
+    loadingOlder,
+    loadOlderMessages,
     statusMessage,
     decidingToolCallId,
     loadThread,

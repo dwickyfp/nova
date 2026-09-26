@@ -39,6 +39,7 @@ async def test_recovery_restores_completed_child_after_stale_running_snapshot(
 
     monkeypatch.setattr(repository_module.db, "execute_system", execute)
     repo = HarnessRepository()
+    repo.get = AsyncMock(return_value={"payload": {}, "checkpoint": {}})
     repo.event = AsyncMock(side_effect=ValueError("Conflicting Auto terminal event"))
     repo.wake_parent = AsyncMock(return_value=True)
 
@@ -81,6 +82,7 @@ async def test_unreadable_terminal_rolls_back_for_a_later_recovery_cycle(
     monkeypatch.setattr(repository_module.db, "execute_system", execute)
     monkeypatch.setattr(repository_module.asyncio, "sleep", AsyncMock())
     repo = HarnessRepository()
+    repo.get = AsyncMock(return_value={"payload": {}, "checkpoint": {}})
     repo.event = AsyncMock(side_effect=ValueError("Conflicting Auto terminal event"))
     repo.wake_parent = AsyncMock(return_value=True)
 

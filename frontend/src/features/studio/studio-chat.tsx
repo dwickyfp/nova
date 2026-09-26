@@ -58,7 +58,7 @@ import {
 } from "./skill-document";
 import { SkillEditor } from "./skill-editor";
 import { AnswerFooter, type AnswerFeedback } from "./answer-footer";
-import { AgentMemoryDialog } from "./agent-memory-dialog";
+import { UserMessageFooter } from "./user-message-footer";
 import { AutoSubagentCard, AutoSubagentPanel } from "./auto-subagent-card";
 import { AutoTurnRail } from "./auto-turn-rail";
 import { rootRunForTurn } from "./auto-run-timeline";
@@ -116,6 +116,7 @@ export type OrderedContent =
 export type TranscriptTurn = {
   id: string;
   question: string;
+  questionCreatedAt?: string;
   attachments?: SentAttachment[];
   /** The ordered work trace: thinking frames, tool calls, context notes. */
   steps: RailStep[];
@@ -200,6 +201,11 @@ export function StudioChat({
   // always runs for that thread instead of assuming it is already in hand.
   const [threadId, setThreadId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
+  const storedMessagesRef = useRef<AgentMessage[]>([]);
+  const [olderCursor, setOlderCursor] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const historyRequestRef = useRef(0);
+  const prependScrollRef = useRef<{ height: number; top: number } | null>(null);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [readingFiles, setReadingFiles] = useState(false);
@@ -262,7 +268,13 @@ export function StudioChat({
         || refreshedAutoRunsRef.current.has(root.run_id)) return;
     refreshedAutoRunsRef.current.add(root.run_id);
     void agentsApi.getThread(AUTO_AGENT_ID, activeThreadId).then((detail) => {
-      if (activeThreadIdRef.current === activeThreadId) setTurns(replayThread(detail.messages));
+      if (activeThreadIdRef.current === activeThreadId) {
+        const newestIds = new Set(detail.messages.map((message) => message.message_id));
+        const hasEarlierMessages = storedMessagesRef.current.some((message) => !newestIds.has(message.message_id));
+        storedMessagesRef.current = [...new Map([...storedMessagesRef.current, ...detail.messages].map((m) => [m.message_id, m])).values()];
+        setTurns(replayThread(storedMessagesRef.current));
+        if (!hasEarlierMessages) setOlderCursor(detail.next_cursor ?? null);
+      }
     }).catch(() => {
       refreshedAutoRunsRef.current.delete(root.run_id);
     });
@@ -279,6 +291,40 @@ export function StudioChat({
   const composerStartRef = useRef<DOMRect | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
+  useLayoutEffect(() => {
+    const previous = prependScrollRef.current;
+    const el = scrollRef.current;
+    if (previous && el) {
+      el.scrollTop = previous.top + el.scrollHeight - previous.height;
+      prependScrollRef.current = null;
+    }
+  }, [turns]);
+
+  const loadOlderMessages = async () => {
+    if (!agent || !threadId || !olderCursor || loadingOlder || streaming) return;
+    const request = historyRequestRef.current;
+    const target = threadId;
+    setLoadingOlder(true);
+    try {
+      const page = await agentsApi.getThread(agent.agent_id, target, olderCursor);
+      if (request !== historyRequestRef.current || activeThreadIdRef.current !== target) return;
+      const previousIds = new Set(replayThread(storedMessagesRef.current).map((turn) => turn.id));
+      storedMessagesRef.current = [...new Map([...page.messages, ...storedMessagesRef.current].map((m) => [m.message_id, m])).values()];
+      const restored = replayThread(storedMessagesRef.current);
+      const el = scrollRef.current;
+      if (el) prependScrollRef.current = { height: el.scrollHeight, top: el.scrollTop };
+      followOutputRef.current = false;
+      setTurns((current) => {
+        const byId = new Map(current.map((turn) => [turn.id, turn]));
+        return [...restored.map((turn) => byId.get(turn.id) ?? turn), ...current.filter((turn) => !previousIds.has(turn.id))];
+      });
+      setOlderCursor(page.next_cursor ?? null);
+    } catch {
+      if (request === historyRequestRef.current) toast.error("Could not load older messages. Try again.");
+    } finally {
+      if (request === historyRequestRef.current) setLoadingOlder(false);
+    }
+  };
   const scrollFrameRef = useRef<number | null>(null);
   const queuedEventsRef = useRef<
     Array<{ turnId: string; event: AssistantEvent }>
@@ -337,14 +383,17 @@ export function StudioChat({
     [discardQueuedEvents],
   );
 
-  // A different agent means a different conversation; the sidebar clears the
-  // selection for us, so there is nothing to replay.
+  // Clear the previous agent's state before opening the selected conversation.
   useEffect(() => {
     abortRef.current?.abort();
     discardQueuedEvents();
     followOutputRef.current = true;
     setThreadId(null);
     setTurns([]);
+    historyRequestRef.current += 1;
+    storedMessagesRef.current = [];
+    setOlderCursor(null);
+    setLoadingOlder(false);
     setActiveAutoRun(null);
     setSelectedChild(null);
     setInput("");
@@ -370,6 +419,8 @@ export function StudioChat({
     staleThreadAfterNewChatRef.current = null;
     if (!agent || activeThreadId === threadId) return;
     let cancelled = false;
+    historyRequestRef.current += 1;
+    setLoadingOlder(false);
     setLoadingThread(true);
     abortRef.current?.abort();
     discardQueuedEvents();
@@ -379,6 +430,8 @@ export function StudioChat({
       .then((detail) => {
         if (cancelled) return;
         setThreadId(activeThreadId);
+        storedMessagesRef.current = detail.messages;
+        setOlderCursor(detail.next_cursor ?? null);
         setTurns(replayThread(detail.messages));
         setAttachments([]);
         setDeepenTarget(null);
@@ -412,6 +465,10 @@ export function StudioChat({
     setThreadId(null);
     setActiveAutoRun(null);
     setTurns([]);
+    historyRequestRef.current += 1;
+    storedMessagesRef.current = [];
+    setOlderCursor(null);
+    setLoadingOlder(false);
     setInput("");
     setAttachments([]);
     setDeepenTarget(null);
@@ -499,9 +556,10 @@ export function StudioChat({
       // Tell the sidebar, so the new conversation is the highlighted one and the
       // history list refreshes to include it.
       onThreadChange(thread.thread_id);
+      void queryClient.invalidateQueries({ queryKey: ["agents", "threads"] });
       return thread.thread_id;
     },
-    [activeThreadId, agent, onThreadChange, threadId],
+    [activeThreadId, agent, onThreadChange, queryClient, threadId],
   );
 
   const addFiles = useCallback(async (files: FileList) => {
@@ -554,6 +612,7 @@ export function StudioChat({
         {
           id: turnId,
           question: content,
+          questionCreatedAt: new Date().toISOString(),
           attachments: pending.map(({ name, sizeBytes, mediaType }) => ({ name, sizeBytes, mediaType })),
           model: agent.model_name ?? undefined,
           steps: [],
@@ -615,7 +674,7 @@ export function StudioChat({
         setStreaming(false);
         abortRef.current = null;
         queryClient.invalidateQueries({
-          queryKey: ["agents", "threads", agent.agent_id],
+          queryKey: ["agents", "threads"],
         });
         if (agent.agent_id === AUTO_AGENT_ID) {
           void queryClient.invalidateQueries({ queryKey: ["studio", "auto-runs"] });
@@ -640,7 +699,7 @@ export function StudioChat({
   const stop = useCallback(() => {
     if (agent?.agent_id === AUTO_AGENT_ID && activeAutoRun) {
       void agentsApi.cancelAutoRun(activeAutoRun.runId).catch(() => {
-        toast.error("Could not cancel the Auto run. Check its activity and try again.");
+        toast.error("Could not cancel the Smart run. Check its activity and try again.");
       });
     }
     abortRef.current?.abort();
@@ -911,6 +970,12 @@ export function StudioChat({
               <Greeting displayName={displayName} />
             ) : (
               <div className="flex flex-col gap-8">
+                {olderCursor ? (
+                  <Button type="button" variant="ghost" size="sm" className="h-auto self-center py-3 sm:py-2"
+                    disabled={loadingOlder || streaming || loadingThread} onClick={() => void loadOlderMessages()}>
+                    {loadingOlder ? "Loading…" : "Load older messages"}
+                  </Button>
+                ) : null}
                 {turns.map((turn) => (
                   <TurnView
                     key={turn.id}
@@ -986,7 +1051,6 @@ export function StudioChat({
         selected={selectedChild}
         runs={selectedTreeQuery.data?.runs ?? []}
         agents={agents}
-        onSelectChild={(childRunId) => openChild(selectedChild.rootRunId, childRunId)}
         onClose={closeChild}
         onRefreshTree={() => void selectedTreeQuery.refetch()}
       /> : null}
@@ -1052,7 +1116,7 @@ const TurnView = memo(function TurnView({
           <span>Reconsidering the previous answer</span>
         </div>
       ) : (
-        <div className="nova-chat-item flex justify-end">
+        <div className="nova-chat-item flex flex-col items-end gap-1">
           <div className="max-w-[85%] rounded-2xl bg-foreground px-4 py-2.5 text-sm text-white ring-1 ring-input dark:bg-accent">
             {turn.attachments?.length ? (
               <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Attached files">
@@ -1070,6 +1134,7 @@ const TurnView = memo(function TurnView({
             ) : null}
             {turn.question ? <p className="break-words whitespace-pre-wrap">{turn.question}</p> : null}
           </div>
+          <UserMessageFooter message={turn.question} createdAt={turn.questionCreatedAt} />
         </div>
       )}
 
@@ -1173,7 +1238,7 @@ function AgentPicker({
           agents.map((a) => (
             <Fragment key={a.agent_id}>
               <DropdownMenuItem onSelect={() => onSelectAgent(a.agent_id)}>
-                {a.agent_id === AUTO_AGENT_ID ? "✦ Auto" : a.name}
+                {a.agent_id === AUTO_AGENT_ID ? "Smart" : a.name}
               </DropdownMenuItem>
               {a.agent_id === AUTO_AGENT_ID ? <DropdownMenuSeparator /> : null}
             </Fragment>
@@ -1381,9 +1446,6 @@ const Composer = ({
             agents={agents}
             onSelectAgent={onSelectAgent}
           />
-          {agent && agent.agent_id !== SKILL_AUTHOR_ID && agent.agent_id !== AUTO_AGENT_ID ? (
-            <AgentMemoryDialog agentId={agent.agent_id} />
-          ) : null}
 
           <div className="flex-1" />
           <button
@@ -1436,6 +1498,7 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
       open = {
         id: message.message_id,
         question: message.content,
+        questionCreatedAt: message.created_at,
         attachments: message.attachments?.map((item) => ({
           name: item.name,
           sizeBytes: item.size_bytes,

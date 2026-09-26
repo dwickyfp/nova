@@ -38,7 +38,6 @@ import {
 /** Tools a user agent may bundle; authoring tools are Nove-only. */
 const BUNDLEABLE = new Set([
   "load_skill",
-  "query_execute",
   "semantic_query",
   "semantic_search",
   "data_to_chart",
@@ -220,6 +219,8 @@ function ToolsConfig({
     <div className="max-w-3xl space-y-6">
       <p className="text-sm text-muted-foreground">
         Choose the tools this agent can use during conversations.
+        {" "}Data questions use the agent’s bound Semantic Views and configured tools.
+        {" "}Use Nove for free-form SQL and database exploration.
       </p>
 
       <section className="space-y-2">
@@ -672,7 +673,12 @@ function toAgentDraft(agent: Agent): AgentCreateInput {
     semantic_model_ids: _semanticModelIds,
     ...draft
   } = agent;
-  return { ...draft, semantic_view_ids: agent.semantic_view_ids ?? [], harness_mode: "auto" };
+  return {
+    ...draft,
+    default_tools: (agent.default_tools ?? []).filter((name) => name !== "query_execute"),
+    semantic_view_ids: agent.semantic_view_ids ?? [],
+    harness_mode: "auto",
+  };
 }
 
 function McpConfig() {
