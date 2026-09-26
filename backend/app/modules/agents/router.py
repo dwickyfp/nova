@@ -99,6 +99,13 @@ from app.modules.agents.semantic.access import bound_view_ids
 from app.modules.agents.service import agent_service
 from app.modules.agents.skill_author import SKILL_AUTHOR_ID, skill_author_config
 from app.modules.agents.skill_catalog import is_builtin_skill_id, merge_skill_rows
+from app.modules.agents.versions import (
+    AgentDraftRequest,
+    AgentPublishRequest,
+    agent_versions,
+    revision_id,
+    validate_publication_dependencies,
+)
 from app.modules.assistant import events
 from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.consent import consent_broker
@@ -623,6 +630,9 @@ async def create_agent(
     user: dict = Depends(get_current_user),
 ):
     fields = body.model_dump()
+    from app.modules.agents.resources import validate_resources
+
+    await validate_resources(fields, user)
     await _normalize_view_binding(fields, provided=body.model_fields_set, user=user)
     # Keep accepting legacy clients that send a mode, but never persist a
     # user-selected strategy. Provider capabilities and turn risk decide it.
@@ -1461,6 +1471,9 @@ async def update_agent(
         raise HTTPException(404, "Agent not found")
     existing = await _require_agent(agent_id, user["username"])
     fields = body.model_dump(exclude_unset=True)
+    from app.modules.agents.resources import validate_resources
+
+    await validate_resources(fields, user)
     await _normalize_view_binding(fields, provided=body.model_fields_set, user=user)
     fields["harness_mode"] = "auto"
     unknown = _unknown_tools(fields.get("default_tools") or [])
@@ -1490,10 +1503,127 @@ async def update_agent(
         except InstructionCompilationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     updated = await agent_repository.update_agent(
-        agent_id, owner_name=user["username"], fields=fields
+        agent_id, owner_name=user["username"], fields=fields,
+        expected_revision=existing.get("config_revision"), check_revision=True,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    return _agent_view(updated)
+
+
+@router.get("/{agent_id}/versions")
+async def list_agent_versions(
+    agent_id: str,
+    offset: int = Query(default=0, ge=0, le=100000),
+    user: dict = Depends(get_current_user),
+):
+    agent = await _require_agent(agent_id, user["username"])
+    result = await agent_versions.list(agent_id, user["username"], offset)
+    return {
+        **result,
+        "active_version_id": revision_id(agent),
+        "expected_revision": agent.get("config_revision"),
+    }
+
+
+@router.get("/{agent_id}/versions/{version_id}")
+async def get_agent_version(agent_id: str, version_id: str, user: dict = Depends(get_current_user)):
+    await _require_agent(agent_id, user["username"])
+    version = await agent_versions.get(agent_id, user["username"], version_id)
+    if version is None:
+        raise HTTPException(404, "Agent version not found")
+    return version
+
+
+@router.post("/{agent_id}/versions", status_code=201)
+async def save_agent_draft(
+    agent_id: str, body: AgentDraftRequest, user: dict = Depends(get_current_user)
+):
+    from app.modules.agents.resources import validate_resources
+
+    agent = await _require_agent(agent_id, user["username"])
+    if agent.get("config_revision") != body.expected_revision:
+        raise HTTPException(409, "Agent changed. Reload before saving a draft.")
+    fields = body.configuration.model_dump(exclude_unset=True)
+    await _normalize_view_binding(fields, provided=body.configuration.model_fields_set, user=user)
+    await validate_resources(fields, user)
+    if _unknown_tools(fields.get("default_tools") or []):
+        raise HTTPException(422, "Unknown agent tool")
+    candidate = {**agent, **fields}
+    candidate["harness_mode"] = "auto"
+    await agent_versions.store(agent, label="Active configuration", version_id=revision_id(agent))
+    draft = await agent_versions.store(candidate, label=body.label)
+    await write_audit_log(
+        event_type="AGENT",
+        action="SAVE_DRAFT",
+        sql_text=json.dumps({"version_id": draft["version_id"]}),
+        object_type="AGENT",
+        object_name=agent_id,
+        user_name=user["username"],
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
+    return draft
+
+
+@router.post("/{agent_id}/versions/{version_id}/publish", response_model=AgentView)
+async def publish_agent_version(
+    agent_id: str,
+    version_id: str,
+    body: AgentPublishRequest,
+    user: dict = Depends(get_current_user),
+):
+    from app.modules.agents.resources import validate_resources
+
+    agent = await _require_agent(agent_id, user["username"])
+    if agent.get("config_revision") != body.expected_revision:
+        raise HTTPException(409, "Agent changed. Reload and compare before publishing.")
+    version = await agent_versions.get(agent_id, user["username"], version_id)
+    if version is None:
+        raise HTTPException(404, "Agent version not found")
+    fields = AgentUpdateRequest.model_validate(version["configuration"]).model_dump(
+        exclude_unset=True
+    )
+    await _normalize_view_binding(fields, provided=set(fields), user=user)
+    await validate_resources(fields, user)
+    if _unknown_tools(fields.get("default_tools") or []) or await _unavailable_mcp_tools(
+        fields.get("default_tools") or []
+    ):
+        raise HTTPException(422, "A configured tool is unavailable")
+    await validate_publication_dependencies(fields, user["username"])
+    try:
+        fields["compiled_instructions"] = compile_agent_instructions(
+            response=fields.get("instructions_response", ""),
+            orchestration=fields.get("instructions_orchestration", ""),
+            description=fields.get("description", ""),
+            response_style=fields.get("response_style"),
+        ).as_dict()
+    except InstructionCompilationError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    # A restore is a new publication, so a stale editor cannot win an A -> B -> A race.
+    updated = await agent_repository.update_agent(
+        agent_id,
+        owner_name=user["username"],
+        fields=fields,
+        expected_revision=body.expected_revision,
+        check_revision=True,
+    )
+    if updated is None:
+        raise HTTPException(404, "Agent not found")
+    await write_audit_log(
+        event_type="AGENT",
+        action="PUBLISH_VERSION",
+        sql_text=json.dumps({
+            "source_version": version_id, "active_version": updated.get("config_revision"),
+        }),
+        object_type="AGENT",
+        object_name=agent_id,
+        user_name=user["username"],
+        status="SUCCESS",
+        session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
     return _agent_view(updated)
 
 

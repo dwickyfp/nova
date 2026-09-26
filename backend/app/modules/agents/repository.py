@@ -91,7 +91,9 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENTS (
     semantic_view_ids          JSON,
     visibility                 VARCHAR(16),
     created_at                 DATETIME NOT NULL,
-    updated_at                 DATETIME NOT NULL
+    updated_at                 DATETIME NOT NULL,
+    resource_bindings          JSON,
+    config_revision            VARCHAR(64)
 ) PRIMARY KEY(agent_id)
 DISTRIBUTED BY HASH(agent_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -105,6 +107,8 @@ AGENTS_SEMANTIC_VIEW_IDS_DDL = (
 )
 
 AGENT_INTELLIGENCE_COLUMNS = (
+    ("resource_bindings", "JSON"),
+    ("config_revision", "VARCHAR(64)"),
     ("discoverable_skills", "JSON"),
     ("compiled_instructions", "JSON"),
     ("harness_mode", "VARCHAR(16)"),
@@ -168,7 +172,7 @@ _AGENT_COLUMNS = (
     "budget_seconds, budget_tokens, tool_not_accessible, default_tools, "
     "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
     "policy, semantic_model_id, semantic_model_ids, semantic_view_ids, visibility, "
-    "created_at, updated_at"
+    "created_at, updated_at, resource_bindings, config_revision"
 )
 
 _SEMANTIC_COLUMNS = (
@@ -381,6 +385,8 @@ def _agent_row(row: list[Any]) -> dict:
         row = [*row[:19], [], {}, "auto", *row[19:]]
     if len(row) == 28:
         row = [*row[:25], None, *row[25:]]
+    if len(row) == 29:
+        row = [*row, None, None]
     (
         agent_id,
         owner,
@@ -411,6 +417,8 @@ def _agent_row(row: list[Any]) -> dict:
         visibility,
         created_at,
         updated_at,
+        resource_bindings,
+        config_revision,
     ) = row
     legacy_ids = _semantic_ids(semantic_model_id, semantic_model_ids)
     return {
@@ -443,6 +451,8 @@ def _agent_row(row: list[Any]) -> dict:
         "visibility": visibility or "private",
         "created_at": _iso(created_at),
         "updated_at": _iso(updated_at),
+        "resource_bindings": _as_json(resource_bindings) or {},
+        "config_revision": config_revision,
     }
 
 
@@ -597,6 +607,9 @@ class AgentRepository:
         await db.execute_system(CUSTOM_TOOLS_DDL)
         await db.execute_system(VERIFIED_QUERIES_DDL)
         await db.execute_system(SEMANTIC_USAGE_DDL)
+        from app.modules.agents.versions import VERSIONS_DDL
+
+        await db.execute_system(VERSIONS_DDL)
 
     async def backfill_semantic_view_ids(self) -> int:
         """Persist legacy agent bindings after Semantic View IDs have been imported.
@@ -674,8 +687,8 @@ class AgentRepository:
             "budget_seconds, budget_tokens, tool_not_accessible, default_tools, "
             "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
             "policy, semantic_model_id, semantic_model_ids, semantic_view_ids, "
-            "visibility, created_at, updated_at"
-            ") VALUES (" + ", ".join(["%s"] * 29) + ")",
+            "visibility, created_at, updated_at, resource_bindings, config_revision"
+            ") VALUES (" + ", ".join(["%s"] * 31) + ")",
             [
                 agent_id,
                 owner_name,
@@ -706,6 +719,8 @@ class AgentRepository:
                 fields.get("visibility", "private"),
                 now,
                 now,
+                _dump(fields.get("resource_bindings") or {}),
+                str(uuid4()),
             ],
         )
         created = await self.get_agent(agent_id, owner_name=owner_name)
@@ -733,7 +748,7 @@ class AgentRepository:
             f"WHERE {where} ORDER BY updated_at DESC",
             params,
             lambda row: (
-                len(row) == 29
+                len(row) == 31
                 and row[1] == owner_name
                 and (not database_name or row[2] == database_name)
                 and (not search or search.lower() in str(row[4]).lower())
@@ -746,7 +761,7 @@ class AgentRepository:
             f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
             "WHERE agent_id = %s AND owner_name = %s",
             [agent_id, owner_name],
-            lambda row: len(row) == 29 and row[0] == agent_id and row[1] == owner_name,
+            lambda row: len(row) == 31 and row[0] == agent_id and row[1] == owner_name,
         )
         if not rows:
             return None
@@ -757,7 +772,7 @@ class AgentRepository:
             f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
             "WHERE agent_id = %s AND visibility = 'shared'",
             [agent_id],
-            lambda row: len(row) == 29 and row[0] == agent_id and row[26] == "shared",
+            lambda row: len(row) == 31 and row[0] == agent_id and row[26] == "shared",
         )
         if not rows:
             return None
@@ -782,11 +797,13 @@ class AgentRepository:
             f"WHERE visibility = 'shared' AND agent_id IN ({placeholders}) "
             "ORDER BY updated_at DESC",
             agent_ids,
-            lambda row: len(row) == 29 and row[0] in agent_ids and row[26] == "shared",
+            lambda row: len(row) == 31 and row[0] in agent_ids and row[26] == "shared",
         )
         return [_agent_row(row) for row in rows]
 
-    async def update_agent(self, agent_id: str, *, owner_name: str, fields: dict) -> dict | None:
+    async def update_agent(self, agent_id: str, *, owner_name: str, fields: dict,
+                           expected_revision: str | None = None,
+                           check_revision: bool = False) -> dict | None:
         """Patch the provided fields only; unknown keys are ignored."""
         assignments: list[str] = []
         params: list[Any] = []
@@ -821,20 +838,48 @@ class AgentRepository:
             "default_skills",
             "discoverable_skills",
             "compiled_instructions",
+            "resource_bindings",
         ):
             if column in fields:
                 assignments.append(f"{column} = %s")
                 params.append(_dump(fields[column] or []))
         if assignments:
+            from app.modules.agents.versions import agent_versions, revision_id
+
+            prior = await self.get_agent(agent_id, owner_name=owner_name)
+            if prior is None:
+                return None
+            if check_revision and prior.get("config_revision") != expected_revision:
+                from fastapi import HTTPException
+
+                raise HTTPException(409, "Agent changed. Reload and compare before publishing.")
+            await agent_versions.store(
+                prior, label="Previous configuration", version_id=revision_id(prior)
+            )
+            next_revision = str(uuid4())
+            await agent_versions.store(
+                {**prior, **fields}, label="Saved configuration", version_id=next_revision
+            )
+            assignments.append("config_revision = %s")
+            params.append(next_revision)
             assignments.append("updated_at = %s")
             params.append(_now())
             params.extend([agent_id, owner_name])
-            await db.execute_system(
+            condition = " AND config_revision IS NULL"
+            if prior.get("config_revision") is not None:
+                condition = " AND config_revision = %s"
+                params.append(prior["config_revision"])
+            result = await db.execute_system(
                 "UPDATE NOVA_SYSTEM.CONFIG_AGENTS SET "
                 + ", ".join(assignments)
-                + " WHERE agent_id = %s AND owner_name = %s",
+                + " WHERE agent_id = %s AND owner_name = %s"
+                + condition,
                 params,
             )
+            if result.get("affected") != 1:
+                from fastapi import HTTPException
+
+                raise HTTPException(409, "Agent changed. Reload and compare before publishing.")
         return await self.get_agent(agent_id, owner_name=owner_name)
 
     async def delete_agent(self, agent_id: str, *, owner_name: str) -> bool:

@@ -67,10 +67,12 @@ function Probe() {
     setWidth,
     newChat,
     newChatAndSend,
+    activeContext,
   } = useAssistant();
   return (
     <div>
       <span data-testid="open">{String(open)}</span>
+      <span data-testid="database">{activeContext.database}</span>
       <span data-testid="collapsed">{String(collapsedToPersist())}</span>
       <span data-testid="width">{width}</span>
       <button type="button" onClick={() => setWidth(600)}>
@@ -163,13 +165,14 @@ describe("AssistantProvider", () => {
     await expect.element(screen.getByTestId("messages")).toHaveTextContent("0");
   });
 
-  it("restores the open panel from the fetched tree without WorkspacesPage", async () => {
+  it("stays closed after loading a previously open panel preference", async () => {
     const { getByTestId } = await renderProbe(
       makeTree({ assistant_collapsed: false }),
     );
 
-    await expect.element(getByTestId("open")).toHaveTextContent("true");
-    await expect.element(getByTestId("collapsed")).toHaveTextContent("false");
+    await expect.element(getByTestId("database")).toHaveTextContent("analytics");
+    await expect.element(getByTestId("open")).toHaveTextContent("false");
+    await expect.element(getByTestId("collapsed")).toHaveTextContent("true");
   });
 
   it("keeps a collapsed panel closed when the tree says so", async () => {
@@ -216,7 +219,7 @@ describe("AssistantProvider", () => {
     });
   });
 
-  it("applies the persisted value only once, so a later refetch cannot clobber a toggle", async () => {
+  it("keeps manual open and close choices across workspace refetches", async () => {
     const client = makeClient();
     const fetchSpy = mockTree(makeTree({ assistant_collapsed: false }));
     const { getByTestId, getByRole } = await render(
@@ -226,10 +229,14 @@ describe("AssistantProvider", () => {
         </AssistantProvider>
       </QueryClientProvider>,
     );
-    await expect.element(getByTestId("open")).toHaveTextContent("true");
+    await expect.element(getByTestId("database")).toHaveTextContent("analytics");
+    await expect.element(getByTestId("open")).toHaveTextContent("false");
 
     await getByRole("button", { name: "toggle" }).click();
-    await expect.element(getByTestId("open")).toHaveTextContent("false");
+    await expect.element(getByTestId("open")).toHaveTextContent("true");
+    await client.refetchQueries({ queryKey: ["workspace-tree"] });
+    await expect.element(getByTestId("open")).toHaveTextContent("true");
+    await getByRole("button", { name: "toggle" }).click();
 
     const before = fetchSpy.mock.calls.filter(([input]) =>
       String(input).includes("/workspaces/tree"),

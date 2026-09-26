@@ -102,16 +102,21 @@ async def test_backfill_keeps_concurrent_explicit_unbind(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_new_agent_writes_only_canonical_view_binding(monkeypatch) -> None:
+    from app.modules.agents.versions import agent_versions
+
+    monkeypatch.setattr(agent_versions, "store", AsyncMock())
     writes = []
 
     class FakeDB:
         async def execute_system(self, sql, params=None):
             writes.append((sql, params))
-            return {"rows": []}
+            return {"rows": [], "affected": 1}
 
     monkeypatch.setattr(repository, "db", FakeDB())
     monkeypatch.setattr(
-        repository.AgentRepository, "get_agent", AsyncMock(return_value={"agent_id": "created"})
+        repository.AgentRepository, "get_agent", AsyncMock(return_value={
+            "agent_id": "created", "owner_name": "owner", "name": "Analyst",
+        })
     )
     repo = repository.AgentRepository()
     await repo.create_agent(
@@ -127,7 +132,7 @@ async def test_new_agent_writes_only_canonical_view_binding(monkeypatch) -> None
     await repo.update_agent(
         "created", owner_name="owner", fields={"semantic_view_ids": []}
     )
-    update_sql, update_values = writes[1]
+    update_sql, update_values = next((sql, values) for sql, values in writes if sql.startswith("UPDATE"))
     assert "semantic_view_ids = %s" in update_sql
     assert "semantic_model_ids = %s" not in update_sql
     assert update_values[0] == "[]"

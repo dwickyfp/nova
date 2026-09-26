@@ -28,7 +28,7 @@ def test_tools_are_opt_in_and_consent_gated():
         }
     )
     assert selected.get("semantic_view_query") is semantic_view_query_tool
-    assert selected.get("feature_lookup") is feature_lookup_tool
+    assert isinstance(selected.get("feature_lookup"), type(feature_lookup_tool))
     assert semantic_view_query_tool.requires_consent
     assert feature_lookup_tool.requires_consent
 

@@ -35,7 +35,6 @@ export type {
 } from "./surface-registry";
 export type { NoveAppContext, NoveSurfaceContext, NoveApplicationEvent, NoveEventInput } from "./app-context";
 export {
-  initialAssistantOpen,
   assistantCollapsedToPersist,
   clampAssistantWidth,
   parseAssistantWidth,

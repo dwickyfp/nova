@@ -60,9 +60,12 @@ class DescribeAgentTool:
     classification = "read_only"
     requires_consent = False
 
-    def __init__(self, registry: ToolRegistry, *, name: str = "") -> None:
+    def __init__(
+        self, registry: ToolRegistry, *, name: str = "", resources: dict | None = None
+    ) -> None:
         self.registry = registry
         self.agent_name = name
+        self.resources = resources or {}
 
     def preview(self, invocation: ToolInvocation) -> str:
         return "Read this agent's business catalog"
@@ -82,6 +85,7 @@ class DescribeAgentTool:
             "views_truncated": len(views) > PAGE_SIZE,
             "catalog_tool": self.name,
             "free_form_sql": False,
+            "resource_details_available_with": self.name,
         }
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
@@ -99,6 +103,12 @@ class DescribeAgentTool:
             "session_id": getattr(context, "audit_session_id", None),
         }
         try:
+            from app.modules.agents.resources import authorized_resources
+
+            resources = await authorized_resources(self.resources, {
+                **(context.user or {}), "active_role": getattr(context, "role", None)
+                or (context.user or {}).get("active_role"),
+            })
             unavailable_bindings = 0
             if getattr(context, "collaboration_root", False):
                 from app.modules.agents.auto_planner import authorized_candidates
@@ -144,6 +154,7 @@ class DescribeAgentTool:
             "capabilities_truncated": len(tools) > 32 or len(skills) > 32,
             "evidence_kind": "agent_catalog",
             "free_form_sql": False,
+            "resources": resources,
             "limitations": (
                 "Metadata describes configured capabilities, not current values, row counts, "
                 "freshness, or date coverage. Tool availability alone does not establish "

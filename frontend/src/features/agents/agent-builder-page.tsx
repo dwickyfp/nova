@@ -14,6 +14,7 @@ import { AgentOverviewTab } from "./agent-detail/overview-tab";
 import { AgentConfigurationTab } from "./agent-detail/configuration-tab";
 import { AgentAccessTab } from "./agent-detail/access-tab";
 import { AgentObservabilityTab } from "./agent-detail/observability-tab";
+import { AgentVersionHistory } from "./agent-detail/version-history";
 
 /**
  * Agent detail — the four-tab surface: Overview, Configuration, Access, and
@@ -24,6 +25,8 @@ export function AgentBuilderPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState("overview");
+  const [draftVersion, setDraftVersion] = useState<string | null>(null);
+  const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false);
 
   const agentQuery = useQuery({
     queryKey: ["agents", "detail", agentId],
@@ -48,6 +51,10 @@ export function AgentBuilderPage() {
     );
   };
 
+  if (agentQuery.isError) {
+    return <><Header fixed /><Main scroll><h1 className="text-xl">Agent</h1><p role="alert">Could not load this agent.</p>
+      <Button onClick={() => agentQuery.refetch()}>Retry</Button></Main></>;
+  }
   if (agentQuery.isLoading || !agentQuery.data) {
     return (
       <>
@@ -64,14 +71,14 @@ export function AgentBuilderPage() {
   return (
     <>
       <Header fixed />
-      <Main scroll>
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <Main fixed>
+        <div className="mb-4 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="truncate text-2xl leading-8 font-normal">
                 {agent.name}
               </h1>
-              <Badge variant="outline">Draft</Badge>
+              <Badge variant="outline">Active</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               {(agent.semantic_view_ids ?? []).length > 0
@@ -82,7 +89,8 @@ export function AgentBuilderPage() {
               Updated {new Date(agent.updated_at).toLocaleString()}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <AgentVersionHistory agent={agent} requestedVersion={draftVersion} hasUnsavedEdits={hasUnsavedEdits} onClose={() => setDraftVersion(null)} />
             <Button variant="outline" onClick={openStudio}>
               <MessageSquarePlus className="size-4" />
               Open in Nova Studio
@@ -99,8 +107,8 @@ export function AgentBuilderPage() {
           </div>
         </div>
 
-        <Tabs value={tab} onValueChange={setTab} className="min-h-0">
-          <TabsList>
+        <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 overflow-y-auto">
+          <TabsList className="h-auto flex-wrap">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="configuration">Configuration</TabsTrigger>
             <TabsTrigger value="access">Access</TabsTrigger>
@@ -110,9 +118,11 @@ export function AgentBuilderPage() {
           <TabsContent value="overview" className="mt-6">
             <AgentOverviewTab agentId={agentId} />
           </TabsContent>
-          <TabsContent value="configuration" className="mt-6">
+          <TabsContent value="configuration" forceMount className="mt-6 data-[state=inactive]:hidden">
             <AgentConfigurationTab
               agent={agent}
+              onDirtyChange={setHasUnsavedEdits}
+              onDraftSaved={(id) => { queryClient.invalidateQueries({ queryKey: ["agent-versions", agentId] }); setDraftVersion(id); }}
               onSaved={() =>
                 queryClient.invalidateQueries({
                   queryKey: ["agents", "detail", agentId],

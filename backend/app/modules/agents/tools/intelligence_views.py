@@ -113,6 +113,9 @@ class SemanticViewQueryTool:
 
 
 class FeatureLookupTool:
+    def __init__(self, bindings: dict | None = None) -> None:
+        self.groups = frozenset((bindings or {}).get("feature_groups") or [])
+
     name = "feature_lookup"
     description = "Look up a Nova Feature Group by its governed entity key."
     parameters = {
@@ -144,6 +147,13 @@ class FeatureLookupTool:
         group = invocation.arguments.get("group")
         if not isinstance(group, str) or not group:
             return ToolOutcome(ok=False, summary="", error="Feature Group is required")
+        if getattr(context, "agent_id", None) and group not in self.groups:
+            return ToolOutcome(
+                ok=False,
+                summary="",
+                error="Feature Group is not bound to this agent",
+                error_class="POLICY_VIOLATION",
+            )
         entity_key = invocation.arguments.get("entity_key")
         if not isinstance(entity_key, dict):
             return ToolOutcome(ok=False, summary="", error="Invalid entity key")

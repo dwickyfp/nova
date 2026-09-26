@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bot, Wand2 } from 'lucide-react'
+import { Bot, GitBranch, Wand2 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Search } from '@/components/search'
@@ -36,7 +36,10 @@ export function AIProviders() {
               <Wand2 className="size-3.5" />
               Functions
             </TabsTrigger>
-            <TabsTrigger value="decision">Decision</TabsTrigger>
+            <TabsTrigger value="decision" className="gap-1.5">
+              <GitBranch className="size-3.5" />
+              Decision
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="providers" className="mt-4">
             <ProvidersTab />

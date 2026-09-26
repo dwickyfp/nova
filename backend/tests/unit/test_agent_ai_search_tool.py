@@ -11,7 +11,8 @@ from app.modules.intelligence.search import search_service
 def test_ai_search_is_selected_only_when_agent_bundles_it():
     assert build_registry({"default_tools": []}).get("ai_search") is None
     selected = build_registry({"default_tools": ["ai_search"]}).get("ai_search")
-    assert selected is ai_search_tool
+    assert isinstance(selected, type(ai_search_tool))
+    assert selected is not ai_search_tool
     assert selected.requires_consent is True
 
 

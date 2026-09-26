@@ -123,7 +123,7 @@ describe("AssistantDock", () => {
     }
   });
 
-  it("restores an open panel from the tree without WorkspacesPage mounted", async () => {
+  it("starts closed even when the saved panel preference is open", async () => {
     await page.viewport(1440, 900);
     try {
       const { getByRole, container } = await renderLayout(
@@ -131,13 +131,13 @@ describe("AssistantDock", () => {
       );
 
       await expect
-        .element(getByRole("button", { name: "Close assistant" }))
+        .element(getByRole("button", { name: "Ask Nove" }))
         .toBeInTheDocument();
       await expect
         .poll(() =>
           container.querySelector("#assistant-panel")?.hasAttribute("inert"),
         )
-        .toBe(false);
+        .toBe(true);
     } finally {
       await page.viewport(375, 800);
     }
@@ -286,6 +286,7 @@ describe("AssistantDock", () => {
         makeTree({ assistant_collapsed: false }),
         "database-explorer",
       );
+      await wide.getByRole("button", { name: "Ask Nove" }).click();
       await expect
         .element(wide.getByRole("complementary", { name: "Nove" }))
         .toBeInTheDocument();
@@ -299,6 +300,8 @@ describe("AssistantDock", () => {
         makeTree({ assistant_collapsed: false }),
         "database-explorer",
       );
+      await expect.element(narrow.getByRole("dialog")).not.toBeInTheDocument();
+      await narrow.getByRole("button", { name: "Ask Nove" }).click();
       // Below md the panel is a Sheet overlay with its own close control; the
       // FAB is the trigger that opened it and is inert behind the overlay.
       const dialog = narrow.getByRole("dialog");

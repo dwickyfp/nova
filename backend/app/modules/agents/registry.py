@@ -73,20 +73,20 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
             pass
 
     if "ai_search" in selected:
-        from app.modules.agents.tools.ai_search import ai_search_tool
+        from app.modules.agents.tools.ai_search import AISearchTool
 
-        registry.register(ai_search_tool)
+        registry.register(AISearchTool(agent.get("resource_bindings")))
 
     if "semantic_view_query" in selected or "feature_lookup" in selected:
         from app.modules.agents.tools.intelligence_views import (
-            feature_lookup_tool,
+            FeatureLookupTool,
             semantic_view_query_tool,
         )
 
         if "semantic_view_query" in selected:
             registry.register(semantic_view_query_tool)
         if "feature_lookup" in selected:
-            registry.register(feature_lookup_tool)
+            registry.register(FeatureLookupTool(agent.get("resource_bindings")))
 
     if "data_to_chart" in selected:
         try:

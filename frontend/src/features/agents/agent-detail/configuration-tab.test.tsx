@@ -59,8 +59,8 @@ describe("AgentConfigurationTab", () => {
   it("keeps business tools and removes legacy free-form SQL on save", async () => {
     const updates: Record<string, unknown>[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (init?.method === "PUT") {
-        updates.push(JSON.parse(init.body as string));
+      if (init?.method === "POST") {
+        updates.push(JSON.parse(init.body as string).configuration);
         return response(AGENT);
       }
       const url = String(input);
@@ -85,7 +85,7 @@ describe("AgentConfigurationTab", () => {
     await expect.element(screen.getByText("semantic_query", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("query_execute", { exact: true })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("checkbox", { name: /semantic_query/ })).toBeChecked();
-    await screen.getByRole("button", { name: "Save changes" }).click();
+    await screen.getByRole("button", { name: "Save draft" }).click();
     await vi.waitFor(() => expect(updates[0]?.default_tools).toEqual(["semantic_query"]));
   });
 
@@ -143,8 +143,8 @@ describe("AgentConfigurationTab", () => {
   it("saves the selected provider and model and restores the default", async () => {
     const updates: Record<string, unknown>[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (init?.method === "PUT") {
-        updates.push(JSON.parse(init.body as string));
+      if (init?.method === "POST") {
+        updates.push(JSON.parse(init.body as string).configuration);
         return response(AGENT);
       }
       const url = String(input);
@@ -211,7 +211,7 @@ describe("AgentConfigurationTab", () => {
     await screen
       .getByRole("option", { name: "Chat model · Provider B" })
       .click();
-    await screen.getByRole("button", { name: "Save changes" }).click();
+    await screen.getByRole("button", { name: "Save draft" }).click();
     await vi.waitFor(() =>
       expect(updates[0]).toMatchObject({
         model_provider_id: "b",
@@ -222,7 +222,7 @@ describe("AgentConfigurationTab", () => {
     await screen
       .getByRole("option", { name: "Provider default", exact: true })
       .click();
-    await screen.getByRole("button", { name: "Save changes" }).click();
+    await screen.getByRole("button", { name: "Save draft" }).click();
     await vi.waitFor(() =>
       expect(updates[1]).toMatchObject({
         model_provider_id: null,
@@ -292,14 +292,14 @@ describe("AgentConfigurationTab", () => {
     await expect.element(mode).toBeVisible();
     await mode.click();
     await screen.getByRole("option", { name: "Discoverable" }).click();
-    await screen.getByRole("button", { name: "Save changes" }).click();
+    await screen.getByRole("button", { name: "Save draft" }).click();
 
     await vi.waitFor(() => {
       const update = fetchMock.mock.calls.find(
-        ([, init]) => init?.method === "PUT",
+        ([, init]) => init?.method === "POST",
       );
       expect(update).toBeDefined();
-      const body = JSON.parse(update?.[1]?.body as string);
+      const body = JSON.parse(update?.[1]?.body as string).configuration;
       expect(body.discoverable_skills).toEqual(["revenue-analysis"]);
       expect(body.default_skills).toEqual([]);
       expect(body.harness_mode).toBe("auto");
@@ -310,8 +310,8 @@ describe("AgentConfigurationTab", () => {
   it("lets the owner explicitly enable an external MCP tool", async () => {
     const updates: Record<string, unknown>[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (init?.method === "PUT") {
-        updates.push(JSON.parse(init.body as string));
+      if (init?.method === "POST") {
+        updates.push(JSON.parse(init.body as string).configuration);
         return response(AGENT);
       }
       const url = String(input);
@@ -347,7 +347,7 @@ describe("AgentConfigurationTab", () => {
       .element(screen.getByText("External calls always require approval."))
       .toBeVisible();
     await screen.getByRole("checkbox", { name: /lookup_customer/ }).click();
-    await screen.getByRole("button", { name: "Save changes" }).click();
+    await screen.getByRole("button", { name: "Save draft" }).click();
     await vi.waitFor(() =>
       expect(updates[0]?.default_tools).toContain("mcp:tool-1"),
     );
@@ -356,8 +356,8 @@ describe("AgentConfigurationTab", () => {
   it("binds only published Semantic Views using semantic_view_ids", async () => {
     const updates: Record<string, unknown>[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (init?.method === "PUT") {
-        updates.push(JSON.parse(init.body as string));
+      if (init?.method === "POST") {
+        updates.push(JSON.parse(init.body as string).configuration);
         return response(AGENT);
       }
       const url = String(input);
@@ -381,7 +381,7 @@ describe("AgentConfigurationTab", () => {
     await expect.element(screen.getByRole("option", { name: /Forecast/ })).not.toBeInTheDocument();
     await screen.getByRole("option", { name: /Sales/ }).click();
     await screen.getByRole("button", { name: "Add Semantic View" }).click();
-    await screen.getByRole("button", { name: "Save changes" }).click();
+    await screen.getByRole("button", { name: "Save draft" }).click();
     await vi.waitFor(() => expect(updates[0]?.semantic_view_ids).toEqual(["view-active"]));
     expect(updates[0]?.semantic_model_ids).toBeUndefined();
   });
