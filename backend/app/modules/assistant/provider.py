@@ -161,6 +161,8 @@ class AssistantProviderClient:
         """
         providers = await ai_service.list_providers()
         for provider in providers:
+            if provider.get("type") == "decision":
+                continue
             if not provider.get("is_active", True) or not provider.get("has_api_key"):
                 continue
             if provider_id and provider["id"] != provider_id:
@@ -212,7 +214,10 @@ class AssistantProviderClient:
         default name; the provider itself then rejects it with a clear error.
         """
         models = await ai_service.list_models(provider_id)
-        active = [m["name"] for m in models if m.get("is_active", True)]
+        active = [
+            m["name"] for m in models
+            if m.get("is_active", True) and m.get("type") != "decision"
+        ]
         if requested:
             if requested not in active:
                 raise AssistantProviderError(

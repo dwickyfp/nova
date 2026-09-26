@@ -446,12 +446,22 @@ class LLMFunctionService:
                 "error": f"Provider {alias['provider_id']} not found",
             }
 
+        model = await self._get_model(alias["model_id"]) if alias.get("model_id") else None
+        if provider.get("type") == "decision" or (model and model.get("type") == "decision"):
+            return {
+                "function_name": template["function_name"],
+                "function_type": function_type,
+                "alias_name": alias.get("alias_name"),
+                "provider_name": alias.get("provider_name"),
+                "model_name": alias.get("model_name"),
+                "registered": False,
+                "error": "Decision providers and models support registration only.",
+            }
+
         # Resolve model name
         model_name = alias.get("model_name")
-        if not model_name and alias.get("model_id"):
-            model = await self._get_model(alias["model_id"])
-            if model:
-                model_name = model["name"]
+        if not model_name and model:
+            model_name = model["name"]
 
         # Build config JSON for ai_query()
         # NOTE: StarRocks ai_query() config fields:

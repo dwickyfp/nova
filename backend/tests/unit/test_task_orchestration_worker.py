@@ -68,14 +68,13 @@ class FakeRepository:
             "definition": body,
             "database_name": None,
             "created_by": owner,
+            "owner_role": "analyst",
             "schedule_kind": "manual",
             "when_expr": when_expr,
         }
         return tid
 
-    def add_edge(
-        self, graph_id: str, parent: str, child: str, edge_kind: str = "after"
-    ) -> None:
+    def add_edge(self, graph_id: str, parent: str, child: str, edge_kind: str = "after") -> None:
         self.edges.setdefault(graph_id, []).append(
             {
                 "id": f"e_{parent}_{child}",
@@ -101,6 +100,8 @@ class FakeRepository:
             "id": run_id,
             "graph_id": graph_id,
             "trigger_type": "schedule",
+            "execution_user": "alice",
+            "execution_role": "analyst",
             "state": state,
             "overlap_policy": overlap_policy,
             "wal_marks": None,
@@ -108,6 +109,9 @@ class FakeRepository:
         }
 
     # ── repository surface ─────────────────────────────────────
+    async def get_role_execution_user(self, role):
+        return "alice"
+
     async def get_graph_run(self, run_id: str):
         return self.graph_runs.get(run_id)
 
@@ -179,8 +183,7 @@ class FakeRepository:
 
     async def list_stale_task_runs(self, older_than_seconds, *, limit=200):
         return [
-            r for r in self.task_runs.values()
-            if r["state"] == "running" and r.get("running_stale")
+            r for r in self.task_runs.values() if r["state"] == "running" and r.get("running_stale")
         ]
 
     async def list_stale_graph_runs(self, older_than_seconds, *, limit=200):
@@ -241,9 +244,7 @@ def audit(monkeypatch):
         captured.append(kwargs)
         return "audit-id"
 
-    monkeypatch.setattr(
-        "app.modules.task_orchestration.worker.write_audit_log", fake_audit
-    )
+    monkeypatch.setattr("app.modules.task_orchestration.worker.write_audit_log", fake_audit)
     return captured
 
 
@@ -369,7 +370,56 @@ class TestWhenFalse:
 
 
 class TestDelegateFirst:
-    async def test_node_is_submitted_on_its_owners_connection(self, audit):
+    async def test_manual_run_uses_persisted_caller_for_entire_graph(self, audit):
+        repo = FakeRepository()
+        repo.add_task("A", owner="nova_admin", when_expr="1=1")
+        repo.add_task("B", owner="root")
+        repo.add_edge("g", "A", "B")
+        repo.add_graph_run("manual", "g")
+        repo.graph_runs["manual"].update(
+            trigger_type="manual",
+            execution_user="dwicky.f.putra",
+            execution_role="analyst",
+            execution_session_id="caller-session",
+        )
+        executor = RecordingExecutor()
+        result = await GraphRunWorker(repo, executor).handle(
+            GraphRunJob(
+                "manual",
+                "g",
+                trigger_type="schedule",
+                execution_user="root",
+                execution_role="ACCOUNTADMIN",
+            )
+        )
+        assert result == GraphState.SUCCESS
+        assert len(executor.submissions) == 2
+        assert all(
+            owner == "dwicky.f.putra" and spec.active_role == "analyst"
+            for spec, owner in executor.submissions
+        )
+        assert repo.tasks["id_A"]["created_by"] == "nova_admin"
+        assert all(
+            entry["user_name"] == "dwicky.f.putra"
+            for entry in audit
+            if entry.get("object_type") == "TASK"
+        )
+
+    async def test_manual_run_without_snapshot_cannot_fall_back_to_owner(self, audit):
+        repo = FakeRepository()
+        repo.add_task("A", owner="root")
+        repo.add_graph_run("manual", "id_A")
+        repo.graph_runs["manual"]["trigger_type"] = "manual"
+        repo.graph_runs["manual"]["execution_user"] = None
+        executor = RecordingExecutor()
+        assert (
+            await GraphRunWorker(repo, executor).handle(GraphRunJob("manual", "id_A"))
+            == GraphState.FAILED
+        )
+        assert not executor.submissions
+        assert "no execution identity" in next(iter(repo.task_runs.values()))["error_message"]
+
+    async def test_scheduled_node_uses_service_identity_not_creator(self, audit):
         repo = FakeRepository()
         repo.add_task("A", owner="bob")
         repo.add_graph_run("gr1", "id_A")
@@ -381,9 +431,10 @@ class TestDelegateFirst:
                     name="A",
                     body="INSERT INTO t SELECT 1",
                     database=None,
+                    active_role="analyst",
                     native_name=native_attempt_name("tr_gr1_id_A"),
                 ),
-                "bob",
+                "alice",
             )
         ]
 
@@ -417,14 +468,15 @@ class TestDelegateFirst:
         second = native_attempt_name("node-run-2")
         assert first != second
         assert first == native_attempt_name("node-run-1")
-        assert build_submit_task(
-            TaskSpec("t", "INSERT INTO x SELECT 1", database="db", native_name=first)
-        ) == f"SUBMIT TASK `db`.`{first}` AS INSERT INTO x SELECT 1"
+        assert (
+            build_submit_task(
+                TaskSpec("t", "INSERT INTO x SELECT 1", database="db", native_name=first)
+            )
+            == f"SUBMIT TASK `db`.`{first}` AS INSERT INTO x SELECT 1"
+        )
 
     def test_identifier_is_escaped(self):
-        assert build_submit_task(TaskSpec("a`b", "SELECT 1")) == (
-            "SUBMIT TASK `a``b` AS SELECT 1"
-        )
+        assert build_submit_task(TaskSpec("a`b", "SELECT 1")) == ("SUBMIT TASK `a``b` AS SELECT 1")
 
 
 def executor_none(row: dict[str, Any]) -> bool:
@@ -500,9 +552,10 @@ class TestIdempotency:
 
     async def test_missing_graph_run_is_not_fatal(self, audit):
         repo = FakeRepository()
-        assert await GraphRunWorker(repo, RecordingExecutor()).handle(
-            GraphRunJob("missing", "g")
-        ) is None
+        assert (
+            await GraphRunWorker(repo, RecordingExecutor()).handle(GraphRunJob("missing", "g"))
+            is None
+        )
 
 
 class TestRestartSafety:
@@ -567,9 +620,7 @@ class TestFinalizeOwnership:
     churn).
     """
 
-    async def test_result_is_dropped_and_not_audited_when_row_was_abandoned(
-        self, audit
-    ):
+    async def test_result_is_dropped_and_not_audited_when_row_was_abandoned(self, audit):
         repo = FakeRepository()
         repo.add_task("A")
         repo.add_graph_run("gr1", "id_A", state="running")
@@ -646,16 +697,14 @@ class TestEngineObservationResilience:
         monkeypatch.setattr(
             execution_module.DelegateExecutor, "_latest_create_time", failing_watermark
         )
-        monkeypatch.setattr(
-            execution_module.DelegateExecutor, "_await_completion", _no_wait
-        )
+        monkeypatch.setattr(execution_module.DelegateExecutor, "_await_completion", _no_wait)
 
         executor = DelegateExecutor(StaticCredentialProvider({"bob": "pw"}))
         result = await executor.execute(
             TaskSpec("A", "INSERT INTO secret SELECT 1", database="db"), "bob"
         )
         assert result.state == "FINISHED"
-        assert submitted and submitted[0].startswith("SUBMIT TASK")
+        assert submitted == ["USE `db`", "SUBMIT TASK `db`.`A` AS INSERT INTO secret SELECT 1"]
 
     async def test_poll_failure_is_retried_not_fatal(self):
         calls = {"n": 0}

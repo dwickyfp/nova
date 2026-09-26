@@ -61,8 +61,8 @@ async def persist_lowered_task(
     """Write ``task`` and its edges, then validate the merged graph.
 
     ``created_by`` is the Nova user who ran the statement; it becomes the task's
-    ``created_by`` and therefore the identity the worker submits ``SUBMIT TASK``
-    as (delegate-first, design D9.4). No password is accepted or stored.
+    ``created_by`` audit field. ``owner_role`` controls shared access and must
+    match the connected graph. No password is accepted or stored.
 
     ``graph_id`` defaults to the predecessor's existing graph, or the first
     predecessor's qualified name when the graph has no edges yet. A standalone
@@ -75,6 +75,8 @@ async def persist_lowered_task(
     leaves no partial task behind.
     """
     graph_key = graph_id or await _graph_key_for_task(task)
+    if owner_role:
+        await _validate_owner_role(task, graph_key, owner_role)
 
     created_task = await task_orchestration_repository.create_task(
         {
@@ -129,6 +131,26 @@ async def persist_lowered_task(
         raise
 
     return PersistedTask(task=created_task, edges=created_edges)
+
+
+async def _validate_owner_role(task: LoweredTask, graph_key: str, role: str) -> None:
+    rows = [
+        row
+        for row in await task_orchestration_repository.list_tasks()
+        if (row.get("database_name"), row.get("schema_name"))
+        == (task.database_name, task.schema_name)
+    ]
+    by_name = {row["name"]: row for row in rows}
+    parents = [*task.after, *([task.finalize] if task.finalize else [])]
+    for name in parents:
+        if name not in by_name or by_name[name].get("owner_role") != role:
+            raise TaskLoweringError("Dependencies must exist and belong to the active owner role")
+    graph_edges = await task_orchestration_repository.list_edges(graph_key)
+    members = {
+        endpoint for edge in graph_edges for endpoint in (edge["parent_task"], edge["child_task"])
+    }
+    if any(name not in by_name or by_name[name].get("owner_role") != role for name in members):
+        raise TaskLoweringError("All graph nodes must have the same owner role")
 
 
 async def _graph_key_for_task(task: LoweredTask) -> str:

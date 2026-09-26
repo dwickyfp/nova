@@ -24,23 +24,28 @@ or a small `SELECT`.
 4. **inject** — adds CSV properties and storage credentials into the `FILES()`.
 5. **redact** — replaces credential values with `***` before audit/return.
 
-A statement with no `@stage` passes through byte-identical after the guard.
+Native statements without Nova extensions pass to StarRocks after guards and
+context normalization. ML, task, and password-policy SQL have their own Nova
+interceptions even without `@stage`.
 
 ## Diagnostic checklist
 
 - **"Stage '…' not found"** — the stage name is wrong or lives in another
-  database/schema. Confirm with `SHOW STAGES` / the object browser; a cross-schema
+  database/schema. Confirm in the object browser; a cross-schema
   stage is `@schema.stage…`.
 - **Destructive statement refused** — `DROP`/`TRUNCATE`/`ALTER … DROP`/`DELETE`/
-  `UPDATE` need `confirm_destructive=true`, and the assistant never confirms.
-  Explain that and hand the statement to the user.
+  `UPDATE` need explicit approval. Draft the correction when requested; for a
+  requested write use query_mutate and its approval flow. Consent cannot
+  override a protected-object block or missing database privilege.
 - **Protected-object block** — `DROP ROLE ACCOUNTADMIN`, revokes/alters on
   `ACCOUNTADMIN`, `DROP USER root`, `DROP GLOBAL FUNCTION` of a Nova UDF are
   hard-blocked. There is no workaround; say so.
-- **Engine syntax error on `LIST`** — `LIST @stage` is parsed but StarRocks has no
-  `LIST`; it is not implemented.
-- **"function not found" on `AI_*`** — should not happen; the UDFs return an
-  error string when unconfigured. If it does, the UDF registration is missing.
+- **Engine syntax error on `LIST`** — Nova lowers `LIST @stage/` to FILES listing
+  options. Check that the query went through Nova's dialect pipeline and that
+  the stage resolved; native StarRocks alone does not understand this extension.
+- **"function not found" on `AI_*`** — verify UDF registration and deployment
+  configuration. An existing UDF with no provider alias can instead return an
+  error string. Do not promise that functions are installed from documentation.
 - **Unknown column/table** — confirm via `DESCRIBE <db>.<table>` before rewriting.
 - **Permission denied (5203)** — the user's role lacks a privilege. RBAC is
   enforced by StarRocks on the user's own connection; do not retry with elevated
@@ -51,8 +56,8 @@ A statement with no `@stage` passes through byte-identical after the guard.
 1. Restate the error in one line and name the pipeline stage.
 2. If the schema is in doubt, run a read-only inspection (`DESCRIBE`, `SHOW`).
 3. Propose the **corrected statement**, with the change called out.
-4. If the fix needs a destructive or protected action, explain why you cannot run
-   it and leave it for the user.
+4. Validate corrected syntax. Execute only when requested and approved, then
+   report the actual result. Refuse protected actions without a workaround.
 
 ## Caveats
 

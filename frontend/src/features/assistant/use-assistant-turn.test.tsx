@@ -21,6 +21,21 @@ vi.mock("./thread-client", () => ({
 
 type Turn = ReturnType<typeof useAssistantTurn>;
 
+it("prepends older messages and retains the pagination cursor in a snapshot", async () => {
+  const msg = (id: string) => ({ message_id: id, role: "user", content: id, created_at: "2026-09-25T00:00:00Z" });
+  getThread.mockResolvedValueOnce({ thread: { thread_id: "paged" }, messages: [msg("new")], next_cursor: "older" });
+  const holder: { current: Turn | null } = { current: null };
+  await render(<Harness holder={holder} />);
+  await holder.current!.loadThread("paged");
+  await expect.poll(() => holder.current!.olderCursor).toBe("older");
+  expect(holder.current!.snapshot().olderCursor).toBe("older");
+  getThread.mockResolvedValueOnce({ thread: { thread_id: "paged" }, messages: [msg("old")], next_cursor: null });
+  await holder.current!.loadOlderMessages();
+  await expect.poll(() => holder.current!.messages.map((m) => m.message_id)).toEqual(["old", "new"]);
+  expect(getThread).toHaveBeenLastCalledWith("paged", "older");
+  expect(holder.current!.olderCursor).toBeNull();
+});
+
 function Harness({
   holder,
   ensureThread = async () => "t-1",

@@ -10,8 +10,8 @@ source: docs/sql_docs/08-native-starrocks-sql.md
 
 Author `CREATE TABLE` DDL that StarRocks 4.1.4 accepts. Nova passes table DDL
 through to the engine unchanged (no interception), so the statement must already
-be valid StarRocks SQL. You write the DDL; you never run it — only a human runs
-it.
+be valid StarRocks SQL. Draft when asked for SQL; use query_mutate with approval
+only when the user asks to execute it.
 
 ## Rules
 
@@ -25,6 +25,8 @@ it.
   - **Duplicate Key** (`DUPLICATE KEY(col)`) — append-only facts; use for
     immutable event/analytics data.
   - **Aggregate** (`AGGREGATE KEY(...)`) — pre-aggregated rollups.
+  - **Unique Key** (`UNIQUE KEY(...)`) — replacement by key; a separate table
+    model from Primary Key, with different storage/update behavior.
 - `DISTRIBUTED BY HASH(key) BUCKETS n` — pick a high-cardinality key; 4–16
   buckets is a reasonable default for dev.
 - Set `PROPERTIES("replication_num" = "1")` for a single-node/dev cluster; omit
@@ -64,12 +66,31 @@ Database first if needed:
 CREATE DATABASE IF NOT EXISTS analytics;
 ```
 
+Daily expression partitioning automatically creates partitions while loading:
+
+```sql
+CREATE TABLE analytics.daily_events (
+  event_date DATE NOT NULL,
+  event_id BIGINT,
+  quantity BIGINT
+) DUPLICATE KEY(event_date, event_id)
+PARTITION BY date_trunc('day', event_date)
+DISTRIBUTED BY HASH(event_id) BUCKETS 8;
+```
+
+Expression partitioning uses `PARTITION BY date_trunc('day', column)` (or
+another supported granularity). `PARTITION BY RANGE(column)` with
+`START ... END ... EVERY ...` pre-creates a fixed range; it is not a substitute
+for the requested expression form. Key and partition columns must satisfy the
+selected table model. Do not invent date boundaries the user did not request.
+See https://docs.starrocks.io/docs/table_design/data_distribution/expression_partitioning/.
+
 ## Notes and caveats
 
-- `PRIMARY KEY` / `DISTRIBUTED BY` / `PROPERTIES` are StarRocks 4.x semantics.
-  The exact option set is upstream-defined; treat anything beyond the shown
-  clauses as needing the user's confirmation rather than inventing it.
+- For additional clauses, use `search_knowledge` with `syntax:CREATE TABLE`
+  and the referenced grammar rule, then `validate_sql`. Ask for missing design
+  requirements only when they affect the requested result.
 - If the request needs a table type or clause you are not certain of, say so and
   offer the closest valid form instead of guessing.
 - Cap the reply to the DDL plus a one-line rationale for the key/distribution
-  choice. Do not execute it.
+  choice. Do not execute a drafting request.

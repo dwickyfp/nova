@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { History, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,14 +41,16 @@ export function ThreadHistory({
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isError, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ["assistant-threads"],
-    queryFn: listThreads,
+    queryFn: ({ pageParam }) => pageParam ? listThreads(pageParam) : listThreads(),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: open,
     staleTime: 0,
   });
 
-  const threads = data?.threads ?? [];
+  const threads = [...new Map(data?.pages.flatMap((page) => page.threads).map((thread) => [thread.thread_id, thread]) ?? []).values()];
 
   const handleSelect = (thread: ThreadView) => {
     setOpen(false);
@@ -84,7 +86,7 @@ export function ThreadHistory({
         <ScrollArea className="h-80">
           {threads.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-              {isFetching ? "Loading…" : "No conversations yet."}
+              {isFetching ? "Loading…" : isError ? "History is unavailable." : hasNextPage ? "More conversations are available." : "No conversations yet."}
             </p>
           ) : (
             <ul className="flex flex-col p-1">
@@ -121,6 +123,14 @@ export function ThreadHistory({
             </ul>
           )}
         </ScrollArea>
+        {isError || hasNextPage ? (
+          <div className="border-t p-2">
+            <Button type="button" variant="ghost" size="sm" className="h-auto w-full py-3 sm:py-2" disabled={isFetching}
+              onClick={() => void (isError ? refetch() : fetchNextPage())}>
+              {isFetchingNextPage ? "Loading…" : isError ? "Retry history" : "Load more conversations"}
+            </Button>
+          </div>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

@@ -29,6 +29,10 @@ function requestedUrl(index = 0) {
 }
 
 describe("agents api paths", () => {
+  it("loads unified history without an agent filter", async () => {
+    await agentsApi.listThreads();
+    expect(requestedUrl()).toBe("/api/v1/agents/threads?limit=50");
+  });
   it("uses the Semantic View rule proposal path", async () => {
     await agentsApi.listRuleProposals("view/with space");
     expect(requestedUrl()).toBe("/api/v1/semantic-views/view%2Fwith%20space/rule-proposals");
@@ -41,7 +45,7 @@ describe("agents api paths", () => {
 
   it("encodes both ids in the thread detail path", async () => {
     await agentsApi.getThread("a b", "c/d");
-    expect(requestedUrl()).toBe("/api/v1/agents/a%20b/threads/c%2Fd");
+    expect(requestedUrl()).toBe("/api/v1/agents/a%20b/threads/c%2Fd?limit=50");
   });
 
   it("posts a tool-call decision to the agent-scoped path", async () => {

@@ -1,57 +1,40 @@
-"""Read-only API for Nova task orchestration.
+"""Role-scoped task metadata and manual run API.
 
-These endpoints expose the `CREATE TASK` surface — graphs, their edges, and their
-runs — which the native `/tasks` API does not: `/tasks` reads StarRocks'
-`information_schema.tasks` (native `SUBMIT TASK`), not Nova's `CONFIG_TASK*`
-metadata. Without this, a task created by `CREATE TASK` is invisible to the UI.
+A caller can read a graph when every node belongs to their active role.
+Active task administrators can inspect every graph, but running still requires
+activating its common owner role. Role membership is checked on each request.
+Legacy definitions without a role remain private to their creator and cannot
+run until an administrator assigns ownership.
 
-**Read-only by construction.** Every route is `GET`, and nothing here calls a
-repository write method. There is no mutation path through this router.
-
-**Authorization.** The data lives in `NOVA_SYSTEM.CONFIG_TASK*` and is read
-through the system pool, so StarRocks' own grant filter does **not** apply the
-way it does on the caller-scoped `/tasks` path. Nova therefore enforces
-ownership itself, in the backend, on every request:
-
-* a caller sees a graph only if they own **every** task in it (`created_by`);
-* a caller holding an admin role (`ACCOUNTADMIN` or a StarRocks security role)
-  sees every graph, matching `/users`;
-* an unknown **or** unauthorized graph id returns the same `404`, so the API does
-  not reveal that someone else's graph exists.
-
-**Why "every" and not "any".** A graph can contain nodes owned by different
-users: `CREATE TASK x AFTER a` does not check who owns `a`, so a mixed-ownership
-graph is reachable. Under an "any" rule, a user who owns one node would see the
-definitions of the others — their `when_expr`, schedule and `created_by`. A graph
-that contains a node owned by another user is therefore **fail-closed**: it is
-invisible to every non-admin. That is the safe default; sharing a graph across
-owners is a feature that would need its own permission model, not a looser
-default.
-
-This is deliberately not a second authorization system: it reuses the same
-`created_by` the worker submits as, and the same admin-role list `/users` uses.
-
-**Credential-invisible.** Responses carry ids, names, states, timings and
-schedule metadata only. The task *body* is not exposed (it can name a `@stage`
-whose credentials Nova injects at execution), and `error_message` is redacted
-with the same helper the worker uses.
+Manual runs persist the caller, role, and exact session reference before queue
+publication. The worker authenticates from that session; scheduled runs use a
+separate role-bound service identity. Creators are retained as audit metadata.
+Unknown and unauthorized graphs both return 404. SQL and errors are redacted.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any, get_args
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.common.audit import write_audit_log
 from app.common.sql_guard import redact_sql_credentials
+from app.core.config import settings
 from app.core.deps import get_current_user
 
 from . import schemas
+from .access import graph_role, is_task_admin, owns_task, verify_active_role
 from .dag import finalizer_targets
 from .repository import TaskOrchestrationRepository
 from .repository import task_orchestration_repository as _repository
+from .scheduler import should_enqueue
+from .transport import RedisGraphRunTransport
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 #: Roles that may read every graph. Mirrors `modules/users/router.py:ADMIN_ROLES`
 #: — `ACCOUNTADMIN` is the Nova super user; the rest are the StarRocks security
@@ -65,8 +48,7 @@ current_user = Depends(get_current_user)
 
 
 def _is_admin(user: dict[str, Any]) -> bool:
-    roles = user.get("roles") or []
-    return any(role in roles for role in ADMIN_ROLES)
+    return is_task_admin(user)
 
 
 def _qualified_name(task: dict[str, Any]) -> str:
@@ -92,13 +74,12 @@ def _owned_by_caller(task: dict[str, Any], user: dict[str, Any]) -> bool:
     (``all(...)`` in :meth:`_GraphAccess.visible_graph_ids`); one unowned node
     makes the whole graph fail closed. See the module docstring for why.
 
-    ``created_by`` is the Nova user who ran `CREATE TASK`, and is the same
-    identity the worker submits the node as (delegate-first). An unset owner is
-    not treated as world-readable: only an admin sees it.
+    ``owner_role`` is compared with the active role. Legacy tasks without a
+    role remain private to the creator; active administrators can inspect them.
     """
     if _is_admin(user):
         return True
-    return str(task.get("created_by") or "") == str(user.get("username") or "")
+    return owns_task(task, user)
 
 
 class _GraphAccess:
@@ -131,6 +112,7 @@ class _GraphAccess:
         """
         if self._graph_ids is not None:
             return
+        await verify_active_role(self._user)
         graph_ids = await self._repository.list_graph_ids()
         for task in await self._repository.list_tasks():
             self._tasks_by_qualified[_qualified_name(task)] = task
@@ -294,6 +276,9 @@ async def list_graphs(user: dict = current_user) -> schemas.GraphListResponse:
             schemas.GraphSummary(
                 graph_id=graph_id,
                 root_task=root["name"] if root else None,
+                owner_role=graph_role(graph_tasks),
+                can_run=bool(graph_role(graph_tasks))
+                and graph_role(graph_tasks) == user.get("active_role"),
                 database_name=(scope_task or {}).get("database_name"),
                 schema_name=(scope_task or {}).get("schema_name"),
                 node_count=len(graph_tasks),
@@ -358,6 +343,92 @@ async def get_graph(graph_id: str, user: dict = current_user) -> schemas.GraphDe
         ],
         node_count=len(nodes),
     )
+
+
+@router.get("/graphs/{graph_id}/nodes/{task_id}/sql", response_model=schemas.TaskSQLResponse)
+async def get_task_sql(
+    graph_id: str, task_id: str, user: dict = current_user
+) -> schemas.TaskSQLResponse:
+    tasks = await _GraphAccess(_repository, user).require(graph_id)
+    task = next((task for task in tasks if str(task["id"]) == task_id), None)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    body = task.get("definition")
+    return schemas.TaskSQLResponse(
+        task_id=task_id,
+        name=str(task["name"]),
+        sql=redact_sql_credentials(str(body)) if body else None,
+    )
+
+
+async def _publish_manual_run(run: dict[str, Any], task_ids: list[str]) -> None:
+    async with aioredis.from_url(settings.REDIS_URL, decode_responses=True) as client:
+        await RedisGraphRunTransport(client).publish_graph_run(run, task_ids)
+
+
+@router.post("/graphs/{graph_id}/runs", response_model=schemas.GraphRunResponse, status_code=202)
+async def run_graph(graph_id: str, user: dict = current_user) -> schemas.GraphRunResponse:
+    access = _GraphAccess(_repository, user)
+    tasks = await access.require(graph_id)
+    root = _root_task(access.edges_for(graph_id), tasks)
+    execution_role = user.get("active_role")
+    if not execution_role or execution_role not in user.get(
+        "assigned_roles", user.get("roles", [])
+    ):
+        raise HTTPException(status_code=403, detail="Select an assigned role before running a task")
+    if root is None:
+        raise HTTPException(status_code=409, detail="Task graph has no root to run")
+    owner_role = graph_role(tasks)
+    if owner_role is None:
+        raise HTTPException(
+            409, "Every node must have the same owner role before this task can run"
+        )
+    if execution_role != owner_role:
+        raise HTTPException(403, f"Activate the task owner role {owner_role!r} before running")
+    policy = _narrow(root.get("overlap_policy"), _OVERLAP_POLICIES, "skip")
+    active = await _repository.list_active_graph_runs(graph_id)
+    if not should_enqueue(policy, len(active)):
+        raise HTTPException(status_code=409, detail="This task already has an active run")
+
+    audit = {
+        "event_type": "task",
+        "user_name": user["username"],
+        "action": "RUN_TASK",
+        "object_type": "TASK_GRAPH",
+        "object_name": graph_id,
+        "database_name": root.get("database_name"),
+        "schema_name": root.get("schema_name"),
+        "session_id": user.get("session_id"),
+        "active_role": user.get("active_role"),
+    }
+    await write_audit_log(**audit, status="ATTEMPTED")
+    try:
+        run = await _repository.create_graph_run(
+            {
+                "graph_id": graph_id,
+                "trigger_type": "manual",
+                "state": "pending",
+                "overlap_policy": policy,
+                "execution_user": user["username"],
+                "execution_role": execution_role,
+                "execution_session_id": user["session_id"],
+            }
+        )
+    except Exception:
+        logger.warning("Could not persist manual task run")
+        raise HTTPException(
+            status_code=503, detail="Could not queue task run. Retry later."
+        ) from None
+    try:
+        await _publish_manual_run(run, [str(task["id"]) for task in tasks])
+    except Exception:
+        # The reconciler delivers persisted pending runs if Redis is unavailable.
+        logger.warning("Manual task run persisted; awaiting transport recovery")
+    try:
+        await write_audit_log(**audit, status="SUCCESS", query_id=str(run["id"]))
+    except Exception:
+        logger.warning("Manual task run audit outcome unavailable; attempt recorded")
+    return _run_response(run)
 
 
 @router.get("/graphs/{graph_id}/runs", response_model=schemas.GraphRunListResponse)
@@ -486,6 +557,8 @@ def _run_response(run: dict[str, Any]) -> schemas.GraphRunResponse:
     return schemas.GraphRunResponse(
         id=str(run["id"]),
         graph_id=str(run["graph_id"]),
+        execution_user=run.get("execution_user"),
+        execution_role=run.get("execution_role"),
         trigger_type=_narrow(run.get("trigger_type"), _TRIGGER_TYPES, "manual"),
         state=_narrow(run.get("state"), _GRAPH_RUN_STATES, "pending"),
         overlap_policy=_narrow(run.get("overlap_policy"), _OVERLAP_POLICIES, "skip"),

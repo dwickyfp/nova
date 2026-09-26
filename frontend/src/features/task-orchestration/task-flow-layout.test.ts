@@ -4,7 +4,7 @@ import {
   buildTaskFlow,
   NODE_HEIGHT,
   NODE_WIDTH,
-  viewportAboveInset,
+  taskFlowViewport,
 } from "./task-flow-layout";
 
 function node(name: string, overrides: Partial<GraphNode> = {}): GraphNode {
@@ -129,29 +129,22 @@ describe("buildTaskFlow", () => {
   });
 });
 
-describe("viewportAboveInset", () => {
-  const viewport = { x: 10, y: 100, zoom: 1 };
-
-  it("shifts the viewport up by half the hidden band, scaled by zoom", () => {
-    // The visible box is the pane minus a 300px drawer, so its centre sits 150px
-    // above the pane centre; in flow coordinates that is 150 * zoom.
-    expect(viewportAboveInset(viewport, 300)).toEqual({
-      x: 10,
-      y: 250,
-      zoom: 1,
-    });
+describe("taskFlowViewport", () => {
+  it.each([0, 56, 332])("centres a node above a %ipx drawer", (inset) => {
+    const bounds = { x: 0, y: 0, width: 200, height: 74 };
+    const viewport = taskFlowViewport(bounds, 1200, 800, inset);
+    expect(viewport.x + (bounds.width * viewport.zoom) / 2).toBeCloseTo(600);
+    expect(viewport.y + (bounds.height * viewport.zoom) / 2).toBeCloseTo(
+      (800 - inset) / 2,
+    );
   });
 
-  it("scales the shift with the zoom level", () => {
-    expect(viewportAboveInset({ x: 0, y: 0, zoom: 2 }, 200)).toEqual({
-      x: 0,
-      y: 200,
-      zoom: 2,
-    });
-  });
-
-  it("leaves the viewport untouched when the drawer is collapsed", () => {
-    expect(viewportAboveInset(viewport, 0)).toEqual(viewport);
-    expect(viewportAboveInset(viewport, -5)).toEqual(viewport);
+  it("fits a tall graph entirely above the drawer at a narrow width", () => {
+    const bounds = { x: 0, y: 0, width: 744, height: 1800 };
+    const viewport = taskFlowViewport(bounds, 320, 700, 332);
+    expect(viewport.y).toBeGreaterThan(0);
+    expect(viewport.y + bounds.height * viewport.zoom).toBeLessThan(368);
+    expect(viewport.x).toBeGreaterThan(0);
+    expect(viewport.x + bounds.width * viewport.zoom).toBeLessThan(320);
   });
 });

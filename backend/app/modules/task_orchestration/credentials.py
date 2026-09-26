@@ -1,6 +1,6 @@
 """Owner-credential providers for legacy callers and tests.
 
-The standalone scheduler worker uses a dedicated account with restricted
+Scheduled runs use a dedicated account with restricted
 StarRocks ``IMPERSONATE`` grants. These providers remain for callers that
 already hold an owner's password. The Credential-Invisible invariant forbids
 storing either password in ``NOVA_SYSTEM``.
@@ -15,7 +15,8 @@ connection with it — nothing caches it.
 an authenticated user's Fernet-encrypted password in the Redis session store.
 Nova has no reverse index from username to session id, so the provider scans the
 live session keys and matches on the ``username`` field. It is not used by the
-standalone worker, because unattended schedules outlive login sessions.
+standalone worker. Manual runs resolve their exact persisted session reference
+in DelegateExecutor; schedules use a role-bound service account.
 """
 
 from __future__ import annotations

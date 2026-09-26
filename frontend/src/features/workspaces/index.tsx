@@ -12,7 +12,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { format as formatSql } from "sql-formatter";
@@ -39,7 +38,6 @@ import {
   RefreshCw,
   Square,
   Search,
-  Table2,
   Type,
   UserRoundCog,
   X,
@@ -96,6 +94,10 @@ import { readToken } from "@/lib/read-token";
 import { applyNovaSqlTheme } from "./monaco-theme";
 import { FileHistoryDialog } from "./file-history-dialog";
 import { WorkspaceTabStrip } from "./workspace-tab-strip";
+import {
+  TableItemWithPopover,
+  TablePopoverProvider,
+} from "./table-item-with-popover";
 import {
   createStarterTemplateFile,
   getStarterTemplate,
@@ -2169,7 +2171,7 @@ export function WorkspacesPage() {
                     </button>
                   </div>
                 </div>
-                <ScrollArea className="min-h-0 flex-1">
+                <ScrollArea className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
                   {sidebarTab === "workspaces" ? (
                     <WorkspaceTree
                       entries={filteredEntries}
@@ -2893,22 +2895,24 @@ function DatabaseExplorer({
   >;
 }) {
   return (
-    <div className="px-2 py-3">
-      <SidebarMenu>
-        {databases.map((database) => (
-          <DatabaseNode
-            key={database.name}
-            database={database.name}
-            expanded={expandedDatabases[database.name] ?? false}
-            expandedSchemas={expandedSchemas}
-            onToggleDatabase={onToggleDatabase}
-            onToggleSchema={onToggleSchema}
-            role={role}
-            setSchemasByDatabase={setSchemasByDatabase}
-          />
-        ))}
-      </SidebarMenu>
-    </div>
+    <TablePopoverProvider>
+      <div className="px-2 py-3">
+        <SidebarMenu>
+          {databases.map((database) => (
+            <DatabaseNode
+              key={database.name}
+              database={database.name}
+              expanded={expandedDatabases[database.name] ?? false}
+              expandedSchemas={expandedSchemas}
+              onToggleDatabase={onToggleDatabase}
+              onToggleSchema={onToggleSchema}
+              role={role}
+              setSchemasByDatabase={setSchemasByDatabase}
+            />
+          ))}
+        </SidebarMenu>
+      </div>
+    </TablePopoverProvider>
   );
 }
 
@@ -3106,121 +3110,6 @@ function ObjectGroup({
           </SidebarMenuSubItem>
         ))}
       </div>
-    </div>
-  );
-}
-
-type ColumnInfo = {
-  name: string;
-  type: string;
-  null: string;
-  key: string;
-  default: string | null;
-  extra: string;
-};
-
-function TableItemWithPopover({
-  name,
-  database,
-  schema,
-}: {
-  name: string;
-  database: string;
-  schema: string;
-}) {
-  const [hovered, setHovered] = useState(false);
-  const [rect, setRect] = useState<DOMRect | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const columnsQuery = useQuery<{ columns: ColumnInfo[]; count: number }>({
-    queryKey: ["table-columns", database, schema, name],
-    queryFn: () =>
-      api.get<{ columns: ColumnInfo[]; count: number }>(
-        `/objects/databases/${encodeURIComponent(database)}/tables/${encodeURIComponent(name)}/columns`,
-      ),
-    enabled: hovered,
-    staleTime: 60_000,
-  });
-
-  function typeIcon(type: string) {
-    const t = type.toUpperCase();
-    if (
-      /INT|BIGINT|SMALLINT|TINYINT|FLOAT|DOUBLE|DECIMAL|NUMERIC|NUMBER/.test(t)
-    )
-      return <Hash className="size-3 shrink-0 text-info-strong" />;
-    if (/DATE|TIME|TIMESTAMP/.test(t))
-      return <Clock className="size-3 shrink-0 text-success-strong" />;
-    if (/BOOL/.test(t))
-      return (
-        <span className="flex size-3 shrink-0 items-center justify-center text-[9px] font-bold text-warning-strong">
-          B
-        </span>
-      );
-    return <Type className="size-3 shrink-0 text-primary" />;
-  }
-
-  return (
-    <div
-      onMouseEnter={() => {
-        setHovered(true);
-        if (btnRef.current) setRect(btnRef.current.getBoundingClientRect());
-      }}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <button
-        ref={btnRef}
-        type="button"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted"
-      >
-        <Table2 className="size-3.5 shrink-0 text-primary" />
-        <span className="truncate">{name}</span>
-      </button>
-      {hovered &&
-        rect &&
-        createPortal(
-          <div
-            className="fixed z-[9999] w-64 rounded-md border bg-popover p-0 shadow-lg"
-            style={{ left: rect.right + 8, top: rect.top }}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-          >
-            <div className="border-b px-3 py-1.5 text-xs font-medium text-muted-foreground">
-              <FileCode className="mr-1.5 inline size-3" />
-              {name}
-              {columnsQuery.data && (
-                <span className="ml-1 text-muted-foreground/60">
-                  • {columnsQuery.data.count} columns
-                </span>
-              )}
-            </div>
-            <div className="max-h-[240px] overflow-auto py-1">
-              {columnsQuery.isLoading && (
-                <div className="px-3 py-2 text-xs text-muted-foreground">
-                  Loading columns…
-                </div>
-              )}
-              {columnsQuery.data?.columns.map((col) => (
-                <div
-                  key={col.name}
-                  className="flex items-center gap-2 px-3 py-1 text-xs"
-                >
-                  {typeIcon(col.type)}
-                  <span className="flex-1 truncate font-medium">
-                    {col.name}
-                  </span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {col.type}
-                  </span>
-                </div>
-              ))}
-              {columnsQuery.isError && (
-                <div className="px-3 py-2 text-xs text-destructive">
-                  Failed to load columns
-                </div>
-              )}
-            </div>
-          </div>,
-          document.body,
-        )}
     </div>
   );
 }

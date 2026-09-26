@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { agentsApi } from "@/features/agents/api";
+import { agentsApi, type AgentThread } from "@/features/agents/api";
 import { StudioApp } from "./index";
 
 const mocks = vi.hoisted(() => ({
@@ -20,7 +20,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("@/features/agents/api", () => ({
-  AUTO_AGENT_ID: "__auto__",
+  AUTO_AGENT_ID: "__smart__",
   agentsApi: {
     listStudio: vi.fn(async () => ({
       agents: [
@@ -29,11 +29,14 @@ vi.mock("@/features/agents/api", () => ({
           name: "Revenue Analyst",
           database_name: "sales",
         },
+        { agent_id: "a2", name: "Support Agent" },
       ],
     })),
     listThreads: vi.fn(async () => ({
-      threads: [{ thread_id: "thread-1", title: "Revenue" }],
+      threads: [{ thread_id: "thread-1", agent_id: "a1", title: "Revenue" }],
     })),
+    deleteThread: vi.fn(async () => undefined),
+    renameThread: vi.fn(async () => ({})),
   },
   studioApi: {
     skillAuthor: vi.fn(async () => ({
@@ -52,14 +55,17 @@ vi.mock("./studio-chat", () => ({
     agent,
     onThreadChange,
     initialPrompt,
+    onSelectAgent,
   }: {
     agent: { name: string } | null;
     onThreadChange: (id: string | null) => void;
     initialPrompt?: string;
+    onSelectAgent: (id: string) => void;
   }) => (
     <div>
       <span>{agent?.name ?? "No agent"}</span>
       <span>{initialPrompt}</span>
+      <button onClick={() => onSelectAgent("a2")}>Choose Support</button>
       <button type="button" onClick={() => onThreadChange(null)}>
         Header new chat
       </button>
@@ -74,13 +80,24 @@ vi.mock("./studio-sidebar", () => ({
     threads,
     onNewChat,
     onView,
+    onOpenThread,
+    onRenameThread,
+    onDeleteThread,
   }: {
-    threads: unknown[];
+    threads: AgentThread[];
     onNewChat: () => void;
     onView: (view: "artifacts" | "capabilities") => void;
+    onOpenThread: (id: string) => void;
+    onRenameThread: (id: string, title: string) => void;
+    onDeleteThread: (id: string) => void;
   }) => (
     <div>
       <span>Threads: {threads.length}</span>
+      {threads.map(thread => <div key={thread.thread_id}>
+        <button onClick={() => onOpenThread(thread.thread_id)}>Open {thread.title}</button>
+        <button onClick={() => onRenameThread(thread.thread_id, "Updated")}>Rename {thread.title}</button>
+        <button onClick={() => onDeleteThread(thread.thread_id)}>Delete {thread.title}</button>
+      </div>)}
       <button type="button" onClick={onNewChat}>
         Sidebar new chat
       </button>
@@ -121,7 +138,58 @@ function renderStudio() {
 describe("StudioApp thread routing", () => {
   beforeEach(() => {
     mocks.navigate.mockReset();
+    vi.mocked(agentsApi.listThreads).mockClear();
+    vi.mocked(agentsApi.deleteThread).mockClear();
+    vi.mocked(agentsApi.renameThread).mockClear();
     mocks.search = { agent: "a1", thread: "thread-1" };
+  });
+
+  const mixedHistory = {
+    count: 3,
+    threads: [
+      { thread_id: "support-1", agent_id: "a2", title: "Support" },
+      { thread_id: "thread-1", agent_id: "a1", title: "Revenue" },
+      { thread_id: "smart-1", agent_id: "__auto__", title: "Earlier Smart" },
+    ] as AgentThread[],
+  };
+
+  it("opens mixed history using each conversation's agent", async () => {
+    vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(mixedHistory);
+    const screen = await renderStudio();
+    await expect.element(screen.getByText("Threads: 3")).toBeVisible();
+    expect(agentsApi.listThreads).toHaveBeenCalledWith();
+    await userEvent.click(screen.getByRole("button", { name: "Open Support" }));
+    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/studio", search: { agent: "a2", thread: "support-1" }, replace: true });
+    await userEvent.click(screen.getByRole("button", { name: "Open Earlier Smart" }));
+    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/studio", search: { agent: "__smart__", thread: "smart-1" }, replace: true });
+  });
+
+  it("renames and deletes another agent's history without using the selected agent", async () => {
+    vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(mixedHistory).mockResolvedValueOnce(mixedHistory);
+    const screen = await renderStudio();
+    await userEvent.click(screen.getByRole("button", { name: "Rename Support" }));
+    expect(agentsApi.renameThread).toHaveBeenCalledWith("a2", "support-1", "Updated");
+    await userEvent.click(screen.getByRole("button", { name: "Delete Support" }));
+    expect(agentsApi.deleteThread).toHaveBeenCalledWith("a2", "support-1");
+  });
+
+  it("opens the newest conversation with its owner even when another agent is selected", async () => {
+    mocks.search = { agent: "a1" };
+    vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(mixedHistory);
+    await renderStudio();
+    await expect.poll(() => mocks.navigate.mock.calls.length).toBe(1);
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: "/studio", search: { agent: "a2", thread: "support-1" }, replace: true });
+  });
+
+  it("keeps the unified history when choosing a different agent for a new chat", async () => {
+    vi.mocked(agentsApi.listThreads).mockResolvedValueOnce(mixedHistory);
+    mocks.navigate.mockImplementation(options => { mocks.search = options.search; });
+    const screen = await renderStudio();
+    await expect.element(screen.getByText("Threads: 3")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Choose Support" }));
+    await expect.element(screen.getByText("Threads: 3")).toBeVisible();
+    expect(agentsApi.listThreads).toHaveBeenCalledTimes(1);
+    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/studio", search: { agent: "a2" }, replace: true });
   });
 
   it("keeps a selected thread instead of removing it again", async () => {
@@ -145,7 +213,7 @@ describe("StudioApp thread routing", () => {
     try {
       const screen = await renderStudio();
 
-      await expect.element(screen.getByText("Auto", { exact: true })).toBeVisible();
+      await expect.element(screen.getByText("Smart", { exact: true })).toBeVisible();
       await expect.element(screen.getByText("No agent")).not.toBeInTheDocument();
       await expect.element(screen.getByRole("status")).toHaveTextContent(
         "Specialists are temporarily unavailable.",

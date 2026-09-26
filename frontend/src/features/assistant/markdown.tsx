@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { createContext, memo, useContext, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import hljs from "highlight.js/lib/core";
@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { CodeCard } from "./code-card";
 import type { TurnContext } from "./stream-client";
 import type { NoveEventInput } from "./app-context";
+import type { TableBlock } from "./types";
+import { matchesResultTable } from "./matching-result-table";
 
 /**
  * Markdown renderer for assistant answers. GFM is enabled so the tables and
@@ -31,6 +33,14 @@ hljs.registerLanguage("sh", bash);
 
 /** Languages a Run button is offered for. */
 const RUNNABLE_LANGUAGES = new Set(["sql", "mysql"]);
+
+type MarkdownContextValue = {
+  runContext?: TurnContext;
+  onExecutionEvent?: (event: NoveEventInput) => void;
+  onFixWithNove?: (prompt: string) => void;
+  representedTables?: TableBlock[];
+};
+const MarkdownContext = createContext<MarkdownContextValue>({});
 
 function CodeBlock({
   code,
@@ -71,6 +81,29 @@ function CodeBlock({
 }
 
 const components: Components = {
+  code: function MarkdownCode({ className, children, ...rest }) {
+    const context = useContext(MarkdownContext);
+    const match = /language-(\w+)/.exec(className ?? "");
+    const text = String(children).replace(/\n$/, "");
+    if (match || text.includes("\n")) {
+      return (
+        <CodeBlock
+          key={text}
+          code={text}
+          language={match?.[1] ?? ""}
+          {...context}
+        />
+      );
+    }
+    return (
+      <code
+        className="rounded bg-surface-1 px-1 py-0.5 font-mono text-[0.85em]"
+        {...rest}
+      >
+        {children}
+      </code>
+    );
+  },
   h1: ({ children }) => (
     <h1 className="mt-3 mb-1 text-base font-semibold">{children}</h1>
   ),
@@ -107,11 +140,16 @@ const components: Components = {
   strong: ({ children }) => (
     <strong className="font-semibold">{children}</strong>
   ),
-  table: ({ children }) => (
-    <div className="my-2 overflow-x-auto rounded-md border">
-      <table className="w-full border-collapse text-xs">{children}</table>
-    </div>
-  ),
+  table: function MarkdownTable({ node, children }) {
+    const { representedTables } = useContext(MarkdownContext);
+    if (representedTables && matchesResultTable(node, representedTables))
+      return null;
+    return (
+      <div className="my-2 overflow-x-auto rounded-md border">
+        <table className="w-full border-collapse text-xs">{children}</table>
+      </div>
+    );
+  },
   thead: ({ children }) => <thead className="bg-surface-2">{children}</thead>,
   th: ({ children }) => (
     <th className="border-b border-border px-2 py-1 text-left font-medium">
@@ -130,6 +168,7 @@ export const Markdown = memo(function Markdown({
   runContext,
   onExecutionEvent,
   onFixWithNove,
+  representedTables,
 }: {
   children: string;
   className?: string;
@@ -137,44 +176,20 @@ export const Markdown = memo(function Markdown({
   runContext?: TurnContext;
   onExecutionEvent?: (event: NoveEventInput) => void;
   onFixWithNove?: (prompt: string) => void;
+  representedTables?: TableBlock[];
 }) {
-  // The `code` override closes over the run context so a fenced SQL block can
-  // offer Run. Only that one entry differs, so the rest of the map is reused.
-  const componentsWithRun = useMemo<Components>(
-    () => ({
-      ...components,
-      code: ({ className, children, ...rest }) => {
-        const match = /language-(\w+)/.exec(className ?? "");
-        const text = String(children).replace(/\n$/, "");
-        if (match || text.includes("\n")) {
-          return (
-            <CodeBlock
-              code={text}
-              language={match?.[1] ?? ""}
-              runContext={runContext}
-              onExecutionEvent={onExecutionEvent}
-              onFixWithNove={onFixWithNove}
-            />
-          );
-        }
-        return (
-          <code
-            className="rounded bg-surface-1 px-1 py-0.5 font-mono text-[0.85em]"
-            {...rest}
-          >
-            {children}
-          </code>
-        );
-      },
-    }),
-    [runContext, onExecutionEvent, onFixWithNove],
+  const context = useMemo(
+    () => ({ runContext, onExecutionEvent, onFixWithNove, representedTables }),
+    [runContext, onExecutionEvent, onFixWithNove, representedTables],
   );
 
   return (
     <div className={cn("break-words", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={componentsWithRun}>
-        {children}
-      </ReactMarkdown>
+      <MarkdownContext.Provider value={context}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+          {children}
+        </ReactMarkdown>
+      </MarkdownContext.Provider>
     </div>
   );
 });

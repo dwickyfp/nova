@@ -47,7 +47,20 @@ export function AnswerFooter({
   reconsiderDisabled?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [visibleFeedback, setVisibleFeedback] = useState(feedback);
+  const feedbackState = useRef({ confirmed: feedback, desired: feedback, writing: false });
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  useEffect(() => {
+    const state = feedbackState.current;
+    if (state.writing) return;
+    state.confirmed = feedback;
+    state.desired = feedback;
+    setVisibleFeedback(feedback);
+  }, [feedback]);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -65,15 +78,32 @@ export function AnswerFooter({
   }
 
   async function rate(next: Exclude<AnswerFeedback, null>) {
-    if (!onFeedback || saving) return;
-    setSaving(true);
-    try {
-      await onFeedback(feedback === next ? null : next);
-    } catch {
-      toast.error("Could not save feedback. Please try again.");
-    } finally {
-      setSaving(false);
+    if (!onFeedback) return;
+    const state = feedbackState.current;
+    state.desired = state.desired === next ? null : next;
+    setVisibleFeedback(state.desired);
+    if (state.writing) return;
+    state.writing = true;
+
+    // Serialize writes and keep only the latest choice while a request is pending.
+    while (true) {
+      const requested = state.desired;
+      try {
+        await onFeedback(requested);
+        state.confirmed = requested;
+      } catch {
+        if (state.desired === requested) {
+          state.desired = state.confirmed;
+          if (mounted.current) {
+            setVisibleFeedback(state.confirmed);
+            toast.error("Could not save feedback. Please try again.");
+          }
+          break;
+        }
+      }
+      if (state.desired === requested) break;
     }
+    state.writing = false;
   }
 
   const actions = [
@@ -92,15 +122,15 @@ export function AnswerFooter({
       label: "Like answer",
       icon: ThumbsUp,
       onClick: () => void rate("like"),
-      disabled: !onFeedback || saving,
-      pressed: feedback === "like",
+      disabled: !onFeedback,
+      pressed: visibleFeedback === "like",
     },
     {
       label: "Dislike answer",
       icon: ThumbsDown,
       onClick: () => void rate("dislike"),
-      disabled: !onFeedback || saving,
-      pressed: feedback === "dislike",
+      disabled: !onFeedback,
+      pressed: visibleFeedback === "dislike",
     },
     ...(onReconsider
       ? [
@@ -138,14 +168,16 @@ export function AnswerFooter({
                 onClick={onClick}
                 className={cn(
                   "size-8 rounded-md hover:text-foreground",
-                  pressed && "bg-muted text-foreground",
+                  pressed !== undefined && "bg-transparent hover:bg-transparent dark:hover:bg-transparent",
+                  pressed && (Icon === ThumbsUp
+                    ? "text-info-strong hover:text-info-strong"
+                    : "text-destructive hover:text-destructive"),
                 )}
               >
                 <Icon
                   aria-hidden="true"
                   className={cn(
                     "size-4",
-                    pressed && "fill-current",
                     reconsidering && Icon === RefreshCcw && "animate-spin",
                   )}
                 />

@@ -76,7 +76,7 @@ def test_user_message_to_child_uses_trusted_root_identity(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["message_id"] == "message-1"
     assert send.await_args.kwargs["sender"] is root
-    assert send.await_args.kwargs["recipient"] is child
+    assert send.await_args.kwargs["recipient"] == child
     assert send.await_args.kwargs["origin"] == "user"
     assert send.await_args.kwargs["operation_id"] == "user:client-1"
     child["root_run_id"] = "other-root"

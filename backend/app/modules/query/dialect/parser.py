@@ -58,16 +58,7 @@ class CommandType(Enum):
 
 
 class UnsupportedStageCommandError(ValueError):
-    """A stage command Nova recognises but cannot execute.
-
-    ``LIST`` is parsed as :attr:`CommandType.STAGE_BROWSE` because the syntax is
-    documented (``docs/02-sql-worksheet.md``) and the enum names it, but there is
-    no implementation behind it and StarRocks has no ``LIST`` statement — every
-    form of it is a syntax error at the engine. Raising here is what keeps the
-    documented-but-unimplemented form from reaching the engine as the *user's*
-    text and coming back as a StarRocks syntax error that names neither Nova nor
-    the missing feature.
-    """
+    """Compatibility exception for callers rejecting unsupported stage forms."""
 
 
 class StageParseError(ValueError):
@@ -719,14 +710,9 @@ def parse_sql(sql: str) -> ParsedSQL:
     not parse travels the ordinary path and the engine answers with its own
     error rather than Nova guessing at a rewrite from a partial tree.
 
-    ``LIST`` is a special case. Nova parses it as
-    :attr:`CommandType.STAGE_BROWSE` (the documented surface), but nothing
-    implements it and the engine has no ``LIST`` statement, so a ``LIST`` that
-    reaches execution always fails; it is never translated.
-
-    Raises:
-        UnsupportedStageCommandError: never today; reserved for the caller that
-            decides to refuse ``LIST`` outright rather than pass it on.
+    The translator lowers supported LIST/COPY forms to FILES-based reads and
+    writes. Native StarRocks has no LIST statement; callers must use the shared
+    translation pipeline rather than forwarding these surfaces unchanged.
     """
     if not sql.strip():
         return ParsedSQL(
@@ -806,8 +792,7 @@ def parse_sql(sql: str) -> ParsedSQL:
     # Falling back to REGULAR (rather than keeping STAGE_BROWSE) routes it down
     # the ordinary path, where the engine answers its own syntax error naming the
     # keyword. That is not silent: the statement is passed through untouched and
-    # fails visibly, which is the honest outcome for a documented command Nova
-    # has no implementation for.
+    # fails visibly rather than guessing a stage destination or source.
     if not stage_refs:
         command_type = CommandType.REGULAR
 

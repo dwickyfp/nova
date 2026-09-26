@@ -1,26 +1,31 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   Background,
   Controls,
+  ControlButton,
   MarkerType,
   ReactFlow,
+  Panel,
   useEdgesState,
   useNodesState,
+  useNodesInitialized,
+  useReactFlow,
+  useStore,
   type Edge,
-  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { AlertCircle, CircleSlash } from "lucide-react";
+import { AlertCircle, CircleSlash, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LoadingLines } from "@/components/ui/loading-overlay";
 import type { GraphEdge, GraphNode } from "./api";
 import {
   buildTaskFlow,
-  viewportAboveInset,
+  taskFlowViewport,
   type TaskFlowNode,
 } from "./task-flow-layout";
 import { TaskNode } from "./task-node";
+import { TaskSQLDialog } from "./task-sql-dialog";
 
 const NODE_TYPES = { task: TaskNode };
 
@@ -28,24 +33,48 @@ const FLOW_EDGE_OPTIONS = {
   markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
 };
 
-/**
- * Fits the graph into the area the drawer leaves visible.
- *
- * React Flow's own `fitView` centres on the full pane, which pushes the graph
- * behind the run-history drawer. Reserving the inset by shrinking the pane is
- * not an option (the flow must stay full-bleed), so the fit is computed for a
- * virtual viewport `bottomInset` pixels shorter and then shifted up. See
- * `viewportAboveInset` for the arithmetic.
- */
-function fitAboveDrawer(
-  instance: ReactFlowInstance<TaskFlowNode, Edge>,
-  bottomInset: number,
-) {
-  instance.fitView({ padding: 0.2, maxZoom: 1 });
-  instance.setViewport(viewportAboveInset(instance.getViewport(), bottomInset));
+function FlowControls({ bottomInset }: { bottomInset: number }) {
+  const { getNodes, getNodesBounds, setViewport } = useReactFlow<
+    TaskFlowNode,
+    Edge
+  >();
+  const initialized = useNodesInitialized();
+  const width = useStore((state) => state.width);
+  const height = useStore((state) => state.height);
+  const fit = useCallback(() => {
+    if (!initialized || !width || !height) return;
+    void setViewport(
+      taskFlowViewport(getNodesBounds(getNodes()), width, height, bottomInset),
+    );
+  }, [
+    initialized,
+    width,
+    height,
+    bottomInset,
+    getNodes,
+    getNodesBounds,
+    setViewport,
+  ]);
+
+  useEffect(() => {
+    fit();
+  }, [fit]);
+
+  return (
+    <Controls
+      showInteractive={false}
+      showFitView={false}
+      className="!top-3 !bottom-auto !left-3 [&>button]:!border-border [&>button]:!bg-background [&>button]:!fill-foreground"
+    >
+      <ControlButton onClick={fit} title="Fit view" aria-label="Fit view">
+        <Maximize />
+      </ControlButton>
+    </Controls>
+  );
 }
 
 export function TaskFlow({
+  graphId,
   nodes: graphNodes,
   edges: graphEdges,
   isLoading,
@@ -53,6 +82,7 @@ export function TaskFlow({
   onRetry,
   bottomInset = 0,
 }: {
+  graphId: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
   isLoading: boolean;
@@ -67,31 +97,22 @@ export function TaskFlow({
   );
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
-  const instanceRef = useRef<ReactFlowInstance<TaskFlowNode, Edge> | null>(
-    null,
+  const selected = graphNodes.find((node) =>
+    nodes.some((flowNode) => flowNode.id === node.name && flowNode.selected),
   );
-
-  const runFit = useCallback((inset: number) => {
-    const instance = instanceRef.current;
-    if (instance) fitAboveDrawer(instance, inset);
-  }, []);
 
   // The graph definition is refetched when the route changes; without this the
   // canvas would keep rendering the previous task's flow because `useNodesState`
   // captures its initial value only once.
   useEffect(() => {
-    setNodes(initial.nodes);
+    setNodes((current) =>
+      initial.nodes.map((node) => ({
+        ...node,
+        selected: current.find((existing) => existing.id === node.id)?.selected,
+      })),
+    );
     setEdges(initial.edges);
-    // Re-centre after the nodes swap, using the current drawer inset.
-    const frame = window.requestAnimationFrame(() => runFit(bottomInset));
-    return () => window.cancelAnimationFrame(frame);
-  }, [initial, setEdges, setNodes, bottomInset, runFit]);
-
-  // Re-fit when the drawer is collapsed/expanded or the pane resizes.
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => runFit(bottomInset));
-    return () => window.cancelAnimationFrame(frame);
-  }, [bottomInset, runFit]);
+  }, [initial, setEdges, setNodes]);
 
   if (isLoading) {
     return (
@@ -137,25 +158,30 @@ export function TaskFlow({
       edges={edges}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
-      onInit={(instance) => {
-        instanceRef.current = instance;
-        fitAboveDrawer(instance, bottomInset);
-      }}
       nodeTypes={NODE_TYPES}
       defaultEdgeOptions={FLOW_EDGE_OPTIONS}
-      minZoom={0.2}
+      minZoom={0.01}
       maxZoom={1.5}
       nodesConnectable={false}
       nodesDraggable
-      elementsSelectable={false}
+      elementsSelectable
+      edgesFocusable={false}
+      deleteKeyCode={null}
+      multiSelectionKeyCode={null}
       proOptions={{ hideAttribution: true }}
       className="[&_.react-flow\_\_node]:!border-0"
     >
       <Background gap={16} size={1} />
-      <Controls
-        showInteractive={false}
-        className="!top-3 !bottom-auto !left-3 [&>button]:!border-border [&>button]:!bg-background [&>button]:!fill-foreground"
-      />
+      <FlowControls bottomInset={bottomInset} />
+      {selected ? (
+        <Panel position="top-right">
+          <TaskSQLDialog
+            key={selected.task_id}
+            graphId={graphId}
+            node={selected}
+          />
+        </Panel>
+      ) : null}
     </ReactFlow>
   );
 }

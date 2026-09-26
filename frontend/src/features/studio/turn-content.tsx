@@ -34,6 +34,7 @@ export function TurnContent({
   savedContentIds?: ReadonlySet<string>;
 }) {
   const ordered = visibleContent(turn.content);
+  const representedTables = ordered.flatMap((item) => item.type === "table" ? [item.block] : []);
 
   if (!ordered.length && !turn.answer) return null;
 
@@ -62,7 +63,7 @@ export function TurnContent({
         >
           {item.type === "text" ? (
             <div className="nova-chat-item min-w-0 text-sm">
-              <Markdown runContext={runContext}>{item.text}</Markdown>
+              <Markdown runContext={runContext} representedTables={representedTables}>{item.text}</Markdown>
               {running && !item.complete && itemIndex === ordered.length - 1 ? (
                 <TextShimmer className="mt-1">Writing</TextShimmer>
               ) : null}

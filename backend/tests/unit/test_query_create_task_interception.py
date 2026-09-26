@@ -74,7 +74,16 @@ class FakeTaskRepository:
         return len(self.edges) != before
 
     async def list_tasks(self, graph_id: str | None = None):
-        return list(self.tasks.values())
+        return [
+            {
+                "id": "existing_a",
+                "name": "a",
+                "database_name": "db1",
+                "schema_name": "default",
+                "owner_role": "analyst",
+            },
+            *self.tasks.values(),
+        ]
 
     async def list_edges(self, graph_id: str):
         return [e for e in self.edges if e["graph_id"] == graph_id]
@@ -108,9 +117,7 @@ def wired(monkeypatch):
     monkeypatch.setattr(
         "app.modules.task_orchestration.lowering.task_orchestration_repository", tasks
     )
-    monkeypatch.setattr(
-        "app.modules.query.service.task_orchestration_repository", tasks
-    )
+    monkeypatch.setattr("app.modules.query.service.task_orchestration_repository", tasks)
     return service, engine, tasks, audit
 
 
@@ -121,8 +128,10 @@ class TestRawCreateTaskNeverReachesEngine:
         result = await service.execute(
             sql="CREATE TASK t1 AFTER a AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
 
         assert engine.calls == [], "CREATE TASK must never reach the engine"
@@ -139,8 +148,10 @@ class TestRawCreateTaskNeverReachesEngine:
         result = await service.execute(
             sql="CREATE TASK t1 AFTER a AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         # `executed_sql` is the Nova statement, not an engine statement; the
         # warning says as much so the surface does not imply the engine ran it.
@@ -152,8 +163,10 @@ class TestRawCreateTaskNeverReachesEngine:
         await service.execute(
             sql="CREATE TASK t1 AS INSERT OVERWRITE agg SELECT a, b FROM src WHERE a > 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         task = next(iter(tasks.tasks.values()))
         assert task["definition"] == "INSERT OVERWRITE agg SELECT a, b FROM src WHERE a > 1"
@@ -167,8 +180,10 @@ class TestRawCreateTaskNeverReachesEngine:
                 "AS INSERT INTO t SELECT 1"
             ),
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         task = next(iter(tasks.tasks.values()))
         assert task["schedule_kind"] == "cron"
@@ -182,8 +197,10 @@ class TestQualifiedTaskScopeThroughPipeline:
         result = await service.execute(
             sql="CREATE TASK analytics.etl.daily AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         assert engine.calls == [], "CREATE TASK must never reach the engine"
         assert result.success
@@ -202,6 +219,7 @@ class TestQualifiedTaskScopeThroughPipeline:
         await service.execute(
             sql="CREATE TASK daily AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
             schema="silver",
@@ -218,8 +236,10 @@ class TestQualifiedTaskScopeThroughPipeline:
         await service.execute(
             sql="CREATE TASK analytics.etl.daily AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         entry = audit.entries[-1]
         assert entry["object_name"] == "analytics.etl.daily"
@@ -231,8 +251,10 @@ class TestQualifiedTaskScopeThroughPipeline:
         result = await service.execute(
             sql="CREATE TASK db2.etl.t1 AFTER db1.etl.a AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         assert engine.calls == []
         assert tasks.tasks == {}, "a rejected statement must store nothing"
@@ -240,13 +262,28 @@ class TestQualifiedTaskScopeThroughPipeline:
 
 
 class TestValidationFailureIsReported:
+    async def test_missing_role_is_rejected_without_metadata_or_engine_write(self, wired):
+        service, engine, tasks, audit = wired
+        result = await service.execute(
+            sql="CREATE TASK t1 AS INSERT INTO t SELECT 1",
+            username="alice",
+            encrypted_password="enc",
+            database="db1",
+        )
+        assert "explicit execution role" in result.error
+        assert engine.calls == []
+        assert tasks.tasks == {}
+        assert audit.statuses == ["ERROR"]
+
     async def test_unknown_overlap_policy_returns_an_error_without_engine_call(self, wired):
         service, engine, tasks, audit = wired
         result = await service.execute(
             sql="CREATE TASK t1 OVERLAP_POLICY = 'MAYBE' AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         assert result.error is not None
         assert "OVERLAP_POLICY" in result.error
@@ -259,8 +296,10 @@ class TestValidationFailureIsReported:
         result = await service.execute(
             sql="CREATE TASK t1 SCHEDULE = '0 2 * * *' AFTER a AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         assert result.error is not None
         assert "order" in result.error
@@ -271,8 +310,10 @@ class TestValidationFailureIsReported:
         result = await service.execute(
             sql="CREATE TASK t1 SCHEDULE = 'not a cron' AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         assert result.error is not None
         assert engine.calls == []
@@ -288,8 +329,10 @@ class TestValidationFailureIsReported:
         result = await service.execute(
             sql="CREATE TASK t1 AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         assert result.error is not None
         assert "timezone" in result.error.lower()
@@ -301,8 +344,10 @@ class TestNonTaskStatementsAreUnaffected:
         result = await service.execute(
             sql="SUBMIT TASK x AS INSERT INTO t SELECT 1",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         assert result.success
         assert engine.calls, "a real engine statement must still be executed"
@@ -313,8 +358,10 @@ class TestNonTaskStatementsAreUnaffected:
         result = await service.execute(
             sql="SELECT cron, finalize FROM t",
             username="alice",
+            role="analyst",
             encrypted_password="enc",
             database="db1",
+            schema="default",
         )
         assert result.success
         assert engine.calls

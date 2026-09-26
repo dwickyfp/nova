@@ -47,6 +47,9 @@ class FakeRepository:
         self.calls.append("list_tasks")
         return list(self.tasks)
 
+    async def get_role_execution_user(self, role):
+        return "task_service"
+
     async def list_all_edges(self) -> list[dict[str, Any]]:
         self.calls.append("list_all_edges")
         return list(self.edges)

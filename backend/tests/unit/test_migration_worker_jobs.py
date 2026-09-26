@@ -314,16 +314,26 @@ def test_read_job_completes_while_execute_waits(environment, monkeypatch):
     asyncio.run(scenario())
 
 
-def test_heartbeat_keeps_live_session_fresh(environment):
+def test_heartbeat_keeps_live_session_fresh(environment, monkeypatch):
     _, _, redis, sessions, _ = environment
 
     async def scenario():
         worker = job_worker.MigrationJobWorker(redis, heartbeat_interval=0.001)
         stop = asyncio.Event()
+        refreshed = asyncio.Event()
+        original_refresh = sessions.refresh
+
+        async def refresh(session_id):
+            await original_refresh(session_id)
+            refreshed.set()
+
+        monkeypatch.setattr(sessions, "refresh", refresh)
         task = asyncio.create_task(worker._heartbeat("job-id", "session-1", stop))
-        await asyncio.sleep(0.01)
-        stop.set()
-        await task
+        try:
+            await asyncio.wait_for(refreshed.wait(), timeout=2)
+        finally:
+            stop.set()
+            await task
 
     asyncio.run(scenario())
     assert sessions.refreshes > 0

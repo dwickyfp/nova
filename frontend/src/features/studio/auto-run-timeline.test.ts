@@ -8,6 +8,18 @@ const event = (event_id: number, run_id: string, type: string, payload: Record<s
 
 afterEach(() => vi.restoreAllMocks());
 
+it("does not claim a specialist was involved when only the root ran tools", () => {
+  const rows = autoRunSteps([
+    event(1, "root", "agent_started"),
+    event(2, "root", "child_activity", { event_type: "thinking", text: "Access verified" }),
+    event(3, "root", "tool_activity", { tool_name: "query_execute" }),
+    event(4, "root", "child_activity", { event_type: "tool_call", tool_name: "query_execute" }),
+    event(5, "root", "agent_completed"),
+  ], "root", []);
+  expect(rows.some((row) => row.kind === "delegate")).toBe(false);
+  expect(rows.filter((row) => row.kind === "tool").map((row) => row.label)).toEqual(["query_execute"]);
+});
+
 it("replays actual delegation, messages, waiting, and completion without a stale active step", () => {
   const events = [
     event(1, "root", "agent_started"),

@@ -47,14 +47,12 @@ SELECT * FROM @silver.stage1.folder.file.parquet
 Load into a table:
 
 ```sql
-COPY INTO NOVA_DEMO.orders FROM @stage1.orders.csv
+INSERT INTO NOVA_DEMO.orders SELECT * FROM @stage1.orders.csv;
 ```
 
-Export from a table:
-
-```sql
-COPY INTO @stage1.exports FROM NOVA_DEMO.orders
-```
+Inspect source and target columns before using SELECT * for loading.
+Stage export requires a verified dedicated capability. COPY INTO loading is
+lowered to executable StarRocks SQL by the translator.
 
 ## What Nova injects (do not write these yourself)
 
@@ -68,9 +66,9 @@ on the translated statement and redacted (`***`) before audit/return.
 
 - Unknown stage → `Stage '…' not found` (audited as ERROR).
 - No file extension → defaults to CSV with a warning.
-- `LIST @stage` parses but the engine has no `LIST`; do not promise it works.
-- Exact `COPY INTO` option syntax beyond the examples is upstream-defined; do not
-  invent options.
+- `LIST @stage1/` lists file metadata through FILES listing options.
+- `COPY INTO db.table FROM @stage1.file.csv` lowers to INSERT SELECT.
+  The supported form has one stage source and no Snowflake load-option clauses.
 
 ## Caveats
 

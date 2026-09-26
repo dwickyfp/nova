@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { agentsApi } from "@/features/agents/api";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,14 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 
-export function AgentMemoryDialog({ agentId }: { agentId: string }) {
-  const [open, setOpen] = useState(false);
+export function AgentMemoryDialog({ agentId, open, onOpenChange, onCloseAutoFocus }: {
+  agentId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCloseAutoFocus?: (event: Event) => void;
+}) {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [ruleMemoryId, setRuleMemoryId] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -39,19 +42,8 @@ export function AgentMemoryDialog({ agentId }: { agentId: string }) {
 
   return (
     <>
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="View agent memory"
-          className="size-11 shrink-0 gap-1.5 px-2 text-xs text-muted-foreground sm:size-auto sm:h-8"
-        >
-          <BookOpen aria-hidden="true" className="size-3.5" />
-          <span className="hidden sm:inline">Memory</span>
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-xl">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus} className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Agent memory</DialogTitle>
           <DialogDescription>

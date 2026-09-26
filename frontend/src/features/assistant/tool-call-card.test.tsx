@@ -79,8 +79,8 @@ describe("ToolCallCard", () => {
       <ToolCallCard
         toolCall={{
           ...destructive,
-          tool_name: "call_ui_operation",
-          sql_preview: 'POST /api/v1/users\n{"body":{"username":"maya"}}',
+          tool_name: "provision_user",
+          sql_preview: "Create user maya with default role analyst; password change required.",
         }}
         toolCallId="create-user"
         onDecide={onDecide}

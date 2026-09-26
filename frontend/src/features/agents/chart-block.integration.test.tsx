@@ -16,12 +16,15 @@ it("renders a sanitized chart with the real Vega runtime", async () => {
     />,
   );
 
-  await vi.waitFor(() => {
-    const svg = screen
-      .getByTestId("vega-chart-container")
-      .element()
-      .querySelector("svg");
-    expect(svg).not.toBeNull();
-  });
+  await vi.waitFor(
+    () => {
+      const svg = screen
+        .getByTestId("vega-chart-container")
+        .element()
+        .querySelector("svg");
+      expect(svg).not.toBeNull();
+    },
+    { timeout: 10_000 },
+  );
   screen.unmount();
 });

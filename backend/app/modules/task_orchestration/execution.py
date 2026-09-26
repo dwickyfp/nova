@@ -1,9 +1,10 @@
 """Delegate-first node execution against StarRocks.
 
-A graph node lowers to its own ``SUBMIT TASK`` and is submitted with the task
-owner's StarRocks identity (design D9.4), so the engine checks the owner's
-privileges. A dedicated worker account may impersonate the owner on a fresh
-connection. If the owner's grants do not cover the body, the node fails.
+A graph node lowers to its own ``SUBMIT TASK``. Manual runs authenticate with
+the exact triggering session; scheduled runs use restricted impersonation of
+the service account bound to the owner role. The engine confirms the selected
+role before executing SQL. The executor's ``owner`` argument is the effective
+execution user, not necessarily the definition's creator.
 
 The engine has **no completion hook** and cannot trigger another statement, so
 after submitting, the worker can only learn the outcome by polling
@@ -21,6 +22,7 @@ import asyncio
 import contextlib
 import importlib
 import logging
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -31,6 +33,8 @@ from uuid import NAMESPACE_URL, uuid5
 from app.common.identifiers import check_identifier
 from app.core.config import settings
 from app.core.database import db
+from app.core.redis import session_store
+from app.core.security import decrypt_password
 from app.modules.task_orchestration.credentials import (
     CredentialUnavailable,
     OwnerCredentialProvider,
@@ -77,6 +81,7 @@ class TaskSpec:
     active_role: str | None = None
     schema: str | None = None
     native_name: str | None = None
+    execution_session_id: str | None = None
 
 
 def native_attempt_name(run_id: str) -> str:
@@ -169,7 +174,8 @@ class DelegateExecutor:
         self._impersonation_password = impersonation_password
         self._impersonation_role = (
             check_identifier(impersonation_role, field="worker impersonation role")
-            if impersonation_role else None
+            if impersonation_role
+            else None
         )
         self._poll_interval = (
             poll_interval
@@ -193,9 +199,12 @@ class DelegateExecutor:
         silently treated as "no data": an error is raised so the node is
         recorded as failed rather than skipped (design §6).
         """
-        async with self._owner_conn(owner, spec.database) as conn, _dict_cursor(conn) as cur:
+        async with (
+            self._owner_conn(owner, spec.execution_session_id) as conn,
+            _dict_cursor(conn) as cur,
+        ):
             try:
-                await self._activate_task_role(cur, spec)
+                await self._prepare_task_session(cur, spec)
                 await cur.execute(f"SELECT ({expression}) AS nova_when")
                 row = await cur.fetchone()
             except Exception as exc:
@@ -216,8 +225,8 @@ class DelegateExecutor:
         """Submit ``spec`` on ``owner``'s connection and wait for the TaskRun.
 
         Raises :class:`NodeExecutionError` on submit failure or a failed run.
-        The standalone worker uses its dedicated account to impersonate the
-        owner on a fresh connection. Test and legacy callers may supply the
+        Manual runs use the triggering session; scheduled runs impersonate the
+        role-bound service account on a fresh connection. Test and legacy callers may supply the
         owner's credential directly. The connection closes after submission.
 
         **The owner's connection exists to submit, nothing else.** Its entire
@@ -265,9 +274,9 @@ class DelegateExecutor:
                 _redact(str(exc)),
             )
 
-        async with self._owner_conn(owner, spec.database) as conn:
+        async with self._owner_conn(owner, spec.execution_session_id) as conn:
             async with _dict_cursor(conn) as cur:
-                await self._activate_task_role(cur, spec)
+                await self._prepare_task_session(cur, spec)
             body = spec.body
             if "@" in body:
                 from app.modules.query.dialect.parser import parse_sql
@@ -307,7 +316,11 @@ class DelegateExecutor:
         """
         assert spec.native_name is not None
         try:
-            async with self._owner_conn(owner, spec.database) as conn, conn.cursor() as cur:
+            async with (
+                self._owner_conn(owner, spec.execution_session_id) as conn,
+                _dict_cursor(conn) as cur,
+            ):
+                await self._prepare_task_session(cur, spec)
                 await cur.execute(
                     f"DROP TASK IF EXISTS {_quote_identifier(None, spec.native_name)}"
                 )
@@ -320,13 +333,33 @@ class DelegateExecutor:
 
     @asynccontextmanager
     async def _owner_conn(
-        self, owner: str, database: str | None
+        self, owner: str, session_id: str | None = None
     ) -> AsyncIterator[NodeConnection]:
         """Open a fresh, verified owner session for one task operation."""
+        if session_id:
+            session = await session_store.get(session_id)
+            if not session or session.get("username") != owner:
+                raise CredentialUnavailable("The triggering session expired; sign in and run again")
+            try:
+                password = decrypt_password(session["encrypted_password"])
+                connection = db.user_conn(owner, password)
+                conn = await connection.__aenter__()
+                del password
+            except Exception:
+                raise CredentialUnavailable(
+                    "The triggering account could not authenticate"
+                ) from None
+            try:
+                yield conn
+            finally:
+                await connection.__aexit__(None, None, None)
+            return
         if self._impersonation_user:
             # Only simple StarRocks accounts are eligible. A stored task owner
             # must never be interpolated into EXECUTE AS without validation.
-            target = check_identifier(owner, field="task owner")
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]{0,127}", owner):
+                raise CredentialUnavailable("invalid task execution account")
+            target = owner
             password = self._impersonation_password
             assert password is not None
             connection = db.user_conn(self._impersonation_user, password)
@@ -350,7 +383,8 @@ class DelegateExecutor:
                             ) from None
                         actual_role = str(
                             active_role.get("nova_active_role", "")
-                            if isinstance(active_role, dict) else ""
+                            if isinstance(active_role, dict)
+                            else ""
                         )
                         if actual_role.strip("[]`' ") != self._impersonation_role:
                             raise CredentialUnavailable(
@@ -362,18 +396,15 @@ class DelegateExecutor:
                         row = await cur.fetchone()
                     except Exception:
                         raise CredentialUnavailable(
-                            f"task worker cannot impersonate owner {target!r}"
+                            f"Task worker is not authorized to execute as user {target!r}"
                         ) from None
                     actual = str(
                         row.get("nova_effective_user", "") if isinstance(row, dict) else ""
                     )
                     if actual.replace("'", "") != f"{target}@%":
                         raise CredentialUnavailable(
-                            f"StarRocks did not confirm task owner {target!r}"
+                            f"StarRocks did not confirm execution user {target!r}"
                         )
-                    if database:
-                        name = check_identifier(database, field="task database")
-                        await cur.execute(f"USE `{name}`")
                 yield conn
             finally:
                 await connection.__aexit__(None, None, None)
@@ -381,9 +412,16 @@ class DelegateExecutor:
 
         assert self._credentials is not None
         password = await self._credentials.password_for(owner)
-        async with db.user_conn(owner, password, database=database) as conn:
+        async with db.user_conn(owner, password) as conn:
             del password
             yield conn
+
+    async def _prepare_task_session(self, cur: Any, spec: TaskSpec) -> None:
+        # USE itself checks database privileges, which may exist only on the stored role.
+        await self._activate_task_role(cur, spec)
+        if spec.database:
+            name = check_identifier(spec.database, field="task database")
+            await cur.execute(f"USE `{name}`")
 
     @staticmethod
     async def _activate_task_role(cur: Any, spec: TaskSpec) -> None:

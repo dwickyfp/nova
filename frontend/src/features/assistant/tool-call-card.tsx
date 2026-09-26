@@ -59,9 +59,7 @@ export function ToolCallCard({
   const passwordRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const canOfferAlwaysAllow = toolCall.classification === "read_only";
-  const needsPassword =
-    toolCall.tool_name === "call_ui_operation" &&
-    toolCall.sql_preview.startsWith("POST /api/v1/users\n");
+  const needsPassword = toolCall.tool_name === "provision_user";
   const needsFile =
     toolCall.tool_name === "call_ui_operation" &&
     (/^POST \/api\/v1\/stages\/[^/\n]+\/files\n/.test(toolCall.sql_preview) ||

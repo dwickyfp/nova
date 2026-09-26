@@ -68,7 +68,10 @@ class QueryResult:
     error: str | None = None
 
     def __post_init__(self) -> None:
+        self.original_sql = redact_sql_credentials(self.original_sql)
         self.executed_sql = redact_sql_credentials(self.executed_sql)
+        if self.error:
+            self.error = redact_sql_credentials(self.error)
 
     @property
     def success(self) -> bool:

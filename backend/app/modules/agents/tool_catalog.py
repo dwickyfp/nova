@@ -15,8 +15,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.modules.agents.collaboration_tools import COLLABORATION_TOOLS
+from app.modules.agents.tools.describe_agent import DESCRIPTION, PARAMETERS
+
 #: name -> (description, input_schema)
 BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
+    **COLLABORATION_TOOLS,
+    "describe_agent": (DESCRIPTION, PARAMETERS),
     "send_agent_message": (
         "Send a finding or question to Auto during a specialist run.",
         {
@@ -220,30 +225,32 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "additionalProperties": False,
         },
     ),
-    "list_ui_operations": (
-        "Browse exact Nova UI API resources and operation schemas.",
+    "validate_sql": (
+        "Check SQL syntax locally without execution, object resolution or privilege verification.",
+        {"type": "object", "properties": {"sql": {"type": "string"}},
+         "required": ["sql"], "additionalProperties": False},
+    ),
+    "provision_user": (
+        "Create a user with protected temporary password input and mandatory password change.",
         {
             "type": "object",
             "properties": {
-                "resource": {"type": "string"},
-                "method": {"type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]},
-                "offset": {"type": "integer", "minimum": 0},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+                "username": {"type": "string"},
+                "role": {"type": "string"},
             },
+            "required": ["username", "role"],
             "additionalProperties": False,
         },
     ),
-    "call_ui_operation": (
-        "Execute one exact Nova UI API operation under the user's session and approval.",
+    "query_mutate": (
+        "Execute approved SQL writes through the caller's query pipeline; "
+        "no credentials or HTTP routes.",
         {
             "type": "object",
             "properties": {
-                "operation": {"type": "string"},
-                "path_params": {"type": "object"},
-                "query": {"type": "object"},
-                "body": {"type": "object"},
+                "sql": {"type": "string"},
             },
-            "required": ["operation"],
+            "required": ["sql"],
             "additionalProperties": False,
         },
     ),
@@ -318,7 +325,6 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
 #: authoring tools (create_*) are Nove-only and are not offered to a user agent.
 AGENT_BUNDLEABLE_TOOLS = (
     "load_skill",
-    "query_execute",
     "semantic_query",
     "semantic_search",
     "ai_search",

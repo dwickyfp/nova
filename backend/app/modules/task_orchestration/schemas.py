@@ -100,6 +100,9 @@ class GraphRun(GraphRunCreate):
     """
 
     id: str
+    execution_user: str | None = None
+    execution_role: str | None = None
+    execution_session_id: str | None = None
     wal_marks: dict[str, int] | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -127,11 +130,8 @@ class TaskRun(TaskRunCreate):
 
 # ── Read-only orchestration API (PR 4a) ────────────────────────────────────────
 #
-# Response models for `/api/v1/task-orchestration`. They are read-only and
-# credential-invisible by construction: every field is an id, a name, a state, a
-# timing, or schedule metadata. No model here carries a password, token, or
-# storage credential — the task *body* is not exposed either, because it can name
-# a stage whose credentials Nova injects at execution time.
+# Response models for `/api/v1/task-orchestration`. The node SQL endpoint returns
+# the original definition with credential redaction, never execution-time SQL.
 #
 # `error_message` is present because the UI needs to show why a node failed; it
 # is redacted by the router through the same helper the worker uses, so an engine
@@ -190,6 +190,8 @@ class GraphSummary(BaseModel):
     """One row of `GET /graphs`."""
 
     graph_id: str
+    owner_role: str | None = None
+    can_run: bool = False
     #: The schedule anchor: a root task with no incoming edge, when there is one.
     root_task: str | None = None
     #: The graph's scope, recovered from any member task.
@@ -246,6 +248,12 @@ class GraphDetailResponse(BaseModel):
     node_count: int
 
 
+class TaskSQLResponse(BaseModel):
+    task_id: str
+    name: str
+    sql: str | None = None
+
+
 class GraphRunResponse(BaseModel):
     """A graph-run row, without `wal_marks` (internal watermark bookkeeping)."""
 
@@ -254,6 +262,8 @@ class GraphRunResponse(BaseModel):
     trigger_type: TriggerType
     state: GraphRunState
     overlap_policy: OverlapPolicy
+    execution_user: str | None = None
+    execution_role: str | None = None
     started_at: datetime | None = None
     heartbeat_at: datetime | None = None
     finished_at: datetime | None = None

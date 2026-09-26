@@ -64,7 +64,7 @@ class AIModelCreate(BaseModel):
     provider_id: str
     name: str = Field(..., min_length=1, max_length=128)
     display_name: str | None = Field(default=None, max_length=256)
-    type: Literal["llm", "embedding"]
+    type: Literal["llm", "embedding", "decision"]
     max_tokens: int | None = Field(default=None, gt=0)
     logical_alias: str | None = Field(default=None, min_length=1, max_length=128)
     revision: str | None = Field(default=None, min_length=1, max_length=128)
@@ -75,6 +75,8 @@ class AIModelCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_embedding(self) -> "AIModelCreate":
+        if self.type == "decision" and self.max_tokens is not None:
+            raise ValueError("max_tokens applies only to LLM models")
         if self.type == "embedding":
             if not all((self.logical_alias, self.revision, self.dimensions)):
                 raise ValueError("Embedding models require logical_alias, revision, and dimensions")
@@ -92,7 +94,7 @@ class AIModelResponse(BaseModel):
     provider_id: str
     name: str
     display_name: str | None = None
-    type: Literal["llm", "embedding"]
+    type: Literal["llm", "embedding", "decision"]
     max_tokens: int | None = None
     logical_alias: str | None = None
     revision: str | None = None
@@ -117,7 +119,7 @@ class AIModelUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
     display_name: str | None = Field(default=None, max_length=256)
-    type: Literal["llm", "embedding"] | None = None
+    type: Literal["llm", "embedding", "decision"] | None = None
     max_tokens: int | None = Field(default=None, gt=0)
     logical_alias: str | None = Field(default=None, min_length=1, max_length=128)
     revision: str | None = Field(default=None, min_length=1, max_length=128)

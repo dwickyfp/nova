@@ -53,11 +53,6 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
 
         registry.register(load_skill_tool)
 
-    if "query_execute" in selected:
-        from app.modules.assistant.tools.query_execute import query_execute_tool
-
-        registry.register(query_execute_tool)
-
     # The semantic/agent tools live in this module's own ``tools`` package.
     # Imported lazily so a deployment that has not built them yet (they land in
     # later stages) still composes the tools it does have.

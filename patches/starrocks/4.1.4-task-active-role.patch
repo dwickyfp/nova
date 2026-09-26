@@ -1,0 +1,63 @@
+--- a/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java
++++ b/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java
+@@ -125,6 +125,8 @@
+     private ConnectContext runCtx;
+ 
+     private ConnectContext parentRunCtx;
++    private Set<Long> submittedRoleIds;
++    private UserIdentity submittedUserIdentity;
+ 
+     private TaskRunProcessor processor;
+ 
+@@ -169,6 +171,11 @@
+ 
+     public void setConnectContext(ConnectContext context) {
+         this.parentRunCtx = context;
++        if (context != null) {
++            this.submittedUserIdentity = context.getCurrentUserIdentity();
++            this.submittedRoleIds = context.getCurrentRoleIds() == null
++                    ? Sets.newHashSet() : Sets.newHashSet(context.getCurrentRoleIds());
++        }
+     }
+ 
+     public TaskRunProcessor getProcessor() {
+@@ -338,14 +345,24 @@
+             } else {
+                 context.setCurrentUserIdentity(UserIdentity.createAnalyzedUserIdentWithIp(status.getUser(), "%"));
+             }
+-            // For internal task runs (e.g., MV refresh), always activate all roles of the task user
+-            // to avoid relying on session default roles which may be empty (causing privilege errors).
++            boolean callerSubmitted = submittedRoleIds != null
++                    && context.getCurrentUserIdentity().equals(submittedUserIdentity);
+             try {
+-                context.setCurrentRoleIds(GlobalStateMgr.getCurrentState().getAuthorizationMgr()
+-                        .getRoleIdsByUser(context.getCurrentUserIdentity()));
++                Set<Long> assignedRoles = GlobalStateMgr.getCurrentState().getAuthorizationMgr()
++                        .getRoleIdsByUser(context.getCurrentUserIdentity());
++                if (callerSubmitted) {
++                    // Never expand a submitted task beyond the caller's selected, still-assigned roles.
++                    Set<Long> activeRoles = Sets.newHashSet(submittedRoleIds);
++                    activeRoles.retainAll(assignedRoles);
++                    context.setCurrentRoleIds(activeRoles);
++                } else {
++                    context.setCurrentRoleIds(assignedRoles);
++                }
+             } catch (PrivilegeException e) {
++                if (callerSubmitted) {
++                    throw new IllegalStateException("Task execution role is no longer available", e);
++                }
+                 LOG.warn("TaskRun {} set role failed", taskRunId, e);
+-                // Fallback to previous behavior if fetching roles fails
+                 context.setCurrentRoleIds(context.getCurrentUserIdentity());
+             }
+         }
+--- a/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java
++++ b/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java
+@@ -460,6 +460,7 @@
+                 .newBuilder(task)
+                 .properties(option.getTaskRunProperties())
+                 .setExecuteOption(option)
++                .setConnectContext(ConnectContext.get())
+                 .build();
+         return taskRunManager.submitTaskRun(taskRun, option);
+     }

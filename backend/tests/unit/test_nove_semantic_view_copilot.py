@@ -10,7 +10,6 @@ import pytest
 from app.modules.assistant.registry import build_registry
 from app.modules.assistant.tools import ToolInvocation
 from app.modules.assistant.tools.create_semantic_view import CreateSemanticViewTool
-from app.modules.assistant.tools.ui_actions import list_ui_operations_tool
 
 
 @pytest.fixture(autouse=True)
@@ -69,21 +68,10 @@ def _invocation(**overrides):
     )
 
 
-def test_nove_registers_real_creation_and_general_ui_actions():
+def test_nove_registers_typed_creation_without_api_actions():
     names = set(build_registry().names())
-    assert {"create_semantic_view", "list_ui_operations", "call_ui_operation"} <= names
-
-
-@pytest.mark.asyncio
-async def test_catalog_browses_exact_semantic_view_operations():
-    outcome = await list_ui_operations_tool.run(
-        ToolInvocation("browse", "list_ui_operations", {"resource": "semantic-views"}),
-        _context(),
-    )
-    assert outcome.ok
-    operations = {item["operation"] for item in outcome.data["operations"]}
-    assert "POST /api/v1/semantic-views" in operations
-    assert all("semantic-views" in item for item in operations)
+    assert {"create_semantic_view", "provision_user", "query_mutate"} <= names
+    assert not {"list_ui_operations", "call_ui_operation"} & names
 
 
 @pytest.mark.asyncio

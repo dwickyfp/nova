@@ -17,6 +17,7 @@ _TASKS = "NOVA_SYSTEM.CONFIG_TASKS"
 _EDGES = "NOVA_SYSTEM.CONFIG_TASK_EDGES"
 _GRAPH_RUNS = "NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS"
 _TASK_RUNS = "NOVA_SYSTEM.CONFIG_TASK_RUNS"
+_ROLE_BINDINGS = "NOVA_SYSTEM.CONFIG_TASK_ROLE_BINDINGS"
 
 _TASK_COLUMNS = (
     "id, name, database_name, schema_name, definition, schedule_kind, schedule_expr, "
@@ -26,7 +27,7 @@ _TASK_COLUMNS = (
 _EDGE_COLUMNS = "id, graph_id, parent_task, child_task, edge_kind, created_at"
 _GRAPH_RUN_COLUMNS = (
     "id, graph_id, trigger_type, state, overlap_policy, wal_marks, started_at, "
-    "heartbeat_at, finished_at"
+    "heartbeat_at, finished_at, execution_user, execution_role, execution_session_id"
 )
 _TASK_RUN_COLUMNS = (
     "id, graph_run_id, task_id, attempt, state, delegated, starrocks_query_id, "
@@ -140,9 +141,22 @@ def _task_scope_key(task: dict[str, Any]) -> tuple[str, str] | None:
 
 
 class TaskOrchestrationRepository:
-    """CRUD over the four ``CONFIG_TASK*`` tables."""
+    """CRUD over task definitions, runs, edges, and scheduled role bindings."""
 
     # ── Helpers ────────────────────────────────────────────────
+
+    async def get_role_execution_user(self, role: str) -> str | None:
+        result = await db.execute_system(
+            f"SELECT execution_user FROM {_ROLE_BINDINGS} WHERE role_name = %s", [role]
+        )
+        return str(result["rows"][0][0]) if result["rows"] else None
+
+    async def bind_role_execution_user(self, role: str, user: str, configured_by: str) -> None:
+        await db.execute_system(
+            f"INSERT INTO {_ROLE_BINDINGS} (role_name, execution_user, configured_by, updated_at) "
+            "VALUES (%s, %s, %s, NOW())",
+            [role, user, configured_by],
+        )
 
     @staticmethod
     def _to_dict(columns: str, row: list[Any]) -> dict[str, Any]:
@@ -268,15 +282,22 @@ class TaskOrchestrationRepository:
                 f"  SELECT child_task FROM {_EDGES} WHERE graph_id = %s"
                 ")"
             )
-            if scope is None:
-                # Legacy/unscoped graph id: the graph id is the task's own bare
-                # id, so resolve by name only.
+            if scope is None and len(graph_id.split(".")) == 2:
+                database_name, root_name = graph_id.split(".")
                 sql = (
                     f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
-                    "WHERE id = %s OR "
+                    "WHERE database_name = %s AND schema_name IS NULL AND "
+                    f"(name = %s OR {names_sql}) ORDER BY name"
+                )
+                params = [database_name, root_name, graph_id, graph_id]
+            elif scope is None:
+                sql = (
+                    f"SELECT {_TASK_COLUMNS} FROM {_TASKS} "
+                    "WHERE id = %s OR (name = %s AND database_name IS NULL "
+                    "AND schema_name IS NULL) OR "
                     f"({names_sql}) ORDER BY name"
                 )
-                params = [graph_id, graph_id, graph_id]
+                params = [graph_id, graph_id, graph_id, graph_id]
             else:
                 database_name, schema_name = scope
                 root_name = graph_id.rsplit(".", 1)[-1]
@@ -557,8 +578,8 @@ class TaskOrchestrationRepository:
             f"""
             INSERT INTO {_GRAPH_RUNS}
             (id, graph_id, trigger_type, state, overlap_policy, wal_marks,
-             started_at, finished_at)
-            SELECT %s, %s, %s, %s, %s, %s, NOW(), NULL
+             execution_user, execution_role, execution_session_id, started_at, finished_at)
+            SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NULL
             WHERE NOT EXISTS (SELECT 1 FROM {_GRAPH_RUNS} WHERE id = %s)
             """,
             [
@@ -568,6 +589,9 @@ class TaskOrchestrationRepository:
                 data.get("state", "pending"),
                 data.get("overlap_policy", "skip"),
                 self._encode_wal_marks(data.get("wal_marks")),
+                data.get("execution_user"),
+                data.get("execution_role"),
+                data.get("execution_session_id"),
                 run_id,
             ],
         )
@@ -589,8 +613,8 @@ class TaskOrchestrationRepository:
             f"""
             INSERT INTO {_GRAPH_RUNS}
             (id, graph_id, trigger_type, state, overlap_policy, wal_marks,
-             started_at, finished_at)
-            SELECT %s, %s, %s, %s, %s, %s, NOW(), NULL
+             execution_user, execution_role, execution_session_id, started_at, finished_at)
+            SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NULL
             WHERE NOT EXISTS (SELECT 1 FROM {_GRAPH_RUNS} WHERE id = %s)
             """,
             [
@@ -600,6 +624,9 @@ class TaskOrchestrationRepository:
                 data.get("state", "pending"),
                 data.get("overlap_policy", "skip"),
                 self._encode_wal_marks(data.get("wal_marks")),
+                data.get("execution_user"),
+                data.get("execution_role"),
+                data.get("execution_session_id"),
                 run_id,
             ],
         )

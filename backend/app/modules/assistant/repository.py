@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS (
     updated_at        DATETIME NOT NULL
 ) PRIMARY KEY(thread_id)
 DISTRIBUTED BY HASH(thread_id) BUCKETS 1
+ORDER BY (user_name, updated_at, thread_id)
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES (
     attachments       JSON
 ) PRIMARY KEY(message_id)
 DISTRIBUTED BY HASH(message_id) BUCKETS 1
+ORDER BY (thread_id, seq)
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
@@ -215,10 +217,16 @@ class AssistantRepository:
             "updated_at": now,
         }
 
-    async def list_threads(self, *, user_name: str, agent_id: str | None = None) -> list[dict]:
+    async def list_threads(
+        self, *, user_name: str, agent_id: str | None = None, all_agents: bool = False
+    ) -> list[dict]:
+        if all_agents and agent_id is not None:
+            raise ValueError("Choose either one agent or all agents")
         clauses = ["t.user_name = %s"]
         params: list = [user_name]
-        if agent_id is None:
+        if all_agents:
+            clauses.append("t.agent_id IS NOT NULL")
+        elif agent_id is None:
             clauses.append("t.agent_id IS NULL")
         else:
             clauses.append("t.agent_id = %s")
@@ -229,7 +237,7 @@ class AssistantRepository:
             "(SELECT COUNT(*) FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES m "
             " WHERE m.thread_id = t.thread_id AND m.user_name = t.user_name) AS message_count "
             "FROM NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS t "
-            f"WHERE {' AND '.join(clauses)} ORDER BY t.updated_at DESC"
+            f"WHERE {' AND '.join(clauses)} ORDER BY t.updated_at DESC, t.thread_id DESC"
         )
         count_sql = (
             "SELECT %s AS requested_user, %s AS requested_agent, COUNT(*) "
@@ -245,7 +253,9 @@ class AssistantRepository:
                 if not isinstance(rows, (list, tuple)):
                     raise ValueError("Assistant thread list returned invalid rows")
                 if not all(
-                    _valid_thread_list_row(row, user_name=user_name, agent_id=agent_id)
+                    _valid_thread_list_row(
+                        row, user_name=user_name, agent_id=agent_id, all_agents=all_agents
+                    )
                     for row in rows
                 ):
                     raise ValueError("Assistant thread list returned invalid rows")
@@ -554,17 +564,20 @@ def _thread_row(row: list) -> dict:
 
 
 def _valid_thread_list_row(
-    row: object, *, user_name: str, agent_id: str | None
+    row: object, *, user_name: str, agent_id: str | None, all_agents: bool = False
 ) -> bool:
     if not isinstance(row, (list, tuple)) or len(row) != 8:
         return False
+    agent_matches = (
+        isinstance(row[4], str) and bool(row[4]) if all_agents else row[4] == agent_id
+    )
     if (
         not isinstance(row[0], str)
         or not row[0]
         or row[1] != user_name
         or not isinstance(row[2], str)
         or not isinstance(row[3], (str, type(None)))
-        or row[4] != agent_id
+        or not agent_matches
     ):
         return False
     for value in (row[5], row[6]):

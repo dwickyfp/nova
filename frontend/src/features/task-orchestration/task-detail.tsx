@@ -102,7 +102,7 @@ export default function TaskDetail({ graphId }: { graphId: string }) {
               {detail?.graph_id ?? graphId}
             </h1>
             {detail ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="truncate text-sm text-muted-foreground">
                 {detail.node_count} {detail.node_count === 1 ? "node" : "nodes"}{" "}
                 · {formatSchedule(anchor?.schedule_kind, anchor?.schedule_expr)}
               </p>
@@ -127,6 +127,8 @@ export default function TaskDetail({ graphId }: { graphId: string }) {
       >
         <div className="absolute inset-0">
           <TaskFlow
+            key={graphId}
+            graphId={graphId}
             nodes={detail?.nodes ?? []}
             edges={detail?.edges ?? []}
             isLoading={detailQuery.isLoading}

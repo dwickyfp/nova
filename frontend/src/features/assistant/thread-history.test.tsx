@@ -67,4 +67,24 @@ describe("ThreadHistory", () => {
       ),
     ).toBe(false);
   });
+
+  it("loads another page only on request and keeps both conversations", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockImplementation(async (input) => {
+      const older = String(input).includes("cursor=older");
+      return json({
+        threads: [{ thread_id: older ? "old" : "new", title: older ? "Earlier question" : "Latest question",
+          created_at: "2026-09-25T00:00:00Z", updated_at: "2026-09-25T00:00:00Z", message_count: 2 }],
+        count: 1, next_cursor: older ? null : "older",
+      });
+    });
+    const view = await renderHistory({ activeThreadId: null, onOpenThread: () => {} });
+    await view.getByRole("button", { name: "Chat history" }).click();
+    await expect.element(view.getByRole("button", { name: /Latest question/ })).toBeVisible();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("cursor=older"))).toBe(false);
+    await view.getByRole("button", { name: "Load more conversations" }).click();
+    await expect.element(view.getByRole("button", { name: /Earlier question/ })).toBeVisible();
+    await expect.element(view.getByRole("button", { name: /Latest question/ })).toBeVisible();
+    await expect.element(view.getByRole("button", { name: "Load more conversations" })).not.toBeInTheDocument();
+  });
 });

@@ -75,11 +75,22 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS (
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
+ORDER BY (entry_id, version)
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 """
 
 
 TASK_ORCHESTRATION_DDL = (
+    """
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_ROLE_BINDINGS (
+    role_name VARCHAR(128) NOT NULL,
+    execution_user VARCHAR(128) NOT NULL,
+    configured_by VARCHAR(128) NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) PRIMARY KEY(role_name)
+DISTRIBUTED BY HASH(role_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
+""",
     """
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASKS (
     id             VARCHAR(64) NOT NULL,
@@ -122,6 +133,9 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS (
     state          VARCHAR(32) NOT NULL,
     overlap_policy VARCHAR(16) NOT NULL DEFAULT 'skip',
     wal_marks      TEXT,
+    execution_user VARCHAR(128),
+    execution_role VARCHAR(128),
+    execution_session_id VARCHAR(128),
     started_at     DATETIME,
     heartbeat_at   DATETIME,
     finished_at    DATETIME
@@ -303,6 +317,9 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 #: the caller's job: each entry is ``(table, column, type)`` and the migration
 #: is applied only when ``information_schema.columns`` says it is absent.
 TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("CONFIG_TASK_GRAPH_RUNS", "execution_session_id", "VARCHAR(128)"),
+    ("CONFIG_TASK_GRAPH_RUNS", "execution_user", "VARCHAR(128)"),
+    ("CONFIG_TASK_GRAPH_RUNS", "execution_role", "VARCHAR(128)"),
     ("CONFIG_TASK_RUNS", "heartbeat_at", "DATETIME"),
     ("CONFIG_TASK_GRAPH_RUNS", "heartbeat_at", "DATETIME"),
     # Nova's own consecutive-failure counter. The engine auto-pauses a task

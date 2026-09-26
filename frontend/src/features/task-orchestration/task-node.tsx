@@ -7,11 +7,9 @@ const HANDLE_CLASS = "!size-2 !border-border !bg-background";
 
 /**
  * One task in the flow. Renders the task name, its schedule, and its last
- * observed state. The card is deliberately non-interactive: the flow is a
- * read-only picture of the graph, and every action lives on the run history
- * below it.
+ * observed state. Selecting a node exposes its SQL in the canvas toolbar.
  */
-export function TaskNode({ data }: NodeProps<TaskFlowNode>) {
+export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const nodeData = data as TaskNodeData;
   return (
     <div
@@ -20,6 +18,7 @@ export function TaskNode({ data }: NodeProps<TaskFlowNode>) {
         nodeData.isFinalizer
           ? "border-primary/40 border-dashed"
           : "border-border",
+        selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
       )}
     >
       <Handle type="target" position={Position.Left} className={HANDLE_CLASS} />

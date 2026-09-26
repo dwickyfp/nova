@@ -24,6 +24,11 @@ from pydantic import BaseModel, Field
 from app.common.audit import write_audit_log
 from app.common.ssrf_guard import BlockedEndpointError, resolve_and_validate_url
 from app.core.deps import get_current_user, require_role
+from app.modules.ai_ml.decision_settings import (
+    DecisionSettings,
+    read_decision_settings,
+    save_decision_settings,
+)
 from app.modules.ai_ml.schemas import (
     AIModelCreate,
     AIModelListResponse,
@@ -69,6 +74,25 @@ def _validate_provider_endpoint(endpoint: str) -> None:
 # ── Providers ──────────────────────────────────────────────────
 
 
+@router.get("/decision-settings", response_model=DecisionSettings)
+async def get_decision_settings(user: dict = require_user):
+    return await read_decision_settings()
+
+
+@router.put("/decision-settings", response_model=DecisionSettings)
+async def update_decision_settings(body: DecisionSettings, user: dict = require_admin):
+    try:
+        result = await save_decision_settings(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    await write_audit_log(
+        event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
+        object_type="DECISION_SETTINGS", object_name="studio_decision_mode", status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return result
+
+
 @router.get("/providers", response_model=AIProviderListResponse)
 async def list_providers(
     user: dict = require_user,
@@ -90,6 +114,11 @@ async def create_provider(
         result = await ai_service.create_provider(body.model_dump(), user["username"])
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    await write_audit_log(
+        event_type="AI_PROVIDER", user_name=user["username"], action="CREATE",
+        object_type="AI_PROVIDER", object_name=result["id"], status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
     return AIProviderResponse(**result)
 
 
@@ -102,6 +131,11 @@ async def delete_provider(
     deleted = await ai_service.delete_provider(provider_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
+    await write_audit_log(
+        event_type="AI_PROVIDER", user_name=user["username"], action="DELETE",
+        object_type="AI_PROVIDER", object_name=provider_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
 
 
 @router.put("/providers/{provider_id}", response_model=AIProviderResponse)
@@ -122,6 +156,11 @@ async def update_provider(
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not result:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
+    await write_audit_log(
+        event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
+        object_type="AI_PROVIDER", object_name=provider_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
     return AIProviderResponse(**result)
 
 

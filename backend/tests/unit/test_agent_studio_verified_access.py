@@ -41,7 +41,7 @@ async def test_studio_list_and_runtime_follow_active_role(monkeypatch) -> None:
     monkeypatch.setattr(agent_repository, "list_agent_roles", grants)
 
     studio_agents = await router.list_agents(studio=True, user=_user("ACCOUNTADMIN"))
-    assert [agent.agent_id for agent in studio_agents.agents] == ["__auto__"]
+    assert [agent.agent_id for agent in studio_agents.agents] == ["__smart__"]
     with pytest.raises(HTTPException) as denied:
         await router._require_agent("sales", _user("ACCOUNTADMIN"))
     assert denied.value.status_code == 404

@@ -88,11 +88,13 @@ type UDFStatusItem = {
 type ProviderOption = {
   id: string
   name: string
+  type: string
 }
 
 type ModelOption = {
   id: string
   name: string
+  type: string
   display_name: string | null
 }
 
@@ -202,7 +204,7 @@ export function FunctionsTab() {
         providers: ProviderOption[]
         count: number
       }>('/ai/providers')
-      setProviderOptions(res.providers)
+      setProviderOptions(res.providers.filter((provider) => provider.type !== 'decision'))
     } catch {
       // Non-critical
     }
@@ -219,7 +221,7 @@ export function FunctionsTab() {
           models: ModelOption[]
           count: number
         }>(`/ai/providers/${providerId}/models`)
-        setModelOptions(res.models)
+        setModelOptions(res.models.filter((model) => model.type !== 'decision'))
       } catch {
         setModelOptions([])
       }

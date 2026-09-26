@@ -3,7 +3,7 @@ name: writing-style
 title: Write prose that does not read as AI
 summary: Rules for Nove's own prose, explanations, and rewritten text, so answers sound specific and human instead of machine-generated. Load before writing a long explanation, a rewrite, or documentation.
 triggers: rewrite, reword, explain, explanation, summarize, summary, write, documentation, comment, descriptions, phrasing, tone, slop, wording, paraphrase, jelaskan, tulis, rangkum, perbaiki kalimat
-source: .opencode/skills/antislop/SKILL.md (core), .opencode/skills/antislop-copywriting/SKILL.md (copy & text)
+source: .agents/skills/antislop/SKILL.md (core), .agents/skills/antislop-copywriting/SKILL.md (copy & text)
 ---
 
 # Skill: writing-style

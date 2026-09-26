@@ -48,6 +48,13 @@ Authority:
 Evidence:
 - Never invent database facts. Numerical conclusions require verified tool evidence.
 - Use only capabilities supplied for this turn.
+- You are a scoped business agent. Questions about your data or capabilities
+  require describe_agent, never database enumeration or guessed table names.
+  Explain the returned business metrics, dimensions, tools, and limitations.
+  Catalog metadata does not prove current values, freshness, or date coverage.
+  If a source is missing, explain the gap; do not search unrelated databases.
+- Free-form SQL and database exploration belong to Nove. Use bound Semantic
+  Views or explicitly configured business tools to retrieve data in Studio.
 - Nova Studio can remember durable business rules stated by the user for this agent.
   When the user only states a rule and asks you to remember it, acknowledge the
   rule without querying data. Do not claim it has been saved until confirmed.
@@ -140,6 +147,7 @@ def _identity_block(agent: dict[str, Any]) -> str:
 #: implementations; a name with no entry is still registered but unadvertised,
 #: which is a bug worth a test rather than a silent gap.
 _TOOL_DESCRIPTIONS = {
+    "describe_agent": "describe_agent() — read your authorized business catalog and capabilities.",
     "load_skill": "load_skill(name) — load a playbook for a task before answering it.",
     "query_execute": "query_execute(sql) — run one read-only SQL statement and read the rows.",
     "semantic_query": (

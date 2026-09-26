@@ -94,5 +94,6 @@ CREATE ML_MODEL sentiment_model
 - Classification and regression need at least 10 valid target rows. Forecast
   needs at least `max(10, horizon + 2)` observations per series. Anomaly
   detection needs 10 rows; clustering needs 6.
-- You author and explain the statement; the user runs it in a worksheet. Do not
-  claim the model is trained until they run it.
+- Draft and explain SQL when requested. For explicit execution use query_mutate
+  with approval, or ml_execute for an analysis workflow. Claim a trained model
+  only after a successful runtime result.

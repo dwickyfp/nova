@@ -83,6 +83,10 @@ def _surface_boosts(app_context: NoveAppContext | None) -> dict[str, int]:
 def search_references(
     query: str, *, app_context: NoveAppContext | None = None
 ) -> list[dict[str, str]]:
+    if query.strip().lower().startswith("syntax:"):
+        from app.modules.assistant.sql_reference import syntax_references
+
+        return syntax_references(query.strip()[7:].strip())
     terms = set(re.findall(r"[\w@-]+", query.lower())) - _STOP_WORDS
     boosts = _surface_boosts(app_context)
     if not terms and not boosts:
@@ -145,8 +149,10 @@ class SearchKnowledgeTool:
     name = "search_knowledge"
     description = (
         "Search packaged Nova product guidance and SQL playbooks using topic keywords "
-        "in English or Indonesian. Returns bounded guidance. These references "
-        "describe Nova; they do not prove current "
+        "in English or Indonesian. Returns bounded guidance. "
+        "For exact packaged SQL grammar use query 'syntax:CREATE TABLE' or "
+        "'syntax:createTableStatement'; referenced rules can be looked up the same way. "
+        "These references describe Nova; they do not prove current "
         "database contents, privileges, deployment configuration, or task status."
     )
     parameters = {

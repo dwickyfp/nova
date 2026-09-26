@@ -169,6 +169,43 @@ def fakes(monkeypatch):
 # ── 1. Read-only executes through the in-process service ─────────────────────
 
 
+@pytest.mark.parametrize("sql", [
+    "SHOW VIEWS", "show views from NOVA_SALES;", "SHOW\nVIEWS",
+])
+async def test_show_views_returns_scoped_repair_without_engine_call(fakes, sql):
+    service, audit = fakes
+    outcome = await QueryExecuteTool().run(_invocation(sql), _context())
+    assert not outcome.ok
+    assert outcome.recoverable
+    assert outcome.error_class == "UNSUPPORTED_SQL"
+    assert "information_schema.views" in outcome.error
+    assert "TABLE_SCHEMA" in outcome.error
+    assert not service.calls
+    assert audit.rows[-1]["status"] == "ERROR"
+
+
+@pytest.mark.parametrize("sql", ["SHOW VIEWS; DELETE FROM facts", "/* inspect */ SHOW VIEWS"])
+async def test_show_views_repair_does_not_override_policy_refusal(fakes, sql):
+    service, _ = fakes
+    outcome = await QueryExecuteTool().run(
+        _invocation(sql), _context(),
+    )
+    assert not outcome.ok
+    assert not outcome.recoverable
+    assert not service.calls
+
+
+@pytest.mark.parametrize("sql", [
+    "SHOW CREATE VIEW db1.orders", "SELECT 'SHOW VIEWS' AS label",
+])
+async def test_other_view_queries_keep_the_existing_execution_path(fakes, sql):
+    service, _ = fakes
+    service._results = [FakeResult(columns=["value"], rows=[["result"]])]
+    outcome = await QueryExecuteTool().run(_invocation(sql), _context())
+    assert outcome.ok
+    assert service.calls[0]["sql"] == sql
+
+
 async def test_read_only_statement_runs_through_query_service(fakes):
     service, audit = fakes
     service._results = [
@@ -394,7 +431,7 @@ async def test_grant_never_auto_approves_zero_gap_into_stage():
         )
     )
     assert "tool_call" in [_frame_event(f) for f in frames]  # NOT auto-approved
-    assert asked == ["denied"]
+    assert asked == []  # A policy denial cannot be overridden by consent.
     assert tool.runs == 0
 
 
@@ -543,7 +580,7 @@ async def test_grant_never_auto_approves_explain_over_a_mutation():
         )
     )
     assert "tool_call" in [_frame_event(f) for f in frames]
-    assert asked == ["denied"]
+    assert asked == []
     assert tool.runs == 0
 
 

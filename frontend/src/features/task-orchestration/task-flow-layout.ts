@@ -1,4 +1,9 @@
-import type { Edge, Node } from "@xyflow/react";
+import {
+  getViewportForBounds,
+  type Edge,
+  type Node,
+  type Rect,
+} from "@xyflow/react";
 import type { GraphEdge, GraphNode, ScheduleKind, TaskRunState } from "./api";
 import { formatSchedule, type ToneName } from "./presentation";
 
@@ -159,22 +164,19 @@ function taskNodeTone(node: GraphNode): ToneName {
   }
 }
 
-/**
- * The viewport the flow should use so it centres in the space the bottom drawer
- * leaves visible, rather than behind the drawer.
- *
- * React Flow's `fitView` centres on the whole pane. The flow must stay
- * full-bleed, so instead of shrinking the pane the whole content is shifted up
- * by half the hidden band: the graph's centre then sits at the centre of the
- * visible box. The shift is in flow coordinates, so it scales with `zoom`.
- */
-export function viewportAboveInset(
-  viewport: { x: number; y: number; zoom: number },
+/** Fit to the visible canvas; the full-bleed background stays behind the drawer. */
+export function taskFlowViewport(
+  bounds: Rect,
+  width: number,
+  height: number,
   bottomInset: number,
 ): { x: number; y: number; zoom: number } {
-  if (bottomInset <= 0) return viewport;
-  return {
-    ...viewport,
-    y: viewport.y + (bottomInset * viewport.zoom) / 2,
-  };
+  return getViewportForBounds(
+    bounds,
+    width,
+    Math.max(1, height - Math.max(0, bottomInset)),
+    0.01,
+    1,
+    0.2,
+  );
 }

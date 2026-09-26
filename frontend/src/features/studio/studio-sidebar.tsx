@@ -58,13 +58,18 @@ export function StudioSidebar({
   onDeleteThread,
   onRenameThread,
   threadsLoading = false,
+  threadsError = false,
+  onRetryThreads,
+  hasMoreThreads = false,
+  loadingMoreThreads = false,
+  onLoadMoreThreads,
   footer,
   open,
   onToggle,
 }: {
   view: StudioView;
   onView: (view: StudioView) => void;
-  /** Past conversations for the active agent, newest first. */
+  /** Conversations across all accessible agents, newest first. */
   threads: AgentThread[];
   activeThreadId: string | null;
   onOpenThread: (threadId: string) => void;
@@ -74,6 +79,11 @@ export function StudioSidebar({
   /** Renames a conversation. Omit to keep titles read-only. */
   onRenameThread?: (threadId: string, title: string) => void;
   threadsLoading?: boolean;
+  threadsError?: boolean;
+  onRetryThreads?: () => void;
+  hasMoreThreads?: boolean;
+  loadingMoreThreads?: boolean;
+  onLoadMoreThreads?: () => void;
   /** The account menu, rendered at the bottom of the rail. */
   footer?: React.ReactNode;
   open: boolean;
@@ -177,11 +187,17 @@ export function StudioSidebar({
                 History
               </span>
             </div>
+            {threadsError ? (
+              <div role="alert" className="px-1 py-2 text-xs text-muted-foreground">
+                Could not load conversations.
+                {onRetryThreads ? <Button variant="link" size="sm" className="h-auto px-1 text-xs" onClick={onRetryThreads}>Retry history</Button> : null}
+              </div>
+            ) : null}
             {threadsLoading ? (
               <p className="px-1 py-2 text-xs text-muted-foreground">
                 Loading conversations
               </p>
-            ) : threads.length === 0 ? (
+            ) : threads.length === 0 && !threadsError && !hasMoreThreads ? (
               <p className="px-1 py-2 text-xs text-muted-foreground">
                 No conversations yet. Ask something and it will appear here.
               </p>
@@ -208,6 +224,12 @@ export function StudioSidebar({
                 ))}
               </ul>
             )}
+            {hasMoreThreads ? (
+              <Button type="button" variant="ghost" size="sm" className="mt-2 h-auto w-full py-3 sm:py-2"
+                disabled={loadingMoreThreads} onClick={onLoadMoreThreads}>
+                {loadingMoreThreads ? "Loading…" : "Load more conversations"}
+              </Button>
+            ) : null}
           </div>
         </ScrollArea>
       ) : (

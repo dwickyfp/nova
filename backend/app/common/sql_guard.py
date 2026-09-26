@@ -249,16 +249,20 @@ def strip_sql_comments(sql: str) -> str:
     while i < length:
         ch = sql[i]
 
-        if ch == "'":
-            # Copy the whole literal verbatim, handling '' escapes.
+        if ch in "'\"`":
+            quote = ch
             out.append(ch)
             i += 1
             while i < length:
                 lit = sql[i]
                 out.append(lit)
-                if lit == "'":
-                    if i + 1 < length and sql[i + 1] == "'":
-                        out.append("'")
+                if lit == "\\" and quote != "`" and i + 1 < length:
+                    out.append(sql[i + 1])
+                    i += 2
+                    continue
+                if lit == quote:
+                    if i + 1 < length and sql[i + 1] == quote:
+                        out.append(quote)
                         i += 2
                         continue
                     i += 1
@@ -605,6 +609,7 @@ def redact_sql_credentials(sql: str) -> str:
     """
     if not sql:
         return sql
+    sql = _redact_account_credentials(sql)
     for pattern, quoted_key in _CREDENTIAL_PATTERNS:
         sql = pattern.sub(
             lambda m, quoted=quoted_key: _redacted_assignment(m, quoted), sql
@@ -614,6 +619,44 @@ def redact_sql_credentials(sql: str) -> str:
             "credential parameters remain populated after redaction; refusing to "
             "return the statement"
         )
+    return sql
+
+
+_SQL_GAP = r"(?:\s|/\*.*?\*/|--[^\n]*(?:\n|$))"
+_ACCOUNT_SECRET = re.compile(
+    rf"\b(?:IDENTIFIED{_SQL_GAP}+(?:BY(?:{_SQL_GAP}+PASSWORD)?"
+    rf"|WITH{_SQL_GAP}+\w+{_SQL_GAP}+(?:AS|BY))"
+    rf"|SET{_SQL_GAP}+PASSWORD(?:{_SQL_GAP}+FOR{_SQL_GAP}+.*?)?{_SQL_GAP}*=)"
+    rf"{_SQL_GAP}*(?:PASSWORD{_SQL_GAP}*\({_SQL_GAP}*)?",
+    re.I | re.S,
+)
+
+
+def _redact_account_credentials(sql: str) -> str:
+    edits: list[tuple[int, int]] = []
+    for match in _ACCOUNT_SECRET.finditer(sql):
+        start = match.end()
+        if start >= len(sql) or sql[start] not in "'\"":
+            # Prose and incomplete SQL have no quoted credential to reveal.
+            continue
+        quote = sql[start]
+        i = start + 1
+        while i < len(sql):
+            if sql[i] == "\\":
+                i += 2
+            elif sql[i] == quote:
+                if i + 1 < len(sql) and sql[i + 1] == quote:
+                    i += 2
+                    continue
+                if sql[start + 1:i] not in {"", "***", "<temporary_password>"}:
+                    edits.append((start, i + 1))
+                break
+            else:
+                i += 1
+        else:
+            raise CredentialsRedactionError("Unterminated account credential; refusing to return SQL.")
+    for start, end in reversed(edits):
+        sql = sql[:start] + "'***'" + sql[end:]
     return sql
 
 
@@ -684,16 +727,22 @@ def split_sql_statements(sql: str) -> list[str]:
     while i < length:
         ch = sql[i]
 
-        if ch == "'":
-            # Copy the whole literal verbatim, handling '' escapes.
+        if ch in "'\"`":
+            # Match the engine's quoted strings/identifiers, including an
+            # escaped quote before a semicolon in protected password input.
+            quote = ch
             current.append(ch)
             i += 1
             while i < length:
                 lit = sql[i]
                 current.append(lit)
-                if lit == "'":
-                    if i + 1 < length and sql[i + 1] == "'":
-                        current.append("'")
+                if lit == "\\" and quote != "`" and i + 1 < length:
+                    current.append(sql[i + 1])
+                    i += 2
+                    continue
+                if lit == quote:
+                    if i + 1 < length and sql[i + 1] == quote:
+                        current.append(quote)
                         i += 2
                         continue
                     i += 1

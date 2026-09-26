@@ -28,6 +28,11 @@ RUN git -C /src apply --check /tmp/ranger-active-role.patch \
 COPY patches/starrocks/4.1.4-ranger-rpc-context.patch /tmp/ranger-rpc-context.patch
 RUN git -C /src apply --check /tmp/ranger-rpc-context.patch \
     && git -C /src apply /tmp/ranger-rpc-context.patch
+RUN git -C /src sparse-checkout add /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java \
+    /fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java
+COPY patches/starrocks/4.1.4-task-active-role.patch /tmp/task-active-role.patch
+RUN git -C /src apply --check /tmp/task-active-role.patch \
+    && git -C /src apply /tmp/task-active-role.patch
 COPY --from=upstream /opt/starrocks/fe/lib /opt/starrocks/fe/lib
 RUN curl -fsSLo /opt/starrocks/fe/lib/nashorn-core-${NASHORN_VERSION}.jar \
        https://repo1.maven.org/maven2/org/openjdk/nashorn/nashorn-core/${NASHORN_VERSION}/nashorn-core-${NASHORN_VERSION}.jar \
@@ -36,11 +41,14 @@ RUN curl -fsSLo /opt/starrocks/fe/lib/nashorn-core-${NASHORN_VERSION}.jar \
        https://repo1.maven.org/maven2/org/ow2/asm/asm-commons/${ASM_COMMONS_VERSION}/asm-commons-${ASM_COMMONS_VERSION}.jar \
     && echo "${ASM_COMMONS_SHA256}  /opt/starrocks/fe/lib/asm-commons-${ASM_COMMONS_VERSION}.jar" | sha256sum -c -
 RUN mkdir -p /tmp/classes \
-    && javac -cp '/opt/starrocks/fe/lib/*' -d /tmp/classes \
+    && javac -encoding UTF-8 -cp '/opt/starrocks/fe/lib/*' -d /tmp/classes \
        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerStarRocksAccessRequest.java \
        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/RangerAccessController.java \
        /src/fe/fe-core/src/main/java/com/starrocks/authorization/ranger/starrocks/RangerStarRocksAccessController.java \
-    && jar uf /opt/starrocks/fe/lib/fe-core-4.1.4.jar -C /tmp/classes com/starrocks/authorization/ranger
+       /src/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java \
+       /src/fe/fe-core/src/main/java/com/starrocks/scheduler/TaskManager.java \
+    && jar uf /opt/starrocks/fe/lib/fe-core-4.1.4.jar -C /tmp/classes com/starrocks/authorization/ranger \
+       -C /tmp/classes com/starrocks/scheduler
 
 FROM starrocks/fe-ubuntu:${STARROCKS_VERSION}
 LABEL org.opencontainers.image.title="Nova patched StarRocks FE"

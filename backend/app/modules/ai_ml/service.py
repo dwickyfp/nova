@@ -452,6 +452,16 @@ class AIService:
         guard before any network activity, and the request itself uses the
         guard's transport so redirects are checked at every hop (NOVA-107).
         """
+        if provider_type == "decision":
+            return {
+                "success": False,
+                "message": (
+                    "Decision endpoints do not support model discovery. "
+                    "Register a model and configure it in Decision settings."
+                ),
+                "models": [],
+            }
+
         # Build request based on provider type
         base_url = endpoint.rstrip("/")
         headers: dict[str, str] = {}

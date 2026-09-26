@@ -32,6 +32,7 @@ from typing import Any, Protocol
 
 from app.common.audit import write_audit_log
 from app.core.config import settings
+from app.modules.task_orchestration.access import graph_role
 from app.modules.task_orchestration.dag import (
     TERMINAL_NODE_STATES,
     GraphState,
@@ -70,6 +71,9 @@ class GraphRunJob:
     graph_id: str
     trigger_type: str = "schedule"
     task_ids: tuple[str, ...] = ()
+    execution_user: str | None = None
+    execution_role: str | None = None
+    execution_session_id: str | None = None
 
     @classmethod
     def from_payload(cls, payload: dict[str, str]) -> GraphRunJob:
@@ -118,8 +122,11 @@ class GraphRunWorker:
         job = GraphRunJob(
             graph_run_id=job.graph_run_id,
             graph_id=str(graph_run["graph_id"]),
-            trigger_type=job.trigger_type,
+            trigger_type=str(graph_run.get("trigger_type") or "schedule"),
             task_ids=job.task_ids,
+            execution_user=graph_run.get("execution_user"),
+            execution_role=graph_run.get("execution_role"),
+            execution_session_id=graph_run.get("execution_session_id"),
         )
         if graph_run.get("state") in {
             GraphState.SUCCESS.value,
@@ -169,10 +176,7 @@ class GraphRunWorker:
             return True
         return any(
             str(run["id"]) != job.graph_run_id
-            and (
-                str(run.get("state")) == GraphState.RUNNING.value
-                or index < own_position
-            )
+            and (str(run.get("state")) == GraphState.RUNNING.value or index < own_position)
             for index, run in enumerate(active)
         )
 
@@ -183,6 +187,32 @@ class GraphRunWorker:
         # right scope — a global task list would collide same-named tasks in
         # different schemas.
         tasks = await self._repository.list_tasks(job.graph_id)
+        owner_role = graph_role(tasks)
+        identity_error = None
+        if (
+            not job.execution_user
+            or not job.execution_role
+            or (job.trigger_type == "manual" and not job.execution_session_id)
+        ):
+            identity_error = (
+                "Run has no execution identity; start a new manual run or configure "
+                "the owner role's scheduled execution account"
+            )
+        elif owner_role is None or owner_role != job.execution_role:
+            identity_error = "Task ownership changed or graph contains different owner roles"
+        elif job.trigger_type != "manual":
+            bound_user = await self._repository.get_role_execution_user(owner_role)
+            if bound_user != job.execution_user:
+                identity_error = "Scheduled execution account binding changed; start a new run"
+        tasks = [
+            {
+                **task,
+                "created_by": job.execution_user,
+                "owner_role": job.execution_role,
+                "execution_identity_error": identity_error,
+            }
+            for task in tasks
+        ]
         edges = await self._repository.list_edges(job.graph_id)
         by_id = {task["id"]: task for task in tasks}
         by_name = {task["name"]: task for task in tasks}
@@ -365,6 +395,16 @@ class GraphRunWorker:
 
     async def _when_then_execute(self, job: GraphRunJob, task: dict[str, Any], run_id: str) -> None:
         """Evaluate ``WHEN`` then execute, as one schedulable unit."""
+        if task.get("execution_identity_error"):
+            await self._finalize(
+                job,
+                task,
+                run_id,
+                job.execution_user,
+                NodeState.FAILED,
+                error=task["execution_identity_error"],
+            )
+            return
         if await self._when_allows(job, task, run_id):
             await self._execute_one(job, task, run_id)
 
@@ -384,6 +424,7 @@ class GraphRunWorker:
             body=task.get("definition") or "",
             database=task.get("database_name"),
             active_role=task.get("owner_role"),
+            execution_session_id=job.execution_session_id if job.trigger_type == "manual" else None,
             schema=task.get("schema_name"),
         )
         try:
@@ -420,6 +461,7 @@ class GraphRunWorker:
             body=body,
             database=task.get("database_name"),
             active_role=task.get("owner_role"),
+            execution_session_id=job.execution_session_id if job.trigger_type == "manual" else None,
             schema=task.get("schema_name"),
             native_name=native_attempt_name(run_id),
         )
@@ -537,6 +579,7 @@ class GraphRunWorker:
         await write_audit_log(
             event_type="task_node_run",
             user_name=owner or "nova-worker",
+            active_role=task.get("owner_role"),
             action="NODE_" + state.upper(),
             object_type="TASK",
             object_name=task["name"],

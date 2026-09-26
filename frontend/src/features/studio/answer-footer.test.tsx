@@ -8,6 +8,21 @@ import "@/styles/index.css";
 
 afterEach(() => vi.restoreAllMocks());
 
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+function FeedbackHarness({ save }: { save: (feedback: AnswerFeedback) => Promise<void> }) {
+  const [feedback, setFeedback] = useState<AnswerFeedback>(null);
+  return <AnswerFooter answer="Answer" feedback={feedback} onFeedback={async (next) => {
+    await save(next);
+    setFeedback(next);
+  }} />;
+}
+
 describe("AnswerFooter", () => {
   it("copies the answer and confirms success", async () => {
     const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
@@ -70,6 +85,82 @@ describe("AnswerFooter", () => {
       .element(page.getByRole("button", { name: "Like answer", exact: true }))
       .toHaveAttribute("aria-pressed", "true");
     expect(error).toHaveBeenCalled();
+  });
+
+  it("changes the rating immediately and keeps the latest choice while saving", async () => {
+    const first = deferred(), second = deferred();
+    const save = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    await render(<FeedbackHarness save={save} />);
+    const like = page.getByRole("button", { name: "Like answer", exact: true });
+    const dislike = page.getByRole("button", { name: "Dislike answer", exact: true });
+
+    await like.click();
+    await expect.element(like).toHaveAttribute("aria-pressed", "true");
+    await expect.element(like).toBeEnabled();
+    await expect.element(dislike).toBeEnabled();
+    expect(getComputedStyle(like.element()).opacity).toBe("1");
+    await dislike.click();
+    await expect.element(dislike).toHaveAttribute("aria-pressed", "true");
+    await expect.element(like).toHaveAttribute("aria-pressed", "false");
+    expect(save.mock.calls).toEqual([["like"]]);
+
+    first.resolve();
+    await expect.poll(() => save.mock.calls).toEqual([["like"], ["dislike"]]);
+    await expect.element(dislike).toHaveAttribute("aria-pressed", "true");
+    second.resolve();
+    await expect.element(dislike).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("coalesces rapid changes and lets the user clear a pending rating", async () => {
+    const first = deferred();
+    const save = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(undefined);
+    await render(<FeedbackHarness save={save} />);
+    const like = page.getByRole("button", { name: "Like answer", exact: true });
+    const dislike = page.getByRole("button", { name: "Dislike answer", exact: true });
+    await like.click();
+    await dislike.click();
+    await dislike.click();
+    await expect.element(like).toHaveAttribute("aria-pressed", "false");
+    await expect.element(dislike).toHaveAttribute("aria-pressed", "false");
+    expect(save.mock.calls).toEqual([["like"]]);
+    first.resolve();
+    await expect.poll(() => save.mock.calls).toEqual([["like"], [null]]);
+    await expect.element(like).toHaveAttribute("aria-pressed", "false");
+    await expect.element(dislike).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("does not roll back a newer choice when an earlier request fails", async () => {
+    const error = vi.spyOn(toast, "error").mockImplementation(() => "error");
+    const first = deferred(), second = deferred();
+    const save = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    await render(<FeedbackHarness save={save} />);
+    const dislike = page.getByRole("button", { name: "Dislike answer", exact: true });
+    await page.getByRole("button", { name: "Like answer", exact: true }).click();
+    await dislike.click();
+    first.reject(new Error("offline"));
+    await expect.poll(() => save.mock.calls).toEqual([["like"], ["dislike"]]);
+    await expect.element(dislike).toHaveAttribute("aria-pressed", "true");
+    expect(error).not.toHaveBeenCalled();
+    second.resolve();
+    await expect.element(dislike).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("rolls back to the last confirmed rating when the latest request fails", async () => {
+    const error = vi.spyOn(toast, "error").mockImplementation(() => "error");
+    const first = deferred(), second = deferred();
+    const save = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    await render(<FeedbackHarness save={save} />);
+    const like = page.getByRole("button", { name: "Like answer", exact: true });
+    const dislike = page.getByRole("button", { name: "Dislike answer", exact: true });
+    await like.click();
+    await dislike.click();
+    first.resolve();
+    await expect.poll(() => save.mock.calls).toHaveLength(2);
+    second.reject(new Error("offline"));
+    await expect.element(like).toHaveAttribute("aria-pressed", "true");
+    await expect.element(dislike).toHaveAttribute("aria-pressed", "false");
+    await expect.element(dislike).toBeEnabled();
+    expect(error).toHaveBeenCalledOnce();
   });
 
   it("shows reported token details including zero, without inventing missing usage", async () => {

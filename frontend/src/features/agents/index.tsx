@@ -121,15 +121,31 @@ export function AgentsPage() {
                   <TableHead>Agent</TableHead>
                   <TableHead className='w-40'>Semantic data</TableHead>
                   <TableHead className='w-28'>Updated</TableHead>
-                  <TableHead className='w-28 text-right'>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {agents.map((agent) => (
-                  <TableRow key={agent.agent_id}>
+                  <TableRow
+                    key={agent.agent_id}
+                    className='cursor-pointer focus-within:bg-muted/50'
+                    onClick={() =>
+                      navigate({
+                        to: '/agents/$agentId',
+                        params: { agentId: agent.agent_id },
+                      })
+                    }
+                  >
                     <TableCell>
                       <div className='flex flex-col'>
-                        <span className='truncate font-medium' title={agent.name}>{agent.name}</span>
+                        <Link
+                          to='/agents/$agentId'
+                          params={{ agentId: agent.agent_id }}
+                          className='truncate font-medium focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground'
+                          title={agent.name}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {agent.name}
+                        </Link>
                         {agent.description ? (
                           <span className='truncate text-xs text-muted-foreground' title={agent.description}>
                             {agent.description}
@@ -146,13 +162,6 @@ export function AgentsPage() {
                     </TableCell>
                     <TableCell className='text-muted-foreground'>
                       {new Date(agent.updated_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className='text-right'>
-                      <Button asChild size='sm' variant='outline'>
-                        <Link to='/agents/$agentId' params={{ agentId: agent.agent_id }}>
-                          Configure
-                        </Link>
-                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

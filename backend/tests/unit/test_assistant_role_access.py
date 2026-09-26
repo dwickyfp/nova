@@ -39,13 +39,14 @@ def _invocation(name: str = "grant_role_access") -> ToolInvocation:
     )
 
 
-def test_default_nove_registry_keeps_typed_role_access_with_api_bridge() -> None:
+def test_default_nove_registry_keeps_typed_role_access_without_api_bridge() -> None:
     names = build_registry().names()
     assert "inspect_role_access" in names
     assert "grant_role_access" in names
     assert "find_ui_operation" not in names
-    assert "list_ui_operations" in names
-    assert "call_ui_operation" in names
+    assert "list_ui_operations" not in names
+    assert "call_ui_operation" not in names
+    assert "query_mutate" in names
     classification = invocation_classification(role_access.grant_role_access_tool, _invocation())
     assert classification == "destructive"
     assert requires_consent(role_access.grant_role_access_tool)

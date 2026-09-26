@@ -25,6 +25,8 @@ function renderSidebar(props: {
   onDeleteThread?: (id: string) => void;
   onRenameThread?: (id: string, title: string) => void;
   onOpenThread?: (id: string) => void;
+  threadsError?: boolean;
+  onRetryThreads?: () => void;
 }) {
   return render(
     <TooltipProvider>
@@ -37,6 +39,8 @@ function renderSidebar(props: {
         onNewChat={() => {}}
         onDeleteThread={props.onDeleteThread}
         onRenameThread={props.onRenameThread}
+        threadsError={props.threadsError}
+        onRetryThreads={props.onRetryThreads}
         open
         onToggle={() => {}}
       />
@@ -45,6 +49,15 @@ function renderSidebar(props: {
 }
 
 describe("StudioSidebar", () => {
+  it("offers history retry without presenting a failed request as empty", async () => {
+    const retry = vi.fn();
+    const screen = await renderSidebar({ threads: [], threadsError: true, onRetryThreads: retry });
+    await expect.element(screen.getByRole("alert")).toHaveTextContent("Could not load conversations.");
+    await expect.element(screen.getByText("No conversations yet.", { exact: false })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry history" }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
   it("treats New chat as an action and never as the active view", async () => {
     const onNewChat = vi.fn();
     const onView = vi.fn();

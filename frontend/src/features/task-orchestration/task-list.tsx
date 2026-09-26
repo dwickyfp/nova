@@ -1,17 +1,23 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   AlertCircle,
-  ChevronRight,
+  Play,
   CircleSlash,
   SearchX,
   Workflow,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { LoadingLines, RefreshBanner } from "@/components/ui/loading-overlay";
+import { LoadingLines } from "@/components/ui/loading-overlay";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
@@ -19,7 +25,8 @@ import {
   SimpleTableToolbar,
   SimpleTableViewport,
 } from "@/components/data-table/simple-table-controls";
-import { fetchGraphs, type GraphSummary } from "./api";
+import { fetchGraphs, runGraph, type GraphSummary } from "./api";
+import { RunErrorDialog } from "./run-error-dialog";
 import {
   formatSchedule,
   formatTimestamp,
@@ -54,6 +61,12 @@ export default function TaskList() {
     queryKey: ["task-orchestration", "graphs"],
     queryFn: ({ signal }) => fetchGraphs(signal),
     placeholderData: keepPreviousData,
+    refetchInterval: (query) =>
+      query.state.data?.graphs.some((graph) =>
+        ["pending", "running"].includes(graph.last_run?.state ?? ""),
+      )
+        ? 2000
+        : false,
   });
 
   const graphs = graphsQuery.data?.graphs ?? [];
@@ -67,6 +80,7 @@ export default function TaskList() {
         graph.root_task ?? "",
         graph.database_name ?? "",
         graph.schema_name ?? "",
+        graph.owner_role ?? "",
         formatSchedule(graph.schedule_kind, graph.schedule_expr),
       ].some((value) => value.toLowerCase().includes(normalized)),
     );
@@ -80,7 +94,7 @@ export default function TaskList() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
       <PageHeader
         title="Tasks"
         description="Every task you can see, with its schedule and run tallies. Open a task to inspect its flow and history."
@@ -96,12 +110,8 @@ export default function TaskList() {
         resultLabel={`${filtered.length} ${filtered.length === 1 ? "task" : "tasks"}`}
       />
 
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1">
         <SimpleTableViewport className="max-h-full h-full">
-          {graphsQuery.isFetching && !graphsQuery.isLoading ? (
-            <RefreshBanner label="Loading tasks..." />
-          ) : null}
-
           <table className="w-full">
             <thead>
               <tr>
@@ -112,19 +122,20 @@ export default function TaskList() {
                 <Th className="text-left">Schedule</Th>
                 <Th className="text-left">Database</Th>
                 <Th className="text-left">Created</Th>
-                <th className="w-10" />
+                <Th className="text-left whitespace-nowrap">Last run</Th>
+                <Th className="text-right">Action</Th>
               </tr>
             </thead>
             <tbody>
               {graphsQuery.isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6">
+                  <td colSpan={9} className="px-4 py-6">
                     <LoadingLines rows={5} />
                   </td>
                 </tr>
               ) : graphsQuery.isError ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6">
+                  <td colSpan={9} className="px-4 py-6">
                     {isAccessError(graphsQuery.error) ? (
                       <EmptyState
                         icon={CircleSlash}
@@ -152,7 +163,7 @@ export default function TaskList() {
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6">
+                  <td colSpan={9} className="px-4 py-6">
                     <EmptyState
                       icon={search ? SearchX : Workflow}
                       title={
@@ -216,6 +227,7 @@ function Th({
 }) {
   return (
     <th
+      scope="col"
       className={cn(
         "px-4 py-3 text-xs font-medium text-muted-foreground",
         className,
@@ -234,10 +246,21 @@ function TaskRow({
   onOpen: () => void;
 }) {
   const counts = graph.run_counts;
+  const queryClient = useQueryClient();
+  const runMutation = useMutation({
+    mutationFn: () => runGraph(graph.graph_id),
+    onSuccess: () => {
+      toast.success(`Run queued for ${taskLabel(graph)}`);
+      void queryClient.invalidateQueries({ queryKey: ["task-orchestration"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not run task"),
+  });
   return (
     <tr
       onClick={onOpen}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onOpen();
@@ -253,9 +276,14 @@ function TaskRow({
             aria-hidden="true"
             className="size-4 shrink-0 text-muted-foreground"
           />
-          <span className="truncate text-sm font-medium">
-            {taskLabel(graph)}
-          </span>
+          <div className="min-w-0">
+            <span className="block truncate text-sm font-medium">
+              {taskLabel(graph)}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {graph.owner_role ?? "Owner role required"}
+            </span>
+          </div>
           {graph.last_run ? (
             <StatusBadge tone={graphRunTone(graph.last_run.state)} dot>
               {graph.last_run.state}
@@ -288,11 +316,40 @@ function TaskRow({
       <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
         {formatTimestamp(graph.created_at)}
       </td>
-      <td className="px-2 py-3 text-right">
-        <ChevronRight
-          aria-hidden="true"
-          className="size-4 text-muted-foreground"
-        />
+      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
+        {graph.last_run
+          ? formatTimestamp(graph.last_run.started_at)
+          : "Never run"}
+      </td>
+      <td className="px-4 py-3 text-right">
+        <div className="flex items-center justify-end gap-2">
+          {graph.last_run?.state === "failed" ? (
+            <RunErrorDialog
+              runId={graph.last_run.id}
+              taskName={taskLabel(graph)}
+            />
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={`Run ${taskLabel(graph)}`}
+            disabled={runMutation.isPending || !graph.can_run}
+            title={
+              graph.can_run
+                ? undefined
+                : graph.owner_role
+                  ? `Activate ${graph.owner_role} to run`
+                  : "Assign one owner role to all nodes before running"
+            }
+            onClick={(event) => {
+              event.stopPropagation();
+              runMutation.mutate();
+            }}
+          >
+            <Play aria-hidden="true" className="size-3.5" />
+            {runMutation.isPending ? "Starting..." : "Run"}
+          </Button>
+        </div>
       </td>
     </tr>
   );

@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_WORKSPACE_FILE_VERSIONS (
   created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 ) PRIMARY KEY(id)
 DISTRIBUTED BY HASH(id) BUCKETS 1
+ORDER BY (entry_id, version)
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AI_PROVIDERS (
@@ -204,6 +205,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS (
     updated_at        DATETIME NOT NULL
 ) PRIMARY KEY(thread_id)
 DISTRIBUTED BY HASH(thread_id) BUCKETS 1
+ORDER BY (user_name, updated_at, thread_id)
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES (
@@ -216,6 +218,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES (
     created_at  DATETIME NOT NULL
 ) PRIMARY KEY(message_id)
 DISTRIBUTED BY HASH(message_id) BUCKETS 1
+ORDER BY (thread_id, seq)
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_OBJECT_TAGS (
@@ -292,13 +295,25 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_EDGES (
 DISTRIBUTED BY HASH(id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
 
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_ROLE_BINDINGS (
+    role_name VARCHAR(128) NOT NULL,
+    execution_user VARCHAR(128) NOT NULL,
+    configured_by VARCHAR(128) NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) PRIMARY KEY(role_name)
+DISTRIBUTED BY HASH(role_name) BUCKETS 1
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
 CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASK_GRAPH_RUNS (
   id             VARCHAR(64) NOT NULL,
   graph_id       VARCHAR(64) NOT NULL,
   trigger_type   VARCHAR(32) NOT NULL,
   state          VARCHAR(32) NOT NULL,
   overlap_policy VARCHAR(16) NOT NULL DEFAULT 'skip',
-  wal_marks      TEXT,
+    wal_marks      TEXT,
+    execution_user VARCHAR(128),
+    execution_role VARCHAR(128),
+    execution_session_id VARCHAR(128),
   started_at     DATETIME,
   heartbeat_at   DATETIME,
   finished_at    DATETIME
@@ -479,6 +494,7 @@ PARTITION BY RANGE(event_time) (
   PARTITION p202612 VALUES LESS THAN ("2027-01-01")
 )
 DISTRIBUTED BY HASH(log_id) BUCKETS 8
+ORDER BY (event_time, log_id)
 PROPERTIES(
   "replication_num"="1",
   "dynamic_partition.enable"="true",

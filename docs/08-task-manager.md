@@ -343,13 +343,44 @@ All four live in `NOVA_SYSTEM` as Primary-Key (CRUD) tables, following the flat
 |-------|-------|-------------|
 | `CONFIG_TASKS` | one row per task definition | `name`, `definition`, `schedule_kind` (`manual`/`interval`/`cron`), `schedule_expr`, `timezone` (IANA), `when_expr`, `overlap_policy`, `owner_role`, `created_by`, `version` |
 | `CONFIG_TASK_EDGES` | directed `parent_task → child_task` per `graph_id` | one row per edge (`edge_kind` is `after` or `finalize`; supports multi-parent, cycle detection, delete-impact queries) |
-| `CONFIG_TASK_GRAPH_RUNS` | one row per graph execution | `trigger_type`, `state`, `overlap_policy` (copied from the root task at enqueue), `wal_marks` (JSON metadata), `started_at`, `finished_at` |
+| `CONFIG_TASK_GRAPH_RUNS` | one row per graph execution | `trigger_type`, `state`, `overlap_policy` (copied from the root task at enqueue), `execution_user`, `execution_role`, internal `execution_session_id` (manual caller or scheduled service snapshot), `wal_marks` (JSON metadata), `started_at`, `finished_at` |
+| `CONFIG_TASK_ROLE_BINDINGS` | scheduled service account per owner role | `role_name`, `execution_user`, `configured_by`, `updated_at` |
 | `CONFIG_TASK_RUNS` | one row per node attempt | `graph_run_id`, `task_id`, `attempt`, `state`, `delegated`, `starrocks_query_id`, `error_message` |
 
 ### Runtime semantics (stage 3b)
 
 These are the behaviours the `CREATE TASK` surface promises, and where each is
 enforced.
+
+**Role ownership and execution identity.** `owner_role` is the task owner;
+`created_by` records the creator for auditing. Users A and B can share a graph
+when both activate its owner role. Every connected node must have the same role.
+`CREATE TASK` requires an explicit active role and rejects cross-role dependencies.
+
+Manual Run snapshots the caller, active owner role, and exact session reference
+before enqueue. Every node, `WHEN`, and finalizer uses that caller's existing
+session credentials and selected role. No creator impersonation is required.
+The session reference is internal and omitted from HTTP responses. Expired or
+logged-out sessions fail closed; start a new run after signing in again.
+
+Scheduled runs snapshot the service account registered for the common owner role
+in `CONFIG_TASK_ROLE_BINDINGS`. The dedicated worker has scoped impersonation of
+that account; it verifies the effective user and role before submitting SQL.
+Binding or owner-role changes while queued fail the old run. No privileged
+fallback exists. Browser role changes do not change cron's execution identity.
+Provision a binding with `scripts/provision_task_schedule_role.py`; grant the
+service role only the SQL privileges its tasks require. Demo cron uses
+`nova_task_service_demo` with `NOVA_TASK_DEMO_RUNNER`, restricted to the demo database.
+
+Task API requests recheck active role membership against StarRocks. An active
+administrator can inspect all graphs but must activate a graph's owner role to
+run it. Having an inactive admin role does not bypass this rule. Legacy tasks
+without an owner role remain creator-private and cannot run until assigned a
+role. Ownership currently uses an exact active-role match; separate task
+MONITOR/OPERATE grants and inherited-role ownership are not implemented.
+
+Run history and audits record the effective user and role. Passwords remain in
+the existing encrypted session path or worker environment, never task metadata.
 
 **`AFTER` — dependency order.** The graph's adjacency is built from
 `edge_kind='after'` edges; a node is ready when every parent has succeeded (or
@@ -377,7 +408,7 @@ A finalizer is **not** a dependency. Two consequences drive the implementation:
    because the latter leaves a concurrency window with a downstream node.
 
 **Decision: a failed or skipped dependency graph skips the finalizer.** A
-finalizer is an engine task submitted as the owner, not a callback. Running it
+finalizer is an engine task submitted under the run's execution identity, not a callback. Running it
 over a failed run would execute a write (e.g. `INSERT INTO etl_log`) that claims
 something which did not happen — a misreport, not a cleanup. It is also
 unsafe-by-default: a finalizer would have to be failure-tolerant by
@@ -392,7 +423,7 @@ honoured like any other node.
 failure" flag would be the way to add always-run semantics, so the decision stays
 with the author. No such flag exists today.
 
-**`WHEN` — conditional skip.** Evaluated on the owner's connection before the
+**`WHEN` — conditional skip.** Evaluated under the node's execution identity before the
 node runs. False marks the node `skipped`, and its descendants are skipped too.
 An evaluation **error** fails the node; an error is never treated as "no data".
 
@@ -458,95 +489,43 @@ backend/app/modules/task_orchestration/
 
 ---
 
-## Read API — `/api/v1/task-orchestration`
+## Task API — `/api/v1/task-orchestration`
 
-Read-only endpoints over the orchestration metadata. They exist because the
-native `/api/v1/tasks` surface reads **StarRocks'** `information_schema.tasks`
-(the `SUBMIT TASK` world), not Nova's `CONFIG_TASK*` tables — so without these, a
-task created with `CREATE TASK` is invisible to the UI.
+These endpoints expose Nova's `CONFIG_TASK*` graphs. The native `/api/v1/tasks`
+endpoint separately exposes StarRocks `SUBMIT TASK` templates.
 
-| Method & path | Returns |
+| Method & path | Behavior |
 |---|---|
-| `GET /graphs` | One row per graph: `graph_id`, root task, node count, root's `schedule_kind`/`schedule_expr`/`timezone`, `overlap_policy`, and the last run (`id`/`state`/`trigger_type`/`overlap_policy`/timings). |
-| `GET /graphs/{graph_id}` | The graph definition: every node (including finalizers), every edge with `edge_kind` (`after`/`finalize`), and each node's latest observed state. |
-| `GET /graphs/{graph_id}/runs` | Graph-run history, newest first, including `overlap_policy` and `trigger_type`. |
-| `GET /runs/{graph_run_id}` | One graph run plus its node runs: `attempt`, `state`, `delegated`, redacted `error_message`, and timings. |
+| `GET /graphs` | Graph summaries, owner role, `can_run`, schedule, last run, and run tallies. |
+| `GET /graphs/{graph_id}` | Nodes, dependency/finalizer edges, and last observed states. |
+| `GET /graphs/{graph_id}/runs` | Run history with execution user/role and timings. |
+| `GET /runs/{graph_run_id}` | Node attempts and redacted errors. |
+| `GET /graphs/{graph_id}/nodes/{task_id}/sql` | Stored SQL before rewriting, with credentials redacted. |
+| `POST /graphs/{graph_id}/runs` | Persist and enqueue a manual run under the authenticated caller. |
 
-**Read-only.** Every route is `GET`; nothing in the router calls a repository
-write method. There is no mutation path.
+Authorization is enforced on every endpoint. Unknown and unauthorized graph IDs
+both return `404`; revoked active roles return `403`. Run snapshots cannot be
+overridden by request or queue payloads.
 
-**Authorization is enforced in the backend.** The metadata lives in
-`NOVA_SYSTEM.CONFIG_TASK*` and is read through the system pool, so StarRocks'
-own grant filter does **not** apply the way it does on the caller-scoped
-`/tasks` path. Nova therefore scopes ownership itself on each request: a caller
-sees a graph only if they own **every** task in it (`created_by` — the same
-identity the worker submits as). A caller holding an admin role (`ACCOUNTADMIN`
-or a StarRocks security role) sees every graph. An unknown **or** unauthorized
-`graph_id` returns the same `404`, so the API does not reveal that someone
-else's graph exists.
+## Task UI — `/tasks`
 
-A graph whose nodes are owned by different users is therefore **fail-closed** —
-invisible to every non-admin. That is deliberate, not a side effect: a graph can
-be assembled from nodes the creator does not own (`CREATE TASK x AFTER a` does
-not check who owns `a`), and a looser rule would let one owner read another
-owner's task definitions — its `when_expr`, schedule and `created_by`. Sharing a
-graph across owners would be an explicit feature with its own permission model,
-not a looser default.
+The table shows owner role, tallies, schedule, Created, Last run, and Run. Run is
+disabled until the graph's owner role is active. Pending/running summaries refresh
+automatically. Failed runs expose **View error**, with a readable modal.
 
-**Credential-invisible.** Responses carry ids, names, states, timings and
-schedule metadata only. The task **body is not exposed** (it can name a `@stage`
-whose credentials Nova injects at execution), and `error_message` is redacted
-with the same helper the worker uses
-(`common/sql_guard.redact_sql_credentials`).
-
-Empty state returns an empty list; an unknown graph or run returns `404` — never
-a `500`.
-
----
-
-## Task graph UI — `/task-graphs`
-
-The graph view is the read consumer of the API above. It lives in
-`frontend/src/features/task-orchestration/` and is mounted at the `/task-graphs`
-route (sidebar: **Data Management → Task Graphs**).
-
-It is a master-detail screen, not a second task table:
-
-| Pane | Source | Shows |
-|---|---|---|
-| Graph list | `GET /graphs` | root task, node count, schedule (`schedule_kind`/`schedule_expr`), and the last run's state |
-| Graph detail | `GET /graphs/{graph_id}` | every node (with `is_finalizer` and `last_state`) and every edge |
-| Run history | `GET /graphs/{graph_id}/runs` | run state, trigger type, overlap policy, timing |
-| Node-run detail | `GET /runs/{graph_run_id}` | per-node `attempt`, `state`, `delegated`, timings, and the redacted `error_message` |
-
-**Finalizer edges are drawn differently from dependencies.** `edge_kind =
-"finalize"` renders as a `FINALIZE` badge and is not presented as a dependency;
-`after` renders as `AFTER`. This is the whole reason `edge_kind` is in the
-contract — a finalizer runs *after* the dependency graph settles, so drawing it
-as a normal edge would misstate execution order.
-
-**No credential ever enters UI state.** The API returns no credential field and
-redacts `error_message` server-side; the view stores neither raw `error_message`
-nor any credential-shaped value in a store or `localStorage`. The task body is
-not fetched at all.
-
-**Permission is UX, not the boundary.** A `404` from the graph or run endpoints
-(deliberately identical for unknown and unauthorized ids) renders as
-"not found / no access", never as an application error. The backend owns
-authorization; the UI never infers access from its own state.
-
-This surface is separate from `frontend/src/features/tasks-manager/api.ts`, which
-reads the **native StarRocks** `/api/v1/tasks` surface. The two must not be
-merged: a `CREATE TASK` graph is invisible to the native task API.
-
----
+Opening a row shows the graph centered in the canvas space above Run history.
+Selecting a node reveals the SQL button at the canvas's upper right; it opens the
+stored, redacted SQL in a modal. The history shows the execution user and role.
+Headers and toolbars remain outside the page's content scrollers.
 
 ## Limitations
 
-- **Native engine has no task dependencies/DAG** — Nova's Phase 9 layer adds them; until the scheduler/worker stages land (9a onward), Nova-shaped DAGs are metadata only and not executed
+- **Native engine has no task dependencies/DAG** — Nova implements the scheduler and graph worker over one-shot engine tasks.
 - **No callback/trigger** on completion — progress must be observed by polling `information_schema.task_runs`
 - **No conditional branching** (if A fails, run C)
-- For orchestration today, use external tools (Airflow, n8n) that poll `information_schema.task_runs`
+- `MERGE` is not a supported task body on the tested engine. Use Primary Key `INSERT` for upsert, or `INSERT OVERWRITE` for replacement.
+- Manual execution needs the triggering session to remain valid when each node starts.
+- Native task bodies containing `@stage` references are rejected because expanded credentials would persist in engine task metadata.
 
 ### Verified against a live 4.1.1 engine (NOVA-23, 2026-09-17)
 
