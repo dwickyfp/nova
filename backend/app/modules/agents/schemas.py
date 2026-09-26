@@ -18,6 +18,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.modules.agents.resources import ResourceBindings
+
 #: Which tools an agent bundles. A tool not in this set is never registered for
 #: the agent, so the model cannot call it.
 AgentToolName = str
@@ -60,6 +62,8 @@ class AgentView(BaseModel):
     visibility: Visibility = "private"
     created_at: datetime
     updated_at: datetime
+    resource_bindings: ResourceBindings = Field(default_factory=ResourceBindings)
+    config_revision: str | None = None
 
 
 class AgentListResponse(BaseModel):
@@ -68,6 +72,7 @@ class AgentListResponse(BaseModel):
 
 
 class AgentCreateRequest(BaseModel):
+    resource_bindings: ResourceBindings = Field(default_factory=ResourceBindings)
     name: str = Field(min_length=1, max_length=128)
     description: str = ""
     database_name: str | None = None
@@ -96,6 +101,8 @@ class AgentCreateRequest(BaseModel):
 
 class AgentUpdateRequest(BaseModel):
     """Every field optional — a PATCH semantics update."""
+
+    resource_bindings: ResourceBindings | None = None
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = None

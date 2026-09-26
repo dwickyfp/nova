@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentModelSelect } from "./model-select";
+import { AgentResourceBindings } from "./resource-bindings";
+import { agentVersionsApi } from "../api";
 import { semanticViewsApi, type SemanticView } from "@/features/intelligence/semantic-views-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +23,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  agentsApi,
   customToolsApi,
   mcpApi,
   skillsApi,
@@ -43,6 +44,9 @@ const BUNDLEABLE = new Set([
   "data_to_chart",
   "diagnose_change",
   "ml_execute",
+  "ai_search",
+  "feature_lookup",
+  "semantic_view_query",
 ]);
 
 /**
@@ -53,23 +57,38 @@ const BUNDLEABLE = new Set([
 export function AgentConfigurationTab({
   agent,
   onSaved,
+  onDraftSaved,
+  onDirtyChange,
 }: {
   agent: Agent;
   onSaved: () => void;
+  onDraftSaved?: (versionId: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [draft, setDraft] = useState<AgentCreateInput>(() =>
     toAgentDraft(agent),
   );
+  const base = useRef(agent);
+  const dirty = useRef(false);
   useEffect(() => {
-    setDraft(toAgentDraft(agent));
+    if (!dirty.current || base.current.agent_id !== agent.agent_id) {
+      base.current = agent;
+      setDraft(toAgentDraft(agent));
+    }
   }, [agent]);
+  useEffect(() => {
+    dirty.current = JSON.stringify(draft) !== JSON.stringify(toAgentDraft(base.current));
+    onDirtyChange?.(dirty.current);
+  }, [draft, agent, onDirtyChange]);
 
   const save = useMutation({
     mutationFn: (body: AgentCreateInput) =>
-      agentsApi.update(agent.agent_id, body),
-    onSuccess: () => {
-      toast.success("Agent saved");
-      onSaved();
+      agentVersionsApi.save(base.current, body),
+    onSuccess: (version) => {
+      onDirtyChange?.(false);
+      dirty.current = false;
+      toast.success("Draft saved. Review the changes before publishing.");
+      if (onDraftSaved) onDraftSaved(version.version_id); else onSaved();
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -81,18 +100,20 @@ export function AgentConfigurationTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button variant="outline" disabled={save.isPending} onClick={() => { base.current = agent; dirty.current = false; setDraft(toAgentDraft(agent)); }}>Discard edits</Button>
         <Button disabled={save.isPending} onClick={() => save.mutate(draft)}>
           <Save className="size-4" />
-          Save changes
+          Save draft
         </Button>
       </div>
 
       <Tabs defaultValue="general">
-        <TabsList>
+        <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="instructions">Instructions</TabsTrigger>
           <TabsTrigger value="tools">Tools</TabsTrigger>
+          <TabsTrigger value="resources">Resources</TabsTrigger>
           <TabsTrigger value="skills">Skills</TabsTrigger>
           <TabsTrigger value="mcp">MCP</TabsTrigger>
         </TabsList>
@@ -170,6 +191,11 @@ export function AgentConfigurationTab({
 
         <TabsContent value="skills" className="mt-6">
           <SkillsConfig draft={draft} set={set} />
+        </TabsContent>
+
+        <TabsContent value="resources" className="mt-6">
+          <AgentResourceBindings value={draft.resource_bindings ?? { search_indexes: [], feature_groups: [] }}
+            onChange={(value) => set("resource_bindings", value)} />
         </TabsContent>
 
         <TabsContent value="mcp" className="mt-6 max-w-2xl">
@@ -669,6 +695,7 @@ function toAgentDraft(agent: Agent): AgentCreateInput {
     created_at: _createdAt,
     updated_at: _updatedAt,
     compiled_instructions: _compiledInstructions,
+    config_revision: _configRevision,
     semantic_model_id: _semanticModelId,
     semantic_model_ids: _semanticModelIds,
     ...draft

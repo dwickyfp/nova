@@ -10,6 +10,8 @@ import { historyQuery } from "@/features/assistant/thread-client";
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
 
 export type Agent = {
+  resource_bindings?: ResourceBindings;
+  config_revision?: string | null;
   agent_id: string;
   owner_name: string;
   database_name: string | null;
@@ -41,6 +43,35 @@ export type Agent = {
   visibility: "private" | "shared";
   created_at: string;
   updated_at: string;
+};
+
+export type ResourceBindings = {
+  search_indexes: { index: string; filters: Record<string, string | number | boolean> }[];
+  feature_groups: string[];
+};
+export type AgentVersion = {
+  version_id: string;
+  label: string;
+  created_at: string;
+  configuration: AgentCreateInput;
+};
+export const agentVersionsApi = {
+  list: (id: string, offset = 0) => api.get<{
+    versions: Omit<AgentVersion, "configuration">[];
+    has_more: boolean;
+    active_version_id: string;
+    expected_revision: string | null;
+  }>(`/agents/${encodeURIComponent(id)}/versions?offset=${offset}`),
+  get: (id: string, version: string) => api.get<AgentVersion>(
+    `/agents/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`),
+  save: (agent: Agent, configuration: AgentCreateInput) => api.post<AgentVersion>(
+    `/agents/${encodeURIComponent(agent.agent_id)}/versions`, {
+      configuration, expected_revision: agent.config_revision ?? null,
+    }),
+  publish: (id: string, version: string, revision: string | null) => api.post<Agent>(
+    `/agents/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/publish`, {
+      expected_revision: revision,
+    }),
 };
 
 export const SMART_AGENT_ID = "__smart__";

@@ -4,7 +4,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -37,7 +36,6 @@ import {
   ASSISTANT_WIDTH_COOKIE,
   assistantCollapsedToPersist,
   clampAssistantWidth,
-  initialAssistantOpen,
   parseAssistantOffsetY,
   parseAssistantWidth,
 } from "./assistant-panel-state";
@@ -175,10 +173,6 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
   const [offsetY, setOffsetYState] = useState(() =>
     parseAssistantOffsetY(getCookie(ASSISTANT_OFFSET_Y_COOKIE)),
   );
-  // The persisted value arrives with the tree after first paint. Apply it once
-  // so a later refetch cannot clobber a toggle the user just made.
-  const initialisedRef = useRef(false);
-
   // Same key and fetcher as WorkspacesPage, so the two consumers share one
   // cache entry instead of issuing a second GET when both are mounted.
   const workspaceTreeQuery = useQuery<WorkspaceTreeResponse>({
@@ -188,12 +182,6 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
   });
 
   const tree = workspaceTreeQuery.data;
-  useEffect(() => {
-    if (!tree || initialisedRef.current) return;
-    initialisedRef.current = true;
-    setOpenState(initialAssistantOpen(tree));
-  }, [tree]);
-
   const treeContext = tree?.defaults;
 
   /**
@@ -389,7 +377,6 @@ export function AssistantProvider({ children, loadWorkspaceDefaults = true }: {
     (text: string) => {
       newChat();
       setPendingNewChatMessage(text);
-      initialisedRef.current = true;
       setOpenState(true);
     },
     [newChat],

@@ -77,7 +77,8 @@ class AgentService:
 
         from app.modules.agents.tools.describe_agent import DescribeAgentTool
 
-        registry.register(DescribeAgentTool(registry, name=str(agent.get("name") or "")))
+        registry.register(DescribeAgentTool(registry, name=str(agent.get("name") or ""),
+                                            resources=agent.get("resource_bindings")))
 
         requested_skills = [s for s in (agent.get("default_skills") or []) if s]
         discoverable_skills = [s for s in (agent.get("discoverable_skills") or []) if s]

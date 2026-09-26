@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.modules.agents.resources import scoped_filters
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.assistant.tools.redaction import redact_rows
@@ -43,6 +44,9 @@ class AISearchTool:
     classification: ToolClassification = "read_only"
     requires_consent = True
 
+    def __init__(self, bindings: dict | None = None) -> None:
+        self.bindings = bindings or {}
+
     def preview(self, invocation: ToolInvocation) -> str:
         name = str(invocation.arguments.get("index", ""))[:128]
         return f"ai_search: {name}"
@@ -57,18 +61,30 @@ class AISearchTool:
         text = invocation.arguments.get("query")
         if not isinstance(text, str):
             return ToolOutcome(ok=False, summary="", error="Search query is required")
+        filters = invocation.arguments.get("filters", {})
+        if not isinstance(filters, dict):
+            return ToolOutcome(ok=False, summary="", error="Invalid search filters")
+        if getattr(context, "agent_id", None):
+            try:
+                filters = scoped_filters(self.bindings, name, filters)
+            except ValueError as exc:
+                return ToolOutcome(
+                    ok=False, summary="", error=str(exc), error_class="POLICY_VIOLATION"
+                )
         try:
             query = SearchQuery(
                 query=text,
                 mode=invocation.arguments.get("mode", "HYBRID"),
                 top_k=min(int(invocation.arguments.get("top_k", 5)), 10),
-                filters=invocation.arguments.get("filters", {}),
+                filters=filters,
             )
         except (ValidationError, ValueError, TypeError):
             return ToolOutcome(ok=False, summary="", error="Invalid search request")
         scoped_user = {
             **user,
-            "active_role": getattr(context, "active_role", None) or user.get("active_role"),
+            "active_role": getattr(context, "role", None)
+            or getattr(context, "active_role", None)
+            or user.get("active_role"),
             "session_id": getattr(context, "audit_session_id", None) or user.get("session_id"),
         }
         try:

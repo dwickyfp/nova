@@ -145,6 +145,10 @@ async def resolve_agent_dependencies(agent: dict) -> list[tuple[str, str]]:
     if agent.get("database_name"):
         deps.append(("database", agent["database_name"]))
 
+    resources = agent.get("resource_bindings") or {}
+    deps.extend(("search_index", item["index"]) for item in resources.get("search_indexes", []))
+    deps.extend(("feature_group", name) for name in resources.get("feature_groups", []))
+
     # De-duplicate while preserving order.
     seen: set[tuple[str, str]] = set()
     unique: list[tuple[str, str]] = []
@@ -169,6 +173,34 @@ async def verify_access(
     deps = await resolve_agent_dependencies(agent)
     items: list[AccessItem] = []
     for kind, name in deps:
+        if kind in {"search_index", "feature_group"}:
+            from app.modules.agents.resources import authorized_resources
+
+            resources = await authorized_resources(
+                agent.get("resource_bindings") or {},
+                {
+                    "username": username,
+                    "encrypted_password": encrypted_password,
+                    "active_role": role_name,
+                    "session_id": session_id,
+                },
+            )
+            available = (
+                {item["index"] for item in resources["search_indexes"]}
+                if kind == "search_index"
+                else set(resources["feature_groups"])
+            )
+            items.append(
+                AccessItem(
+                    kind=kind,
+                    name=name,
+                    granted=name in available,
+                    detail="Resource is accessible"
+                    if name in available
+                    else "Resource is unavailable",
+                )
+            )
+            continue
         if kind == "semantic_view":
             from app.modules.intelligence.semantic_views import semantic_view_service
 
@@ -225,8 +257,15 @@ async def access_fingerprint(agent: dict) -> str:
             if active_version else None
         )
         versions.append((view_id, active_version, version.get("fingerprint") if version else None))
+    configured = {
+        key: value for key, value in agent.items()
+        if key not in {"created_at", "config_revision", "resource_bindings"}
+    }
+    resources = agent.get("resource_bindings") or {}
+    if resources.get("search_indexes") or resources.get("feature_groups"):
+        configured["resource_bindings"] = resources
     payload = {
-        "agent": {key: value for key, value in agent.items() if key not in {"created_at"}},
+        "agent": configured,
         "dependencies": await resolve_agent_dependencies(agent),
         "semantic_view_versions": versions,
     }

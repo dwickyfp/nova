@@ -138,7 +138,7 @@ async def test_agent_lookup_retries_a_malformed_metadata_result(monkeypatch) -> 
             self.calls.append(params)
             if len(self.calls) == 1:
                 return {"rows": [[None] * 8]}
-            return {"rows": [["agent-1", "alice", *([None] * 27)]]}
+            return {"rows": [["agent-1", "alice", *([None] * 29)]]}
 
     db = FlakyDB()
     monkeypatch.setattr(repository, "db", db)
@@ -146,7 +146,7 @@ async def test_agent_lookup_retries_a_malformed_metadata_result(monkeypatch) -> 
 
     result = await repository.AgentRepository().get_agent("agent-1", owner_name="alice")
 
-    assert result == {"columns": 29}
+    assert result == {"columns": 31}
     assert db.calls == [["agent-1", "alice"], ["agent-1", "alice"]]
 
 
@@ -198,7 +198,7 @@ async def test_shared_agent_requires_visibility_and_active_role_grant(monkeypatc
                     return {"rows": [["agent-1", "owner", "city_reader", "USAGE", None, None]]}
                 return {"rows": [["agent-1", "city_reader"]] if params == ["city_reader"] else []}
             if "visibility = 'shared'" in sql:
-                row = ["agent-1", "owner", *([None] * 27)]
+                row = ["agent-1", "owner", *([None] * 29)]
                 row[26] = "shared"
                 return {"rows": [row]}
             return {"rows": []}
