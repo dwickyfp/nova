@@ -106,7 +106,7 @@ services:
     # `minio/minio:*` no longer pulls ("requested access to the resource is
     # denied") and the whole stack failed to start. Same reason the StarRocks
     # images are tagged. Bump deliberately, not implicitly.
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    image: ghcr.io/teableio/minio:RELEASE.2025-04-22T22-12-26Z
     # MinIO serves the S3 API on the SAME number inside and outside the
     # network. The port NUMBER must be identical on both sides, not just
     # mapped.
