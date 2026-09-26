@@ -132,7 +132,9 @@ async def test_new_agent_writes_only_canonical_view_binding(monkeypatch) -> None
     await repo.update_agent(
         "created", owner_name="owner", fields={"semantic_view_ids": []}
     )
-    update_sql, update_values = next((sql, values) for sql, values in writes if sql.startswith("UPDATE"))
+    update_sql, update_values = next(
+        (sql, values) for sql, values in writes if sql.startswith("UPDATE")
+    )
     assert "semantic_view_ids = %s" in update_sql
     assert "semantic_model_ids = %s" not in update_sql
     assert update_values[0] == "[]"

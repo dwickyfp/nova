@@ -4,7 +4,6 @@ import fs from "node:fs/promises";
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const config = JSON.parse(input);
-input = "";
 const browser = await chromium.launch({ headless: true });
 const records = [];
 async function login(account) {
