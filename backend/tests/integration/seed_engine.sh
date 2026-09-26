@@ -23,7 +23,7 @@ PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "$BACKEND_DIR")}"
 SR_PORT="${STARROCKS_PORT:-29030}"
 S3_PORT="${S3_PORT:-29000}"
 INIT_SQL="${INIT_SQL:-$REPO_ROOT/docker/init-nova.sql}"
-MC_IMAGE="quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z"
+MC_IMAGE="ghcr.io/teableio/minio-mc:RELEASE.2025-04-16T18-13-26Z"
 
 compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
 cd "$BACKEND_DIR"
