@@ -39,6 +39,8 @@ from app.common.nova_system import (
 )
 from app.core.config import settings
 from app.core.database import db
+from app.core.redis import session_store
+from app.core.security import encrypt_password
 from app.modules.task_orchestration.consumer import GraphRunConsumer
 from app.modules.task_orchestration.credentials import StaticCredentialProvider
 from app.modules.task_orchestration.dag import GraphState
@@ -73,6 +75,7 @@ pytestmark = pytest.mark.engine
 #: "forbidden" task is this user; the "allowed" task belongs to root.
 RESTRICTED_USER = "nova_worker_restricted"
 RESTRICTED_PASSWORD = "restrictedpw"
+RESTRICTED_ROLE = "nova_worker_runner"
 ALLOWED_USER = "root"
 
 FORBIDDEN_DB = "nova_worker_rbac"
@@ -144,11 +147,15 @@ async def worker_infra(request):
     await migrate_task_orchestration_columns()
 
     await _seed_rbac_fixture()
+    await session_store.init()
 
     client = aioredis.from_url(REDIS_URL, decode_responses=True)
-    yield client
-    await client.aclose()
-    await db.close_system_pool()
+    try:
+        yield client
+    finally:
+        await client.aclose()
+        await session_store.close()
+        await db.close_system_pool()
 
 
 async def _seed_rbac_fixture() -> None:
@@ -176,9 +183,11 @@ async def _seed_rbac_fixture() -> None:
     # The restricted user gets INSERT only on ``allowed`` (the RBAC proof) and
     # SELECT so a ``WHEN`` expression can be evaluated against it. StarRocks
     # lets the user log in regardless; every un-granted table is denied.
+    await db.execute_system(f"CREATE ROLE IF NOT EXISTS {RESTRICTED_ROLE}")
     await db.execute_system(
-        f"GRANT INSERT, SELECT ON {FORBIDDEN_DB}.allowed TO '{RESTRICTED_USER}'"
+        f"GRANT INSERT, SELECT ON {FORBIDDEN_DB}.allowed TO ROLE {RESTRICTED_ROLE}"
     )
+    await db.execute_system(f"GRANT {RESTRICTED_ROLE} TO USER '{RESTRICTED_USER}'")
 
 
 @pytest_asyncio.fixture
@@ -187,6 +196,9 @@ async def cleanup_runs(worker_infra):
     created: dict[str, list[str]] = {"graph": [], "task": [], "edge": []}
     yield created
     for run in created["graph"]:
+        graph = await repo.get_graph_run(run)
+        if graph and graph.get("execution_session_id"):
+            await session_store.delete(graph["execution_session_id"])
         for node in await repo.list_task_runs(run):
             await repo.delete_task_run(node["id"])
         await repo.delete_graph_run(run)
@@ -207,6 +219,27 @@ def _executor() -> DelegateExecutor:
         _credentials(),
         poll_interval=0.5,
         poll_timeout=settings.WORKER_TASK_POLL_TIMEOUT_SECONDS,
+    )
+
+
+async def _create_manual_run(graph_id: str, user: str = RESTRICTED_USER) -> dict:
+    password = await _credentials().password_for(user)
+    session_id = await session_store.create(
+        user,
+        encrypt_password(password),
+        [RESTRICTED_ROLE],
+        default_role=RESTRICTED_ROLE,
+        active_role=RESTRICTED_ROLE,
+    )
+    return await repo.create_graph_run(
+        {
+            "graph_id": graph_id,
+            "trigger_type": "manual",
+            "state": "pending",
+            "execution_user": user,
+            "execution_role": RESTRICTED_ROLE,
+            "execution_session_id": session_id,
+        }
     )
 
 
@@ -234,6 +267,7 @@ async def _make_graph(
                 "definition": body,
                 "database_name": FORBIDDEN_DB,
                 "schedule_kind": "manual",
+                "owner_role": RESTRICTED_ROLE,
             },
             created_by=owners[name],
         )
@@ -244,9 +278,7 @@ async def _make_graph(
         )
     if not edges and len(ids) == 1:
         graph_id = next(iter(ids.values()))
-    run = await repo.create_graph_run(
-        {"graph_id": graph_id, "trigger_type": "manual", "state": "pending"}
-    )
+    run = await _create_manual_run(graph_id, user=next(iter(owners.values())))
     return run["id"], ids
 
 
@@ -442,15 +474,14 @@ class TestFailureAndSkipSemantics:
                     "database_name": FORBIDDEN_DB,
                     "when_expr": when,
                     "schedule_kind": "manual",
+                    "owner_role": RESTRICTED_ROLE,
                 },
                 created_by=owner,
             )
             ids[name] = task["id"]
         await repo.create_edge(graph_id, {"parent_task": root, "child_task": child})
         await repo.create_edge(graph_id, {"parent_task": child, "child_task": grand})
-        run = await repo.create_graph_run(
-            {"graph_id": graph_id, "trigger_type": "manual", "state": "pending"}
-        )
+        run = await _create_manual_run(graph_id)
         cleanup_runs["graph"].append(run["id"])
         cleanup_runs["task"].extend(ids.values())
 
