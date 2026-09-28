@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-
 import pytest
 import yaml
 
@@ -28,18 +26,24 @@ def test_a_well_built_view_is_ready_and_reports_sample_coverage():
     assert checks["sample_questions"]["detail"].startswith("1 of 2 resolve")
 
 
+def _without_plain_dimensions(node):
+    """The demo model before 2026-09-28: text fields had no ``dimension:`` key."""
+    if isinstance(node, dict):
+        return {key: _without_plain_dimensions(value) for key, value in node.items()
+                if not (key == "dimension" and value == {})}
+    if isinstance(node, list):
+        return [_without_plain_dimensions(item) for item in node]
+    return node
+
+
 def test_text_fields_that_cannot_group_are_flagged():
-    # The demo model before 2026-09-28 declared city/status without `dimension:`.
-    original = subprocess.run(
-        ["git", "show", "HEAD:backend/app/modules/agents/examples/nova_sales.ossie.yaml"],
-        capture_output=True, text=True, check=True, cwd="..",
-    ).stdout
+    with open("app/modules/agents/examples/nova_sales.ossie.yaml") as source:
+        fixed = yaml.safe_load(source)
+    original = yaml.safe_dump(_without_plain_dimensions(fixed))
     ir = SemanticModelIR.from_ossie(parse_ossie(original).as_dict())
     checks = by_id(assess(AGENT, [{"_scoped_ir": ir}]))
     assert checks["dimensions"]["status"] == "warn"
     assert "shipping_city" in checks["dimensions"]["detail"]
-    with open("app/modules/agents/examples/nova_sales.ossie.yaml") as source:
-        fixed = yaml.safe_load(source)
     ir = SemanticModelIR.from_ossie(parse_ossie(yaml.safe_dump(fixed)).as_dict())
     assert by_id(assess(AGENT, [{"_scoped_ir": ir}]))["dimensions"]["status"] == "ok"
 

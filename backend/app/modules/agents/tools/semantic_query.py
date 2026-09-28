@@ -468,6 +468,8 @@ class SemanticQueryTool:
         except Exception as exc:  # noqa: BLE001 - telemetry must not fail a query
             logger.warning("semantic usage telemetry failed: %s", type(exc).__name__)
 
+        if hasattr(context, "primary_query_done"):
+            context.primary_query_done = True
         return ToolOutcome(
             ok=True,
             summary=_render(
@@ -700,12 +702,9 @@ def _user_period(
     from app.modules.agents.semantic.time_ranges import parse_time_phrase
 
     original = str(getattr(context, "user_question", None) or "")
-    first = not getattr(context, "primary_query_done", False)
-    if hasattr(context, "primary_query_done"):
-        context.primary_query_done = True
-    # Only the turn's first query answers the user's question as asked; later
-    # queries are analysis steps that may compare other periods on purpose.
-    if not first or not original or original.strip() == question.strip():
+    # Only the turn's first successful query answers the user's question as asked;
+    # later queries are analysis steps that may compare other periods on purpose.
+    if getattr(context, "primary_query_done", False) or not original:
         return plan, None
     wanted = parse_time_phrase(original)
     if not wanted.range:
@@ -744,7 +743,7 @@ def _user_rank(
     from app.modules.agents.semantic.planning import SemanticOrder, requested_rank
 
     original = str(getattr(context, "user_question", None) or "")
-    if not original or original.strip() == question.strip():
+    if not original:
         return plan, None
     wanted = requested_rank(original)
     if (
@@ -765,13 +764,12 @@ def _user_having(
     from app.modules.agents.semantic.planning import SemanticHaving, requested_threshold
 
     original = str(getattr(context, "user_question", None) or "")
-    if not original or original.strip() == question.strip():
+    if not original:
         return plan, None
     wanted = requested_threshold(original)
     if (
         wanted is None or plan.having or not plan.dimensions or not plan.metrics
         or any(item.operator in {">", ">=", "<", "<="} for item in plan.filters)
-        or requested_threshold(question) is not None
     ):
         return plan, None
     operator, value = wanted
