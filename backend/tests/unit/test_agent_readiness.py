@@ -23,7 +23,9 @@ def test_a_well_built_view_is_ready_and_reports_sample_coverage():
     checks = by_id(result)
     assert result["ready"]
     assert checks["dimensions"]["status"] == "ok"
-    assert checks["sample_questions"]["detail"].startswith("1 of 2 resolve")
+    # Two starter questions: fewer than the three a user expects to see.
+    assert checks["sample_questions"]["status"] == "warn"
+    assert checks["catalog"]["status"] == "ok"
 
 
 def _without_plain_dimensions(node):

@@ -8,6 +8,7 @@ from typing import Any
 
 from app.modules.agents.tool_catalog import BUILTIN_TOOLS
 from app.modules.assistant.intelligence import TurnIntent, TurnRoute
+from app.modules.assistant.intent import INTENT_FRAME_RULES, IntentFrame, intent_frame_schema
 from app.modules.assistant.tools import ToolRegistry
 
 
@@ -20,6 +21,11 @@ class TurnPlan:
     route: TurnRoute
     selected_tools: tuple[str, ...]
     selected_skills: tuple[str, ...] = ()
+    #: What the user asked, language-neutral; see ``assistant/intent.py``.
+    intent_frame: IntentFrame | None = None
+    #: The first governed query's SemanticPlan, unvalidated until the tool runs.
+    primary_plan: dict[str, Any] | None = None
+    primary_view: str | None = None
 
 
 _DATA_INTENTS = frozenset(
@@ -60,6 +66,29 @@ _PLAN_SCHEMA = {
     "required": ["intent", "tools", "required_tools", "skills", "ml_task"],
     "additionalProperties": False,
 }
+
+
+_PRIMARY_PLAN_RULES = (
+    "semantic_context lists the Semantic Views this agent may query, with their "
+    "catalogs and the planning rules. When the intent is semantic_analytics or "
+    "compound_analytics and semantic_query is required, also write primary_plan: the "
+    "SemanticPlan for the first query that answers the user as asked, following "
+    "semantic_context.rules and using only names from the chosen view's catalog, and "
+    "set primary_view to that view. Leave both null otherwise, and when the question "
+    "cannot be expressed with the catalog."
+)
+
+
+def _plan_schema(semantic_context: dict[str, Any] | None) -> dict[str, Any]:
+    properties = {**_PLAN_SCHEMA["properties"], "intent_frame": intent_frame_schema()}
+    required = [*_PLAN_SCHEMA["required"], "intent_frame"]
+    if semantic_context is not None:
+        properties["primary_plan"] = {
+            "anyOf": [semantic_context["plan_schema"], {"type": "null"}],
+        }
+        properties["primary_view"] = {"type": ["string", "null"]}
+        required += ["primary_plan", "primary_view"]
+    return {**_PLAN_SCHEMA, "properties": properties, "required": required}
 
 
 def validate_turn_plan(
@@ -133,6 +162,9 @@ def validate_turn_plan(
         "regression",
     }:
         raise TurnPlanningError("The provider returned an unknown ML task.")
+    primary_plan = value.get("primary_plan")
+    primary_view = value.get("primary_view")
+    frame = value.get("intent_frame")
     route = TurnRoute(
         intent=intent,
         needs_data=bool(required) and intent in _DATA_INTENTS,
@@ -145,7 +177,15 @@ def validate_turn_plan(
         clarification_required=intent == TurnIntent.CLARIFICATION,
         required_capabilities=required,
     )
-    return TurnPlan(route=route, selected_tools=tools, selected_skills=skills)
+    return TurnPlan(
+        route=route, selected_tools=tools, selected_skills=skills,
+        intent_frame=IntentFrame.from_dict(frame) if isinstance(frame, dict) else None,
+        primary_plan=(
+            primary_plan if isinstance(primary_plan, dict) and "semantic_query" in required
+            else None
+        ),
+        primary_view=primary_view if isinstance(primary_view, str) and primary_view else None,
+    )
 
 
 def _read_json(content: Any) -> dict[str, Any]:
@@ -329,6 +369,7 @@ async def plan_turn(
     conversation_context: list[dict[str, str]] | None = None,
     decision: Any = None,
     agent_scope: dict[str, Any] | None = None,
+    semantic_context: dict[str, Any] | None = None,
 ) -> TurnPlan:
     available = registry.names()
     skill_names = set(registry.discoverable_skills)
@@ -347,6 +388,10 @@ async def plan_turn(
         for name in available
     ]
     instructions = _STUDIO_INSTRUCTIONS if agent_scope is not None else _nove_instructions()
+    instructions += "\n" + INTENT_FRAME_RULES
+    schema = _plan_schema(semantic_context)
+    if semantic_context is not None:
+        instructions += "\n" + _PRIMARY_PLAN_RULES
     messages = [
         {"role": "system", "content": instructions},
         {
@@ -370,6 +415,7 @@ async def plan_turn(
                         if name in registry.skill_definitions
                     ],
                     "unavailable_builtin_tools": sorted(set(BUILTIN_TOOLS) - set(available)),
+                    **({"semantic_context": semantic_context} if semantic_context else {}),
                 },
                 ensure_ascii=False,
             ),
@@ -377,7 +423,7 @@ async def plan_turn(
     ]
     response_format = {
         "type": "json_schema",
-        "json_schema": {"name": "nova_turn_plan", "strict": True, "schema": _PLAN_SCHEMA},
+        "json_schema": {"name": "nova_turn_plan", "strict": True, "schema": schema},
     }
     for attempt in range(2):
         message = await provider_client.complete(
@@ -403,7 +449,7 @@ async def plan_turn(
                     "role": "user",
                     "content": (
                         f"Repair the JSON plan: {exc}. Use only listed tools and skills. "
-                        "Return the complete JSON object with the five required keys."
+                        "Return the complete JSON object with every required key."
                     ),
                 },
             ]

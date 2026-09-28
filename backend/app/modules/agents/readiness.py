@@ -38,7 +38,11 @@ def _looks_categorical(field: Any) -> bool:
 
 
 def assess(agent: dict[str, Any], models: list[dict[str, Any]]) -> dict[str, Any]:
-    from app.modules.agents.semantic.planning import SemanticPlanError, SemanticPlanner
+    from app.modules.agents.semantic.model_planner import (
+        CATALOG_EMBEDDING_ALIAS,
+        CATALOG_TOKEN_BUDGET,
+        catalog_tokens,
+    )
     from app.modules.agents.semantic.runtime import lint_semantic_model
 
     checks: list[Check] = []
@@ -101,33 +105,27 @@ def assess(agent: dict[str, Any], models: list[dict[str, Any]]) -> dict[str, Any
             "Set default_time_dimension so 'last month' filters the right date."
             if timeless else "",
         ))
-    questions = [str(item) for item in agent.get("sample_questions") or []][:20]
-    if questions and irs:
-        planner = SemanticPlanner()
-        outcome = {"fast": 0, "model": 0}
-        for question in questions:
-            resolved = False
-            for ir in irs:
-                try:
-                    planned = planner.plan(ir, question)
-                except SemanticPlanError:
-                    continue
-                if planned.plan is not None and not planned.confidence.unresolved:
-                    resolved = True
-                    break
-            outcome["fast" if resolved else "model"] += 1
+    for ir in irs:
+        # The planner reads the whole catalog in any language; a catalog too large
+        # for its budget is narrowed by meaning, or cut when no embedding model is set.
+        tokens = catalog_tokens(ir)
+        narrowed = tokens > CATALOG_TOKEN_BUDGET
+        cut = narrowed and not CATALOG_EMBEDDING_ALIAS
         checks.append(Check(
-            "sample_questions", "ok" if outcome["fast"] else "warn",
-            "Sample questions resolve against the catalog",
-            f"{outcome['fast']} of {len(questions)} resolve without the model; "
-            f"{outcome['model']} need the model planner or are not covered.",
-            "Add synonyms or sample values for the words those questions use."
-            if outcome["model"] else "",
+            f"catalog:{ir.name}", "warn" if cut else "ok",
+            f"{ir.name}: the planner sees the catalog",
+            f"About {tokens} tokens against a budget of {CATALOG_TOKEN_BUDGET}"
+            + ("; cut to fit." if cut else "; narrowed by meaning." if narrowed else "."),
+            "Set NOVA_SEMANTIC_EMBEDDING_ALIAS so a large catalog is narrowed by meaning."
+            if cut else "",
         ))
-    elif not questions:
-        checks.append(Check("sample_questions", "warn", "Sample questions are set",
-                            "Users see no starter questions.",
-                            "Add three to five questions this agent should answer."))
+    questions = [str(item) for item in agent.get("sample_questions") or []][:20]
+    checks.append(Check(
+        "sample_questions", "ok" if len(questions) >= 3 else "warn", "Sample questions are set",
+        f"{len(questions)} starter question(s)." if questions
+        else "Users see no starter questions.",
+        "" if len(questions) >= 3 else "Add three to five questions this agent should answer.",
+    ))
     analysis = {"compute_metrics", "data_to_chart"} - tools
     has_data_tool = bool(tools & {"semantic_query", "semantic_view_query"})
     checks.append(Check(

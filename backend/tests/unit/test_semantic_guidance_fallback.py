@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.modules.agents.semantic.compiler import SemanticCompiler
+from app.modules.agents.semantic.model_planner import generate_plan
 from app.modules.agents.semantic.planning import SemanticPlanError, SemanticPlanner
 from app.modules.agents.semantic.runtime import SemanticCatalogRetriever, semantic_ir_to_definition
 from app.modules.agents.tools.semantic_query import SemanticQueryTool
@@ -118,7 +119,6 @@ async def test_natural_guidance_uses_validated_fallback_and_required_filters(mon
 @pytest.mark.parametrize(
     "patch",
     [
-        {"time": None},
         {"metrics": ["payroll"]},
         {"unresolved_concepts": [{"text": "margin", "type_hint": "metric", "material": True}]},
         {"sql": "SELECT * FROM payroll"},
@@ -151,10 +151,21 @@ async def test_fallback_still_blocks_explicit_clarification_rule():
     )
     provider = SimpleNamespace(resolve=AsyncMock())
     with pytest.raises(SemanticPlanError, match="requires clarification"):
-        await SemanticQueryTool(provider=provider)._generate_plan(
-            model,
-            {},
-            "Revenue per customer",
-            SimpleNamespace(),
-        )
+        await generate_plan(provider, model, {}, "Revenue per customer", SimpleNamespace())
     provider.resolve.assert_not_awaited()
+
+
+async def test_a_plan_that_drops_the_users_year_gets_it_back_from_the_frame(monkeypatch):
+    from app.modules.assistant.intent import IntentFrame
+
+    tool, _, execute = setup_tool(monkeypatch, {**generated_plan(), "time": None})
+    context = LoopContext(user_name="alice", user=USER.copy())
+    context.intent_frame = IntentFrame(range="2025")
+    outcome = await tool.run(
+        ToolInvocation(
+            tool_call_id="semantic-1", tool_name="semantic_query", arguments={"question": QUESTION}
+        ),
+        context,
+    )
+    assert outcome.ok, outcome.safe_detail
+    assert ">= '2025-01-01'" in execute.call_args.kwargs["sql"]

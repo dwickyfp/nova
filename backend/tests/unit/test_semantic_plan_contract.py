@@ -269,7 +269,7 @@ async def test_legacy_verified_query_endpoint_points_to_semantic_view_draft():
 
 @pytest.mark.parametrize("supports_schema", [True, False])
 async def test_generator_shares_contract_with_provider_and_runtime(supports_schema):
-    from app.modules.agents.tools.semantic_query import SemanticQueryTool
+    from app.modules.agents.semantic.model_planner import generate_plan
 
     provider = SimpleNamespace(
         resolve=AsyncMock(
@@ -281,8 +281,7 @@ async def test_generator_shares_contract_with_provider_and_runtime(supports_sche
         ),
         complete=AsyncMock(return_value={"content": json.dumps(_plan())}),
     )
-    tool = SemanticQueryTool(provider=provider)
-    plan = await tool._generate_plan(sales_model(), {}, "Revenue", SimpleNamespace())
+    plan = await generate_plan(provider, sales_model(), {}, "Revenue", SimpleNamespace())
     assert plan.metrics == ("total_revenue",)
     kwargs = provider.complete.call_args.kwargs
     if supports_schema:
@@ -293,4 +292,4 @@ async def test_generator_shares_contract_with_provider_and_runtime(supports_sche
     assert json.loads(kwargs["messages"][1]["content"])["response_schema"] == semantic_plan_schema()
     provider.complete.return_value = {"content": '{"metrics":["total_revenue"],"sql":"SELECT 1"}'}
     with pytest.raises(SemanticPlanError, match="violates its schema"):
-        await tool._generate_plan(sales_model(), {}, "Revenue", SimpleNamespace())
+        await generate_plan(provider, sales_model(), {}, "Revenue", SimpleNamespace())

@@ -1,8 +1,8 @@
-"""semantic_query plans with the model unless the lexical fast path is certain.
+"""semantic_query plans every question with the model, in any language.
 
-Audit 2026-09-27: one unrecognised word made the lexical planner raise before
-the constrained model planner could run, and follow-ups were recognised only
-when the question started with "now" or "sekarang".
+The model returns a SemanticPlan from the catalog; Nova validates and compiles
+it. The user's own constraints come from the turn's IntentFrame, never from
+parsing the question text.
 """
 
 from __future__ import annotations
@@ -11,10 +11,9 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import pytest
-
 from app.modules.agents.semantic.runtime import semantic_ir_to_definition
 from app.modules.agents.tools.semantic_query import SemanticQueryTool
+from app.modules.assistant.intent import IntentFrame, Threshold
 from app.modules.assistant.service import LoopContext
 from app.modules.assistant.tools import ToolInvocation
 from tests.unit.test_semantic_guidance_fallback import USER
@@ -66,15 +65,7 @@ async def _run(tool, question, *, active_state=None):
     )
 
 
-async def test_confident_lexical_plan_skips_the_model(monkeypatch):
-    tool, provider, execute = setup_tool(monkeypatch)
-    outcome = await _run(tool, "Revenue by city last month")
-    assert outcome.ok, outcome.safe_detail
-    provider.complete.assert_not_awaited()
-    assert "`orders`.`city`" in execute.call_args.kwargs["sql"]
-
-
-async def test_unrecognised_word_goes_to_the_model_instead_of_failing(monkeypatch):
+async def test_every_question_is_planned_by_the_model(monkeypatch):
     tool, provider, execute = setup_tool(
         monkeypatch, _plan(dimensions=["city"], time={
             "dimension": "order_date", "grain": None, "range": "previous_month", "compare": None,
@@ -86,6 +77,9 @@ async def test_unrecognised_word_goes_to_the_model_instead_of_failing(monkeypatc
     sql = execute.call_args.kwargs["sql"]
     assert "`orders`.`city`" in sql
     assert "DATE_SUB(DATE_TRUNC('month', CURRENT_DATE()), INTERVAL 1 MONTH)" in sql
+    payload = json.loads(provider.complete.call_args.kwargs["messages"][1]["content"])
+    # The whole catalog, not a slice chosen by shared words.
+    assert {item["name"] for item in payload["catalog"]["metrics"]} >= {"total_revenue"}
 
 
 async def test_follow_up_without_keyword_receives_the_previous_plan(monkeypatch):
@@ -143,26 +137,56 @@ async def test_second_invalid_model_plan_is_a_recoverable_plan_error(monkeypatch
     execute.assert_not_awaited()
 
 
-@pytest.mark.parametrize("question", ["Revenue in Q2 2025", "Revenue last 7 days"])
-async def test_audit_time_questions_run_without_the_model(monkeypatch, question):
+# ── the turn planner's primary plan ─────────────────────────────────────────
+
+def _context(frame=None, *, question="x", primary=None):
+    context = LoopContext(user_name="alice", user=USER.copy())
+    context.user_question = question
+    context.intent_frame = frame
+    context.primary_plan = primary
+    return context
+
+
+async def _ask(tool, context, question="the model's rewrite of the question"):
+    return await tool.run(ToolInvocation("s1", "semantic_query", {"question": question}), context)
+
+
+async def test_the_turn_planners_plan_runs_without_another_model_call(monkeypatch):
     tool, provider, execute = setup_tool(monkeypatch)
-    outcome = await _run(tool, question)
+    context = _context(primary={"plan": _plan(dimensions=["city"]), "view": None})
+    outcome = await _ask(tool, context)
     assert outcome.ok, outcome.safe_detail
     provider.complete.assert_not_awaited()
-    execute.assert_awaited_once()
+    assert "`orders`.`city`" in execute.call_args.kwargs["sql"]
+    assert outcome.metadata["plan_source"] == "turn_planner"
 
 
-async def test_the_users_explicit_period_wins_over_the_models_rewrite(monkeypatch):
+async def test_an_invalid_turn_plan_is_planned_again(monkeypatch):
+    tool, provider, execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
+    context = _context(primary={"plan": _plan(metrics=["gross_merchandise"]), "view": None})
+    outcome = await _ask(tool, context)
+    assert outcome.ok, outcome.safe_detail
+    provider.complete.assert_awaited_once()
+    assert outcome.metadata["plan_source"] == "model_planner"
+
+
+async def test_later_queries_plan_for_themselves(monkeypatch):
+    tool, provider, _execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
+    context = _context(primary={"plan": _plan(), "view": None})
+    context.primary_query_done = True
+    outcome = await _ask(tool, context)
+    assert outcome.ok, outcome.safe_detail
+    provider.complete.assert_awaited_once()
+
+
+# ── the user's constraints, from the intent frame ────────────────────────────
+
+async def test_the_users_period_wins_over_the_models_rewrite(monkeypatch):
     tool, _provider, execute = setup_tool(monkeypatch, _plan(time={
         "dimension": "order_date", "grain": "month", "range": "last_3_months", "compare": None,
     }))
-    context = LoopContext(user_name="alice", user=USER.copy())
-    context.user_question = "Revenue this month vs last month"
-    outcome = await tool.run(
-        ToolInvocation("s1", "semantic_query",
-                       {"question": "revenue by month for the last 3 months"}),
-        context,
-    )
+    frame = IntentFrame(language="ja", range="current_month", compare="month_over_month")
+    outcome = await _ask(tool, _context(frame, question="今月の売上を先月と比較して"))
     assert outcome.ok, outcome.safe_detail
     sql = execute.call_args.kwargs["sql"]
     assert "comparison_period" in sql
@@ -174,14 +198,10 @@ async def test_later_analysis_queries_keep_their_own_period(monkeypatch):
     plan = _plan(time={
         "dimension": "order_date", "grain": None, "range": "previous_month", "compare": None,
     })
-    tool, _provider, execute = setup_tool(monkeypatch, plan, plan)
-    context = LoopContext(user_name="alice", user=USER.copy())
-    context.user_question = "Kenapa penjualan bulan ini turun?"
+    tool, _provider, execute = setup_tool(monkeypatch, plan)
+    context = _context(IntentFrame(range="current_month"))
     context.primary_query_done = True
-    outcome = await tool.run(
-        ToolInvocation("s2", "semantic_query", {"question": "penjualan per kota periode lalu x"}),
-        context,
-    )
+    outcome = await _ask(tool, context)
     assert outcome.ok, outcome.safe_detail
     assert outcome.metadata["period_from_user"] is None
     assert "INTERVAL 1 MONTH)" in execute.call_args.kwargs["sql"]
@@ -189,82 +209,32 @@ async def test_later_analysis_queries_keep_their_own_period(monkeypatch):
 
 async def test_the_users_top_n_survives_a_rewrite_that_drops_it(monkeypatch):
     tool, _provider, execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
-    context = LoopContext(user_name="alice", user=USER.copy())
-    context.user_question = "Top 2 kota berdasarkan penjualan"
-    outcome = await tool.run(
-        ToolInvocation("s1", "semantic_query", {"question": "total revenue by city overall x"}),
-        context,
-    )
+    outcome = await _ask(tool, _context(IntentFrame(top_n=2, order="desc")))
     assert outcome.ok, outcome.safe_detail
     sql = execute.call_args.kwargs["sql"]
     assert "LIMIT 2" in sql and "DESC" in sql
     assert "top 2" in outcome.metadata["period_from_user"]
 
 
-@pytest.mark.parametrize(("question", "expected"), [
-    ("Top 2 kanal berdasarkan penjualan", (2, "desc")),
-    ("5 kota teratas bulan ini", (5, "desc")),
-    ("3 produk terlaris", (3, "desc")),
-    ("bottom 3 cities by revenue", (3, "asc")),
-    ("3 kanal terendah", (3, "asc")),
-    ("penjualan tahun 2025 terbesar", None),
-    ("pesanan di atas 10 juta terbesar", None),
-])
-def test_rank_phrases_in_english_and_indonesian(question, expected):
-    from app.modules.agents.semantic.planning import requested_rank
-
-    assert requested_rank(question) == expected
-
-
 async def test_the_users_threshold_survives_a_rewrite_that_drops_it(monkeypatch):
     tool, _provider, execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
-    context = LoopContext(user_name="alice", user=USER.copy())
-    context.user_question = "Kota dengan penjualan di atas 1 miliar"
-    outcome = await tool.run(
-        ToolInvocation("s1", "semantic_query", {"question": "total revenue by city overall x"}),
-        context,
-    )
+    frame = IntentFrame(threshold=Threshold(">", 1_000_000_000.0, "total_revenue"))
+    outcome = await _ask(tool, _context(frame))
     assert outcome.ok, outcome.safe_detail
     assert "`total_revenue` > 1000000000" in execute.call_args.kwargs["sql"]
-
-
-@pytest.mark.parametrize(("question", "expected"), [
-    ("Kota dengan penjualan di atas 1 miliar tahun ini", (">", 1_000_000_000)),
-    ("cities with revenue over 500k", (">", 500_000)),
-    ("kategori dengan omzet kurang dari 1,5 miliar", ("<", 1_500_000_000)),
-    ("channels above Rp 100.000.000", (">", 100_000_000)),
-    ("penjualan minimal 50 juta per kota", (">=", 50_000_000)),
-    ("orders over 3 months", None),
-    ("growth above 10%", None),
-    ("revenue by city", None),
-])
-def test_threshold_phrases(question, expected):
-    from app.modules.agents.semantic.planning import requested_threshold
-
-    assert requested_threshold(question) == expected
 
 
 async def test_a_period_total_is_not_split_by_month_unless_asked(monkeypatch):
     by_month = _plan(time={
         "dimension": "order_date", "grain": "month", "range": "last_3_months", "compare": None,
     })
-    tool, _provider, execute = setup_tool(monkeypatch, by_month, by_month)
-    context = LoopContext(user_name="alice", user=USER.copy())
-    context.user_question = "Berapa penjualan 3 bulan terakhir?"
-    outcome = await tool.run(
-        ToolInvocation("s1", "semantic_query", {"question": "penjualan per bulan 3 bulan x"}),
-        context,
-    )
+    tool, _provider, execute = setup_tool(monkeypatch, by_month)
+    outcome = await _ask(tool, _context(IntentFrame(range="last_3_months")))
     assert outcome.ok, outcome.safe_detail
     assert "DATE_TRUNC" not in execute.call_args.kwargs["sql"].split("WHERE")[0]
 
     tool, _provider, execute = setup_tool(monkeypatch, by_month)
-    context = LoopContext(user_name="alice", user=USER.copy())
-    context.user_question = "Tren penjualan 3 bulan terakhir"
-    outcome = await tool.run(
-        ToolInvocation("s1", "semantic_query", {"question": "penjualan per bulan 3 bulan x"}),
-        context,
-    )
+    outcome = await _ask(tool, _context(IntentFrame(range="last_3_months", asks_series=True)))
     assert outcome.ok, outcome.safe_detail
     assert "DATE_TRUNC('month'" in execute.call_args.kwargs["sql"]
 
@@ -276,78 +246,62 @@ async def test_a_failed_first_query_leaves_the_users_wording_for_the_retry(monke
     })
     tool, _provider, execute = setup_tool(monkeypatch, by_day, by_day)
     execute.side_effect = [RuntimeError("engine busy"), execute.return_value]
-    context = LoopContext(user_name="alice", user=USER.copy())
-    context.user_question = "Revenue this month vs last month"
-    first = await tool.run(
-        ToolInvocation("s1", "semantic_query", {"question": "daily revenue this month x"}), context
-    )
+    context = _context(IntentFrame(range="current_month", compare="month_over_month"))
+    first = await _ask(tool, context)
     assert not first.ok and not context.primary_query_done
-    retry = await tool.run(
-        ToolInvocation("s2", "semantic_query", {"question": "daily revenue this month x"}), context
-    )
+    retry = await _ask(tool, context)
     assert retry.ok, retry.safe_detail
     assert "DATE_TRUNC('day'" not in execute.call_args.kwargs["sql"]
     assert context.primary_query_done
 
 
-async def test_the_users_own_words_still_get_their_limit(monkeypatch):
-    tool, _provider, execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
-    context = LoopContext(user_name="alice", user=USER.copy())
-    context.user_question = "Top 2 kota berdasarkan penjualan x"
-    outcome = await tool.run(
-        ToolInvocation("s1", "semantic_query", {"question": "Top 2 kota berdasarkan penjualan x"}),
-        context,
-    )
-    assert outcome.ok, outcome.safe_detail
-    assert "LIMIT 2" in execute.call_args.kwargs["sql"]
-
-
-def _bench_context(question):
-    context = LoopContext(user_name="alice", user=USER.copy())
-    context.user_question = question
-    return context
-
-
 def test_top_n_in_each_group_is_a_per_group_ranking_not_a_flat_limit():
     from app.modules.agents.semantic.planning import SemanticPlan
-    from app.modules.agents.tools.semantic_query import _user_rank
+    from app.modules.agents.tools.semantic_query import reconcile_with_frame
     from tests.benchmark.studio_accuracy.model import bench_model
 
     plan = SemanticPlan(metrics=("product_revenue",), dimensions=("category", "city"))
-    ranked, note = _user_rank(
-        plan, "product revenue by category and city",
-        _bench_context("Top 2 categories by product revenue in each city this quarter"),
-        bench_model(),
-    )
+    frame = IntentFrame(top_n=2, order="desc", per_group_dimension="city")
+    ranked, notes = reconcile_with_frame(plan, frame, bench_model())
     assert ranked.limit is None
     assert ranked.top_n_per_group.n == 2
     assert ranked.top_n_per_group.partition_by == ("city",)
-    assert "per city" in note
-    unclear, _ = _user_rank(
-        plan, "x", _bench_context("Top 2 categories in each galaxy"), bench_model()
+    assert any("per city" in note for note in notes)
+    unclear, _ = reconcile_with_frame(
+        plan, IntentFrame(top_n=2, per_group_dimension="galaxy"), bench_model()
     )
     assert unclear == plan
 
 
 def test_a_raw_date_column_is_dropped_when_the_user_asked_for_a_total():
     from app.modules.agents.semantic.planning import SemanticPlan, SemanticTime
-    from app.modules.agents.tools.semantic_query import _user_period
+    from app.modules.agents.tools.semantic_query import reconcile_with_frame
     from tests.benchmark.studio_accuracy.model import bench_model
 
     daily = SemanticPlan(
         metrics=("total_revenue",), dimensions=("order_date",),
         time=SemanticTime("order_date", range="previous_month", compare="month_over_month"),
     )
-    fixed, _ = _user_period(
-        daily, "x", _bench_context("Pertumbuhan penjualan bulan lalu dibanding bulan sebelumnya"),
-        bench_model(),
-    )
+    frame = IntentFrame(range="previous_month", compare="month_over_month")
+    fixed, _ = reconcile_with_frame(daily, frame, bench_model())
     assert fixed.dimensions == ()
-    kept, _ = _user_period(
-        daily, "x", _bench_context("Tren harian penjualan bulan lalu dibanding bulan sebelumnya"),
+    kept, _ = reconcile_with_frame(
+        daily, IntentFrame(range="previous_month", compare="month_over_month", asks_series=True),
         bench_model(),
     )
     assert kept.dimensions == ("order_date",)
+
+
+def test_a_superlative_ranks_every_group_without_a_limit():
+    from app.modules.agents.semantic.planning import SemanticPlan
+    from app.modules.agents.tools.semantic_query import reconcile_with_frame
+    from tests.benchmark.studio_accuracy.model import bench_model
+
+    plan = SemanticPlan(metrics=("total_revenue",), dimensions=("sales_channel",))
+    ranked, notes = reconcile_with_frame(plan, IntentFrame(order="desc"), bench_model())
+    assert ranked.limit is None
+    assert [(item.field, item.direction) for item in ranked.order_by] == [("total_revenue", "desc")]
+    assert notes == ["Ranked by the user's superlative"]
 
 
 def test_a_limit_without_an_order_ranks_by_the_first_metric():
@@ -361,29 +315,12 @@ def test_a_limit_without_an_order_ranks_by_the_first_metric():
     assert "ORDER BY `total_revenue` DESC\nLIMIT 3" in sql
 
 
-@pytest.mark.parametrize(("question", "expected"), [
-    ("Which channel brought in the most sales last quarter?", "desc"),
-    ("Kota mana yang paling laku bulan ini?", "desc"),
-    ("Kategori dengan penjualan terendah", "asc"),
-    ("Which city had the least orders?", "asc"),
-    ("Revenue by channel last quarter", None),
-])
-def test_superlatives_set_a_direction(question, expected):
-    from app.modules.agents.semantic.planning import requested_order
-
-    assert requested_order(question) == expected
-
-
-def test_a_superlative_ranks_every_group_without_a_limit():
-    from app.modules.agents.semantic.planning import SemanticPlan
-    from app.modules.agents.tools.semantic_query import _user_rank
-    from tests.benchmark.studio_accuracy.model import bench_model
-
-    plan = SemanticPlan(metrics=("total_revenue",), dimensions=("sales_channel",))
-    ranked, note = _user_rank(
-        plan, "total revenue by sales channel last quarter",
-        _bench_context("Which channel brought in the most sales last quarter?"), bench_model(),
-    )
-    assert ranked.limit is None
-    assert [(item.field, item.direction) for item in ranked.order_by] == [("total_revenue", "desc")]
-    assert note == "Ranked by the user's superlative"
+def test_a_malformed_frame_keeps_only_valid_fields():
+    frame = IntentFrame.from_dict({
+        "language": "ja", "range": "the month before", "compare": "month_over_month",
+        "grain": "fortnight", "top_n": 0, "order": "most",
+        "threshold": {"operator": "above", "value": 10, "metric": None},
+    })
+    assert frame.language == "ja"
+    assert frame.range is None and frame.compare is None and frame.grain is None
+    assert frame.top_n is None and frame.order is None and frame.threshold is None
