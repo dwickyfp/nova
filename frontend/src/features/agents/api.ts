@@ -34,6 +34,8 @@ export type Agent = {
   discoverable_skills?: string[];
   compiled_instructions?: Record<string, unknown>;
   harness_mode?: "auto" | "fast" | "guided" | "strict";
+  /** Loop limits: "analyst" leaves room to drill down after the first result. */
+  budget_profile?: "fast" | "analyst" | "deep";
   policy: "auto_read_only" | "ask_every_tool";
   semantic_model_id: string | null;
   /** Legacy bindings retained for responses created before Semantic Views. */

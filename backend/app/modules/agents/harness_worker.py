@@ -31,14 +31,13 @@ from app.modules.agents.collaboration_tools import (
 from app.modules.agents.harness_repository import TERMINAL, HarnessRepository, harness_repository
 from app.modules.agents.harness_tools import RequestSpecialistTool, SendAgentMessageTool
 from app.modules.agents.identity import SMART_AGENT_ID, participant_id
-from app.modules.agents.memory import memory_prompt, memory_repository, select_memories
+from app.modules.agents.memory import memory_prompt, memory_repository, select_relevant_memories
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.semantic.access import bound_view_ids
 from app.modules.agents.service import agent_service
 from app.modules.assistant.answer_contract import (
     check_numeric_answer,
-    is_numeric_comparison_question,
-    render_verified_comparison,
+    finalize_verified_answer,
 )
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.events import _json_default
@@ -114,11 +113,49 @@ def _table_evidence(payload: dict[str, Any]) -> dict[str, Any] | None:
         if size > MAX_EVIDENCE_CHARS:
             break
         safe_rows.append(values)
+    truncated = len(columns) > len(safe_columns) or len(safe_rows) < len(rows)
+    if len(safe_rows) < len(rows):
+        # A labelled total keeps a truncated preview useful. It sums redacted
+        # rows, so a masked column never leaks through its total.
+        redacted_rows = redact_rows(
+            column_names,
+            [row[:len(column_names)] for row in rows if isinstance(row, list)],
+        )
+        totals = _column_totals(column_names, redacted_rows)
+        if totals is not None:
+            safe_rows.append(
+                [f"TOTAL ({len(rows)} rows)" if index == 0 else value
+                 for index, value in enumerate(totals)]
+            )
     return {
         "columns": safe_columns,
         "rows": safe_rows,
-        "truncated": len(columns) > len(safe_columns) or len(safe_rows) < len(rows),
+        "truncated": truncated,
+        "row_count": len(rows),
     }
+
+
+def _column_totals(columns: list[str], rows: list[Any]) -> list[str] | None:
+    from decimal import Decimal, InvalidOperation
+
+    totals: list[Decimal | None] = [Decimal(0)] * len(columns)
+    for row in rows:
+        if not isinstance(row, list):
+            return None
+        for index in range(len(columns)):
+            if totals[index] is None:
+                continue
+            value = row[index] if index < len(row) else None
+            try:
+                totals[index] = (
+                    totals[index] + Decimal(str(value))  # type: ignore[operator]
+                    if value is not None and not isinstance(value, bool) else None
+                )
+            except InvalidOperation:
+                totals[index] = None
+    if all(value is None for value in totals[1:]):
+        return None
+    return ["" if value is None else str(value) for value in totals]
 
 
 def _render_evidence_tables(tables: list[dict[str, Any]]) -> str:
@@ -702,35 +739,22 @@ class AgentHarnessWorker:
                 verified_tables = evidence_tables or {
                     "missing": {"columns": [], "rows": []}
                 }
-                draft_accepted = check_numeric_answer(
+                if evidence_tables:
+                    # The coordinator compares specialists' findings, so their leaders
+                    # are always computed from cells.
+                    verified = finalize_verified_answer(
+                        answer, question=root["objective"], tables=verified_tables,
+                        compares_groups=True,
+                    )
+                    answer = verified.text
+                    rendered_verified_table = verified.replaced
+                elif not check_numeric_answer(
                     answer, question=root["objective"], tables=verified_tables
-                ).accepted
-                comparison_requested = is_numeric_comparison_question(
-                    root["objective"], evidence_tables
-                )
-                if comparison_requested or not draft_accepted:
-                    if evidence_tables:
-                        replacement = render_verified_comparison(
-                            evidence_tables, question=root["objective"]
-                        )
-                        if check_numeric_answer(
-                            replacement,
-                            question=root["objective"],
-                            tables=evidence_tables,
-                        ).accepted:
-                            answer = replacement
-                            rendered_verified_table = True
-                        else:
-                            answer = (
-                                "Saya tidak dapat memverifikasi semua angka pada ringkasan. "
-                                "Berikut hasil query yang terotorisasi:\n\n"
-                                + _render_evidence_tables(list(evidence_tables.values()))
-                            )
-                    else:
-                        answer = (
-                            "Saya tidak dapat memverifikasi angka karena tidak ada hasil query "
-                            "terotorisasi yang tersedia."
-                        )
+                ).accepted:
+                    answer = (
+                        "Saya tidak dapat memverifikasi angka karena tidak ada hasil query "
+                        "terotorisasi yang tersedia."
+                    )
             if evidence_tables and not rendered_verified_table:
                 table_text = _render_evidence_tables(list(evidence_tables.values()))
                 if table_text not in answer:
@@ -862,7 +886,7 @@ class AgentHarnessWorker:
                 agent_id=child["agent_id"],
                 role_name=child["role_name"],
             )
-            selected = select_memories(memories, child["objective"])
+            selected = await select_relevant_memories(memories, child["objective"])
             if selected:
                 system_prompt += "\n\n" + memory_prompt(selected)
         except Exception as exc:

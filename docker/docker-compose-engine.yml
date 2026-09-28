@@ -221,7 +221,7 @@ services:
 
   # ── MinIO (S3-compatible object storage) ──────────────────────────
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    image: ghcr.io/teableio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: nova-minio
     command: server /data --console-address ":9001"
     ports:
@@ -251,7 +251,7 @@ services:
 
   # ── MinIO Init (auto-create buckets + service account) ────────────
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: ghcr.io/teableio/minio-mc:RELEASE.2025-04-16T18-13-26Z
     container_name: nova-minio-init
     depends_on:
       minio:

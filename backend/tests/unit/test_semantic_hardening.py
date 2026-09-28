@@ -4,10 +4,18 @@ from dataclasses import replace
 
 import pytest
 
-from app.modules.agents.semantic.compiler import MultiFactCompilationError, SemanticCompiler
+from app.modules.agents.semantic.compiler import (
+    MultiFactCompilationError,
+    SemanticCompiler,
+    UnsafeFanoutError,
+)
 from app.modules.agents.semantic.expressions import qualify_expression
 from app.modules.agents.semantic.ir import SemanticMetricIR, SemanticModelIR
-from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError, SemanticPlanner
+from app.modules.agents.semantic.planning import (
+    SemanticPlan,
+    SemanticPlanError,
+    SemanticTime,
+)
 from app.modules.agents.semantic.runtime import scope_semantic_model, semantic_ir_to_definition
 from app.modules.assistant.intelligence import (
     EvidenceTracker,
@@ -17,19 +25,12 @@ from app.modules.assistant.intelligence import (
 from tests.unit.test_semantic_intelligence import sales_model
 
 
-def test_unknown_filter_cannot_be_dropped_or_receive_high_confidence():
-    model = sales_model()
-    result = SemanticPlanner().plan(model, "Revenue Enterprise this month")
-    assert result.confidence.unresolved == ("Enterprise",)
-    assert result.confidence.level == "low"
-    with pytest.raises(SemanticPlanError):
-        SemanticCompiler().compile(model, result.plan)
-
-
 def test_yoy_selects_two_disjoint_months_not_entire_year():
     model = sales_model()
-    plan = SemanticPlanner().plan(model, "Revenue this month YoY").plan
-    assert plan.time.compare == "year_over_year"
+    plan = SemanticPlan(
+        metrics=("total_revenue",),
+        time=SemanticTime("order_date", range="current_month", compare="year_over_year"),
+    )
     sql = SemanticCompiler().compile(model, plan).sql
     assert "INTERVAL 1 YEAR" in sql
     assert ") OR (" in sql
@@ -51,14 +52,49 @@ def test_catalog_scope_filters_expression_dependencies_and_round_trips_facts():
     assert round_trip.field("amount").kind == model.field("amount").kind
 
 
-def test_fact_metrics_refuse_unproven_combination():
+def _two_fact_model():
     model = sales_model()
-    model = replace(
+    return replace(
         model,
         metrics=(*model.metrics, SemanticMetricIR("population", "SUM(population)", "regions")),
     )
+
+
+def test_two_fact_totals_are_aggregated_separately_then_joined():
+    # Each fact is aggregated on its own, so neither is fanned out by the other.
+    sql = SemanticCompiler().compile(
+        _two_fact_model(), SemanticPlan(metrics=("total_revenue", "population"))
+    ).sql
+    assert sql.startswith("WITH f0 AS (")
+    assert "FROM `analytics`.`sales`.`orders`" in sql
+    assert "FROM `analytics`.`sales`.`regions`" in sql
+    assert "CROSS JOIN f1" in sql
+
+
+def test_two_facts_join_on_a_shared_dimension():
+    sql = SemanticCompiler().compile(
+        _two_fact_model(),
+        SemanticPlan(metrics=("total_revenue", "population"), dimensions=("region",)),
+    ).sql
+    assert "FULL OUTER JOIN f1 ON f0.`region` <=> f1.`region`" in sql
+    assert "COALESCE(f0.`region`, f1.`region`) AS `region`" in sql
+
+
+def test_fact_metrics_refuse_unproven_combination():
+    model = _two_fact_model()
+    # ``city`` lives on orders; reaching it from regions would fan population out.
+    with pytest.raises((MultiFactCompilationError, UnsafeFanoutError)):
+        SemanticCompiler().compile(
+            model, SemanticPlan(metrics=("total_revenue", "population"), dimensions=("city",))
+        )
     with pytest.raises(MultiFactCompilationError):
-        SemanticCompiler().compile(model, SemanticPlan(metrics=("total_revenue", "population")))
+        SemanticCompiler().compile(
+            model,
+            SemanticPlan(
+                metrics=("total_revenue", "population"),
+                time=SemanticTime("order_date", range="current_month", compare="previous_period"),
+            ),
+        )
 
 
 @pytest.mark.parametrize(

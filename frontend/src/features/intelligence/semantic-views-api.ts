@@ -148,7 +148,8 @@ export type SemanticPreview = {
   model_fingerprint: string
   semantic_plan: Record<string, unknown>
   generated_sql: string
-  confidence: Record<string, unknown>
+  /** Who wrote the plan: the model planner, or a verified query. */
+  plan_source?: string
   relationship_path: string[]
   warnings: string[]
 }

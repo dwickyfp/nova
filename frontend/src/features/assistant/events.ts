@@ -82,6 +82,13 @@ export function parseAssistantEvent(
         return parseChart(record);
       case "citation":
         return parseCitation(record);
+      case "suggestions": {
+        const items = Array.isArray(record.suggestions) ? record.suggestions : [];
+        const suggestions = items
+          .filter((item): item is string => typeof item === "string" && item.trim() !== "")
+          .slice(0, 5);
+        return suggestions.length ? { type: "suggestions", suggestions } : null;
+      }
       case "content_block_done": {
         const index = record.content_index;
         const id = record.content_id;

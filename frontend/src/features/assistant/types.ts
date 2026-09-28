@@ -110,6 +110,8 @@ export type AssistantEvent = (
     } & ContentPosition)
   | ({ type: "chart"; payload: ChartBlock } & ContentPosition)
   | ({ type: "citation"; payload: CitationBlock } & ContentPosition)
+  /** Catalog-bound follow-up questions offered after a Studio answer. */
+  | { type: "suggestions"; suggestions: string[] }
   | {
       type: "content_block_done";
       content_index: number;

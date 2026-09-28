@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowLeft,
   BarChart3,
+  Download,
   Loader2,
   PackageOpen,
   RefreshCw,
@@ -18,6 +19,13 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChartBlock as VegaChart } from "@/features/agents/chart-block";
 import {
@@ -27,6 +35,7 @@ import {
   type StudioArtifactEditResponse,
   type StudioArtifactRefresh,
 } from "@/features/agents/api";
+import { downloadArtifact, type ExportFormat } from "@/features/agents/studio-intelligence-api";
 import { cn } from "@/lib/utils";
 import { formatArtifactSql } from "./artifact-source";
 import { ArtifactFilterBar } from "./artifact-filter-bar";
@@ -342,6 +351,7 @@ function ArtifactDetail({
         subtitle={`${draftResponse?.draft ? "Draft" : `Updated ${formatTimestamp(artifact.updated_at)}`} · ${activeData.row_count.toLocaleString()} rows · ${formatDuration(activeData.elapsed_ms)}`}
         refreshing={detail.isFetching}
         onRefresh={() => void detail.refetch()}
+        onExport={draftResponse?.draft ? undefined : (format) => downloadArtifact(artifact.artifact_id, format)}
         onDelete={() => setDeleteOpen(true)}
       />
 
@@ -529,6 +539,7 @@ function DetailHeader({
   subtitle,
   refreshing,
   onRefresh,
+  onExport,
   onDelete,
 }: {
   onBack: () => void;
@@ -536,8 +547,21 @@ function DetailHeader({
   subtitle?: string;
   refreshing?: boolean;
   onRefresh?: () => void;
+  onExport?: (format: ExportFormat) => Promise<void>;
   onDelete?: () => void;
 }) {
+  const [exporting, setExporting] = useState(false);
+  const exportAs = async (format: ExportFormat) => {
+    if (!onExport) return;
+    setExporting(true);
+    try {
+      await onExport(format);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <header className="flex shrink-0 items-center gap-3 border-b px-4 py-3 sm:px-6">
       <Button
@@ -563,13 +587,39 @@ function DetailHeader({
           size="sm"
           disabled={refreshing}
           onClick={onRefresh}
+          aria-label="Refresh"
         >
           <RefreshCw
             aria-hidden="true"
             className={cn("size-3.5", refreshing && "animate-spin")}
           />
-          Refresh
+          <span className="hidden sm:inline">Refresh</span>
         </Button>
+      ) : null}
+      {onExport ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="sm" disabled={exporting} aria-label="Export">
+              {exporting ? (
+                <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+              ) : (
+                <Download aria-hidden="true" className="size-3.5" />
+              )}
+              <span className="hidden sm:inline">Export</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              Re-runs with your access
+            </DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => void exportAs("csv")}>CSV</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void exportAs("xlsx")}>Excel (.xlsx)</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void exportAs("pdf")}>PDF</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void exportAs("pptx")}>
+              PowerPoint (.pptx)
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       ) : null}
       {onDelete ? (
         <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
@@ -680,7 +730,11 @@ function useArtifactData(artifactId: string) {
   });
 }
 
-export function chartSpecWithRows(data: StudioArtifactRefresh): string {
+export function chartSpecWithRows(
+  data: Pick<StudioArtifactRefresh, "columns" | "rows"> & {
+    artifact: { chart_spec?: Record<string, unknown> | null };
+  },
+): string {
   const spec = structuredClone(data.artifact.chart_spec ?? {});
   const values = data.rows.map((row) =>
     Object.fromEntries(

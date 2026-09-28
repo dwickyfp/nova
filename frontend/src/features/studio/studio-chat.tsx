@@ -18,6 +18,7 @@ import {
   Plus,
   RefreshCcw,
   Square,
+  Telescope,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,8 @@ import {
 } from "./skill-document";
 import { SkillEditor } from "./skill-editor";
 import { AnswerFooter, type AnswerFeedback } from "./answer-footer";
+import { DeepResearchCard } from "./deep-research-card";
+import { deepResearchApi } from "@/features/agents/studio-intelligence-api";
 import { UserMessageFooter } from "./user-message-footer";
 import { AutoSubagentCard, AutoSubagentPanel } from "./auto-subagent-card";
 import { AutoTurnRail } from "./auto-turn-rail";
@@ -134,6 +137,8 @@ export type TranscriptTurn = {
   state: "streaming" | "done" | "cancelled" | "error";
   /** Why the turn stopped, when it did not stop cleanly. */
   stopReason?: string;
+  /** Follow-up questions the agent's catalog can answer next. */
+  suggestions?: string[];
   error?: string;
   /**
    * A Nova-initiated turn (the reconsider pass), not something the user asked.
@@ -200,6 +205,7 @@ export function StudioChat({
   // starts empty even when the URL names a thread, so the load effect below
   // always runs for that thread instead of assuming it is already in hand.
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [research, setResearch] = useState<{ agentId: string; runId: string } | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const storedMessagesRef = useRef<AgentMessage[]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null>(null);
@@ -899,6 +905,21 @@ export function StudioChat({
     setTurns((prev) => patchTurn(prev, turn.id, (current) => ({ ...current, feedback: result.feedback })));
   }, [agent, threadId]);
 
+  const researchable = Boolean(
+    agent && agent.agent_id !== AUTO_AGENT_ID && agent.agent_id !== SKILL_AUTHOR_ID && !streaming,
+  );
+  const startResearch = async () => {
+    const question = input.trim();
+    if (!agent || question.length < 3) return;
+    try {
+      const started = await deepResearchApi.start(agent.agent_id, question);
+      setResearch({ agentId: agent.agent_id, runId: started.run_id });
+      setInput("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Deep research could not start.");
+    }
+  };
+
   const empty = turns.length === 0;
   const welcome = empty && (!agent || !loadingThread);
   const showAutoCard = agent?.agent_id === AUTO_AGENT_ID && Boolean(displayedAutoRunId);
@@ -976,10 +997,11 @@ export function StudioChat({
                     {loadingOlder ? "Loading…" : "Load older messages"}
                   </Button>
                 ) : null}
-                {turns.map((turn) => (
+                {turns.map((turn, index) => (
                   <TurnView
                     key={turn.id}
                     turn={turn}
+                    onAsk={index === turns.length - 1 && !streaming ? (question) => void send(question) : undefined}
                     agent={agent}
                     agents={agents}
                     autoRunId={agent.agent_id === AUTO_AGENT_ID ? rootRunForTurn(turn, chronologicalAutoRuns, autoTurns, activeAutoRunId) : null}
@@ -1012,12 +1034,26 @@ export function StudioChat({
             showAutoCard && !selectedChild && "xl:pr-[324px]",
           )}
         >
+        {research ? (
+          <div className="mx-auto w-full max-w-3xl">
+            <DeepResearchCard
+              agentId={research.agentId}
+              runId={research.runId}
+              onOpenReport={(threadId) => {
+                setResearch(null);
+                onThreadChange(threadId);
+              }}
+              onDismiss={() => setResearch(null)}
+            />
+          </div>
+        ) : null}
         <Composer
             ref={textareaRef}
             value={input}
             onChange={setInput}
             onKeyDown={onKeyDown}
             onSend={() => void send()}
+          onResearch={researchable ? () => void startResearch() : undefined}
           onStop={stop}
           readingFiles={readingFiles}
           attachments={attachments}
@@ -1060,6 +1096,7 @@ export function StudioChat({
 
 const TurnView = memo(function TurnView({
   turn,
+  onAsk,
   agent,
   agents,
   autoRunId,
@@ -1076,6 +1113,8 @@ const TurnView = memo(function TurnView({
   onReviewSkill,
 }: {
   turn: TranscriptTurn;
+  /** Ask a follow-up; set only for the latest finished turn. */
+  onAsk?: (question: string) => void;
   agent: Agent;
   agents: Agent[];
   autoRunId: string | null;
@@ -1201,6 +1240,23 @@ const TurnView = memo(function TurnView({
           reconsidering={deepening}
           reconsiderDisabled={reconsiderDisabled}
         />
+      ) : null}
+
+      {!running && onAsk && turn.suggestions?.length ? (
+        <nav aria-label="Suggested follow-up questions" className="nova-chat-item flex flex-wrap gap-2">
+          {turn.suggestions.map((question) => (
+            <Button
+              key={question}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-auto max-w-full py-1.5 text-left whitespace-normal"
+              onClick={() => onAsk(question)}
+            >
+              {question}
+            </Button>
+          ))}
+        </nav>
       ) : null}
     </div>
   );
@@ -1341,6 +1397,7 @@ const Composer = ({
   onChange,
   onKeyDown,
   onSend,
+  onResearch,
   onStop,
   readingFiles,
   attachments,
@@ -1357,6 +1414,8 @@ const Composer = ({
   onChange: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
+  /** Present when the agent can run Deep research on the typed question. */
+  onResearch?: () => void;
   onStop: () => void;
   readingFiles: boolean;
   attachments: PendingAttachment[];
@@ -1448,6 +1507,19 @@ const Composer = ({
           />
 
           <div className="flex-1" />
+          {onResearch ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 rounded-full text-muted-foreground"
+              disabled={disabled || value.trim().length < 3}
+              title="Break the question into several investigations and write a report. Takes a few minutes."
+              onClick={onResearch}
+            >
+              <Telescope aria-hidden="true" className="size-4" />
+              <span className="hidden sm:inline">Deep research</span>
+            </Button>
+          ) : null}
           <button
             type="button"
             onClick={streaming ? onStop : onSend}
@@ -2037,6 +2109,9 @@ export function applyEvent(
           state: turn.answer ? turn.state : "error",
           error: turn.answer ? turn.error : event.message,
         };
+
+      case "suggestions":
+        return { ...turn, suggestions: event.suggestions };
 
       case "done":
         return {

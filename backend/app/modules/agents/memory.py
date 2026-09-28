@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import os
 import re
 from datetime import UTC, datetime
 from html import escape
@@ -197,6 +199,11 @@ memory_repository = AgentMemoryRepository()
 
 
 def select_memories(memories: list[dict], query: str, *, limit: int = 8) -> list[dict]:
+    """Lexical selection. A small memory set is included whole, most relevant first.
+
+    Word overlap misses paraphrases ("omzet" vs "pendapatan"); when every memory
+    fits, none is dropped for lacking a shared word.
+    """
     terms = set(_WORDS.findall(query.casefold())) - _STOP
     scored = []
     for index, memory in enumerate(memories):
@@ -204,10 +211,56 @@ def select_memories(memories: list[dict], query: str, *, limit: int = 8) -> list
         overlap = len(terms & words)
         scored.append((overlap, -index, memory))
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    if len(memories) <= limit:
+        return [item[2] for item in scored]
     selected = [item[2] for item in scored if item[0] > 0][:limit]
     if not selected:
         selected = memories[: min(2, limit)]
     return selected
+
+
+#: Logical alias of the embedding model used to rank a large memory set.
+MEMORY_EMBEDDING_ALIAS = os.environ.get("NOVA_MEMORY_EMBEDDING_ALIAS", "memory")
+
+
+async def select_relevant_memories(
+    memories: list[dict], query: str, *, limit: int = 8
+) -> list[dict]:
+    """Rank a large memory set by embedding similarity; fall back to words.
+
+    Small sets and any embedding failure use :func:`select_memories`. The
+    embedding model is the one registered under ``MEMORY_EMBEDDING_ALIAS``;
+    without one, selection stays lexical.
+    """
+    if len(memories) <= limit or not query.strip():
+        return select_memories(memories, query, limit=limit)
+    try:
+        from app.modules.ai_ml.embeddings import EmbeddingService
+
+        service = EmbeddingService()
+        model = await service.resolve_model(alias=MEMORY_EMBEDDING_ALIAS)
+        pool = memories[:63]
+        vectors = await service.embed_batch(
+            [query[:2000], *(f"{item['fact_key']}: {item['fact']}"[:1000] for item in pool)],
+            model,
+        )
+    except Exception as exc:  # noqa: BLE001 - selection degrades to words, never fails
+        logger.debug("Memory embedding unavailable: %s", type(exc).__name__)
+        return select_memories(memories, query, limit=limit)
+    query_vector, memory_vectors = vectors[0], vectors[1:]
+    lexical = {id(item): rank for rank, item in enumerate(select_memories(pool, query, limit=63))}
+
+    def cosine(left: list[float], right: list[float]) -> float:
+        dot = sum(a * b for a, b in zip(left, right, strict=False))
+        norm = math.sqrt(sum(a * a for a in left)) * math.sqrt(sum(b * b for b in right))
+        return dot / norm if norm else 0.0
+
+    ranked = sorted(
+        zip(pool, memory_vectors, strict=True),
+        key=lambda pair: (cosine(query_vector, pair[1]), -lexical.get(id(pair[0]), 99)),
+        reverse=True,
+    )
+    return [item for item, _vector in ranked[:limit]]
 
 
 def memory_prompt(memories: list[dict]) -> str:

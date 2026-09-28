@@ -15,10 +15,12 @@ import { AgentConfigurationTab } from "./agent-detail/configuration-tab";
 import { AgentAccessTab } from "./agent-detail/access-tab";
 import { AgentObservabilityTab } from "./agent-detail/observability-tab";
 import { AgentVersionHistory } from "./agent-detail/version-history";
+import { AgentImproveTab } from "./agent-detail/improve-tab";
+import { AgentAutomationsTab } from "./agent-detail/automations-tab";
 
 /**
- * Agent detail — the four-tab surface: Overview, Configuration, Access, and
- * Observability. The header is shared; each tab owns its own data and layout.
+ * Agent detail: Overview, Configuration, Access, Observability, Improve, and
+ * Automations. The header is shared; each tab owns its own data and layout.
  */
 export function AgentBuilderPage() {
   const { agentId } = useParams({ from: "/_authenticated/agents/$agentId" });
@@ -113,6 +115,8 @@ export function AgentBuilderPage() {
             <TabsTrigger value="configuration">Configuration</TabsTrigger>
             <TabsTrigger value="access">Access</TabsTrigger>
             <TabsTrigger value="observability">Observability</TabsTrigger>
+            <TabsTrigger value="improve">Improve</TabsTrigger>
+            <TabsTrigger value="automations">Automations</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-6">
@@ -136,6 +140,12 @@ export function AgentBuilderPage() {
           </TabsContent>
           <TabsContent value="observability" className="mt-6">
             <AgentObservabilityTab agentId={agentId} />
+          </TabsContent>
+          <TabsContent value="improve" className="mt-6">
+            <AgentImproveTab agentId={agentId} />
+          </TabsContent>
+          <TabsContent value="automations" className="mt-6">
+            <AgentAutomationsTab agentId={agentId} />
           </TabsContent>
         </Tabs>
       </Main>

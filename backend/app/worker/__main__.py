@@ -28,6 +28,7 @@ from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
+from app.modules.agents.automations import AutomationRunner, AutomationWorker
 from app.modules.migration.job_worker import MigrationJobWorker
 from app.modules.migration.repository import migration_repo
 from app.modules.task_orchestration.consumer import GraphRunConsumer
@@ -57,6 +58,17 @@ def build_worker_service(client: aioredis.Redis) -> WorkerService:
         GraphRunConsumer(client),
         Reconciler(repository),
     )
+
+
+def build_automation_worker(client: aioredis.Redis) -> AutomationWorker:
+    """Scheduled Studio agent runs, impersonating owners like scheduled tasks."""
+    executor = DelegateExecutor(
+        None,
+        impersonation_user=settings.WORKER_IMPERSONATION_USER,
+        impersonation_password=settings.WORKER_IMPERSONATION_PASSWORD,
+        impersonation_role=settings.WORKER_IMPERSONATION_ROLE,
+    )
+    return AutomationWorker(AutomationRunner(executor), client)
 
 
 async def _run() -> None:
@@ -103,6 +115,10 @@ async def _run() -> None:
     migration_task = asyncio.create_task(
         MigrationJobWorker(client).run_forever(stop_event), name="nova-worker-migration"
     )
+    automation_task = asyncio.create_task(
+        build_automation_worker(client).run_forever(stop_event),
+        name="nova-worker-automations",
+    )
     try:
         await service.run_forever(stop_event)
     finally:
@@ -111,6 +127,8 @@ async def _run() -> None:
             await heartbeat_task
         with contextlib.suppress(asyncio.CancelledError):
             await migration_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await automation_task
         await heartbeat.close()
         await session_store.close()
         await client.aclose()
