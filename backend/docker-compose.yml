@@ -36,7 +36,7 @@ services:
       - nova
 
   minio:
-    image: minio/minio:latest
+    image: ghcr.io/teableio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: nova-minio
     command: server /data --console-address ":9001"
     ports:
