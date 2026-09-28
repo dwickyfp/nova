@@ -607,7 +607,10 @@ async def test_message_is_durable_and_consumed_once(monkeypatch) -> None:
         params = params or []
         if sql.startswith("SELECT message_id, recipient_run_id, message_type"):
             row = rows.get(params[0])
-            existing = [row[0], row[6], row[2], row[4], row[5], row[3], row[8], "QUEUE_ONLY"] if row else None
+            existing = (
+                [row[0], row[6], row[2], row[4], row[5], row[3], row[8], "QUEUE_ONLY"]
+                if row else None
+            )
             return {"rows": [existing] if existing else []}
         if sql.startswith("INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_MESSAGES"):
             rows[params[0]] = [
@@ -1650,7 +1653,9 @@ async def test_cancel_tree_continues_when_update_applies_with_zero_affected(monk
     ])
     assert await repo.cancel_tree("root")
     assert len(updates) == 3
-    assert all("run_id = %s AND agent_id IN ('__auto__', '__smart__')" in sql for sql in updates[:2])
+    assert all(
+        "run_id = %s AND agent_id IN ('__auto__', '__smart__')" in sql for sql in updates[:2]
+    )
     assert "root_run_id = %s AND depth > 0" in updates[2]
 
 
@@ -2015,7 +2020,9 @@ async def test_stale_recovery_requeues_root_but_never_replays_child_tools(monkey
     repo = HarnessRepository()
     repo.event = AsyncMock(return_value="0")
     repo.wake_parent = AsyncMock(return_value=True)
-    repo.get = AsyncMock(side_effect=lambda run_id: _run(run_id, depth=0 if run_id == "root" else 1))
+    repo.get = AsyncMock(
+        side_effect=lambda run_id: _run(run_id, depth=0 if run_id == "root" else 1)
+    )
     assert await repo.recover_stale() == ["root", "finance"]
     assert updates == [("root", "queued"), ("finance", "interrupted")]
     repo.wake_parent.assert_awaited_once_with("root")

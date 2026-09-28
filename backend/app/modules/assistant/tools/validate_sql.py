@@ -30,7 +30,10 @@ def check_sql(sql: str) -> list[dict[str, Any]]:
         dialect = "StarRocks 4.1"
         try:
             if re.match(r"CREATE\s+(?:STAGE|SEMANTIC\s+VIEW|AGENT|WAREHOUSE)\b", stmt, re.I):
-                errors = ["This SQL surface is not implemented in Nova. Use supported SQL or a typed capability."]
+                errors = [
+                    "This SQL surface is not implemented in Nova. "
+                    "Use supported SQL or a typed capability."
+                ]
             elif is_force_password_change(stmt):
                 dialect = "Nova password-change policy"
             elif is_create_ml_model(stmt):
@@ -52,13 +55,17 @@ def check_sql(sql: str) -> list[dict[str, Any]]:
                     dialect = "Nova stage"
                 # parse_sql skips grammar parsing when no @stage token is present.
                 _, _, syntax_errors = _parse_tree(candidate)
-                errors = [f"line {e.line}, column {e.column}: {e.message}" for e in syntax_errors[:3]]
+                errors = [
+                    f"line {e.line}, column {e.column}: {e.message}" for e in syntax_errors[:3]
+                ]
                 if not errors:
                     detect_ml_predict(stmt)
                     detect_ml_predict_table(stmt)
         except ValueError as exc:
             errors = [str(exc)[:500]]
-        checks.append({"statement": index, "valid": not errors, "dialect": dialect, "errors": errors})
+        checks.append(
+            {"statement": index, "valid": not errors, "dialect": dialect, "errors": errors}
+        )
     return checks
 
 
@@ -85,9 +92,16 @@ class ValidateSQLTool:
             checks = check_sql(sql)
         except Exception:
             return ToolOutcome(ok=False, summary="", error="SQL could not be checked safely.")
-        return ToolOutcome(ok=True, summary="Syntax checked; runtime behavior has not been verified.",
-                           data={"valid": all(c["valid"] for c in checks), "statements": checks,
-                                 "executed": False, "objects_verified": False})
+        return ToolOutcome(
+            ok=True,
+            summary="Syntax checked; runtime behavior has not been verified.",
+            data={
+                "valid": all(c["valid"] for c in checks),
+                "statements": checks,
+                "executed": False,
+                "objects_verified": False,
+            },
+        )
 
 
 validate_sql_tool = ValidateSQLTool()
