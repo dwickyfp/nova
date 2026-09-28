@@ -740,8 +740,11 @@ class AgentHarnessWorker:
                     "missing": {"columns": [], "rows": []}
                 }
                 if evidence_tables:
+                    # The coordinator compares specialists' findings, so their leaders
+                    # are always computed from cells.
                     verified = finalize_verified_answer(
-                        answer, question=root["objective"], tables=verified_tables
+                        answer, question=root["objective"], tables=verified_tables,
+                        compares_groups=True,
                     )
                     answer = verified.text
                     rendered_verified_table = verified.replaced

@@ -220,10 +220,10 @@ async def test_auto_carries_query_evidence_and_withholds_unsupported_numbers(
     answer = append_message.await_args.kwargs["content"]
     assert "999" not in answer
     assert "leads every metric" not in answer
-    assert "| Mobile App | 125 | 37,00% | 3 |" in answer
-    assert "| WhatsApp B2B | 60 | 39,00% | 1 |" in answer
+    assert "| Mobile App | 125 | 37.00% | 3 |" in answer
+    assert "| WhatsApp B2B | 60 | 39.00% | 1 |" in answer
     assert "recognized revenue: Mobile App 125, Store" in answer
-    assert "gross margin pct: WhatsApp B2B 39,00%" in answer
+    assert "gross margin pct: WhatsApp B2B 39.00%" in answer
     assert "order count: Marketplace 4" in answer
     if replan_failure:
         assert ("root-eval", "delegation_plan") in repository.events

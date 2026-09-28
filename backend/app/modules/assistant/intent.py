@@ -49,6 +49,8 @@ class IntentFrame:
     threshold: Threshold | None = None
     #: The request points at something on screen ("this query", "この結果").
     refers_to_screen: bool = False
+    #: The user compares items or groups against each other ("compare the channels").
+    compares_groups: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -76,6 +78,7 @@ class IntentFrame:
             per_group_dimension=dimension if isinstance(dimension, str) and dimension else None,
             threshold=_threshold(value.get("threshold")),
             refers_to_screen=bool(value.get("refers_to_screen")),
+            compares_groups=bool(value.get("compares_groups")),
         )
 
 
@@ -135,10 +138,11 @@ def intent_frame_schema() -> dict[str, Any]:
                 ],
             },
             "refers_to_screen": {"type": "boolean"},
+            "compares_groups": {"type": "boolean"},
         },
         "required": [
             "language", "range", "compare", "grain", "asks_series", "top_n", "order",
-            "per_group_dimension", "threshold", "refers_to_screen",
+            "per_group_dimension", "threshold", "refers_to_screen", "compares_groups",
         ],
         "additionalProperties": False,
     }
@@ -157,6 +161,7 @@ INTENT_FRAME_RULES = (
     "dimension a ranking restarts in ('top 2 categories in each city' -> city). "
     "threshold: a condition on a metric value ('above 1 billion', '10億を超えた'), with "
     "the value as a plain number and the exact metric name. refers_to_screen: the "
-    "request points at something on the user's screen. Use null or false for "
+    "request points at something on the user's screen. compares_groups: the user asks "
+    "to compare items or groups against each other. Use null or false for "
     "anything the user did not say."
 )

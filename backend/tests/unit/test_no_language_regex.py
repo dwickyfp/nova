@@ -32,7 +32,6 @@ _GRAIN_TOKENS = {"hour", "day", "week", "month", "quarter", "year"}
 REMAINING = {
     "app/modules/agents/semantic/planning.py",
     "app/modules/agents/semantic/time_ranges.py",
-    "app/modules/assistant/answer_contract.py",
     "app/modules/assistant/tools/search_knowledge.py",
 }
 
@@ -44,9 +43,24 @@ def _strings(node: ast.AST) -> list[str]:
     ]
 
 
+def _identifier_vocabularies(tree: ast.AST) -> set[int]:
+    """Nodes under ``X_IDENTIFIERS = ...``: schema column-name words, not user language."""
+    skipped: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id.endswith("_IDENTIFIERS")
+            for target in node.targets
+        ):
+            skipped.update(id(child) for child in ast.walk(node.value))
+    return skipped
+
+
 def _language_patterns(tree: ast.AST) -> list[str]:
     found = []
+    skipped = _identifier_vocabularies(tree)
     for node in ast.walk(tree):
+        if id(node) in skipped:
+            continue
         candidates: list[str] = []
         if (
             isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)

@@ -52,7 +52,7 @@ async def run(script: list[dict], *, result: dict | None = None, owners: bool = 
         "intent": "semantic_analytics", "tools": registry.names(),
         "required_tools": ["query_execute"],
         # What the planner reads from the question: the year 2025, no series.
-        "intent_frame": {"language": "en", "range": "2025"},
+        "intent_frame": {"language": "en", "range": "2025", "compares_groups": True},
     })
     context = LoopContext(user_name="alice", collaboration_root=True,
                           collaboration_tools=tuple(COLLABORATION_TOOLS))

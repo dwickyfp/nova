@@ -61,6 +61,7 @@ def plan(*tools: str) -> dict:
         "tools": list(tools),
         "required_tools": ["semantic_query"],
         "ml_task": None,
+        "intent_frame": {"language": "id"},
     }
 
 
