@@ -1274,7 +1274,9 @@ class QueryService:
             from app.modules.users.service import user_service
 
             if role not in {"ACCOUNTADMIN", "SECURITYADMIN", "user_admin", "security_admin"}:
-                raise ForbiddenSQLError("An active security-admin role is required for password-change policy.")
+                raise ForbiddenSQLError(
+                    "An active security-admin role is required for password-change policy."
+                )
             if parsed.username.casefold() == "root":
                 raise ForbiddenSQLError("The root account is protected.")
             if not await user_service.user_exists(parsed.username):
