@@ -891,6 +891,23 @@ def requested_threshold(question: str) -> tuple[str, int | float] | None:
     return None
 
 
+_SUPERLATIVE = re.compile(
+    r"\b(?:(?P<up>the\s+most|most|highest|largest|biggest|best|top|terbesar|tertinggi|"
+    r"terbanyak|terlaris|terbaik|paling\s+(?:laku|besar|tinggi|banyak|laris|ramai))|"
+    r"(?P<down>the\s+least|least|lowest|smallest|worst|terendah|terkecil|tersedikit|"
+    r"terburuk|paling\s+(?:sedikit|kecil|rendah|sepi)))\b",
+    re.I,
+)
+
+
+def requested_order(question: str) -> str | None:
+    """``desc`` for "which city sells the most" / "paling laku", ``asc`` for the least."""
+    match = _SUPERLATIVE.search(question)
+    if not match:
+        return None
+    return "desc" if match.group("up") else "asc"
+
+
 def requested_rank(question: str) -> tuple[int, str] | None:
     """``(n, direction)`` for "top 5", "bottom 3", "5 kota teratas", "3 terendah"."""
     match = _RANK_BEFORE.search(question) or _RANK_AFTER.search(question)

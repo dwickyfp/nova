@@ -359,3 +359,31 @@ def test_a_limit_without_an_order_ranks_by_the_first_metric():
         bench_model(), SemanticPlan(metrics=("total_revenue",), dimensions=("city",), limit=3)
     ).sql
     assert "ORDER BY `total_revenue` DESC\nLIMIT 3" in sql
+
+
+@pytest.mark.parametrize(("question", "expected"), [
+    ("Which channel brought in the most sales last quarter?", "desc"),
+    ("Kota mana yang paling laku bulan ini?", "desc"),
+    ("Kategori dengan penjualan terendah", "asc"),
+    ("Which city had the least orders?", "asc"),
+    ("Revenue by channel last quarter", None),
+])
+def test_superlatives_set_a_direction(question, expected):
+    from app.modules.agents.semantic.planning import requested_order
+
+    assert requested_order(question) == expected
+
+
+def test_a_superlative_ranks_every_group_without_a_limit():
+    from app.modules.agents.semantic.planning import SemanticPlan
+    from app.modules.agents.tools.semantic_query import _user_rank
+    from tests.benchmark.studio_accuracy.model import bench_model
+
+    plan = SemanticPlan(metrics=("total_revenue",), dimensions=("sales_channel",))
+    ranked, note = _user_rank(
+        plan, "total revenue by sales channel last quarter",
+        _bench_context("Which channel brought in the most sales last quarter?"), bench_model(),
+    )
+    assert ranked.limit is None
+    assert [(item.field, item.direction) for item in ranked.order_by] == [("total_revenue", "desc")]
+    assert note == "Ranked by the user's superlative"
