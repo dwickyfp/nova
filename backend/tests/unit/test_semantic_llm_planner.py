@@ -267,3 +267,36 @@ async def test_a_period_total_is_not_split_by_month_unless_asked(monkeypatch):
     )
     assert outcome.ok, outcome.safe_detail
     assert "DATE_TRUNC('month'" in execute.call_args.kwargs["sql"]
+
+
+async def test_a_failed_first_query_leaves_the_users_wording_for_the_retry(monkeypatch):
+    by_day = _plan(time={
+        "dimension": "order_date", "grain": "day", "range": "current_month",
+        "compare": "month_over_month",
+    })
+    tool, _provider, execute = setup_tool(monkeypatch, by_day, by_day)
+    execute.side_effect = [RuntimeError("engine busy"), execute.return_value]
+    context = LoopContext(user_name="alice", user=USER.copy())
+    context.user_question = "Revenue this month vs last month"
+    first = await tool.run(
+        ToolInvocation("s1", "semantic_query", {"question": "daily revenue this month x"}), context
+    )
+    assert not first.ok and not context.primary_query_done
+    retry = await tool.run(
+        ToolInvocation("s2", "semantic_query", {"question": "daily revenue this month x"}), context
+    )
+    assert retry.ok, retry.safe_detail
+    assert "DATE_TRUNC('day'" not in execute.call_args.kwargs["sql"]
+    assert context.primary_query_done
+
+
+async def test_the_users_own_words_still_get_their_limit(monkeypatch):
+    tool, _provider, execute = setup_tool(monkeypatch, _plan(dimensions=["city"]))
+    context = LoopContext(user_name="alice", user=USER.copy())
+    context.user_question = "Top 2 kota berdasarkan penjualan x"
+    outcome = await tool.run(
+        ToolInvocation("s1", "semantic_query", {"question": "Top 2 kota berdasarkan penjualan x"}),
+        context,
+    )
+    assert outcome.ok, outcome.safe_detail
+    assert "LIMIT 2" in execute.call_args.kwargs["sql"]
