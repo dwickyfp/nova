@@ -1,4 +1,9 @@
-"""Reproducible numeric-answer acceptance corpus and overhead report."""
+"""Reproducible numeric-answer acceptance corpus and overhead report.
+
+Numbers are checked by value in any language. The direction of a change is
+checked through the claims the model sends with its answer, so those cases
+carry the claim the model would state.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +11,9 @@ import json
 import statistics
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 
-from app.modules.assistant.answer_contract import check_numeric_answer
+from app.modules.assistant.answer_contract import Claim, check_numeric_answer
 
 
 @dataclass(frozen=True)
@@ -18,6 +24,15 @@ class Case:
     columns: tuple[str, ...]
     rows: tuple[tuple[object, ...], ...]
     should_accept: bool
+    claims: tuple[Claim, ...] | None = None
+    language: str = "en"
+
+
+def down(text: str, value: str) -> tuple[Claim, ...]:
+    return (Claim(text=text, value=Decimal(value), kind="derived", direction="down"),)
+
+
+_MONTHS = (("2026-07", 1200000), ("2026-08", 1500000))
 
 
 CASES = (
@@ -38,7 +53,8 @@ CASES = (
         False,
     ),
     Case(
-        "drop magnitude", "Why did revenue fall?", "Revenue fell by 5.", ("change",), ((-5,),), True
+        "drop magnitude", "Why did revenue fall?", "Revenue fell by 5.", ("change",), ((-5,),), True,
+        claims=(Claim(text="5", value=Decimal(5), kind="cell", direction="down"),),
     ),
     Case(
         "unsigned change",
@@ -230,11 +246,28 @@ CASES = (
             ("derived average", "Rata-rata per bulan 1.350.000.", True),
             ("derived share", "Agustus menyumbang 55,6% dari total.", True),
             ("invented growth", "Revenue tumbuh 26% dari Juli ke Agustus.", False),
-            ("wrong direction amount", "Revenue turun 300.000 dari Juli ke Agustus.", False),
-            ("wrong direction percent", "Revenue turun 25% dari Juli ke Agustus.", False),
             ("invented total", "Total dua bulan 2.800.000.", False),
         )
     ),
+    Case("wrong direction amount", "Bagaimana revenue Juli vs Agustus?",
+         "Revenue turun 300.000 dari Juli ke Agustus.", ("month", "total_revenue"), _MONTHS,
+         False, claims=down("300.000", "300000"), language="id"),
+    Case("wrong direction percent", "Bagaimana revenue Juli vs Agustus?",
+         "Revenue turun 25% dari Juli ke Agustus.", ("month", "total_revenue"), _MONTHS,
+         False, claims=down("25%", "25"), language="id"),
+    # The same checks in other languages (NOVA-124 language-neutral verifier).
+    Case("ja compact scale", "売上は？", "売上は1.2億円です。", ("revenue",), ((120000000,),),
+         True, language="ja"),
+    Case("ja invented", "売上は？", "売上は1.3億円です。", ("revenue",), ((120000000,),),
+         False, language="ja"),
+    Case("de grouping", "Umsatz?", "Der Umsatz beträgt 1.234.567 €.", ("revenue",),
+         ((1234567,),), True, language="de"),
+    Case("es growth", "¿Crecimiento?", "Los ingresos crecieron un 25%.", ("month", "total_revenue"),
+         _MONTHS, True, language="es"),
+    Case("ar digits", "الإيرادات؟", "الإيرادات ١٢٣٤.", ("revenue",), ((1234,),), True,
+         language="ar"),
+    Case("ja wrong direction", "売上の変化は？", "売上は25%減少しました。", ("month", "total_revenue"),
+         _MONTHS, False, claims=down("25%", "25"), language="ja"),
 )
 
 
@@ -245,6 +278,8 @@ def evaluate() -> dict:
             case.answer,
             question=case.question,
             tables={"evidence_1": {"columns": case.columns, "rows": case.rows}},
+            claims=case.claims,
+            language=case.language,
         )
         outputs.append((case, result.accepted))
     tp = sum(case.should_accept and actual for case, actual in outputs)
@@ -259,6 +294,8 @@ def evaluate() -> dict:
                 case.answer,
                 question=case.question,
                 tables={"evidence_1": {"columns": case.columns, "rows": case.rows}},
+                claims=case.claims,
+                language=case.language,
             )
             timings_ms.append((time.perf_counter_ns() - start) / 1_000_000)
     return {
@@ -276,7 +313,7 @@ def evaluate() -> dict:
 
 def test_answer_contract_quality_corpus() -> None:
     result = evaluate()
-    assert result["cases"] == 50
+    assert result["cases"] >= 65
     assert result["false_accept"] == 0
     assert result["false_reject"] == 0
 

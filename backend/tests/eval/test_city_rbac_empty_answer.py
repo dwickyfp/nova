@@ -41,7 +41,7 @@ async def test_city_rbac_empty_result_overrides_unsupported_number() -> None:
             arguments={"question": "Berapa penjualan di Bandung?"},
         ),
         text_frame("Bandung has sales of 600."),
-    ])
+    ], intent_frame={"language": "id"})
 
     async def allow(_invocation, _classification):
         return True

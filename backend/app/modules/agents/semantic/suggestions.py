@@ -10,27 +10,17 @@ from __future__ import annotations
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import SemanticGraph, SemanticPlan, SemanticPlanError
 
-_PERIOD_NAMES = {
-    "current_month": ("this month", "bulan ini"),
-    "previous_month": ("last month", "bulan lalu"),
-    "current_quarter": ("this quarter", "kuartal ini"),
-    "previous_quarter": ("last quarter", "kuartal lalu"),
-    "current_year": ("this year", "tahun ini"),
-    "previous_year": ("last year", "tahun lalu"),
-    "current_week": ("this week", "minggu ini"),
-    "previous_week": ("last week", "minggu lalu"),
-    "ytd": ("year to date", "sejak awal tahun"),
-    "last_30_days": ("in the last 30 days", "30 hari terakhir"),
-}
-
 
 def _words(name: str) -> str:
     return name.replace("_", " ")
 
 
 def suggest_follow_ups(
-    plan: SemanticPlan, model: SemanticModelIR, *, indonesian: bool, limit: int = 3
+    plan: SemanticPlan, model: SemanticModelIR, *, language: str = "en", limit: int = 3
 ) -> list[str]:
+    """Up to ``limit`` follow-up questions, written in the user's language."""
+    from app.modules.assistant.messages import MESSAGES, say
+
     if not plan.metrics:
         return []
     metric = model.metric(plan.metrics[0])
@@ -59,28 +49,20 @@ def suggest_follow_ups(
         and field.name not in used and reachable(dataset.name)
     ]
     period = plan.time.range if plan.time else None
-    period_text = _PERIOD_NAMES.get(period or "", (None, None))[1 if indonesian else 0]
-    suffix = f" {period_text}" if period_text else ""
+    period_key = f"period.{period}"
+    suffix = f" {say(period_key, language)}" if period_key in MESSAGES else ""
     name = _words(metric.name)
-    output: list[str] = []
-    for dimension in candidates[:2]:
-        output.append(
-            f"{name} per {_words(dimension)}{suffix}" if indonesian
-            else f"{name} by {_words(dimension)}{suffix}"
-        )
-    if period in _PERIOD_NAMES and not (plan.time and plan.time.compare):
-        output.append(
-            f"{name}{suffix} dibanding periode sebelumnya" if indonesian
-            else f"{name}{suffix} compared with the previous period"
-        )
+    output: list[str] = [
+        say("suggest.by", language, metric=name, dimension=_words(dimension), period=suffix)
+        for dimension in candidates[:2]
+    ]
+    if period_key in MESSAGES and not (plan.time and plan.time.compare):
+        output.append(say("suggest.previous", language, metric=name, period=suffix))
     if not (plan.time and plan.time.grain) and metric.default_time_dimension:
-        output.append(
-            f"tren {name} per bulan tahun ini" if indonesian
-            else f"monthly {name} trend this year"
-        )
+        output.append(say("suggest.trend", language, metric=name))
     if plan.dimensions and not plan.limit:
-        output.append(
-            f"top 5 {_words(plan.dimensions[0])} berdasarkan {name}{suffix}" if indonesian
-            else f"top 5 {_words(plan.dimensions[0])} by {name}{suffix}"
-        )
+        output.append(say(
+            "suggest.top", language, dimension=_words(plan.dimensions[0]), metric=name,
+            period=suffix,
+        ))
     return list(dict.fromkeys(output))[:limit]

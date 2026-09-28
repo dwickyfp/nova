@@ -22,6 +22,7 @@ SQL. Stage C's tool owns execution and the redaction boundary.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -34,6 +35,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.modules.assistant import events
+from app.modules.assistant.answer_contract import CLAIMS_INSTRUCTION, split_claims
 from app.modules.assistant.app_context import NoveAppContext, resolve_app_references
 from app.modules.assistant.attachments import provider_user_content
 from app.modules.assistant.consent import ConsentApproval
@@ -61,6 +63,7 @@ from app.modules.assistant.intelligence import (
     state_step,
     validate_json_arguments,
 )
+from app.modules.assistant.messages import say
 from app.modules.assistant.planning import TurnPlan, plan_turn, refine_turn_plan
 from app.modules.assistant.provider import (
     AssistantProviderClient,
@@ -801,6 +804,8 @@ class AssistantLoop:
         route = turn_plan.route
         context.route = route.as_dict()
         context.intent_frame = turn_plan.intent_frame
+        if route.needs_data:
+            _start_translation(_turn_language(context), self._provider, provider)
         if turn_plan.primary_plan is not None:
             context.primary_plan = {"plan": turn_plan.primary_plan, "view": turn_plan.primary_view}
             if (
@@ -845,6 +850,14 @@ class AssistantLoop:
             summary_lookup=lambda lines: summary_cache.get(thread_key, lines),
         )
         messages = self._build_messages(thread, user_content, context, route=route)
+        if route.needs_data:
+            # Data answers carry a claims block, so numbers are checked by meaning
+            # rather than by reading the answer's words.
+            leading = next(
+                (index for index, item in enumerate(messages) if item.get("role") != "system"),
+                len(messages),
+            )
+            messages.insert(leading, {"role": "system", "content": CLAIMS_INSTRUCTION})
         if (
             self._summarize_history
             and self._dropped_lines
@@ -1187,9 +1200,15 @@ class AssistantLoop:
                             for update in updates
                         )
                         continue
+                # The model states what each number means in a trailing claims
+                # block; it is checked below and never shown.
+                draft, answer_claims = split_claims("".join(buffered_text))
+                if answer_claims is not None:
+                    buffered_text = [draft]
+                language = _turn_language(context)
                 if clarification_requested:
-                    answer_text = "".join(buffered_text).strip() or (
-                        "I need one more detail to answer this from the governed data."
+                    answer_text = "".join(buffered_text).strip() or say(
+                        "loop.clarify", language
                     )
                     yield events.text_delta(answer_text)
                     _record_step(context, {"kind": "answer", "clarification": True})
@@ -1306,30 +1325,20 @@ class AssistantLoop:
                     "".join(buffered_text), needs_data=route.needs_data, evidence=evidence
                 )
                 if denials and route.needs_data and not evidence.items:
-                    from app.modules.assistant.answer_contract import is_indonesian
-
-                    answer_text = (
-                        "Query tidak dijalankan karena persetujuan ditolak, jadi belum ada "
-                        "data terverifikasi untuk menjawab pertanyaan ini."
-                        if is_indonesian(user_content)
-                        else "The query did not run because the approval was declined, so "
-                        "there is no verified data to answer this question."
-                    )
+                    answer_text = say("loop.consent_declined", language)
                 if route.needs_data and answer_tables:
-                    from app.modules.assistant.answer_contract import (
-                        finalize_verified_answer,
-                        is_indonesian,
-                    )
+                    from app.modules.assistant.answer_contract import finalize_verified_answer
 
                     if all(not table.get("rows") for table in answer_tables.values()):
-                        answer_text = (
-                            "Query terotorisasi tidak mengembalikan baris untuk permintaan ini."
-                            if is_indonesian(user_content)
-                            else "The authorized query returned no rows for this request."
-                        )
+                        answer_text = say("loop.no_rows", language)
+                    await _localized(language, context)
                     verified_answer = finalize_verified_answer(
                         answer_text, question=user_content, tables=answer_tables,
                         tables_shown=any(item.kind == "table" for item in pending_artifacts),
+                        claims=answer_claims, language=language,
+                        compares_groups=bool(
+                            getattr(context.intent_frame, "compares_groups", False)
+                        ),
                     )
                     answer_check = verified_answer.check
                     comparison_requested = verified_answer.comparison
@@ -1351,6 +1360,8 @@ class AssistantLoop:
                         {
                             "kind": "answer_verification",
                             "status": "accepted" if answer_check.accepted else "unsupported_number",
+                            "claims_present": answer_claims is not None,
+                            "language": language,
                             "claim_count": len(answer_check.claims),
                             "evidence_columns": [
                                 {"evidence_id": claim.evidence_id, "column": claim.column}
@@ -2401,7 +2412,6 @@ def _follow_up_suggestions(context: LoopContext, question: str) -> list[str]:
         return []
     from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError
     from app.modules.agents.semantic.suggestions import suggest_follow_ups
-    from app.modules.assistant.answer_contract import is_indonesian
 
     try:
         plan = SemanticPlan.from_dict(raw)
@@ -2410,8 +2420,40 @@ def _follow_up_suggestions(context: LoopContext, question: str) -> list[str]:
     for model in models:
         ir = model.get("_scoped_ir")
         if ir is not None and all(ir.metric(name) for name in plan.metrics):
-            return suggest_follow_ups(plan, ir, indonesian=is_indonesian(question))
+            return suggest_follow_ups(plan, ir, language=_turn_language(context))
     return []
+
+
+def _turn_language(context: LoopContext) -> str:
+    """The user's language, as the turn planner read it; English when unknown."""
+    return str(getattr(context.intent_frame, "language", None) or "en")
+
+
+#: Translations of Nova's own messages being fetched, per language.
+_translations: dict[str, asyncio.Task] = {}
+
+
+def _start_translation(language: str, provider_client: Any, provider: Any) -> None:
+    """Fetch Nova's messages in the user's language while the turn runs."""
+    from app.modules.assistant.messages import base_language, ensure_language, known
+
+    key = base_language(language)
+    if known(key) or key in _translations and not _translations[key].done():
+        return
+    _translations[key] = asyncio.create_task(
+        ensure_language(key, provider_client=provider_client, provider=provider)
+    )
+
+
+async def _localized(language: str, _context: LoopContext) -> None:
+    """Wait briefly for the translation; English is used if it is not ready."""
+    from app.modules.assistant.messages import base_language
+
+    task = _translations.get(base_language(language))
+    if task is None or task.done():
+        return
+    with contextlib.suppress(Exception):
+        await asyncio.wait_for(asyncio.shield(task), timeout=5)
 
 
 def _studio_fallback_plan(
