@@ -770,6 +770,7 @@ def _user_rank(
     from app.modules.agents.semantic.planning import (
         SemanticOrder,
         SemanticTopN,
+        requested_order,
         requested_rank,
     )
 
@@ -778,11 +779,21 @@ def _user_rank(
         return plan, None
     wanted = requested_rank(original)
     if (
-        wanted is None or plan.limit is not None or plan.top_n_per_group is not None
+        plan.limit is not None or plan.top_n_per_group is not None
         or not plan.dimensions or not plan.metrics
         or (plan.time is not None and (plan.time.compare or plan.time.grain))
     ):
         return plan, None
+    if wanted is None:
+        # "Which channel sold the most?": rank every group so the leader comes
+        # first, without hiding the rest behind a LIMIT.
+        direction = requested_order(original)
+        if direction is None or plan.order_by or _PER_GROUP.search(original):
+            return plan, None
+        return (
+            replace(plan, order_by=(SemanticOrder(plan.metrics[0], direction),)),
+            "Ranked by the user's superlative",
+        )
     per_group = _PER_GROUP.search(original)
     if per_group:
         # A per-group ranking is never a flat LIMIT; without a clear group, leave it.
