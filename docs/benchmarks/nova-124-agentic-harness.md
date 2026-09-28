@@ -8,7 +8,7 @@
 
 ```text
 user turn
-  → route          fast path (Studio, fully resolved metric question) or model planner
+  → plan           one structured call: route, intent frame, and (Studio) the first query plan
   → context        system prompt + scope + curated history (ContextManager)
   → model action   tool calls or text
   → validate       allowed tool, arguments, consent (fail-closed)
@@ -19,8 +19,10 @@ user turn
 ```
 
 `app/modules/assistant/` is the engine: `service.py` (the loop), `planning.py`
-(turn routing), `context.py` (history budget), `answer_contract.py` (numeric
-verification), `intelligence.py` (evidence and turn states). Studio composes the
+(turn routing), `intent.py` (the intent frame), `context.py` (history budget),
+`answer_contract.py` (numeric verification), `locale_numbers.py` (numbers in any
+language), `messages.py` (Nova's own text in the user's language),
+`intelligence.py` (evidence and turn states). Studio composes the
 engine from `app/modules/agents/`: the registry chooses tools, `prompt.py`
 builds the system prompt, and `semantic/` grounds data questions in a Semantic
 View. Studio never forks the loop.
@@ -72,22 +74,35 @@ error.
 
 A Studio agent answers business questions only from governed results.
 
-1. Routing. When the lexical planner maps every word of the question to the
-   bound Semantic View with high confidence, and the question does not ask why,
-   for a forecast, for documents, or for an automation, the turn is routed to
-   `semantic_query` without a planner call. Otherwise the model planner routes
-   it. If the planner fails twice, a safe plan is used: the governed query for a
-   recognizable metric question, a clarification for anything else.
-2. Planning the query. `semantic_query` uses the lexical plan when it is
-   confident, and otherwise asks the model for a structured `SemanticPlan`
-   constrained to the catalog. Nova validates the plan and compiles the SQL; the
-   model never writes SQL on this path. An unresolved concept becomes a
-   clarification.
-3. The user's words win. The loop model often rewrites the question it passes to
-   the tool. On the turn's first query, a period, a top N, or a threshold the
-   user stated ("bulan ini vs bulan lalu", "Top 2 kanal", "di atas 1 miliar")
-   replaces what the rewrite dropped or changed. Later queries in the same turn
-   are analysis steps and keep their own parameters.
+No step reads the user's words with a regex or a word list. The model reads
+the question in whatever language it is written; Nova checks what the model
+returns against the catalog, the time grammar, and the result cells.
+`tests/unit/test_no_language_regex.py` fails when a natural-language word
+appears in a regex or a word set under `assistant/`, `agents/`, or
+`intelligence/`.
+
+1. Planning. One structured call returns the route, an intent frame, and, for
+   a data question, the first `SemanticPlan` and the view it uses. The frame is
+   language-neutral: the user's language (BCP-47), the range and comparison in
+   the canonical time grammar (`previous_month`, `2025-Q2`), the grain, whether
+   a series was asked for, top N, order, a per-group dimension, a threshold,
+   whether the question refers to the screen, and whether it compares groups.
+   Nova validates the plan and compiles the SQL; the model never writes SQL on
+   this path. A valid plan is run before the first loop model call, so a simple
+   data turn costs about two model calls. If planning fails twice, the turn runs
+   `semantic_query` with the user's own words, or asks for clarification when no
+   view is bound.
+2. The catalog. The planner sees the whole authorized catalog when it fits the
+   budget (6,000 tokens, `NOVA_SEMANTIC_CATALOG_TOKENS`). A larger catalog is
+   narrowed with embeddings (`NOVA_SEMANTIC_EMBEDDING_ALIAS`), or truncated with
+   a note in the trace when no embedding model is set. Nothing is chosen by
+   shared words, so a question in Japanese sees the same catalog as one in
+   English. A verified query is reused when its plan is identical.
+3. The user's request wins. The loop model often rewrites the question it passes
+   to the tool. On the turn's first successful query, the frame's period, grain,
+   top N, per-group rank, order, and threshold replace what the rewrite dropped
+   or changed. Later queries in the same turn are analysis steps and keep their
+   own parameters.
 4. Metrics from different facts. The scope lists dimensions shared across facts
    (`sales_channel` and `marketing_channel`), and the tool asks for every metric
    in one question, so Nova compiles one drill-across query instead of two
@@ -97,14 +112,26 @@ A Studio agent answers business questions only from governed results.
    the user's own words. If the governed tool ran and the request is outside the
    catalog, an answer that states the limit and contains no numbers ends with
    `out_of_scope`.
-6. Verification. Every number in the answer must be a result cell, simple
-   arithmetic over cells of one column (difference, percent change, share,
-   total, average), a count of the result (rows, groups, rows per group), or a
-   value from the question. Dates, list positions, and period lengths are not
-   claims. `compute_metrics` returns percentages with a `%` sign so a model does
-   not read -0.71% as a fraction. When a few numbers fail, only those are marked.
-   When the headline number fails, the answer is rebuilt from the result cells
-   in the user's language, with the values.
+6. Verification. On a data turn the model appends a `<claims>` block that Nova
+   strips before the user sees the answer. Each claim names a number as written,
+   its value, and its kind: a result cell, a derivation (difference, percent
+   change, share, total, average, multiple), a count of the result, a number
+   from the question, a list position, a date, or a comparison between rows.
+   Every number in the answer must be backed by the cells. A claimed direction
+   must match the sign of the change, and a claimed comparison ("Website is
+   higher than Marketplace") must match the cells. Without claims, numbers are
+   still checked by value, but direction and comparison are not.
+7. Numbers in any language. Digits in any script are normalized. Decimal and
+   group marks, compact scales (juta, Mio., 万, 億, 조), and currency symbols
+   come from the Unicode CLDR data that Babel ships, not from hand-written
+   lists. A unit word CLDR does not know is accepted only through a claim.
+8. Nova's own text. Fallback renders, consent and no-rows messages, and
+   follow-up suggestions come from a message catalog (English source,
+   Indonesian built in). Other languages are translated once by the model,
+   accepted only when every placeholder survives and no new digit appears, and
+   cached in `NOVA_SYSTEM.CONFIG_I18N_MESSAGES`. When a failing number is the
+   headline, the answer is rebuilt from the result cells in the user's language
+   and number format.
 
 ### Finish reasons
 
@@ -135,6 +162,8 @@ A Studio agent answers business questions only from governed results.
 | `budget_seconds` | Agent configuration | Profile value |
 | `budget_tokens` | Agent configuration | 60% of the model window, at most 120,000 |
 | `NOVA_MEMORY_EMBEDDING_ALIAS` | Environment | Unset: lexical memory retrieval |
+| `NOVA_SEMANTIC_CATALOG_TOKENS` | Environment | 6000: the full catalog up to this size |
+| `NOVA_SEMANTIC_EMBEDDING_ALIAS` | Environment | Unset: a larger catalog is truncated |
 
 ## Measured cost
 
@@ -167,8 +196,7 @@ StarRocks with the configured model (2026-09-28, commit `6b0bb9a`; details in
 
 The one remaining failure is a clarification the model asked for once out of
 two runs. The last row's p50 and p95 (47 s) are inflated: targeted runs shared
-the provider while it ran. The planner fast path cut the time before the first
-model call from 1.9 s to 0.4-0.6 s.
+the provider while it ran.
 
 What moved the numbers, in order of effect:
 

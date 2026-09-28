@@ -6,9 +6,6 @@ particular planner writes. Fields:
 * ``outcome``: ``answer`` (a governed query answers it), ``clarify`` (the
   Semantic View cannot express it; the agent must ask or explain), or
   ``refuse`` (a policy boundary).
-* ``lexical``: the deterministic fast path is expected to resolve it on its own.
-  Cases without it may need the model planner; the offline gate then only
-  requires that the fast path does not produce a *confident wrong* plan.
 * ``turns``: earlier user turns for a follow-up case (live runs only).
 * ``phase``: the plan milestone that makes the case answerable (1, 2, or 3).
 """
@@ -34,7 +31,6 @@ class Case:
     category: str
     expect: dict[str, Any]
     outcome: str = "answer"
-    lexical: bool = False
     turns: tuple[str, ...] = ()
     phase: int = 1
     notes: str = ""
@@ -86,7 +82,6 @@ def generated_cases(today: date) -> list[Case]:
                     lang=lang,
                     category="time_range",
                     expect={"metrics": [metric], "range": range_value},
-                    lexical=True,
                 ))
     year = today.year - 1
     comparisons = (
@@ -111,7 +106,6 @@ def generated_cases(today: date) -> list[Case]:
                 lang=lang,
                 category="comparison",
                 expect={"metrics": ["total_revenue"], "range": range_value, "compare": compare},
-                lexical=True,
             ))
     grains = (
         ("month", str(year), f"Monthly revenue in {year}", f"Penjualan per bulan tahun {year}"),
@@ -129,7 +123,6 @@ def generated_cases(today: date) -> list[Case]:
                 lang=lang,
                 category="time_grain",
                 expect={"metrics": [metric], "range": range_value, "grain": grain},
-                lexical=True,
             ))
     return cases
 
@@ -144,7 +137,6 @@ def file_cases(path: Path = CASES_FILE) -> list[Case]:
             category=item["category"],
             expect=item.get("expect") or {},
             outcome=item.get("outcome", "answer"),
-            lexical=bool(item.get("lexical", False)),
             turns=tuple(item.get("turns") or ()),
             phase=int(item.get("phase", 1)),
             notes=item.get("notes", ""),

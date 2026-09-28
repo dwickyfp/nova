@@ -1,10 +1,8 @@
 """Agent readiness: what a builder should fix before users rely on a Studio agent.
 
 Every check reads configuration and semantic metadata only; none queries data.
-The sample-question check runs the deterministic planner (the same fast path a
-live turn uses) over the agent's own sample questions, so a builder sees which
-questions resolve without the model, which need it, and which the catalog
-cannot express.
+The catalog checks report whether each bound view fits the planner's catalog
+budget, so a builder sees when the model would get a narrowed catalog.
 """
 
 from __future__ import annotations
