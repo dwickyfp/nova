@@ -121,6 +121,20 @@ class SemanticModelIR:
     examples: tuple[SemanticExampleIR, ...] = ()
     question_routing_instructions: str = ""
     query_generation_instructions: str = ""
+    #: Fields in different datasets holding the same key (``sales_channel``,
+    #: ``marketing_channel``); only these join metrics from two facts.
+    conformed_dimensions: tuple[tuple[str, ...], ...] = ()
+
+    def conformed_partner(self, field_name: str, dataset: str) -> str | None:
+        """The field in ``dataset`` declared conformed with ``field_name``."""
+        for group in self.conformed_dimensions:
+            if field_name not in group:
+                continue
+            for candidate in group:
+                field = self.field(candidate)
+                if field is not None and field.dataset == dataset:
+                    return candidate
+        return None
 
     @classmethod
     def from_ossie(cls, definition: dict[str, Any]) -> SemanticModelIR:
@@ -262,6 +276,7 @@ class SemanticModelIR:
             query_generation_instructions=str(
                 definition.get("query_generation_instructions") or ""
             ),
+            conformed_dimensions=_conformed(definition.get("conformed_dimensions")),
         )
 
     def dataset(self, name: str) -> SemanticDatasetIR | None:
@@ -314,6 +329,15 @@ def _field_from(dataset: str, raw: dict[str, Any]) -> SemanticFieldIR:
         sample_values=tuple(str(value) for value in sample_values or []),
         search_strategy=_optional_str(raw.get("search_strategy")),
     )
+
+
+def _conformed(raw: Any) -> tuple[tuple[str, ...], ...]:
+    groups: list[tuple[str, ...]] = []
+    for item in raw or []:
+        fields = item.get("fields") if isinstance(item, dict) else item
+        if isinstance(fields, list) and len(fields) >= 2:
+            groups.append(tuple(str(value) for value in fields))
+    return tuple(groups)
 
 
 def _synonyms(raw: dict[str, Any]) -> tuple[str, ...]:

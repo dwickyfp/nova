@@ -180,11 +180,9 @@ function DefinitionDetail({ view, version }: {
 }
 
 function PreviewDetail({ result }: { result: SemanticPreview }) {
-  const score = result.confidence?.score
-  const level = result.confidence?.level
   return <div className='space-y-4' aria-live='polite'>
     <div className='flex flex-wrap gap-x-6 gap-y-2 rounded-lg border bg-surface-2 p-4 text-sm'>
-      <span>Confidence: {typeof level === 'string' ? level : 'Unavailable'}{typeof score === 'number' ? ` (${Math.round(score * 100)}%)` : ''}</span>
+      <span>Planned by: {result.plan_source === 'verified_query' ? 'a verified query' : 'the model, checked against this View'}</span>
       <span>Relationship path: {result.relationship_path.length ? result.relationship_path.join(' → ') : 'None required'}</span>
     </div>
     {result.warnings.length ? <div className='rounded-lg border border-warning bg-warning/10 p-4 text-sm'><p className='font-medium'>Review warnings</p><ul className='mt-2 list-disc space-y-1 ps-5'>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}

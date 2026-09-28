@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.modules.agents.semantic.time_ranges import RANGE_GRAMMAR_HELP
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.assistant.tools.redaction import redact_rows
@@ -45,6 +46,29 @@ class SemanticViewQueryTool:
                     {"type": "number"}, {"type": "boolean"},
                 ],
             }},
+            "time": {
+                "type": "object",
+                "properties": {
+                    "range": {"type": "string", "description": RANGE_GRAMMAR_HELP},
+                    "grain": {"type": "string",
+                              "enum": ["day", "week", "month", "quarter", "year"]},
+                    "compare": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            "order_by": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "field": {"type": "string"},
+                        "direction": {"type": "string", "enum": ["asc", "desc"]},
+                    },
+                    "required": ["field"],
+                    "additionalProperties": False,
+                },
+            },
             "version": {"type": "integer", "minimum": 1},
             "limit": {"type": "integer", "minimum": 1, "maximum": 100},
         },
@@ -77,6 +101,8 @@ class SemanticViewQueryTool:
                 dimensions=invocation.arguments.get("dimensions", []),
                 named_filters=invocation.arguments.get("named_filters", []),
                 filters=invocation.arguments.get("filters", {}),
+                time=invocation.arguments.get("time"),
+                order_by=invocation.arguments.get("order_by", []),
                 version=invocation.arguments.get("version"),
                 limit=min(int(invocation.arguments.get("limit", 20)), 100),
             )

@@ -9,9 +9,10 @@ from fastapi import HTTPException
 from app.modules.agents import router as agent_router
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.semantic.access import load_authorized_models
+from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.ossie import parse_ossie
-from app.modules.agents.semantic.planning import SemanticPlanner
+from app.modules.agents.semantic.planning import SemanticFilter, SemanticPlan
 from app.modules.assistant.service import LoopContext
 from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.query.service import query_service
@@ -108,13 +109,9 @@ def test_city_question_preserves_explicit_forbidden_city_filter() -> None:
         .read_text()
     ).as_dict()
     model = SemanticModelIR.from_ossie(definition)
-    planned = SemanticPlanner().plan(
-        model, "Berapa total_amount per city hanya untuk Bandung?"
+    plan = SemanticPlan(
+        metrics=("total_amount",), dimensions=("city",),
+        filters=(SemanticFilter("city", "=", "Bandung"),),
     )
-    assert planned.confidence.unresolved == ()
-    assert planned.plan is not None
-    assert planned.plan.metrics == ("total_amount",)
-    assert planned.plan.dimensions == ("city",)
-    assert [(item.field, item.operator, item.value) for item in planned.plan.filters] == [
-        ("city", "=", "Bandung")
-    ]
+    # The filter reaches SQL as written: the engine, not the plan, applies RBAC.
+    assert "'Bandung'" in SemanticCompiler().compile(model, plan).sql

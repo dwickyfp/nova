@@ -228,3 +228,16 @@ async def test_jev_cannot_add_execution_to_catalog_plan():
     assert refined.selected_tools == ("describe_agent",)
     assert refined.route.required_capabilities == ("describe_agent",)
     assert not refined.selected_skills
+
+
+def test_scope_names_dimensions_shared_across_facts():
+    from tests.benchmark.studio_accuracy.model import bench_model
+
+    models = [{"semantic_model_id": "nova_bench", "name": "nova_bench",
+               "_scoped_ir": bench_model()}]
+    scope = DescribeAgentTool(ToolRegistry(), name="Bench").planning_scope(
+        LoopContext("reader", authorized_semantic_models=models)
+    )
+    assert scope["semantic_views"][0]["shared_dimensions"] == [
+        ["sales_channel", "marketing_channel"]
+    ]

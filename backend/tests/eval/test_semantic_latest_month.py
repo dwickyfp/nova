@@ -3,11 +3,12 @@ from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
 from tests.benchmark.harness import ScriptedProvider, text_frame, tool_call_frame
 from tests.unit.test_semantic_guidance_fallback import USER, setup_tool
+from tests.unit.test_semantic_latest_month import LATEST_MONTH
 
 
 async def test_latest_month_trajectory_uses_consent_and_completes(monkeypatch):
     question = "What is the latest month with data for revenue?"
-    tool, planner_provider, execute = setup_tool(monkeypatch)
+    tool, planner_provider, execute = setup_tool(monkeypatch, LATEST_MONTH)
     registry = ToolRegistry()
     registry.register(tool)
     provider = ScriptedProvider(
@@ -36,7 +37,8 @@ async def test_latest_month_trajectory_uses_consent_and_completes(monkeypatch):
     ]
     assert consented == [("semantic_query", "read_only")], frames
     assert context.route["required_capabilities"] == ("semantic_query",)
-    planner_provider.complete.assert_not_awaited()
+    # One planning call inside the tool: the scripted turn planner wrote no plan.
+    planner_provider.complete.assert_awaited_once()
     execute.assert_awaited_once()
     assert "ORDER BY `order_date` DESC" in execute.call_args.kwargs["sql"]
     assert "private-test-value" not in "".join(frames)

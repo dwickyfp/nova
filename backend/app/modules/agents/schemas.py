@@ -29,6 +29,10 @@ AgentToolName = str
 #: v1 (Phase 12 §8).
 AgentPolicy = Literal["auto_read_only", "ask_every_tool"]
 
+#: Loop limits. ``analyst`` lets an agent drill down after its first result;
+#: ``deep`` runs only as an asynchronous Smart/Deep Research run.
+BudgetProfile = Literal["fast", "analyst", "deep"]
+
 Visibility = Literal["private", "shared"]
 
 
@@ -55,6 +59,7 @@ class AgentView(BaseModel):
     discoverable_skills: list[str] = Field(default_factory=list)
     compiled_instructions: dict = Field(default_factory=dict)
     harness_mode: Literal["auto", "fast", "guided", "strict"] = "auto"
+    budget_profile: BudgetProfile = "analyst"
     policy: AgentPolicy = "auto_read_only"
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] = Field(default_factory=list)
@@ -92,6 +97,7 @@ class AgentCreateRequest(BaseModel):
     default_skills: list[str] = Field(default_factory=list)
     discoverable_skills: list[str] = Field(default_factory=list)
     harness_mode: Literal["auto", "fast", "guided", "strict"] = "auto"
+    budget_profile: BudgetProfile = "analyst"
     policy: AgentPolicy = "auto_read_only"
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] = Field(default_factory=list)
@@ -123,6 +129,7 @@ class AgentUpdateRequest(BaseModel):
     default_skills: list[str] | None = None
     discoverable_skills: list[str] | None = None
     harness_mode: Literal["auto", "fast", "guided", "strict"] | None = None
+    budget_profile: BudgetProfile | None = None
     policy: AgentPolicy | None = None
     semantic_model_id: str | None = None
     semantic_model_ids: list[str] | None = None

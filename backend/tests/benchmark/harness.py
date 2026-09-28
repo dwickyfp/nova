@@ -47,11 +47,14 @@ class ScriptedProvider:
     script: list[dict[str, Any]]
     calls: int = 0
     turn_plan: dict[str, Any] | None = None
+    #: What the planner reads from the question (language, period, ...).
+    intent_frame: dict[str, Any] | None = None
 
     async def plan_turn(
         self, *, user_content: str, available_tools: list[str]
     ) -> dict[str, Any]:
-        return self.turn_plan or scripted_turn_plan(self.script)
+        plan = self.turn_plan or scripted_turn_plan(self.script)
+        return {**plan, "intent_frame": self.intent_frame} if self.intent_frame else plan
 
     async def resolve(self, **_: Any) -> Any:
         from app.modules.assistant.provider import ProviderConfig

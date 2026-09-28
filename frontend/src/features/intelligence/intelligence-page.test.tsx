@@ -342,7 +342,7 @@ describe("Nova Intelligence", () => {
       if (path === "/semantic-views/sv1/versions/1/preview") return {
         view_id: "sv1", version: 1, model_fingerprint: "fingerprint-1",
         semantic_plan: { metrics: ["revenue"] }, generated_sql: "SELECT SUM(amount) FROM orders",
-        confidence: { level: "high", score: 0.9 }, relationship_path: ["orders"], warnings: [],
+        plan_source: "model_planner", relationship_path: ["orders"], warnings: [],
       };
       return {};
     });

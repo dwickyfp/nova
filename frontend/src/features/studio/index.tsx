@@ -12,6 +12,8 @@ import { StudioAccountMenu } from "./studio-account-menu";
 import { StudioArtifacts } from "./studio-artifacts";
 import { StudioCapabilities } from "./studio-capabilities";
 import { StudioDashboards } from "./studio-dashboards";
+import { StudioShared } from "./studio-shared";
+import { ShareDialog } from "./share-dialog";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
 
 const AUTO_WHILE_CATALOG_LOADS: Agent = {
@@ -91,6 +93,7 @@ function StudioAppContent() {
   // one, which is the opposite of what they asked for.
   const [freshChat, setFreshChat] = useState(false);
   const [initialPrompt, setInitialPrompt] = useState("");
+  const [sharing, setSharing] = useState<{ id: string; title: string } | null>(null);
   // Shared with Nova's main sidebar, so the rail remembers its state whichever
   // surface set it last.
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -284,6 +287,7 @@ function StudioAppContent() {
           onRenameThread={(threadId, title) =>
             renameThread.mutate({ threadId, title })
           }
+          onShareThread={(thread) => setSharing({ id: thread.thread_id, title: thread.title })}
           threadsLoading={threadsQuery.isLoading}
           threadsError={threadsQuery.isError}
           onRetryThreads={() => void threadsQuery.refetch()}
@@ -349,6 +353,8 @@ function StudioAppContent() {
           <StudioArtifacts onSelectAgent={selectAgent} />
         ) : view === "dashboards" ? (
           <StudioDashboards />
+        ) : view === "shared" ? (
+          <StudioShared />
         ) : (
           <StudioCapabilities
             onCreateWithChat={() => {
@@ -358,6 +364,12 @@ function StudioAppContent() {
           />
         )}
       </main>
+      <ShareDialog
+        objectType="thread"
+        objectId={sharing?.id ?? null}
+        title={sharing?.title || "Conversation"}
+        onClose={() => setSharing(null)}
+      />
     </div>
   );
 }

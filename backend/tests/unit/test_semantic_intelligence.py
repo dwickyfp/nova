@@ -27,17 +27,12 @@ from app.modules.agents.semantic.planning import (
     SemanticFilter,
     SemanticGraph,
     SemanticPlan,
-    SemanticPlanner,
     SemanticTime,
 )
 from app.modules.agents.semantic.runtime import (
-    LiteralResolver,
-    SemanticCatalogRetriever,
     SemanticFeedback,
     SemanticModelCandidate,
     SemanticModelRouter,
-    VerifiedQuery,
-    VerifiedQueryRetriever,
     feedback_suggestions,
     lint_semantic_model,
     materialized_view_suggestions,
@@ -211,36 +206,8 @@ def test_semantic_model_router_chooses_domain_and_reports_ties():
     )
 
 
-def test_catalog_retrieval_is_small_and_authorization_aware():
-    model = sales_model(with_items=True)
-    irrelevant = tuple(
-        SemanticDatasetIR(
-            name=f"unused_{index}",
-            source=f"analytics.other.unused_{index}",
-            grain=SemanticGrain(("id",)),
-            fields=(_field(f"unused_{index}", "id"),),
-        )
-        for index in range(60)
-    )
-    model = replace(model, datasets=(*model.datasets, *irrelevant))
-    semantic_slice = SemanticCatalogRetriever().retrieve(
-        model,
-        "revenue by region",
-        authorized_datasets={"orders", "regions"},
-    )
-    assert {item["name"] for item in semantic_slice.datasets} == {"orders", "regions"}
-    assert all(not item["name"].startswith("unused_") for item in semantic_slice.datasets)
-    assert len(semantic_slice.metrics) == 1
 
 
-def test_planner_selects_metric_dimension_literal_and_time():
-    planned = SemanticPlanner().plan(sales_model(), "Revenue by city in Jakarta last month top 5")
-    assert planned.plan is not None
-    assert planned.plan.metrics == ("total_revenue",)
-    assert planned.plan.dimensions == ("city",)
-    assert planned.plan.filters == (SemanticFilter("city", "=", "Jakarta"),)
-    assert planned.plan.time == SemanticTime("order_date", grain="month", range="previous_month")
-    assert planned.plan.limit == 5
 
 
 def test_compiler_generates_starrocks_sql_and_graph_join():
@@ -371,29 +338,8 @@ def test_additivity_rules_reject_invalid_dimensions_and_time():
         )
 
 
-def test_literal_resolver_uses_samples_and_search_candidates():
-    field = _field(
-        "order_items",
-        "product_name",
-        samples=("AQUA Mineral Water 600 ML PET", "Tea Bottle 500 ML"),
-    )
-    result = LiteralResolver().resolve("Aqua botol 600ml", field)
-    assert result[0].value == "AQUA Mineral Water 600 ML PET"
-    assert result[0].source == "sample"
 
 
-def test_verified_query_retrieval_is_version_bound():
-    plan = SemanticPlan(metrics=("total_revenue",), dimensions=("region",))
-    entry = VerifiedQuery(
-        "v1", "sales", "sales-v1", "Revenue by region last month", plan, "SELECT 1"
-    )
-    retriever = VerifiedQueryRetriever()
-    current = retriever.retrieve(
-        "regional revenue last month", [entry], model_fingerprint="sales-v1"
-    )
-    stale = retriever.retrieve("regional revenue last month", [entry], model_fingerprint="sales-v2")
-    assert current == (entry,)
-    assert stale == ()
 
 
 def test_semantic_validation_lint_quality_and_feedback_are_reviewable():

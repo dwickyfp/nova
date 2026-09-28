@@ -8,6 +8,7 @@ import pytest
 
 from app.modules.assistant.app_context import NoveAppContext
 from app.modules.assistant.intelligence import TurnIntent, TurnRoute
+from app.modules.assistant.intent import IntentFrame
 from app.modules.assistant.provider import AssistantProviderClient
 from app.modules.assistant.registry import build_registry
 from app.modules.assistant.service import AssistantLoop, LoopContext
@@ -41,9 +42,10 @@ def _app(surface: str, entity_type: str | None = None, *, failed_sql: bool = Fal
 def test_generic_reference_request_uses_current_surface(
     surface, entity, failed_sql, expected
 ):
+    # The planner reads "this" / "この" / "هذا" as pointing at the screen.
     results = search_references(
         "Explain this" if not failed_sql else "Why did this fail?",
-        app_context=_app(surface, entity, failed_sql=failed_sql),
+        app_context=_app(surface, entity, failed_sql=failed_sql), refers_to_screen=True,
     )
     assert results[0]["source"] == f"knowledge:{expected}"
     assert len(results) <= 3
@@ -72,7 +74,10 @@ def test_explicit_topic_overrides_unrelated_surface_and_legacy_search_is_unchang
 async def test_knowledge_tool_uses_surface_without_needing_new_arguments():
     outcome = await search_knowledge_tool.run(
         ToolInvocation("lookup", "search_knowledge", {"query": "Explain this"}),
-        SimpleNamespace(app_context=_app("role.detail", "role")),
+        SimpleNamespace(
+            app_context=_app("role.detail", "role"),
+            intent_frame=IntentFrame(refers_to_screen=True),
+        ),
     )
     assert outcome.ok is True
     assert outcome.metadata["sources"][0] == "knowledge:security-governance"
@@ -88,6 +93,7 @@ def test_capability_help_context_compiler_uses_same_surface_ranking():
         user_name="alice",
         selected_tools=["search_knowledge"],
         app_context=_app("role.detail", "role"),
+        intent_frame=IntentFrame(refers_to_screen=True),
     )
     messages = loop._build_messages(
         AssistantThread(thread_id="t", user_name="alice", title="t"),

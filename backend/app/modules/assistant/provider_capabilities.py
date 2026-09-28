@@ -20,6 +20,11 @@ class ProviderCapabilities:
     supports_tool_role_messages: bool = True
     context_window: int = 32_000
     preferred_temperature_controls: bool = False
+    #: Send a stable ``prompt_cache_key`` derived from the system prompt, for
+    #: OpenAI-compatible endpoints that route cache hits by key.
+    supports_prompt_cache_key: bool = False
+    #: ``reasoning_effort`` to request from reasoning models (low/medium/high).
+    reasoning_effort: str | None = None
 
     @classmethod
     def from_mapping(
@@ -40,6 +45,9 @@ class ProviderCapabilities:
             candidate = value.get(name)
             if name == "context_window":
                 if isinstance(candidate, int) and candidate > 0:
+                    updates[name] = candidate
+            elif name == "reasoning_effort":
+                if candidate in {"minimal", "low", "medium", "high"}:
                     updates[name] = candidate
             elif isinstance(candidate, bool):
                 updates[name] = candidate

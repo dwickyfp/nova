@@ -256,14 +256,13 @@ class NoveAppContext(_ContextPart):
         return data
 
 
-_DEICTIC = re.compile(
-    r"\b(this|that|it|here|these|current|selected|last|ini|itu|terakhir)\b", re.I
-)
-
-
 def resolve_app_references(request: str, app: NoveAppContext | None) -> dict[str, Any]:
-    """Give the model bounded references from the current surface, not old turns."""
-    if app is None or not _DEICTIC.search(request):
+    """Give the model bounded references from the current surface, not old turns.
+
+    They are always offered: whether "this", "この", or "هذا" points at the screen
+    is the planner's call in any language, and the references are small.
+    """
+    if app is None:
         return {}
     result: dict[str, Any] = {"surfaceId": app.surface.id}
     selection = app.selection

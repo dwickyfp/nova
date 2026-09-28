@@ -37,6 +37,9 @@ loop can then stop cleanly instead of relying on the provider to reject it.
 
 from __future__ import annotations
 
+import hashlib
+from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -145,6 +148,11 @@ class ContextStats:
     summarized: bool = False
     messages_in: int = 0
     messages_out: int = 0
+    #: The text lines of dropped turns, so a caller can prepare a model-written
+    #: summary for the next turn. Not part of ``as_dict``: it is transcript text.
+    dropped_lines: tuple[str, ...] = ()
+    #: True when the note came from a cached model summary.
+    model_summary: bool = False
 
     @property
     def fits(self) -> bool:
@@ -159,6 +167,7 @@ class ContextStats:
             "dropped_turns": self.dropped_turns,
             "cleared_tool_results": self.cleared_tool_results,
             "summarized": self.summarized,
+            "model_summary": self.model_summary,
             "messages_in": self.messages_in,
             "messages_out": self.messages_out,
             "fits": self.fits,
@@ -199,6 +208,7 @@ class ContextManager:
         token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET,
         keep_recent: int = DEFAULT_KEEP_RECENT_MESSAGES,
         tool_result_ttl: int = DEFAULT_TOOL_RESULT_TTL_MESSAGES,
+        summary_lookup: Callable[[tuple[str, ...]], str | None] | None = None,
     ) -> None:
         if token_budget <= 0:
             raise ValueError("token_budget must be positive")
@@ -209,6 +219,9 @@ class ContextManager:
         self.token_budget = token_budget
         self.keep_recent = keep_recent
         self.tool_result_ttl = tool_result_ttl
+        #: Model-written summary for these dropped lines; synchronous and free of
+        #: side effects. A miss falls back to the deterministic note.
+        self.summary_lookup = summary_lookup
 
     def curate(self, messages: list[dict[str, Any]]) -> CuratedContext:
         """Return a budget-curtailed copy of ``messages``.
@@ -237,8 +250,12 @@ class ContextManager:
         pinned = body[len(body) - pinned_count :] if pinned_count else []
 
         mutable, stats.cleared_tool_results = self._clear_tool_results(mutable)
-        mutable, stats.dropped_turns, summary = self._drop_oldest_until_fits(head, mutable, pinned)
+        mutable, stats.dropped_turns, summary, dropped_lines = self._drop_oldest_until_fits(
+            head, mutable, pinned
+        )
         stats.summarized = summary is not None
+        stats.dropped_lines = dropped_lines
+        stats.model_summary = bool(summary) and not summary.startswith(_DETERMINISTIC_PREFIX)
 
         curated = list(head)
         if summary is not None:
@@ -279,7 +296,7 @@ class ContextManager:
         head: list[dict[str, Any]],
         mutable: list[dict[str, Any]],
         pinned: list[dict[str, Any]],
-    ) -> tuple[list[dict[str, Any]], int, str | None]:
+    ) -> tuple[list[dict[str, Any]], int, str | None, tuple[str, ...]]:
         """Drop the oldest exchanges until the result fits, or the region is empty.
 
         Dropped user/assistant text is collected into a bounded summary note so
@@ -309,7 +326,11 @@ class ContextManager:
                 if line:
                     dropped_lines.append(line)
 
-        summary = _build_summary(dropped_lines) if dropped_lines else None
+        summary = None
+        if dropped_lines and self.summary_lookup is not None:
+            summary = self.summary_lookup(tuple(dropped_lines))
+        if summary is None and dropped_lines:
+            summary = _build_summary(dropped_lines)
         # A newly inserted summary is charged against the budget too. If adding
         # it pushes us back over, the summary is trimmed to fit rather than sent
         # as-is; the note is an aid, never the reason a turn overflows.
@@ -318,7 +339,7 @@ class ContextManager:
             if over > 0:
                 keep_chars = max(0, (estimate_tokens(summary) - over) * CHARS_PER_TOKEN)
                 summary = summary[:keep_chars].rstrip() or None
-        return region, dropped_turns, summary
+        return region, dropped_turns, summary, tuple(dropped_lines)
 
 
 def _split_leading_system(
@@ -379,7 +400,55 @@ def _build_summary(lines: list[str]) -> str:
     joined = "\n".join(lines)
     if len(joined) > _MAX_SUMMARY_CHARS:
         joined = joined[-_MAX_SUMMARY_CHARS:]
-    return "[earlier conversation, summarized because it exceeded the context budget]\n" + joined
+    return _DETERMINISTIC_PREFIX + joined
+
+
+_DETERMINISTIC_PREFIX = (
+    "[earlier conversation, summarized because it exceeded the context budget]\n"
+)
+MODEL_SUMMARY_PREFIX = "[earlier conversation, summarized by the model]\n"
+_MAX_MODEL_SUMMARY_CHARS = 1500
+
+
+class SummaryCache:
+    """Model-written summaries of dropped turns, keyed by thread and exact text.
+
+    Keyed by the thread as well as the text so a summary never crosses a
+    conversation. Bounded and in-process: a miss only means the deterministic
+    note is used for one more turn.
+    """
+
+    def __init__(self, capacity: int = 256) -> None:
+        self._capacity = capacity
+        self._items: OrderedDict[str, str] = OrderedDict()
+
+    @staticmethod
+    def key(thread_id: str | None, lines: tuple[str, ...]) -> str:
+        return hashlib.sha256(("\x1f".join((thread_id or "", *lines))).encode()).hexdigest()
+
+    def get(self, thread_id: str | None, lines: tuple[str, ...]) -> str | None:
+        key = self.key(thread_id, lines)
+        value = self._items.get(key)
+        if value is not None:
+            self._items.move_to_end(key)
+        return value
+
+    def put(self, thread_id: str | None, lines: tuple[str, ...], summary: str) -> None:
+        key = self.key(thread_id, lines)
+        self._items[key] = MODEL_SUMMARY_PREFIX + summary.strip()[:_MAX_MODEL_SUMMARY_CHARS]
+        self._items.move_to_end(key)
+        while len(self._items) > self._capacity:
+            self._items.popitem(last=False)
+
+
+summary_cache = SummaryCache()
+
+SUMMARY_INSTRUCTIONS = (
+    "Summarize the earlier part of this analytics conversation so it can continue. "
+    "Keep: business definitions and rules the user stated, metrics, filters, periods, "
+    "entities, decisions, and open questions. Drop pleasantries. Do not add facts or "
+    "numbers that are not in the text. At most 120 words, in the conversation's language."
+)
 
 
 #: A manager at the default budget, for callers that do not need a custom one.
