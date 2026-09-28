@@ -7,8 +7,8 @@ import pytest
 
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.model_planner import generate_plan
-from app.modules.agents.semantic.planning import SemanticPlanError, SemanticPlanner
-from app.modules.agents.semantic.runtime import SemanticCatalogRetriever, semantic_ir_to_definition
+from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanError, SemanticTime
+from app.modules.agents.semantic.runtime import semantic_ir_to_definition
 from app.modules.agents.tools.semantic_query import SemanticQueryTool
 from app.modules.assistant.service import LoopContext
 from app.modules.assistant.tools import ToolInvocation
@@ -82,22 +82,24 @@ def setup_tool(monkeypatch, plan=None):
     return tool, provider, execute
 
 
-@pytest.mark.parametrize("question", [QUESTION, "Compare revenue by city for 2025"])
-def test_calendar_year_is_bounded_without_period_comparison(question):
+def test_calendar_year_is_bounded_without_period_comparison():
     model = sales_model()
-    planned = SemanticPlanner().plan(model, question)
-    assert planned.confidence.unresolved_count == 0
-    assert planned.plan.time.range == "2025"
-    assert planned.plan.time.compare is None
-    assert planned.plan.time.grain is None
-    sql = SemanticCompiler().compile(model, planned.plan).sql
+    plan = SemanticPlan(
+        metrics=("total_revenue",), dimensions=("city",),
+        time=SemanticTime("order_date", range="2025"),
+    )
+    sql = SemanticCompiler().compile(model, plan).sql
     assert ">= '2025-01-01'" in sql
     assert "< '2026-01-01'" in sql
 
 
-def test_catalog_includes_default_time_dimension_without_lexical_match():
-    catalog = SemanticCatalogRetriever().retrieve(sales_model(), "Revenue", limit=1)
-    assert "order_date" in {field["name"] for field in catalog.dimensions}
+async def test_catalog_includes_default_time_dimension_in_any_language():
+    from app.modules.agents.semantic.model_planner import planning_catalog
+
+    catalog = await planning_catalog(guided_model(), "今月の売上")
+    metric = next(item for item in catalog["metrics"] if item["name"] == "total_revenue")
+    assert metric["default_time_dimension"] == "order_date"
+    assert any(item["name"] == "order_date" and item["is_time"] for item in catalog["dimensions"])
 
 
 async def test_natural_guidance_uses_validated_fallback_and_required_filters(monkeypatch):

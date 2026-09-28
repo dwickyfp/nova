@@ -15,12 +15,10 @@ from app.modules.agents.semantic.plan_contract import validate_generated_plan
 from app.modules.agents.semantic.planning import (
     SemanticPlan,
     SemanticPlanError,
-    SemanticPlanner,
     SemanticTime,
 )
 from app.modules.agents.semantic.time_ranges import (
     comparison_bounds,
-    parse_time_phrase,
     range_predicates,
     resolve_time_range,
 )
@@ -141,84 +139,25 @@ def test_incompatible_comparison_is_rejected(value, comparison):
 
 # ── question phrases (EN + ID) ──────────────────────────────────────────────
 
-@pytest.mark.parametrize(
-    ("question", "range_value", "compare", "grain"),
-    [
-        ("revenue last quarter", "previous_quarter", None, None),
-        ("penjualan kuartal lalu", "previous_quarter", None, None),
-        ("omzet triwulan lalu", "previous_quarter", None, None),
-        ("revenue tahun lalu", "previous_year", None, None),
-        ("revenue last year", "previous_year", None, None),
-        ("penjualan bulan kemarin", "previous_month", None, None),
-        ("orders yesterday", "previous_day", None, None),
-        ("order hari ini", "current_day", None, None),
-        ("revenue this week", "current_week", None, None),
-        ("revenue pekan lalu", "previous_week", None, None),
-        ("revenue last 7 days", "last_7_days", None, None),
-        ("omzet 30 hari terakhir", "last_30_days", None, None),
-        ("revenue past 6 months", "last_6_months", None, None),
-        ("revenue year to date", "ytd", None, None),
-        ("revenue sejak awal tahun", "ytd", None, None),
-        ("revenue in Q2 2025", "2025-Q2", None, None),
-        ("revenue kuartal 3 2025", "2025-Q3", None, None),
-        ("revenue 2025 Q4", "2025-Q4", None, None),
-        ("omzet Maret 2025", "2025-03", None, None),
-        ("revenue from January to March 2025", "2025-01-01..2025-03-31", None, None),
-        ("penjualan Januari sampai Juni 2025", "2025-01-01..2025-06-30", None, None),
-        ("revenue between 2025-01-01 and 2025-03-31", "2025-01-01..2025-03-31", None, None),
-        ("revenue since 2023", "since_2023", None, None),
-        ("revenue in 2025", "2025", None, None),
-        ("revenue by month in 2025", "2025", None, "month"),
-        ("revenue per bulan tahun ini", "current_year", None, "month"),
-        ("monthly revenue this year", "current_year", None, "month"),
-        ("revenue this month vs last year", "current_month", "year_over_year", None),
-        ("revenue bulan ini dibanding tahun lalu", "current_month", "year_over_year", None),
-        ("revenue this month vs last month", "current_month", "month_over_month", None),
-        ("revenue growth this quarter", "current_quarter", "previous_period", None),
-        ("revenue Q2 2025 vs previous", "2025-Q2", "previous_period", None),
-        # Channel comparison is not a period comparison.
-        ("revenue online vs offline this month", "current_month", None, None),
-        # A comparison without its period is reported, not guessed.
-        ("revenue year over year", None, "year_over_year", None),
-    ],
-)
-def test_question_phrase_names_range_compare_and_grain(question, range_value, compare, grain):
-    phrase = parse_time_phrase(question)
-    assert (phrase.range, phrase.compare, phrase.grain) == (range_value, compare, grain)
 
 
 # ── audit regressions through the planner and compiler ──────────────────────
 
-@pytest.mark.parametrize(
-    ("question", "range_value"),
-    [
-        ("Revenue last quarter", "previous_quarter"),
-        ("Revenue last year", "previous_year"),
-        ("Revenue tahun lalu", "previous_year"),
-        ("Revenue in Q2 2025", "2025-Q2"),
-        ("Revenue from January to March 2025", "2025-01-01..2025-03-31"),
-        ("Revenue last 7 days", "last_7_days"),
-        ("Revenue year to date", "ytd"),
-    ],
-)
-def test_planner_binds_the_requested_period_and_compiles(question, range_value):
-    planned = SemanticPlanner().plan(sales_model(), question)
-    assert planned.plan is not None, planned.confidence
-    assert planned.confidence.unresolved == ()
-    assert planned.plan.time is not None
-    assert planned.plan.time.range == range_value
-    # The audit bug: a period phrase became a grouping grain with no range.
-    assert planned.plan.time.grain is None
-    assert planned.plan.dimensions == ()
+@pytest.mark.parametrize("range_value", [
+    "previous_quarter", "previous_year", "2025-Q2", "2025-01-01..2025-03-31", "last_7_days", "ytd",
+])
+def test_a_period_compiles_to_its_window_without_a_grain(range_value):
+    # The audit bug: a period became a grouping grain with no range.
+    plan = SemanticPlan(
+        metrics=("total_revenue",), time=SemanticTime("order_date", range=range_value)
+    )
     window = resolve_time_range(range_value)
-    sql = SemanticCompiler().compile(sales_model(), planned.plan).sql
+    sql = SemanticCompiler().compile(sales_model(), plan).sql
     assert f">= {window.start}" in sql
     assert f"< {window.end}" in sql
+    assert "DATE_TRUNC('month', `orders`.`order_date`) AS" not in sql
 
 
-def test_comparison_without_period_is_unresolved_not_a_compile_error():
-    planned = SemanticPlanner().plan(sales_model(), "Revenue year over year")
-    assert "comparison period" in planned.confidence.unresolved
 
 
 def test_compiler_builds_year_over_year_for_an_absolute_quarter():

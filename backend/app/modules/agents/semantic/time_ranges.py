@@ -101,13 +101,19 @@ _ALIASES = {
 _TODATE = {"ytd": "year", "qtd": "quarter", "mtd": "month"}
 
 
+#: Spellings of the grammar's own tokens a model may use ("this_month").
+_PREFIX_ALIASES = {
+    "this": "current", "current": "current", "last": "previous", "previous": "previous",
+    "prior": "previous",
+}
+
+
 def _word_form(value: str) -> str:
-    text = re.sub(r"[\s-]+", "_", value.strip().lower())
+    text = "_".join(value.strip().lower().replace("-", " ").split())
     text = _ALIASES.get(text, text)
-    match = re.fullmatch(r"(this|current|last|previous|prior)_(day|week|month|quarter|year)", text)
-    if match:
-        prefix = "current" if match[1] in {"this", "current"} else "previous"
-        return f"{prefix}_{match[2]}"
+    prefix, _, unit = text.partition("_")
+    if prefix in _PREFIX_ALIASES and unit in UNITS:
+        return f"{_PREFIX_ALIASES[prefix]}_{unit}"
     return text
 
 
@@ -191,15 +197,15 @@ def resolve_time_range(value: str) -> TimeWindow:
         return TimeWindow(
             _trunc(unit), _plus("CURRENT_DATE()", Interval(1, "DAY")), _UNIT_INTERVAL[unit], None
         )
-    if match := re.fullmatch(r"(current|previous)_(day|week|month|quarter|year)", text):
-        unit = match[2]
+    position, _, unit = text.partition("_")
+    if position in {"current", "previous"} and unit in UNITS:
         step = _UNIT_INTERVAL[unit]
-        if match[1] == "current":
+        if position == "current":
             return TimeWindow(
                 _trunc(unit), _plus(_trunc(unit), step), step, unit, in_progress=unit != "day"
             )
         return TimeWindow(_minus(_trunc(unit), step), _trunc(unit), step, unit)
-    recent = r"(?:last|past|previous)_(\d{1,4})_(day|week|month|quarter|year)s?"
+    recent = r"(?:last|past|previous)_(\d{1,4})_(" + "|".join(UNITS) + ")s?"
     if match := re.fullmatch(recent, text):
         count, unit = int(match[1]), match[2]
         if not 1 <= count <= _MAX_COUNT[unit]:
@@ -264,208 +270,3 @@ def _parse_date(value: str) -> date:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise SemanticPlanError("The time range has an invalid date.") from exc
-
-
-# ── question parsing ────────────────────────────────────────────────────────
-
-_MONTHS = {
-    **{name: index for index, name in enumerate(
-        ["january", "february", "march", "april", "may", "june", "july", "august",
-         "september", "october", "november", "december"], start=1)},
-    **{name: index for index, name in enumerate(
-        ["januari", "februari", "maret", "april", "mei", "juni", "juli", "agustus",
-         "september", "oktober", "november", "desember"], start=1)},
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8, "agu": 8,
-    "agt": 8, "sep": 9, "sept": 9, "oct": 10, "okt": 10, "nov": 11, "dec": 12, "des": 12,
-}
-_MONTH = "(" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + ")"
-_UNIT_WORDS = {
-    "day": "day", "days": "day", "hari": "day",
-    "week": "week", "weeks": "week", "minggu": "week", "pekan": "week",
-    "month": "month", "months": "month", "bulan": "month",
-    "quarter": "quarter", "quarters": "quarter", "kuartal": "quarter", "triwulan": "quarter",
-    "year": "year", "years": "year", "tahun": "year",
-}
-_UNIT = "(" + "|".join(sorted(_UNIT_WORDS, key=len, reverse=True)) + ")"
-_RANGE_JOIN = r"(?:to|until|through|thru|sampai|hingga|s/d|sd|-|–|and|dan)"
-
-_VERSUS = r"(?:dibanding(?:kan)?|vs\.?|versus|compared (?:to|with))\s+(?:dengan\s+)?"
-
-
-def _compare_pattern(short: str, unit: str, previous: str) -> str:
-    return rf"\b(?:{short}|{unit}[- ]over[- ]{unit}|{_VERSUS}(?:{previous}))\b"
-
-
-_COMPARE_PATTERNS = (
-    ("year_over_year", _compare_pattern(
-        "yoy", "year", "last year|the previous year|tahun lalu|tahun sebelumnya")),
-    ("quarter_over_quarter", _compare_pattern(
-        "qoq", "quarter",
-        "last quarter|the previous quarter|kuartal lalu|kuartal sebelumnya|triwulan lalu")),
-    ("month_over_month", _compare_pattern(
-        "mom", "month", "last month|the previous month|bulan lalu|bulan sebelumnya")),
-    ("week_over_week", _compare_pattern(
-        "wow", "week", "last week|the previous week|minggu lalu|pekan lalu|minggu sebelumnya")),
-)
-#: A two-period answer needs a period word: "online vs offline" compares
-#: channels, not periods.
-_GENERIC_COMPARE = (
-    r"\b(?:growth|pertumbuhan|tumbuh|perubahan|change)\b"
-    r"|\b(?:compare[ds]?|versus|vs\.?|dibanding(?:kan)?|bandingkan)\s+(?:dengan\s+|to\s+|with\s+)?"
-    r"(?:the\s+)?(?:previous|prior|sebelumnya|periode sebelumnya)\b"
-)
-
-_PREVIOUS_ID = r"(?:lalu|kemarin|sebelumnya)"
-
-
-def _relative(english: str, indonesian: str) -> tuple[str, str]:
-    current = rf"\b(?:this|current) {english}\b|\b{indonesian} ini\b"
-    previous = rf"\b(?:last|previous|prior) {english}\b|\b{indonesian} {_PREVIOUS_ID}\b"
-    return current, previous
-
-
-#: Longer units first: "bulan kemarin" is last month, not yesterday.
-_RELATIVE = tuple(
-    item
-    for english, indonesian in (
-        ("year", "tahun"), ("quarter", "(?:kuartal|triwulan)"), ("month", "bulan"),
-        ("week", "(?:minggu|pekan)"),
-    )
-    for item in zip(
-        _relative(english, indonesian),
-        (f"current_{english}", f"previous_{english}"),
-        strict=True,
-    )
-) + (
-    (r"\b(?:today|hari ini)\b", "current_day"),
-    (r"\b(?:yesterday|kemarin)\b", "previous_day"),
-)
-_TO_DATE = (
-    (r"\b(?:ytd|year[- ]to[- ]date|sejak awal tahun|tahun berjalan)\b", "ytd"),
-    (r"\b(?:qtd|quarter[- ]to[- ]date|sejak awal (?:kuartal|triwulan))\b", "qtd"),
-    (r"\b(?:mtd|month[- ]to[- ]date|sejak awal bulan|bulan berjalan)\b", "mtd"),
-)
-_GRAIN = (
-    rf"\b(?:by|per|each|every|tiap|setiap)\s+{_UNIT}\b",
-    r"\b(daily|weekly|monthly|quarterly|yearly|annually|harian|mingguan|bulanan|kuartalan|triwulanan|tahunan)\b",
-)
-_GRAIN_ADJECTIVES = {
-    "daily": "day", "harian": "day", "weekly": "week", "mingguan": "week",
-    "monthly": "month", "bulanan": "month", "quarterly": "quarter", "kuartalan": "quarter",
-    "triwulanan": "quarter", "yearly": "year", "annually": "year", "tahunan": "year",
-}
-
-
-@dataclass(frozen=True)
-class TimePhrase:
-    range: str | None = None
-    compare: str | None = None
-    grain: str | None = None
-    #: Normalized words this parse explained, so they are not reported as
-    #: unresolved business concepts.
-    consumed: frozenset[str] = frozenset()
-
-
-def parse_time_phrase(question: str) -> TimePhrase:
-    """Find the range, comparison, and explicit grain a question asks for."""
-    text = " " + question.lower() + " "
-    consumed: set[str] = set()
-
-    def take(match: re.Match[str]) -> None:
-        consumed.update(re.findall(r"[a-z0-9]+", match.group(0)))
-
-    def blank(match: re.Match[str]) -> str:
-        take(match)
-        return " " * len(match.group(0))
-
-    compare = None
-    for kind, pattern in _COMPARE_PATTERNS:
-        updated = re.sub(pattern, blank, text)
-        if updated != text:
-            compare, text = kind, updated
-            break
-
-    range_value = None
-    date_range = re.search(
-        rf"(?:between|from|dari|antara)?\s*(\d{{4}}-\d{{2}}-\d{{2}})\s*(?:\.\.|{_RANGE_JOIN})\s*(\d{{4}}-\d{{2}}-\d{{2}})",
-        text,
-    )
-    month_range = re.search(
-        rf"(?:between|from|dari|antara)?\s*\b{_MONTH}\s*{_RANGE_JOIN}\s*{_MONTH}\s+(\d{{4}})\b",
-        text,
-    )
-    quarter = re.search(
-        r"\b(?:q|kuartal\s*|triwulan\s*|quarter\s*)([1-4])(?:\s*(?:of|tahun|[-/]))?\s*(\d{4})\b"
-        r"|\b(\d{4})\s*[-/ ]?q([1-4])\b",
-        text,
-    )
-    month_year = re.search(rf"\b{_MONTH}\s+(\d{{4}})\b", text)
-    last_n = re.search(
-        rf"\b(?:the\s+)?(?:last|past|previous)\s+(\d{{1,4}})\s+{_UNIT}\b"
-        rf"|\b(\d{{1,4}})\s+{_UNIT}\s+(?:terakhir|belakangan|ke belakang)\b",
-        text,
-    )
-    since = re.search(r"\b(?:since|sejak)\s+(?:(\d{4}-\d{2}-\d{2})|(\d{4}))\b", text)
-
-    if date_range:
-        range_value = f"{date_range[1]}..{date_range[2]}"
-        take(date_range)
-    elif month_range:
-        range_year = int(month_range[3])
-        start = date(range_year, _MONTHS[month_range[1]], 1)
-        last_month = date(range_year, _MONTHS[month_range[2]], 1)
-        if last_month >= start:
-            end = _add_months(last_month, 1) - timedelta(days=1)
-            range_value = f"{start.isoformat()}..{end.isoformat()}"
-            take(month_range)
-    elif quarter:
-        quarter_year = quarter[2] or quarter[3]
-        number = quarter[1] or quarter[4]
-        range_value = f"{quarter_year}-Q{number}"
-        take(quarter)
-    elif month_year:
-        range_value = f"{month_year[2]}-{_MONTHS[month_year[1]]:02d}"
-        take(month_year)
-    elif last_n:
-        count = last_n[1] or last_n[3]
-        unit = _UNIT_WORDS[last_n[2] or last_n[4]]
-        range_value = f"last_{int(count)}_{unit}s"
-        take(last_n)
-    elif since:
-        range_value = f"{since[1]}+" if since[1] else f"since_{since[2]}"
-        take(since)
-    if range_value is None:
-        for pattern, value in (*_TO_DATE, *_RELATIVE):
-            match = re.search(pattern, text)
-            if match:
-                range_value = value
-                take(match)
-                break
-    if range_value is None:
-        bare_year = re.search(
-            r"\b(?:for|in|untuk|tahun|year|during|selama)?\s*\b((?:19|20)\d{2})\b(?![\d/-])", text
-        )
-        if bare_year:
-            range_value = bare_year[1]
-            take(bare_year)
-
-    grain = None
-    for pattern in _GRAIN:
-        match = re.search(pattern, text)
-        if match:
-            word = match[1]
-            grain = _UNIT_WORDS.get(word) or _GRAIN_ADJECTIVES.get(word)
-            take(match)
-            break
-
-    generic = re.search(_GENERIC_COMPARE, text)
-    if compare is None and range_value and generic:
-        compare = "previous_period"
-        take(generic)
-    if compare and not range_value:
-        # A comparison without the period it compares is left unresolved rather
-        # than guessed; the caller reports it or asks.
-        return TimePhrase(None, compare, grain, frozenset(consumed))
-    if range_value and not is_supported_time_range(range_value):
-        range_value = None
-    return TimePhrase(range_value, compare, grain, frozenset(consumed))

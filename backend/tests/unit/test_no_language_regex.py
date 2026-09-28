@@ -4,7 +4,7 @@ Understanding a question is the model's job, in any language; code checks the
 model's structured output. A regex or word set that matches English or
 Indonesian words silently fails every other language, so this test finds them.
 
-``REMAINING`` is the list still being migrated. A file may leave it, never join.
+``REMAINING`` held the files still being migrated; it is empty and stays so.
 """
 
 from __future__ import annotations
@@ -29,11 +29,8 @@ _REGEX_CALLS = {"compile", "search", "match", "fullmatch", "sub", "findall", "fi
 _GRAIN_TOKENS = {"hour", "day", "week", "month", "quarter", "year"}
 
 #: Files still holding language patterns; each one is removed as it migrates.
-REMAINING = {
-    "app/modules/agents/semantic/planning.py",
-    "app/modules/agents/semantic/time_ranges.py",
-    "app/modules/assistant/tools/search_knowledge.py",
-}
+#: Empty since NOVA-124 moved all language reading to the model. Keep it empty.
+REMAINING: set[str] = set()
 
 
 def _strings(node: ast.AST) -> list[str]:

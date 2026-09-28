@@ -15,37 +15,11 @@ from app.modules.assistant.skills import contains_credential_shape
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 
 _KNOWLEDGE_DIR = Path(__file__).resolve().parent.parent / "knowledge_library"
-_STOP_WORDS = frozenset(
-    [
-        "the",
-        "a",
-        "an",
-        "is",
-        "are",
-        "in",
-        "of",
-        "to",
-        "for",
-        "and",
-        "or",
-        "how",
-        "what",
-        "nova",
-        "itu",
-        "apa",
-        "di",
-        "dan",
-        "untuk",
-        "dengan",
-        "bagaimana",
-    ]
-)
-_CONTEXT_ONLY_WORDS = frozenset(
-    {
-        "this", "that", "it", "here", "these", "does", "do", "did", "why",
-        "work", "works", "fail", "failing", "explain", "help", "ini", "tersebut",
-    }
-)
+#: A word found in more than this share of the references carries no signal
+#: ("the", "yang", "の"); measured from the references, so it holds in any language.
+_COMMON_SHARE = 0.5
+#: A title word (3) plus a body word, or any keyword alias (8), is a real match.
+_STRONG_MATCH = 4
 _SURFACE_REFERENCES: dict[str, tuple[tuple[str, int], ...]] = {
     "workspace": (("query-troubleshooting", 5), ("data-workspace-catalog", 4)),
     "role": (("security-governance", 6), ("stages-tasks-access", 2)),
@@ -81,18 +55,22 @@ def _surface_boosts(app_context: NoveAppContext | None) -> dict[str, int]:
 
 
 def search_references(
-    query: str, *, app_context: NoveAppContext | None = None
+    query: str, *, app_context: NoveAppContext | None = None, refers_to_screen: bool = False,
 ) -> list[dict[str, str]]:
+    """Rank Nova's references for ``query``.
+
+    ``refers_to_screen`` (from the turn's intent frame) means the question points at
+    the page the user is on ("explain this", "これは何?"): the page decides, not the
+    words, which may be generic in any language.
+    """
     if query.strip().lower().startswith("syntax:"):
         from app.modules.assistant.sql_reference import syntax_references
 
         return syntax_references(query.strip()[7:].strip())
-    terms = set(re.findall(r"[\w@-]+", query.lower())) - _STOP_WORDS
+    terms = set(re.findall(r"[\w@-]+", query.lower()))
     boosts = _surface_boosts(app_context)
     if not terms and not boosts:
         return []
-    contextual_query = bool(boosts) and (not terms or terms <= _CONTEXT_ONLY_WORDS)
-    match_terms = set() if contextual_query else terms
     references = [
         (
             f"skill:{skill.name}",
@@ -105,12 +83,26 @@ def search_references(
         (f"knowledge:{path.stem}", path.stem.replace("-", " "), path.read_text(encoding="utf-8"))
         for path in sorted(_KNOWLEDGE_DIR.glob("*.md"))
     )
+    words = [
+        (set(re.findall(r"[\w@-]+", title.lower())), set(re.findall(r"[\w@-]+", body.lower())))
+        for _source, title, body in references
+    ]
+    limit = _COMMON_SHARE * max(len(references), 1)
+    match_terms = {
+        term for term in terms
+        if sum(term in title | body for title, body in words) <= limit
+    }
+    # Words that match nothing ("why does this fail?", or another language than the
+    # references) leave the ranking to where the user is in the app.
+    contextual_query = bool(boosts) and (refers_to_screen or not any(
+        match_terms & (title | body) for title, body in words
+    ))
+    if contextual_query:
+        match_terms = set()
     ranked: list[tuple[int, str, str]] = []
-    for source, title, body in references:
+    for (source, _title, body), (title_words, body_words) in zip(references, words, strict=True):
         if contains_credential_shape(body):
             continue
-        title_words = set(re.findall(r"[\w@-]+", title.lower()))
-        body_words = set(re.findall(r"[\w@-]+", body.lower()))
         score = 3 * len(match_terms & title_words) + len(match_terms & body_words)
         keywords = re.search(r"(?im)^Keywords:\s*(.+)$", body)
         if keywords and not contextual_query:
@@ -119,10 +111,12 @@ def search_references(
                 if alias and re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", query.lower()):
                     score += 8 * len(alias.split())
         surface_bonus = boosts.get(source, 0)
-        if score:
+        if score >= _STRONG_MATCH:
             score += min(surface_bonus, 2)
-        elif contextual_query:
-            score = surface_bonus
+        elif score or contextual_query:
+            # An incidental word match ("explain", "this") does not outweigh where
+            # the user is; a title or keyword match does.
+            score += surface_bonus
         if score:
             ranked.append((score, source, body))
     ranked.sort(key=lambda item: (-item[0], item[1]))
@@ -177,6 +171,9 @@ class SearchKnowledgeTool:
         references = search_references(
             query,
             app_context=app_context if isinstance(app_context, NoveAppContext) else None,
+            refers_to_screen=bool(getattr(
+                getattr(context, "intent_frame", None), "refers_to_screen", False
+            )),
         )
         return ToolOutcome(
             ok=True,

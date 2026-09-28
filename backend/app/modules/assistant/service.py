@@ -410,6 +410,9 @@ class AssistantLoop:
             references = search_references(
                 routing_content,
                 app_context=context.app_context if context is not None else None,
+                refers_to_screen=bool(getattr(
+                    getattr(context, "intent_frame", None), "refers_to_screen", False
+                )),
             )
             messages.append(
                 {
@@ -850,6 +853,16 @@ class AssistantLoop:
             summary_lookup=lambda lines: summary_cache.get(thread_key, lines),
         )
         messages = self._build_messages(thread, user_content, context, route=route)
+        language = _turn_language(context)
+        if context.intent_frame is not None:
+            leading = next(
+                (index for index, item in enumerate(messages) if item.get("role") != "system"),
+                len(messages),
+            )
+            messages.insert(leading, {"role": "system", "content": (
+                f"Write the answer in the user's language (BCP-47 tag '{language}'), "
+                "including refusals and questions back."
+            )})
         if route.needs_data:
             # Data answers carry a claims block, so numbers are checked by meaning
             # rather than by reading the answer's words.
