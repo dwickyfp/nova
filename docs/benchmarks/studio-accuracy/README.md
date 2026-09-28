@@ -38,7 +38,10 @@ progress is compared with the same number of elapsed days in the prior period.
 ## Cases
 
 `cases.yaml` holds hand-written cases and `cases.py` adds generated time-range
-cases. Each case has a question, a language, a category, and either an expected
+cases. `cases_multilingual.yaml` holds 25 base questions in eleven more
+languages (es, pt, fr, de, ja, zh, ko, ar, vi, th, hi), each expanding to
+`ml.<base>.<lang>` with the base's expectation. Names are written the way a
+speaker of the language writes them (ジャカルタ, Yakarta). Each case has a question, a language, a category, and either an expected
 plan (`expect`) or an outcome (`clarify`, `refuse`). Derived-number cases also
 carry an `answer` spec: the value a correct answer states (a percent change, a
 difference, a share), computed from the gold rows.
@@ -54,6 +57,9 @@ end with `stop`.
 `silent_wrong` counts confident wrong answers: the turn ended normally with a
 result table that does not match gold, or an out-of-scope question was answered
 with numbers and no stated limitation. The gate is zero.
+
+`languages` repeats accuracy and `silent_wrong` per language; a case's language
+is the last part of its id.
 
 `consistency` is the share of cases that passed in every repetition. `flaky`
 lists the cases that passed in some repetitions and failed in others.
@@ -90,6 +96,7 @@ Useful flags:
 |---|---|
 | `--case ID` | Run one case; repeatable |
 | `--category NAME` | Run one category; repeatable |
+| `--lang CODE` | Run one language; repeatable |
 | `--per-category N` | The first N cases of every category |
 | `--repeat N` | L3: run each case N times and report consistency |
 | `--load` | Rebuild `NOVA_BENCH` first |

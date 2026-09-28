@@ -23,6 +23,7 @@ from typing import Any
 import yaml
 
 CASES_FILE = Path(__file__).with_name("cases.yaml")
+MULTILINGUAL_FILE = Path(__file__).with_name("cases_multilingual.yaml")
 
 
 @dataclass(frozen=True)
@@ -154,8 +155,32 @@ def file_cases(path: Path = CASES_FILE) -> list[Case]:
     ]
 
 
+def multilingual_cases(path: Path = MULTILINGUAL_FILE) -> list[Case]:
+    """One case per base question and language, with the base's expectation."""
+    raw = yaml.safe_load(path.read_text()) or {}
+    languages = list(raw.get("languages") or [])
+    cases = []
+    for item in raw.get("cases") or []:
+        missing = [lang for lang in languages if lang not in (item.get("questions") or {})]
+        if missing:
+            raise ValueError(f"{item['base']} has no question in {missing}")
+        for lang in languages:
+            cases.append(Case(
+                id=f"ml.{item['base']}.{lang}",
+                question=item["questions"][lang],
+                lang=lang,
+                category=item["category"],
+                expect=item.get("expect") or {},
+                outcome=item.get("outcome", "answer"),
+                phase=int(item.get("phase", 1)),
+                tags=tuple(item.get("tags") or ()),
+                answer=item.get("answer") or {},
+            ))
+    return cases
+
+
 def all_cases(today: date) -> list[Case]:
-    cases = [*generated_cases(today), *file_cases()]
+    cases = [*generated_cases(today), *file_cases(), *multilingual_cases()]
     ids = [case.id for case in cases]
     duplicates = {case_id for case_id in ids if ids.count(case_id) > 1}
     if duplicates:

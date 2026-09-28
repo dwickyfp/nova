@@ -152,3 +152,37 @@ developer laptop (2026-09-28):
 
 The loop itself costs well under a millisecond per turn. A live turn's time goes
 to the model and the engine; the L3 results below break it down.
+
+## L3 results
+
+Full corpus, 157 English and Indonesian cases, each run twice against the dev
+StarRocks with the configured model (2026-09-28, commit `6b0bb9a`; details in
+`studio-accuracy/l3-baseline.json`):
+
+| Run | Accuracy | Silent wrong | Consistency | p50 |
+|---|---|---|---|---|
+| Before the answer and planning fixes (3 per category, twice) | 82.9% | 11 | 75.6% | 9.1 s |
+| After the fixes, before the last three planner fixes | 95.5% | 13 | 93.6% | 6.2 s |
+| `6b0bb9a` | 99.7% | 0 | 99.4% | 7.3 s |
+
+The one remaining failure is a clarification the model asked for once out of
+two runs. The last row's p50 and p95 (47 s) are inflated: targeted runs shared
+the provider while it ran. The planner fast path cut the time before the first
+model call from 1.9 s to 0.4-0.6 s.
+
+What moved the numbers, in order of effect:
+
+- The user's own period, top N, threshold, and grain win over the loop model's
+  rewrite on the turn's first successful query. Most wrong answers were correct
+  SQL for a question the user did not ask.
+- A LIMIT without ORDER BY now ranks by the first metric; before, it returned
+  arbitrary rows.
+- The verifier accepts list positions, worded percentages, result counts, and
+  period-labelled direction, and rebuilds a rejected answer as sentences with
+  values instead of a bare table.
+- Out-of-catalog requests end with `out_of_scope` instead of an error.
+
+These results are English and Indonesian only. The lexical parts of the
+planner and verifier read those two languages; replacing them with a
+language-neutral intent frame is the next step, measured on the eleven
+languages in `studio-accuracy/cases_multilingual.yaml`.
