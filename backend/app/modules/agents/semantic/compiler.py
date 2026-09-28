@@ -10,6 +10,7 @@ from typing import Any
 from app.modules.agents.semantic.ir import Additivity, SemanticFieldIR, SemanticModelIR
 from app.modules.agents.semantic.planning import (
     SemanticGraph,
+    SemanticOrder,
     SemanticPlan,
     SemanticPlanError,
     validate_plan,
@@ -67,9 +68,13 @@ class SemanticCompiler:
         if plan.having or plan.transforms or plan.top_n_per_group:
             sql, columns = _wrap(sql, columns, plan)
         lines = [sql]
-        if plan.order_by:
+        order_by = plan.order_by
+        if plan.limit and not order_by and plan.metrics:
+            # LIMIT without ORDER BY returns arbitrary rows; a limit means "the top".
+            order_by = (SemanticOrder(plan.metrics[0]),)
+        if order_by:
             order_parts = []
-            for order_item in plan.order_by:
+            for order_item in order_by:
                 if order_item.field not in columns:
                     raise SemanticPlanError(f"Order field {order_item.field!r} is not selected.")
                 order_parts.append(f"{_quote(order_item.field)} {order_item.direction.upper()}")

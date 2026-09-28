@@ -437,11 +437,18 @@ async def evaluate_live(
                 normalize_rows(table.get("rows") or []) for table in tables
             ]
             ranked = bool(case.expect.get("limit"))
-            matched = want is not None and any(
-                rows == want or rows_contain(rows, want)
-                # A ranked table of every group answers "top N" when its first N rows match.
-                or (ranked and rows_contain(rows[:len(want)], want))
-                for rows in semantic_tables
+            matched = want is not None and (
+                any(rows == want or rows_contain(rows, want) for rows in semantic_tables)
+                # A ranked table of every group answers "top N" when its first N rows,
+                # in the order returned, are the gold rows.
+                or (ranked and any(
+                    rows_contain(
+                        sorted(normalize_rows(table.get("rows") or [], ordered=True)[:len(want)]),
+                        want,
+                    )
+                    for table in tables
+                ))
+                or any(filter_answered(case.expect, table, want) for table in tables)
             )
             if not matched and case.answer and want:
                 gold_rows = await _rows(execute, gold_sql(case.expect, today))
@@ -537,6 +544,59 @@ async def _grant_ranger_read() -> None:
         )
     except Exception as exc:  # noqa: BLE001 - a stack without Ranger needs only the GRANT
         print(f"Ranger grant skipped: {type(exc).__name__}", file=sys.stderr)
+
+
+def filter_answered(expect: dict[str, Any], table: dict[str, Any], want: Any) -> bool:
+    """A filtered total answered by a breakdown over the filtered values.
+
+    "Orders from Mobile App" answered by a table per channel whose Mobile App row
+    holds the gold value, or "revenue in Jakarta and Bandung" answered by one row
+    per city that sums to the gold total. Only single-value gold qualifies.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    filters = expect.get("filters") or {}
+    if not filters or not want or len(want) != 1 or len(want[0]) != 1 or expect.get("dimensions"):
+        return False
+    try:
+        total = Decimal(want[0][0])
+    except InvalidOperation:
+        return False
+    literals = {
+        str(value).casefold()
+        for values in filters.values()
+        for value in (values if isinstance(values, list) else [values])
+    }
+    rows = table.get("rows") or []
+    matching = [
+        row for row in rows
+        if any(isinstance(cell, str) and cell.casefold() in literals for cell in row)
+    ]
+    labels = {
+        cell.casefold() for row in matching for cell in row
+        if isinstance(cell, str) and cell.casefold() in literals
+    }
+    if labels != literals or (len(literals) > 1 and len(matching) != len(rows)):
+        # Several filtered values must be the whole breakdown, not part of a larger one.
+        return False
+
+    def numbers(row: list[Any]) -> list[Decimal]:
+        values = []
+        for cell in row:
+            try:
+                values.append(Decimal(str(cell).rstrip("%")))
+            except InvalidOperation:
+                continue
+        return values
+
+    columns = {len(numbers(row)) for row in matching}
+    if len(columns) != 1:
+        return False
+    for index in range(columns.pop()):
+        summed = sum((numbers(row)[index] for row in matching), Decimal(0))
+        if summed.quantize(Decimal("0.01")) == total.quantize(Decimal("0.01")):
+            return True
+    return False
 
 
 def rows_contain(got: list[tuple[str, ...]], want: list[tuple[str, ...]]) -> bool:

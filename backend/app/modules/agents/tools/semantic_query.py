@@ -249,7 +249,7 @@ class SemanticQueryTool:
             first_query = not getattr(context, "primary_query_done", False)
             plan, period_note = _user_period(plan, question, context, semantic_ir)
             if first_query:
-                plan, rank_note = _user_rank(plan, question, context)
+                plan, rank_note = _user_rank(plan, question, context, semantic_ir)
                 plan, having_note = _user_having(plan, question, context)
                 period_note = "; ".join(
                     note for note in (period_note, rank_note, having_note) if note
@@ -712,12 +712,14 @@ def _user_period(
     current = plan.time
     # "3 bulan terakhir" asks for one total; a per-month breakdown needs the
     # user to say so ("per bulan", "weekly") or to ask for a trend.
-    drop_grain = bool(
-        current is not None and current.grain and not wanted.grain
-        and not _TREND_WORDS.search(original)
+    asked_for_series = bool(wanted.grain or _TREND_WORDS.search(original))
+    drop_grain = bool(current is not None and current.grain and not asked_for_series)
+    # A raw date column groups by day as surely as a day grain does.
+    drop_date = bool(
+        current is not None and current.dimension in plan.dimensions and not asked_for_series
     )
     if (
-        current is not None and not drop_grain
+        current is not None and not drop_grain and not drop_date
         and (current.range, current.compare) == (wanted.range, wanted.compare)
     ):
         return plan, None
@@ -728,19 +730,48 @@ def _user_period(
     if not dimension:
         return plan, None
     grain = current.grain if current is not None and not drop_grain else None
+    dimensions = plan.dimensions
+    if not asked_for_series:
+        dimensions = tuple(name for name in dimensions if name != dimension)
     if wanted.compare:
         grain = None  # a two-period comparison groups by period, not by grain
     time = SemanticTime(dimension, grain=grain, range=wanted.range, compare=wanted.compare)
     note = f"Used the period the user asked for ({wanted.range}"
     note += f", compared {wanted.compare})" if wanted.compare else ")"
-    return replace(plan, time=time), note
+    return replace(plan, time=time, dimensions=dimensions), note
+
+
+_PER_GROUP = re.compile(
+    r"\b(?:in\s+each|for\s+each|each|every|per|setiap|tiap|masing-masing|di\s+setiap|"
+    r"di\s+tiap|dalam\s+setiap)\s+([a-z][\w-]*)",
+    re.I,
+)
+
+
+def _group_dimension(model: SemanticModelIR, plan: SemanticPlan, word: str) -> str | None:
+    """The selected dimension a word after "each"/"setiap" names, by name or synonym."""
+    word = word.lower()
+    stems = {word, word.rstrip("s"), word[:-3] + "y" if word.endswith("ies") else word}
+    for name in plan.dimensions:
+        field = model.field(name)
+        names = {name.lower(), *name.lower().split("_")}
+        if field is not None:
+            names |= {synonym.lower() for synonym in field.synonyms}
+        if stems & names:
+            return name
+    return None
 
 
 def _user_rank(
-    plan: SemanticPlan, question: str, context: Any
+    plan: SemanticPlan, question: str, context: Any, model: SemanticModelIR
 ) -> tuple[SemanticPlan, str | None]:
-    """"Top 2 kanal" in the user's words keeps its limit when the rewrite drops it."""
-    from app.modules.agents.semantic.planning import SemanticOrder, requested_rank
+    """"Top 2 kanal" in the user's words keeps its limit when the rewrite drops it;
+    "top 2 kategori di setiap kota" keeps its per-group ranking."""
+    from app.modules.agents.semantic.planning import (
+        SemanticOrder,
+        SemanticTopN,
+        requested_rank,
+    )
 
     original = str(getattr(context, "user_question", None) or "")
     if not original:
@@ -752,6 +783,17 @@ def _user_rank(
         or (plan.time is not None and (plan.time.compare or plan.time.grain))
     ):
         return plan, None
+    per_group = _PER_GROUP.search(original)
+    if per_group:
+        # A per-group ranking is never a flat LIMIT; without a clear group, leave it.
+        group = _group_dimension(model, plan, per_group.group(1))
+        if group is None or len(plan.dimensions) < 2:
+            return plan, None
+        top = SemanticTopN(wanted[0], (group,), plan.metrics[0])
+        return (
+            replace(plan, top_n_per_group=top),
+            f"Kept the user's top {wanted[0]} per {group}",
+        )
     limit, direction = wanted
     order = plan.order_by or (SemanticOrder(plan.metrics[0], direction),)
     return replace(plan, limit=limit, order_by=order), f"Kept the user's top {limit}"

@@ -300,3 +300,62 @@ async def test_the_users_own_words_still_get_their_limit(monkeypatch):
     )
     assert outcome.ok, outcome.safe_detail
     assert "LIMIT 2" in execute.call_args.kwargs["sql"]
+
+
+def _bench_context(question):
+    context = LoopContext(user_name="alice", user=USER.copy())
+    context.user_question = question
+    return context
+
+
+def test_top_n_in_each_group_is_a_per_group_ranking_not_a_flat_limit():
+    from app.modules.agents.semantic.planning import SemanticPlan
+    from app.modules.agents.tools.semantic_query import _user_rank
+    from tests.benchmark.studio_accuracy.model import bench_model
+
+    plan = SemanticPlan(metrics=("product_revenue",), dimensions=("category", "city"))
+    ranked, note = _user_rank(
+        plan, "product revenue by category and city",
+        _bench_context("Top 2 categories by product revenue in each city this quarter"),
+        bench_model(),
+    )
+    assert ranked.limit is None
+    assert ranked.top_n_per_group.n == 2
+    assert ranked.top_n_per_group.partition_by == ("city",)
+    assert "per city" in note
+    unclear, _ = _user_rank(
+        plan, "x", _bench_context("Top 2 categories in each galaxy"), bench_model()
+    )
+    assert unclear == plan
+
+
+def test_a_raw_date_column_is_dropped_when_the_user_asked_for_a_total():
+    from app.modules.agents.semantic.planning import SemanticPlan, SemanticTime
+    from app.modules.agents.tools.semantic_query import _user_period
+    from tests.benchmark.studio_accuracy.model import bench_model
+
+    daily = SemanticPlan(
+        metrics=("total_revenue",), dimensions=("order_date",),
+        time=SemanticTime("order_date", range="previous_month", compare="month_over_month"),
+    )
+    fixed, _ = _user_period(
+        daily, "x", _bench_context("Pertumbuhan penjualan bulan lalu dibanding bulan sebelumnya"),
+        bench_model(),
+    )
+    assert fixed.dimensions == ()
+    kept, _ = _user_period(
+        daily, "x", _bench_context("Tren harian penjualan bulan lalu dibanding bulan sebelumnya"),
+        bench_model(),
+    )
+    assert kept.dimensions == ("order_date",)
+
+
+def test_a_limit_without_an_order_ranks_by_the_first_metric():
+    from app.modules.agents.semantic.compiler import SemanticCompiler
+    from app.modules.agents.semantic.planning import SemanticPlan
+    from tests.benchmark.studio_accuracy.model import bench_model
+
+    sql = SemanticCompiler().compile(
+        bench_model(), SemanticPlan(metrics=("total_revenue",), dimensions=("city",), limit=3)
+    ).sql
+    assert "ORDER BY `total_revenue` DESC\nLIMIT 3" in sql
