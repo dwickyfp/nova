@@ -7,9 +7,8 @@
 
 Levels
 ------
-* **L0 offline** (CI gate). The deterministic fast path must never return a
-  *confident wrong* plan (``silent_wrong == 0``), and cases marked ``lexical``
-  must resolve exactly.
+* **L0 offline** (CI gate). Every answerable case's expected plan is valid for
+  the catalog and compiles, in every language of the corpus.
 * **L2 engine**. Each answerable case's expected plan is compiled by Nova and
   executed on ``NOVA_BENCH``; the rows must equal an independent gold query
   (``gold.py``). This checks the compiler and the time grammar, not a planner.
@@ -43,7 +42,6 @@ from app.modules.agents.semantic.planning import (
     SemanticOrder,
     SemanticPlan,
     SemanticPlanError,
-    SemanticPlanner,
     SemanticTime,
     SemanticTopN,
     SemanticTransform,
@@ -148,51 +146,30 @@ def plan_differences(plan: SemanticPlan, expect: dict[str, Any]) -> list[str]:
     return diffs
 
 
-def _confident(planned: Any) -> bool:
-    return bool(
-        planned is not None and planned.plan is not None
-        and not planned.confidence.unresolved and planned.confidence.level == "high"
-    )
-
-
-# ── L0 ──────────────────────────────────────────────────────────────────────
-
 def evaluate_offline(cases: list[Case], model: SemanticModelIR) -> list[CaseResult]:
-    planner = SemanticPlanner()
+    """L0: every expected plan is valid for the catalog and compiles, in every language.
+
+    Nothing here reads the question: planning is the model's job (L3). L0 checks
+    that the corpus, the plan contract, and the compiler agree.
+    """
+    from app.modules.agents.semantic.planning import validate_plan
+
+    compiler = SemanticCompiler()
     results = []
     for case in cases:
-        if case.turns:
+        if case.turns or case.outcome != "answer" or case.phase > CURRENT_PHASE:
             results.append(CaseResult(case.id, case.category, "L0", True, skipped=True,
-                                      detail="follow-up: live only"))
+                                      detail="live only"))
             continue
         try:
-            planned = planner.plan(model, case.question)
-        except SemanticPlanError as exc:
-            planned = None
-            detail = f"planner deferred: {exc}"
-        else:
-            detail = ""
-        confident = _confident(planned)
-        diffs = plan_differences(planned.plan, case.expect) if confident else []
-        if case.outcome != "answer":
-            silent_wrong = confident
-            passed = not confident
-            detail = detail or ("confident plan for an unanswerable question" if confident else "")
-        elif case.phase > CURRENT_PHASE:
-            silent_wrong = confident and bool(diffs)
-            passed = not silent_wrong
-        else:
-            silent_wrong = confident and bool(diffs)
-            if case.lexical:
-                passed = confident and not diffs
-                if not confident:
-                    unresolved = planned.confidence.unresolved if planned else ()
-                    detail = detail or f"fast path not confident: {unresolved}"
-            else:
-                passed = not silent_wrong
-            detail = detail or "; ".join(diffs)
-        results.append(CaseResult(case.id, case.category, "L0", passed,
-                                  silent_wrong=silent_wrong, detail=detail))
+            plan = plan_from_expect(model, case.expect)
+            errors = validate_plan(model, plan)
+            if not errors:
+                compiler.compile(model, plan)
+        except (SemanticPlanError, ValueError) as exc:
+            errors = [str(exc)]
+        results.append(CaseResult(case.id, case.category, "L0", not errors,
+                                  detail="; ".join(errors)))
     return results
 
 
@@ -454,7 +431,8 @@ async def evaluate_live(
                 gold_rows = await _rows(execute, gold_sql(case.expect, today))
                 expected = expected_answer_value(case.answer, gold_rows)
                 matched = expected is not None and text_states_value(
-                    text, expected, percent=case.answer.get("kind") in {"pct_change", "share"}
+                    text, expected, percent=case.answer.get("kind") in {"pct_change", "share"},
+                    language=case.lang,
                 )
             passed = matched and finish == "stop"
             silent_wrong = finish == "stop" and bool(semantic_tables) and not matched
@@ -644,25 +622,22 @@ def expected_answer_value(spec: dict[str, Any], rows: list[list[Any]]) -> Any:
     return None
 
 
-def text_states_value(text: str, expected: Any, *, percent: bool) -> bool:
+def text_states_value(
+    text: str, expected: Any, *, percent: bool, language: str = "en"
+) -> bool:
     """True when some number in ``text``, at its own display precision, equals ``expected``."""
+    from dataclasses import replace
     from decimal import Decimal
 
-    from app.modules.assistant.answer_contract import (
-        _NUMBER,
-        _candidates,
-        _display_matches,
-        _mask_dates,
-        _percent_values,
-    )
+    from app.modules.assistant.answer_contract import _mask_dates
+    from app.modules.assistant.locale_numbers import display_matches, number_tokens
 
     target = abs(Decimal(str(expected)))
-    for match in _NUMBER.finditer(_mask_dates(text)):
-        literal = match.group(1).strip()
-        if literal.endswith("%") != percent:
+    for token in number_tokens(_mask_dates(text), language):
+        if token.percent != percent:
             continue
-        shown = _percent_values(literal) if percent else _candidates(literal.rstrip("% "))
-        if shown and _display_matches(target, {abs(value) for value in shown}, literal):
+        unsigned = replace(token, values=frozenset(abs(value) for value in token.values))
+        if display_matches(target, unsigned):
             return True
     return False
 

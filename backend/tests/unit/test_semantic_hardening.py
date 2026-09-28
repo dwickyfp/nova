@@ -14,7 +14,6 @@ from app.modules.agents.semantic.ir import SemanticMetricIR, SemanticModelIR
 from app.modules.agents.semantic.planning import (
     SemanticPlan,
     SemanticPlanError,
-    SemanticPlanner,
     SemanticTime,
 )
 from app.modules.agents.semantic.runtime import scope_semantic_model, semantic_ir_to_definition
@@ -26,19 +25,12 @@ from app.modules.assistant.intelligence import (
 from tests.unit.test_semantic_intelligence import sales_model
 
 
-def test_unknown_filter_cannot_be_dropped_or_receive_high_confidence():
-    model = sales_model()
-    result = SemanticPlanner().plan(model, "Revenue Enterprise this month")
-    assert result.confidence.unresolved == ("Enterprise",)
-    assert result.confidence.level == "low"
-    with pytest.raises(SemanticPlanError):
-        SemanticCompiler().compile(model, result.plan)
-
-
 def test_yoy_selects_two_disjoint_months_not_entire_year():
     model = sales_model()
-    plan = SemanticPlanner().plan(model, "Revenue this month YoY").plan
-    assert plan.time.compare == "year_over_year"
+    plan = SemanticPlan(
+        metrics=("total_revenue",),
+        time=SemanticTime("order_date", range="current_month", compare="year_over_year"),
+    )
     sql = SemanticCompiler().compile(model, plan).sql
     assert "INTERVAL 1 YEAR" in sql
     assert ") OR (" in sql

@@ -1,9 +1,8 @@
 """CI gate for the Studio accuracy benchmark's offline level (L0).
 
-The deterministic planner answers without the model only when it is certain.
-This gate holds it to that: across the whole corpus it must never return a
-confident plan that differs from the expected one, and every case marked
-``lexical`` must resolve exactly. Live and engine levels run in nightly jobs.
+Planning is the model's job and is measured live (L3). Offline, every case's
+expected plan must be valid for the catalog and compile, in every language of
+the corpus, so the corpus, the plan contract, and the compiler stay in step.
 """
 
 from __future__ import annotations
@@ -23,15 +22,14 @@ def results():
     return evaluate_offline(all_cases(date.today()), bench_model())
 
 
-def test_fast_path_is_never_confidently_wrong(results):
-    wrong = [f"{item.id}: {item.detail}" for item in results if item.silent_wrong]
-    assert wrong == []
-
-
-def test_lexical_cases_resolve_exactly(results):
+def test_every_expected_plan_is_valid_and_compiles(results):
     failed = [f"{item.id}: {item.detail}" for item in results
               if not item.passed and not item.skipped]
     assert failed == []
+
+
+def test_the_corpus_covers_thirteen_languages():
+    assert len({case.lang for case in all_cases(date.today())}) >= 13
 
 
 def test_corpus_covers_every_category_the_plan_names():
