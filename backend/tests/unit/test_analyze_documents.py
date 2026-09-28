@@ -45,7 +45,9 @@ async def test_counts_and_shares_are_exact_and_unknown_labels_become_other(monke
 
 
 async def test_bound_agents_cannot_read_an_unbound_index():
-    tool = AnalyzeDocumentsTool(bindings={"search_indexes": [{"index": "tickets"}]}, provider=provider([]))
+    tool = AnalyzeDocumentsTool(
+        bindings={"search_indexes": [{"index": "tickets"}]}, provider=provider([])
+    )
     ctx = context()
     ctx.agent_id = "a1"
     outcome = await tool.run(ToolInvocation("a1", "analyze_documents", {

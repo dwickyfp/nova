@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import suppress
 from typing import Any
 
 from app.common.audit import write_audit_log
@@ -20,7 +21,9 @@ logger = logging.getLogger(__name__)
 
 def account_request(arguments: dict[str, Any]) -> tuple[str, str]:
     if set(arguments) != {"username", "role"}:
-        raise ValueError("Provide only username and role. Enter a temporary password in protected input.")
+        raise ValueError(
+            "Provide only username and role. Enter a temporary password in protected input."
+        )
     username, role = arguments["username"], arguments["role"]
     if not isinstance(username, str) or not re.fullmatch(r"[A-Za-z_][\w.$-]{0,63}", username):
         raise ValueError("Invalid username.")
@@ -75,16 +78,30 @@ class ProvisionUserTool:
             username, role = account_request(invocation.arguments)
             security = SecurityContext.from_session(context.user or {})
             if security.active_role not in ADMIN_ROLES:
-                return ToolOutcome(ok=False, summary="", error="An active security-admin role is required.",
-                                   error_class="AUTHORIZATION_DENIED")
-            if not secure_input or set(secure_input) != {"password"} or not secure_input["password"]:
-                return ToolOutcome(ok=False, summary="", error="Enter a temporary password in protected input.")
+                return ToolOutcome(
+                    ok=False,
+                    summary="",
+                    error="An active security-admin role is required.",
+                    error_class="AUTHORIZATION_DENIED",
+                )
+            if (
+                not secure_input
+                or set(secure_input) != {"password"}
+                or not secure_input["password"]
+            ):
+                return ToolOutcome(
+                    ok=False,
+                    summary="",
+                    error="Enter a temporary password in protected input.",
+                )
             roles = (await access_control_service.list_roles() if settings.RANGER_ENABLED
                      else await user_service.list_roles())
             if not any(r.get("name", r.get("role_name")) == role for r in roles):
                 return ToolOutcome(ok=False, summary="", error="The requested role does not exist.")
             if await user_service.user_exists(username):
-                return ToolOutcome(ok=False, summary="", error="This user already exists; no changes made.")
+                return ToolOutcome(
+                    ok=False, summary="", error="This user already exists; no changes made."
+                )
             audit = dict(event_type="assistant_tool", user_name=security.principal,
                          action=self.name, object_type="USER", object_name=username,
                          active_role=security.active_role, session_id=context.audit_session_id)
@@ -109,17 +126,21 @@ class ProvisionUserTool:
             completed.append("default role set")
             await write_audit_log(**audit, status="SUCCESS")
         except Exception:
-            try:
+            with suppress(Exception):
                 await write_audit_log(**audit, status="ERROR")
-            except Exception:
-                pass
             return ToolOutcome(
                 ok=False, summary="",
-                error="Provisioning did not finish. Inspect the account before retrying; creation is not atomic.",
+                error=(
+                    "Provisioning did not finish. Inspect the account before retrying; "
+                    "creation is not atomic."
+                ),
                 data={"username": username, "completed_steps": completed, "atomic": False},
             )
-        return ToolOutcome(ok=True, summary=f"Created {username} with default role {role}; password change required.",
-                           data={"username": username, "role": role, "must_change_password": True})
+        return ToolOutcome(
+            ok=True,
+            summary=f"Created {username} with default role {role}; password change required.",
+            data={"username": username, "role": role, "must_change_password": True},
+        )
 
 
 provision_user_tool = ProvisionUserTool()

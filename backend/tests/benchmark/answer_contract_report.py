@@ -53,7 +53,8 @@ CASES = (
         False,
     ),
     Case(
-        "drop magnitude", "Why did revenue fall?", "Revenue fell by 5.", ("change",), ((-5,),), True,
+        "drop magnitude", "Why did revenue fall?", "Revenue fell by 5.",
+        ("change",), ((-5,),), True,
         claims=(Claim(text="5", value=Decimal(5), kind="cell", direction="down"),),
     ),
     Case(
@@ -266,7 +267,8 @@ CASES = (
          _MONTHS, True, language="es"),
     Case("ar digits", "الإيرادات؟", "الإيرادات ١٢٣٤.", ("revenue",), ((1234,),), True,
          language="ar"),
-    Case("ja wrong direction", "売上の変化は？", "売上は25%減少しました。", ("month", "total_revenue"),
+    Case("ja wrong direction", "売上の変化は？", "売上は25%減少しました。",
+         ("month", "total_revenue"),
          _MONTHS, False, claims=down("25%", "25"), language="ja"),
 )
 
