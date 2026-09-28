@@ -219,6 +219,22 @@ CASES = (
          ("omzet", "biaya"), ((1234, 1235),), False),
     Case("costs plural", "What are costs?", "Costs are 100.",
          ("revenue", "cost"), ((90, 100),), True),
+    # Derived arithmetic over one result column (audit 2026-09-27).
+    *(
+        Case(name, "Bagaimana revenue Juli vs Agustus?", answer, ("month", "total_revenue"),
+             (("2026-07", 1200000), ("2026-08", 1500000)), accept)
+        for name, answer, accept in (
+            ("derived growth percent", "Revenue tumbuh 25% dari Juli ke Agustus.", True),
+            ("derived increase amount", "Revenue naik 300.000 dari Juli ke Agustus.", True),
+            ("derived total", "Total dua bulan 2.700.000.", True),
+            ("derived average", "Rata-rata per bulan 1.350.000.", True),
+            ("derived share", "Agustus menyumbang 55,6% dari total.", True),
+            ("invented growth", "Revenue tumbuh 26% dari Juli ke Agustus.", False),
+            ("wrong direction amount", "Revenue turun 300.000 dari Juli ke Agustus.", False),
+            ("wrong direction percent", "Revenue turun 25% dari Juli ke Agustus.", False),
+            ("invented total", "Total dua bulan 2.800.000.", False),
+        )
+    ),
 )
 
 

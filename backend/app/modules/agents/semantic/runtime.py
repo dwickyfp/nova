@@ -222,6 +222,9 @@ def semantic_ir_to_definition(model: SemanticModelIR) -> dict[str, Any]:
                 for item in model.examples
             ]
         },
+        "conformed_dimensions": [
+            {"fields": list(group)} for group in model.conformed_dimensions
+        ],
     }
 
 
@@ -286,6 +289,31 @@ class SemanticCatalogRetriever:
             )
             if time_field is not None and time_field not in selected_fields:
                 selected_fields.append(time_field)
+        # A value named in the question ("from the Mobile App") identifies its
+        # dimension even when the dimension's own name is absent.
+        spoken = f" {_phrase(question)} "
+        for field in fields:
+            if (
+                field.kind.value == "dimension"
+                and field not in selected_fields
+                and any(
+                    f" {_phrase(value)} " in spoken for value in field.sample_values
+                    if _phrase(value)
+                )
+            ):
+                selected_fields.append(field)
+        # The metrics' own grouping dimensions, bounded, so the planner can
+        # group or filter by them without guessing their names.
+        bases = {metric.base_dataset for metric in selected_metrics}
+        for field in fields:
+            if len(selected_fields) >= 2 * limit:
+                break
+            if (
+                field.kind.value == "dimension"
+                and field.dataset in bases
+                and field not in selected_fields
+            ):
+                selected_fields.append(field)
         dataset_names = {metric.base_dataset for metric in selected_metrics if metric.base_dataset}
         dataset_names |= {field.dataset for field in selected_fields}
         graph = SemanticGraph(model)

@@ -282,6 +282,11 @@ def error(code: str, message: str) -> str:
     return format_sse(EVENT_ERROR, {"code": code, "message": message})
 
 
+def suggestions(items: list[str]) -> str:
+    """Follow-up questions the panel can offer after an answer."""
+    return format_sse("suggestions", {"suggestions": list(items)[:5]})
+
+
 def ping() -> str:
     return format_sse(EVENT_PING, {})
 

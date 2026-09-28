@@ -212,9 +212,24 @@ def test_auto_table_preview_marks_omitted_rows() -> None:
         {"columns": ["channel", "revenue"], "rows": [[f"C{index}", index] for index in range(21)]}
     )
     assert evidence is not None
-    assert len(evidence["rows"]) == 20
+    # 20 preview rows plus one labelled total over all 21 rows (0 + 1 + ... + 20).
+    assert len(evidence["rows"]) == 21
+    assert evidence["rows"][-1] == ["TOTAL (21 rows)", "210"]
+    assert evidence["row_count"] == 21
     assert evidence["truncated"] is True
     assert "Some result rows or columns were omitted" in _render_evidence_tables([evidence])
+
+
+def test_auto_table_totals_never_sum_a_masked_column() -> None:
+    evidence = _table_evidence(
+        {"columns": ["channel", "pin_password", "revenue"],
+         "rows": [[f"C{index}", 1000 + index, index] for index in range(25)]}
+    )
+    assert evidence is not None
+    total = evidence["rows"][-1]
+    assert total[0] == "TOTAL (25 rows)"
+    assert total[1] == ""
+    assert total[2] == "300"
 
 
 def test_auto_table_evidence_redacts_credential_columns_and_values() -> None:
@@ -2259,7 +2274,7 @@ async def test_coordinator_suspends_steers_and_resumes_from_checkpoint(monkeypat
         ["Mobile App", "3368049065451.00"]
     ]
     assert append.await_count == 1
-    assert "| Mobile App | 3,368,049,065,451.00 |" in append.await_args.kwargs["content"]
+    assert "| Mobile App | 3,368,049,065,451 |" in append.await_args.kwargs["content"]
     assert "999" not in append.await_args.kwargs["content"]
     assert events[-1] == ("root", "agent_completed")
     assert not plans

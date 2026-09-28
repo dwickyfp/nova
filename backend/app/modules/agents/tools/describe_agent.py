@@ -49,8 +49,18 @@ def semantic_catalog(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
                             "description": _text(field.description)}
                            for field in dimensions[:FIELD_LIMIT]],
             "fields_truncated": len(metrics) > FIELD_LIMIT or len(dimensions) > FIELD_LIMIT,
+            "shared_dimensions": _shared_dimensions(model),
         })
     return result
+
+
+def _shared_dimensions(model: Any) -> list[list[str]]:
+    """Dimensions that mean the same thing across facts ("sales_channel" and
+    "marketing_channel"), so metrics from both can be asked for in one question."""
+    return [
+        [_text(field.rsplit(".", 1)[-1], 128) for field in group]
+        for group in getattr(model, "conformed_dimensions", ())[:FIELD_LIMIT]
+    ]
 
 
 class DescribeAgentTool:
@@ -80,6 +90,8 @@ class DescribeAgentTool:
                 "name": view["name"], "description": view["description"],
                 "metrics": [metric["name"] for metric in view["metrics"][:8]],
                 "dimensions": [field["name"] for field in view["dimensions"][:8]],
+                **({"shared_dimensions": view["shared_dimensions"]}
+                   if view["shared_dimensions"] else {}),
                 "details_available_with": self.name,
             } for view in views[:PAGE_SIZE]],
             "views_truncated": len(views) > PAGE_SIZE,

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.modules.agents.semantic.ir import Additivity, SemanticFieldIR, SemanticModelIR
@@ -13,8 +12,12 @@ from app.modules.agents.semantic.planning import (
     SemanticGraph,
     SemanticPlan,
     SemanticPlanError,
-    TimeComparison,
     validate_plan,
+)
+from app.modules.agents.semantic.time_ranges import (
+    comparison_bounds,
+    range_predicates,
+    resolve_time_range,
 )
 
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
@@ -40,11 +43,180 @@ class CompiledSemanticQuery:
     relationship_path: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class _Core:
+    """An aggregated query without ORDER BY/LIMIT, and its output columns."""
+
+    sql: str
+    columns: tuple[str, ...]
+    relationships: tuple[str, ...]
+    warnings: tuple[str, ...]
+
+
 class SemanticCompiler:
     def compile(self, model: SemanticModelIR, plan: SemanticPlan) -> CompiledSemanticQuery:
         errors = validate_plan(model, plan)
         if errors:
             raise SemanticPlanError("; ".join(errors))
+        metrics = [metric for name in plan.metrics if (metric := model.metric(name))]
+        if len({metric.base_dataset for metric in metrics if metric.base_dataset}) > 1:
+            core = self._drill_across(model, plan)
+        else:
+            core = self._single(model, plan)
+        sql, columns = core.sql, list(core.columns)
+        if plan.having or plan.transforms or plan.top_n_per_group:
+            sql, columns = _wrap(sql, columns, plan)
+        lines = [sql]
+        if plan.order_by:
+            order_parts = []
+            for order_item in plan.order_by:
+                if order_item.field not in columns:
+                    raise SemanticPlanError(f"Order field {order_item.field!r} is not selected.")
+                order_parts.append(f"{_quote(order_item.field)} {order_item.direction.upper()}")
+            lines.append("ORDER BY " + ", ".join(order_parts))
+        if plan.limit:
+            lines.append(f"LIMIT {plan.limit}")
+        return CompiledSemanticQuery(
+            sql="\n".join(lines),
+            model_fingerprint=model.fingerprint,
+            warnings=core.warnings,
+            relationship_path=core.relationships,
+        )
+
+    def _drill_across(self, model: SemanticModelIR, plan: SemanticPlan) -> _Core:
+        """Metrics of several fact datasets, each aggregated alone, joined on shared keys.
+
+        Each fact is compiled as its own single-fact query at the requested grain,
+        so no fact is fanned out by another. The results are joined on the
+        requested dimensions, which must be reachable from every fact directly or
+        through a declared conformed dimension.
+        """
+        if plan.time and plan.time.compare:
+            raise MultiFactCompilationError(
+                "Period comparison across metrics of different fact datasets is not supported."
+            )
+        groups: dict[str, list[str]] = {}
+        for name in plan.metrics:
+            metric = model.metric(name)
+            assert metric is not None
+            groups.setdefault(metric.base_dataset, []).append(name)
+        graph = SemanticGraph(model)
+
+        def reach(base: str, field_name: str) -> str | None:
+            candidates = [field_name, *(
+                member for group in model.conformed_dimensions if field_name in group
+                for member in group if member != field_name
+            )]
+            for candidate in candidates:
+                field = model.field(candidate)
+                if field is None:
+                    continue
+                if field.dataset == base:
+                    return candidate
+                try:
+                    path = graph.path(base, field.dataset)
+                except SemanticPlanError:
+                    continue
+                if not path.ambiguous:
+                    return candidate
+            return None
+
+        keys = (["period"] if plan.time and plan.time.grain else []) + list(plan.dimensions)
+        cores: list[tuple[str, _Core, list[str]]] = []
+        for index, (base, names) in enumerate(groups.items()):
+            mapped_dimensions, alias_map = [], {}
+            for name in plan.dimensions:
+                target = reach(base, name)
+                if target is None:
+                    raise MultiFactCompilationError(
+                        f"Dimension {name!r} is not shared with {base!r}. Declare it in "
+                        "conformed_dimensions to compare these metrics by it."
+                    )
+                mapped_dimensions.append(target)
+                alias_map[target] = name
+            mapped_filters = []
+            for item in plan.filters:
+                target = reach(base, item.field)
+                if target is None:
+                    raise MultiFactCompilationError(
+                        f"Filter field {item.field!r} does not apply to {base!r}."
+                    )
+                mapped_filters.append(replace(item, field=target))
+            named = []
+            for name in plan.named_filters:
+                named_filter = model.named_filter(name)
+                if named_filter is None or (
+                    named_filter.dataset and reach(base, _any_field(model, named_filter.dataset))
+                    is None
+                ):
+                    raise MultiFactCompilationError(
+                        f"Named filter {name!r} does not apply to {base!r}."
+                    )
+                named.append(name)
+            time = None
+            if plan.time:
+                metric = model.metric(names[0])
+                dimension = (metric.default_time_dimension if metric else None) or next(
+                    (field.name for field in _dataset_fields(model, base) if field.is_time), None
+                )
+                if dimension is None:
+                    raise MultiFactCompilationError(f"{base!r} has no time dimension.")
+                time = replace(plan.time, dimension=dimension)
+                alias_map[dimension] = "period"
+            sub_plan = SemanticPlan(
+                metrics=tuple(names), dimensions=tuple(mapped_dimensions),
+                filters=tuple(mapped_filters), named_filters=tuple(named), time=time,
+            )
+            cores.append((f"f{index}", self._single(model, sub_plan, alias_map=alias_map), names))
+
+        ctes = ",\n".join(f"{alias} AS (\n{core.sql}\n)" for alias, core, _names in cores)
+        select = []
+        for key in keys:
+            select.append(
+                "COALESCE(" + ", ".join(f"{alias}.{_quote(key)}" for alias, _c, _n in cores)
+                + f") AS {_quote(key)}"
+            )
+        for alias, _core, names in cores:
+            select.extend(f"{alias}.{_quote(name)} AS {_quote(name)}" for name in names)
+        first = cores[0][0]
+        body = f"FROM {first}"
+        for position, (alias, _core, _names) in enumerate(cores[1:], start=1):
+            if not keys:
+                body += f"\nCROSS JOIN {alias}"
+                continue
+            previous = [item[0] for item in cores[:position]]
+            conditions = [
+                (
+                    f"COALESCE({', '.join(f'{p}.{_quote(key)}' for p in previous)})"
+                    if len(previous) > 1 else f"{previous[0]}.{_quote(key)}"
+                )
+                + f" <=> {alias}.{_quote(key)}"
+                for key in keys
+            ]
+            body += f"\nFULL OUTER JOIN {alias} ON " + " AND ".join(conditions)
+        sql = f"WITH {ctes}\nSELECT\n  " + ",\n  ".join(select) + "\n" + body
+        return _Core(
+            sql=sql,
+            columns=(*keys, *plan.metrics),
+            relationships=tuple(
+                name for _alias, core, _names in cores for name in core.relationships
+            ),
+            warnings=tuple(
+                warning for _alias, core, _names in cores for warning in core.warnings
+            ),
+        )
+
+    def _single(
+        self,
+        model: SemanticModelIR,
+        plan: SemanticPlan,
+        *,
+        alias_map: dict[str, str] | None = None,
+    ) -> _Core:
+        errors = validate_plan(model, plan)
+        if errors:
+            raise SemanticPlanError("; ".join(errors))
+        alias_map = alias_map or {}
 
         metric_objects = [model.metric(name) for name in plan.metrics]
         metrics = [metric for metric in metric_objects if metric is not None]
@@ -117,16 +289,24 @@ class SemanticCompiler:
             )
             select_parts.append(f"{comparison} AS `comparison_period`")
             group_parts.append(comparison)
+            if plan.time.range and resolve_time_range(plan.time.range).in_progress:
+                warnings.append(
+                    f"{plan.time.range} is still in progress, so both periods cover the "
+                    "same days to date; the previous period is not a full period."
+                )
         if plan.time and time_field is not None and plan.time.grain:
             expression = _qualified_expression(time_field)
             grouped_time = f"DATE_TRUNC('{_safe_grain(plan.time.grain)}', {expression})"
-            select_parts.append(f"{grouped_time} AS {_quote(plan.time.dimension)}")
+            time_alias = alias_map.get(plan.time.dimension, plan.time.dimension)
+            select_parts.append(f"{grouped_time} AS {_quote(time_alias)}")
             group_parts.append(grouped_time)
         for field in dimension_fields:
             if plan.time and field.name == plan.time.dimension and plan.time.grain:
                 continue
             expression = _qualified_expression(field)
-            select_parts.append(f"{expression} AS {_quote(field.name)}")
+            select_parts.append(
+                f"{expression} AS {_quote(alias_map.get(field.name, field.name))}"
+            )
             group_parts.append(expression)
         for metric in metrics:
             expression = compile_metric_expression(model, metric)
@@ -211,27 +391,22 @@ class SemanticCompiler:
             lines.append("WHERE " + "\n  AND ".join(filter_predicates))
         if group_parts and metrics:
             lines.append("GROUP BY " + ", ".join(group_parts))
-        if plan.order_by:
-            aliases = {metric.name for metric in metrics} | {
-                field.name for field in dimension_fields
-            }
-            if plan.time and plan.time.grain and time_field is not None:
-                aliases.add(plan.time.dimension)
-            if plan.time and plan.time.compare:
-                aliases.add("comparison_period")
-            order_parts = []
-            for order_item in plan.order_by:
-                if order_item.field not in aliases:
-                    raise SemanticPlanError(f"Order field {order_item.field!r} is not selected.")
-                order_parts.append(f"{_quote(order_item.field)} {order_item.direction.upper()}")
-            lines.append("ORDER BY " + ", ".join(order_parts))
-        if plan.limit:
-            lines.append(f"LIMIT {plan.limit}")
-        return CompiledSemanticQuery(
+        columns: list[str] = []
+        if plan.time and plan.time.compare:
+            columns.append("comparison_period")
+        if plan.time and plan.time.grain and time_field is not None:
+            columns.append(alias_map.get(plan.time.dimension, plan.time.dimension))
+        columns.extend(
+            alias_map.get(field.name, field.name)
+            for field in dimension_fields
+            if not (plan.time and field.name == plan.time.dimension and plan.time.grain)
+        )
+        columns.extend(metric.name for metric in metrics)
+        return _Core(
             sql="\n".join(lines),
-            model_fingerprint=model.fingerprint,
+            columns=tuple(columns),
+            relationships=tuple(relationship.name for relationship in relationships),
             warnings=tuple(warnings),
-            relationship_path=tuple(relationship.name for relationship in relationships),
         )
 
     @staticmethod
@@ -286,6 +461,82 @@ class SemanticCompiler:
             raise AdditivityError(
                 f"Metric {metric.name!r} cannot be summed across time grain {plan.time.grain!r}."
             )
+
+
+def _dataset_fields(model: SemanticModelIR, dataset: str) -> tuple[SemanticFieldIR, ...]:
+    target = model.dataset(dataset)
+    return target.fields if target else ()
+
+
+def _any_field(model: SemanticModelIR, dataset: str) -> str:
+    target = model.dataset(dataset)
+    return target.fields[0].name if target and target.fields else ""
+
+
+def _wrap(sql: str, columns: list[str], plan: SemanticPlan) -> tuple[str, list[str]]:
+    """Window calculations, metric conditions, and top-N per group over an aggregate.
+
+    Windows are computed over every aggregated row first; ``having`` and the
+    top-N filter apply afterwards, so a share is a share of the full total.
+    """
+    compare = bool(plan.time and plan.time.compare)
+    time_column = next(
+        (column for column in columns
+         if plan.time and column in {plan.time.dimension, "period"}),
+        None,
+    )
+    other_dimensions = [
+        column for column in columns
+        if column in plan.dimensions and column != time_column
+    ]
+    windows: list[str] = []
+    added: list[str] = []
+    for transform in plan.transforms:
+        metric = _quote(transform.metric)
+        partition = "PARTITION BY q.`comparison_period`" if compare else ""
+        if transform.kind == "share_of_total":
+            name = f"{transform.metric}_share_pct"
+            expression = f"100.0 * q.{metric} / NULLIF(SUM(q.{metric}) OVER ({partition}), 0)"
+        elif transform.kind == "rank":
+            name = f"{transform.metric}_rank"
+            if plan.top_n_per_group is not None:
+                # Ranked within the same groups the top-N keeps.
+                partition = "PARTITION BY " + ", ".join(
+                    f"q.{_quote(column)}" for column in plan.top_n_per_group.partition_by
+                )
+            prefix = partition + " " if partition else ""
+            expression = f"RANK() OVER ({prefix}ORDER BY q.{metric} DESC)"
+        else:
+            name = f"{transform.metric}_running_total"
+            partition_by = ", ".join(f"q.{_quote(column)}" for column in other_dimensions)
+            partition = f"PARTITION BY {partition_by} " if partition_by else ""
+            expression = (
+                f"SUM(q.{metric}) OVER ({partition}ORDER BY q.{_quote(str(time_column))} "
+                "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+            )
+        windows.append(f"{expression} AS {_quote(name)}")
+        added.append(name)
+    if plan.top_n_per_group is not None:
+        top = plan.top_n_per_group
+        partition = ", ".join(f"q.{_quote(column)}" for column in top.partition_by)
+        windows.append(
+            f"ROW_NUMBER() OVER (PARTITION BY {partition} ORDER BY q.{_quote(top.metric)} DESC)"
+            " AS `_nova_row`"
+        )
+    inner_select = ", ".join([*(f"q.{_quote(column)}" for column in columns), *windows])
+    conditions = [
+        f"w.{_quote(item.metric)} {item.operator} {_literal(item.value)}" for item in plan.having
+    ]
+    if plan.top_n_per_group is not None:
+        conditions.append(f"w.`_nova_row` <= {int(plan.top_n_per_group.n)}")
+    output = [*columns, *added]
+    wrapped = (
+        "SELECT " + ", ".join(f"w.{_quote(column)}" for column in output)
+        + f"\nFROM (\nSELECT {inner_select}\nFROM (\n{sql}\n) AS q\n) AS w"
+    )
+    if conditions:
+        wrapped += "\nWHERE " + " AND ".join(conditions)
+    return wrapped, output
 
 
 def _quote(identifier: str) -> str:
@@ -366,113 +617,24 @@ def _safe_grain(value: str) -> str:
 
 
 def _time_predicates(expression: str, range_value: str) -> list[str]:
-    since_year = re.fullmatch(r"since[_ ]([12]\d{3})", range_value.strip().lower())
-    since_date = re.fullmatch(r"([12]\d{3})-(\d{2})-(\d{2})\+", range_value.strip())
-    if since_year or since_date:
-        start = f"{since_year[1]}-01-01" if since_year else "-".join(since_date.groups())
-        try:
-            date.fromisoformat(start)
-        except ValueError as exc:
-            raise SemanticPlanError("The time range has an invalid start date.") from exc
-        return [
-            f"{expression} >= '{start}'",
-            f"{expression} < DATE_ADD(CURRENT_DATE(), INTERVAL 1 DAY)",
-        ]
-    recent_months = re.fullmatch(
-        r"(?:last|past)[_ ]([1-9]|1\d|2[0-4])[_ ]months?",
-        range_value.strip().lower(),
-    )
-    if recent_months:
-        months = int(recent_months[1])
-        return [
-            f"{expression} >= DATE_SUB(DATE_TRUNC('month', CURRENT_DATE()), "
-            f"INTERVAL {months} MONTH)",
-            f"{expression} < DATE_TRUNC('month', CURRENT_DATE())",
-        ]
-    if re.fullmatch(r"[12]\d{3}", range_value):
-        year = int(range_value)
-        return [
-            f"{expression} >= '{year:04d}-01-01'",
-            f"{expression} < '{year + 1:04d}-01-01'",
-        ]
-    if range_value == "current_month":
-        return [
-            f"{expression} >= DATE_TRUNC('month', CURRENT_DATE())",
-            f"{expression} < DATE_ADD(DATE_TRUNC('month', CURRENT_DATE()), INTERVAL 1 MONTH)",
-        ]
-    if range_value == "previous_month":
-        return [
-            f"{expression} >= DATE_SUB(DATE_TRUNC('month', CURRENT_DATE()), INTERVAL 1 MONTH)",
-            f"{expression} < DATE_TRUNC('month', CURRENT_DATE())",
-        ]
-    if range_value == "current_quarter":
-        return [
-            f"{expression} >= DATE_TRUNC('quarter', CURRENT_DATE())",
-            f"{expression} < DATE_ADD(DATE_TRUNC('quarter', CURRENT_DATE()), INTERVAL 3 MONTH)",
-        ]
-    if range_value == "current_week":
-        return [
-            f"{expression} >= DATE_TRUNC('week', CURRENT_DATE())",
-            f"{expression} < DATE_ADD(DATE_TRUNC('week', CURRENT_DATE()), INTERVAL 1 WEEK)",
-        ]
-    if range_value == "last_30_days":
-        return [
-            f"{expression} >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)",
-            f"{expression} < CURRENT_DATE()",
-        ]
-    raise SemanticPlanError(f"Unsupported time range {range_value!r}.")
+    return range_predicates(expression, range_value)
 
 
 def _comparison_expression(expression: str, range_value: str | None, comparison: str | None) -> str:
-    current_start, _current_end, _prior_start = _comparison_bounds(range_value, comparison)
-    boundary = current_start
-    return f"CASE WHEN {expression} >= {boundary} THEN 'current_period' ELSE 'previous_period' END"
+    current_start, _current_end, _prior_start, _prior_end = comparison_bounds(
+        range_value, comparison
+    )
+    return (
+        f"CASE WHEN {expression} >= {current_start} "
+        "THEN 'current_period' ELSE 'previous_period' END"
+    )
 
 
 def _comparison_predicates(expression: str, range_value: str, comparison: str | None) -> list[str]:
-    current_start, current_end, prior_start = _comparison_bounds(range_value, comparison)
-    interval = prior_start.rsplit("INTERVAL ", 1)[1][:-1]
-    prior_end = f"DATE_SUB({current_end}, INTERVAL {interval})"
+    current_start, current_end, prior_start, prior_end = comparison_bounds(
+        range_value, comparison
+    )
     return [
         f"(({expression} >= {current_start} AND {expression} < {current_end}) OR "
         f"({expression} >= {prior_start} AND {expression} < {prior_end}))"
     ]
-
-
-def _comparison_bounds(range_value: str | None, comparison: str | None) -> tuple[str, str, str]:
-    kind = TimeComparison(comparison or TimeComparison.PREVIOUS_PERIOD)
-    if range_value == "current_month":
-        start = "DATE_TRUNC('month', CURRENT_DATE())"
-        end = "DATE_ADD(DATE_TRUNC('month', CURRENT_DATE()), INTERVAL 1 MONTH)"
-        interval = "1 YEAR" if kind == TimeComparison.YEAR_OVER_YEAR else "1 MONTH"
-    elif range_value == "previous_month":
-        start = "DATE_SUB(DATE_TRUNC('month', CURRENT_DATE()), INTERVAL 1 MONTH)"
-        end = "DATE_TRUNC('month', CURRENT_DATE())"
-        interval = "1 YEAR" if kind == TimeComparison.YEAR_OVER_YEAR else "1 MONTH"
-    elif range_value == "current_quarter":
-        start = "DATE_TRUNC('quarter', CURRENT_DATE())"
-        end = "DATE_ADD(DATE_TRUNC('quarter', CURRENT_DATE()), INTERVAL 3 MONTH)"
-        interval = "1 YEAR" if kind == TimeComparison.YEAR_OVER_YEAR else "3 MONTH"
-    elif range_value == "current_week":
-        start = "DATE_TRUNC('week', CURRENT_DATE())"
-        end = "DATE_ADD(DATE_TRUNC('week', CURRENT_DATE()), INTERVAL 1 WEEK)"
-        interval = "1 YEAR" if kind == TimeComparison.YEAR_OVER_YEAR else "1 WEEK"
-    elif range_value == "last_30_days":
-        start = "DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
-        end = "CURRENT_DATE()"
-        interval = "1 YEAR" if kind == TimeComparison.YEAR_OVER_YEAR else "30 DAY"
-    else:
-        raise SemanticPlanError("Comparison needs a supported explicit time range.")
-    expected_range = {
-        TimeComparison.MONTH_OVER_MONTH: {"current_month", "previous_month"},
-        TimeComparison.QUARTER_OVER_QUARTER: {"current_quarter"},
-        TimeComparison.WEEK_OVER_WEEK: {"current_week"},
-    }
-    if kind in expected_range and range_value not in expected_range[kind]:
-        raise SemanticPlanError(
-            f"{kind.value} is incompatible with semantic range {range_value!r}."
-        )
-    if kind == TimeComparison.CUSTOM:
-        raise SemanticPlanError("Custom comparison needs explicit bounded dates.")
-    prior = f"DATE_SUB({start}, INTERVAL {interval})"
-    return start, end, prior

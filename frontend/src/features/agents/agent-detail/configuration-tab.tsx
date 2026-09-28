@@ -151,6 +151,28 @@ export function AgentConfigurationTab({
               task. No manual mode selection is required.
             </p>
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="c-profile">Analysis depth</Label>
+            <Select
+              value={draft.budget_profile ?? "analyst"}
+              onValueChange={(value) =>
+                set("budget_profile", value as "fast" | "analyst")
+              }
+            >
+              <SelectTrigger id="c-profile" className="max-w-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="analyst">Analyst: break down, compute, chart</SelectItem>
+                <SelectItem value="fast">Fast: one query, then answer</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Analyst lets the agent run a few more read-only steps after the first
+              result, such as a breakdown or growth. Deep research questions use
+              their own longer limit.
+            </p>
+          </div>
         </TabsContent>
 
         <TabsContent value="instructions" className="mt-6 max-w-3xl space-y-4">

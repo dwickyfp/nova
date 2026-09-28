@@ -12,6 +12,7 @@ not into the prompt as free text, so the model reasons over structured metadata.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.modules.agents.prompt import build_system_prompt
@@ -33,6 +34,36 @@ MAX_BUDGET_SECONDS = 3600
 #: misconfigured agent cannot ask for an unbounded request.
 MIN_CONTEXT_TOKEN_BUDGET = 1_000
 MAX_CONTEXT_TOKEN_BUDGET = 120_000
+
+
+@dataclass(frozen=True)
+class LoopLimits:
+    """Iteration, wall-clock and per-tool caps for one agent turn."""
+
+    max_iterations: int
+    time_budget_seconds: int
+    max_calls_per_tool: int
+
+
+#: ``analyst`` (the default) leaves room to drill down after the first result.
+#: ``deep`` is for asynchronous runs; an interactive turn asking for it gets ``analyst``.
+BUDGET_PROFILES = {
+    "fast": LoopLimits(max_iterations=8, time_budget_seconds=60, max_calls_per_tool=2),
+    "analyst": LoopLimits(max_iterations=16, time_budget_seconds=180, max_calls_per_tool=6),
+    "deep": LoopLimits(max_iterations=40, time_budget_seconds=1800, max_calls_per_tool=10),
+}
+
+
+def loop_limits(agent: dict[str, Any], *, interactive: bool = True) -> LoopLimits:
+    """The limits for one agent turn. An explicit ``budget_seconds`` still wins."""
+    name = str(agent.get("budget_profile") or "analyst")
+    if name not in BUDGET_PROFILES or (interactive and name == "deep"):
+        name = "analyst"
+    profile = BUDGET_PROFILES[name]
+    seconds = agent.get("budget_seconds")
+    if isinstance(seconds, int) and not isinstance(seconds, bool) and seconds > 0:
+        return replace(profile, time_budget_seconds=min(seconds, MAX_BUDGET_SECONDS))
+    return profile
 
 
 class AgentNotFoundError(LookupError):
@@ -157,15 +188,9 @@ class AgentService:
             skill_bodies=skill_bodies,
             actual_tools=registry.names(),
         )
-        budget = _clamp_budget(agent.get("budget_seconds"))
+        budget = loop_limits(agent).time_budget_seconds
         token_budget = _clamp_token_budget(agent.get("budget_tokens"))
         return registry, system_prompt, budget, token_budget
-
-
-def _clamp_budget(seconds: Any) -> int:
-    if not isinstance(seconds, int) or seconds <= 0:
-        return DEFAULT_BUDGET_SECONDS
-    return min(seconds, MAX_BUDGET_SECONDS)
 
 
 def _clamp_token_budget(tokens: Any) -> int | None:

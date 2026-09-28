@@ -27,7 +27,7 @@ import asyncio
 import contextlib
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from typing import Annotated
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -45,6 +45,7 @@ from app.modules.agents.auto_planner import (
     rank_candidates,
     semantic_matches,
 )
+from app.modules.agents.automations import AutomationCreate, AutomationUpdate
 from app.modules.agents.capabilities import CapabilityManifest, capability_repository
 from app.modules.agents.harness_repository import (
     TERMINAL,
@@ -65,7 +66,7 @@ from app.modules.agents.memory import (
     memory_prompt,
     memory_repository,
     remember_user_message,
-    select_memories,
+    select_relevant_memories,
 )
 from app.modules.agents.repository import AgentMetadataUnavailable, agent_repository
 from app.modules.agents.rule_proposals import candidate_definition, rule_proposal_repository
@@ -96,7 +97,7 @@ from app.modules.agents.schemas import (
     VerifiedQueryView,
 )
 from app.modules.agents.semantic.access import bound_view_ids
-from app.modules.agents.service import agent_service
+from app.modules.agents.service import BUDGET_PROFILES, agent_service, loop_limits
 from app.modules.agents.skill_author import SKILL_AUTHOR_ID, skill_author_config
 from app.modules.agents.skill_catalog import is_builtin_skill_id, merge_skill_rows
 from app.modules.agents.versions import (
@@ -131,7 +132,6 @@ from app.modules.assistant.schemas import (
 )
 from app.modules.assistant.security import observation_context, session_security
 from app.modules.assistant.service import (
-    DEFAULT_MAX_ITERATIONS,
     AssistantLoop,
     LoopContext,
 )
@@ -139,6 +139,22 @@ from app.modules.assistant.state import AssistantMessage, thread_store
 from app.modules.assistant.tools import ToolInvocation
 
 logger = logging.getLogger(__name__)
+
+#: Strong references to fire-and-forget tasks; asyncio keeps only weak ones.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _run_in_background(coroutine: Coroutine[object, object, object], *, label: str) -> asyncio.Task:
+    task = asyncio.create_task(coroutine)
+    _BACKGROUND_TASKS.add(task)
+
+    def finished(done: asyncio.Task) -> None:
+        _BACKGROUND_TASKS.discard(done)
+        if not done.cancelled() and done.exception() is not None:
+            logger.warning("Could not update %s: %s", label, type(done.exception()).__name__)
+
+    task.add_done_callback(finished)
+    return task
 _active_run_tasks: set[asyncio.Task[None]] = set()
 
 router = APIRouter()
@@ -1810,13 +1826,15 @@ async def update_message_feedback(
     body: MessageFeedbackRequest,
     user: dict = Depends(get_current_user),
 ) -> MessageFeedbackRequest:
-    await _require_agent(agent_id, user)
+    agent = await _require_agent(agent_id, user)
     await _require_agent_thread(thread_id, agent_id, user["username"])
     updated = await assistant_repository.set_feedback(
         thread_id, message_id, body.feedback, user_name=user["username"]
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Message not found")
+    if body.feedback == "like":
+        await _propose_verified_queries(agent, agent_id, thread_id, message_id, user)
     await write_audit_log(
         event_type="ASSISTANT",
         user_name=user["username"],
@@ -1829,6 +1847,298 @@ async def update_message_feedback(
         active_role=user.get("active_role"),
     )
     return body
+
+
+async def _propose_verified_queries(
+    agent: dict, agent_id: str, thread_id: str, message_id: str, user: dict
+) -> None:
+    """A liked semantic answer proposes its plan as a verified-query candidate."""
+    from app.modules.agents.verified_candidates import (
+        candidates_from_steps,
+        verified_candidate_repository,
+    )
+
+    try:
+        messages = await assistant_repository.list_messages(
+            thread_id, user_name=user["username"]
+        )
+        message = next((item for item in messages if item["message_id"] == message_id), None)
+        for candidate in candidates_from_steps((message or {}).get("steps")):
+            candidate_id = await verified_candidate_repository.propose(
+                agent_id=agent_id,
+                owner_name=str(agent.get("owner_name") or user["username"]),
+                proposed_by=user["username"],
+                thread_id=thread_id,
+                message_id=message_id,
+                candidate=candidate,
+            )
+            if candidate_id:
+                await write_audit_log(
+                    event_type="AGENT_LEARNING", user_name=user["username"], action="CREATE",
+                    object_type="VERIFIED_QUERY_CANDIDATE", object_name=candidate_id,
+                    status="SUCCESS", session_id=user.get("session_id"),
+                    active_role=user.get("active_role"),
+                )
+    except Exception as exc:  # noqa: BLE001 - feedback itself must still succeed
+        logger.warning("Verified-query candidate skipped: %s", type(exc).__name__)
+
+
+async def _require_owned_agent(agent_id: str, user: dict) -> dict:
+    # Managing an agent needs ownership, like editing it; the active role's grant
+    # governs using the agent, not configuring it.
+    agent = await _require_agent(agent_id, user["username"])
+    if agent.get("owner_name") != user["username"]:
+        raise HTTPException(status_code=403, detail="Only the agent owner can review this")
+    return agent
+
+
+@router.get("/{agent_id}/verified-query-candidates")
+async def list_verified_query_candidates(
+    agent_id: str, status: str | None = None, user: dict = Depends(get_current_user)
+) -> dict:
+    from app.modules.agents.verified_candidates import verified_candidate_repository
+
+    await _require_owned_agent(agent_id, user)
+    items = await verified_candidate_repository.list(
+        agent_id=agent_id, owner_name=user["username"], status=status
+    )
+    return {"candidates": items, "count": len(items)}
+
+
+@router.post("/{agent_id}/verified-query-candidates/{candidate_id}/{decision}")
+async def decide_verified_query_candidate(
+    agent_id: str, candidate_id: str, decision: str, user: dict = Depends(get_current_user)
+) -> dict:
+    from app.modules.agents.verified_candidates import verified_candidate_repository
+    from app.modules.intelligence.semantic_views import semantic_view_service
+
+    if decision not in {"approve", "reject"}:
+        raise HTTPException(status_code=404, detail="Unknown decision")
+    await _require_owned_agent(agent_id, user)
+    candidate = await verified_candidate_repository.get(candidate_id, owner_name=user["username"])
+    if candidate is None or candidate["agent_id"] != agent_id:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    if candidate["status"] != "pending":
+        raise HTTPException(status_code=409, detail="Candidate already decided")
+    version = None
+    if decision == "approve":
+        version = await semantic_view_service.adopt_verified_plan(
+            candidate["view_id"], question=candidate["question"],
+            semantic_plan=candidate["semantic_plan"], user=user,
+        )
+    status = "approved" if decision == "approve" else "rejected"
+    await verified_candidate_repository.decide(
+        candidate_id, status=status, decided_by=user["username"]
+    )
+    await write_audit_log(
+        event_type="AGENT_LEARNING", user_name=user["username"],
+        action="APPROVE" if decision == "approve" else "REJECT",
+        object_type="VERIFIED_QUERY_CANDIDATE", object_name=candidate_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return {
+        "candidate_id": candidate_id,
+        "status": status,
+        "draft_version": (version or {}).get("version"),
+    }
+
+
+@router.get("/{agent_id}/automations")
+async def list_agent_automations(agent_id: str, user: dict = Depends(get_current_user)) -> dict:
+    from app.modules.agents.automations import automation_repository
+
+    await _require_owned_agent(agent_id, user)
+    items = await automation_repository.list(agent_id=agent_id, owner_name=user["username"])
+    return {"automations": items, "count": len(items)}
+
+
+@router.post("/{agent_id}/automations", status_code=201)
+async def create_agent_automation(
+    agent_id: str, body: AutomationCreate, user: dict = Depends(get_current_user)
+) -> dict:
+    from app.modules.agents.automations import AutomationError, automation_repository
+
+    await _require_owned_agent(agent_id, user)
+    try:
+        created = await automation_repository.create(
+            agent_id=agent_id, owner_name=user["username"],
+            role_name=session_security(user).active_role, body=body,
+        )
+    except AutomationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await write_audit_log(
+        event_type="AGENT_AUTOMATION", user_name=user["username"], action="CREATE",
+        object_type="AGENT_AUTOMATION", object_name=created["automation_id"], status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return created
+
+
+@router.patch("/{agent_id}/automations/{automation_id}")
+async def update_agent_automation(
+    agent_id: str, automation_id: str, body: AutomationUpdate,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    from app.modules.agents.automations import AutomationError, automation_repository
+
+    await _require_owned_agent(agent_id, user)
+    automation = await automation_repository.get(automation_id, owner_name=user["username"])
+    if automation is None or automation["agent_id"] != agent_id:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    try:
+        updated = await automation_repository.update(automation, body)
+    except AutomationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await write_audit_log(
+        event_type="AGENT_AUTOMATION", user_name=user["username"], action="ALTER",
+        object_type="AGENT_AUTOMATION", object_name=automation_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return updated
+
+
+@router.delete("/{agent_id}/automations/{automation_id}", status_code=204)
+async def delete_agent_automation(
+    agent_id: str, automation_id: str, user: dict = Depends(get_current_user)
+) -> None:
+    from app.modules.agents.automations import automation_repository
+
+    await _require_owned_agent(agent_id, user)
+    automation = await automation_repository.get(automation_id, owner_name=user["username"])
+    if automation is None or automation["agent_id"] != agent_id:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    await automation_repository.delete(automation_id, owner_name=user["username"])
+    await write_audit_log(
+        event_type="AGENT_AUTOMATION", user_name=user["username"], action="DROP",
+        object_type="AGENT_AUTOMATION", object_name=automation_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+
+
+class DeepResearchRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=4000)
+
+
+@router.post("/{agent_id}/deep-research", status_code=202)
+async def start_deep_research(
+    agent_id: str, body: DeepResearchRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    from app.modules.agents import deep_research
+
+    agent = await _require_agent(agent_id, user)
+    thread = await assistant_repository.create_thread(
+        user_name=user["username"], title=f"Deep research: {body.question[:80]}",
+        agent_id=agent_id,
+    )
+    run_id = await deep_research.deep_research_repository.create(
+        agent_id=agent_id, owner_name=user["username"], thread_id=thread["thread_id"],
+        question=body.question,
+    )
+    deep_research.start(run_id, agent, dict(user), body.question, thread["thread_id"])
+    await write_audit_log(
+        event_type="AGENT_DEEP_RESEARCH", user_name=user["username"], action="CREATE",
+        object_type="DEEP_RESEARCH", object_name=run_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return {"run_id": run_id, "thread_id": thread["thread_id"], "status": "planning"}
+
+
+@router.get("/{agent_id}/deep-research/{run_id}")
+async def get_deep_research(
+    agent_id: str, run_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    from app.modules.agents.deep_research import deep_research_repository
+
+    await _require_agent(agent_id, user)
+    record = await deep_research_repository.get(run_id, owner_name=user["username"])
+    if record is None or record["agent_id"] != agent_id:
+        raise HTTPException(status_code=404, detail="Research run not found")
+    return record
+
+
+@router.post("/{agent_id}/deep-research/{run_id}/cancel")
+async def cancel_deep_research(
+    agent_id: str, run_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    from app.modules.agents import deep_research
+
+    record = await deep_research.deep_research_repository.get(run_id, owner_name=user["username"])
+    if record is None or record["agent_id"] != agent_id:
+        raise HTTPException(status_code=404, detail="Research run not found")
+    return {"run_id": run_id, "cancelling": deep_research.cancel(run_id)}
+
+
+@router.get("/{agent_id}/readiness")
+async def agent_readiness(agent_id: str, user: dict = Depends(get_current_user)) -> dict:
+    """A builder checklist from configuration and semantic metadata; queries no data."""
+    from app.modules.agents.readiness import assess
+    from app.modules.agents.semantic.access import load_authorized_models
+    from app.modules.assistant.service import LoopContext
+
+    agent = await _require_owned_agent(agent_id, user)
+    context = LoopContext(
+        user_name=user["username"], user=dict(user), agent_id=agent_id,
+        agent_owner_name=agent.get("owner_name"), semantic_view_ids=bound_view_ids(agent),
+    )
+    try:
+        models = await load_authorized_models(context)
+    except Exception:  # noqa: BLE001 - reported as an unreadable view
+        models = []
+    return assess(agent, models)
+
+
+@router.get("/{agent_id}/improvement-suggestions")
+async def agent_improvement_suggestions(
+    agent_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    """Review-only suggestions from disliked answers and the agent's query workload."""
+    from app.core.database import db
+    from app.modules.agents.semantic.runtime import (
+        SemanticFeedback,
+        feedback_suggestions,
+        materialized_view_suggestions,
+    )
+
+    agent = await _require_owned_agent(agent_id, user)
+    disliked = await db.execute_system(
+        "SELECT content, steps FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
+        "WHERE agent_id = %s AND feedback = 'dislike' ORDER BY created_at DESC LIMIT 200",
+        [agent_id],
+    )
+    events = []
+    for _content, raw_steps in disliked.get("rows") or []:
+        steps = json.loads(raw_steps) if isinstance(raw_steps, str) else raw_steps or []
+        for step in steps:
+            trace = step.get("trace_detail") or {} if isinstance(step, dict) else {}
+            view = trace.get("semantic_view") or {}
+            if trace.get("question") and view.get("id"):
+                events.append(SemanticFeedback(
+                    kind="disliked_answer", question=str(trace["question"])[:300],
+                    detail=str(trace.get("error") or ""), semantic_model_id=str(view["id"]),
+                ))
+    view_ids = [str(item) for item in bound_view_ids(agent)]
+    usage: list[dict] = []
+    if view_ids:
+        rows = await db.execute_system(
+            "SELECT semantic_model_id, model_fingerprint, metric_names, dimension_names, "
+            "time_grain, succeeded FROM NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE "
+            "WHERE semantic_model_id IN (" + ", ".join(["%s"] * len(view_ids)) + ") "
+            "ORDER BY created_at DESC LIMIT 2000",
+            view_ids,
+        )
+        for model_id, fingerprint, metrics, dimensions, grain, succeeded in rows.get("rows") or []:
+            usage.append({
+                "semantic_model_id": model_id, "model_fingerprint": fingerprint,
+                "metrics": json.loads(metrics) if isinstance(metrics, str) else metrics or [],
+                "dimensions": (
+                    json.loads(dimensions) if isinstance(dimensions, str) else dimensions or []
+                ),
+                "time_grain": grain, "succeeded": bool(succeeded),
+            })
+    return {
+        "feedback": feedback_suggestions(events),
+        "materialized_views": materialized_view_suggestions(usage),
+    }
 
 
 @router.delete("/{agent_id}/threads/{thread_id}", status_code=204)
@@ -2073,7 +2383,7 @@ async def send_agent_message(
                 agent_id=agent_id,
                 role_name=security.active_role,
             )
-            selected = select_memories(memories, body.content)
+            selected = await select_relevant_memories(memories, body.content)
             if selected:
                 system_prompt += "\n\n" + memory_prompt(selected)
         except Exception as exc:
@@ -2176,13 +2486,17 @@ async def send_agent_message(
     context_manager = (
         ContextManager(token_budget=token_budget) if token_budget is not None else None
     )
+    limits = loop_limits(agent)
     loop = AssistantLoop(
         provider=assistant_provider,
         registry=registry,
-        max_iterations=DEFAULT_MAX_ITERATIONS,
+        max_iterations=limits.max_iterations,
         time_budget_seconds=float(budget),
         system_prompt=system_prompt,
         context_manager=context_manager,
+        max_calls_per_tool=limits.max_calls_per_tool,
+        iterative=limits.max_iterations > BUDGET_PROFILES["fast"].max_iterations,
+        summarize_history=True,
     )
 
     async def resolve_consent(invocation: ToolInvocation, classification: str) -> bool | None:
@@ -2280,8 +2594,10 @@ async def send_agent_message(
                 }
                 and agent_id != SKILL_AUTHOR_ID
             ):
-                try:
-                    await asyncio.wait_for(
+                # Memory extraction is a model call; it must not hold the
+                # answer's ``done`` frame, so it runs after the turn is released.
+                _run_in_background(
+                    asyncio.wait_for(
                         remember_user_message(
                             user_name=user_name,
                             agent_id=agent_id,
@@ -2294,9 +2610,9 @@ async def send_agent_message(
                             session_id=user.get("session_id"),
                         ),
                         timeout=15.0,
-                    )
-                except Exception as exc:
-                    logger.warning("Could not update agent memory: %s", type(exc).__name__)
+                    ),
+                    label="agent memory",
+                )
         if done_frame is not None:
             yield done_frame
 

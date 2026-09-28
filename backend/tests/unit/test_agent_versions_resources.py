@@ -375,6 +375,8 @@ async def test_additive_columns_do_not_invalidate_existing_role_verification(mon
         await access_fingerprint({**old, "config_revision": None, "resource_bindings": {}})
         == baseline
     )
+    assert await access_fingerprint({**old, "budget_profile": "analyst"}) == baseline
+    assert await access_fingerprint({**old, "budget_profile": "deep"}) == baseline
     assert (
         await access_fingerprint(
             {

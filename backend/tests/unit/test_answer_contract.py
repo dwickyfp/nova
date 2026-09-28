@@ -236,10 +236,12 @@ def test_rejected_sales_draft_gets_an_exact_authorized_comparison() -> None:
     assert check_numeric_answer(replacement, question=question, tables=tables).accepted
     assert is_numeric_comparison_question(question, tables)
     assert "Mobile App" in replacement and "WhatsApp B2B" in replacement
-    assert "recognized revenue: tertinggi Mobile App; terendah WhatsApp B2B" in replacement
-    assert "gross margin pct: tertinggi WhatsApp B2B; terendah Website" in replacement
-    assert "order count: tertinggi Mobile App; terendah WhatsApp B2B" in replacement
-    assert "3.368.049.065.451,00" in replacement
-    assert "847.526.929.200,00" in replacement
+    # Five groups: every value is listed, highest first.
+    assert "recognized revenue: Mobile App 3.368.049.065.451, Store" in replacement
+    assert "gross margin pct: WhatsApp B2B 37,03%" in replacement
+    assert "Website 36,93%." in replacement
+    assert "order count: Mobile App 177.450" in replacement
+    assert "1.935.135.942.274,50" in replacement
+    assert "847.526.929.200" in replacement
     assert "37,03%" in replacement and "177.450" in replacement
     assert "42%" not in replacement

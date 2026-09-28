@@ -60,5 +60,6 @@ async def test_city_rbac_empty_result_overrides_unsupported_number() -> None:
         json.loads(frame.split("data: ", 1)[1])["text"]
         for frame in frames if frame.startswith("event: text_delta\n")
     )
-    assert answer == "The authorized query returned no rows for this request."
+    # The question is Indonesian, so Nova's own sentence is too.
+    assert answer == "Query terotorisasi tidak mengembalikan baris untuk permintaan ini."
     assert '"finish_reason":"stop"' in "".join(frames).replace(" ", "")

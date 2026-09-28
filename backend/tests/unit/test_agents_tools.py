@@ -34,7 +34,12 @@ from app.modules.assistant.tools import ToolInvocation
 def test_registry_is_a_structural_tool_selection() -> None:
     agent = {"default_tools": ["load_skill", "semantic_query"]}
     registry = build_registry(agent)
-    assert set(registry.names()) == {"load_skill", "semantic_query"}
+    # compute_metrics comes with any tool that returns a result table: it reads
+    # only results that tool already authorized.
+    assert set(registry.names()) == {
+        "load_skill", "semantic_query", "compute_metrics", "schedule_automation",
+    }
+    assert "compute_metrics" not in build_registry({"default_tools": ["load_skill"]}).names()
     # An unselected tool is not merely hidden; it cannot be fetched.
     assert registry.get("query_execute") is None
     assert registry.get("data_to_chart") is None

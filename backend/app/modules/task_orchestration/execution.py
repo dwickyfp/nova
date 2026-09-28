@@ -331,6 +331,14 @@ class DelegateExecutor:
                 _redact(str(exc)),
             )
 
+    def owner_connection(self, owner: str) -> Any:
+        """A verified connection that executes as ``owner`` (impersonated).
+
+        Public for other scheduled work, such as Studio agent automations; it
+        applies the same identity checks as a scheduled task.
+        """
+        return self._owner_conn(owner)
+
     @asynccontextmanager
     async def _owner_conn(
         self, owner: str, session_id: str | None = None

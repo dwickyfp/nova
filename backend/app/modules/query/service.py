@@ -11,11 +11,13 @@ Pipeline:
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import contextvars
 import json
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import replace
 from functools import wraps
 from typing import Any, ParamSpec
@@ -255,6 +257,34 @@ def _mask_literals_and_comments(sql: str) -> str:
     return "".join(chars)
 
 
+#: Owner-bound connection for a scheduled automation run, which has no session.
+#: Set by the automation runner for one run; used only for the matching username.
+_DELEGATED: contextvars.ContextVar[tuple[str, Any] | None] = contextvars.ContextVar(
+    "nova_delegated_connection", default=None
+)
+
+
+@contextlib.contextmanager
+def delegated_connection(username: str, connection: Any) -> Iterator[None]:
+    token = _DELEGATED.set((username, connection))
+    try:
+        yield
+    finally:
+        _DELEGATED.reset(token)
+
+
+def delegated_connection_for(username: str) -> Any | None:
+    current = _DELEGATED.get()
+    if current is None or current[0] != username:
+        return None
+    return current[1]
+
+
+def delegated_username() -> str | None:
+    current = _DELEGATED.get()
+    return current[0] if current else None
+
+
 class QueryService:
     """Orchestrates SQL execution with @stage dialect support."""
 
@@ -291,6 +321,10 @@ class QueryService:
         Returns:
             QueryResult with columns, rows, metadata
         """
+        if connection is None:
+            delegated = delegated_connection_for(username)
+            if delegated is not None:
+                connection, encrypted_password = delegated, ""
         # Normalize Nova's editor-friendly db.default.table notation to the
         # StarRocks-compatible db.table form before validation/execution.
         normalized_sql = self._normalize_default_schema_qualification(sql)

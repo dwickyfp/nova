@@ -133,7 +133,11 @@ async def test_invalid_fallback_never_executes(monkeypatch, patch):
         LoopContext(user_name="alice", user=USER.copy()),
     )
     assert not outcome.ok
-    assert outcome.error_class == "INVALID_SEMANTIC_PLAN"
+    # An unresolved concept is a question back to the user; the rest are plan errors.
+    expected = (
+        "CLARIFICATION_REQUIRED" if "unresolved_concepts" in patch else "INVALID_SEMANTIC_PLAN"
+    )
+    assert outcome.error_class == expected
     execute.assert_not_awaited()
 
 

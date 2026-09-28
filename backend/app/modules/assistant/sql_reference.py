@@ -1,9 +1,9 @@
 """Bounded reference lookup from the exact grammar packaged with Nova."""
 
-from functools import lru_cache
 import hashlib
-from pathlib import Path
 import re
+from functools import lru_cache
+from pathlib import Path
 
 _GRAMMAR = Path(__file__).resolve().parents[2] / "sql_dialect" / "grammar" / "StarRocks.g4"
 

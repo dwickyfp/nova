@@ -44,6 +44,8 @@ datasets:
         description: Order status (completed, shipped, processing, pending)
         ai_context:
           synonyms: [order status, state]
+        dimension:
+          sample_values: [completed, shipped, processing, pending]
       - name: total_amount
         expression:
           dialects:
@@ -59,6 +61,8 @@ datasets:
             - dialect: ANSI_SQL
               expression: payment_method
         description: Payment method (DANA, GoPay, QRIS, Bank Transfer, Credit Card)
+        dimension:
+          sample_values: [DANA, GoPay, QRIS, Bank Transfer, Credit Card]
       - name: shipping_city
         expression:
           dialects:
@@ -67,6 +71,7 @@ datasets:
         description: Destination city
         ai_context:
           synonyms: [city, destination]
+        dimension: {}
   - name: customers
     source: NOVA_DEMO.customers
     primary_key: [customer_id]
@@ -88,18 +93,21 @@ datasets:
         description: Customer full name
         ai_context:
           synonyms: [name, customer name]
+        dimension: {}
       - name: city
         expression:
           dialects:
             - dialect: ANSI_SQL
               expression: city
         description: Customer city
+        dimension: {}
       - name: country
         expression:
           dialects:
             - dialect: ANSI_SQL
               expression: country
         description: Customer country
+        dimension: {}
       - name: created_at
         expression:
           dialects:
@@ -167,18 +175,22 @@ datasets:
             - dialect: ANSI_SQL
               expression: product_name
         description: Product name
+        dimension: {}
       - name: category
         expression:
           dialects:
             - dialect: ANSI_SQL
               expression: category
         description: Product category (Electronics, Audio, Accessories, Storage)
+        dimension:
+          sample_values: [Electronics, Audio, Accessories, Storage]
       - name: brand
         expression:
           dialects:
             - dialect: ANSI_SQL
               expression: brand
         description: Product brand
+        dimension: {}
       - name: price
         expression:
           dialects:

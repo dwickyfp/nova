@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.common.sql_guard import redact_sql_credentials, split_sql_statements
 from app.common.ml_intercept import detect_ml_forecast, detect_ml_predict, detect_ml_predict_table
+from app.common.sql_guard import redact_sql_credentials, split_sql_statements
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.query.dialect.force_password_change import is_force_password_change
 from app.modules.query.dialect.ml_model import is_create_ml_model, parse_create_ml_model

@@ -22,6 +22,7 @@ Credential handling, stated because it is the whole risk surface:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import suppress
@@ -258,6 +259,13 @@ class AssistantProviderClient:
                 body["parallel_tool_calls"] = False
         if response_format is not None and config.capabilities.supports_json_schema:
             body["response_format"] = response_format
+        first = messages[0] if messages else {}
+        system = first.get("content") if first.get("role") == "system" else None
+        if config.capabilities.supports_prompt_cache_key and isinstance(system, str):
+            # The platform and agent prompt is the stable prefix of every call.
+            body["prompt_cache_key"] = "nova-" + hashlib.sha256(system.encode()).hexdigest()[:32]
+        if config.capabilities.reasoning_effort:
+            body["reasoning_effort"] = config.capabilities.reasoning_effort
         return body
 
     @staticmethod
