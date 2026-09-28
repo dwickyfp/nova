@@ -316,7 +316,8 @@ def normalize_rows(rows: list[Any], *, ordered: bool = False) -> list[tuple[str,
                 cells.append(value.isoformat())
             else:
                 try:
-                    cells.append(str(Decimal(str(value)).quantize(
+                    # compute_metrics writes percentages as "20.4763%".
+                    cells.append(str(Decimal(str(value).rstrip("%")).quantize(
                         Decimal("0.01"), rounding=ROUND_HALF_UP
                     )))
                 except Exception:  # noqa: BLE001 - text cell
