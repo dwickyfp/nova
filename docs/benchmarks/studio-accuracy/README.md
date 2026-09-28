@@ -8,14 +8,15 @@
 
 | Level | What runs | Gate | Where |
 |---|---|---|---|
-| L0 offline | The lexical planner on every case, no engine, no model | CI on every PR | `tests/unit/test_studio_accuracy_l0.py` |
+| L0 offline | Every expected plan validates against the view and compiles, in every language; no engine, no model | CI on every PR | `tests/unit/test_studio_accuracy_l0.py` |
 | L1 trajectory | The agent loop with a scripted provider: tool choice, consent, repair, finish reason | CI on every PR (`-m eval`) | `tests/eval/` |
 | L2 engine | Each expected plan compiled by Nova and executed on StarRocks, compared with an independent gold query | Engine CI job | `run.py --engine` |
 | L3 live | The real agent loop with the configured model, on StarRocks | Nightly or on request | `run.py --live` |
 
-L0 and L2 check the compiler, the time grammar, and the planner fast path. They
-do not involve a model, so their results are exact and repeatable. L3 measures
-what a user sees. The model is not deterministic, so L3 runs each case more than
+L0 and L2 check the plan contract, the time grammar, and the compiler. They do
+not involve a model, so their results are exact and repeatable. Planning is done
+by the model in every language, so planning accuracy is measured only in L3,
+per language. L3 measures what a user sees. The model is not deterministic, so L3 runs each case more than
 once and reports consistency next to accuracy.
 
 ## Data
@@ -41,10 +42,12 @@ progress is compared with the same number of elapsed days in the prior period.
 cases. `cases_multilingual.yaml` holds 25 base questions in eleven more
 languages (es, pt, fr, de, ja, zh, ko, ar, vi, th, hi), each expanding to
 `ml.<base>.<lang>` with the base's expectation. Names are written the way a
-speaker of the language writes them (ジャカルタ, Yakarta). Each case has a question, a language, a category, and either an expected
-plan (`expect`) or an outcome (`clarify`, `refuse`). Derived-number cases also
-carry an `answer` spec: the value a correct answer states (a percent change, a
-difference, a share), computed from the gold rows.
+speaker of the language writes them (ジャカルタ, Yakarta). Each case has a
+question, a language, a category, and either an expected plan (`expect`) or an
+outcome (`clarify`, `refuse`). Derived-number cases also carry an `answer` spec:
+the value a correct answer states (a percent change, a difference, a share),
+computed from the gold rows. The answer text is read with the same CLDR number
+parser the verifier uses, in the case's language.
 
 ## Metrics
 

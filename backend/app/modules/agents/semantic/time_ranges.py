@@ -1,11 +1,11 @@
-"""One time-range grammar for semantic plans, the compiler, and question parsing.
+"""One time-range grammar for semantic plans, intent frames, and the compiler.
 
 A ``SemanticTime.range`` is a string so plans stay portable (stored verified
 queries, provider JSON). This module is the only place that gives that string a
-meaning. The compiler asks it for SQL bounds, the plan contract asks it whether
-a range is valid, and the lexical planner asks it which range a question names.
-Keeping the three together is what stops a phrase such as "last quarter" from
-being parsed as a grouping grain while the compiler silently ignores it.
+meaning. The compiler asks it for SQL bounds, and the plan contract and the
+intent frame ask it whether a range is valid. The model reads the user's words
+in any language and writes a token of this grammar; nothing here parses a
+question.
 
 Supported ranges (case-insensitive, spaces or hyphens accepted in word forms):
 

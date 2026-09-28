@@ -1,17 +1,18 @@
-"""``semantic_query`` — deterministic semantic planning and SQL compilation.
+"""``semantic_query``: a model-planned, Nova-compiled governed query.
 
-The agent gives a business question. Nova selects a semantic model, retrieves a
-small semantic slice, validates a ``SemanticPlan``, resolves the relationship
-graph, checks grain/additivity/fanout, and compiles StarRocks SQL. An LLM is used
-only as a constrained SemanticPlan fallback when deterministic planning is
-ambiguous. It never supplies the SQL or join path.
+The agent gives a business question. The model writes a structured
+``SemanticPlan`` against the view's catalog, in whatever language the question
+is in (the turn planner's plan is used when it has one). Nova validates the
+plan, applies the user's intent frame to the turn's first query, resolves the
+relationship graph, checks grain, additivity, and fanout, and compiles
+StarRocks SQL. The model never supplies the SQL or the join path.
 
 Non-negotiables, identical to ``query_execute``:
 
 * **Delegate-first.** The generated SQL runs on the user's connection, so
   StarRocks RBAC decides. There is no service identity.
-* **Grounded on metadata, never rows.** A small retrieved semantic slice carries
-  relevant datasets, fields, metrics, and relationships, not table data.
+* **Grounded on metadata, never rows.** The planner sees the catalog (datasets,
+  fields, metrics, relationships, sample values), not table data.
 * **Guarded.** Nova's compiled SQL is run through the *same* pipeline as any user SQL:
   ``QueryService`` applies the SQL guard, ``@stage`` translation, credential
   redaction, and audit. This tool does not execute the model's statement any
@@ -19,8 +20,9 @@ Non-negotiables, identical to ``query_execute``:
 * **Read-only by construction.** A compiled statement that is not read-only is
   refused by the same per-statement policy ``query_execute`` uses before the
   engine sees it.
-* **Bounded and honest.** A row cap applies at fetch time. Runtime confidence is
-  computed from semantic match and ambiguity signals, not model self-report.
+* **Bounded and honest.** A row cap applies at fetch time. The trace records
+  where the plan came from (``plan_source``), not a model's self-reported
+  confidence.
 """
 
 from __future__ import annotations

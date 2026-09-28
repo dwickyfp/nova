@@ -5,101 +5,83 @@
 - id: dim.city.en
   question: Revenue by city this month
   category: dimension
-  lexical: true
   expect: {metrics: [total_revenue], dimensions: [city], range: current_month}
 - id: dim.city.id
   lang: id
   question: Penjualan per kota bulan ini
   category: dimension
-  lexical: true
   expect: {metrics: [total_revenue], dimensions: [city], range: current_month}
 - id: dim.channel.en
   question: Orders by sales channel last month
   category: dimension
-  lexical: true
   expect: {metrics: [order_count], dimensions: [sales_channel], range: previous_month}
 - id: dim.channel.id
   lang: id
   question: Jumlah pesanan per kanal bulan lalu
   category: dimension
-  lexical: true
   expect: {metrics: [order_count], dimensions: [sales_channel], range: previous_month}
 - id: dim.segment.en
   question: Revenue by customer segment this year
   category: dimension
-  lexical: true
   expect: {metrics: [total_revenue], dimensions: [segment], range: current_year}
 - id: dim.segment.id
   lang: id
   question: Omzet per segmen pelanggan tahun ini
   category: dimension
-  lexical: true
   expect: {metrics: [total_revenue], dimensions: [segment], range: current_year}
 - id: dim.status.en
   question: Order count by order status last quarter
   category: dimension
-  lexical: true
   expect: {metrics: [order_count], dimensions: [status], range: previous_quarter}
 - id: dim.category.units.en
   question: Units sold by product category this quarter
   category: dimension
-  lexical: true
   expect: {metrics: [units_sold], dimensions: [category], range: current_quarter}
 - id: dim.category.units.id
   lang: id
   question: Unit terjual per kategori produk kuartal ini
   category: dimension
-  lexical: true
   expect: {metrics: [units_sold], dimensions: [category], range: current_quarter}
 - id: dim.category.product_revenue.en
   question: Product revenue by category last month
   category: dimension
-  lexical: true
   expect: {metrics: [product_revenue], dimensions: [category], range: previous_month}
 - id: dim.marketing.en
   question: Marketing spend by marketing channel this month
   category: dimension
-  lexical: true
   expect: {metrics: [marketing_spend_total], dimensions: [marketing_channel], range: current_month}
 - id: dim.marketing.id
   lang: id
   question: Biaya marketing per kanal marketing bulan lalu
   category: dimension
-  lexical: true
   expect: {metrics: [marketing_spend_total], dimensions: [marketing_channel], range: previous_month}
 - id: dim.two.en
   question: Revenue by city and sales channel last month
   category: dimension
-  lexical: true
   expect: {metrics: [total_revenue], dimensions: [city, sales_channel], range: previous_month}
 
 # ── filters ──────────────────────────────────────────────────────────────────
 - id: filter.city.en
   question: Revenue in Jakarta this month
   category: filter
-  lexical: true
   expect: {metrics: [total_revenue], filters: {city: Jakarta}, range: current_month}
 - id: filter.city.id
   lang: id
   question: Penjualan di Surabaya bulan lalu
   category: filter
-  lexical: true
   expect: {metrics: [total_revenue], filters: {city: Surabaya}, range: previous_month}
 - id: filter.channel.en
   question: Orders from Mobile App last week
   category: filter
-  lexical: true
   expect: {metrics: [order_count], filters: {sales_channel: Mobile App}, range: previous_week}
 - id: filter.segment.id
   lang: id
   question: Omzet segmen Enterprise tahun ini
   category: filter
-  lexical: true
   expect: {metrics: [total_revenue], filters: {segment: Enterprise}, range: current_year}
 - id: filter.category.en
   question: Units sold in Electronics last quarter
   category: filter
-  lexical: true
   expect: {metrics: [units_sold], filters: {category: Electronics}, range: previous_quarter}
 - id: filter.named.en
   question: Completed orders last month
@@ -118,7 +100,6 @@
   lang: id
   question: Penjualan per kanal di Medan kuartal lalu
   category: filter
-  lexical: true
   expect: {metrics: [total_revenue], dimensions: [sales_channel], filters: {city: Medan}, range: previous_quarter}
 
 # ── synonyms ─────────────────────────────────────────────────────────────────
@@ -126,71 +107,59 @@
   lang: id
   question: Pendapatan bulan ini berapa?
   category: synonym
-  lexical: true
   expect: {metrics: [total_revenue], range: current_month}
 - id: syn.pembeli.id
   lang: id
   question: Berapa jumlah pembeli bulan lalu?
   category: synonym
-  lexical: true
   expect: {metrics: [customer_count], range: previous_month}
 - id: syn.aov.en
   question: What was the AOV last quarter?
   category: synonym
-  lexical: true
   expect: {metrics: [avg_order_value], range: previous_quarter}
 - id: syn.aov.id
   lang: id
   question: Rata-rata nilai order tahun ini
   category: synonym
-  lexical: true
   expect: {metrics: [avg_order_value], range: current_year}
 - id: syn.adspend.en
   question: Ad spend in the last 30 days
   category: synonym
-  lexical: true
   expect: {metrics: [marketing_spend_total], range: last_30_days}
 - id: syn.belanja_iklan.id
   lang: id
   question: Belanja iklan kuartal ini
   category: synonym
-  lexical: true
   expect: {metrics: [marketing_spend_total], range: current_quarter}
 - id: syn.buyers.en
   question: How many buyers this week?
   category: synonym
-  lexical: true
   expect: {metrics: [customer_count], range: current_week}
 
 # ── ranking and limits ───────────────────────────────────────────────────────
 - id: top.city.en
   question: Top 3 cities by revenue this year
   category: ranking
-  lexical: true
   expect: {metrics: [total_revenue], dimensions: [city], range: current_year, limit: 3}
 - id: top.channel.id
   lang: id
   question: Top 2 kanal berdasarkan penjualan bulan lalu
   category: ranking
-  lexical: true
   expect: {metrics: [total_revenue], dimensions: [sales_channel], range: previous_month, limit: 2}
 - id: top.category.en
   question: Top 5 categories by units sold last quarter
   category: ranking
-  lexical: true
   expect: {metrics: [units_sold], dimensions: [category], range: previous_quarter, limit: 5}
 
 # ── several metrics ──────────────────────────────────────────────────────────
 - id: multi.revenue_orders.en
   question: Revenue and orders by sales channel this month
   category: multi_metric
-  lexical: true
   expect: {metrics: [total_revenue, order_count], dimensions: [sales_channel], range: current_month}
 - id: multi.revenue_orders.id
   lang: id
   question: Penjualan dan jumlah pesanan per kota tahun lalu
   category: multi_metric
-  lexical: true
   expect: {metrics: [total_revenue, order_count], dimensions: [city], range: previous_year}
 
 # ── paraphrases that need the model planner ─────────────────────────────────
