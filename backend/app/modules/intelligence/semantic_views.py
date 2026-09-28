@@ -19,7 +19,7 @@ from app.core.deps import get_current_user
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.ossie import SUPPORTED_VERSIONS, OssieParseError, parse_ossie
-from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanner
+from app.modules.agents.semantic.planning import SemanticPlan
 from app.modules.agents.semantic.quality_lab import evaluate_verified_queries
 from app.modules.agents.semantic.runtime import (
     lint_semantic_model,
@@ -385,28 +385,44 @@ class SemanticViewService:
                 detail="Replace this legacy draft with a supported Ossie 0.1.1 definition",
             )
         ir = SemanticModelIR.from_ossie(row["definition"])
-        planned = SemanticPlanner().plan(ir, question)
-        if planned.plan is None:
+        # The same model planner as Studio, so a preview in any language shows what
+        # an agent would run.
+        from types import SimpleNamespace
+
+        from app.modules.agents.semantic.model_planner import generate_plan, planning_catalog
+        from app.modules.assistant.provider import (
+            AssistantProviderClient,
+            AssistantProviderError,
+        )
+
+        try:
+            plan = await generate_plan(
+                AssistantProviderClient(), ir, await planning_catalog(ir, question), question,
+                SimpleNamespace(usage=None, model_provider_id=None, model_name=None),
+            )
+        except AssistantProviderError as exc:
+            raise HTTPException(
+                status_code=503, detail="No AI provider is available to plan the question."
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        unresolved = [item.text for item in plan.unresolved_concepts if item.material]
+        if unresolved:
             raise HTTPException(
                 status_code=422,
-                detail=planned.clarification or "The semantic question is ambiguous.",
+                detail="The View does not cover: " + ", ".join(unresolved),
             )
         try:
-            compiled = SemanticCompiler().compile(ir, planned.plan)
+            compiled = SemanticCompiler().compile(ir, plan)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         preview = {
             "view_id": view_id,
             "version": version,
             "model_fingerprint": row["fingerprint"],
-            "semantic_plan": planned.plan.as_dict(),
+            "semantic_plan": plan.as_dict(),
             "generated_sql": compiled.sql,
-            "confidence": {
-                "score": planned.confidence.score,
-                "level": planned.confidence.level,
-                "signals": planned.confidence.signals,
-                "unresolved": list(planned.confidence.unresolved),
-            },
+            "plan_source": "model_planner",
             "relationship_path": list(compiled.relationship_path),
             "warnings": list(compiled.warnings),
         }

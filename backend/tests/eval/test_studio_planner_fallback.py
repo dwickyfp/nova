@@ -29,7 +29,7 @@ def semantic_tool():
     )
 
 
-async def run(question, *, studio=True):
+async def run(question, *, studio=True, views=True):
     tool = semantic_tool()
     registry = ToolRegistry()
     registry.register(tool)
@@ -40,7 +40,7 @@ async def run(question, *, studio=True):
     context = LoopContext(user_name="alice")
     if studio:
         context.agent_scope = {"agent": "Sales"}
-        context.authorized_semantic_models = [{"_scoped_ir": bench_model()}]
+        context.authorized_semantic_models = [{"_scoped_ir": bench_model()}] if views else []
     thread = AssistantThread(thread_id="fallback", user_name="alice", title="Eval")
     thread.consent.always_allow_read_only = True
     frames = [
@@ -52,25 +52,26 @@ async def run(question, *, studio=True):
 
 
 async def test_governed_metric_question_falls_back_to_the_semantic_tool():
-    # "jelaskan" keeps the question off the fast path, so the planner is asked.
-    joined, tool, context = await run("Berapa penjualan bulan ini? jelaskan")
+    joined, tool, context = await run("Berapa penjualan bulan ini?")
     assert '"finish_reason":"stop"' in joined
     assert len(tool.runs) == 1
     assert any(step.get("planner_fallback") == "semantic_analytics"
                for step in context.steps or [])
 
 
-async def test_a_fully_resolved_metric_question_skips_the_model_planner():
-    joined, tool, context = await run("Berapa penjualan bulan ini?")
-    assert '"finish_reason":"stop"' in joined
-    assert len(tool.runs) == 1
-    assert any(step.get("planner_fast_path") == "semantic_analytics"
-               for step in context.steps or [])
-    assert not any(step.get("planner_fallback") for step in context.steps or [])
+async def test_the_fallback_does_not_read_the_question_in_any_language():
+    # Without the planner, the governed tool plans the question itself and says
+    # what the catalog cannot cover; no word list decides the route.
+    for question in ("Tolong bantu saya dong", "今月の売上は？"):
+        joined, tool, context = await run(question)
+        assert "planning_failed" not in joined
+        assert len(tool.runs) == 1
+        assert any(step.get("planner_fallback") == "semantic_analytics"
+                   for step in context.steps or [])
 
 
-async def test_unmatched_question_falls_back_to_clarification():
-    joined, tool, _context = await run("Tolong bantu saya dong")
+async def test_a_studio_agent_without_a_view_falls_back_to_clarification():
+    joined, tool, _context = await run("Berapa penjualan bulan ini?", views=False)
     assert tool.runs == []
     assert "planning_failed" not in joined
 

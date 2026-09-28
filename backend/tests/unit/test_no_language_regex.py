@@ -32,11 +32,7 @@ _GRAIN_TOKENS = {"hour", "day", "week", "month", "quarter", "year"}
 REMAINING = {
     "app/modules/agents/semantic/planning.py",
     "app/modules/agents/semantic/time_ranges.py",
-    "app/modules/agents/tools/semantic_query.py",
     "app/modules/assistant/answer_contract.py",
-    "app/modules/assistant/app_context.py",
-    "app/modules/assistant/data_evidence.py",
-    "app/modules/assistant/service.py",
     "app/modules/assistant/tools/search_knowledge.py",
 }
 

@@ -98,14 +98,18 @@ def next_collaboration_tool(evidence: Any) -> str | None:
     return None
 
 
-def incomplete_metrics(evidence: Any, question: str) -> list[str]:
+def incomplete_metrics(evidence: Any, question: str, frame: Any = None) -> list[str]:
     owners = metric_owners(evidence)
     requirements: dict[str, list[tuple[dict, dict]]] = {}
     for agent in owners:
         for match in agent.get("semantic_matches", []):
             alias = str(match.get("matched_alias") or match["metric"]).casefold().replace("_", " ")
             requirements.setdefault(alias, []).append((agent, match))
-    year = re.search(r"\b(?:for|in|untuk|tahun|year)\s+([12]\d{3})(?![\d/-])\b", question, re.I)
+    # The year and whether a series was asked come from the intent frame, in any
+    # language; the question text itself is never parsed here.
+    requested = str(getattr(frame, "range", "") or "")
+    year = requested if re.fullmatch(r"[12]\d{3}", requested) else None
+    asks_series = bool(getattr(frame, "asks_series", False))
     missing = []
     for alias, alternatives in requirements.items():
         covered = False
@@ -121,14 +125,10 @@ def incomplete_metrics(evidence: Any, question: str) -> list[str]:
                 if not dimensions <= set(metadata.get("dimensions", [])):
                     continue
                 plan = metadata.get("semantic_plan") or {}
-                if year and str((plan.get("time") or {}).get("range")) != year[1]:
+                if year and str((plan.get("time") or {}).get("range")) != year:
                     continue
                 grain = (plan.get("time") or {}).get("grain")
-                if year and grain and not re.search(
-                    r"\b(?:(?:by|per)\s+(?:day|week|month|quarter|year|hari|minggu|bulan|tahun)"
-                    r"|daily|weekly|monthly|quarterly|yearly|harian|mingguan|bulanan|tahunan)\b",
-                    question, re.I,
-                ):
+                if year and grain and not asks_series:
                     continue
                 if not {match["metric"], *dimensions} <= set(table["columns"]):
                     continue

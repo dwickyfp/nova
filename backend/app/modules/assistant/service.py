@@ -183,6 +183,12 @@ class LoopContext:
     #: Set once the turn's first semantic query ran; later queries are analysis
     #: steps the model may point at other periods on purpose.
     primary_query_done: bool = False
+    #: What the user asked, read once by the turn planner in any language.
+    intent_frame: Any = None
+    #: The turn planner's plan for the first governed query: {"plan", "view"}.
+    primary_plan: dict[str, Any] | None = None
+    #: The Semantic View the loop model named in its semantic_query call.
+    requested_semantic_view: str | None = None
     #: This turn's verified result tables by evidence id, for ``compute_metrics``.
     #: Set before each tool call; never persisted or sent upstream.
     evidence_tables: dict[str, dict[str, Any]] | None = None
@@ -716,6 +722,18 @@ class AssistantLoop:
             yield events.done(str(uuid4()), finish_reason="error")
             return
 
+        semantic_context = None
+        if (
+            context.agent_scope is not None
+            and self._registry.get("semantic_query") is not None
+            and context.authorized_semantic_models
+        ):
+            from app.modules.agents.semantic.model_planner import planning_context
+
+            # The planner writes the first query's plan in the same call that
+            # routes the turn, so a data question costs no extra model call.
+            semantic_context = planning_context(context.authorized_semantic_models)
+
         async def plan_with(selected_provider: Any) -> TurnPlan:
             return await plan_turn(
                 provider_client=self._provider,
@@ -730,6 +748,7 @@ class AssistantLoop:
                 has_previous_result=context.last_result is not None,
                 has_semantic_model=_has_semantic_binding(context),
                 agent_scope=context.agent_scope,
+                semantic_context=semantic_context,
                 conversation_context=_planning_history(thread, user_content),
                 application_context=(
                     {
@@ -750,26 +769,11 @@ class AssistantLoop:
                 ),
             )
 
-        fast_plan = (
-            _studio_fast_plan(self._registry, context, user_content)
-            if context.agent_scope is not None
-            and not context.attachments and not context.collaboration_root
-            else None
-        )
         try:
-            if fast_plan is not None:
-                # A plain metric question the governed planner already understands
-                # needs no model call to route it.
-                turn_plan = fast_plan
-                _record_step(context, {
-                    "kind": "runtime_decision", "planner_fast_path": turn_plan.route.intent.value,
-                    "status": "done",
-                })
-            else:
-                turn_plan = await asyncio.wait_for(
-                    plan_with(provider), timeout=max(0.01, deadline - _budget_time()),
-                )
-            if fast_plan is None and context.decision is not None:
+            turn_plan = await asyncio.wait_for(
+                plan_with(provider), timeout=max(0.01, deadline - _budget_time()),
+            )
+            if context.decision is not None:
                 turn_plan = await asyncio.wait_for(
                     refine_turn_plan(
                         turn_plan, self._registry, context.routing_content or user_content,
@@ -796,6 +800,23 @@ class AssistantLoop:
             })
         route = turn_plan.route
         context.route = route.as_dict()
+        context.intent_frame = turn_plan.intent_frame
+        if turn_plan.primary_plan is not None:
+            context.primary_plan = {"plan": turn_plan.primary_plan, "view": turn_plan.primary_view}
+            if (
+                "semantic_query" in turn_plan.selected_tools
+                and "semantic_query" in route.required_capabilities
+            ):
+                # Run the first query before the first loop model call: the model
+                # then answers from its result instead of spending a call to ask.
+                deferred_calls.append({
+                    "id": f"primary-{uuid4()}",
+                    "type": "function",
+                    "function": {
+                        "name": "semantic_query",
+                        "arguments": json.dumps({"question": user_content}, ensure_ascii=False),
+                    },
+                })
         context.selected_tools = list(turn_plan.selected_tools)
         context.selected_skills = list(turn_plan.selected_skills)
         selected_tools = turn_plan.selected_tools
@@ -1253,7 +1274,8 @@ class AssistantLoop:
                     )
                 ) or bool(context.collaboration_root and metric_owners(evidence))
                 missing_metrics = (
-                    incomplete_metrics(evidence, user_content) if business_request else []
+                    incomplete_metrics(evidence, user_content, context.intent_frame)
+                    if business_request else []
                 )
                 if business_request and not denials and (
                     not evidence.business_tables or missing_metrics
@@ -2392,87 +2414,27 @@ def _follow_up_suggestions(context: LoopContext, question: str) -> list[str]:
     return []
 
 
-#: Requests that need the model planner's wider tool choice, not only the
-#: governed query: diagnosis, forecasting, documents, automations, sharing.
-_NEEDS_PLANNER = re.compile(
-    r"\b(?:why|kenapa|mengapa|explain|jelaskan|penyebab|cause|forecast|predict|prediksi|"
-    r"ramal\w*|proyeksi|anomal\w*|dokumen|document|search|cari|tiket|ticket|schedule|"
-    r"jadwal\w*|every|setiap|tiap|remind|ingatkan|share|bagikan|export|ekspor|unduh|"
-    r"download|sql|query|table|tabel|schema|skema|who\s+are\s+you|siapa|help|bantuan)\b",
-    re.I,
-)
-
-
-def _studio_fast_plan(
-    registry: ToolRegistry, context: LoopContext, question: str
-) -> TurnPlan | None:
-    """The governed route for a metric question the lexical planner resolves fully.
-
-    Only a confident plan qualifies: every word mapped, no ambiguity. Anything
-    else, and any request that may need another tool, goes to the model planner.
-    """
-    from app.modules.agents.semantic.planning import SemanticPlanError, SemanticPlanner
-
-    names = registry.names()
-    if "semantic_query" not in names or _NEEDS_PLANNER.search(question):
-        return None
-    for model in context.authorized_semantic_models or []:
-        ir = model.get("_scoped_ir")
-        if ir is None:
-            continue
-        try:
-            planned = SemanticPlanner().plan(ir, question)
-        except SemanticPlanError:
-            continue
-        if (
-            planned.plan is not None and planned.plan.metrics
-            and planned.confidence.level == "high" and not planned.confidence.unresolved
-        ):
-            return TurnPlan(
-                route=TurnRoute(
-                    TurnIntent.SEMANTIC_ANALYTICS, needs_data=True,
-                    needs_semantic_model=True, required_capabilities=("semantic_query",),
-                ),
-                selected_tools=tuple(
-                    name for name in ("semantic_query", "compute_metrics", "data_to_chart")
-                    if name in names
-                ),
-            )
-    return None
-
-
 def _studio_fallback_plan(
-    registry: ToolRegistry, context: LoopContext, question: str
+    registry: ToolRegistry, context: LoopContext, _question: str
 ) -> TurnPlan | None:
     """A safe plan when the model planner fails twice for a Studio agent.
 
-    A confident governed metric match routes to the semantic tool; anything
-    else becomes a clarification. It never selects raw SQL.
+    An agent with a governed view routes to ``semantic_query``, which plans the
+    question with its own model call and says what the catalog cannot cover;
+    anything else becomes a clarification. It never selects raw SQL.
     """
-    from app.modules.agents.semantic.planning import SemanticPlanError, SemanticPlanner
-
     names = registry.names()
-    if "semantic_query" in names:
-        for model in context.authorized_semantic_models or []:
-            ir = model.get("_scoped_ir")
-            if ir is None:
-                continue
-            try:
-                planned = SemanticPlanner().plan(ir, question)
-            except SemanticPlanError:
-                continue
-            if planned.plan is not None and planned.plan.metrics:
-                tools = tuple(
-                    name for name in ("semantic_query", "compute_metrics", "data_to_chart")
-                    if name in names
-                )
-                return TurnPlan(
-                    route=TurnRoute(
-                        TurnIntent.SEMANTIC_ANALYTICS, needs_data=True,
-                        needs_semantic_model=True, required_capabilities=("semantic_query",),
-                    ),
-                    selected_tools=tools,
-                )
+    if "semantic_query" in names and context.authorized_semantic_models:
+        return TurnPlan(
+            route=TurnRoute(
+                TurnIntent.SEMANTIC_ANALYTICS, needs_data=True,
+                needs_semantic_model=True, required_capabilities=("semantic_query",),
+            ),
+            selected_tools=tuple(
+                name for name in ("semantic_query", "compute_metrics", "data_to_chart")
+                if name in names
+            ),
+        )
     return TurnPlan(
         route=TurnRoute(TurnIntent.CLARIFICATION, clarification_required=True),
         selected_tools=(),
