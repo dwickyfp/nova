@@ -719,6 +719,15 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
             categories[item.category]["total"] += 1
             categories[item.category]["passed"] += int(item.passed)
         latencies = sorted(item.latency_ms for item in scored if item.latency_ms is not None)
+        languages: dict[str, dict[str, int]] = defaultdict(
+            lambda: {"passed": 0, "total": 0, "silent_wrong": 0}
+        )
+        for item in scored:
+            # Every case id ends in its language: "top.city.en", "ml.rev_mom.ja".
+            language = languages[item.id.rsplit(".", 1)[-1]]
+            language["total"] += 1
+            language["passed"] += int(item.passed)
+            language["silent_wrong"] += int(item.silent_wrong)
         summary[level] = {
             "accuracy": round(sum(item.passed for item in scored) / max(len(scored), 1), 4),
             "cases": len(scored),
@@ -727,6 +736,10 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
             "categories": {
                 name: {**value, "accuracy": round(value["passed"] / value["total"], 4)}
                 for name, value in sorted(categories.items())
+            },
+            "languages": {
+                name: {**value, "accuracy": round(value["passed"] / value["total"], 4)}
+                for name, value in sorted(languages.items())
             },
             "p50_ms": latencies[len(latencies) // 2] if latencies else None,
             **_consistency(scored),
@@ -777,6 +790,8 @@ async def main_async(args: argparse.Namespace) -> int:
     cases = all_cases(today)
     if args.category:
         cases = [case for case in cases if case.category in args.category]
+    if args.lang:
+        cases = [case for case in cases if case.lang in args.lang]
     if args.case:
         cases = [case for case in cases if case.id in args.case]
     if args.per_category:
@@ -829,6 +844,11 @@ async def main_async(args: argparse.Namespace) -> int:
             for name, value in values["categories"].items():
                 print(f"    {name:16} {value['passed']:>3}/{value['total']:<3} "
                       f"{value['accuracy']:.2f}")
+            if len(values["languages"]) > 1:
+                print("  by language:")
+                for name, value in values["languages"].items():
+                    print(f"    {name:16} {value['passed']:>3}/{value['total']:<3} "
+                          f"{value['accuracy']:.2f}  silent_wrong={value['silent_wrong']}")
         for item in report["failures"][: args.show]:
             print(f"FAIL {item['level']} {item['id']}: {item['detail']}")
         for failure in failures:
@@ -845,6 +865,7 @@ def main() -> int:
     parser.add_argument("--per-category", type=int, default=None)
     parser.add_argument("--repeat", type=int, default=1, help="L3: runs per case")
     parser.add_argument("--category", action="append")
+    parser.add_argument("--lang", action="append", help="only cases in these languages")
     parser.add_argument("--case", action="append")
     parser.add_argument("--baseline", default=None)
     parser.add_argument("--write", action="store_true", help="write docs/benchmarks report")
