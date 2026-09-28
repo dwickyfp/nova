@@ -47,24 +47,27 @@ def build_registry() -> ToolRegistry:
         inspect_agent_configuration_tool,
     )
     from app.modules.assistant.tools.load_skill import load_skill_tool
+    from app.modules.assistant.tools.provision_user import provision_user_tool
     from app.modules.assistant.tools.query_context import (
         inspect_query_error_tool,
         verify_query_repair_tool,
     )
     from app.modules.assistant.tools.query_execute import query_execute_tool
+    from app.modules.assistant.tools.query_mutate import query_mutate_tool
     from app.modules.assistant.tools.role_access import (
         grant_role_access_tool,
         inspect_role_access_tool,
     )
     from app.modules.assistant.tools.search_knowledge import search_knowledge_tool
-    from app.modules.assistant.tools.provision_user import provision_user_tool
-    from app.modules.assistant.tools.query_mutate import query_mutate_tool
     from app.modules.assistant.tools.validate_sql import validate_sql_tool
 
     registry = ToolRegistry()
     registry.register(load_skill_tool)
     registry.register(search_knowledge_tool)
     registry.register(query_execute_tool)
+    from app.modules.agents.tools.compute_metrics import compute_metrics_tool
+
+    registry.register(compute_metrics_tool)
     registry.register(ml_execute_tool)
     registry.register(data_to_chart_tool)
     registry.register(ai_search_tool)

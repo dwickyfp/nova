@@ -16,7 +16,16 @@ from __future__ import annotations
 from typing import Any
 
 from app.modules.agents.collaboration_tools import COLLABORATION_TOOLS
+from app.modules.agents.tools.analyze_documents_spec import DESCRIPTION as ANALYZE_DESCRIPTION
+from app.modules.agents.tools.analyze_documents_spec import PARAMETERS as ANALYZE_PARAMETERS
+from app.modules.agents.tools.compute_metrics import PARAMETERS as COMPUTE_PARAMETERS
+from app.modules.agents.tools.compute_metrics import ComputeMetricsTool
 from app.modules.agents.tools.describe_agent import DESCRIPTION, PARAMETERS
+from app.modules.agents.tools.schedule_automation import PARAMETERS as SCHEDULE_PARAMETERS
+from app.modules.agents.tools.schedule_automation import ScheduleAutomationTool
+
+COMPUTE_DESCRIPTION = ComputeMetricsTool.description
+SCHEDULE_DESCRIPTION = ScheduleAutomationTool.description
 
 #: name -> (description, input_schema)
 BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
@@ -107,6 +116,7 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
                 "query": {"type": "string"},
                 "mode": {"type": "string", "enum": ["LEXICAL", "SEMANTIC", "HYBRID"]},
                 "top_k": {"type": "integer", "minimum": 1, "maximum": 10},
+                "filters": {"type": "object"},
             },
             "required": ["index", "query"],
             "additionalProperties": False,
@@ -120,6 +130,10 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
                 "view_id": {"type": "string"},
                 "metrics": {"type": "array", "items": {"type": "string"}},
                 "dimensions": {"type": "array", "items": {"type": "string"}},
+                "filters": {"type": "object"},
+                "named_filters": {"type": "array", "items": {"type": "string"}},
+                "time": {"type": "object"},
+                "order_by": {"type": "array", "items": {"type": "object"}},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 100},
             },
             "required": ["view_id", "metrics"],
@@ -167,6 +181,9 @@ BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
             "additionalProperties": False,
         },
     ),
+    "compute_metrics": (COMPUTE_DESCRIPTION, COMPUTE_PARAMETERS),
+    "schedule_automation": (SCHEDULE_DESCRIPTION, SCHEDULE_PARAMETERS),
+    "analyze_documents": (ANALYZE_DESCRIPTION, ANALYZE_PARAMETERS),
     "ml_execute": (
         "Run Nova's bounded ML runtime for forecast, classification, regression, anomaly "
         "detection, or clustering over caller-authorized SQL features. Do not approximate "
@@ -332,6 +349,8 @@ AGENT_BUNDLEABLE_TOOLS = (
     "feature_lookup",
     "data_to_chart",
     "diagnose_change",
+    "compute_metrics",
+    "schedule_automation",
     "ml_execute",
 )
 

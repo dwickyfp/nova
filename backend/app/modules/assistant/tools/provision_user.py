@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import re
 import logging
+import re
 from typing import Any
 
 from app.common.audit import write_audit_log

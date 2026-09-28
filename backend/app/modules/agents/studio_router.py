@@ -70,6 +70,7 @@ from app.modules.agents.schemas import (
     ToolToggleRequest,
     ToolView,
 )
+from app.modules.agents.sharing import ShareCreate
 from app.modules.agents.studio_schemas import (
     AccessCheckRequest,
     ArtifactApplyRequest,
@@ -993,3 +994,243 @@ async def _require_unique_custom_tool_name(
 
 def _clamp_days(days: int) -> int:
     return min(max(days, 1), 90)
+
+
+# ── Sharing ────────────────────────────────────────────────────
+# A share makes the work visible; every result is re-run as the viewer.
+
+
+async def _owned_share_object(object_type: str, object_id: str, owner: str) -> dict:
+    from app.modules.assistant.repository import assistant_repository
+
+    if object_type == "dashboard":
+        found = await dashboard_repository.get(object_id, owner_name=owner)
+    else:
+        found = await assistant_repository.get_thread(object_id, user_name=owner)
+    if not found:
+        raise HTTPException(status_code=404, detail="Nothing to share with that id")
+    return found
+
+
+@router.post("/studio/shares", status_code=201)
+async def create_share(body: ShareCreate, user: dict = Depends(get_current_user)) -> dict:
+    from app.modules.agents.sharing import share_repository
+
+    await _owned_share_object(body.object_type, body.object_id, user["username"])
+    try:
+        share = await share_repository.create(owner_name=user["username"], body=body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await write_audit_log(
+        event_type="STUDIO_SHARE", user_name=user["username"], action="GRANT",
+        object_type=body.object_type.upper(), object_name=body.object_id, status="SUCCESS",
+        decision=f"{body.target_type}:{body.target_name}", session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
+    return share
+
+
+@router.get("/studio/shares")
+async def list_object_shares(
+    object_type: str, object_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    from app.modules.agents.sharing import share_repository
+
+    shares = await share_repository.for_object(object_type, object_id, owner_name=user["username"])
+    return {"shares": shares, "count": len(shares)}
+
+
+@router.delete("/studio/shares/{share_id}", status_code=204)
+async def revoke_share(share_id: str, user: dict = Depends(get_current_user)) -> None:
+    from app.modules.agents.sharing import share_repository
+
+    await share_repository.delete(share_id, owner_name=user["username"])
+    await write_audit_log(
+        event_type="STUDIO_SHARE", user_name=user["username"], action="REVOKE",
+        object_type="STUDIO_SHARE", object_name=share_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+
+
+@router.get("/studio/shared")
+async def list_shared_with_me(user: dict = Depends(get_current_user)) -> dict:
+    from app.modules.agents.sharing import share_repository
+
+    shares = [share for share in await share_repository.visible(user)
+              if share["owner_name"] != user["username"]]
+    unique = {(item["object_type"], item["object_id"]): item for item in shares}
+    return {"shared": list(unique.values()), "count": len(unique)}
+
+
+async def _shared_grant(user: dict, object_type: str, object_id: str) -> dict:
+    from app.modules.agents.sharing import share_repository
+
+    share = await share_repository.grant_for(user, object_type, object_id)
+    if share is None:
+        raise HTTPException(status_code=404, detail="Not shared with you")
+    return share
+
+
+@router.get("/studio/shared/threads/{thread_id}", response_class=SanitizingJSONResponse)
+async def open_shared_thread(thread_id: str, user: dict = Depends(get_current_user)) -> dict:
+    from app.modules.agents.sharing import shared_steps
+    from app.modules.assistant.repository import assistant_repository
+
+    share = await _shared_grant(user, "thread", thread_id)
+    owner = share["owner_name"]
+    thread = await assistant_repository.get_thread(thread_id, user_name=owner)
+    if not thread:
+        raise HTTPException(status_code=404, detail="The shared conversation no longer exists")
+    messages = await assistant_repository.list_messages(thread_id, user_name=owner)
+    await write_audit_log(
+        event_type="STUDIO_SHARE", user_name=user["username"], action="READ",
+        object_type="THREAD", object_name=thread_id, status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return {
+        "thread_id": thread_id,
+        "title": thread.get("title"),
+        "owner_name": owner,
+        "agent_id": thread.get("agent_id"),
+        "messages": [
+            {
+                "message_id": item["message_id"],
+                "role": item["role"],
+                "content": item["content"],
+                "steps": shared_steps(item.get("steps")),
+            }
+            for item in messages if item["role"] in {"user", "assistant"}
+        ],
+        "note": "Results are not included. Refresh a result to run it with your own access.",
+    }
+
+
+@router.post(
+    "/studio/shared/threads/{thread_id}/results/{tool_call_id}/refresh",
+    response_class=SanitizingJSONResponse,
+)
+async def refresh_shared_result(
+    thread_id: str, tool_call_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    """Re-run one governed answer of a shared thread as the viewer."""
+    from app.modules.agents.semantic.compiler import SemanticCompiler
+    from app.modules.agents.semantic.ir import SemanticModelIR
+    from app.modules.agents.semantic.planning import SemanticPlan
+    from app.modules.assistant.repository import assistant_repository
+    from app.modules.intelligence.semantic_views import semantic_view_service
+
+    share = await _shared_grant(user, "thread", thread_id)
+    owner = share["owner_name"]
+    thread = await assistant_repository.get_thread(thread_id, user_name=owner) or {}
+    messages = await assistant_repository.list_messages(thread_id, user_name=owner)
+    step = next(
+        (item for message in messages for item in (message.get("steps") or [])
+         if isinstance(item, dict) and item.get("tool_call_id") == tool_call_id
+         and item.get("name") == "semantic_query"),
+        None,
+    )
+    trace = (step or {}).get("trace_detail") or {}
+    view_id = (trace.get("semantic_view") or {}).get("id")
+    if not view_id or not isinstance(trace.get("semantic_plan"), dict):
+        raise HTTPException(status_code=404, detail="That result cannot be re-run")
+    record = await semantic_view_service.get_active_for_agent(
+        str(view_id), user, agent_id=thread.get("agent_id")
+    )
+    if record is None:
+        raise HTTPException(status_code=403, detail="Your access does not cover this result")
+    plan = SemanticPlan.from_dict(trace["semantic_plan"])
+    sql = SemanticCompiler().compile(SemanticModelIR.from_ossie(record["definition"]), plan).sql
+    result = await query_service.execute(
+        sql=sql, username=user["username"], encrypted_password=user["encrypted_password"],
+        role=_current_role(user), session_id=user.get("session_id"), max_rows=500,
+    )
+    if result.error:
+        raise HTTPException(status_code=403, detail="Your access does not cover this result")
+    return {"columns": result.columns, "rows": result.rows, "row_count": result.row_count}
+
+
+@router.get("/studio/shared/dashboards/{dashboard_id}")
+async def open_shared_dashboard(dashboard_id: str, user: dict = Depends(get_current_user)) -> dict:
+    share = await _shared_grant(user, "dashboard", dashboard_id)
+    dashboard = await dashboard_repository.get(dashboard_id, owner_name=share["owner_name"])
+    if dashboard is None:
+        raise HTTPException(status_code=404, detail="The shared dashboard no longer exists")
+    layout = dashboard["layout"]
+    return {
+        "dashboard_id": dashboard_id,
+        "title": dashboard["title"],
+        "owner_name": share["owner_name"],
+        "layout": layout.model_dump() if hasattr(layout, "model_dump") else layout,
+    }
+
+
+@router.post(
+    "/studio/shared/dashboards/{dashboard_id}/artifacts/{artifact_id}/refresh",
+    response_class=SanitizingJSONResponse,
+)
+async def refresh_shared_dashboard_artifact(
+    dashboard_id: str, artifact_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    share = await _shared_grant(user, "dashboard", dashboard_id)
+    owner = share["owner_name"]
+    dashboard = await dashboard_repository.get(dashboard_id, owner_name=owner)
+    tiles = dashboard["layout"].tiles if dashboard else []
+    if not any(tile.artifact_id == artifact_id for tile in tiles):
+        raise HTTPException(status_code=404, detail="That tile is not on the shared dashboard")
+    artifact = await artifact_repository.get(artifact_id, owner_name=owner)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    results = await query_service.execute_statements(
+        sql=artifact["sql_text"], username=user["username"],
+        encrypted_password=user["encrypted_password"], database=artifact["database_name"],
+        schema=artifact["schema_name"], role=_current_role(user), max_rows=500,
+        session_id=user.get("session_id"), confirm_destructive=False,
+    )
+    result = results[0]
+    if not result.success:
+        raise HTTPException(status_code=403, detail="Your access does not cover this tile")
+    return {
+        "artifact": {key: artifact.get(key) for key in
+                     ("artifact_id", "title", "artifact_type", "chart_spec")},
+        "columns": result.columns, "rows": result.rows, "row_count": result.row_count,
+    }
+
+
+@router.get("/studio/artifacts/{artifact_id}/export")
+async def export_artifact(
+    artifact_id: str, format: str = "csv", user: dict = Depends(get_current_user)
+):
+    """Download an artifact's current result, re-run under the caller's access."""
+    import re
+
+    from fastapi.responses import Response
+
+    from app.modules.agents.exporters import MAX_EXPORT_ROWS, MEDIA_TYPES, export
+    from app.modules.assistant.tools.redaction import redact_rows
+
+    if format not in MEDIA_TYPES:
+        raise HTTPException(status_code=422, detail="Choose csv, xlsx, pdf, or pptx")
+    artifact = await _artifact_or_404(artifact_id, user["username"])
+    results = await query_service.execute_statements(
+        sql=artifact["sql_text"], username=user["username"],
+        encrypted_password=user["encrypted_password"], database=artifact["database_name"],
+        schema=artifact["schema_name"], role=_current_role(user), max_rows=MAX_EXPORT_ROWS,
+        session_id=user["session_id"], confirm_destructive=False,
+    )
+    result = results[0]
+    if not result.success:
+        raise HTTPException(status_code=422, detail="The artifact query could not be exported.")
+    columns = [str(column) for column in result.columns]
+    rows = redact_rows(columns, [list(row) for row in result.rows])
+    body = export(format, columns, rows, title=str(artifact["title"]))
+    await write_audit_log(
+        event_type="STUDIO_EXPORT", user_name=user["username"], action="EXPORT",
+        object_type="ARTIFACT", object_name=artifact_id, status="SUCCESS",
+        decision=f"{format}:{len(rows)} rows", session_id=user.get("session_id"),
+        active_role=user.get("active_role"),
+    )
+    filename = (re.sub(r"[^A-Za-z0-9._-]+", "_", str(artifact["title"]))[:60] or "result")
+    return Response(
+        content=body, media_type=MEDIA_TYPES[format],
+        headers={"Content-Disposition": f'attachment; filename="{filename}.{format}"'},
+    )

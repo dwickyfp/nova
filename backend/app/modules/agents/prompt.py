@@ -174,6 +174,15 @@ _TOOL_DESCRIPTIONS = {
         "data_to_chart(intent) — build a chart from the latest data already fetched "
         "in this conversation, including the preceding turn's table."
     ),
+    "compute_metrics": (
+        "compute_metrics(operation, value_column, ...) — exact growth, share, rank, CAGR, "
+        "totals or contribution from a result already returned; call it before stating "
+        "a derived number."
+    ),
+    "schedule_automation": (
+        "schedule_automation(title, prompt, schedule_kind, schedule_expr) — schedule a "
+        "recurring report or threshold alert when the user asks for one."
+    ),
     "ml_execute": (
         "ml_execute(task, input_sql, ...) — run bounded deterministic ML as the "
         "requesting user; keep one-off analysis ephemeral."

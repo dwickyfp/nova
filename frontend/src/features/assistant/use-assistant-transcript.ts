@@ -274,6 +274,9 @@ function applyEvent(
       return appendBlock(state, { kind: "chart", block: event.payload });
     case "citation":
       return appendBlock(state, { kind: "citation", block: event.payload });
+    case "suggestions":
+      // Nove's panel does not offer catalog follow-ups; Studio does.
+      return state;
     case "tool_detail":
       // What a tool did, for the reader who opens its step. Recorded on the
       // matching tool activity step so the panel can show it.

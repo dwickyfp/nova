@@ -239,7 +239,8 @@ def test_planner_selects_metric_dimension_literal_and_time():
     assert planned.plan.metrics == ("total_revenue",)
     assert planned.plan.dimensions == ("city",)
     assert planned.plan.filters == (SemanticFilter("city", "=", "Jakarta"),)
-    assert planned.plan.time == SemanticTime("order_date", grain="month", range="previous_month")
+    # "last month" names the period; it does not ask for a monthly grouping.
+    assert planned.plan.time == SemanticTime("order_date", grain=None, range="previous_month")
     assert planned.plan.limit == 5
 
 
