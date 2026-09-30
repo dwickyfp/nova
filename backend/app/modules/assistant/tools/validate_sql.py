@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from app.common.ml_intercept import detect_ml_forecast, detect_ml_predict, detect_ml_predict_table
 from app.common.sql_guard import redact_sql_credentials, split_sql_statements
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
-from app.modules.query.dialect.force_password_change import is_force_password_change
-from app.modules.query.dialect.ml_model import is_create_ml_model, parse_create_ml_model
-from app.modules.query.dialect.parser import _parse_tree, parse_sql
-from app.modules.query.dialect.translator import StorageConfig, translate_stage_query
-from app.modules.task_orchestration.ddl import is_create_task, parse_create_task
 
 
 def check_sql(sql: str) -> list[dict[str, Any]]:
@@ -25,42 +18,24 @@ def check_sql(sql: str) -> list[dict[str, Any]]:
     if not 1 <= len(statements) <= 8:
         raise ValueError("Validate at most eight statements at once.")
     checks = []
+    from app.sql_frontend.analysis.validation import validate_action
+    from app.sql_frontend.ast.builder import ast_builders
+    from app.sql_frontend.ast.statements import NativeStatement, StageAwareStatement
+    from app.sql_frontend.parser import parse_statement
+
     for index, stmt in enumerate(statements, 1):
         errors: list[str] = []
         dialect = "StarRocks 4.1"
         try:
-            if re.match(r"CREATE\s+(?:STAGE|SEMANTIC\s+VIEW|AGENT|WAREHOUSE)\b", stmt, re.I):
-                errors = [
-                    "This SQL surface is not implemented in Nova. "
-                    "Use supported SQL or a typed capability."
-                ]
-            elif is_force_password_change(stmt):
-                dialect = "Nova password-change policy"
-            elif is_create_ml_model(stmt):
-                parse_create_ml_model(stmt)
-                dialect = "Nova ML"
-            elif is_create_task(stmt):
-                parse_create_task(stmt)
-                dialect = "Nova task"
-            elif detect_ml_forecast(stmt):
-                dialect = "Nova ML forecast"
-            else:
-                parsed = parse_sql(stmt)
-                candidate = stmt
-                if parsed.stage_refs:
-                    placeholder = StorageConfig("s3", "", "syntax-only", "")
-                    candidate, _ = translate_stage_query(
-                        parsed, {ref.stage_name: placeholder for ref in parsed.stage_refs}
-                    )
-                    dialect = "Nova stage"
-                # parse_sql skips grammar parsing when no @stage token is present.
-                _, _, syntax_errors = _parse_tree(candidate)
-                errors = [
-                    f"line {e.line}, column {e.column}: {e.message}" for e in syntax_errors[:3]
-                ]
-                if not errors:
-                    detect_ml_predict(stmt)
-                    detect_ml_predict_table(stmt)
+            parsed = parse_statement(stmt)
+            if type(parsed.statement_context).__name__ == "CreateWarehouseStatementContext":
+                raise ValueError("Nova warehouse creation is not supported")
+            statement = ast_builders.build(parsed)
+            if isinstance(statement, StageAwareStatement):
+                dialect = "Nova stage"
+            elif not isinstance(statement, NativeStatement):
+                validate_action(statement)
+                dialect = "Nova " + type(statement).__name__.removesuffix("Statement")
         except ValueError as exc:
             errors = [str(exc)[:500]]
         checks.append(
@@ -76,8 +51,12 @@ class ValidateSQLTool:
         "without executing or accessing a database. Supports '<temporary_password>' placeholders. "
         "Does not verify objects, types, permissions, runtime functions or deployment support."
     )
-    parameters = {"type": "object", "properties": {"sql": {"type": "string"}},
-                  "required": ["sql"], "additionalProperties": False}
+    parameters = {
+        "type": "object",
+        "properties": {"sql": {"type": "string"}},
+        "required": ["sql"],
+        "additionalProperties": False,
+    }
     classification = "read_only"
     requires_consent = False
 

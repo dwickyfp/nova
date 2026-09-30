@@ -74,10 +74,13 @@ class FakeEngine:
 @pytest.fixture
 def explain_client(monkeypatch):
     """The production router + service, with the engine and stage metadata stubbed."""
+    from unittest.mock import AsyncMock
+
     import app.modules.query.service as service_module
     from app.core import deps as deps_module
     from app.modules.query.service import query_service
 
+    monkeypatch.setattr(service_module, "write_audit_log", AsyncMock())
     engine = FakeEngine()
 
     async def fake_configs(parsed, **kwargs):

@@ -77,10 +77,13 @@ def explain_client(monkeypatch):
     handlers are the ones production uses; only the engine, the stage metadata
     and the session lookup are replaced.
     """
+    from unittest.mock import AsyncMock
+
     import app.modules.query.service as service_module
     from app.core import deps as deps_module
     from app.modules.query.service import query_service
 
+    monkeypatch.setattr(service_module, "write_audit_log", AsyncMock())
     repo = RecordingRepo()
 
     async def fake_configs(parsed, **kwargs):

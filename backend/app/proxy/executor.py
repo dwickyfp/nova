@@ -155,6 +155,21 @@ class ProxyQueryExecutor:
         connection,
         session_id: str | None = None,
     ) -> WireResult:
+        from app.sql_frontend.parser import parsing_scope
+
+        with parsing_scope():
+            return await self._execute(
+                sql, username=username, connection=connection, session_id=session_id
+            )
+
+    async def _execute(
+        self,
+        sql: str,
+        *,
+        username: str,
+        connection,
+        session_id: str | None = None,
+    ) -> WireResult:
         """Run one ``COM_QUERY`` payload and return the response.
 
         The payload is split by the proxy first so that ``SET``, ``USE`` and

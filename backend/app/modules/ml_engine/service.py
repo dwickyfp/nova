@@ -55,8 +55,6 @@ from app.modules.ml_engine.spec import (
     MLTask,
 )
 from app.modules.query.sql_pipeline import (
-    guard_user_statement,
-    prepare_stage_sql,
     redact_for_output,
 )
 
@@ -1014,23 +1012,10 @@ class MLEngineService:
         what: str | None = None,
     ) -> str:
         del what
-        guard_user_statement(sql)
-        security = security or MLSecurityContext(username="", password="", database=database_name)
-        from app.modules.query.dialect.parser import parse_sql
-        from app.modules.query.service import query_service
+        from app.sql_frontend.preparation import prepare_stream_sql
 
-        parsed = parse_sql(sql)
-        if parsed.stage_refs:
-            parsed, configs = await query_service._resolve_stage_refs(
-                parsed, database=security.database, schema=security.schema,
-                username=security.username, password=security.password,
-                role=security.role,
-            )
-            prepared = await prepare_stage_sql(
-                sql, parsed=parsed, stage_configs_by_ref=configs
-            )
-        else:
-            prepared = await prepare_stage_sql(sql)
+        security = security or MLSecurityContext(username="", password="", database=database_name)
+        prepared = await prepare_stream_sql(sql, security)
         return prepared.engine_sql
 
     @staticmethod

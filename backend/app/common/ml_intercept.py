@@ -57,7 +57,7 @@ class MLForecastCall:
     confidence_level: int = 95
 
 
-def detect_ml_forecast(sql: str) -> MLForecastCall | None:
+def detect_ml_forecast(sql: str, *, parsed=None) -> MLForecastCall | None:
     """Parse Nova's table-oriented persisted forecast statement.
 
     Supported forms are::
@@ -71,27 +71,37 @@ def detect_ml_forecast(sql: str) -> MLForecastCall | None:
     The argument scanner is balanced and quote-aware; forecast is deliberately
     separate from scalar ``ML_PREDICT`` because it creates future rows.
     """
-    prefix = re.match(r"\s*SELECT\s+\*\s+FROM\s+ML_FORECAST\b", sql, re.IGNORECASE)
-    if prefix is None:
-        return None
-    opening = prefix.end()
-    while opening < len(sql) and sql[opening].isspace():
-        opening += 1
-    if opening >= len(sql) or sql[opening] != "(":
-        raise ValueError("ML_FORECAST requires named arguments in parentheses")
-    closing = _matching_parenthesis(sql, opening, function_name="ML_FORECAST")
-    if sql[closing + 1 :].strip().rstrip(";").strip():
-        raise ValueError("ML_FORECAST must be the complete table expression")
-
+    if parsed is None:
+        prefix = re.match(r"\s*SELECT\s+\*\s+FROM\s+ML_FORECAST\b", sql, re.IGNORECASE)
+        if prefix is None:
+            return None
+        opening = prefix.end()
+        while opening < len(sql) and sql[opening].isspace():
+            opening += 1
+        if opening >= len(sql) or sql[opening] != "(":
+            raise ValueError("ML_FORECAST requires named arguments in parentheses")
+        closing = _matching_parenthesis(sql, opening, function_name="ML_FORECAST")
+        if sql[closing + 1 :].strip().rstrip(";").strip():
+            raise ValueError("ML_FORECAST must be the complete table expression")
+        arguments = []
+        for argument in _split_args(sql[opening + 1 : closing]):
+            name, separator, value = argument.partition("=>")
+            if not separator or not name.strip() or not value.strip():
+                raise ValueError("ML_FORECAST arguments must use NAME => VALUE syntax")
+            arguments.append((name.strip().upper(), value.strip()))
+    else:
+        arguments = [
+            (
+                _source(sql, argument.identifierOrString()).upper(),
+                _source(sql, argument.string() or argument.number()),
+            )
+            for argument in parsed.statement_context.novaNamedArgument()
+        ]
     values: dict[str, str] = {}
-    for argument in _split_args(sql[opening + 1 : closing]):
-        name, separator, value = argument.partition("=>")
-        key = name.strip().upper()
-        if not separator or not key or not value.strip():
-            raise ValueError("ML_FORECAST arguments must use NAME => VALUE syntax")
+    for key, value in arguments:
         if key in values:
             raise ValueError(f"ML_FORECAST argument {key} was provided more than once")
-        values[key] = value.strip()
+        values[key] = value
     allowed = {"MODEL", "MODEL_ID", "VERSION", "HORIZON", "SERIES", "CONFIDENCE"}
     unknown = sorted(set(values) - allowed)
     if unknown:
@@ -124,11 +134,11 @@ def detect_ml_forecast(sql: str) -> MLForecastCall | None:
     )
 
 
-def detect_ml_predict(sql: str) -> MLPredictCall | None:
+def detect_ml_predict(sql: str, *, tree=None) -> MLPredictCall | None:
     """Return the first parser-proven ``ML_PREDICT`` expression."""
     if "ml_predict" not in sql.casefold():
         return None
-    calls = _ml_predict_nodes(sql)
+    calls = _ml_predict_nodes(sql, tree=tree)
     if not calls:
         return None
     node = calls[0]
@@ -151,10 +161,13 @@ def detect_ml_predict(sql: str) -> MLPredictCall | None:
     )
 
 
-def detect_ml_predict_table(sql: str) -> tuple[str, str] | None:
+def detect_ml_predict_table(sql: str, *, parsed=None) -> tuple[str, str] | None:
     if "ml_predict_table" not in sql.casefold():
         return None
-    stream, tree, errors = _parse_tree(sql)
+    if parsed is None:
+        stream, tree, errors = _parse_tree(sql)
+    else:
+        stream, tree, errors = parsed.tokens, parsed.parse_tree, []
     calls = [
         node
         for node in _walk_nodes(tree)
@@ -219,12 +232,13 @@ def detect_ml_predict_table(sql: str) -> tuple[str, str] | None:
     return values[0], values[1]
 
 
-def rewrite_ml_predict_projection(sql: str, match: MLPredictCall) -> MLPredictRewrite:
+def rewrite_ml_predict_projection(sql: str, match: MLPredictCall, *, tree=None) -> MLPredictRewrite:
     """Plan all top-level prediction expressions from the StarRocks AST."""
     del match
-    _, tree, errors = _parse_tree(sql)
-    if errors:
-        raise ValueError(str(errors[0]))
+    if tree is None:
+        _, tree, errors = _parse_tree(sql)
+        if errors:
+            raise ValueError(str(errors[0]))
     query_specs = [
         node for node in _walk_nodes(tree) if type(node).__name__ == "QuerySpecificationContext"
     ]

@@ -134,6 +134,12 @@ statement
     // statement and is listed here rather than folded into an existing rule. No
     // production caller lowers it in this slice (109-B, NOVA-126).
     | createMlModelStatement
+    | novaListStatement
+    | novaCopyStatement
+    | novaStageInsertStatement
+    | novaForcePasswordStatement
+    | novaSecurityShowStatement
+    | novaForecastStatement
 
     // NOVA-END
     // Partition Statement
@@ -783,11 +789,48 @@ columnNameWithComment
 // clauses; `mlModelProperty` accepts a string or a number so the existing regex
 // remains the only authority on what the values mean.
 createMlModelStatement
-    : CREATE ML_MODEL modelName=qualifiedName
-      mlModelTypeClause
-      (mlModelInputClause | mlModelTimestampClause | mlModelTargetClause
-       | mlModelSeriesClause | mlModelConfigClause | mlModelCompactClause)*
-      AS training=queryStatement
+    : CREATE ML_MODEL modelName=qualifiedName mlModelTypeClause mlModelClause*
+      (AS training=queryStatement | mlModelInputClause mlModelClause* (AS training=queryStatement)?)
+    ;
+
+mlModelClause
+    : mlModelTimestampClause | mlModelTargetClause | mlModelSeriesClause
+    | mlModelConfigClause | mlModelCompactClause
+    ;
+
+novaListStatement
+    : LIST FILES? stageReference
+    ;
+
+novaCopyStatement
+    : COPY INTO (stageReference | qualifiedName) FROM
+      (stageReference | qualifiedName | queryStatement)
+    ;
+
+novaStageInsertStatement
+    : INSERT INTO stageReference
+      (queryStatement | VALUES expressionsWithDefault (',' expressionsWithDefault)*)
+    ;
+
+novaForcePasswordStatement
+    : ALTER USER identity=novaUserIdentity REQUIRE PASSWORD CHANGE (OFF | NONE)?
+    ;
+
+novaUserIdentity
+    : identifierOrString (('.' | '-') identifierOrString)* (AT identifierOrString)?
+    ;
+
+novaSecurityShowStatement
+    : SHOW AVAILABLE ROLES
+    | SHOW CURRENT ACCESS
+    ;
+
+novaForecastStatement
+    : SELECT '*' FROM ML_FORECAST '(' novaNamedArgument (',' novaNamedArgument)* ')'
+    ;
+
+novaNamedArgument
+    : identifierOrString '=>' (string | number)
     ;
 
 mlModelTypeClause
@@ -819,6 +862,9 @@ mlModelCompactClause
     | TEST_SIZE EQ number
     | FEATURES EQ '(' identifierOrStringList ')'
     | HYPERPARAMETERS EQ JSON? string
+    | HORIZON EQ number
+    | FREQUENCY EQ string
+    | MODE EQ identifierOrString
     ;
 
 mlModelPropertyList
@@ -839,7 +885,7 @@ submitTaskStatement
     // statement reaches the engine. `CREATE` is already a token and is not
     // redefined; `CREATE TASK` is viable under no other `statement` alternative,
     // so there is no ambiguity.
-    : (SUBMIT | CREATE) TASK qualifiedName?
+    : (SUBMIT TASK qualifiedName? | CREATE TASK novaQualifiedTaskName?)
     // NOVA-END
         taskClause*
         AS (createTableAsSelectStatement | insertStatement | dataCacheSelectStatement)
@@ -874,6 +920,10 @@ taskScheduleDesc
     ;
 
 // NOVA-BEGIN (NOVA-54 / 9b): Nova CREATE TASK clauses.
+novaQualifiedTaskName
+    : (identifier | DEFAULT) ('.' (identifier | DEFAULT))*
+    ;
+
 //
 // Surface (design doc SS3):
 //   AFTER task_a, task_b          -- DAG parents
@@ -3640,6 +3690,7 @@ nonReserved
     // `algorithm`, `test_size`, `features` or `hyperparameters` parsing as an
     // identifier -- without it these new tokens would become reserved spellings.
     | ML_MODEL | INPUT | TARGET | SERIES | ALGORITHM | TEST_SIZE | FEATURES | HYPERPARAMETERS
+    | COPY | REQUIRE | CHANGE | AVAILABLE | ML_FORECAST | HORIZON | FREQUENCY
     // NOVA-END
     | ARRAY_AGG | ARRAY_AGG_DISTINCT | ASSERT_ROWS | AWARE
     | BACKEND | BACKENDS | BACKUP | BEGIN | BITMAP_UNION | BLACKLIST | BLACKHOLE | BINARY | BODY | BOOLEAN | BRANCH | BROKER | BUCKETS
