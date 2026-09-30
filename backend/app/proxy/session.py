@@ -238,31 +238,6 @@ def _store_value(raw_value: str) -> str:
 _USER_VARIABLE_REFERENCE = re.compile(r"(?<!@)@(?P<name>[A-Za-z_][\w$]*)")
 
 
-def _parser_classifies_as_stage(statement: str, position: int) -> bool:
-    """Whether ``parser`` reads ``@name`` at ``position`` as a stage.
-
-    The proxy and the engine must agree on this or one of them rewrites the
-    other's work. ``@x`` in ``SELECT @x`` is a value and must be substituted;
-    ``@stage1`` in ``SELECT * FROM @stage1`` is a stage and must be left alone —
-    the two are spelled identically, so position is the only thing that can
-    separate them. Since NOVA-126 that decision is made from the ANTLR4 parse
-    tree (``parser.stage_reference_at``), which is the same source the engine
-    builds its registry from, so the two cannot drift.
-
-    The import is local because ``parser`` pulls in the dialect layer, which the
-    proxy otherwise never touches; keeping it inside the function means a proxy
-    that never sees ``@`` does not pay for it, and the two modules stay
-    independently importable.
-    """
-    try:
-        from app.modules.query.dialect import parser
-    except Exception:
-        # If the dialect layer is unavailable the proxy cannot resolve the
-        # ambiguity; treat it as a variable, which is the pre-existing behaviour.
-        return False
-    return parser.stage_reference_at(statement, position) is not None
-
-
 class SubstitutionResult:
     """The outcome of substituting session variables into a statement."""
 
@@ -292,7 +267,7 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
     * ``@@version`` — a system variable, excluded by the pattern's lookbehind;
     * ``@stage.col`` and ``SELECT * FROM @stage`` — a stage reference, decided by
       *position* with the same classifier the dialect engine uses
-      (:func:`_parser_classifies_as_stage`). A name that is *both* a session
+      from the central frontend tree. A name that is *both* a session
       variable and a stage is not resolvable from the text alone; the stage wins,
       because that is what the engine would otherwise have seen and the ambiguity
       is the client's. Deciding this by position rather than by a trailing dot is
@@ -308,6 +283,18 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
     out: list[str] = []
     substituted: list[str] = []
     unknown: list[str] = []
+
+    stage_ends: dict[int, int] = {}
+    if "@" in statement:
+        from app.sql_frontend.parser import parse_statement
+        from app.sql_frontend.stages import stage_view
+
+        try:
+            parsed = parse_statement(statement)
+            stage_ends = {ref.start: ref.end for ref in stage_view(parsed).stage_refs}
+        except ValueError:
+            # Execution rejects invalid input; substitution cannot guess a stage span.
+            pass
 
     index = 0
     length = len(statement)
@@ -350,7 +337,7 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
             match = _USER_VARIABLE_REFERENCE.match(statement, index)
             if match:
                 name = match.group("name").lower()
-                if _parser_classifies_as_stage(statement, index):
+                if index in stage_ends:
                     # ``@stage1`` in ``FROM``/``LIST``/``JOIN``/``INTO`` position,
                     # or any dotted/slashed ``@stage1.data.csv``: leave it for the
                     # dialect engine, which is the only thing that can resolve it.
@@ -358,7 +345,7 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
                     # name, because this is the same classification the engine is
                     # about to apply and a substitution here would change what it
                     # sees.
-                    end = _stage_reference_end(statement, index)
+                    end = stage_ends[index]
                     out.append(statement[index:end])
                     index = end
                     continue
@@ -376,26 +363,6 @@ def substitute_user_variables(statement: str, session: SessionState) -> Substitu
         index += 1
 
     return SubstitutionResult("".join(out), substituted, unknown)
-
-
-def _stage_reference_end(statement: str, start: int) -> int:
-    """Index just past a stage reference beginning at ``start``.
-
-    Consumes the whole reference — dotted or slash path, glob segments and any
-    trailing slash — so ``@stage1/folder/x.csv`` is emitted as one span rather
-    than only ``@stage1`` followed by the remaining characters, which would be
-    appended verbatim anyway but would misreport the boundary to anything
-    reading spans. The length comes from the parser's own reference, so the
-    span boundary and the registry agree (NOVA-126).
-    """
-    try:
-        from app.modules.query.dialect import parser
-    except Exception:
-        return start
-    reference = parser.stage_reference_at(statement, start)
-    if reference is None:
-        return start
-    return start + len(reference.full_match)
 
 
 def _skip_single_quoted(statement: str, start: int) -> int:

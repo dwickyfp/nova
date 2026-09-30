@@ -143,7 +143,8 @@ class TestTrainingSqlStageTranslation:
             }
 
         monkeypatch.setattr(
-            "app.modules.query.service.query_service._resolve_stage_refs", stage_configs
+            "app.sql_frontend.execution.stages.StageRuntime._resolve_stage_refs",
+            staticmethod(stage_configs),
         )
 
         engine_sql = await service._prepare_user_sql(
@@ -180,7 +181,8 @@ class TestNoCredentialMaterialEscapes:
             }
 
         monkeypatch.setattr(
-            "app.modules.query.service.query_service._resolve_stage_refs", stage_configs
+            "app.sql_frontend.execution.stages.StageRuntime._resolve_stage_refs",
+            staticmethod(stage_configs),
         )
 
         engine_sql = await service._prepare_user_sql(
@@ -248,7 +250,8 @@ class TestNoCredentialMaterialEscapes:
             }
 
         monkeypatch.setattr(
-            "app.modules.query.service.query_service._resolve_stage_refs", stage_configs
+            "app.sql_frontend.execution.stages.StageRuntime._resolve_stage_refs",
+            staticmethod(stage_configs),
         )
 
         await svc.train_model(
