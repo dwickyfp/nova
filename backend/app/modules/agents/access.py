@@ -257,9 +257,11 @@ async def access_fingerprint(agent: dict) -> str:
             if active_version else None
         )
         versions.append((view_id, active_version, version.get("fingerprint") if version else None))
+    # Loop limits (``budget_profile``) change cost, not what the agent can read,
+    # so they do not invalidate a verified grant.
     configured = {
         key: value for key, value in agent.items()
-        if key not in {"created_at", "config_revision", "resource_bindings"}
+        if key not in {"created_at", "config_revision", "resource_bindings", "budget_profile"}
     }
     resources = agent.get("resource_bindings") or {}
     if resources.get("search_indexes") or resources.get("feature_groups"):

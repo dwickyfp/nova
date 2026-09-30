@@ -112,6 +112,7 @@ AGENT_INTELLIGENCE_COLUMNS = (
     ("discoverable_skills", "JSON"),
     ("compiled_instructions", "JSON"),
     ("harness_mode", "VARCHAR(16)"),
+    ("budget_profile", "VARCHAR(16)"),
 )
 
 #: One row per semantic model. ``definition`` is the *parsed* Ossie metadata
@@ -172,8 +173,13 @@ _AGENT_COLUMNS = (
     "budget_seconds, budget_tokens, tool_not_accessible, default_tools, "
     "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
     "policy, semantic_model_id, semantic_model_ids, semantic_view_ids, visibility, "
-    "created_at, updated_at, resource_bindings, config_revision"
+    "created_at, updated_at, resource_bindings, config_revision, budget_profile"
 )
+_AGENT_COLUMN_COUNT = len(_AGENT_COLUMNS.split(", "))
+
+
+def _full_row(row: list[Any] | tuple[Any, ...]) -> bool:
+    return len(row) == _AGENT_COLUMN_COUNT
 
 _SEMANTIC_COLUMNS = (
     "semantic_model_id, owner_name, name, description, database_name, "
@@ -387,6 +393,9 @@ def _agent_row(row: list[Any]) -> dict:
         row = [*row[:25], None, *row[25:]]
     if len(row) == 29:
         row = [*row, None, None]
+    # ``budget_profile`` is the newest column; rows read before it exist have 31.
+    budget_profile = row[31] if len(row) > 31 else None
+    row = list(row[:31])
     (
         agent_id,
         owner,
@@ -444,6 +453,7 @@ def _agent_row(row: list[Any]) -> dict:
         "discoverable_skills": _as_json(discoverable_skills) or [],
         "compiled_instructions": _as_json(compiled_instructions) or {},
         "harness_mode": harness_mode or "auto",
+        "budget_profile": budget_profile or "analyst",
         "policy": policy or "auto_read_only",
         "semantic_model_id": semantic_model_id,
         "semantic_model_ids": legacy_ids,
@@ -687,8 +697,9 @@ class AgentRepository:
             "budget_seconds, budget_tokens, tool_not_accessible, default_tools, "
             "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
             "policy, semantic_model_id, semantic_model_ids, semantic_view_ids, "
-            "visibility, created_at, updated_at, resource_bindings, config_revision"
-            ") VALUES (" + ", ".join(["%s"] * 31) + ")",
+            "visibility, created_at, updated_at, resource_bindings, config_revision, "
+            "budget_profile"
+            ") VALUES (" + ", ".join(["%s"] * 32) + ")",
             [
                 agent_id,
                 owner_name,
@@ -721,6 +732,7 @@ class AgentRepository:
                 now,
                 _dump(fields.get("resource_bindings") or {}),
                 str(uuid4()),
+                fields.get("budget_profile", "analyst"),
             ],
         )
         created = await self.get_agent(agent_id, owner_name=owner_name)
@@ -748,7 +760,7 @@ class AgentRepository:
             f"WHERE {where} ORDER BY updated_at DESC",
             params,
             lambda row: (
-                len(row) == 31
+                len(row) == _AGENT_COLUMN_COUNT
                 and row[1] == owner_name
                 and (not database_name or row[2] == database_name)
                 and (not search or search.lower() in str(row[4]).lower())
@@ -761,7 +773,7 @@ class AgentRepository:
             f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
             "WHERE agent_id = %s AND owner_name = %s",
             [agent_id, owner_name],
-            lambda row: len(row) == 31 and row[0] == agent_id and row[1] == owner_name,
+            lambda row: _full_row(row) and row[0] == agent_id and row[1] == owner_name,
         )
         if not rows:
             return None
@@ -772,7 +784,7 @@ class AgentRepository:
             f"SELECT {_AGENT_COLUMNS} FROM NOVA_SYSTEM.CONFIG_AGENTS "
             "WHERE agent_id = %s AND visibility = 'shared'",
             [agent_id],
-            lambda row: len(row) == 31 and row[0] == agent_id and row[26] == "shared",
+            lambda row: _full_row(row) and row[0] == agent_id and row[26] == "shared",
         )
         if not rows:
             return None
@@ -797,7 +809,7 @@ class AgentRepository:
             f"WHERE visibility = 'shared' AND agent_id IN ({placeholders}) "
             "ORDER BY updated_at DESC",
             agent_ids,
-            lambda row: len(row) == 31 and row[0] in agent_ids and row[26] == "shared",
+            lambda row: _full_row(row) and row[0] in agent_ids and row[26] == "shared",
         )
         return [_agent_row(row) for row in rows]
 
@@ -823,6 +835,7 @@ class AgentRepository:
             "budget_tokens",
             "tool_not_accessible",
             "harness_mode",
+            "budget_profile",
             "policy",
             "visibility",
         ):

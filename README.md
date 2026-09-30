@@ -96,7 +96,7 @@ flowchart LR
     Client["MySQL clients<br/>:4406"]
     API["Nova API<br/>FastAPI :8000"]
     Proxy["Nova MySQL proxy"]
-    SQL["SQL pipeline<br/>guard · parse · translate · redact"]
+    SQL["SQL frontend<br/>guard · parse · analyze · plan · execute"]
     Agent["Bounded assistant engine<br/>agents · tools · consent"]
     ML["ML worker<br/>Arrow batches · model runtime"]
     Tasks["Scheduler + workers<br/>Redis Streams"]
@@ -131,7 +131,7 @@ flowchart LR
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Web**            | React 19, Vite, TanStack Router, Monaco, and shadcn/ui provide the Console and standalone Studio.                                                                                                                                   |
 | **API and proxy**  | FastAPI serves the application and HTTP API. The MySQL proxy carries Nova-aware SQL and session behavior to existing clients.                                                                                                       |
-| **SQL dialect**    | The StarRocks grammar, Nova translator, credential injector, and guard prepare statements before execution. Parser generation uses Java at build time; the request path runs in Python.                                             |
+| **SQL dialect**    | The central ANTLR frontend builds typed statements and plans, then routes execution to StarRocks or Nova services. Parser generation uses Java at build time; the request path runs in Python.                                             |
 | **StarRocks**      | Version 4.1.4 is the query engine and authentication source. The patched FE passes Nova's single active role into Ranger checks.                                                                                                    |
 | **Ranger**         | Ranger 2.9.0 owns object permissions, row filters, and masks in the full security profile. Nova manages policies; the StarRocks Ranger plugin enforces them. An internal, authenticated bridge supplies policy downloads to the FE. |
 | **State and jobs** | `NOVA_SYSTEM` is a StarRocks database with prefixed tables for configuration, metadata, runs, and audit records. Redis carries sessions, caches, and task work; scheduled execution uses separate scheduler and worker processes.   |
@@ -223,7 +223,7 @@ nova/
 | Topic                   | Read                                                                                                                                                                                                                           |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Product and local setup | [Overview](docs/01-overview.md), [run guide](HOW_TO_RUN.md)                                                                                                                                                                    |
-| SQL and stages          | [Dialect architecture](docs/arch-01-sql-dialect-engine.md), [stage manager](docs/04-stage-manager.md), [storage layer](docs/arch-02-storage-provider-layer.md)                                                                 |
+| SQL and stages          | [Frontend and planner](docs/arch-13-sql-frontend.md), [dialect architecture](docs/arch-01-sql-dialect-engine.md), [stage manager](docs/04-stage-manager.md), [storage layer](docs/arch-02-storage-provider-layer.md)                                                                 |
 | Security                | [Ranger authorization architecture](docs/arch-08-ranger-authorization.md), [access control runbook](docs/29-ranger-access-control.md)                                                                                          |
 | Studio and agents       | [Agentic harness](docs/benchmarks/nova-124-agentic-harness.md), [Studio memory](docs/benchmarks/nova-studio-agent-memory-2026-09-23.md), [Studio evidence harness](docs/benchmarks/nova-studio-evidence-harness-2026-09-23.md) |
 | Intelligence and ML     | [Intelligence foundation](docs/28-intelligence-foundation.md), [native ML runtime](docs/28-native-ml-runtime.md)                                                                                                               |

@@ -1,0 +1,163 @@
+{
+  "date": "2026-09-28",
+  "phase": 1,
+  "summary": {
+    "L0": {
+      "accuracy": 1.0,
+      "cases": 153,
+      "skipped": 4,
+      "silent_wrong": 0,
+      "categories": {
+        "comparison": {
+          "passed": 12,
+          "total": 12,
+          "accuracy": 1.0
+        },
+        "derived": {
+          "passed": 3,
+          "total": 3,
+          "accuracy": 1.0
+        },
+        "dimension": {
+          "passed": 13,
+          "total": 13,
+          "accuracy": 1.0
+        },
+        "filter": {
+          "passed": 9,
+          "total": 9,
+          "accuracy": 1.0
+        },
+        "having": {
+          "passed": 1,
+          "total": 1,
+          "accuracy": 1.0
+        },
+        "multi_fact": {
+          "passed": 1,
+          "total": 1,
+          "accuracy": 1.0
+        },
+        "multi_metric": {
+          "passed": 2,
+          "total": 2,
+          "accuracy": 1.0
+        },
+        "out_of_scope": {
+          "passed": 6,
+          "total": 6,
+          "accuracy": 1.0
+        },
+        "paraphrase": {
+          "passed": 6,
+          "total": 6,
+          "accuracy": 1.0
+        },
+        "policy": {
+          "passed": 2,
+          "total": 2,
+          "accuracy": 1.0
+        },
+        "ranking": {
+          "passed": 3,
+          "total": 3,
+          "accuracy": 1.0
+        },
+        "share": {
+          "passed": 1,
+          "total": 1,
+          "accuracy": 1.0
+        },
+        "synonym": {
+          "passed": 7,
+          "total": 7,
+          "accuracy": 1.0
+        },
+        "time_grain": {
+          "passed": 6,
+          "total": 6,
+          "accuracy": 1.0
+        },
+        "time_range": {
+          "passed": 80,
+          "total": 80,
+          "accuracy": 1.0
+        },
+        "top_per_group": {
+          "passed": 1,
+          "total": 1,
+          "accuracy": 1.0
+        }
+      },
+      "p50_ms": null,
+      "p95_ms": null
+    },
+    "L2": {
+      "accuracy": 1.0,
+      "cases": 145,
+      "skipped": 0,
+      "silent_wrong": 0,
+      "categories": {
+        "comparison": {
+          "passed": 12,
+          "total": 12,
+          "accuracy": 1.0
+        },
+        "derived": {
+          "passed": 3,
+          "total": 3,
+          "accuracy": 1.0
+        },
+        "dimension": {
+          "passed": 13,
+          "total": 13,
+          "accuracy": 1.0
+        },
+        "filter": {
+          "passed": 9,
+          "total": 9,
+          "accuracy": 1.0
+        },
+        "follow_up": {
+          "passed": 4,
+          "total": 4,
+          "accuracy": 1.0
+        },
+        "multi_metric": {
+          "passed": 2,
+          "total": 2,
+          "accuracy": 1.0
+        },
+        "paraphrase": {
+          "passed": 6,
+          "total": 6,
+          "accuracy": 1.0
+        },
+        "ranking": {
+          "passed": 3,
+          "total": 3,
+          "accuracy": 1.0
+        },
+        "synonym": {
+          "passed": 7,
+          "total": 7,
+          "accuracy": 1.0
+        },
+        "time_grain": {
+          "passed": 6,
+          "total": 6,
+          "accuracy": 1.0
+        },
+        "time_range": {
+          "passed": 80,
+          "total": 80,
+          "accuracy": 1.0
+        }
+      },
+      "p50_ms": 13.770667006610893,
+      "p95_ms": 28.39670800312888
+    }
+  },
+  "failures": [],
+  "gate_failures": []
+}

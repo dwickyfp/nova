@@ -206,7 +206,10 @@ class EvidenceTracker:
         )
         self._items.append(evidence)
         if (
-            tool in {"semantic_query", "semantic_view_query", "query_execute", "diagnose_change"}
+            tool in {
+                "semantic_query", "semantic_view_query", "query_execute", "diagnose_change",
+                "compute_metrics", "analyze_documents",
+            }
             and table
         ):
             self._tables[evidence.evidence_id] = {

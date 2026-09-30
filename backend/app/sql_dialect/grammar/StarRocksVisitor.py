@@ -339,6 +339,51 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#mlModelClause.
+    def visitMlModelClause(self, ctx:StarRocksParser.MlModelClauseContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaListStatement.
+    def visitNovaListStatement(self, ctx:StarRocksParser.NovaListStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaCopyStatement.
+    def visitNovaCopyStatement(self, ctx:StarRocksParser.NovaCopyStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaStageInsertStatement.
+    def visitNovaStageInsertStatement(self, ctx:StarRocksParser.NovaStageInsertStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaForcePasswordStatement.
+    def visitNovaForcePasswordStatement(self, ctx:StarRocksParser.NovaForcePasswordStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaUserIdentity.
+    def visitNovaUserIdentity(self, ctx:StarRocksParser.NovaUserIdentityContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaSecurityShowStatement.
+    def visitNovaSecurityShowStatement(self, ctx:StarRocksParser.NovaSecurityShowStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaForecastStatement.
+    def visitNovaForecastStatement(self, ctx:StarRocksParser.NovaForecastStatementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaNamedArgument.
+    def visitNovaNamedArgument(self, ctx:StarRocksParser.NovaNamedArgumentContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by StarRocksParser#mlModelTypeClause.
     def visitMlModelTypeClause(self, ctx:StarRocksParser.MlModelTypeClauseContext):
         return self.visitChildren(ctx)
@@ -406,6 +451,11 @@ class StarRocksVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by StarRocksParser#taskScheduleDesc.
     def visitTaskScheduleDesc(self, ctx:StarRocksParser.TaskScheduleDescContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by StarRocksParser#novaQualifiedTaskName.
+    def visitNovaQualifiedTaskName(self, ctx:StarRocksParser.NovaQualifiedTaskNameContext):
         return self.visitChildren(ctx)
 
 

@@ -1,7 +1,7 @@
 """Query API router — execute SQL, explain, query history."""
 
-from datetime import datetime
 import re
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -86,14 +86,20 @@ def _bind_temporary_password(req: QueryRequest) -> str:
     placeholder = "'<temporary_password>'"
     if req.temporary_password is None:
         if placeholder in req.sql:
-            raise HTTPException(status_code=400, detail="Enter a temporary password in protected input.")
+            raise HTTPException(
+                status_code=400, detail="Enter a temporary password in protected input."
+            )
         return req.sql
     secret = req.temporary_password.get_secret_value()
     if not secret or len(secret) > 4096:
-        raise HTTPException(status_code=400, detail="A temporary password of 1 to 4096 characters is required.")
+        raise HTTPException(
+            status_code=400, detail="A temporary password of 1 to 4096 characters is required."
+        )
     statements = split_sql_statements(req.sql)
     if req.sql.count(placeholder) != 1:
-        raise HTTPException(status_code=400, detail="Protected input requires exactly one CREATE USER placeholder.")
+        raise HTTPException(
+            status_code=400, detail="Protected input requires exactly one CREATE USER placeholder."
+        )
     bound = []
     for statement in statements:
         if placeholder not in statement:
@@ -101,10 +107,15 @@ def _bind_temporary_password(req: QueryRequest) -> str:
             continue
         match = re.fullmatch(
             r"CREATE\s+USER\s+(?P<identity>'(?:''|[^'])*'(?:\s*@\s*'(?:''|[^'])*')?)"
-            r"\s+IDENTIFIED\s+BY\s+'<temporary_password>'", statement, re.I,
+            r"\s+IDENTIFIED\s+BY\s+'<temporary_password>'",
+            statement,
+            re.I,
         )
         if not match:
-            raise HTTPException(status_code=400, detail="Protected input is only supported for CREATE USER password placeholders.")
+            raise HTTPException(
+                status_code=400,
+                detail="Protected input is only supported for CREATE USER password placeholders.",
+            )
         escaped = secret.replace("\\", "\\\\").replace("'", "\\'")
         bound.append(statement.replace(placeholder, f"'{escaped}'"))
         requirement = f"ALTER USER {match.group('identity')} REQUIRE PASSWORD CHANGE"
@@ -158,9 +169,15 @@ async def execute_query(
     """
     sql = _bind_temporary_password(req)
     if req.temporary_password is not None and _resolve_active_role(user) not in {
-        "ACCOUNTADMIN", "SECURITYADMIN", "user_admin", "security_admin",
+        "ACCOUNTADMIN",
+        "SECURITYADMIN",
+        "user_admin",
+        "security_admin",
     }:
-        raise HTTPException(status_code=403, detail="Activate a security-admin role before creating a temporary-password account.")
+        raise HTTPException(
+            status_code=403,
+            detail="Activate a security-admin role before creating a temporary-password account.",
+        )
     try:
         requested_role = parse_role_statement(req.sql)
     except ValueError as exc:
@@ -218,8 +235,16 @@ async def execute_query(
                 original_sql=result.original_sql,
                 executed_sql=result.executed_sql,
                 warnings=result.warnings,
-                destructive=is_destructive_sql(result.original_sql),
-                needs_confirmation=is_destructive_sql(result.original_sql)
+                destructive=(
+                    result.destructive
+                    if result.destructive is not None
+                    else is_destructive_sql(result.original_sql)
+                ),
+                needs_confirmation=(
+                    result.destructive
+                    if result.destructive is not None
+                    else is_destructive_sql(result.original_sql)
+                )
                 or is_unscoped_mutation(result.original_sql),
                 error=result.error,
             )

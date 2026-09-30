@@ -180,9 +180,17 @@ async def test_draft_preview_and_quality_are_owner_only(monkeypatch):
     quality = await service.quality("view-1", 1, _user("owner"))
     assert quality["view_id"] == "view-1"
     assert quality["quality"]["verified_query_count"] == 0
-    preview = await service.preview("view-1", 1, "total revenue", _user("owner"))
+    import app.modules.agents.semantic.model_planner as model_planner
+    from app.modules.agents.semantic.planning import SemanticPlan
+
+    ir = SemanticModelIR.from_ossie(_version(status="DRAFT")["definition"])
+    planner = AsyncMock(return_value=SemanticPlan(metrics=(ir.metrics[0].name,)))
+    monkeypatch.setattr(model_planner, "generate_plan", planner)
+    preview = await service.preview("view-1", 1, "総売上", _user("owner"))
     assert "SELECT" in preview["generated_sql"]
     assert preview["version"] == 1
+    assert preview["plan_source"] == "model_planner"
+    assert planner.await_args.args[3] == "総売上"
     assert service._audit.await_count == 2
 
 

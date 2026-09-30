@@ -1,68 +1,49 @@
-"""Query service — orchestrates the full SQL execution pipeline.
-
-Pipeline:
-1. Parse SQL (detect @stage references)
-2. Translate @stage → FILES() (if stage references found)
-3. Inject credentials (if FILES() calls present)
-4. Execute against StarRocks
-5. Return standardized result
-"""
+"""Query lifecycle, history, metrics and responses around the SQL frontend."""
 
 from __future__ import annotations
 
 import asyncio
-import json
+import contextlib
+import contextvars
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
-from dataclasses import replace
+from collections.abc import Awaitable, Callable, Iterator
 from functools import wraps
 from typing import Any, ParamSpec
 
 import asyncmy
 
 from app.common.audit import write_audit_log
-from app.common.ml_intercept import (
-    MLForecastCall,
-    MLPredictCall,
-    detect_ml_forecast,
-    detect_ml_predict,
-    detect_ml_predict_table,
-    rewrite_ml_predict_projection,
-)
 from app.common.sql_guard import (
     CredentialsRedactionError,
     split_sql_statements,
 )
 from app.common.user_flags import set_must_change_password
-from app.core.config import get_storage_connection, settings, to_docker_endpoint
+from app.core.config import get_storage_connection, settings
 from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
 from app.core.security import decrypt_password
 from app.modules.access_control.security_context import require_security_context
-from app.modules.access_control.statement_router import security_statement_router
-from app.modules.query.dialect.force_password_change import (
-    is_force_password_change,
-    parse_force_password_change,
-)
+from app.modules.access_control.service import AccessControlError
 from app.modules.query.dialect.injector import resolve_storage_credentials
-from app.modules.query.dialect.ml_model import is_create_ml_model, parse_create_ml_model
-from app.modules.query.dialect.parser import CommandType, parse_sql
-from app.modules.query.dialect.translator import StorageConfig
 from app.modules.query.repository import QueryRepository, QueryResult
 from app.modules.query.sql_pipeline import (
     guard_user_statement,
-    prepare_stage_sql,
     redact_for_output,
 )
 from app.modules.stages.access import check_stage_access
-from app.modules.task_orchestration.ddl import TaskDDLError, is_create_task, parse_create_task
-from app.modules.task_orchestration.lowering import TaskLoweringError, persist_lowered_task
 from app.modules.task_orchestration.repository import task_orchestration_repository
 from app.observability.metrics import SQL_QUERIES, SQL_QUERY_DURATION, SQL_SOURCE
+from app.sql_frontend.ast.builder import AstBuilderRegistry, ast_builders
+from app.sql_frontend.binding.catalog import Binder, CatalogProvider
+from app.sql_frontend.binding.starrocks import StarRocksCatalogProvider
+from app.sql_frontend.capabilities.starrocks import capability_provider
+from app.sql_frontend.context import ExecutionContext, PlanningContext
+from app.sql_frontend.execution.adapters import FeatureAdapters
+from app.sql_frontend.parser import parse_statement
+from app.sql_frontend.planning.planner import SQLPlanner
 from app.storage.secrets import (
-    SecretResolutionError,
     drain_secret_resolution_facts,
 )
 
@@ -255,11 +236,49 @@ def _mask_literals_and_comments(sql: str) -> str:
     return "".join(chars)
 
 
+#: Owner-bound connection for a scheduled automation run, which has no session.
+#: Set by the automation runner for one run; used only for the matching username.
+_DELEGATED: contextvars.ContextVar[tuple[str, Any] | None] = contextvars.ContextVar(
+    "nova_delegated_connection", default=None
+)
+
+
+@contextlib.contextmanager
+def delegated_connection(username: str, connection: Any) -> Iterator[None]:
+    token = _DELEGATED.set((username, connection))
+    try:
+        yield
+    finally:
+        _DELEGATED.reset(token)
+
+
+def delegated_connection_for(username: str) -> Any | None:
+    current = _DELEGATED.get()
+    if current is None or current[0] != username:
+        return None
+    return current[1]
+
+
+def delegated_username() -> str | None:
+    current = _DELEGATED.get()
+    return current[0] if current else None
+
+
 class QueryService:
     """Orchestrates SQL execution with @stage dialect support."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        builders: AstBuilderRegistry | None = None,
+        planner: SQLPlanner | None = None,
+        catalog_provider_factory: Callable[..., CatalogProvider] = StarRocksCatalogProvider,
+    ) -> None:
         self._repo = QueryRepository()
+        self._frontend = parse_statement
+        self._builders = builders if builders is not None else ast_builders
+        self._planner = planner if planner is not None else SQLPlanner()
+        self._catalog_provider_factory = catalog_provider_factory
 
     @_observe_sql_execution
     async def execute(
@@ -291,34 +310,14 @@ class QueryService:
         Returns:
             QueryResult with columns, rows, metadata
         """
+        if connection is None:
+            delegated = delegated_connection_for(username)
+            if delegated is not None:
+                connection, encrypted_password = delegated, ""
         # Normalize Nova's editor-friendly db.default.table notation to the
         # StarRocks-compatible db.table form before validation/execution.
         normalized_sql = self._normalize_default_schema_qualification(sql)
 
-        if settings.RANGER_ENABLED:
-            security = require_security_context(
-                principal=username,
-                active_role=role,
-                database=database,
-                session_id=session_id,
-            )
-            routed = await security_statement_router.route(normalized_sql, security=security)
-            if routed.handled:
-                assert routed.result is not None
-                return routed.result
-
-        # 1. Guard: block dangerous SQL, per statement (shared with ml_engine).
-        #
-        # A refusal is an *event*, not just an exception: `DROP ROLE
-        # ACCOUNTADMIN` is the most security-relevant thing a client can attempt
-        # through this pipeline, and AGENTS.md requires every action to reach
-        # NOVA_SYSTEM.AUDIT_LOG. Without the audit call below, the pre-engine
-        # refusals left no trace at all while engine failures were recorded as
-        # ERROR — so "no ERROR rows" did not mean "no failed attempts".
-        #
-        # The guard itself moved to `sql_pipeline.guard_user_statement` so
-        # ml_engine applies the identical rule; the audit stays here because it
-        # is this service's record of the attempt, not part of the rule.
         try:
             guard_user_statement(
                 normalized_sql,
@@ -338,311 +337,80 @@ class QueryService:
                 error_message=str(exc),
             )
             raise
-
-        # Nova ML DDL is handled by the Python ML engine, not sent to StarRocks.
-        if is_create_ml_model(normalized_sql):
-            return await self._execute_create_ml_model(
-                tenant=tenant,
-                sql=sql,
-                normalized_sql=normalized_sql,
-                username=username,
-                encrypted_password=encrypted_password,
-                database=database,
-                role=role,
-                session_id=session_id,
-                file_id=file_id,
-                schema=schema,
-            )
-
-        ml_forecast_call = detect_ml_forecast(normalized_sql)
-        if ml_forecast_call:
-            return await self._execute_ml_forecast(
-                tenant=tenant,
-                sql=sql,
-                normalized_sql=normalized_sql,
-                call=ml_forecast_call,
-                username=username,
+        if settings.RANGER_ENABLED:
+            require_security_context(
+                principal=username,
+                active_role=role,
                 database=database,
                 session_id=session_id,
-                file_id=file_id,
-                schema=schema,
+                security_context_version=security_context_version,
             )
-
-        table_prediction = detect_ml_predict_table(normalized_sql)
-        if table_prediction:
-            from app.modules.ml_engine.service import ml_engine_service
-            from app.modules.ml_engine.spec import MLSecurityContext
-
-            alias, input_sql = table_prediction
-            started = time.monotonic()
-            try:
-                if connection is not None and not encrypted_password:
-                    raise ValueError(
-                        "Materialized ML prediction requires an API session. "
-                        "Use bounded ML_PREDICT for a relayed client connection."
-                    )
-                result = await ml_engine_service.materialize_prediction(
-                    alias,
-                    input_sql,
-                    MLSecurityContext(
-                        username=username,
-                        password=decrypt_password(encrypted_password),
-                        database=database,
-                        schema=schema,
-                        role=role,
-                        tenant=tenant,
-                        security_context_version=security_context_version,
-                    ),
-                )
-                await write_audit_log(
-                    event_type="query",
-                    user_name=username,
-                    action="ml_predict_materialize",
-                    object_type="ml_model",
-                    object_name=alias,
-                    status="SUCCESS",
-                    rows_affected=result["total_rows"],
-                    database_name=database,
-                    schema_name=schema,
-                )
-                return QueryResult(
-                    columns=["result_id", "total_rows", "parts"],
-                    rows=[[result["result_id"], result["total_rows"], result["parts"]]],
-                    row_count=1,
-                    elapsed_ms=(time.monotonic() - started) * 1000,
-                    original_sql=sql,
-                    executed_sql=redact_for_output(normalized_sql),
-                )
-            except Exception as exc:
-                await write_audit_log(
-                    event_type="query",
-                    user_name=username,
-                    action="ml_predict_materialize",
-                    object_type="ml_model",
-                    object_name=alias,
-                    status="ERROR",
-                    error_message=_redact_error_message(str(exc)),
-                )
-                raise
-
-        ml_predict_match = detect_ml_predict(normalized_sql)
-        if ml_predict_match:
-            return await self._execute_ml_predict(
-                tenant=tenant,
-                sql=sql,
-                normalized_sql=normalized_sql,
-                match=ml_predict_match,
-                username=username,
-                encrypted_password=encrypted_password,
-                database=database,
-                role=role,
-                session_id=session_id,
-                file_id=file_id,
-                schema=schema,
-                connection=connection,
-                max_rows=max_rows,
-            )
-
-        # Nova `CREATE TASK` is a Nova statement, not an engine one: it is
-        # lowered to CONFIG_TASK* metadata and **never** sent to StarRocks. The
-        # same interception shape as `CREATE ML_MODEL` above, so the pipeline has
-        # one pattern for Nova DDL rather than a second one.
-        if is_create_task(normalized_sql):
-            return await self._execute_create_task(
-                sql=sql,
-                normalized_sql=normalized_sql,
-                username=username,
-                role=role,
-                database=database,
-                session_id=session_id,
-                file_id=file_id,
-                schema=schema,
-            )
-
-        # Nova `ALTER USER … REQUIRE PASSWORD CHANGE` is metadata, not engine SQL:
-        # StarRocks has no such attribute, so the flag is recorded in
-        # NOVA_SYSTEM and the statement is never sent to the engine. Same
-        # interception shape as the two above.
-        if is_force_password_change(normalized_sql):
-            return await self._execute_force_password_change(
-                sql=sql,
-                normalized_sql=normalized_sql,
-                username=username,
-                database=database,
-                session_id=session_id,
-                file_id=file_id,
-                schema=schema,
-                role=role,
-            )
-
-        # 2. Parse: detect @stage references
-        parsed = parse_sql(normalized_sql)
-
-        executed_sql = normalized_sql
-        warnings = []
-        csv_column_names: list[str] | None = None
-
-        # 3. Translate @stage → FILES() and inject credentials, through the
-        # shared pipeline so this path and ml_engine's cannot drift apart.
-        if parsed.stage_refs:
-            try:
-                # Load stage configs from NOVA_SYSTEM. This is where a
-                # connection's secret reference is resolved, so it belongs
-                # inside the same try as preparation: a broken reference must be
-                # reported as a query error, not escape as a 500.
-                parsed, stage_configs_by_ref = await self._resolve_stage_refs(
-                    parsed, database=database, schema=schema, username=username,
-                    password="" if connection is not None else decrypt_password(encrypted_password),
-                    role=role, connection=connection,
-                )
-
-                # 3b. CSV auto-detect: read file header to detect delimiter &
-                # columns. I/O, so it happens here and its result is passed into
-                # the pure preparation step.
-                csv_params_by_ref = {}
-                for index, ref in enumerate(parsed.stage_refs):
-                    if parsed.command_type == CommandType.STAGE_EXPORT and index == 0:
-                        continue
-                    if parsed.command_type == CommandType.STAGE_BROWSE:
-                        continue
-                    params, columns = await self._detect_csv_params(
-                        replace(parsed, stage_refs=[ref]),
-                        {ref.stage_name: stage_configs_by_ref[ref.start]},
-                    )
-                    if params:
-                        csv_params_by_ref[ref.start] = params
-                    if len(parsed.stage_refs) == 1:
-                        csv_column_names = columns
-
-                prepared = await prepare_stage_sql(
-                    normalized_sql,
-                    parsed=parsed,
-                    stage_configs_by_ref=stage_configs_by_ref,
-                    csv_params_by_ref=csv_params_by_ref,
-                    csv_columns=csv_column_names,
-                )
-            except (ValueError, SecretResolutionError) as e:
-                # The statement never reached the engine: no result object is
-                # built by the repository, so this is the only place the failure
-                # can be recorded. ``error`` (not ``warnings``) is what the
-                # router reads for ``success``.
-                #
-                # "The only place the failure can be recorded" is why the audit
-                # row is written here too: the engine is never called, so the
-                # catch-all around the repository below cannot see this. A
-                # rejected ``@stage`` reference is a refused attempt like any
-                # other and belongs in the log for the same reason.
-                #
-                # ``SecretResolutionError`` is caught here rather than allowed
-                # to reach the catch-all so the failure is *audited* and
-                # reported as a query error, not a 500. Its message is already
-                # value-free (provider + reference only), and any credential
-                # that did resolve is redacted below before it leaves.
-                await self._audit_secret_resolutions(username=username)
-                await self._audit_engine_result(
-                    status="ERROR",
-                    sql=sql,
-                    username=username,
-                    role=role,
-                    database=database,
-                    schema=schema,
-                    session_id=session_id,
-                    file_id=file_id,
-                    error_message=str(e),
-                )
-                return QueryResult(
-                    original_sql=sql,
-                    executed_sql=normalized_sql,
-                    warnings=[f"❌ {e}"],
-                    error=str(e),
-                )
-
-            executed_sql = prepared.engine_sql
-            warnings = prepared.warnings
-            csv_column_names = prepared.csv_columns
-            await self._audit_secret_resolutions(username=username)
-        else:
-            prepared = await prepare_stage_sql(normalized_sql)
-            executed_sql = prepared.engine_sql
-            warnings = prepared.warnings
-
-        # 5. Execute
-        #
-        # ``connection`` is an already-authenticated engine session supplied by
-        # the MySQL proxy, which relays StarRocks' own challenge and therefore
-        # never holds a password (see ``app/proxy/auth.py``). Only the
-        # connection-opening path needs the plaintext, so the decrypt is skipped
-        # when one was injected — otherwise an empty ``encrypted_password``
-        # would raise ``InvalidToken`` before the statement ever ran.
-        password = "" if connection is not None else decrypt_password(encrypted_password)
-
-        # The statement sent to the engine carries real storage credentials —
-        # that is unavoidable, FILES() needs them. Everything derived from it
-        # that leaves the process (audit row, API response) must carry the
-        # redacted form instead: NOVA_SYSTEM and API JSON are on the
-        # never-store-credentials list in AGENTS.md.
-        #
-        # Redacted up front rather than read back off the result: the ERROR
-        # branch below needs it too, and the engine call may never return.
-        # ``QueryResult`` redacts ``executed_sql`` as well, so the value the
-        # repository hands back is independently safe.
-        redacted_sql = redact_for_output(executed_sql)
+        context = ExecutionContext(
+            username=username,
+            encrypted_password=encrypted_password,
+            database=database,
+            schema=schema,
+            role=role,
+            max_rows=max_rows,
+            session_id=session_id,
+            file_id=file_id,
+            tenant=tenant,
+            security_context_version=security_context_version,
+            connection=connection,
+            confirm_destructive=confirm_destructive,
+            allow_stage_export=allow_stage_export,
+        )
         try:
-            result = await self._repo.execute_as_user(
-                sql=executed_sql,
-                username=username,
-                password=password,
+            parsed = self._frontend(normalized_sql, original_sql=sql)
+            statement = self._builders.build(parsed)
+            context.statements[0] = statement
+            binder = Binder(
+                self._catalog_provider_factory(
+                    self._repo, context, lambda: decrypt_password(encrypted_password)
+                )
+            )
+            planning = PlanningContext(
                 database=database,
-                role=role,
-                max_rows=max_rows,
-                connected=connection,
+                schema=schema,
+                binder=binder,
+                capabilities=capability_provider.for_version(),
+                ranger_enabled=settings.RANGER_ENABLED,
+                confirm_destructive=confirm_destructive,
             )
-
-            result.original_sql = redact_for_output(sql)
-            result.executed_sql = redacted_sql
-            result.warnings = warnings
-
-            # Rename $1, $2 columns with CSV header names if detected
-            if csv_column_names and result.columns:
-                for i, col_name in enumerate(csv_column_names):
-                    if i < len(result.columns):
-                        result.columns[i] = col_name
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="execute",
-                object_type="sql",
-                object_name=(database or "") if database else "workspace",
-                status="SUCCESS",
-                sql_text=redacted_sql,
-                rewritten_sql=redacted_sql,
-                duration_ms=int(result.elapsed_ms),
-                rows_affected=result.affected_rows or result.row_count,
-                session_id=session_id,
-                file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-                active_role=role,
-            )
-            return result
-        except Exception as exc:
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="execute",
-                object_type="sql",
-                object_name=(database or "") if database else "workspace",
+            plan = await self._planner.plan(statement, planning)
+            context.validated = planning.validated
+        except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
+            await self._audit_engine_result(
                 status="ERROR",
-                sql_text=redacted_sql,
-                rewritten_sql=redacted_sql,
-                error_message=_redact_error_message(str(exc)),
+                sql=sql,
+                username=username,
+                role=role,
+                database=database,
+                schema=schema,
                 session_id=session_id,
                 file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-                active_role=role,
+                error_message=_redact_error_message(str(exc)),
             )
-            raise
+            if isinstance(exc, (AccessControlError, ForbiddenSQLError)):
+                raise
+            return QueryResult(
+                original_sql=sql, executed_sql=normalized_sql, error=_redact_error_message(str(exc))
+            )
+        result = await self._adapters().executor().execute(plan, context)
+        result.destructive = plan.requires_confirmation
+        return result
+
+    def _adapters(self):
+        return FeatureAdapters(
+            self,
+            audit=write_audit_log,
+            decrypt=decrypt_password,
+            task_repository=task_orchestration_repository,
+            set_flag=set_must_change_password,
+            check_stage_access=check_stage_access,
+            get_storage_connection=get_storage_connection,
+            resolve_storage_credentials=resolve_storage_credentials,
+        )
 
     async def _audit_secret_resolutions(self, *, username: str) -> None:
         """Persist the auditable *facts* of any secret reference resolved above.
@@ -718,9 +486,9 @@ class QueryService:
                 object_type="sql",
                 object_name=(database or "") if database else "workspace",
                 status=status,
-                sql_text=sql,
+                sql_text=_redact_error_message(sql),
                 rewritten_sql=None,
-                error_message=error_message,
+                error_message=_redact_error_message(error_message),
                 session_id=session_id,
                 file_id=file_id,
                 database_name=database,
@@ -789,519 +557,18 @@ class QueryService:
                 # ``warnings`` keeps carrying the message for the operator.
                 # Setting only ``warnings`` is what made this path depend on a
                 # shape-based guess downstream.
+                message = _redact_error_message(str(exc))
                 error_result = QueryResult(
                     original_sql=stmt_sql,
                     executed_sql=stmt_sql,
-                    warnings=[str(exc)],
-                    error=str(exc),
+                    warnings=[message],
+                    error=message,
                 )
                 results.append(error_result)
                 break
             finally:
                 SQL_SOURCE.reset(metric_token)
         return results
-
-    async def _execute_create_ml_model(
-        self,
-        *,
-        sql: str,
-        normalized_sql: str,
-        username: str,
-        encrypted_password: str,
-        database: str | None,
-        role: str | None,
-        session_id: str | None,
-        file_id: str | None,
-        schema: str | None,
-        tenant: str = "default",
-    ) -> QueryResult:
-        """Execute Nova CREATE ML_MODEL DDL through the ML engine."""
-        start = time.monotonic()
-        try:
-            statement = parse_create_ml_model(normalized_sql)
-            password = decrypt_password(encrypted_password)
-
-            from app.modules.ml_engine.service import ml_engine_service
-
-            result = await ml_engine_service.train_model(
-                **({"tenant": tenant} if tenant != "default" else {}),
-                model_name=statement.model_name,
-                model_type=statement.model_type,
-                algorithm=statement.algorithm,
-                training_sql=statement.training_sql,
-                target_column=statement.target_column,
-                feature_columns=statement.feature_columns,
-                hyperparameters=statement.hyperparameters,
-                test_size=statement.test_size,
-                database_name=database,
-                created_by=username,
-                username=username,
-                password=password,
-                role=role,
-                timestamp_column=statement.timestamp_column,
-                series_column=statement.series_column,
-                horizon=statement.horizon,
-                frequency=statement.frequency,
-                mode=statement.mode,
-            )
-            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
-            columns = [
-                "model_id",
-                "model_name",
-                "model_type",
-                "algorithm",
-                "version",
-                "status",
-                "training_rows",
-                "feature_columns",
-                "metrics",
-            ]
-            row = [
-                result.get("model_id"),
-                result.get("model_name"),
-                result.get("model_type"),
-                result.get("algorithm"),
-                result.get("version"),
-                result.get("status"),
-                result.get("training_rows"),
-                json.dumps(result.get("feature_columns", [])),
-                json.dumps(result.get("metrics", {})),
-            ]
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="execute",
-                object_type="ml_model",
-                object_name=statement.model_name,
-                status="SUCCESS",
-                sql_text=sql,
-                rewritten_sql=normalized_sql,
-                duration_ms=int(elapsed_ms),
-                rows_affected=result.get("training_rows"),
-                session_id=session_id,
-                file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-            )
-            return QueryResult(
-                columns=columns,
-                rows=[row],
-                row_count=1,
-                affected_rows=int(result.get("training_rows") or 0),
-                elapsed_ms=elapsed_ms,
-                original_sql=sql,
-                executed_sql=normalized_sql,
-            )
-        except Exception as exc:
-            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="execute",
-                object_type="ml_model",
-                object_name=database or "workspace",
-                status="ERROR",
-                sql_text=sql,
-                rewritten_sql=normalized_sql,
-                error_message=str(exc),
-                duration_ms=int(elapsed_ms),
-                session_id=session_id,
-                file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-            )
-            raise
-
-    async def _execute_ml_predict(
-        self,
-        *,
-        sql: str,
-        normalized_sql: str,
-        match: MLPredictCall,
-        username: str,
-        encrypted_password: str,
-        database: str | None,
-        role: str | None,
-        session_id: str | None,
-        file_id: str | None,
-        schema: str | None,
-        connection: asyncmy.Connection | None,
-        max_rows: int | None,
-        tenant: str = "default",
-    ) -> QueryResult:
-        """Execute Nova ``ML_PREDICT`` as one columnar, vectorized batch."""
-        start = time.monotonic()
-        alias = match.group(1)
-        feature_sql = ""
-        password = "" if connection is not None else decrypt_password(encrypted_password)
-        from app.modules.ml_engine.service import ml_engine_service
-
-        try:
-            rewrite = rewrite_ml_predict_projection(normalized_sql, match)
-            alias = rewrite.alias
-            feature_sql = rewrite.feature_sql
-            metadata, result_table = await ml_engine_service.batch_predict_projected(
-                **({"tenant": tenant} if tenant != "default" else {}),
-                model_alias=alias,
-                prediction_sql=feature_sql,
-                feature_source_columns=rewrite.feature_columns,
-                prediction_index=rewrite.prediction_index,
-                prediction_name=rewrite.prediction_name,
-                database_name=database,
-                username=username,
-                password=password,
-                role=role,
-                connection=connection,
-                max_rows=max_rows,
-                **({"predictions": rewrite.predictions} if len(rewrite.predictions) > 1 else {}),
-            )
-            del metadata
-            columns = result_table.column_names
-            rows: list[list[Any]] = []
-            for batch in result_table.to_batches(max_chunksize=4096):
-                values = [column.to_pylist() for column in batch.columns]
-                rows.extend([list(row) for row in zip(*values, strict=True)])
-            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="ml_predict_batch",
-                object_type="ml_model",
-                object_name=alias,
-                status="SUCCESS",
-                sql_text=sql,
-                rewritten_sql=feature_sql,
-                duration_ms=int(elapsed_ms),
-                rows_affected=len(rows),
-                session_id=session_id,
-                file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-            )
-            return QueryResult(
-                columns=columns,
-                rows=rows,
-                row_count=len(rows),
-                elapsed_ms=elapsed_ms,
-                original_sql=sql,
-                executed_sql=feature_sql,
-                warnings=["ML_PREDICT executed in bounded vectorized Nova batches"],
-            )
-        except Exception as exc:
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="ml_predict_batch",
-                object_type="ml_model",
-                object_name=alias,
-                status="ERROR",
-                sql_text=sql,
-                rewritten_sql=feature_sql,
-                error_message=_redact_error_message(str(exc)),
-                duration_ms=int((time.monotonic() - start) * 1000),
-                session_id=session_id,
-                file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-            )
-            raise
-
-    async def _execute_ml_forecast(
-        self,
-        *,
-        sql: str,
-        normalized_sql: str,
-        call: MLForecastCall,
-        username: str,
-        database: str | None,
-        session_id: str | None,
-        file_id: str | None,
-        schema: str | None,
-        tenant: str = "default",
-    ) -> QueryResult:
-        """Execute persisted forecast SQL without pretending it is row inference."""
-        start = time.monotonic()
-        from app.modules.ml_engine.service import ml_engine_service
-
-        object_name = call.model_alias or call.model_id or "forecast"
-        try:
-            if call.model_alias is not None:
-                result = await ml_engine_service.forecast_alias(
-                    call.model_alias,
-                    call.horizon,
-                    owner_name=username,
-                    database_name=database,
-                    level=call.confidence_level,
-                    series=call.series,
-                    **({"tenant": tenant} if tenant != "default" else {}),
-                )
-            else:
-                assert call.model_id is not None and call.version is not None
-                result = await ml_engine_service.forecast_version(
-                    call.model_id,
-                    call.version,
-                    call.horizon,
-                    owner_name=username,
-                    database_name=database,
-                    level=call.confidence_level,
-                    series=call.series,
-                    **({"tenant": tenant} if tenant != "default" else {}),
-                )
-            forecast = result["forecast"]
-            columns = ["timestamp", "series", "prediction", "lower", "upper"]
-            rows = [[row.get(column) for column in columns] for row in forecast]
-            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="ml_forecast",
-                object_type="ml_model",
-                object_name=object_name,
-                status="SUCCESS",
-                sql_text=sql,
-                rewritten_sql=normalized_sql,
-                duration_ms=int(elapsed_ms),
-                rows_affected=len(rows),
-                session_id=session_id,
-                file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-            )
-            return QueryResult(
-                columns=columns,
-                rows=rows,
-                row_count=len(rows),
-                elapsed_ms=elapsed_ms,
-                original_sql=sql,
-                executed_sql=normalized_sql,
-                warnings=["ML_FORECAST executed with persisted forecast semantics"],
-            )
-        except Exception as exc:
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="ml_forecast",
-                object_type="ml_model",
-                object_name=object_name,
-                status="ERROR",
-                sql_text=sql,
-                rewritten_sql=normalized_sql,
-                error_message=_redact_error_message(str(exc)),
-                duration_ms=int((time.monotonic() - start) * 1000),
-                session_id=session_id,
-                file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-            )
-            raise
-
-    async def _execute_create_task(
-        self,
-        *,
-        sql: str,
-        normalized_sql: str,
-        username: str,
-        role: str | None,
-        database: str | None,
-        session_id: str | None,
-        file_id: str | None,
-        schema: str | None,
-    ) -> QueryResult:
-        """Lower Nova ``CREATE TASK`` to ``CONFIG_TASK*`` metadata.
-
-        The raw statement is **never** executed: it is parsed, validated, and
-        written to Nova's own metadata tables. The engine statement for a node
-        is produced later by the worker via ``execution.build_submit_task`` on
-        the owner's connection (delegate-first, design D9.4).
-
-        No credential is accepted here — the statement cannot embed one, and the
-        body is stored opaquely.
-        """
-        start = time.monotonic()
-        try:
-            if not role:
-                raise TaskLoweringError("CREATE TASK requires an explicit execution role")
-            timezone = await task_orchestration_repository.get_engine_timezone()
-            if not timezone:
-                raise TaskLoweringError(
-                    "cannot determine the engine timezone; CREATE TASK stores an "
-                    "explicit IANA zone and will not assume UTC"
-                )
-            task = parse_create_task(
-                normalized_sql, database=database, schema=schema, timezone=timezone
-            )
-            persisted = await persist_lowered_task(task, created_by=username, owner_role=role)
-            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
-            task_row = persisted.task
-            edge_count = len(persisted.edges)
-
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="execute",
-                object_type="task",
-                object_name=task.qualified_name,
-                status="SUCCESS",
-                sql_text=sql,
-                rewritten_sql=normalized_sql,
-                duration_ms=int(elapsed_ms),
-                rows_affected=1,
-                session_id=session_id,
-                file_id=file_id,
-                database_name=task.database_name,
-                schema_name=task.schema_name,
-            )
-            return QueryResult(
-                columns=[
-                    "task_id",
-                    "name",
-                    "database_name",
-                    "schema_name",
-                    "schedule_kind",
-                    "schedule_expr",
-                    "overlap_policy",
-                    "edges",
-                ],
-                rows=[
-                    [
-                        task_row["id"],
-                        task_row["name"],
-                        task_row["database_name"],
-                        task_row["schema_name"],
-                        task_row["schedule_kind"],
-                        task_row["schedule_expr"],
-                        task_row["overlap_policy"],
-                        edge_count,
-                    ]
-                ],
-                row_count=1,
-                affected_rows=1,
-                elapsed_ms=elapsed_ms,
-                original_sql=sql,
-                # The raw CREATE TASK is metadata, not the executed SQL; the run
-                # statement is built per node at execution time. Surfacing the
-                # normalized statement here is honest about what Nova did with it
-                # and never implies the engine saw it.
-                executed_sql=normalized_sql,
-                warnings=[
-                    "CREATE TASK is Nova metadata; no statement was sent to StarRocks. "
-                    "The task's SUBMIT TASK is issued by the worker when the graph runs."
-                ],
-            )
-        except (TaskDDLError, TaskLoweringError) as exc:
-            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="execute",
-                object_type="task",
-                object_name=database or "workspace",
-                status="ERROR",
-                sql_text=sql,
-                rewritten_sql=normalized_sql,
-                error_message=str(exc),
-                duration_ms=int(elapsed_ms),
-                session_id=session_id,
-                file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-            )
-            # Return, rather than raise, so the Nova-surface validation message
-            # reaches the worksheet as an explicit failure instead of being lost
-            # behind a generic engine error.
-            return QueryResult(
-                error=str(exc),
-                elapsed_ms=elapsed_ms,
-                original_sql=sql,
-                executed_sql=normalized_sql,
-            )
-
-    async def _execute_force_password_change(
-        self,
-        *,
-        sql: str,
-        normalized_sql: str,
-        username: str,
-        database: str | None,
-        session_id: str | None,
-        file_id: str | None,
-        schema: str | None,
-        role: str | None,
-    ) -> QueryResult:
-        """Record the first-login password-change flag for a user.
-
-        The statement is Nova metadata: StarRocks has no such attribute, so it is
-        parsed here and written to ``NOVA_SYSTEM.CONFIG_USER_PREFERENCES``; the
-        engine never sees it. Only the flag is stored — no password.
-        """
-        start = time.monotonic()
-        try:
-            parsed = parse_force_password_change(normalized_sql)
-            from app.modules.users.service import user_service
-
-            if role not in {"ACCOUNTADMIN", "SECURITYADMIN", "user_admin", "security_admin"}:
-                raise ForbiddenSQLError("An active security-admin role is required for password-change policy.")
-            if parsed.username.casefold() == "root":
-                raise ForbiddenSQLError("The root account is protected.")
-            if not await user_service.user_exists(parsed.username):
-                raise ValueError("The target user does not exist.")
-            await set_must_change_password(parsed.username, required=parsed.required)
-        except Exception as exc:
-            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
-            await write_audit_log(
-                event_type="query",
-                user_name=username,
-                action="execute",
-                object_type="user",
-                object_name=username,
-                status="ERROR",
-                sql_text=sql,
-                rewritten_sql=normalized_sql,
-                error_message=_redact_error_message(str(exc)),
-                duration_ms=int(elapsed_ms),
-                session_id=session_id,
-                file_id=file_id,
-                database_name=database,
-                schema_name=schema,
-            )
-            return QueryResult(
-                error=_redact_error_message(str(exc)),
-                elapsed_ms=elapsed_ms,
-                original_sql=sql,
-                executed_sql=normalized_sql,
-            )
-
-        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
-        await write_audit_log(
-            event_type="query",
-            user_name=username,
-            action="execute",
-            object_type="user",
-            object_name=parsed.username,
-            status="SUCCESS",
-            sql_text=sql,
-            rewritten_sql=normalized_sql,
-            duration_ms=int(elapsed_ms),
-            rows_affected=1,
-            session_id=session_id,
-            file_id=file_id,
-            database_name=database,
-            schema_name=schema,
-        )
-        return QueryResult(
-            columns=["user", "must_change_password"],
-            rows=[[parsed.username, parsed.required]],
-            row_count=1,
-            affected_rows=1,
-            elapsed_ms=elapsed_ms,
-            original_sql=sql,
-            executed_sql=normalized_sql,
-            warnings=[
-                "ALTER USER … REQUIRE PASSWORD CHANGE is Nova metadata; no statement "
-                "was sent to StarRocks. The user is asked to change the password at "
-                "their next login."
-            ],
-        )
 
     async def get_history(
         self,
@@ -1483,62 +750,18 @@ class QueryService:
         with ``***`` before the result — the only object the router serialises
         into the HTTP body — can leave this method.
         """
-        normalized_sql = self._normalize_default_schema_qualification(sql)
-        guard_user_statement(normalized_sql)
-
-        parsed = parse_sql(normalized_sql)
-        executed_sql = normalized_sql
-
-        if parsed.stage_refs:
-            try:
-                # Loading stage configs resolves each stage's secret reference,
-                # so it belongs inside the try: an unresolvable reference must
-                # be reported as a redacted query error, not escape to the
-                # generic handler as an unredacted 500 (NOVA-66).
-                parsed, stage_configs_by_ref = await self._resolve_stage_refs(
-                    parsed, database=database, schema=schema, username=username,
-                    password=decrypt_password(encrypted_password), role=role,
-                )
-                prepared = await prepare_stage_sql(
-                    normalized_sql, parsed=parsed, stage_configs_by_ref=stage_configs_by_ref
-                )
-            except (ValueError, SecretResolutionError) as e:
-                # ``normalized_sql`` is the user's own text and carries no
-                # injected credential, but it is redacted all the same so every
-                # return path out of this method is uniform.
-                #
-                # ``error`` carries the failure the same way ``execute()`` does:
-                # the statement never reached the engine, so nothing else can
-                # record it, and ``QueryResult.success`` (``error is None``)
-                # would otherwise report a refused translation as a success.
-                #
-                # A secret-resolution failure is audited here too, exactly as
-                # ``execute()`` does, so the fact of the failed fetch reaches
-                # NOVA_SYSTEM rather than only the HTTP response.
-                await self._audit_secret_resolutions(username=username)
-                return QueryResult(
-                    original_sql=sql,
-                    executed_sql=normalized_sql,
-                    warnings=[f"❌ {e}"],
-                    error=str(e),
-                )
-
-            executed_sql = prepared.engine_sql
-
-        explain_sql = (
-            executed_sql if re.match(r"(?is)^\s*EXPLAIN\b", executed_sql)
-            else f"EXPLAIN {executed_sql}"
-        )
-        password = decrypt_password(encrypted_password)
-
-        result = await self._repo.execute_as_user(
-            sql=explain_sql,
+        guard_user_statement(self._normalize_default_schema_qualification(sql))
+        result = await self.execute(
+            sql=sql if re.match(r"^\s*EXPLAIN\b", sql, re.IGNORECASE) else "EXPLAIN " + sql,
             username=username,
-            password=password,
+            encrypted_password=encrypted_password,
             database=database,
+            schema=schema,
             role=role,
         )
         result.original_sql = redact_for_output(sql)
+        if not result.error:
+            result.warnings = []
         return result
 
     async def get_context(
@@ -1626,8 +849,13 @@ class QueryService:
             if not database:
                 return {"items": []}
             rows = await self._list_stage_files(
-                stage, database, folder=folder, schema=schema,
-                username=username, password=password, role=role,
+                stage,
+                database,
+                folder=folder,
+                schema=schema,
+                username=username,
+                password=password,
+                role=role,
             )
             return {"items": self._stage_file_completion_items(rows, prefix)}
 
@@ -1635,7 +863,11 @@ class QueryService:
         return {"items": self._filter_strings(objects, prefix, "object")}
 
     async def list_schemas(
-        self, database: str | None, *, username: str, password: str,
+        self,
+        database: str | None,
+        *,
+        username: str,
+        password: str,
         role: str | None = None,
     ) -> list[str]:
         if not database:
@@ -1656,223 +888,21 @@ class QueryService:
             try:
                 await check_stage_access(
                     {"database_name": database, "schema_name": row[0]},
-                    action="read", username=username, password=password, active_role=role,
+                    action="read",
+                    username=username,
+                    password=password,
+                    active_role=role,
                 )
             except ValueError:
                 continue
             schemas.append(row[0])
         return schemas or ["default"]
 
-    async def _resolve_stage_refs(
-        self,
-        parsed,
-        *,
-        database: str | None,
-        schema: str | None,
-        username: str,
-        password: str,
-        role: str | None,
-        connection: asyncmy.Connection | None = None,
-    ) -> tuple[Any, dict[int, StorageConfig]]:
-        """Bind each reference to one authorized metadata row before resolving secrets."""
-        result = await db.execute_system(
-            "SELECT name, database_name, schema_name, storage_connection, base_prefix "
-            "FROM NOVA_SYSTEM.CONFIG_STAGES"
-        )
-        rows = [
-            {"name": row[0], "database_name": row[1], "schema_name": row[2],
-             "storage_connection": row[3], "base_prefix": row[4]}
-            for row in result["rows"]
-        ]
-        selected = []
-        for index, ref in enumerate(parsed.stage_refs):
-            candidates = [(database, schema, ref.stage_name, 0)]
-            if ref.path_parts:
-                candidates.append((database, ref.stage_name, ref.path_parts[0], 1))
-            if len(ref.path_parts) > 1:
-                candidates.append(
-                    (ref.stage_name, ref.path_parts[0], ref.path_parts[1], 2)
-                )
-            matches = []
-            for db_name, schema_name, name, consumed in candidates:
-                found = [
-                    row for row in rows
-                    if row["name"] == name
-                    and (db_name is None or row["database_name"] == db_name)
-                    and (schema_name is None or row["schema_name"] == schema_name)
-                ]
-                if found:
-                    matches = [(row, consumed) for row in found]
-            if len(matches) != 1:
-                raise ValueError(
-                    f"Stage reference {ref.full_match!r} is "
-                    + ("ambiguous" if matches else "not found")
-                )
-            row, consumed = matches[0]
-            action = (
-                "write" if parsed.command_type == CommandType.STAGE_EXPORT and index == 0
-                else "read"
-            )
-            selected.append((ref, row, consumed, action))
+    async def _resolve_stage_refs(self, parsed, **kwargs):
+        return await self._adapters()._resolve_stage_refs(parsed, **kwargs)
 
-        for _, row, _, action in selected:
-            await check_stage_access(
-                row, action=action, username=username, password=password,
-                active_role=role, connection=connection,
-            )
-
-        configs: dict[int, StorageConfig] = {}
-        refs = []
-        for ref, row, consumed, _ in selected:
-            storage_conn = row["storage_connection"]
-            conn = get_storage_connection(storage_conn)
-            access_key, secret_key = resolve_storage_credentials(storage_conn)
-            prefix = (row["base_prefix"] or "").strip("/")
-            if not prefix:
-                prefix = f"{row['database_name']}/{row['schema_name']}/{row['name']}"
-            refs.append(replace(ref, stage_name=row["name"], path_parts=ref.path_parts[consumed:]))
-            configs[ref.start] = StorageConfig(
-                storage_type=conn.type, endpoint=to_docker_endpoint(conn.endpoint),
-                bucket=conn.bucket, base_prefix=prefix,
-                access_key=access_key, secret_key=secret_key,
-                region=conn.region or "us-east-1", storage_connection=storage_conn,
-            )
-        return replace(parsed, stage_refs=refs), configs
-
-    async def _detect_csv_params(
-        self,
-        parsed,
-        stage_configs: dict,
-    ) -> tuple[dict[str, str], list[str] | None]:
-        """Pre-read CSV file from MinIO to detect delimiter and header.
-
-        Returns (params_dict, column_names_or_None).
-        params_dict: FILES() params like {"csv.column_separator": ",", "csv.skip_header": "1"}
-        column_names: list of header column names if detected, else None
-        """
-        if not parsed.stage_refs:
-            logger.warning("CSV detect: no stage references in the parsed statement")
-            return {}, None
-
-        ref = parsed.stage_refs[0]
-        # Detect format from file extension
-        ext = ""
-        if ref.file_name and "." in ref.file_name:
-            ext = ref.file_name.rsplit(".", 1)[-1].lower()
-        if ext not in ("csv", "tsv"):
-            logger.warning("CSV detect: %r is not csv/tsv (ext=%r)", ref.file_name, ext)
-            return {}, None
-
-        config = stage_configs.get(ref.stage_name)
-        if not config:
-            # The stage exists as a row but could not be resolved into a
-            # StorageConfig, so the FILES() call gets no delimiter/header
-            # tuning and the caller sees untuned rows rather than an error.
-            logger.warning(
-                "CSV detect: stage %r is not in the resolved stage configs %r",
-                ref.stage_name,
-                sorted(stage_configs),
-            )
-            return {}, None
-
-        try:
-            import boto3
-            from botocore.config import Config as BotoConfig
-
-            # Build S3 key
-            parts = ref.path_parts + [ref.file_name] if ref.file_name else ref.path_parts
-            s3_key = "/".join([config.base_prefix] + parts)
-
-            def read_header() -> str:
-                s3 = boto3.client(
-                    "s3",
-                    endpoint_url=(
-                        get_storage_connection(config.storage_connection).endpoint
-                        if config.storage_connection else config.endpoint
-                    ),
-                    aws_access_key_id=config.access_key,
-                    aws_secret_access_key=config.secret_key,
-                    config=BotoConfig(signature_version="s3v4"),
-                    region_name=config.region or "us-east-1",
-                )
-                resp = s3.get_object(Bucket=config.bucket, Key=s3_key, Range="bytes=0-8191")
-                body = resp["Body"]
-                try:
-                    return body.read(8192).decode("utf-8", errors="replace")
-                finally:
-                    body.close()
-
-            raw = await asyncio.to_thread(read_header)
-            lines = raw.split("\n")
-            if len(lines) < 2:
-                logger.warning(
-                    "CSV detect: object %r/%r returned %d line(s); cannot detect",
-                    config.bucket,
-                    s3_key,
-                    len(lines),
-                )
-                return {}, None
-
-            first_line = lines[0].strip()
-
-            # Detect delimiter by counting occurrences in first line
-            candidates = [
-                (",", first_line.count(",")),
-                (";", first_line.count(";")),
-                ("\t", first_line.count("\t")),
-                ("|", first_line.count("|")),
-            ]
-            # Pick the delimiter with highest count (must be > 0)
-            best_delim, best_count = max(candidates, key=lambda x: x[1])
-            if best_count == 0:
-                best_delim = ","
-
-            # Detect enclosure
-            enclose = ""
-            if first_line.startswith('"') and first_line.endswith('"'):
-                enclose = '"'
-
-            # Detect if first line is a header:
-            # Headers typically contain text, not numbers
-            second_line = lines[1].strip() if len(lines) > 1 else ""
-            first_fields = first_line.split(best_delim)
-            second_fields = second_line.split(best_delim)
-
-            is_header = False
-            column_names = None
-            if first_fields and second_fields and len(first_fields) == len(second_fields):
-                # Check if first row looks like text (header) and second like data
-                text_count = sum(
-                    1
-                    for f in first_fields
-                    if not f.strip().replace("-", "").replace(".", "").isdigit()
-                )
-                is_header = text_count > len(first_fields) / 2
-                if is_header:
-                    # Extract clean column names from header
-                    column_names = [f.strip().strip('"').strip("'") for f in first_fields]
-
-            params: dict[str, str] = {
-                "csv.column_separator": best_delim,
-                "csv.trim_space": "true",
-            }
-            if enclose:
-                params["csv.enclose"] = enclose
-                params["csv.escape"] = "\\\\"
-            if is_header:
-                params["csv.skip_header"] = "1"
-
-            return params, column_names
-
-        except Exception:
-            # Falling back to defaults is correct — a CSV that cannot be
-            # pre-read still loads, without delimiter or header tuning. What is
-            # NOT correct is doing it silently: a boto3 failure here (unreachable
-            # endpoint, missing credential) makes the query return typed rows
-            # where the caller expected a header, which surfaces as a confusing
-            # shape assertion far from the cause. Name it in the log instead.
-            logger.warning("CSV parameter detection failed for stage %r", ref.stage_name)
-            return {}, None
+    async def _detect_csv_params(self, parsed, stage_configs):
+        return await self._adapters()._detect_csv_params(parsed, stage_configs)
 
     async def _list_user_databases(
         self,
@@ -1957,7 +987,10 @@ class QueryService:
             try:
                 await check_stage_access(
                     {"database_name": database, "schema_name": schema_name},
-                    action="read", username=username, password=password, active_role=role,
+                    action="read",
+                    username=username,
+                    password=password,
+                    active_role=role,
                 )
             except ValueError:
                 continue
@@ -1992,7 +1025,10 @@ class QueryService:
         try:
             await check_stage_access(
                 {"database_name": database, "schema_name": rows[0][1]},
-                action="read", username=username, password=password, active_role=role,
+                action="read",
+                username=username,
+                password=password,
+                active_role=role,
             )
         except ValueError:
             return []

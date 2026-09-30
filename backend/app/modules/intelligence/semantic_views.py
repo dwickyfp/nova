@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,7 +19,7 @@ from app.core.deps import get_current_user
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.ossie import SUPPORTED_VERSIONS, OssieParseError, parse_ossie
-from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanner
+from app.modules.agents.semantic.planning import SemanticPlan
 from app.modules.agents.semantic.quality_lab import evaluate_verified_queries
 from app.modules.agents.semantic.runtime import (
     lint_semantic_model,
@@ -55,11 +55,27 @@ class SemanticViewVersionCreate(BaseModel):
     definition: str = Field(min_length=1, max_length=1_000_000)
 
 
+class SemanticViewTime(BaseModel):
+    """Period for a view query, in the semantic time-range grammar."""
+
+    range: str | None = Field(default=None, max_length=64)
+    grain: Literal["day", "week", "month", "quarter", "year"] | None = None
+    compare: str | None = Field(default=None, max_length=32)
+    dimension: str | None = Field(default=None, max_length=128)
+
+
+class SemanticViewOrder(BaseModel):
+    field: str = Field(min_length=1, max_length=128)
+    direction: Literal["asc", "desc"] = "desc"
+
+
 class SemanticViewQuery(BaseModel):
     metrics: list[str] = Field(default_factory=list, max_length=32)
     dimensions: list[str] = Field(default_factory=list, max_length=32)
     filters: dict[str, str | int | float | bool] = Field(default_factory=dict, max_length=32)
     named_filters: list[str] = Field(default_factory=list, max_length=16)
+    time: SemanticViewTime | None = None
+    order_by: list[SemanticViewOrder] = Field(default_factory=list, max_length=8)
     limit: int = Field(default=100, ge=1, le=1000)
     version: int | None = Field(default=None, ge=1)
 
@@ -369,28 +385,44 @@ class SemanticViewService:
                 detail="Replace this legacy draft with a supported Ossie 0.1.1 definition",
             )
         ir = SemanticModelIR.from_ossie(row["definition"])
-        planned = SemanticPlanner().plan(ir, question)
-        if planned.plan is None:
+        # The same model planner as Studio, so a preview in any language shows what
+        # an agent would run.
+        from types import SimpleNamespace
+
+        from app.modules.agents.semantic.model_planner import generate_plan, planning_catalog
+        from app.modules.assistant.provider import (
+            AssistantProviderClient,
+            AssistantProviderError,
+        )
+
+        try:
+            plan = await generate_plan(
+                AssistantProviderClient(), ir, await planning_catalog(ir, question), question,
+                SimpleNamespace(usage=None, model_provider_id=None, model_name=None),
+            )
+        except AssistantProviderError as exc:
+            raise HTTPException(
+                status_code=503, detail="No AI provider is available to plan the question."
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        unresolved = [item.text for item in plan.unresolved_concepts if item.material]
+        if unresolved:
             raise HTTPException(
                 status_code=422,
-                detail=planned.clarification or "The semantic question is ambiguous.",
+                detail="The View does not cover: " + ", ".join(unresolved),
             )
         try:
-            compiled = SemanticCompiler().compile(ir, planned.plan)
+            compiled = SemanticCompiler().compile(ir, plan)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         preview = {
             "view_id": view_id,
             "version": version,
             "model_fingerprint": row["fingerprint"],
-            "semantic_plan": planned.plan.as_dict(),
+            "semantic_plan": plan.as_dict(),
             "generated_sql": compiled.sql,
-            "confidence": {
-                "score": planned.confidence.score,
-                "level": planned.confidence.level,
-                "signals": planned.confidence.signals,
-                "unresolved": list(planned.confidence.unresolved),
-            },
+            "plan_source": "model_planner",
             "relationship_path": list(compiled.relationship_path),
             "warnings": list(compiled.warnings),
         }
@@ -503,6 +535,41 @@ class SemanticViewService:
         await self._insert_version(view_id, latest_version + 1, definition, new_ir.fingerprint)
         await self._audit("ALTER", view["name"], user)
         return await self._version(view_id, latest_version + 1)
+
+    async def adopt_verified_plan(
+        self, view_id: str, *, question: str, semantic_plan: dict, user: dict
+    ) -> dict:
+        """Add a reviewed plan as a verified query on a new draft version.
+
+        The SQL is compiled from the latest version's definition rather than
+        taken from the answer that proposed it, so the verified SQL always
+        matches the view it is stored in.
+        """
+        result = await db.execute_system(
+            "SELECT MAX(version) FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS WHERE view_id=%s",
+            [view_id],
+        )
+        latest = int(result["rows"][0][0] or 0) if result.get("rows") else 0
+        if not latest:
+            raise HTTPException(status_code=404, detail="Semantic View not found")
+        _view, row = await self._readable_version(view_id, latest, user)
+        try:
+            ir = SemanticModelIR.from_ossie(row["definition"])
+            plan = SemanticPlan.from_dict(semantic_plan)
+            sql = SemanticCompiler().compile(ir, plan).sql
+        except (TypeError, KeyError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail="The plan no longer fits the current Semantic View"
+            ) from exc
+        return await self.add_verified_query(
+            view_id,
+            latest,
+            SemanticViewVerifiedQueryCreate(
+                question=question, semantic_plan=plan.as_dict(), verified_sql=sql,
+                tags=["from_feedback"],
+            ),
+            user,
+        )
 
     async def create(self, body: SemanticViewCreate, user: dict) -> dict:
         definition, ir = self._parse(body.definition, body.name)
@@ -737,6 +804,21 @@ class SemanticViewService:
         ir = SemanticModelIR.from_ossie(row["definition"])
         if not await self._entity_access(ir, user):
             raise HTTPException(status_code=403, detail="Semantic entity reference is unavailable")
+        time = None
+        if body.time is not None and (body.time.range or body.time.grain):
+            default = next(
+                (metric.default_time_dimension for metric in ir.metrics
+                 if metric.name in body.metrics and metric.default_time_dimension),
+                None,
+            )
+            time = {
+                "dimension": body.time.dimension or default,
+                "range": body.time.range,
+                "grain": body.time.grain,
+                "compare": body.time.compare,
+            }
+            if not time["dimension"]:
+                raise HTTPException(status_code=422, detail="The metric has no time dimension")
         plan = SemanticPlan.from_dict(
             {
                 "metrics": body.metrics,
@@ -746,6 +828,8 @@ class SemanticViewService:
                     for field, value in body.filters.items()
                 ],
                 "named_filters": body.named_filters,
+                "time": time,
+                "order_by": [item.model_dump() for item in body.order_by],
                 "limit": body.limit,
             }
         )

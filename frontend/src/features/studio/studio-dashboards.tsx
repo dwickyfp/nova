@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Eye, Grip, LayoutDashboard, Pencil, Plus, RefreshCw, Search, Table2, Trash2 } from "lucide-react";
+import { BarChart3, Eye, Grip, LayoutDashboard, Pencil, Plus, RefreshCw, Search, Share2, Table2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -13,6 +13,7 @@ import {
   type StudioDashboardTile,
 } from "@/features/agents/api";
 import { chartSpecWithRows } from "./studio-artifacts";
+import { ShareDialog } from "./share-dialog";
 import {
   canPlaceTile,
   DASHBOARD_COLUMNS,
@@ -150,6 +151,7 @@ function DashboardDesigner({
   onDeleted: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [sharing, setSharing] = useState(false);
   const dashboard = useQuery({
     queryKey: ["studio", "dashboard", dashboardId],
     queryFn: () => studioApi.getDashboard(dashboardId),
@@ -402,10 +404,22 @@ function DashboardDesigner({
         ) : (
           <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{title}</h1>
         )}
+        {mode === "view" ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="ml-auto size-8"
+            aria-label="Share dashboard"
+            onClick={() => setSharing(true)}
+          >
+            <Share2 aria-hidden="true" className="size-4" />
+          </Button>
+        ) : null}
         <Button
           type="button"
           size={mode === "edit" && dirty ? "sm" : "icon"}
-          className={mode === "edit" && dirty ? "ml-auto" : "ml-auto size-8"}
+          className={mode === "edit" && dirty ? "ml-auto" : mode === "edit" ? "ml-auto size-8" : "size-8"}
           variant={mode === "edit" && !dirty ? "secondary" : "outline"}
           aria-label={mode === "view" ? "Edit dashboard" : dirty ? undefined : "View dashboard"}
           onClick={() => {
@@ -447,6 +461,12 @@ function DashboardDesigner({
           </>
         ) : null}
       </header>
+      <ShareDialog
+        objectType="dashboard"
+        objectId={sharing ? dashboardId : null}
+        title={title}
+        onClose={() => setSharing(false)}
+      />
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
           <div className="h-full min-h-0 w-full overflow-x-auto">

@@ -1,0 +1,113 @@
+{
+  "date": "2026-09-28",
+  "commit": "6b0bb9a",
+  "runs_per_case": 2,
+  "note": "Full corpus (157 cases x 2). p50/p95 are inflated: targeted runs shared the provider during this run. The superlative fix (1fa59f6) was verified separately: model.biggest_channel.en and model.laku.id 8/8.",
+  "summary": {
+    "L3": {
+      "accuracy": 0.9968,
+      "cases": 314,
+      "skipped": 0,
+      "silent_wrong": 0,
+      "categories": {
+        "comparison": {
+          "passed": 24,
+          "total": 24,
+          "accuracy": 1.0
+        },
+        "derived": {
+          "passed": 6,
+          "total": 6,
+          "accuracy": 1.0
+        },
+        "dimension": {
+          "passed": 26,
+          "total": 26,
+          "accuracy": 1.0
+        },
+        "filter": {
+          "passed": 18,
+          "total": 18,
+          "accuracy": 1.0
+        },
+        "follow_up": {
+          "passed": 8,
+          "total": 8,
+          "accuracy": 1.0
+        },
+        "having": {
+          "passed": 2,
+          "total": 2,
+          "accuracy": 1.0
+        },
+        "multi_fact": {
+          "passed": 2,
+          "total": 2,
+          "accuracy": 1.0
+        },
+        "multi_metric": {
+          "passed": 4,
+          "total": 4,
+          "accuracy": 1.0
+        },
+        "out_of_scope": {
+          "passed": 12,
+          "total": 12,
+          "accuracy": 1.0
+        },
+        "paraphrase": {
+          "passed": 12,
+          "total": 12,
+          "accuracy": 1.0
+        },
+        "policy": {
+          "passed": 4,
+          "total": 4,
+          "accuracy": 1.0
+        },
+        "ranking": {
+          "passed": 6,
+          "total": 6,
+          "accuracy": 1.0
+        },
+        "share": {
+          "passed": 2,
+          "total": 2,
+          "accuracy": 1.0
+        },
+        "synonym": {
+          "passed": 14,
+          "total": 14,
+          "accuracy": 1.0
+        },
+        "time_grain": {
+          "passed": 12,
+          "total": 12,
+          "accuracy": 1.0
+        },
+        "time_range": {
+          "passed": 159,
+          "total": 160,
+          "accuracy": 0.9938
+        },
+        "top_per_group": {
+          "passed": 2,
+          "total": 2,
+          "accuracy": 1.0
+        }
+      },
+      "p50_ms": 7295.485499984352,
+      "consistency": 0.9936,
+      "flaky": [
+        "time.last_30_days.total_revenue.id"
+      ],
+      "mean_timing_ms": {
+        "before_loop_ms": 609.7,
+        "loop_model_ms": 10921.5,
+        "tool_ms": 1092.5,
+        "loop_model_calls": 2.2
+      },
+      "p95_ms": 47048.17166700377
+    }
+  }
+}

@@ -358,6 +358,11 @@ def _normalise(document: dict) -> dict[str, Any]:
             for item in document.get("named_filters") or []
             if isinstance(item, dict)
         ],
+        "conformed_dimensions": [
+            {"name": item.get("name"), "fields": list(item.get("fields") or [])}
+            for item in document.get("conformed_dimensions") or []
+            if isinstance(item, dict)
+        ],
         "question_routing_instructions": document.get("question_routing_instructions", ""),
         "query_generation_instructions": document.get("query_generation_instructions", ""),
     }

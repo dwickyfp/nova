@@ -50,7 +50,8 @@ def service(monkeypatch):
         return parsed, {ref.start: configs[ref.stage_name] for ref in parsed.stage_refs}
 
     monkeypatch.setattr(
-        "app.modules.query.service.query_service._resolve_stage_refs", stage_configs
+        "app.sql_frontend.execution.stages.StageRuntime._resolve_stage_refs",
+        staticmethod(stage_configs),
     )
     return MLEngineService()
 
@@ -116,9 +117,7 @@ class TestPredictionSqlIsGuarded:
     )
     async def test_every_accountadmin_form_is_blocked(self, service, sql):
         with pytest.raises(ForbiddenSQLError):
-            await service.batch_predict(
-                model_alias="m", prediction_sql=sql, database_name=None
-            )
+            await service.batch_predict(model_alias="m", prediction_sql=sql, database_name=None)
 
 
 class TestPredictionSqlTranslation:

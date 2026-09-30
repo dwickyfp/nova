@@ -33,9 +33,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from antlr4 import CommonTokenStream, InputStream
-from antlr4.error.ErrorListener import ErrorListener
-
 from app.modules.task_orchestration.graph import (
     Edge,
     Graph,
@@ -49,7 +46,6 @@ from app.modules.task_orchestration.schedule import (
     resolve_timezone,
 )
 from app.modules.task_orchestration.schemas import OverlapPolicy
-from app.sql_dialect.grammar import StarRocksLexer, StarRocksParser
 
 #: The surface's clause order. `taskClause*` accepts any order, so the lowering
 #: enforces this one and rejects anything out of order rather than guessing.
@@ -107,17 +103,6 @@ class LoweredTask:
         """The ``database.schema.name`` spelling, for messages and graph keys."""
         parts = [p for p in (self.database_name, self.schema_name, self.name) if p]
         return ".".join(parts)
-
-
-class _TaskSyntaxErrorListener(ErrorListener):
-    """Collect ANTLR syntax errors so the caller gets a Nova-shaped message."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.errors: list[str] = []
-
-    def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):  # noqa: N802
-        self.errors.append(f"line {line}:{column} {msg}")
 
 
 def is_create_task(sql: str) -> bool:
@@ -187,6 +172,7 @@ def parse_create_task(
     database: str | None = None,
     schema: str | None = None,
     timezone: str | None = None,
+    parsed=None,
 ) -> LoweredTask:
     """Parse ``sql`` and lower it to metadata.
 
@@ -205,25 +191,20 @@ def parse_create_task(
     Raises :class:`TaskDDLError` for a syntax error or any validation failure
     above. No SQL literal is echoed into an error message.
     """
-    if not is_create_task(sql):
+    if parsed is None:
+        from app.sql_frontend.parser import parse_statement
+
+        try:
+            parsed = parse_statement(sql)
+        except ValueError as exc:
+            raise TaskDDLError("invalid CREATE TASK syntax: " + str(exc)) from None
+    if [token.text.upper() for token in parsed.visible_tokens[:2]] != ["CREATE", "TASK"]:
         raise TaskDDLError("not a CREATE TASK statement")
-
-    parser = StarRocksParser(CommonTokenStream(StarRocksLexer(InputStream(sql))))
-    listener = _TaskSyntaxErrorListener()
-    parser.removeErrorListeners()
-    parser.addErrorListener(listener)
-    tree = parser.sqlStatements()
-    if listener.errors:
-        raise TaskDDLError("invalid CREATE TASK syntax: " + "; ".join(listener.errors))
-    statements = [item for item in tree.singleStatement() if item.statement() is not None]
-    if len(statements) != 1:
-        raise TaskDDLError("CREATE TASK must contain exactly one SQL statement")
-
-    statement = _find_first(tree, "SubmitTaskStatementContext")
-    if statement is None:
+    statement = parsed.statement_context
+    if type(statement).__name__ != "SubmitTaskStatementContext":
         raise TaskDDLError("invalid CREATE TASK syntax: no task statement found")
 
-    task_name = _slice(sql, statement.qualifiedName())
+    task_name = _slice(sql, statement.novaQualifiedTaskName())
     if not task_name:
         raise TaskDDLError("CREATE TASK requires a task name")
 
@@ -270,14 +251,15 @@ def parse_create_task(
         # empty body to the engine.
         raise TaskDDLError("CREATE TASK body must be CREATE TABLE ... AS, INSERT, or CACHE SELECT")
     body = _slice(sql, body_node)
-    if "@" in body:
-        from app.modules.query.dialect.parser import parse_sql
+    from app.common.sql_guard import redact_sql_credentials
 
-        if parse_sql(body).stage_refs:
-            raise TaskDDLError(
-                "CREATE TASK with @stage is unavailable: native task definitions "
-                "would persist injected storage credentials"
-            )
+    if redact_sql_credentials(body) != body:
+        raise TaskDDLError("CREATE TASK bodies must not persist credentials")
+    if _find_all(body_node, "StageReferenceContext"):
+        raise TaskDDLError(
+            "CREATE TASK with @stage is unavailable: native task definitions "
+            "would persist injected storage credentials"
+        )
 
     _validate_own_edges(bare_name, after, finalize)
 
@@ -427,9 +409,7 @@ def _clause_schedule(sql: str, clause) -> tuple[str, str | None, str | None]:
         raise TaskDDLError("SCHEDULE requires a cron string or an EVERY(INTERVAL …) form")
     schedule_ctx = _find_first(clause, "TaskScheduleDescContext")
     if schedule_ctx is not None and schedule_ctx.START() is not None:
-        raise TaskDDLError(
-            "CREATE TASK SCHEDULE START is not supported by the Nova scheduler"
-        )
+        raise TaskDDLError("CREATE TASK SCHEDULE START is not supported by the Nova scheduler")
     expression = _slice(sql, interval_ctx)
     try:
         parse_interval(expression)

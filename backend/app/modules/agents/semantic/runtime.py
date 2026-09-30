@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import difflib
 import re
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.modules.agents.semantic.ir import (
     Additivity,
-    SemanticFieldIR,
-    SemanticMetricIR,
     SemanticModelIR,
 )
-from app.modules.agents.semantic.planning import SemanticGraph, SemanticPlan
+from app.modules.agents.semantic.planning import SemanticPlan
 
 
 @dataclass(frozen=True)
@@ -222,148 +219,18 @@ def semantic_ir_to_definition(model: SemanticModelIR) -> dict[str, Any]:
                 for item in model.examples
             ]
         },
+        "conformed_dimensions": [
+            {"fields": list(group)} for group in model.conformed_dimensions
+        ],
     }
 
 
-@dataclass(frozen=True)
-class SemanticSlice:
-    metrics: tuple[dict[str, Any], ...]
-    dimensions: tuple[dict[str, Any], ...]
-    datasets: tuple[dict[str, Any], ...]
-    relationships: tuple[dict[str, Any], ...]
-    named_filters: tuple[dict[str, Any], ...]
-    examples: tuple[dict[str, Any], ...]
-
-    def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
-class SemanticCatalogRetriever:
-    """Return the matching semantic objects and only their connecting graph."""
-
-    def retrieve(
-        self,
-        model: SemanticModelIR,
-        question: str,
-        *,
-        limit: int = 8,
-        authorized_datasets: set[str] | None = None,
-    ) -> SemanticSlice:
-        model = scope_semantic_model(model, authorized_datasets)
-        allowed = {dataset.name for dataset in model.datasets}
-        terms = _words(question)
-        metric_scores = sorted(
-            (
-                (_score(terms, metric.name, metric.description, metric.synonyms), metric)
-                for metric in model.metrics
-                if metric.base_dataset in allowed
-            ),
-            key=lambda item: (-item[0], item[1].name),
-        )
-        fields = [
-            field
-            for dataset in model.datasets
-            if dataset.name in allowed
-            for field in dataset.fields
-        ]
-        field_scores = sorted(
-            (
-                (_score(terms, field.name, field.description, field.synonyms), field)
-                for field in fields
-            ),
-            key=lambda item: (-item[0], item[1].name),
-        )
-        selected_metrics = [item for score, item in metric_scores if score > 0][:limit]
-        selected_fields = [item for score, item in field_scores if score > 0][:limit]
-        permitted_metrics = [metric for metric in model.metrics if metric.base_dataset in allowed]
-        if not selected_metrics and len(permitted_metrics) == 1:
-            selected_metrics = [permitted_metrics[0]]
-        for metric in selected_metrics:
-            time_field = (
-                model.field(metric.default_time_dimension)
-                if metric.default_time_dimension
-                else None
-            )
-            if time_field is not None and time_field not in selected_fields:
-                selected_fields.append(time_field)
-        dataset_names = {metric.base_dataset for metric in selected_metrics if metric.base_dataset}
-        dataset_names |= {field.dataset for field in selected_fields}
-        graph = SemanticGraph(model)
-        relationships = []
-        names = sorted(dataset_names)
-        if names:
-            base = names[0]
-            for target in names[1:]:
-                try:
-                    path = graph.path(base, target)
-                except ValueError:
-                    continue
-                for relationship in path.relationships:
-                    if (
-                        relationship.from_dataset not in allowed
-                        or relationship.to_dataset not in allowed
-                    ):
-                        continue
-                    if relationship not in relationships:
-                        relationships.append(relationship)
-                    dataset_names.update((relationship.from_dataset, relationship.to_dataset))
-        selected_datasets = [dataset for dataset in model.datasets if dataset.name in dataset_names]
-        selected_filters = [
-            named_filter
-            for named_filter in model.named_filters
-            if _score(terms, named_filter.name, named_filter.description, named_filter.synonyms) > 0
-        ][:3]
-        selected_examples = sorted(
-            ((len(terms & _words(example.question)), example) for example in model.examples),
-            key=lambda item: (-item[0], item[1].question),
-        )
-        return SemanticSlice(
-            metrics=tuple(asdict(metric) for metric in selected_metrics),
-            dimensions=tuple(asdict(field) for field in selected_fields),
-            datasets=tuple(
-                {
-                    "name": dataset.name,
-                    "source": dataset.source,
-                    "grain": asdict(dataset.grain),
-                }
-                for dataset in selected_datasets
-            ),
-            relationships=tuple(asdict(relationship) for relationship in relationships),
-            named_filters=tuple(asdict(item) for item in selected_filters),
-            examples=tuple(asdict(item) for score, item in selected_examples[:3] if score > 0),
-        )
 
 
-@dataclass(frozen=True)
-class LiteralCandidate:
-    value: str
-    score: float
-    source: str
 
 
-class LiteralResolver:
-    def resolve(
-        self,
-        literal: str,
-        field: SemanticFieldIR,
-        *,
-        search_candidates: list[str] | tuple[str, ...] = (),
-        limit: int = 5,
-    ) -> tuple[LiteralCandidate, ...]:
-        values = [(value, "sample") for value in field.sample_values]
-        values.extend((value, "search") for value in search_candidates)
-        target = _phrase(literal)
-        target_words = _literal_words(literal)
-        candidates = [
-            LiteralCandidate(
-                value=value,
-                score=_literal_score(target, target_words, value),
-                source=source,
-            )
-            for value, source in dict.fromkeys(values)
-        ]
-        candidates.sort(key=lambda item: (-item.score, item.value))
-        return tuple(candidates[:limit])
 
 
 @dataclass(frozen=True)
@@ -379,63 +246,8 @@ class VerifiedQuery:
     success_count: int = 0
 
 
-class VerifiedQueryRetriever:
-    def retrieve(
-        self,
-        question: str,
-        entries: list[VerifiedQuery],
-        *,
-        model_fingerprint: str,
-        limit: int = 3,
-        model: SemanticModelIR | None = None,
-    ) -> tuple[VerifiedQuery, ...]:
-        normalized = _vqr_concepts(question, model)
-        words = _words(normalized)
-        scored = [
-            (
-                max(
-                    2.0 if normalized == _vqr_concepts(entry.question, model) else 0.0,
-                    len(words & _words(_vqr_concepts(entry.question, model)))
-                    / max(len(words | _words(_vqr_concepts(entry.question, model))), 1),
-                    difflib.SequenceMatcher(
-                        None, normalized, _vqr_concepts(entry.question, model)
-                    ).ratio()
-                    * 0.85,
-                    _plan_term_similarity(words, entry),
-                ),
-                entry,
-            )
-            for entry in entries
-            if entry.model_fingerprint == model_fingerprint
-        ]
-        scored.sort(key=lambda item: (-item[0], item[1].verified_query_id))
-        return tuple(entry for score, entry in scored[:limit] if score > 0)
 
 
-def _vqr_concepts(text: str, model: SemanticModelIR | None) -> str:
-    normalized = _phrase(text)
-    if model is None:
-        return normalized
-    objects: list[SemanticMetricIR | SemanticFieldIR] = [
-        *model.metrics,
-        *(field for dataset in model.datasets for field in dataset.fields),
-    ]
-    aliases: dict[str, set[str]] = {}
-    for item in objects:
-        for term in (item.name, *item.synonyms):
-            aliases.setdefault(_phrase(term), set()).add(_phrase(item.name))
-    # Ambiguous synonyms stay lexical; they must not collapse distinct concepts.
-    mapping = {
-        term: next(iter(names)) for term, names in aliases.items() if term and len(names) == 1
-    }
-    if not mapping:
-        return normalized
-    pattern = (
-        r"(?<!\w)(?:"
-        + "|".join(re.escape(term) for term in sorted(mapping, key=len, reverse=True))
-        + r")(?!\w)"
-    )
-    return re.sub(pattern, lambda match: mapping[match.group()], normalized)
 
 
 @dataclass(frozen=True)
@@ -726,12 +538,6 @@ def materialized_view_suggestions(
     )
 
 
-def _score(words: set[str], name: str, description: str, synonyms: tuple[str, ...]) -> float:
-    candidates = [name, *synonyms]
-    if any(_phrase(candidate) in " ".join(sorted(words)) for candidate in candidates if candidate):
-        return 1.0
-    terms = _words(" ".join([name, description, *synonyms]))
-    return len(words & terms) / max(len(words), 1)
 
 
 def _words(value: str) -> set[str]:
@@ -742,26 +548,7 @@ def _phrase(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", value.lower().replace("_", " ")))
 
 
-def _literal_words(value: str) -> set[str]:
-    expanded = re.sub(r"(?<=\d)(?=[a-z])|(?<=[a-z])(?=\d)", " ", value.lower())
-    return set(re.findall(r"[a-z0-9]+", expanded))
 
 
-def _literal_score(target: str, target_words: set[str], candidate: str) -> float:
-    candidate_words = _literal_words(candidate)
-    overlap = len(target_words & candidate_words) / max(len(target_words), 1)
-    sequence = difflib.SequenceMatcher(None, target, _phrase(candidate)).ratio()
-    return round((overlap * 0.75) + (sequence * 0.25), 6)
 
 
-def _plan_term_similarity(words: set[str], entry: VerifiedQuery) -> float:
-    plan_terms = _words(
-        " ".join(
-            [
-                *entry.semantic_plan.metrics,
-                *entry.semantic_plan.dimensions,
-                *entry.semantic_plan.named_filters,
-            ]
-        )
-    )
-    return (len(words & plan_terms) / max(len(words), 1)) * 0.9

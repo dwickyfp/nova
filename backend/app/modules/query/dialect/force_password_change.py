@@ -62,12 +62,23 @@ def is_force_password_change(sql: str) -> bool:
     return bool(_FORCE_CHANGE_PATTERN.match(sql))
 
 
-def parse_force_password_change(sql: str) -> ForcePasswordChangeStatement:
+def parse_force_password_change(sql: str, *, parsed=None) -> ForcePasswordChangeStatement:
     """Parse the statement, or raise ``ValueError`` for a malformed one.
 
     The username is extracted from the identity, host stripped. A quoted identity
     keeps internal dots/spaces; a bare one is taken whole.
     """
+    if parsed is not None:
+        node = parsed.statement_context
+        identity = sql[node.identity.start.start : node.identity.stop.stop + 1]
+        user_match = _QUOTED_IDENTITY_PATTERN.match(identity) or _BARE_IDENTITY_PATTERN.match(
+            identity
+        )
+        if user_match is None:
+            raise ValueError("The statement does not name a user")
+        return ForcePasswordChangeStatement(
+            user_match.group("user").strip(), node.OFF() is None and node.NONE() is None
+        )
     match = _FORCE_CHANGE_PATTERN.match(sql)
     if not match:
         raise ValueError(

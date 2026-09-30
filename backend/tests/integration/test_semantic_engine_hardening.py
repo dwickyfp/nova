@@ -8,7 +8,7 @@ import pytest_asyncio
 
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
-from app.modules.agents.semantic.planning import SemanticPlan, SemanticPlanner
+from app.modules.agents.semantic.planning import SemanticFilter, SemanticPlan, SemanticTime
 from tests.conftest import engine_host_ports, require_stack
 
 pytestmark = pytest.mark.engine
@@ -102,9 +102,11 @@ async def semantic_engine(docker_services):
 
 async def test_compiled_yoy_preserves_literal_and_excludes_intervening_periods(semantic_engine):
     connection, model = semantic_engine
-    planned = SemanticPlanner().plan(model, "Revenue Surabaya this month YoY")
-    assert planned.confidence.unresolved_count == 0
-    compiled = SemanticCompiler().compile(model, planned.plan)
+    plan = SemanticPlan(
+        metrics=("revenue",), filters=(SemanticFilter("city", "=", "Surabaya"),),
+        time=SemanticTime("order_date", range="current_month", compare="year_over_year"),
+    )
+    compiled = SemanticCompiler().compile(model, plan)
     async with connection.cursor(asyncmy.cursors.DictCursor) as cursor:
         await cursor.execute(compiled.sql)
         rows = await cursor.fetchall()

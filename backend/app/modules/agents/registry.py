@@ -33,8 +33,16 @@ KNOWN_TOOLS = frozenset(
         "feature_lookup",
         "data_to_chart",
         "diagnose_change",
+        "compute_metrics",
+        "schedule_automation",
         "ml_execute",
     }
+)
+
+#: Tools that return a result table. An agent with any of them also gets
+#: ``compute_metrics``: it reads only results those tools already authorized.
+DATA_RESULT_TOOLS = frozenset(
+    {"query_execute", "semantic_query", "semantic_view_query", "feature_lookup", "ml_execute"}
 )
 
 
@@ -76,6 +84,10 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
         from app.modules.agents.tools.ai_search import AISearchTool
 
         registry.register(AISearchTool(agent.get("resource_bindings")))
+        from app.modules.agents.tools.analyze_documents import AnalyzeDocumentsTool
+
+        # Theme counts over the same bound indexes, with the same permissions.
+        registry.register(AnalyzeDocumentsTool(agent.get("resource_bindings")))
 
     if "semantic_view_query" in selected or "feature_lookup" in selected:
         from app.modules.agents.tools.intelligence_views import (
@@ -105,6 +117,17 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
         from app.modules.agents.tools.ml_execute import ml_execute_tool
 
         registry.register(ml_execute_tool)
+
+    if "compute_metrics" in selected or selected & DATA_RESULT_TOOLS:
+        from app.modules.agents.tools.compute_metrics import compute_metrics_tool
+
+        registry.register(compute_metrics_tool)
+
+    if "schedule_automation" in selected or selected & DATA_RESULT_TOOLS:
+        # Always prompts; the scheduled runs are read-only.
+        from app.modules.agents.tools.schedule_automation import schedule_automation_tool
+
+        registry.register(schedule_automation_tool)
 
     return registry
 

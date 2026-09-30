@@ -15,7 +15,7 @@ from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolRegistry
 from app.modules.intelligence.semantic_views import semantic_view_service
 from app.modules.query.service import query_service
-from tests.benchmark.harness import ScriptedProvider, text_frame, tool_call_frame
+from tests.benchmark.harness import ScriptedProvider, text_frame
 
 
 async def test_bound_published_view_trajectory_uses_consent_and_finishes(monkeypatch):
@@ -41,13 +41,18 @@ async def test_bound_published_view_trajectory_uses_consent_and_finishes(monkeyp
 
     registry = ToolRegistry()
     registry.register(SemanticQueryTool())
-    provider = ScriptedProvider(script=[
-        tool_call_frame(
-            "view-query", name="semantic_query",
-            arguments={"question": "What is total revenue?"},
-        ),
-        text_frame("Total revenue is 100."),
-    ])
+    # The turn planner routes the question and writes the first query's plan in the
+    # same call; the loop runs that query before asking the model to answer.
+    provider = ScriptedProvider(script=[text_frame("Total revenue is 100.")], turn_plan={
+        "intent": "semantic_analytics", "tools": ["semantic_query"],
+        "required_tools": ["semantic_query"], "ml_task": None,
+        "intent_frame": {"language": "en"},
+        "primary_plan": {
+            "metrics": ["total_revenue"], "dimensions": [], "filters": [], "named_filters": [],
+            "time": None, "order_by": [], "limit": None, "unresolved_concepts": [],
+        },
+        "primary_view": "sales-view",
+    })
     context = LoopContext(
         user_name="reader", user={
             "username": "reader", "encrypted_password": "sealed", "active_role": "analyst",
