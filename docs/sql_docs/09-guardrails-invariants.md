@@ -16,7 +16,9 @@ Sources: `backend/app/common/sql_guard.py`, `backend/app/common/responses.py`, `
 | `root` user | Cannot be dropped. |
 | Nova built-in UDFs | `DROP GLOBAL FUNCTION` of `AI_COMPLETE`, `AI_SENTIMENT`, `AI_CLASSIFY`, `AI_SUMMARIZE`, `AI_EXTRACT`, `AI_TRANSLATE`, `AI_FILTER`, `ML_PREDICT` is blocked. |
 
-`ACCOUNTADMIN` is the only role with `GRANT OPTION`; if dropped, no user can grant privileges and the system locks. Hence the hard block.
+`ACCOUNTADMIN` is a protected administrative role provisioned by bootstrap.
+Its guard is an architectural contract, not an assumption that no other role
+can hold grant authority.
 
 ### Blocked patterns
 
@@ -108,13 +110,17 @@ These are the rules from `AGENTS.md`, restated with their enforcement.
 
 ### 3.1 Credentials never appear in user-visible output
 
-Credentials live in `nova.yaml` + `.env` and in memory (encrypted for the StarRocks user password and AI provider keys). They never appear in:
+Tracked configuration may contain connection metadata, environment placeholders,
+and supported secret references, never raw deployment secrets. StarRocks session
+passwords are encrypted in Redis; supported provider keys are encrypted before
+persistence in `NOVA_SYSTEM`. Use the existing encryption and secret-resolution
+adapters; do not silently store plaintext when encryption fails.
 
-- `NOVA_SYSTEM` tables,
-- API JSON responses,
-- frontend state,
-- logs,
-- error messages.
+Stored secret material and credential-bearing execution state must not appear in
+API responses, public frontend state, logs, errors, or provider context. Provider
+status/masked display and deliberate credential-entry flows are separate from
+stored-secret readback. Execution resolves stage credentials only after access
+checks; response and audit SQL use the redacted form.
 
 **Enforcement:** redaction layers above; `tests/unit/test_credential_leaks.py`, `test_audit_credential_redaction.py`, `test_exception_handler_credential_leak.py`, `test_explain_credential_leak.py`, `test_defense_in_depth_hardening.py`.
 
@@ -134,13 +140,26 @@ The pipeline uses provider-agnostic FILES() parameters supplied by the storage p
 
 **Enforcement:** `tests/unit/test_query_pre_engine_audit.py`, `tests/unit/test_audit_credential_redaction.py`.
 
-### 3.5 StarRocks is the RBAC source of truth
+### 3.5 Authentication and authorization retain caller context
 
-Nova authenticates a user against StarRocks and executes the user's statement on the user's connection. Nova's metadata reads (stage configs, `NOVA_SYSTEM` lookups) are configuration, not a privilege boundary — the control is enforced where StarRocks enforces every other read: on the statement.
+StarRocks authenticates the caller. In Ranger-enabled execution, the caller's
+principal and exactly one active role reach the patched FE, which applies
+Ranger access policies, row filters, and masking. Preserve session identity and
+security-context version through delegation and security-scoped caches.
+`SHOW GRANTS` establishes role-marker assignments; it does not replace Ranger
+policy decisions. Explicit Ranger-disabled deployments retain native-RBAC
+compatibility rather than falling back to it on a governed authorization failure.
 
-**Enforcement:** `tests/unit/test_explain_credential_leak.py` (system-config read does not widen user reach), `tests/unit/test_users_rbac.py`.
+System metadata reads do not authorize caller-visible data. Never substitute
+root, system, service, or agent-owner credentials to widen the caller's access.
+See [Ranger architecture](../arch-08-ranger-authorization.md) and the
+[access-control guide](../../backend/app/modules/access_control/AGENTS.md).
 
-### 3.6 No credentials in storage or logs
+**Enforcement:** `tests/unit/test_ranger_access_control.py`,
+`test_query_active_role.py`, `test_shared_agent_rbac.py`,
+`tests/eval/test_security_context_boundary.py`, and patched-FE policy acceptance.
+
+### 3.6 No plaintext credentials in persistence or logs
 
 - Training SQL is persisted redacted (`test_ml_engine_training_sql.py`).
 - Execution logs use redacted SQL (`test_explain_credential_leak.py`).

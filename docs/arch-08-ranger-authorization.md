@@ -42,9 +42,11 @@ assignment, Ranger projection, `SET ROLE`, and `CURRENT_ROLE()` before session
 state changes. Redis and proxy sessions store assigned, default, and active role
 separately and advance the context version after a switch.
 
-`SecurityStatementRouter` intercepts security DDL/DCL before ordinary query
-execution. UI and SQL calls converge on `AccessControlService`. Ranger writes
-are bounded, authenticated, paginated, idempotent, and credential-safe.
+The current SQL frontend parses managed security DDL/DCL into typed operations
+and routes them to `AccessControlService`; the old `SecurityStatementRouter`
+remains a compatibility API. UI and SQL governance converge on the same service.
+Ranger writes are bounded, authenticated, paginated, idempotent, and
+credential-safe. See [SQL frontend architecture](arch-13-sql-frontend.md).
 
 The FE patch adds `RangerAccessRequest.setUserRoles()` for access, row-filter,
 and mask requests. `active_role` mode rejects zero or multiple active role IDs.

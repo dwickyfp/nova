@@ -1,5 +1,10 @@
 # Architecture 05: Frontend Architecture
 
+> Status: HISTORICAL DESIGN, NON-NORMATIVE. The framework, routing, paths, and
+> examples below are an earlier design, not the implemented frontend. Nova uses
+> React/Vite and TanStack Router. Read [frontend instructions](../frontend/AGENTS.md),
+> [DESIGN.md](../DESIGN.md), and the current frontend manifests/configuration.
+
 > React + Next.js + shadcn/ui + Monaco Editor.
 
 ---
