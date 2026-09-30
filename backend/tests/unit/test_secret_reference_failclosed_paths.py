@@ -145,7 +145,7 @@ class TestMLEngineLoaderResolvesTheStageConnection:
         from app.modules.ml_engine.service import MLEngineService
         from app.modules.ml_engine.spec import MLSecurityContext
         from app.modules.query.dialect.translator import StorageConfig
-        from app.modules.query.service import query_service
+        from app.sql_frontend.execution.stages import StageRuntime
 
         calls = []
 
@@ -154,7 +154,7 @@ class TestMLEngineLoaderResolvesTheStageConnection:
             config = StorageConfig("s3", "http://storage", "bucket", "prefix", "key", "secret")
             return parsed, {ref.start: config for ref in parsed.stage_refs}
 
-        monkeypatch.setattr(query_service, "_resolve_stage_refs", shared_resolver)
+        monkeypatch.setattr(StageRuntime, "_resolve_stage_refs", staticmethod(shared_resolver))
         svc = MLEngineService()
 
         sql = await svc._prepare_user_sql(
@@ -170,12 +170,12 @@ class TestMLEngineLoaderResolvesTheStageConnection:
         """A provider failure raises; it never falls back to inline values."""
         from app.modules.ml_engine.service import MLEngineService
         from app.modules.ml_engine.spec import MLSecurityContext
-        from app.modules.query.service import query_service
+        from app.sql_frontend.execution.stages import StageRuntime
 
         async def shared_resolver(parsed, **kwargs):
             raise SecretResolutionError("secret provider unavailable")
 
-        monkeypatch.setattr(query_service, "_resolve_stage_refs", shared_resolver)
+        monkeypatch.setattr(StageRuntime, "_resolve_stage_refs", staticmethod(shared_resolver))
         svc = MLEngineService()
 
         with pytest.raises(SecretResolutionError):
@@ -223,6 +223,7 @@ class TestExplainFailsClosedAndRedacted:
         )
         monkeypatch.setattr(service_module, "write_audit_log", fake_write_audit_log)
         monkeypatch.setattr(service_module, "decrypt_password", lambda value: "pw")
+
         async def allowed_stage(*args, **kwargs):
             return None
 

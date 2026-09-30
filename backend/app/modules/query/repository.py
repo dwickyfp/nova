@@ -66,6 +66,7 @@ class QueryResult:
     executed_sql: str = ""
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
+    destructive: bool | None = None
 
     def __post_init__(self) -> None:
         self.original_sql = redact_sql_credentials(self.original_sql)

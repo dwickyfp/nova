@@ -44,7 +44,7 @@ from enum import Enum
 from antlr4 import CommonTokenStream, InputStream, Token
 from antlr4.error.ErrorListener import ErrorListener
 
-from app.sql_dialect.grammar import StarRocksLexer, StarRocksParser
+from app.sql_dialect.grammar import StarRocksLexer
 
 
 class CommandType(Enum):
@@ -156,19 +156,13 @@ class CaseInsensitiveInputStream(InputStream):
 
 
 class _RecordingErrorListener(ErrorListener):
-    """Collect syntax errors with their position instead of writing to stderr.
-
-    ANTLR's default listener prints the offending text to stderr, which would
-    leak statement content into a log; the caller decides what reaches the audit
-    row instead.
-    """
+    """Compatibility listener for the semantic-expression entrypoint."""
 
     def __init__(self) -> None:
-        super().__init__()
         self.errors: list[StageParseError] = []
 
     def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):  # noqa: N802
-        self.errors.append(StageParseError(line, column, msg))
+        self.errors.append(StageParseError(line, column, "Unexpected or missing SQL token"))
 
 
 def _lex(sql: str) -> CommonTokenStream:
@@ -179,8 +173,9 @@ def _lex(sql: str) -> CommonTokenStream:
     makes a ``@stage`` in a comment invisible to the token scan, exactly as it
     is to the parser.
     """
-    stream = CommonTokenStream(StarRocksLexer(CaseInsensitiveInputStream(sql)))
-    stream.fill()
+    from app.sql_frontend.parser import tokenize_sql
+
+    stream, _ = tokenize_sql(sql)
     return stream
 
 
@@ -201,19 +196,18 @@ def _visible_tokens(stream: CommonTokenStream) -> list:
 
 
 def _parse_tree(sql: str):
-    """Lex and parse ``sql``; return ``(stream, tree, errors)``.
+    """Compatibility return shape for callers outside the production frontend."""
+    from app.sql_frontend.parser import parse_tree
 
-    One token stream is shared by lexer and parser, so a node's start token and
-    ``stream.get(index)`` are the same object (``CommonTokenStream.get`` maps an
-    index into that stream's own token list).
-    """
-    stream = _lex(sql)
-    parser = StarRocksParser(stream)
-    listener = _RecordingErrorListener()
-    parser.removeErrorListeners()
-    parser.addErrorListener(listener)
-    tree = parser.sqlStatements()
-    return stream, tree, listener.errors
+    stream, tree, diagnostics = parse_tree(sql)
+    return (
+        stream,
+        tree,
+        [
+            StageParseError(diagnostic.line, diagnostic.column, diagnostic.message)
+            for diagnostic in diagnostics
+        ],
+    )
 
 
 def _walk_nodes(tree):
@@ -745,11 +739,7 @@ def parse_sql(sql: str) -> ParsedSQL:
     leading = _texts(_visible_tokens(stream)[:4])
 
     visible = _visible_tokens(stream)
-    insert_stage = (
-        leading[:2] == ["INSERT", "INTO"]
-        and len(visible) > 2
-        and visible[2].text == "@"
-    )
+    insert_stage = leading[:2] == ["INSERT", "INTO"] and len(visible) > 2 and visible[2].text == "@"
     nova_surface = leading[:1] in (["LIST"], ["COPY"]) or insert_stage
     if errors and not nova_surface:
         # A partial tree must not drive a rewrite: a missing token can make a

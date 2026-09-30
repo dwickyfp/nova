@@ -9,9 +9,10 @@ import asyncmy
 import boto3
 import pytest
 
-from app.modules.query.dialect.parser import parse_sql
 from app.modules.query.dialect.translator import StorageConfig, translate_stage_query
 from app.modules.stages.access import StageAccessDenied, check_stage_access
+from app.sql_frontend.parser import parse_statement
+from app.sql_frontend.stages import stage_view
 from tests.conftest import engine_host_ports, require_stack
 
 pytestmark = pytest.mark.engine
@@ -24,8 +25,10 @@ async def test_stage_list_load_and_export_on_engine(docker_services) -> None:
         host="127.0.0.1", port=ports["starrocks-fe"], user="root", password=""
     )
     minio_client = boto3.client(
-        "s3", endpoint_url=f"http://127.0.0.1:{ports['minio']}",
-        aws_access_key_id="minioadmin", aws_secret_access_key="minioadmin",
+        "s3",
+        endpoint_url=f"http://127.0.0.1:{ports['minio']}",
+        aws_access_key_id="minioadmin",
+        aws_secret_access_key="minioadmin",
     )
     with suppress(minio_client.exceptions.BucketAlreadyOwnedByYou):
         minio_client.create_bucket(Bucket="test-stage")
@@ -33,17 +36,21 @@ async def test_stage_list_load_and_export_on_engine(docker_services) -> None:
     database = f"nova_stage_audit_{suffix}"
     prefix = f"stage-audit/{suffix}"
     bucket = "test-stage"
-    minio_client.put_object(
-        Bucket=bucket, Key=f"{prefix}/input.csv", Body=b"1,alice\n2,bob\n"
-    )
+    minio_client.put_object(Bucket=bucket, Key=f"{prefix}/input.csv", Body=b"1,alice\n2,bob\n")
     config = StorageConfig(
-        storage_type="s3", endpoint=f"http://minio:{ports['minio']}", bucket=bucket,
-        base_prefix=prefix, access_key="minioadmin", secret_key="minioadmin",
+        storage_type="s3",
+        endpoint=f"http://minio:{ports['minio']}",
+        bucket=bucket,
+        base_prefix=prefix,
+        access_key="minioadmin",
+        secret_key="minioadmin",
     )
 
     def lower(sql: str) -> str:
         return translate_stage_query(
-            parse_sql(sql), {"stage": config}, files_params={"csv.column_separator": ","}
+            stage_view(parse_statement(sql)),
+            {"stage": config},
+            files_params={"csv.column_separator": ","},
         )[0]
 
     try:
@@ -60,9 +67,7 @@ async def test_stage_list_load_and_export_on_engine(docker_services) -> None:
             await cur.execute(lower(f"COPY INTO `{database}`.`loaded` FROM @stage.input.csv"))
             await cur.execute(f"SELECT COUNT(*) FROM `{database}`.`loaded`")
             assert (await cur.fetchone())[0] == 2
-            await cur.execute(
-                lower(f"COPY INTO @stage.copy.parquet FROM `{database}`.`loaded`")
-            )
+            await cur.execute(lower(f"COPY INTO @stage.copy.parquet FROM `{database}`.`loaded`"))
             await cur.execute(
                 lower(f"INSERT INTO @stage.insert.parquet SELECT * FROM `{database}`.`loaded`")
             )
