@@ -12,8 +12,19 @@ from app.modules.query.dialect.parser import _lex, _visible_tokens
 _MODEL_NAME_PATTERN = re.compile(r"(?:`[^`]+`|[A-Za-z_][A-Za-z0-9_$]*)\Z")
 _CLAUSE_NAMES = frozenset(
     {
-        "TYPE", "TARGET", "ALGORITHM", "TEST_SIZE", "FEATURES", "HYPERPARAMETERS",
-        "TIMESTAMP", "SERIES", "HORIZON", "FREQUENCY", "MODE", "INPUT", "CONFIG",
+        "TYPE",
+        "TARGET",
+        "ALGORITHM",
+        "TEST_SIZE",
+        "FEATURES",
+        "HYPERPARAMETERS",
+        "TIMESTAMP",
+        "SERIES",
+        "HORIZON",
+        "FREQUENCY",
+        "MODE",
+        "INPUT",
+        "CONFIG",
     }
 )
 #: The model types the surface documents. `FORECAST` and `ANOMALY_DETECTION` are
@@ -83,7 +94,7 @@ def is_create_ml_model(sql: str) -> bool:
     return bool(re.match(r"^\s*CREATE\s+ML_MODEL\b", sql, re.IGNORECASE))
 
 
-def parse_create_ml_model(sql: str) -> CreateMLModelStatement:
+def parse_create_ml_model(sql: str, *, tokens: list | None = None) -> CreateMLModelStatement:
     """Parse compact CREATE ML_MODEL DDL.
 
     Supported v1 syntax:
@@ -96,7 +107,7 @@ def parse_create_ml_model(sql: str) -> CreateMLModelStatement:
         [HYPERPARAMETERS = JSON '{"n_estimators": 100}']
         AS SELECT ...
     """
-    tokens = _visible_tokens(_lex(sql))
+    tokens = tokens if tokens is not None else _visible_tokens(_lex(sql))
     if len(tokens) < 4 or [token.text.upper() for token in tokens[:2]] != ["CREATE", "ML_MODEL"]:
         raise ValueError(
             "Invalid CREATE ML_MODEL syntax. Expected: CREATE ML_MODEL name "
