@@ -11,6 +11,7 @@ from app.sql_frontend.errors import SemanticError
 from app.sql_frontend.execution.executor import SQLExecutor
 from app.sql_frontend.planning.execution import (
     ActionKind,
+    Atomicity,
     CompositePlan,
     EngineSqlPlan,
     NovaActionPlan,
@@ -30,7 +31,8 @@ async def test_composite_is_ordered_and_returns_final_step():
         return QueryResult(rows=[[len(calls)]])
 
     plan = CompositePlan(
-        (engine(reads_data=True), engine("INSERT INTO t SELECT 1", writes_data=True))
+        (engine(reads_data=True), engine("INSERT INTO t SELECT 1", writes_data=True)),
+        Atomicity.BEST_EFFORT,
     )
     result = await SQLExecutor(run).execute(plan, ExecutionContext("alice"))
     assert calls == ["SELECT 1", "INSERT INTO t SELECT 1"]
@@ -49,7 +51,7 @@ async def test_composite_stops_on_failure_without_rollback(exception):
         return QueryResult(error="engine failed")
 
     executor = SQLExecutor(run)
-    plan = CompositePlan((engine(), engine("SELECT 2")))
+    plan = CompositePlan((engine(), engine("SELECT 2")), Atomicity.BEST_EFFORT)
     if exception:
         with pytest.raises(RuntimeError):
             await executor.execute(plan, ExecutionContext("alice"))
@@ -63,7 +65,7 @@ async def test_confirmation_is_enforced_before_any_composite_step():
     deletion = EngineSqlPlan(
         "DELETE FROM t", "DELETE FROM t", PlanEffects(deletes_rows=True), requires_confirmation=True
     )
-    plan = CompositePlan((engine(), deletion))
+    plan = CompositePlan((engine(), deletion), Atomicity.BEST_EFFORT)
     with pytest.raises(ForbiddenSQLError):
         await SQLExecutor(handler).execute(plan, ExecutionContext("alice"))
     handler.assert_not_awaited()
@@ -85,4 +87,6 @@ async def test_typed_action_dispatch_rejects_unknown_and_duplicate_handlers():
 
 async def test_empty_composite_is_rejected():
     with pytest.raises(SemanticError):
-        await SQLExecutor(AsyncMock()).execute(CompositePlan(()), ExecutionContext("alice"))
+        await SQLExecutor(AsyncMock()).execute(
+            CompositePlan((), Atomicity.BEST_EFFORT), ExecutionContext("alice")
+        )

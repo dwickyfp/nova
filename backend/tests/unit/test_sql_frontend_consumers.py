@@ -131,10 +131,11 @@ async def test_task_body_with_explicit_credentials_cannot_be_persisted():
 
 async def test_extension_runs_through_unmodified_query_service_with_injected_catalog(monkeypatch):
     from app.sql_frontend.analysis.effects import PlanEffects
+    from app.sql_frontend.analysis.semantics import StatementSemantics, default_semantics
     from app.sql_frontend.ast.builder import AstBuilderRegistry
     from app.sql_frontend.ast.statements import Statement
     from app.sql_frontend.binding.models import BoundColumn, BoundTable, TableName
-    from app.sql_frontend.planning.execution import CompositePlan
+    from app.sql_frontend.planning.execution import Atomicity, CompositePlan
     from app.sql_frontend.planning.registry import PlannerRegistry
 
     class DummyStatement(Statement):
@@ -153,16 +154,19 @@ async def test_extension_runs_through_unmodified_query_service_with_injected_cat
                 (
                     EngineSqlPlan(selected, selected, logical.analysis.effects),
                     EngineSqlPlan("SELECT 9", "SELECT 9", PlanEffects(reads_data=True)),
-                )
+                ),
+                Atomicity.BEST_EFFORT,
             )
 
     builders = AstBuilderRegistry()
     builders.register("QueryStatementContext", DummyStatement)
     registry = PlannerRegistry()
     registry.register(DummyStatement, DummyPlanner())
+    semantics = default_semantics()
+    semantics.register(DummyStatement, StatementSemantics(lambda _: PlanEffects(reads_data=True)))
     service = QueryService(
         builders=builders,
-        planner=SQLPlanner(registry),
+        planner=SQLPlanner(registry, semantics=semantics),
         catalog_provider_factory=lambda *args: catalog,
     )
     calls = []

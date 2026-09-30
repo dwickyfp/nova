@@ -9,6 +9,26 @@ class PlanEffects:
     changes_schema: bool = False
     changes_security: bool = False
     external_io: bool = False
+    writes_metadata: bool = False
+    updates_rows: bool = False
+    replaces_data: bool = False
+    drops_objects: bool = False
+
+    @property
+    def mutates(self) -> bool:
+        return any(
+            getattr(self, name)
+            for name in (
+                "writes_data",
+                "deletes_rows",
+                "changes_schema",
+                "changes_security",
+                "writes_metadata",
+                "updates_rows",
+                "replaces_data",
+                "drops_objects",
+            )
+        )
 
     def __or__(self, other: "PlanEffects") -> "PlanEffects":
         return PlanEffects(

@@ -83,6 +83,9 @@ async def lifespan(app: FastAPI):
 
     # Startup
     await db.init_system_pool()
+    from app.sql_frontend.capabilities.starrocks import resolve_engine_capabilities
+
+    await resolve_engine_capabilities()
     # Align the engine's global time_zone with Nova's session pin (advisory; the
     # per-session init_command is the guarantee). Best-effort inside the method.
     await db.apply_global_time_zone()
@@ -148,11 +151,13 @@ async def lifespan(app: FastAPI):
 
         await agent_repository.ensure_schema()
         from app.modules.agents.capabilities import capability_repository
+
         await capability_repository.ensure_schema()
         await memory_repository.ensure_schema()
         await rule_proposal_repository.ensure_schema()
         await run_journal.ensure_schema()
         from app.modules.agents.harness_repository import harness_repository
+
         await harness_repository.ensure_schema()
         await agent_repository.migrate_legacy_skill_authors()
         await artifact_repository.ensure_schema()

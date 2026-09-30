@@ -9,8 +9,8 @@ from typing import Any
 from antlr4 import CommonTokenStream, Token
 from antlr4.error.ErrorListener import ErrorListener
 
-from app.modules.query.dialect.parser import CaseInsensitiveInputStream
 from app.sql_dialect.grammar import StarRocksLexer, StarRocksParser
+from app.sql_frontend.antlr_utils import CaseInsensitiveInputStream
 from app.sql_frontend.errors import SQLSyntaxError, SyntaxDiagnostic
 from app.sql_frontend.source import SourceSpan
 
@@ -27,7 +27,10 @@ def parsing_scope() -> Iterator[None]:
         return
     token = _REQUEST_PARSES.set({})
     try:
-        yield
+        from app.sql_frontend.analysis.semantics import semantic_scope
+
+        with semantic_scope():
+            yield
     finally:
         _REQUEST_PARSES.reset(token)
 

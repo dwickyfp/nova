@@ -67,6 +67,11 @@ class QueryResult:
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
     destructive: bool | None = None
+    needs_confirmation: bool = False
+    error_code: str | None = None
+    statement_kind: str | None = None
+    effects: dict[str, bool] | None = None
+    execution_failure: dict | None = None
 
     def __post_init__(self) -> None:
         self.original_sql = redact_sql_credentials(self.original_sql)
@@ -137,6 +142,7 @@ class QueryRepository:
         role: str | None = None,
         max_rows: int | None = None,
         connected: asyncmy.Connection | None = None,
+        session_prepared: bool = False,
     ) -> QueryResult:
         """Execute SQL as an authenticated user (RBAC-respecting).
 
@@ -158,7 +164,13 @@ class QueryRepository:
         start = time.monotonic()
         if connected is not None:
             return await self._execute_on(
-                connected, sql, role=role, database=database, max_rows=max_rows, start=start
+                connected,
+                sql,
+                role=role,
+                database=database,
+                max_rows=max_rows,
+                start=start,
+                session_prepared=session_prepared,
             )
         try:
             async with db.user_conn(
@@ -183,13 +195,14 @@ class QueryRepository:
         max_rows: int | None,
         start: float,
         database: str | None = None,
+        session_prepared: bool = False,
     ) -> QueryResult:
         try:
             cursor_type = asyncmy.cursors.SSDictCursor if max_rows else asyncmy.cursors.DictCursor
             async with conn.cursor(cursor_type) as cur:
-                if role:
+                if role and not session_prepared:
                     await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
-                if database:
+                if database and not session_prepared:
                     await conn.select_db(database)
                 await cur.execute(sql)
                 elapsed = (time.monotonic() - start) * 1000

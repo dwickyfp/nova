@@ -335,23 +335,29 @@ async def verify_agent_tool() -> None:
     _inherit_pid_one_environment()
     from app.core.database import db
     from app.core.security import encrypt_password
+    from app.modules.access_control.role_activation import role_activation_service
     from app.modules.assistant.service import LoopContext
     from app.modules.assistant.tools import ToolInvocation
     from app.modules.assistant.tools.query_execute import QueryExecuteTool
 
     async def run(username: str, password: str, expected: str, forbidden: str) -> None:
+        async with db.user_conn(username, password) as connection:
+            active_role, assignments = await role_activation_service.activate(
+                connection, principal=username, requested_role="marketing"
+            )
         context = LoopContext(
             user_name=username,
             database="analytics",
             schema_name=None,
-            role="marketing",
+            role=active_role,
             workspace_file_id=None,
             session_id=f"ranger-e2e-{username}",
             thread_id=f"ranger-e2e-{username}",
             user={
                 "username": username,
                 "encrypted_password": encrypt_password(password),
-                "active_role": "marketing",
+                "active_role": active_role,
+                "assigned_roles": list(assignments.assigned_roles),
                 "security_context_version": 1,
                 "session_id": f"ranger-e2e-{username}",
             },

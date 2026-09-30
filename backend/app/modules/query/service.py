@@ -9,6 +9,7 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import asdict
 from functools import wraps
 from typing import Any, ParamSpec
 
@@ -35,13 +36,15 @@ from app.modules.query.sql_pipeline import (
 from app.modules.stages.access import check_stage_access
 from app.modules.task_orchestration.repository import task_orchestration_repository
 from app.observability.metrics import SQL_QUERIES, SQL_QUERY_DURATION, SQL_SOURCE
+from app.sql_frontend.analysis.analyzer import Analysis
 from app.sql_frontend.ast.builder import AstBuilderRegistry, ast_builders
 from app.sql_frontend.binding.catalog import Binder, CatalogProvider
 from app.sql_frontend.binding.starrocks import StarRocksCatalogProvider
-from app.sql_frontend.capabilities.starrocks import capability_provider
+from app.sql_frontend.capabilities.starrocks import EngineCapabilities, resolve_engine_capabilities
 from app.sql_frontend.context import ExecutionContext, PlanningContext
+from app.sql_frontend.errors import ConfirmationRequiredError, SemanticError
 from app.sql_frontend.execution.adapters import FeatureAdapters
-from app.sql_frontend.parser import parse_statement
+from app.sql_frontend.parser import parse_statement, parsing_scope
 from app.sql_frontend.planning.planner import SQLPlanner
 from app.storage.secrets import (
     drain_secret_resolution_facts,
@@ -273,12 +276,16 @@ class QueryService:
         builders: AstBuilderRegistry | None = None,
         planner: SQLPlanner | None = None,
         catalog_provider_factory: Callable[..., CatalogProvider] = StarRocksCatalogProvider,
+        capability_resolver: Callable[
+            [], Awaitable[EngineCapabilities]
+        ] = resolve_engine_capabilities,
     ) -> None:
         self._repo = QueryRepository()
         self._frontend = parse_statement
         self._builders = builders if builders is not None else ast_builders
         self._planner = planner if planner is not None else SQLPlanner()
         self._catalog_provider_factory = catalog_provider_factory
+        self._capability_resolver = capability_resolver
 
     @_observe_sql_execution
     async def execute(
@@ -323,6 +330,7 @@ class QueryService:
                 normalized_sql,
                 confirm_destructive=confirm_destructive,
                 allow_stage_export=allow_stage_export,
+                check_confirmation=False,
             )
         except ForbiddenSQLError as exc:
             await self._audit_engine_result(
@@ -361,6 +369,13 @@ class QueryService:
             allow_stage_export=allow_stage_export,
         )
         try:
+            if len(split_sql_statements(normalized_sql)) > 1:
+                # Direct single-result callers still receive a confirmation refusal.
+                for item in split_sql_statements(normalized_sql):
+                    candidate = self._builders.build(self._frontend(item))
+                    analysis = self._planner.preflight(candidate)
+                    if analysis.requires_confirmation and not confirm_destructive:
+                        raise ConfirmationRequiredError(analysis.effects, analysis.statement_kind)
             parsed = self._frontend(normalized_sql, original_sql=sql)
             statement = self._builders.build(parsed)
             context.statements[0] = statement
@@ -373,11 +388,28 @@ class QueryService:
                 database=database,
                 schema=schema,
                 binder=binder,
-                capabilities=capability_provider.for_version(),
+                capabilities=await self._capability_resolver(),
                 ranger_enabled=settings.RANGER_ENABLED,
                 confirm_destructive=confirm_destructive,
             )
+            from app.sql_frontend.binding.relations import RelationBinder
+
+            context.capabilities = planning.capabilities
+            context.binder = binder
+            planning.relation_binder = RelationBinder(
+                binder,
+                database=database,
+                stage_schema=self._adapters().stage_schema_provider(context),
+            )
+            analysis = self._planner.preflight(statement)
             plan = await self._planner.plan(statement, planning)
+            bound = self._planner.preflight(statement)
+            if not bound.effects.includes(plan.effects) or (
+                plan.requires_confirmation and not bound.requires_confirmation
+            ):
+                raise SemanticError("Execution plan exceeds declared semantic effects")
+            if plan.requires_confirmation and not confirm_destructive:
+                raise ConfirmationRequiredError(plan.effects, type(statement).__name__)
             context.validated = planning.validated
         except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
             await self._audit_engine_result(
@@ -393,11 +425,37 @@ class QueryService:
             )
             if isinstance(exc, (AccessControlError, ForbiddenSQLError)):
                 raise
-            return QueryResult(
-                original_sql=sql, executed_sql=normalized_sql, error=_redact_error_message(str(exc))
+            failure = QueryResult(
+                original_sql=sql,
+                executed_sql=normalized_sql,
+                error=_redact_error_message(str(exc)),
+                error_code=getattr(exc, "code", "semantic_error"),
             )
-        result = await self._adapters().executor().execute(plan, context)
+            if context.statements:
+                statement = context.statements[0]
+                analysis = self._planner.preflight(statement)
+                failure.statement_kind = analysis.statement_kind
+                failure.effects = asdict(analysis.effects)
+                failure.destructive = analysis.requires_confirmation
+            return failure
+        try:
+            result = await self._adapters().executor().execute(plan, context)
+        except SemanticError as exc:
+            await self._audit_engine_result(
+                status="ERROR",
+                sql=sql,
+                username=username,
+                role=role,
+                database=database,
+                schema=schema,
+                session_id=session_id,
+                file_id=file_id,
+                error_message=_redact_error_message(str(exc)),
+            )
+            raise
         result.destructive = plan.requires_confirmation
+        result.statement_kind = type(statement).__name__
+        result.effects = asdict(plan.effects)
         return result
 
     def _adapters(self):
@@ -526,49 +584,117 @@ class QueryService:
         if not statements:
             return [QueryResult(original_sql=sql, warnings=["Empty SQL"], error="Empty SQL")]
 
-        metric_source = source if source in {"web", "mysql_proxy", "internal"} else "internal"
-        results: list[QueryResult] = []
-        for stmt_sql in statements:
-            metric_token = SQL_SOURCE.set(metric_source)
+        with parsing_scope():
+            analyses: list[Analysis] = []
+            analysis = None
             try:
-                result = await self.execute(
-                    tenant=tenant,
-                    security_context_version=security_context_version,
+                from app.sql_frontend.analysis.effects import PlanEffects
+
+                script_effects = PlanEffects()
+                confirmation_statement = None
+                for stmt_sql in statements:
+                    analysis = None
+                    normalized = self._normalize_default_schema_qualification(stmt_sql)
+                    guard_user_statement(
+                        normalized,
+                        allow_stage_export=allow_stage_export,
+                        check_confirmation=False,
+                    )
+                    statement = self._builders.build(
+                        self._frontend(normalized, original_sql=stmt_sql)
+                    )
+                    analysis = self._planner.preflight(statement)
+                    analyses.append(analysis)
+                    self._planner.semantics.validate_preflight(
+                        statement,
+                        PlanningContext(
+                            database=database, schema=schema, ranger_enabled=settings.RANGER_ENABLED
+                        ),
+                    )
+                    script_effects |= analysis.effects
+                    if analysis.requires_confirmation and confirmation_statement is None:
+                        confirmation_statement = (stmt_sql, analysis.statement_kind)
+                if confirmation_statement and not confirm_destructive:
+                    stmt_sql, kind = confirmation_statement
+                    raise ConfirmationRequiredError(
+                        script_effects, "script" if len(statements) > 1 else kind
+                    )
+            except (ValueError, AccessControlError, ForbiddenSQLError) as exc:
+                await self._audit_engine_result(
+                    status="ERROR",
                     sql=stmt_sql,
                     username=username,
-                    encrypted_password=encrypted_password,
+                    role=role,
                     database=database,
                     schema=schema,
-                    role=role,
-                    max_rows=max_rows,
                     session_id=session_id,
-                    confirm_destructive=confirm_destructive,
-                    allow_stage_export=allow_stage_export,
                     file_id=file_id,
-                    connection=connection,
+                    error_message=_redact_error_message(str(exc)),
                 )
-                results.append(result)
-                if result.error:
+                return [self._error_result(stmt_sql, exc, analysis)]
+
+            metric_source = source if source in {"web", "mysql_proxy", "internal"} else "internal"
+            results: list[QueryResult] = []
+            for stmt_sql, analysis in zip(statements, analyses, strict=True):
+                metric_token = SQL_SOURCE.set(metric_source)
+                try:
+                    result = await self.execute(
+                        tenant=tenant,
+                        security_context_version=security_context_version,
+                        sql=stmt_sql,
+                        username=username,
+                        encrypted_password=encrypted_password,
+                        database=database,
+                        schema=schema,
+                        role=role,
+                        max_rows=max_rows,
+                        session_id=session_id,
+                        confirm_destructive=confirm_destructive,
+                        allow_stage_export=allow_stage_export,
+                        file_id=file_id,
+                        connection=connection,
+                    )
+                    results.append(result)
+                    if result.error:
+                        break
+                except Exception as exc:
+                    # Return error result for this statement and stop.
+                    #
+                    # ``error`` is the explicit failure marker the router reads;
+                    # ``warnings`` keeps carrying the message for the operator.
+                    # Setting only ``warnings`` is what made this path depend on a
+                    # shape-based guess downstream.
+                    error_result = self._error_result(stmt_sql, exc, analysis)
+                    results.append(error_result)
                     break
-            except Exception as exc:
-                # Return error result for this statement and stop.
-                #
-                # ``error`` is the explicit failure marker the router reads;
-                # ``warnings`` keeps carrying the message for the operator.
-                # Setting only ``warnings`` is what made this path depend on a
-                # shape-based guess downstream.
-                message = _redact_error_message(str(exc))
-                error_result = QueryResult(
-                    original_sql=stmt_sql,
-                    executed_sql=stmt_sql,
-                    warnings=[message],
-                    error=message,
-                )
-                results.append(error_result)
-                break
-            finally:
-                SQL_SOURCE.reset(metric_token)
-        return results
+                finally:
+                    SQL_SOURCE.reset(metric_token)
+            return results
+
+    @staticmethod
+    def _error_result(sql: str, exc: Exception, analysis: Analysis | None = None) -> QueryResult:
+        confirmation = isinstance(exc, ConfirmationRequiredError)
+        return QueryResult(
+            original_sql=sql,
+            executed_sql="",
+            error=_redact_error_message(str(exc)),
+            warnings=[_redact_error_message(str(exc))],
+            destructive=confirmation or bool(analysis and analysis.requires_confirmation),
+            needs_confirmation=confirmation,
+            error_code=getattr(
+                exc,
+                "code",
+                "security_rejection" if isinstance(exc, ForbiddenSQLError) else "execution_error",
+            ),
+            statement_kind=getattr(exc, "statement_kind", None)
+            or (analysis.statement_kind if analysis else None),
+            effects=asdict(exc.effects)
+            if isinstance(exc, ConfirmationRequiredError)
+            else asdict(analysis.effects)
+            if analysis
+            else None,
+            execution_failure=getattr(exc, "execution_failure", None),
+        )
 
     async def get_history(
         self,

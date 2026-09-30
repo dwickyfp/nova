@@ -1,0 +1,50 @@
+# Disposable shared-data fixture for SQL transaction acceptance.
+services:
+  minio:
+    image: ghcr.io/teableio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --address :9000
+    ports: ["${NOVA_SHARED_DATA_STORAGE_PORT:-49000}:9000"]
+    environment:
+      MINIO_ROOT_USER: hardening
+      MINIO_ROOT_PASSWORD: hardening-test-only
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:9000/minio/health/live]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  starrocks-fe:
+    image: starrocks/fe-ubuntu:4.1.4
+    user: root
+    command:
+      - /bin/bash
+      - -c
+      - |
+        printf '\nrun_mode = shared_data\ncloud_native_storage_type = S3\n' >> /opt/starrocks/fe/conf/fe.conf
+        /opt/starrocks/fe/bin/start_fe.sh --host_type IP --logconsole
+    ports: ["${NOVA_SHARED_DATA_PORT:-49030}:9030"]
+    environment: {AWS_EC2_METADATA_DISABLED: "true"}
+    depends_on:
+      minio: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, 'mysql -h 127.0.0.1 -P 9030 -u root -e "SHOW FRONTENDS\G" | grep -q "Alive: true"']
+      interval: 5s
+      timeout: 5s
+      retries: 60
+  starrocks-cn:
+    image: starrocks/cn-ubuntu:4.1.4
+    user: root
+    command:
+      - /bin/bash
+      - -c
+      - |
+        CN_IP="$$(hostname -i | cut -d' ' -f1)"
+        mysql -h starrocks-fe -P 9030 -u root -e "ALTER SYSTEM ADD COMPUTE NODE '$$CN_IP:9050'"
+        /opt/starrocks/cn/bin/start_cn.sh --logconsole
+    environment: {AWS_EC2_METADATA_DISABLED: "true"}
+    depends_on:
+      starrocks-fe: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, 'mysql -h starrocks-fe -P 9030 -u root -e "SHOW COMPUTE NODES\G" | grep -q "Alive: true"']
+      interval: 5s
+      timeout: 5s
+      retries: 60

@@ -9,8 +9,6 @@ from pydantic import BaseModel, Field, SecretStr
 
 from app.common.responses import SanitizingJSONResponse
 from app.common.sql_guard import (
-    is_destructive_sql,
-    is_unscoped_mutation,
     split_sql_statements,
 )
 from app.core.config import settings
@@ -137,6 +135,10 @@ class QueryResponse(BaseModel):
     destructive: bool = False
     needs_confirmation: bool = False
     error: str | None = None
+    error_code: str | None = None
+    statement_kind: str | None = None
+    effects: dict[str, bool] | None = None
+    execution_failure: dict | None = None
 
 
 class CompletionItem(BaseModel):
@@ -235,19 +237,18 @@ async def execute_query(
                 original_sql=result.original_sql,
                 executed_sql=result.executed_sql,
                 warnings=result.warnings,
-                destructive=(
-                    result.destructive
-                    if result.destructive is not None
-                    else is_destructive_sql(result.original_sql)
-                ),
-                needs_confirmation=(
-                    result.destructive
-                    if result.destructive is not None
-                    else is_destructive_sql(result.original_sql)
-                )
-                or is_unscoped_mutation(result.original_sql),
+                destructive=bool(result.destructive),
+                needs_confirmation=result.needs_confirmation,
                 error=result.error,
+                error_code=result.error_code,
+                statement_kind=result.statement_kind,
+                effects=result.effects,
+                execution_failure=result.execution_failure,
             )
+        )
+    if any(result.error_code == "security_rejection" for result in results):
+        return SanitizingJSONResponse(
+            status_code=403, content=[response.model_dump() for response in responses]
         )
     return responses
 

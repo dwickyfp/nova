@@ -195,9 +195,7 @@ class TestTranslationFailureIsAudited:
         assert result.columns == []
         assert result.rows == []
 
-    async def test_audit_failure_does_not_swallow_the_translation_error(
-        self, wired, monkeypatch
-    ):
+    async def test_audit_failure_does_not_swallow_the_translation_error(self, wired, monkeypatch):
         service, _, _ = wired
 
         async def no_stages(parsed, **kwargs):
@@ -279,9 +277,9 @@ class TestEnginePathsStillAuditExactlyOnce:
         )
 
         assert results[-1].error is not None
-        # The first statement succeeded and is audited; the second was refused
-        # and is audited. Two rows, in order.
-        assert sink.statuses == ["SUCCESS", "ERROR"]
+        assert repo.calls == []
+        assert len(results) == 1
+        assert sink.statuses == ["ERROR"]
         assert sink.entries[-1]["sql_text"] == "DROP ROLE ACCOUNTADMIN"
 
 
@@ -385,9 +383,7 @@ class TestResolvedCredentialsNeverReachTheAuditRow:
 
         async def failing(sql, **kwargs):
             repo.calls.append(sql)
-            raise RuntimeError(
-                f"StarRocks rejected: {sql} — REPOSITORY already exists"
-            )
+            raise RuntimeError(f"StarRocks rejected: {sql} — REPOSITORY already exists")
 
         monkeypatch.setattr(repo, "execute_as_user", failing)
 
@@ -407,9 +403,7 @@ class TestResolvedCredentialsNeverReachTheAuditRow:
         assert "ACCESSKEY_SENTINEL" not in (entry["error_message"] or "")
         assert "SECRETKEY_SENTINEL" not in (entry["error_message"] or "")
 
-    async def test_unredactable_error_message_does_not_mask_the_original(
-        self, wired, monkeypatch
-    ):
+    async def test_unredactable_error_message_does_not_mask_the_original(self, wired, monkeypatch):
         """A redactor refusal must not replace the client's real error.
 
         ``redact_for_output`` fails closed on a credential value it cannot

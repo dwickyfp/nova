@@ -85,6 +85,9 @@ class StageRuntime:
                 if parsed.command_type == CommandType.STAGE_EXPORT and index == 0
                 else "read"
             )
+            action = ref.access or action
+            if action not in {"read", "write"}:
+                raise ValueError("Invalid stage access direction")
             selected.append((ref, row, consumed, action))
 
         for _, row, _, action in selected:

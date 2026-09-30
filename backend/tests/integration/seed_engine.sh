@@ -88,6 +88,8 @@ fe_sql -e "ALTER TABLE NOVA_SYSTEM.AUDIT_LOG ADD COLUMN decision VARCHAR(32)" ||
 fe_sql -e "ALTER TABLE NOVA_SYSTEM.AUDIT_LOG ADD COLUMN ranger_policy_ids VARCHAR(2048)" || true
 
 echo "== users and databases =="
+# Match the existing task repository's counter in this disposable acceptance stack.
+fe_sql -e "ALTER TABLE NOVA_SYSTEM.CONFIG_TASKS ADD COLUMN consecutive_fail_count INT DEFAULT '0'" || true
 # init-nova.sql creates nova_admin with its own password ('!1password') and
 # `CREATE USER IF NOT EXISTS` will not change it, so the acceptance suite's
 # expected credential is set explicitly here. The suite defaults to

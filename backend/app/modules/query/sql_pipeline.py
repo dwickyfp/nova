@@ -27,11 +27,9 @@ import re
 
 from app.common.sql_guard import (
     guard_sql,
-    is_destructive_sql,
     redact_sql_credentials,
     split_sql_statements,
 )
-from app.core.exceptions import ForbiddenSQLError
 from app.modules.query.dialect.injector import get_credential_params
 from app.modules.query.dialect.parser import ParsedSQL, parse_sql
 from app.modules.query.dialect.translator import StorageConfig, translate_stage_query
@@ -66,7 +64,8 @@ class PreparedSQL:
 
 
 def guard_user_statement(
-    sql: str, *, confirm_destructive: bool = False, allow_stage_export: bool = False
+    sql: str, *, confirm_destructive: bool = False, allow_stage_export: bool = False,
+    check_confirmation: bool = True,
 ) -> None:
     """Apply the SQL guard and the destructive-confirmation rule to ``sql``.
 
@@ -81,10 +80,15 @@ def guard_user_statement(
     """
     for statement in split_sql_statements(sql) or [sql]:
         guard_sql(statement, allow_stage_export=allow_stage_export)
-        if is_destructive_sql(statement) and not confirm_destructive:
-            raise ForbiddenSQLError(
-                "Destructive SQL requires confirmation before execution."
-            ) from None
+        if check_confirmation and not confirm_destructive:
+            from app.sql_frontend.ast.builder import ast_builders
+            from app.sql_frontend.errors import ConfirmationRequiredError
+            from app.sql_frontend.parser import parse_statement
+            from app.sql_frontend.planning.planner import SQLPlanner
+
+            analysis = SQLPlanner().preflight(ast_builders.build(parse_statement(statement)))
+            if analysis.requires_confirmation:
+                raise ConfirmationRequiredError(analysis.effects, analysis.statement_kind)
 
 
 def redact_for_output(sql: str) -> str:
@@ -121,6 +125,8 @@ async def prepare_stage_sql(
     result in.
     """
     parsed = parsed or parse_sql(sql)
+    if parsed.stage_refs and parsed.original_sql != sql:
+        raise ValueError("Stage bindings do not match the execution template")
     if parsed.errors and parsed.stage_refs:
         raise ValueError(f"Invalid stage SQL: {parsed.errors[0]}")
     if not parsed.stage_refs:

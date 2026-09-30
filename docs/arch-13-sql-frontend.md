@@ -13,13 +13,13 @@ flowchart TD
     AST --> Analysis[Effects and semantic validation]
     Analysis --> Planner[Planner registry]
     Binder[Lazy caller-authorized catalog binder] -. requested metadata .-> Planner
-    Capabilities[Explicit engine capability profile] --> Planner
+    Capabilities[Cached engine identity and overrides] --> Planner
     Planner --> Rules[Ordered rules: one pass]
     Rules --> Plan[Credential-free execution plan]
     Plan --> Executor[Central executor and confirmation check]
     Executor --> Engine[Late stage authorization, secrets and StarRocks SQL]
     Executor --> Service[Existing Nova services]
-    Executor --> Composite[Ordered composite steps; stop on failure]
+    Executor --> Composite[Explicit best effort or engine transaction]
     Engine --> Result[Redacted QueryResult and audit]
     Service --> Result
     Composite --> Result
@@ -59,7 +59,10 @@ reconstruct executable SQL.
 Both lexer and parser default error listeners are removed. Errors report a
 position and a generic message; rejected tokens and literals are omitted.
 Direct execution accepts exactly one complete statement. Script execution keeps
-the existing splitter, executes sequentially and stops at the first error.
+the existing splitter and checks security, syntax, semantic effects, safe action
+validation and rule effect bounds for the entire script before the first execution.
+Confirmation refusal runs no statements. Confirmed scripts plan and execute each
+statement sequentially so CREATE followed by INSERT can observe the new table.
 The hard guard still checks the complete input of direct execution before parsing.
 
 The MySQL proxy classifies all stage spans in one tree while substituting
@@ -76,10 +79,24 @@ task submission, and prediction/forecast forms before ordinary queries.
 
 ### Effects and plans
 
-`PlanEffects` has six flags: `reads_data`, `writes_data`, `deletes_rows`,
-`changes_schema`, `changes_security`, and `external_io`. Destructive confirmation
+`PlanEffects` includes `reads_data`, `writes_data`, `deletes_rows`,
+`changes_schema`, `changes_security`, `external_io`, `writes_metadata`,
+`updates_rows`, `replaces_data` and `drops_objects`. Destructive confirmation
 is a separate `requires_confirmation` property. An INSERT can write data without
-acquiring UPDATE/DELETE confirmation behavior.
+acquiring UPDATE/DELETE confirmation behavior. INSERT OVERWRITE replaces data
+without requiring additional confirmation. CREATE TASK writes Nova metadata;
+its deferred body does not contribute execution effects.
+
+`StatementSemanticsRegistry` owns exact-type analyzer, validator, effects resolver
+and confirmation-policy registrations. Native effects dispatch on grammar context
+and structural children. Comments and literals never supply statement effects.
+Planners return complete plans even when confirmation has not been granted.
+Lifecycle and executor checks raise `ConfirmationRequiredError` with typed effects.
+The HTTP response keeps legacy fields and adds `error_code`, `statement_kind`,
+`effects` and optional `execution_failure`. `destructive` describes statement
+policy; `needs_confirmation` describes the current wait for approval. The worksheet
+uses the server response and resubmits the immutable SQL/tab/namespace snapshot.
+The proxy returns its existing ERR refusal without a new confirmation syntax.
 
 `LogicalPlan` carries the statement and analysis. Lowering produces one of:
 
@@ -92,25 +109,50 @@ Planning can read explicitly requested catalog metadata and populate request-loc
 validation caches. It does not persist metadata, fetch storage secrets, submit
 engine mutations or call action services. The executor enforces confirmation
 again after planning. Rules run once in registration order and may preserve or
-expand effects and confirmation requirements; they cannot remove either.
+expand effects and confirmation requirements; they cannot remove either. A rule
+adding effects declares `effect_bound` and, if needed, `requires_confirmation_bound`.
+Preflight unions the bounds; execution rejects an undeclared effect increase.
 
-Composite execution stops on an error result or an exception. It provides no
-transaction, rollback or compensation guarantee. The final successful step's
-`QueryResult` is the composite result. Each executed service/engine step retains
-its existing auditing behavior.
+Every `CompositePlan` requires an explicit `Atomicity`. `BEST_EFFORT` stops on
+the first error result or exception and reports completed indices, failed index,
+outcome and possible partial effects. It never claims rollback.
+
+`SINGLE_ENGINE_TRANSACTION` admits proven internal-engine DML in one database.
+It rejects DDL, Nova actions, INSERT OVERWRITE, unknown dependencies, reads of
+previously modified tables and unsupported partial-column writes. UPDATE/DELETE
+require primary-key tables and a known shared-data release supporting them;
+repeated INSERT also requires shared-data support. Version overrides cannot
+remove these structural restrictions. Metadata is requested only for this validation.
+
+The runner opens a dedicated user connection, selects role/database before BEGIN,
+executes all steps on that connection and commits after the last success.
+Statement failure or cancellation rolls back on the same connection. A lost COMMIT
+response or failed rollback produces `unknown` and discards the connection.
+Statements inside a transaction are audited as EXECUTED, with a separate committed,
+rolled_back or unknown transaction event. Proxy sessions are never borrowed for a
+composite transaction; missing credentials for a dedicated connection cause refusal.
+Cross-system coordination and compensation are outside this contract.
 
 ### Credentials and stage execution
 
 Plans contain no passwords, resolved storage keys or authenticated connections.
-Typed task/model/prediction/security payloads contain safe metadata. Source
-fragments and validated SQL bodies remain in private request execution state.
+Typed task/model/prediction/security payloads contain their validated definitions.
+Security payloads include the decoded operation and identifiers. Source
+fragments remain in private request execution state for audit and execution material.
 Only plans are suitable for serialization; execution contexts are internal.
 Debug representations omit source, encrypted passwords, connections and private
 validation caches. Engine plan construction rejects credential-bearing SQL.
 
-The engine adapter restores native source only for the unchanged safe template.
-For stages, `stage_view()` reads reference nodes from the central tree and the
-ordered stage rule marks the plan for lowering. `StageRuntime` resolves scoped
+Native sensitive tokens also use unique slots, with source spans pointing into
+private runtime state. Their material is restored only after stage authorization
+and lowering, so length-changing rewrites and mixed native FILES/stage queries
+retain both the rewrite and execution material without serializing secrets.
+Missing or duplicated private slots fail closed. After parsing, stage references
+become unique slot identifiers in the SQL template with path, scope and access
+direction descriptors. Rewrite rules
+operate on the template; runtime locates each slot exactly once and rejects missing
+or duplicate slots. It never rescans the AST or restores the original stage SQL.
+`StageRuntime` resolves scoped
 references and checks access for every selected stage before resolving any
 storage secret. Credentials and CSV settings remain keyed by reference offset,
 so repeated stage names, joins and different scoped connections stay independent.
@@ -139,10 +181,41 @@ order. Details use the source of `SHOW CREATE TABLE` to retain key type, primary
 keys and the full partition clause where available. The binder preserves the
 resolved table/view type. See [StarRocks columns metadata](https://docs.starrocks.io/docs/sql-reference/information_schema/columns/).
 
-The explicit 4.1.4 profile disables `native_merge`, `merge_all_by_name` and
-`merge_schema_evolution`. Unknown versions use conservative profiles. Optional
-version detection is cached by engine target and runs only when requested.
-Native queries, including `SELECT 1`, perform no binding or version query.
+`RelationBinder.bind_relation()` derives ordered output columns from table/view
+metadata, aliases, computed expressions with aliases, wildcard, qualified wildcard,
+subquery and CTE (including column alias lists). Duplicate names are retained.
+Complex expressions have `UnknownType`; undetermined output forms such as recursive
+CTE, set operations or USING join wildcard shape are refused conservatively.
+Stage schemas use an authorized DESC FILES execution helper; credentials remain
+inside that helper and only typed columns reach the planner.
+
+`SqlType` preserves raw engine type and normalized parameters for numeric/string
+types, ARRAY, MAP and STRUCT. Unknown future types remain unknown. Query assignment
+permits explicit compatibility categories; safe schema widening is a separate
+conservative comparison. Name mapping uses case-insensitive column identifiers,
+rejects missing/extra/duplicate names and follows target order rather than source
+ordinal. `SchemaDelta` describes additive candidates and unsafe reasons; it never
+executes ALTER. Generated/key/partition/auto-increment/hidden constraints and missing
+metadata prevent a safe mutation decision. No synthetic schema version is invented.
+
+Production resolves `EngineIdentity` using CURRENT_VERSION(), splitting release,
+prerelease and build (including StarRocks's hexadecimal build suffix). VERSION()
+continues to be a user compatibility function. Deployment mode comes from explicit
+configuration or the FE `run_mode` Value column using a system connection.
+Unknown mode never enables shared-data transaction features.
+
+Capabilities resolve in order: conservative defaults, detected release profile,
+operator overrides. Unknown override names and non-boolean values are rejected.
+MERGE remains disabled in upstream 4.1.4. Cache keys contain host/port, deployment
+configuration identity, deployment mode and overrides, never credentials. A
+single-flight lock per target/configuration prevents concurrent duplicate probes;
+successful identity lasts 15 minutes and
+failure retries after 30 seconds. The combined probe budget is two seconds.
+Startup warms the cache. `reload_nova_app_config()` clears config/capability caches;
+`capability_provider.invalidate(target)` supports an engine switch. Detection
+failure returns conservative capabilities so ordinary SQL can proceed.
+Native queries, including SELECT 1, perform zero binding and no capability network
+calls once the cache is warm.
 
 ## Integration Points
 
@@ -151,6 +224,11 @@ role, tenant context, row limits and audit behavior. EXPLAIN uses the same
 frontend, stage preparation and engine adapter. ML SQL preparation uses the
 shared frontend without routing through QueryService. Assistant SQL validation
 uses parsing and pure validation without a catalog or engine connection.
+
+The worksheet opens confirmation only from server `needs_confirmation` and
+resubmits the captured SQL, tab and namespace. Cancel submits nothing. On narrow
+viewports a pending confirmation closes the assistant sheet so it cannot cover
+the dialog or trap its keyboard controls; the desktop assistant stays open.
 
 Ranger-enabled planning decodes role creation/deletion, membership, hierarchy,
 supported table grants, role listings and access listings from grammar contexts.
@@ -171,9 +249,20 @@ The frontend requires no database migration or new runtime dependency. It uses
 the committed Python parser generated by ANTLR 4.13.2 from the pinned StarRocks
 4.1.4 grammar. Java is used only for regeneration.
 
-QueryService accepts injected AST builders, a planner and a catalog-provider
-factory. Defaults select the production registries and caller-authorized
-StarRocks catalog. Engine capability selection is explicit in planning context.
+QueryService accepts injected AST builders, planner, catalog-provider factory and
+capability resolver. Production defaults select the registries and caller-authorized
+StarRocks catalog. The executor's payload-type handler registry accepts extensions
+without changes to adapter routing. Generic debug logging reports planner/rule names,
+effects, binding request counts, capability source and atomicity; it omits SQL and
+credentials and introduces no unbounded metric labels.
+
+```yaml
+sql_frontend:
+  engine:
+    deployment_mode: shared_data # optional; omit to introspect
+    feature_overrides:
+      native_merge: false
+```
 
 ## Developer Extension Workflow
 
@@ -183,21 +272,28 @@ StarRocks catalog. Engine capability selection is explicit in planning context.
 2. Add a typed Statement subclass and register an AST builder for its context.
    Slice SQL fragments from normalized source. Do not add a feature detector
    to QueryService.
-3. Implement a planner and register its exact statement type. Request only the
+3. Register `StatementSemantics` with an analyzer, validator, effects resolver and
+   confirmation policy. Mark a validator preflight-safe only when it needs no
+   table binding or execution; request-local validation avoids decoding it twice.
+4. Implement a planner and register its exact statement type. Request only the
    catalog metadata needed through `context.binder`; choose lowering from
    `context.capabilities`. Keep action execution and secrets out of planning.
-4. Return safe engine templates, a typed action payload or a composite. Declare
+5. Return safe engine templates, a typed action payload or an explicit composite. Declare
    all effects and any separate confirmation requirement. Register an action
    handler only when an existing service must execute the operation.
-5. Add a rule only if lowering requires one; register it in explicit order.
-   Prove that it does not remove effects or confirmation requirements.
-6. Test native preservation, planner purity, binding caches, capabilities,
+6. Add a rule only if lowering requires one; register it in explicit order and
+   declare any effect bounds. Preserve stage slots and do not reuse transaction
+   intent after changing SQL unless the new dependencies are proven.
+7. Test native preservation, planner purity, binding caches, capabilities,
    composite ordering/failure, redaction and the real consumer path.
 
 `test_sql_frontend_planning.py` demonstrates capability-dependent composite
 lowering with a dummy statement and explicit binding. The consumer test
 `test_extension_runs_through_unmodified_query_service_with_injected_catalog`
 runs that extension through QueryService without adding a branch to its SQL flow.
+`test_sql_frontend_readiness.py` registers a test mutation's analyzer, validator,
+effects, planner, relation binding, rule and payload handler, proves confirmation
+for a SELECT-prefixed mutation, and executes through the production adapters.
 
 MERGE, ALL BY NAME and schema evolution have no syntax or implementation here.
 Their future planners can use these registration, binding, capability and
