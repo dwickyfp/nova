@@ -50,11 +50,23 @@ async def _run() -> None:
         except NotImplementedError:  # pragma: no cover - Windows
             signal.signal(signal_number, lambda *_: _request_stop())
 
+    from app.modules.query_autopilot.repository import repository
+    from app.modules.query_autopilot.schema import ensure_schema
+    from app.modules.query_autopilot.telemetry import collector
+
+    try:
+        await ensure_schema()
+    except Exception:
+        logger.warning("Autopilot schema unavailable; proxy telemetry will report dropped batches")
+    telemetry_stop = asyncio.Event()
+    telemetry_task = asyncio.create_task(collector.run(telemetry_stop, repository))
     await server.start()
     try:
         await stop_event.wait()
     finally:
         await server.stop()
+        telemetry_stop.set()
+        await telemetry_task
         await db.close_system_pool()
 
 

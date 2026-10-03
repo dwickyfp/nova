@@ -65,6 +65,10 @@ class EngineCapabilities:
     describe_files: bool = False
     identity: EngineIdentity | None = None
     source: str = "conservative"
+    query_profiles: bool = False
+    plan_advisor: bool = False
+    sql_plan_manager: bool = False
+    be_logs: bool = False
 
     def __post_init__(self) -> None:
         if self.identity is None:
@@ -80,6 +84,10 @@ FEATURES = frozenset(
         "transaction_update_delete",
         "transaction_repeated_insert",
         "describe_files",
+        "query_profiles",
+        "plan_advisor",
+        "sql_plan_manager",
+        "be_logs",
     }
 )
 
@@ -129,6 +137,10 @@ class StarRocksCapabilityProvider:
             transaction_update_delete=stable and shared and release >= (4, 0, 0),
             transaction_repeated_insert=stable and shared and release >= (4, 0, 0),
             describe_files=stable and release >= (3, 3, 4),
+            query_profiles=stable and release >= (4, 1, 4),
+            plan_advisor=stable and release >= (4, 1, 4),
+            sql_plan_manager=stable and release >= (4, 1, 4),
+            be_logs=stable and release >= (4, 1, 4),
             source="operator_override"
             if overrides
             else "version_profile"

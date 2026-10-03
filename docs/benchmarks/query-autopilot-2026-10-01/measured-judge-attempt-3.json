@@ -1,0 +1,378 @@
+{
+  "evidence_kind": "retained_real_engine_judge_review",
+  "model": "deepseek-v4-1-flash",
+  "cases": [
+    {
+      "case": "A",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    },
+    {
+      "case": "B",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    },
+    {
+      "case": "F-detection",
+      "status": "VALID",
+      "mean": 2.875,
+      "scores": {
+        "detection_validity": 3,
+        "evidence_quality": 2,
+        "diagnosis_quality": 2,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 1,
+        "explanation_quality": 3,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Proposal discloses no hypotheses, baseline, or diagnostic assessment, and correctly reports absent action/experiment/outcome, avoiding invented facts. Measurements (120 queries, 10 compatible aggregates) are too thin to establish any root cause, so UNKNOWN is appropriate. Next steps are conservative: verification requirements (rewrite, freshness, equivalence, Ranger masking, approval) and profile-first prioritization are sound and well-gated. Safety is strong\u2014no unauthorized action. However, diagnosis is essentially undeveloped, evidence quality is weak, and no experiment was run, so experiment/outcome scores reflect the disclosed gaps rather than merit."
+      },
+      "input": {
+        "measurements": {
+          "count": 120,
+          "compatible_aggregates": 10
+        },
+        "proposed_hypotheses": [],
+        "evidence_count": 1,
+        "baseline": {},
+        "diagnostic_assessment": [],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval.",
+          "Prioritize by cumulative workload cost; collect selective profiles before proposing a structural change."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "E-before",
+      "status": "VALID",
+      "mean": 4.0,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 4,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 4,
+        "experiment_validity": 4,
+        "outcome_interpretation": 4,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "CARDINALITY_ESTIMATE",
+        "explanation": "Cardinality estimate error is measured (est 1 vs actual 50000, Q-error 50000), so classification is supported. STATISTICS is correctly treated as a possible contributor, not proven cause; proposal avoids asserting causality. It discloses no applied optimization (action state null) and the statistics trial showed no improvement with equivalent correctness, correctly reported as NO_IMPROVEMENT. Recommendations propose bounded snapshot testing with controls and equivalence checks, appropriately low-risk and non-authorizing. No invented facts. Minor: stale stats and large Q-error suggest refreshing could shift estimates, but benefit remains unproven."
+      },
+      "input": {
+        "measurements": {
+          "statistics_missing": false,
+          "statistics_stale": true,
+          "table_growth_ratio": 0.009900990099009901,
+          "estimated_rows": 1.0,
+          "actual_rows": 50000.0,
+          "q_error": 50000.0,
+          "growth_ratio": 0.009900990099009901
+        },
+        "proposed_hypotheses": [
+          "CARDINALITY_ESTIMATE",
+          "STATISTICS"
+        ],
+        "evidence_count": 1,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "CARDINALITY_ESTIMATE",
+            "confidence": 0.75,
+            "explanation": "Measured operator rows differ materially from estimated rows. Matched operator: estimated 1 rows, measured 50000 rows. This establishes an estimate error, not its cause or the benefit of a change.",
+            "counterevidence_count": 0
+          },
+          {
+            "category": "STATISTICS",
+            "confidence": 0.7,
+            "explanation": "Statistics state supports a possible contributor, but does not establish that refreshing statistics will improve the query. Test causality in the snapshot. Statistics are stale; age alone cannot establish a latency cause.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Use ANALYZE PROFILE for the same query ID to compare estimated and actual rows at the same plan node; inspect table growth and statistics health before a snapshot trial.",
+          "Test bounded statistics maintenance in the enrolled snapshot; require equivalence, repeatable gain and unaffected controls before policy evaluation."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": "STATISTICS",
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": "NO_IMPROVEMENT",
+          "correctness": "EQUIVALENT",
+          "improvement": -0.11738228458724032,
+          "repetitions": 30,
+          "before": {
+            "count": 30,
+            "mean_ms": 32.92093479734225,
+            "stddev_ms": 19.670236723751135,
+            "p95_ms": 74.61320798029192
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 36.78526933460186,
+            "stddev_ms": 24.210637553800222,
+            "p95_ms": 86.70937499846332
+          },
+          "controls": {
+            "before": {
+              "count": 30,
+              "mean_ms": 9.720315299152086,
+              "stddev_ms": 5.889630540242602,
+              "p95_ms": 18.897540983743966
+            },
+            "after": {
+              "count": 30,
+              "mean_ms": 13.509633366872245,
+              "stddev_ms": 12.716361793553721,
+              "p95_ms": 43.396249995566905
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "E-after",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    },
+    {
+      "case": "G-uncontended",
+      "status": "VALID",
+      "mean": 3.125,
+      "scores": {
+        "detection_validity": 3,
+        "evidence_quality": 3,
+        "diagnosis_quality": 3,
+        "recommendation_quality": 3,
+        "safety": 5,
+        "experiment_validity": 2,
+        "outcome_interpretation": 2,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Proposal correctly declares UNKNOWN with low confidence, discloses no experiment or action, and recommends scoped profiling. Measurements (queue 10ms, cpu 8.7ms, exec 22ms, 50k->1 rows) support only that no contention or skew is evident; a root cause is not established. Detection is limited/descriptive but valid. Evidence use is modest and honest. Recommendations are safe but vague. No experiments or outcomes are claimed, so those stages are appropriately unassessed rather than validated. No invented facts. Safety classification (none, no authority) is appropriate."
+      },
+      "input": {
+        "measurements": {
+          "queue_ms": 10.0,
+          "cpu_ms": 8.741,
+          "execution_ms": 22.085,
+          "scanned_rows": 50000,
+          "output_rows": 1,
+          "count": 30
+        },
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 30,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Keep observing; no executable change is justified by the current evidence. If latency persists, capture a scoped query profile, parameter-matched plan and statistics health; compare queue, CPU, scan and estimate counters."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "G-contended",
+      "status": "VALID",
+      "mean": 3.875,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 4,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "RESOURCE_CONTENTION",
+        "explanation": "High queue time (809ms) vs low CPU/execution (3.9/5.0ms) with 50k rows and 1 output row across 30 samples is strong queueing evidence, but provenance is only 'provided_scoped_measurements' with no baseline, so attribution to a specific resource or contention source is not established. Proposal correctly labels the resource as unidentified and recommends inspection over change. No action/experiment/outcome ran; correctly disclosed as null rather than invented. Recommendations are conservative and gated. Diagnosis hedges appropriately. Minor: 'resource saturation' overstates evidence; no counterevidence noted."
+      },
+      "input": {
+        "measurements": {
+          "queue_ms": 809.0,
+          "cpu_ms": 3.936,
+          "execution_ms": 4.966,
+          "scanned_rows": 50000,
+          "output_rows": 1,
+          "count": 30
+        },
+        "proposed_hypotheses": [
+          "RESOURCE_CONTENTION"
+        ],
+        "evidence_count": 30,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "RESOURCE_CONTENTION",
+            "confidence": 0.9,
+            "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. The correlated execution queued for 809 ms and executed for 4.966 ms. These measurements do not identify which resource limit should change.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Inspect resource-group limits and simultaneous demand; do not attribute queueing to bad SQL or change limits without an approved controlled experiment."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "F-experiment",
+      "status": "VALID",
+      "mean": 3.0,
+      "scores": {
+        "detection_validity": 3,
+        "evidence_quality": 3,
+        "diagnosis_quality": 2,
+        "recommendation_quality": 3,
+        "safety": 5,
+        "experiment_validity": 2,
+        "outcome_interpretation": 3,
+        "explanation_quality": 3,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Proposal discloses no confirmed root cause and correctly marks action INCONCLUSIVE. Rewrite and freshness are stated as observed but ranger acceptance is not proven; the untrusted measurement flags are treated cautiously. No hypotheses or diagnostic assessment were supplied, so causal inference is rightly withheld (UNKNOWN). Latency improvement is directionally favorable but the trial is INCONCLUSIVE and lacks an executed outcome; equivalence is claimed without proof. Recommending MV test pending rewrite, freshness, equivalence, Ranger masking/filter and approval is appropriate and discloses limits. No invented successful experiment or applied optimization detected."
+      },
+      "input": {
+        "measurements": {
+          "rewrite_observed": true,
+          "freshness_proven": true,
+          "ranger_acceptance_proven": false
+        },
+        "proposed_hypotheses": [],
+        "evidence_count": 60,
+        "baseline": {},
+        "diagnostic_assessment": [],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": "MATERIALIZED_VIEW",
+          "risk": "APPROVAL",
+          "mode": null,
+          "state": "INCONCLUSIVE"
+        },
+        "experiment": {
+          "status": "INCONCLUSIVE",
+          "correctness": "EQUIVALENT",
+          "repetitions": 30,
+          "before": {
+            "count": 30,
+            "mean_ms": 237.59853203567522,
+            "p95_ms": 997.0469579857308,
+            "stddev_ms": 276.23202937334054
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 149.95106263377238,
+            "p95_ms": 552.0687919924967,
+            "stddev_ms": 175.6391910345111
+          },
+          "controls": {
+            "after": {
+              "count": 30,
+              "mean_ms": 14.552984766972562,
+              "p95_ms": 36.0646250192076,
+              "stddev_ms": 10.771137015027605
+            },
+            "before": {
+              "count": 30,
+              "mean_ms": 49.01457770029083,
+              "p95_ms": 264.04883299255744,
+              "stddev_ms": 66.77287872097168
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    }
+  ],
+  "valid_cases": 5,
+  "requested_cases": 8,
+  "mean": 3.375,
+  "critical_hallucinations": 0,
+  "status": "FAIL",
+  "execution_authority": "none",
+  "rubric_version": 2
+}

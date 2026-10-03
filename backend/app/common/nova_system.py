@@ -486,6 +486,9 @@ async def init_nova_system() -> None:
         # Once the base schema is confirmed, an AI model migration failure
         # must fail startup rather than leaving model CRUD on a stale schema.
         await migrate_ai_model_columns()
+        from app.modules.query_autopilot.schema import ensure_schema
+
+        await ensure_schema()
 
 
 async def is_setup_complete() -> bool:

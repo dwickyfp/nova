@@ -7,6 +7,7 @@ export interface AuthUser {
   username: string
   roles: string[]
   activeRole?: string | null
+  securityContextVersion?: number
 }
 
 interface AuthState {

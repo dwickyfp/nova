@@ -1,0 +1,29 @@
+{
+  "status": "FAIL",
+  "reason": "current_window_regression_or_collection_proof_unavailable",
+  "raw_runner_status": "PASS",
+  "runtime_started_before_incident_binding_hardening": true,
+  "current_regression_incident_ids": [],
+  "baseline": {
+    "current_count": 30,
+    "current_p95": 9161.924458981957,
+    "eligible": true,
+    "historical_count": 274,
+    "historical_p95": 9086.11825671888,
+    "reason": null,
+    "seasonal": false,
+    "upper_envelope": 7639.249263071062,
+    "windows": 9
+  },
+  "window": "2026-10-02T16:46:41.780933+00:00",
+  "current_findings": [
+    "absolute_slow",
+    "contention"
+  ],
+  "executions": 180,
+  "persisted": 180,
+  "dropped": 0,
+  "failed_batches": 0,
+  "queue_settings_restored": true,
+  "production_actions": 0
+}

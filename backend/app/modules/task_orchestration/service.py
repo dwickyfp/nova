@@ -35,8 +35,10 @@ class SchedulerService:
         tick: SchedulerTick,
         leader_lock: LeaderLock,
         poll_interval: float | None = None,
+        after_tick=None,
     ) -> None:
         self._tick = tick
+        self._after_tick = after_tick
         self._leader_lock = leader_lock
         self._poll_interval = (
             poll_interval if poll_interval is not None else settings.SCHEDULER_POLL_INTERVAL_SECONDS
@@ -80,7 +82,13 @@ class SchedulerService:
                     lost_lock.set()
                     return
 
-        tick_task = asyncio.create_task(self._tick.tick(), name="nova-scheduler-tick")
+        async def tick_with_domains():
+            result = await self._tick.tick()
+            if self._after_tick is not None:
+                await self._after_tick()
+            return result
+
+        tick_task = asyncio.create_task(tick_with_domains(), name="nova-scheduler-tick")
         renewal = asyncio.create_task(keep_leadership(), name="nova-scheduler-lock-renewal")
         try:
             done, _ = await asyncio.wait({tick_task, renewal}, return_when=asyncio.FIRST_COMPLETED)
@@ -135,4 +143,6 @@ def build_scheduler_service(
 ) -> SchedulerService:
     """Wire the default service from a transport and a leader lock."""
     tick = SchedulerTick(task_orchestration_repository, transport)
-    return SchedulerService(tick, leader_lock)
+    from app.modules.query_autopilot.jobs import schedule_due_jobs
+
+    return SchedulerService(tick, leader_lock, after_tick=schedule_due_jobs)

@@ -1,0 +1,17 @@
+{
+  "state": "COLLECTION_FAILED_CONFIGURATION_RESTORED",
+  "database": "autopilot_snapshot_fresh_20261003",
+  "history_anchor": "2026-10-02T17:30:00+00:00",
+  "recent_anchor": "2026-10-02T19:00:00+00:00",
+  "failure_type": "ValueError",
+  "collector_counters": {
+    "newly_persisted": 80,
+    "accepted": 80,
+    "dropped": 0,
+    "failed_batches": 0,
+    "queued": 0
+  },
+  "failure_reason": "history_window_expired",
+  "result": "FAIL",
+  "durable_execution_count": 80
+}

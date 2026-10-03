@@ -3449,5 +3449,10 @@ class StarRocksVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by StarRocksParser#novaPlanAdvisorStatement.
+    def visitNovaPlanAdvisorStatement(self, ctx:StarRocksParser.NovaPlanAdvisorStatementContext):
+        return self.visitChildren(ctx)
+
+
 
 del StarRocksParser

@@ -80,6 +80,7 @@ def default_builders() -> AstBuilderRegistry:
         "CreateMlModelStatementContext": CreateMLModelStatement,
         "SubmitTaskStatementContext": _task,
         "QueryStatementContext": _query,
+        "NovaPlanAdvisorStatementContext": NativeStatement,
         "NovaForecastStatementContext": MLForecastStatement,
         "NovaForcePasswordStatementContext": ForcePasswordChangeStatement,
         "NovaListStatementContext": StageAwareStatement,

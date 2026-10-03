@@ -98,6 +98,10 @@ _NATIVE_EFFECTS: dict[str, PlanEffects] = {}
 def _native_effects(statement: ast.Statement) -> PlanEffects:
     root = type(statement.parsed.statement_context).__name__
     nodes = {type(node).__name__ for node in walk_nodes(statement.parsed.statement_context)}
+    if root == "NovaPlanAdvisorStatementContext":
+        return PlanEffects(
+            reads_data=True, writes_metadata=statement.parsed.statement_context.ALTER() is not None
+        )
     if "ExplainDescContext" in nodes:
         return PlanEffects(reads_data=True)
     effects = _NATIVE_EFFECTS.get(root, PlanEffects())
@@ -157,6 +161,12 @@ def default_semantics() -> StatementSemanticsRegistry:
             "TruncateTableStatementContext": PlanEffects(writes_data=True, deletes_rows=True),
             "CreateTableAsSelectStatementContext": PlanEffects(
                 reads_data=True, writes_data=True, changes_schema=True
+            ),
+            "AnalyzeStatementContext": PlanEffects(reads_data=True, writes_metadata=True),
+            "AnalyzeHistogramStatementContext": PlanEffects(reads_data=True, writes_metadata=True),
+            "DropHistogramStatementContext": PlanEffects(writes_metadata=True),
+            "RefreshMaterializedViewStatementContext": PlanEffects(
+                reads_data=True, writes_data=True
             ),
             "LoadStatementContext": PlanEffects(writes_data=True, external_io=True),
             "SubmitTaskStatementContext": PlanEffects(reads_data=True, writes_data=True),

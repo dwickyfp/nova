@@ -1,0 +1,9 @@
+{
+  "status": "INTERRUPTED_CONFIGURATION_RESTORED",
+  "reason": "restart_after_window_anchor_recursion_fix",
+  "phase": "COLLECTION_FAILED_CONFIGURATION_RESTORED",
+  "newly_persisted": 80,
+  "dropped": 0,
+  "failed_batches": 0,
+  "production_actions": 0
+}

@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from datetime import UTC, datetime
+from typing import Literal
 
 from app.common.audit import write_audit_log
 from app.common.identifiers import check_identifier
@@ -265,6 +266,7 @@ class AccessControlService:
         database: str,
         table: str,
         accesses: list[str],
+        resource_type: Literal["database", "table", "materialized_view"] | None = None,
     ) -> dict:
         self.require_security_admin(security)
         policy = compile_access_policy(
@@ -273,6 +275,7 @@ class AccessControlService:
             database=database,
             table=table,
             accesses=accesses,
+            resource_type=resource_type,
         )
         existing = await self._ranger.get_policy(policy.name)
         if existing:
@@ -288,6 +291,7 @@ class AccessControlService:
                 database=database,
                 table=table,
                 accesses=sorted(previous | {value.lower() for value in accesses}),
+                resource_type=resource_type,
             )
         result = await self._ranger.put_policy(policy)
         await self._record_policy_state(policy.name, result, ProjectionState.PROPAGATING)
@@ -309,6 +313,7 @@ class AccessControlService:
         database: str,
         table: str,
         accesses: list[str],
+        resource_type: Literal["database", "table", "materialized_view"] | None = None,
     ) -> None:
         self.require_security_admin(security)
         desired = compile_access_policy(
@@ -316,7 +321,8 @@ class AccessControlService:
             catalog=catalog,
             database=database,
             table=table,
-            accesses=[],
+            accesses=accesses if resource_type is not None else [],
+            resource_type=resource_type,
         )
         existing = await self._ranger.get_policy(desired.name)
         if not existing:
@@ -344,6 +350,7 @@ class AccessControlService:
             database=database,
             table=table,
             accesses=sorted(remaining),
+            resource_type=resource_type,
         )
         result = await self._ranger.put_policy(policy)
         await self._record_policy_state(policy.name, result, ProjectionState.PROPAGATING)
@@ -590,6 +597,7 @@ class AccessControlService:
         object_access: set[str] = set()
         row_restrictions: list[str] = []
         column_restrictions: dict[str, str] = {}
+        column_restriction_fingerprints: dict[str, str] = {}
         for policy in matching:
             for item in policy.get("policyItems", []):
                 if active_role in item.get("roles", []):
@@ -614,6 +622,9 @@ class AccessControlService:
                 mask_type = str(item.get("dataMaskInfo", {}).get("dataMaskType", "MASK"))
                 for column in policy.get("resources", {}).get("column", {}).get("values", []):
                     column_restrictions[str(column)] = mask_type
+                    column_restriction_fingerprints[str(column)] = hashlib.sha256(
+                        json.dumps(item.get("dataMaskInfo", {}), sort_keys=True).encode()
+                    ).hexdigest()
         return {
             "principal": principal,
             "active_role": active_role,
@@ -624,7 +635,62 @@ class AccessControlService:
             "object_access": sorted(object_access),
             "row_restrictions": row_restrictions,
             "column_restrictions": column_restrictions,
+            "column_restriction_fingerprints": column_restriction_fingerprints,
+            "security_effects_fingerprint": self._security_effects_fingerprint(
+                policies, catalog, database, table,
+            ),
+            "security_effects_comparison_supported": self._security_effects_comparison_supported(
+                policies, catalog, database, table,
+            ),
         }
+
+    @classmethod
+    def _security_effects_fingerprint(
+        cls, policies: list[dict], catalog: str, database: str, table: str,
+    ) -> str:
+        definitions = []
+        for policy in policies:
+            if (policy.get("service", settings.RANGER_SERVICE_NAME) != settings.RANGER_SERVICE_NAME
+                    or not policy.get("isEnabled", True)
+                    or int(policy.get("policyType", 0)) not in {1, 2}
+                    or not cls._resource_matches(policy, catalog, database, table)):
+                continue
+            definition = {key: policy.get(key) for key in (
+                "policyType", "policyPriority", "conditions", "validitySchedules",
+                "rowFilterPolicyItems", "dataMaskPolicyItems", "denyPolicyItems",
+                "denyExceptions", "allowExceptions",
+            )}
+            definition["column"] = policy.get("resources", {}).get("column")
+            definitions.append(json.dumps(definition, sort_keys=True))
+        return hashlib.sha256(json.dumps(sorted(definitions)).encode()).hexdigest()
+
+    @classmethod
+    def _security_effects_comparison_supported(
+        cls, policies: list[dict], catalog: str, database: str, table: str,
+    ) -> bool:
+        for policy in policies:
+            if (policy.get("service", settings.RANGER_SERVICE_NAME) != settings.RANGER_SERVICE_NAME
+                    or not policy.get("isEnabled", True)
+                    or int(policy.get("policyType", 0)) not in {1, 2}):
+                continue
+            resources = policy.get("resources", {})
+            if any(
+                resource.get("isExcludes") or resource.get("isRecursive")
+                or any(value != "*" and any(character in str(value) for character in "*?[]")
+                       for value in resource.get("values", []))
+                for resource in resources.values()
+            ):
+                return False
+            if not cls._resource_matches(policy, catalog, database, table):
+                continue
+            if (policy.get("conditions") or policy.get("validitySchedules")
+                    or policy.get("policyPriority", 0) != 0):
+                return False
+            for key in ("rowFilterPolicyItems", "dataMaskPolicyItems"):
+                for item in policy.get(key, []):
+                    if item.get("users") or item.get("groups") or item.get("conditions"):
+                        return False
+        return True
 
     @staticmethod
     def _resource_matches(policy: dict, catalog: str, database: str, table: str) -> bool:

@@ -1,0 +1,22 @@
+{
+  "model": "deepseek-v4-1-flash",
+  "provider": "Kenari",
+  "global_default_saved_and_read_back": true,
+  "light_and_heavy_saved_and_read_back": true,
+  "routing_parameters_preserved": true,
+  "resolution": {
+    "global": "deepseek-v4-1-flash",
+    "light": "deepseek-v4-1-flash",
+    "heavy": "deepseek-v4-1-flash",
+    "judge": "deepseek-v4-1-flash",
+    "actual_default_completion": false
+  },
+  "default_json_completion": {
+    "resolved_model": "deepseek-v4-1-flash",
+    "content": "{\n  \"answer\": 4\n}",
+    "passed": true
+  },
+  "authentication": "existing Nova login and active ACCOUNTADMIN API session",
+  "status": "PASS",
+  "strict_plain_text_probe": "FAIL; retained in resolution.actual_default_completion"
+}

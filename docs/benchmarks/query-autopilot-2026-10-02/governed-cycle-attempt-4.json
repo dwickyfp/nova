@@ -1,0 +1,15 @@
+{
+  "status": "FAIL",
+  "evidence_kind": "isolated_governed_complete_cycle",
+  "database": "autopilot_gov_365e73d2a5ce",
+  "snapshot": "autopilot_gov_365e73d2a5ce_snapshot",
+  "fixture_rows": {
+    "sales": 50000,
+    "customers": 200
+  },
+  "candidate_id": "governed-cycle-365e73d2a5ce",
+  "production_actions": 0,
+  "fixture_actions": 0,
+  "phase": "FAILED",
+  "error_type": "RangerError"
+}

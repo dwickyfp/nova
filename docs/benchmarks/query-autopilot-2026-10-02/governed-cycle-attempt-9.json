@@ -1,0 +1,15 @@
+{
+  "status": "FAIL",
+  "evidence_kind": "isolated_governed_complete_cycle",
+  "database": "autopilot_gov_3d926b1d079f",
+  "snapshot": "autopilot_gov_3d926b1d079f_snapshot",
+  "fixture_rows": {
+    "sales": 50000,
+    "customers": 200
+  },
+  "candidate_id": "governed-cycle-3d926b1d079f",
+  "production_actions": 0,
+  "fixture_actions": 0,
+  "phase": "FAILED",
+  "error_type": "NoSuchBucket"
+}

@@ -140,6 +140,7 @@ statement
     | novaForcePasswordStatement
     | novaSecurityShowStatement
     | novaForecastStatement
+    | novaPlanAdvisorStatement
 
     // NOVA-END
     // Partition Statement
@@ -3702,6 +3703,7 @@ nonReserved
     // keeps them usable as ordinary identifiers, so a column or table named
     // `cron`, `finalize` or `overlap_policy` still parses.
     | CRON
+    | 'ADVISOR'
     // NOVA-END
     | DATA | DATE | DATACACHE | DATETIME | DAY | DAYS | DECOMMISSION | DIALECT | DIGEST | DISABLE | DISK | DISTRIBUTION | DUPLICATE | DYNAMIC | DISTRIBUTED | DICTIONARY | DICTIONARY_GET | DEALLOCATE
     | ENABLE | END | ENGINE | ENGINES | ERRORS | EVENTS | EXECUTE | EXTERNAL | EXTRACT | EVERY | ENCLOSE | ESCAPE | EXPORT
@@ -3744,3 +3746,10 @@ nonReserved
     | PERSISTENT
     | EXCLUDE | EXCEPT
     ;
+// NOVA-BEGIN: optional pinned StarRocks query feedback surface.
+novaPlanAdvisorStatement
+    : SHOW PLAN 'ADVISOR'
+    | ALTER PLAN 'ADVISOR' ADD queryRelation
+    | ALTER PLAN 'ADVISOR' DROP string
+    ;
+// NOVA-END

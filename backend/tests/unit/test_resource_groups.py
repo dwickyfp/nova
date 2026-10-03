@@ -107,7 +107,7 @@ class TestCrud:
             session_id="s1",
         )
         assert pipeline.statements()[0] == (
-            'ALTER RESOURCE GROUP `etl_group` SET ("concurrency_limit" = "10")'
+            'ALTER RESOURCE GROUP `etl_group` WITH ("concurrency_limit" = "10")'
         )
 
     async def test_drop(self, pipeline):
@@ -151,7 +151,7 @@ class TestClassifiers:
             session_id="s1",
         )
         assert pipeline.statements()[0] == (
-            "ALTER RESOURCE GROUP `etl_group` ADD ('user' = 'alice', 'query_type' = 'select')"
+            "ALTER RESOURCE GROUP `etl_group` ADD (user = 'alice', query_type = 'select')"
         )
 
     async def test_drop_serializes_classifier(self, pipeline):
@@ -163,19 +163,18 @@ class TestClassifiers:
             session_id="s1",
         )
         assert pipeline.statements()[0] == (
-            "ALTER RESOURCE GROUP `etl_group` DROP ('role' = 'etl_role')"
+            "ALTER RESOURCE GROUP `etl_group` DROP (role = 'etl_role')"
         )
 
-    async def test_create_with_classifiers_adds_each(self, pipeline):
+    async def test_create_with_classifiers_is_one_engine_statement(self, pipeline):
         await _create(
             name="g",
             properties={"cpu_core_limit": 1},
             classifiers=[{"user": "alice"}, {"role": "etl"}],
         )
         assert pipeline.statements() == [
-            'CREATE RESOURCE GROUP `g` WITH ("cpu_core_limit" = "1")',
-            "ALTER RESOURCE GROUP `g` ADD ('user' = 'alice')",
-            "ALTER RESOURCE GROUP `g` ADD ('role' = 'etl')",
+            "CREATE RESOURCE GROUP `g` TO (user = 'alice'), (role = 'etl') "
+            'WITH ("cpu_core_limit" = "1")',
         ]
 
 

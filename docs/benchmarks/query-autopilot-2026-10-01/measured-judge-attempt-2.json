@@ -1,0 +1,47 @@
+{
+  "evidence_kind": "retained_real_engine_judge_review",
+  "model": "deepseek-v4-1-flash",
+  "cases": [
+    {
+      "case": "A",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    },
+    {
+      "case": "B",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    },
+    {
+      "case": "F-detection",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    },
+    {
+      "case": "E-before",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    },
+    {
+      "case": "E-after",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    },
+    {
+      "case": "G-uncontended",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    },
+    {
+      "case": "G-contended",
+      "status": "FAIL",
+      "error_type": "AssistantProviderError"
+    }
+  ],
+  "valid_cases": 0,
+  "requested_cases": 7,
+  "mean": null,
+  "critical_hallucinations": 0,
+  "status": "FAIL",
+  "execution_authority": "none"
+}

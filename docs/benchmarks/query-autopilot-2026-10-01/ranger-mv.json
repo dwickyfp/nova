@@ -1,0 +1,259 @@
+{
+  "evidence_kind": "isolated_patched_fe_measurements",
+  "cases": [
+    {
+      "case": "row_filter",
+      "status": "PASS",
+      "principals": [
+        {
+          "principal": "alice",
+          "active_role": "marketing",
+          "result_equivalent": true,
+          "candidate_accepted": true,
+          "values_equal": true,
+          "before_types": [
+            "(246, 42, 2)"
+          ],
+          "after_types": [
+            "(246, 42, 2)"
+          ],
+          "actual_rewrite": true,
+          "query_ids": [
+            "01a0f923-e7a1-7f84-941a-a242e3952851"
+          ],
+          "row_count": 1
+        },
+        {
+          "principal": "bob",
+          "active_role": "marketing",
+          "result_equivalent": true,
+          "candidate_accepted": true,
+          "values_equal": true,
+          "before_types": [
+            "(246, 42, 2)"
+          ],
+          "after_types": [
+            "(246, 42, 2)"
+          ],
+          "actual_rewrite": true,
+          "query_ids": [
+            "01a0f923-e8e7-7e9c-8207-b51c2022c4b1"
+          ],
+          "row_count": 1
+        }
+      ],
+      "expected_rewrite": true,
+      "expected_typed_equivalence": true,
+      "fixture_object_removed": true
+    },
+    {
+      "case": "mask",
+      "status": "PASS",
+      "principals": [
+        {
+          "principal": "alice",
+          "active_role": "marketing",
+          "result_equivalent": true,
+          "candidate_accepted": true,
+          "values_equal": true,
+          "before_types": [
+            "(253, 64, 0)",
+            "(8, 20, 0)"
+          ],
+          "after_types": [
+            "(253, 64, 0)",
+            "(8, 20, 0)"
+          ],
+          "actual_rewrite": true,
+          "query_ids": [
+            "01a0f923-f1c9-71a2-92ef-07f952958887"
+          ],
+          "row_count": 1
+        },
+        {
+          "principal": "bob",
+          "active_role": "marketing",
+          "result_equivalent": true,
+          "candidate_accepted": true,
+          "values_equal": true,
+          "before_types": [
+            "(253, 64, 0)",
+            "(8, 20, 0)"
+          ],
+          "after_types": [
+            "(253, 64, 0)",
+            "(8, 20, 0)"
+          ],
+          "actual_rewrite": true,
+          "query_ids": [
+            "01a0f923-f2fe-7f02-a3ba-d27f7e9de71f"
+          ],
+          "row_count": 1
+        }
+      ],
+      "expected_rewrite": true,
+      "expected_typed_equivalence": true,
+      "fixture_object_removed": true
+    },
+    {
+      "case": "inner_join_missing_filter_column_negative",
+      "status": "PASS",
+      "principals": [
+        {
+          "principal": "alice",
+          "active_role": "marketing",
+          "result_equivalent": true,
+          "candidate_accepted": false,
+          "values_equal": true,
+          "before_types": [
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "after_types": [
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "actual_rewrite": false,
+          "query_ids": [
+            "01a0f923-fd41-7199-b045-6f0a80f7856b"
+          ],
+          "row_count": 1
+        },
+        {
+          "principal": "bob",
+          "active_role": "marketing",
+          "result_equivalent": true,
+          "candidate_accepted": false,
+          "values_equal": true,
+          "before_types": [
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "after_types": [
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "actual_rewrite": false,
+          "query_ids": [
+            "01a0f923-ff2f-7ad1-9769-726b6cbc9de0"
+          ],
+          "row_count": 1
+        }
+      ],
+      "expected_rewrite": false,
+      "expected_typed_equivalence": true,
+      "fixture_object_removed": true
+    },
+    {
+      "case": "inner_join_varchar_metadata_change_rejected",
+      "status": "PASS",
+      "principals": [
+        {
+          "principal": "alice",
+          "active_role": "marketing",
+          "result_equivalent": false,
+          "candidate_accepted": false,
+          "values_equal": true,
+          "before_types": [
+            "(253, 64, 0)",
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "after_types": [
+            "(253, 1048576, 0)",
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "actual_rewrite": true,
+          "query_ids": [
+            "01a0f924-1864-7f78-8f8b-429e11321fd8"
+          ],
+          "row_count": 1
+        },
+        {
+          "principal": "bob",
+          "active_role": "marketing",
+          "result_equivalent": false,
+          "candidate_accepted": false,
+          "values_equal": true,
+          "before_types": [
+            "(253, 64, 0)",
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "after_types": [
+            "(253, 1048576, 0)",
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "actual_rewrite": true,
+          "query_ids": [
+            "01a0f924-19b3-7e33-9665-5688042d505c"
+          ],
+          "row_count": 1
+        }
+      ],
+      "expected_rewrite": true,
+      "expected_typed_equivalence": false,
+      "fixture_object_removed": true
+    },
+    {
+      "case": "inner_join_retained_grouping_filter_and_mask",
+      "status": "PASS",
+      "principals": [
+        {
+          "principal": "alice",
+          "active_role": "marketing",
+          "result_equivalent": true,
+          "candidate_accepted": true,
+          "values_equal": true,
+          "before_types": [
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "after_types": [
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "actual_rewrite": true,
+          "query_ids": [
+            "01a0f924-1fe1-7dcb-9980-968c0db46e5c"
+          ],
+          "row_count": 1
+        },
+        {
+          "principal": "bob",
+          "active_role": "marketing",
+          "result_equivalent": true,
+          "candidate_accepted": true,
+          "values_equal": true,
+          "before_types": [
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "after_types": [
+            "(253, 64, 0)",
+            "(246, 42, 2)"
+          ],
+          "actual_rewrite": true,
+          "query_ids": [
+            "01a0f924-2113-74c2-9e5b-2b80d3322c58"
+          ],
+          "row_count": 1
+        }
+      ],
+      "expected_rewrite": true,
+      "expected_typed_equivalence": true,
+      "fixture_object_removed": true
+    }
+  ],
+  "status": "PASS",
+  "production_actions": 0,
+  "policy_revision": {
+    "control_plane_revision": "3:59:3",
+    "matching_scope": "PASS",
+    "stale_scope_blocked_before_sql": "PASS",
+    "fe_propagation": "verified_separately_by_filter_and_mask_cases"
+  },
+  "enrollment_acceptance": "not_issued_unrelated_to_production_snapshot"
+}

@@ -1,0 +1,961 @@
+{
+  "case": "G",
+  "ground_truth": "controlled_global_admission_contention",
+  "status": "PASS",
+  "evidence_kind": "real_native_engine_controlled_fixture",
+  "phases": {
+    "uncontended": {
+      "count": 30,
+      "warmups": 3,
+      "latency": {
+        "bins": {
+          "230": 2,
+          "339": 1,
+          "448": 1,
+          "280": 2,
+          "300": 2,
+          "261": 1,
+          "284": 1,
+          "228": 1,
+          "315": 1,
+          "247": 1,
+          "208": 1,
+          "241": 1,
+          "278": 1,
+          "249": 1,
+          "323": 1,
+          "291": 1,
+          "327": 1,
+          "366": 1,
+          "561": 1,
+          "305": 1,
+          "266": 1,
+          "223": 1,
+          "235": 1,
+          "276": 1,
+          "317": 1,
+          "262": 1,
+          "210": 1
+        },
+        "count": 30,
+        "total": 805.6090010504704,
+        "maximum": 262.1769170218613
+      },
+      "observations": [
+        {
+          "query_id": "01a0f713-7f40-7c7a-ae59-4ba25abee37c",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 0.587047,
+            "execution_ms": 2.119,
+            "peak_memory_bytes": 819416.064,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-8176-735c-8f5f-e21df9009b82",
+          "facts": {
+            "queue_ms": 2.0,
+            "cpu_ms": 5.206,
+            "execution_ms": 14.415,
+            "peak_memory_bytes": 328567.808,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-83f2-72bf-9c38-c1482415dd34",
+          "facts": {
+            "queue_ms": 10.0,
+            "cpu_ms": 8.741,
+            "execution_ms": 22.085,
+            "peak_memory_bytes": 518232.064,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-86a6-762b-b49a-78625c9a0634",
+          "facts": {
+            "queue_ms": 3.0,
+            "cpu_ms": 0.6658769999999999,
+            "execution_ms": 3.305,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-882f-72cd-8676-2fee462e75de",
+          "facts": {
+            "queue_ms": 2.0,
+            "cpu_ms": 1.343,
+            "execution_ms": 4.682,
+            "peak_memory_bytes": 744215.552,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-8a23-7d54-b781-b881b910b009",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 1.434,
+            "execution_ms": 5.547,
+            "peak_memory_bytes": 819464.192,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-8bb1-794e-98af-30d0aab8eb87",
+          "facts": {
+            "queue_ms": 2.0,
+            "cpu_ms": 0.727077,
+            "execution_ms": 3.021,
+            "peak_memory_bytes": 404880.384,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-8d47-77cd-a8a1-d299d0f98ff3",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 0.459515,
+            "execution_ms": 2.593,
+            "peak_memory_bytes": 817359.872,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-8ec0-7cc9-9f31-671ad7e58ced",
+          "facts": {
+            "queue_ms": 0.0,
+            "cpu_ms": 0.460889,
+            "execution_ms": 3.252,
+            "peak_memory_bytes": 668776.448,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-904a-73a8-8924-2962181831c4",
+          "facts": {
+            "queue_ms": 2.0,
+            "cpu_ms": 1.146,
+            "execution_ms": 7.054,
+            "peak_memory_bytes": 442791.936,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-91ba-7bcb-834f-47959872b57c",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 0.654377,
+            "execution_ms": 2.246,
+            "peak_memory_bytes": 404880.384,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-9338-75ad-b623-647b05a0b1ec",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 0.47593,
+            "execution_ms": 2.166,
+            "peak_memory_bytes": 819128.32,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-94b6-798d-94d5-165fc71ba2e3",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 0.56501,
+            "execution_ms": 2.545,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-962c-7faf-a283-683d71246a64",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 1.445,
+            "execution_ms": 3.156,
+            "peak_memory_bytes": 706159.616,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-97ad-7829-932f-5b451e18ceee",
+          "facts": {
+            "queue_ms": 2.0,
+            "cpu_ms": 2.239,
+            "execution_ms": 5.228,
+            "peak_memory_bytes": 338719.744,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-991a-753d-b54a-5fa78a4df7d8",
+          "facts": {
+            "queue_ms": 0.0,
+            "cpu_ms": 0.653169,
+            "execution_ms": 3.248,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-9a96-7d4e-82ae-ddb4f587f3b8",
+          "facts": {
+            "queue_ms": 2.0,
+            "cpu_ms": 1.112,
+            "execution_ms": 5.074,
+            "peak_memory_bytes": 744215.552,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-9c3f-7954-8d78-ae4f1ba733de",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 0.754955,
+            "execution_ms": 4.286,
+            "peak_memory_bytes": 819976.192,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-9de5-7820-b992-83f0d45061b4",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 0.6801670000000001,
+            "execution_ms": 9.786,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-a09c-7b49-8395-42197031fa22",
+          "facts": {
+            "queue_ms": 9.0,
+            "cpu_ms": 2.856,
+            "execution_ms": 7.106,
+            "peak_memory_bytes": 780279.808,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-a273-71b0-a032-01b70ef2a928",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 1.595,
+            "execution_ms": 3.607,
+            "peak_memory_bytes": 780279.808,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-a5d2-7a8b-913f-02704ed8585b",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 1.338,
+            "execution_ms": 7.634,
+            "peak_memory_bytes": 819464.192,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-a78b-7b4e-bd2a-4cdd0d2105a1",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 0.8139510000000001,
+            "execution_ms": 3.284,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-a905-7cf0-a349-3489edfee484",
+          "facts": {
+            "queue_ms": 0.0,
+            "cpu_ms": 1.281,
+            "execution_ms": 3.363,
+            "peak_memory_bytes": 779943.936,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-aa82-7060-986e-f7b8f158e93f",
+          "facts": {
+            "queue_ms": 0.0,
+            "cpu_ms": 0.427767,
+            "execution_ms": 2.458,
+            "peak_memory_bytes": 819128.32,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-abfe-7bcf-be1a-d623b96abd2e",
+          "facts": {
+            "queue_ms": 0.0,
+            "cpu_ms": 1.046,
+            "execution_ms": 2.829,
+            "peak_memory_bytes": 780327.936,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-adee-7945-b415-9558a83c3e09",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 0.8283250000000001,
+            "execution_ms": 3.071,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-af92-76f7-a192-fcb2dc8cfb69",
+          "facts": {
+            "queue_ms": 3.0,
+            "cpu_ms": 2.498,
+            "execution_ms": 5.08,
+            "peak_memory_bytes": 779943.936,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-b121-727e-a3c1-ad11168556e2",
+          "facts": {
+            "queue_ms": 1.0,
+            "cpu_ms": 1.32,
+            "execution_ms": 4.054,
+            "peak_memory_bytes": 442743.808,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        },
+        {
+          "query_id": "01a0f713-b293-77f7-a10c-89769e4fcb9e",
+          "facts": {
+            "queue_ms": 0.0,
+            "cpu_ms": 0.982438,
+            "execution_ms": 2.746,
+            "peak_memory_bytes": 668487.68,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": false,
+          "limit_occupied": false
+        }
+      ],
+      "results_equivalent": true,
+      "findings": [],
+      "diagnosis": [
+        {
+          "category": "UNKNOWN",
+          "confidence": 0,
+          "evidence_ids": [
+            "01a0f713-7f40-7c7a-ae59-4ba25abee37c"
+          ],
+          "counterevidence": [],
+          "explanation": "The available measurements do not establish a root cause."
+        }
+      ]
+    },
+    "contended": {
+      "count": 30,
+      "warmups": 3,
+      "latency": {
+        "bins": {
+          "676": 3,
+          "677": 3,
+          "668": 1,
+          "672": 2,
+          "671": 1,
+          "680": 3,
+          "681": 2,
+          "679": 1,
+          "674": 1,
+          "678": 1,
+          "665": 1,
+          "663": 1,
+          "675": 4,
+          "612": 1,
+          "664": 1,
+          "666": 1,
+          "691": 1,
+          "684": 1,
+          "670": 1
+        },
+        "count": 30,
+        "total": 24088.401542016072,
+        "maximum": 954.2512499901932
+      },
+      "observations": [
+        {
+          "query_id": "01a0f713-c47e-7443-967f-d066d1920df6",
+          "facts": {
+            "queue_ms": 809.0,
+            "cpu_ms": 1.424,
+            "execution_ms": 4.966,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f713-ca4d-7a9e-88ca-2e20d1e83e00",
+          "facts": {
+            "queue_ms": 810.0,
+            "cpu_ms": 0.639043,
+            "execution_ms": 3.561,
+            "peak_memory_bytes": 817359.872,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f713-d0c6-74b4-8375-7201e743c40e",
+          "facts": {
+            "queue_ms": 739.0,
+            "cpu_ms": 3.416,
+            "execution_ms": 8.864,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f713-d6c4-73f7-8d13-b344e2246e73",
+          "facts": {
+            "queue_ms": 749.0,
+            "cpu_ms": 1.25,
+            "execution_ms": 4.131,
+            "peak_memory_bytes": 819464.192,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f713-dd02-7900-b012-724652333717",
+          "facts": {
+            "queue_ms": 757.0,
+            "cpu_ms": 6.262,
+            "execution_ms": 9.546,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f713-e404-77bc-8a00-704b34ecd649",
+          "facts": {
+            "queue_ms": 836.0,
+            "cpu_ms": 1.583,
+            "execution_ms": 6.865,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f713-eb19-7165-bfc7-d4e1505c8818",
+          "facts": {
+            "queue_ms": 500.0,
+            "cpu_ms": 16.415,
+            "execution_ms": 40.339,
+            "peak_memory_bytes": 405168.128,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f713-f25e-7a26-9975-50cc26d8564e",
+          "facts": {
+            "queue_ms": 814.0,
+            "cpu_ms": 6.273,
+            "execution_ms": 19.256,
+            "peak_memory_bytes": 556000.256,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f713-f8a5-70b8-9b25-8a9004d5fe3f",
+          "facts": {
+            "queue_ms": 809.0,
+            "cpu_ms": 1.416,
+            "execution_ms": 5.8,
+            "peak_memory_bytes": 819464.192,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f713-ff7c-7c45-a2c2-e1e698caaab6",
+          "facts": {
+            "queue_ms": 820.0,
+            "cpu_ms": 3.587,
+            "execution_ms": 9.879,
+            "peak_memory_bytes": 405312.512,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-0586-7760-a9ba-f4aec9d92d4f",
+          "facts": {
+            "queue_ms": 799.0,
+            "cpu_ms": 0.526258,
+            "execution_ms": 2.906,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-0b68-7098-b8f7-7cb9201780dc",
+          "facts": {
+            "queue_ms": 820.0,
+            "cpu_ms": 0.950315,
+            "execution_ms": 5.089,
+            "peak_memory_bytes": 480367.616,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-1156-74ca-a5da-5d9c290f6e78",
+          "facts": {
+            "queue_ms": 805.0,
+            "cpu_ms": 2.483,
+            "execution_ms": 12.19,
+            "peak_memory_bytes": 706591.744,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-17c7-7013-bfd7-5a02c4171173",
+          "facts": {
+            "queue_ms": 795.0,
+            "cpu_ms": 2.765,
+            "execution_ms": 11.09,
+            "peak_memory_bytes": 819464.192,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-1e32-7607-91bb-d2c764ea2791",
+          "facts": {
+            "queue_ms": 815.0,
+            "cpu_ms": 2.188,
+            "execution_ms": 14.703,
+            "peak_memory_bytes": 668439.552,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-2564-7e7f-8c66-f92ffb4c69b9",
+          "facts": {
+            "queue_ms": 711.0,
+            "cpu_ms": 2.902,
+            "execution_ms": 8.704,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-2b95-7d13-91c1-25afe5d9d238",
+          "facts": {
+            "queue_ms": 686.0,
+            "cpu_ms": 4.018,
+            "execution_ms": 13.3,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-317a-74b0-98e8-1298c0bc1c28",
+          "facts": {
+            "queue_ms": 785.0,
+            "cpu_ms": 0.973441,
+            "execution_ms": 5.011,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-38c5-7e69-b37d-0797f4999558",
+          "facts": {
+            "queue_ms": 412.0,
+            "cpu_ms": 4.14,
+            "execution_ms": 14.478,
+            "peak_memory_bytes": 780327.936,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-3d81-7026-bcf7-853aef73c822",
+          "facts": {
+            "queue_ms": 705.0,
+            "cpu_ms": 1.649,
+            "execution_ms": 11.03,
+            "peak_memory_bytes": 819976.192,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-4305-757a-bc35-3a1172cc70a5",
+          "facts": {
+            "queue_ms": 727.0,
+            "cpu_ms": 0.9554840000000001,
+            "execution_ms": 5.037,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-4983-76de-894a-3030e1560115",
+          "facts": {
+            "queue_ms": 762.0,
+            "cpu_ms": 6.099,
+            "execution_ms": 98.098,
+            "peak_memory_bytes": 817408.0,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-5035-7cec-b2f8-7693c82b30f7",
+          "facts": {
+            "queue_ms": 806.0,
+            "cpu_ms": 0.643464,
+            "execution_ms": 3.651,
+            "peak_memory_bytes": 518087.68,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-560a-7925-a8bb-4a497675aa40",
+          "facts": {
+            "queue_ms": 790.0,
+            "cpu_ms": 1.818,
+            "execution_ms": 6.663,
+            "peak_memory_bytes": 819464.192,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-5bed-7ff7-90fb-88f55d96af2a",
+          "facts": {
+            "queue_ms": 847.0,
+            "cpu_ms": 3.936,
+            "execution_ms": 15.571,
+            "peak_memory_bytes": 819464.192,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-64c2-75bf-b462-31bddc66cbbf",
+          "facts": {
+            "queue_ms": 748.0,
+            "cpu_ms": 7.112,
+            "execution_ms": 22.266,
+            "peak_memory_bytes": 706448.384,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-6b45-751b-817a-2323ffef5990",
+          "facts": {
+            "queue_ms": 757.0,
+            "cpu_ms": 1.42,
+            "execution_ms": 9.138,
+            "peak_memory_bytes": 668967.936,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-70d7-75e6-b5aa-653d86cde350",
+          "facts": {
+            "queue_ms": 767.0,
+            "cpu_ms": 11.561,
+            "execution_ms": 31.545,
+            "peak_memory_bytes": 780839.936,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-77e2-7fdc-9a3f-41e1d59db189",
+          "facts": {
+            "queue_ms": 769.0,
+            "cpu_ms": 1.14,
+            "execution_ms": 7.038,
+            "peak_memory_bytes": 518183.936,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        },
+        {
+          "query_id": "01a0f714-7d9f-787c-96e1-3bacebf71d83",
+          "facts": {
+            "queue_ms": 798.0,
+            "cpu_ms": 2.689,
+            "execution_ms": 4.501,
+            "peak_memory_bytes": 555712.512,
+            "spill_bytes": 0.0,
+            "scanned_rows": 50000,
+            "output_rows": 1
+          },
+          "pending_observed": true,
+          "limit_occupied": true
+        }
+      ],
+      "results_equivalent": true,
+      "findings": [
+        {
+          "detector": "contention",
+          "severity": "warning",
+          "measured": {
+            "queue_ms": 809.0,
+            "execution_ms": 4.966
+          },
+          "evidence_ids": [
+            "01a0f713-c47e-7443-967f-d066d1920df6"
+          ]
+        }
+      ],
+      "diagnosis": [
+        {
+          "category": "RESOURCE_CONTENTION",
+          "confidence": 0.9,
+          "evidence_ids": [
+            "01a0f713-c47e-7443-967f-d066d1920df6"
+          ],
+          "counterevidence": [],
+          "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it."
+        }
+      ]
+    }
+  },
+  "queue_limit": 1,
+  "queue_settings_restored": true,
+  "production_actions": 0
+}

@@ -298,3 +298,5 @@ for a SELECT-prefixed mutation, and executes through the production adapters.
 MERGE, ALL BY NAME and schema evolution have no syntax or implementation here.
 Their future planners can use these registration, binding, capability and
 composite interfaces. Physical optimization remains StarRocks's responsibility.
+
+Query Autopilot uses the central frontend for canonical fingerprints, typed snapshot mappings, and governed maintenance. See [Query Autopilot architecture](arch-14-query-autopilot.md).

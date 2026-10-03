@@ -1,0 +1,76 @@
+{
+  "evidence_kind": "retained_real_engine_judge_review",
+  "model": "deepseek-v4-1-flash",
+  "cases": [
+    {
+      "case": "A",
+      "status": "FAIL",
+      "error_type": "RuntimeError",
+      "reason": "control_plane_unavailable",
+      "initialization_error_type": "OperationalError"
+    },
+    {
+      "case": "B",
+      "status": "FAIL",
+      "error_type": "RuntimeError",
+      "reason": "control_plane_unavailable",
+      "initialization_error_type": "OperationalError"
+    },
+    {
+      "case": "F-detection",
+      "status": "FAIL",
+      "error_type": "RuntimeError",
+      "reason": "control_plane_unavailable",
+      "initialization_error_type": "OperationalError"
+    },
+    {
+      "case": "E-before",
+      "status": "FAIL",
+      "error_type": "RuntimeError",
+      "reason": "control_plane_unavailable",
+      "initialization_error_type": "OperationalError"
+    },
+    {
+      "case": "E-after",
+      "status": "FAIL",
+      "error_type": "RuntimeError",
+      "reason": "control_plane_unavailable",
+      "initialization_error_type": "OperationalError"
+    },
+    {
+      "case": "G-uncontended",
+      "status": "FAIL",
+      "error_type": "RuntimeError",
+      "reason": "control_plane_unavailable",
+      "initialization_error_type": "OperationalError"
+    },
+    {
+      "case": "G-contended",
+      "status": "FAIL",
+      "error_type": "RuntimeError",
+      "reason": "control_plane_unavailable",
+      "initialization_error_type": "OperationalError"
+    },
+    {
+      "case": "D",
+      "status": "FAIL",
+      "error_type": "RuntimeError",
+      "reason": "control_plane_unavailable",
+      "initialization_error_type": "OperationalError"
+    },
+    {
+      "case": "F-experiment",
+      "status": "FAIL",
+      "error_type": "RuntimeError",
+      "reason": "control_plane_unavailable",
+      "initialization_error_type": "OperationalError"
+    }
+  ],
+  "valid_cases": 0,
+  "requested_cases": 9,
+  "mean": null,
+  "critical_hallucinations": 0,
+  "status": "FAIL",
+  "execution_authority": "none",
+  "rubric_version": 2
+}

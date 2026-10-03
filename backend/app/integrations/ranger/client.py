@@ -138,6 +138,21 @@ class RangerClient:
     async def get_service(self, name: str) -> dict | None:
         return await self._request("GET", f"/service/plugins/services/name/{quote(name, safe='')}")
 
+    async def policy_revision(self) -> str | None:
+        service = await self.get_service(settings.RANGER_SERVICE_NAME)
+        if not service:
+            return None
+        values = []
+        for key in ("version", "policyVersion", "tagVersion"):
+            value = service.get(key)
+            if value is None and key != "policyVersion":
+                values.append("unknown")
+            elif type(value) is int and value >= 0:
+                values.append(str(value))
+            else:
+                return None
+        return ":".join(values)
+
     async def put_service(self, service: dict[str, Any]) -> dict:
         existing = await self.get_service(str(service["name"]))
         if existing and existing.get("id") is not None:

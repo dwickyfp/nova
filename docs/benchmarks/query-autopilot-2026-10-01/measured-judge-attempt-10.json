@@ -1,0 +1,997 @@
+{
+  "evidence_kind": "retained_real_engine_judge_review",
+  "model": "deepseek-v4-1-flash",
+  "cases": [
+    {
+      "case": "A",
+      "status": "VALID",
+      "mean": 3.625,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 3,
+        "diagnosis_quality": 5,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 2,
+        "outcome_interpretation": 2,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "High-frequency detector correctly fires at info severity (120 execs); p95 23.9ms is mild. No baseline, no plan/operator evidence, so UNKNOWN diagnosis is calibrated. Correctly discloses regression window not met and no percentile regression. Next steps are conservative but somewhat generic. Experiment/outcome stages absent, correctly not claimed. No invented facts. Good calibration throughout."
+      },
+      "input": {
+        "measurements": {
+          "count": 120,
+          "total_ms": 1553.726256970549,
+          "max_ms": 163.1444999948144,
+          "p95_ms": 23.906623206580772
+        },
+        "detected_findings": [
+          {
+            "detector": "high_frequency",
+            "severity": "info",
+            "measured": {
+              "count": 120
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 120,
+        "baseline": {
+          "eligible": false,
+          "historical_count": 0,
+          "current_count": 120,
+          "windows": 0,
+          "current_p95": 23.906623206580772,
+          "seasonal": false
+        },
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause. Current window: 120 executions, P95 23.9066 ms. The regression sample/window requirement is not met; no percentile regression is established.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Prioritize by cumulative workload cost; collect selective profiles before proposing a structural change."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "B",
+      "status": "VALID",
+      "mean": 3.125,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 3,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 4,
+        "experiment_validity": 1,
+        "outcome_interpretation": 1,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Single 6s rare_slow execution with no baseline, no operator/plan evidence, and hypothesis UNKNOWN. Proposal correctly declines to name a cause and discloses the unmet regression-window requirement. Next step (observe more executions) is low-risk and appropriate. No action, experiment, or outcome is claimed, so those stages are unassessed; scoring 1 reflects proper non-disclosure rather than error. No invented facts detected."
+      },
+      "input": {
+        "measurements": {
+          "count": 1,
+          "total_ms": 6016.798249998828,
+          "max_ms": 6016.798249998828,
+          "p95_ms": 6016.798249998828
+        },
+        "detected_findings": [
+          {
+            "detector": "rare_slow",
+            "severity": "info",
+            "measured": {
+              "max_ms": 6016.798249998828,
+              "count": 1
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 1,
+        "baseline": {
+          "eligible": false,
+          "historical_count": 0,
+          "current_count": 1,
+          "windows": 0,
+          "current_p95": 6016.798249998828,
+          "seasonal": false
+        },
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause. Current window: 1 executions, P95 6016.8 ms. The regression sample/window requirement is not met; no percentile regression is established.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Observe further executions before investing in a structural change; compare total workload cost with frequent families."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "F-detection",
+      "status": "VALID",
+      "mean": 3.875,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 3,
+        "diagnosis_quality": 5,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Proposal correctly declines to infer a root cause: 120 executions with P95 ~23.9ms and no baseline windows establish no regression, and hypotheses are left UNKNOWN. Detectors report only info-level frequency and MV eligibility; useful but no operator or plan evidence. Recommendations are gated on experiment, rewrite/equivalence/freshness proof and approval, matching the APPROVAL risk. No experiment or outcome is claimed, correctly disclosed as null. No invented facts. Correctly avoids asserting a materialized view caused anything. Minor: MV suggestion precedes any selectivity profile."
+      },
+      "input": {
+        "measurements": {
+          "compatible_aggregates": 10,
+          "mv_eligible": true,
+          "grouping_key_count": 1,
+          "aggregate_expression_count": 1,
+          "replay_eligible": true,
+          "count": 120,
+          "total_ms": 1553.726256970549,
+          "max_ms": 163.1444999948144,
+          "p95_ms": 23.906623206580772
+        },
+        "detected_findings": [
+          {
+            "detector": "high_frequency",
+            "severity": "info",
+            "measured": {
+              "count": 120
+            }
+          },
+          {
+            "detector": "materialized_view",
+            "severity": "info",
+            "measured": {
+              "compatible_aggregates": 10,
+              "count": 120
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 121,
+        "baseline": {
+          "eligible": false,
+          "historical_count": 0,
+          "current_count": 120,
+          "windows": 0,
+          "current_p95": 23.906623206580772,
+          "seasonal": false
+        },
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause. Current window: 120 executions, P95 23.9066 ms. The regression sample/window requirement is not met; no percentile regression is established.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval.",
+          "Prioritize by cumulative workload cost; collect selective profiles before proposing a structural change."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": "MATERIALIZED_VIEW",
+          "risk": "APPROVAL",
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "E-before",
+      "status": "VALID",
+      "mean": 4.25,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 4,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 4,
+        "experiment_validity": 5,
+        "outcome_interpretation": 5,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "CARDINALITY_ESTIMATE",
+        "explanation": "Cardinality error is measured (est 1 vs actual 1500, q_error 1500 at OLAP_SCAN), establishing an estimate error but not its cause; proposal correctly states this rather than asserting statistics as proven cause. Stale statistics noted only as possible contributor, no invented proof. Experiment is bounded, repeated, equivalent-correctness, with controls; NO_IMPROVEMENT reported honestly with non-repeatable/negative benefit (-0.52). No unjustified action or fabricated success. Cause inferred as CARDINALITY_ESTIMATE since measurement establishes estimate error; statistics contribution remains UNKNOWN-noted."
+      },
+      "input": {
+        "measurements": {
+          "statistics_missing": false,
+          "statistics_stale": true,
+          "table_growth_ratio": 0.009900990099009901,
+          "estimated_rows": 1.0,
+          "actual_rows": 1500.0,
+          "q_error": 1500.0,
+          "growth_ratio": 0.009900990099009901
+        },
+        "detected_findings": [
+          {
+            "detector": "cardinality_error",
+            "severity": "warning",
+            "measured": {
+              "q_error": 1500.0
+            }
+          },
+          {
+            "detector": "statistics",
+            "severity": "warning",
+            "measured": {
+              "q_error": 1500.0,
+              "growth_ratio": 0.009900990099009901
+            }
+          }
+        ],
+        "operator_evidence": [
+          {
+            "operator": "AGGREGATION",
+            "node_id": 2,
+            "estimated_rows": 1.0,
+            "actual_rows": 1.0
+          },
+          {
+            "operator": "PROJECT",
+            "node_id": 1,
+            "actual_rows": 1500.0
+          },
+          {
+            "operator": "OLAP_SCAN",
+            "node_id": 0,
+            "estimated_rows": 1.0,
+            "actual_rows": 1500.0
+          }
+        ],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "CARDINALITY_ESTIMATE",
+          "STATISTICS"
+        ],
+        "evidence_count": 1,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "CARDINALITY_ESTIMATE",
+            "confidence": 0.75,
+            "explanation": "Measured operator rows differ materially from estimated rows. Matched operator: estimated 1 rows, measured 1500 rows. This establishes an estimate error, not its cause or the benefit of a change.",
+            "counterevidence_count": 0
+          },
+          {
+            "category": "STATISTICS",
+            "confidence": 0.7,
+            "explanation": "Statistics state supports a possible contributor, but does not establish that refreshing statistics will improve the query. Test causality in the snapshot. Statistics are stale; age alone cannot establish a latency cause.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Use ANALYZE PROFILE for the same query ID to compare estimated and actual rows at the same plan node; inspect table growth and statistics health before a snapshot trial.",
+          "Test bounded statistics maintenance in the enrolled snapshot; require equivalence, repeatable gain and unaffected controls before policy evaluation."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": "STATISTICS",
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": "NO_IMPROVEMENT",
+          "correctness": "EQUIVALENT",
+          "improvement": -0.5208744461243802,
+          "repetitions": 30,
+          "reason": "benefit_not_repeatable_or_below_threshold",
+          "before": {
+            "count": 30,
+            "mean_ms": 59.81570266885683,
+            "stddev_ms": 75.2148252276528,
+            "p95_ms": 208.8558330142405,
+            "resource_samples": [
+              {
+                "queue_ms": 0.0,
+                "cpu_ms": 4.111,
+                "execution_ms": 12.506,
+                "peak_memory_bytes": 379024.384,
+                "spill_bytes": 0.0,
+                "scanned_rows": 1500,
+                "output_rows": 1
+              }
+            ]
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 90.97217366603824,
+            "stddev_ms": 103.2229463366593,
+            "p95_ms": 281.85654201661237,
+            "resource_samples": [
+              {
+                "queue_ms": 0.0,
+                "cpu_ms": 8.96,
+                "execution_ms": 15.997,
+                "peak_memory_bytes": 379008.0,
+                "spill_bytes": 0.0,
+                "scanned_rows": 1500,
+                "output_rows": 1
+              }
+            ]
+          },
+          "controls": {
+            "before": {
+              "count": 30,
+              "mean_ms": 20.939026398506638,
+              "stddev_ms": 25.393515994826384,
+              "p95_ms": 73.0952080048155
+            },
+            "after": {
+              "count": 30,
+              "mean_ms": 42.607136066847794,
+              "stddev_ms": 86.51114596306424,
+              "p95_ms": 186.76529100048356
+            }
+          },
+          "result_comparison": {
+            "checked_target_samples": 60,
+            "checked_control_samples": 60,
+            "target_equivalent": true,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "digest_match": true,
+            "before_proof": {
+              "row_count": 1,
+              "bytes_compared": 19,
+              "ordered": false,
+              "column_count": 1
+            },
+            "after_proof": {
+              "row_count": 1,
+              "bytes_compared": 19,
+              "ordered": false,
+              "column_count": 1
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "E-after",
+      "status": "VALID",
+      "mean": 3.625,
+      "scores": {
+        "detection_validity": 3,
+        "evidence_quality": 3,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Correctly withholds root cause: stale statistics and 800\u21921500 estimate gap (~1.9x) are real but unproven as latency cause, so UNKNOWN is calibrated. Findings list empty despite stale stats; minor. Proposed step is safe, non-mutating observation. Experiment data shows controls also degraded (20.9\u219242.6ms), indicating environment drift; proposal appropriately labels NO_IMPROVEMENT with equivalence proofs and 30 reps. No invented facts or unjustified actions. Risk mode/state null and execution_authority none appropriately disclosed."
+      },
+      "input": {
+        "measurements": {
+          "statistics_missing": false,
+          "statistics_stale": true,
+          "table_growth_ratio": 0.0006246096189881324,
+          "estimated_rows": 800.0,
+          "actual_rows": 1500.0
+        },
+        "detected_findings": [],
+        "operator_evidence": [
+          {
+            "operator": "AGGREGATION",
+            "node_id": 2,
+            "estimated_rows": 1.0,
+            "actual_rows": 1.0
+          },
+          {
+            "operator": "PROJECT",
+            "node_id": 1,
+            "actual_rows": 1500.0
+          },
+          {
+            "operator": "OLAP_SCAN",
+            "node_id": 0,
+            "estimated_rows": 800.0,
+            "actual_rows": 1500.0
+          }
+        ],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 1,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause. Statistics are stale; age alone cannot establish a latency cause.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Keep observing; no executable change is justified by the current evidence. If latency persists, capture a scoped query profile, parameter-matched plan and statistics health; compare queue, CPU, scan and estimate counters."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": "STATISTICS",
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": "NO_IMPROVEMENT",
+          "correctness": "EQUIVALENT",
+          "improvement": -0.5208744461243802,
+          "repetitions": 30,
+          "reason": "benefit_not_repeatable_or_below_threshold",
+          "before": {
+            "count": 30,
+            "mean_ms": 59.81570266885683,
+            "stddev_ms": 75.2148252276528,
+            "p95_ms": 208.8558330142405,
+            "resource_samples": [
+              {
+                "queue_ms": 0.0,
+                "cpu_ms": 4.111,
+                "execution_ms": 12.506,
+                "peak_memory_bytes": 379024.384,
+                "spill_bytes": 0.0,
+                "scanned_rows": 1500,
+                "output_rows": 1
+              }
+            ]
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 90.97217366603824,
+            "stddev_ms": 103.2229463366593,
+            "p95_ms": 281.85654201661237,
+            "resource_samples": [
+              {
+                "queue_ms": 0.0,
+                "cpu_ms": 8.96,
+                "execution_ms": 15.997,
+                "peak_memory_bytes": 379008.0,
+                "spill_bytes": 0.0,
+                "scanned_rows": 1500,
+                "output_rows": 1
+              }
+            ]
+          },
+          "controls": {
+            "before": {
+              "count": 30,
+              "mean_ms": 20.939026398506638,
+              "stddev_ms": 25.393515994826384,
+              "p95_ms": 73.0952080048155
+            },
+            "after": {
+              "count": 30,
+              "mean_ms": 42.607136066847794,
+              "stddev_ms": 86.51114596306424,
+              "p95_ms": 186.76529100048356
+            }
+          },
+          "result_comparison": {
+            "checked_target_samples": 60,
+            "checked_control_samples": 60,
+            "target_equivalent": true,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "digest_match": true,
+            "before_proof": {
+              "row_count": 1,
+              "bytes_compared": 19,
+              "ordered": false,
+              "column_count": 1
+            },
+            "after_proof": {
+              "row_count": 1,
+              "bytes_compared": 19,
+              "ordered": false,
+              "column_count": 1
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "G-uncontended",
+      "status": "VALID",
+      "mean": 3.875,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 3,
+        "diagnosis_quality": 5,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Detector correctly flags high frequency (count 120) as info-only, matching severity. Measurements are real but thin: cpu_ms 0.79 vs execution_ms 6.32, queue 16ms, 500 scanned rows, single counter-pair sample \u2014 no plan/operator evidence. Diagnosis properly declines to name a root cause; no invented facts. Next step (prioritize by cumulative cost, gather selective profiles) is calibrated and disclosed as needing experiment/policy. Action/experiment/outcome all null, correctly disclosed as unassessed rather than portrayed as successful. Minor: could note sample_count=1 and missing baseline limit confidence."
+      },
+      "input": {
+        "measurements": {
+          "queue_ms": 16.0,
+          "cpu_ms": 0.79255,
+          "execution_ms": 6.324,
+          "scanned_rows": 500,
+          "output_rows": 1,
+          "count": 120,
+          "saturated": false,
+          "bound_pending_samples": 0,
+          "counter_pair_sample_count": 1
+        },
+        "detected_findings": [
+          {
+            "detector": "high_frequency",
+            "severity": "info",
+            "measured": {
+              "count": 120
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 120,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Prioritize by cumulative workload cost; collect selective profiles before proposing a structural change."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "G-contended",
+      "status": "VALID",
+      "mean": 3.875,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 4,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "RESOURCE_CONTENTION",
+        "explanation": "Strong detection: 756ms queue vs 4ms execution with saturation and 55/60 bound-pending samples clearly support contention. Proposal rightly scopes causality to unknown resource and refuses attribution to bad SQL. Evidence use is scoped and counterevidence disclosed. No action, experiment, or outcome is claimed, so those stages are absent but correctly not treated as validated; inventing none. Recommendation to inspect resource-group limits before any change is safe and policy-compliant. No marked action, no approval misuse. Only limitation: doesn't identify which resource (CPU/memory/IO), so root resource stays opaque."
+      },
+      "input": {
+        "measurements": {
+          "queue_ms": 756.0,
+          "cpu_ms": 6.496,
+          "execution_ms": 4.096,
+          "scanned_rows": 500,
+          "output_rows": 1,
+          "count": 60,
+          "saturated": true,
+          "bound_pending_samples": 55,
+          "counter_pair_sample_count": 1
+        },
+        "detected_findings": [
+          {
+            "detector": "contention",
+            "severity": "warning",
+            "measured": {
+              "queue_ms": 756.0,
+              "execution_ms": 4.096
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "RESOURCE_CONTENTION"
+        ],
+        "evidence_count": 60,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "RESOURCE_CONTENTION",
+            "confidence": 0.9,
+            "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. The correlated execution queued for 756 ms and executed for 4.096 ms. These measurements do not identify which resource limit should change.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Inspect resource-group limits and simultaneous demand; do not attribute queueing to bad SQL or change limits without an approved controlled experiment."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "D",
+      "status": "VALID",
+      "mean": 2.5,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 2,
+        "diagnosis_quality": 2,
+        "recommendation_quality": 3,
+        "safety": 4,
+        "experiment_validity": 1,
+        "outcome_interpretation": 1,
+        "explanation_quality": 3,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Latency regression is well supported: current p95 850.9ms vs baseline 37.0ms, 23x above the 31.95ms envelope across 3 windows, so detection is valid. However, evidence is limited to aggregate latency; operator, plan, and hypothesis sections are empty, and no profiles or plans are provided. The proposal correctly avoids asserting a mechanism and discloses the unknown, marking execution authority as none and requiring experiments for changes. No action, experiment, or outcome was run or claimed, which is correctly not treated as validated. Diagnosis stays UNKNOWN; follow-up plan comparison is appropriate but unfalsified."
+      },
+      "input": {
+        "measurements": {
+          "current_p95_ms": 850.9252768640498,
+          "baseline_p95_ms": 37.03895140955522
+        },
+        "detected_findings": [
+          {
+            "detector": "latency_regression",
+            "severity": "critical",
+            "measured": {
+              "current_p95_ms": 850.9252768640498,
+              "baseline_p95_ms": 37.03895140955522
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [],
+        "evidence_count": 60,
+        "baseline": {
+          "eligible": true,
+          "historical_count": 120,
+          "current_count": 30,
+          "windows": 3,
+          "historical_p95": 37.03895140955522,
+          "current_p95": 850.9252768640498,
+          "upper_envelope": 31.949671470073028,
+          "seasonal": false
+        },
+        "diagnostic_assessment": [],
+        "proposed_next_steps": [
+          "Compare parameter-matched plans, profiles and statistics to identify a mechanism for the sustained regression."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "F-experiment",
+      "status": "VALID",
+      "mean": 3.625,
+      "scores": {
+        "detection_validity": 3,
+        "evidence_quality": 4,
+        "diagnosis_quality": 3,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "MTV rewrite detector is plausible; plan before/after shows scan cardinality 500->5 but no cardinality-estimate error proven, so root cause remains UNKNOWN. Measurements are provided/scoped; freshness and digest-equivalence verified, but Ranger acceptance is unproven and honestly flagged. Experiment is INCONCLUSIVE with mean_ms slightly worse after (311.7 vs 328.5) though p95 improved and scans dropped, so no speedup is established. 30 repetitions and controls support reasonable rigor, but resource samples are partial and variance is huge. Proposal correctly classifies risk APPROVAL, requires real rewrite/freshness/equivalence/Ranger proof and administrative approval, and discloses no applied action or outcome. No invented material facts; missing evidence disclosed as unavailable."
+      },
+      "input": {
+        "measurements": {
+          "rewrite_observed": true,
+          "freshness_proven": true,
+          "ranger_acceptance_proven": false
+        },
+        "detected_findings": [
+          {
+            "detector": "materialized_view"
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {
+          "before": {
+            "operators": [
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 12,
+                  "cardinality": 500
+                }
+              }
+            ]
+          },
+          "after": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 5
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 5
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 56,
+                  "cardinality": 5
+                }
+              }
+            ]
+          }
+        },
+        "proposed_hypotheses": [],
+        "evidence_count": 59,
+        "baseline": {},
+        "diagnostic_assessment": [],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "action": {
+          "kind": "MATERIALIZED_VIEW",
+          "risk": "APPROVAL",
+          "mode": null,
+          "state": "INCONCLUSIVE"
+        },
+        "experiment": {
+          "status": "INCONCLUSIVE",
+          "correctness": "EQUIVALENT",
+          "repetitions": 30,
+          "reason": "ranger_acceptance_unavailable",
+          "before": {
+            "count": 30,
+            "mean_ms": 311.7061111329046,
+            "p95_ms": 909.5435829949565,
+            "stddev_ms": 392.9716804218091,
+            "resource_samples": [
+              {
+                "cpu_ms": 19.407,
+                "execution_ms": 83.824,
+                "output_rows": 5,
+                "peak_memory_bytes": 839744.512,
+                "queue_ms": 0,
+                "scanned_rows": 500,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 1.463,
+                "execution_ms": 11.876,
+                "output_rows": 5,
+                "peak_memory_bytes": 830784.512,
+                "queue_ms": 0,
+                "scanned_rows": 500,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 328.47255006587756,
+            "p95_ms": 834.731249982724,
+            "stddev_ms": 264.3719695368575,
+            "resource_samples": [
+              {
+                "cpu_ms": 20.154,
+                "execution_ms": 14.561,
+                "output_rows": 5,
+                "peak_memory_bytes": 2337275.904,
+                "queue_ms": 0,
+                "scanned_rows": 5,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 68.029,
+                "execution_ms": 27.581,
+                "output_rows": 5,
+                "peak_memory_bytes": 2549088.256,
+                "queue_ms": 0,
+                "scanned_rows": 5,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "controls": {
+            "after": {
+              "count": 30,
+              "mean_ms": 40.907192900582835,
+              "p95_ms": 115.25808298029006,
+              "stddev_ms": 37.5349494226195
+            },
+            "before": {
+              "count": 30,
+              "mean_ms": 83.05597920358802,
+              "p95_ms": 242.3326660064049,
+              "stddev_ms": 82.32653089794465
+            }
+          },
+          "result_comparison": {
+            "checked_control_samples": 60,
+            "checked_target_samples": 60,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "target_equivalent": true,
+            "digest_match": true,
+            "before_proof": {
+              "bytes_compared": 255,
+              "ordered": false,
+              "row_count": 5,
+              "column_count": 3
+            },
+            "after_proof": {
+              "bytes_compared": 255,
+              "ordered": false,
+              "row_count": 5,
+              "column_count": 3
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null
+        },
+        "rubric_version": 2
+      }
+    }
+  ],
+  "valid_cases": 9,
+  "requested_cases": 9,
+  "mean": 3.5972222222222223,
+  "critical_hallucinations": 0,
+  "status": "FAIL",
+  "execution_authority": "none",
+  "rubric_version": 2
+}

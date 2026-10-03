@@ -84,6 +84,9 @@ async def _run() -> None:
     await db.init_system_pool()
     try:
         await init_task_orchestration()
+        from app.modules.query_autopilot.schema import ensure_schema
+
+        await ensure_schema()
         await migration_repo.ensure_schema()
     except Exception:
         await db.close_system_pool()
@@ -119,6 +122,13 @@ async def _run() -> None:
         build_automation_worker(client).run_forever(stop_event),
         name="nova-worker-automations",
     )
+    from app.modules.query_autopilot.jobs import AutopilotWorker
+    from app.modules.query_autopilot.service import AutopilotService
+
+    autopilot_task = asyncio.create_task(
+        AutopilotWorker(client, AutopilotService(client=client)).run_forever(stop_event),
+        name="nova-worker-query-autopilot",
+    )
     try:
         await service.run_forever(stop_event)
     finally:
@@ -129,6 +139,8 @@ async def _run() -> None:
             await migration_task
         with contextlib.suppress(asyncio.CancelledError):
             await automation_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await autopilot_task
         await heartbeat.close()
         await session_store.close()
         await client.aclose()

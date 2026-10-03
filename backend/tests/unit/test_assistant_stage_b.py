@@ -769,6 +769,14 @@ async def test_tool_failure_terminates_the_turn():
 
 
 async def test_provider_resolve_skips_providers_without_a_readable_key(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app.modules.ai_ml.default_model import DefaultModelSettings
+
+    monkeypatch.setattr(
+        "app.modules.ai_ml.default_model.read_default_model",
+        AsyncMock(return_value=DefaultModelSettings()),
+    )
     client = AssistantProviderClient()
 
     async def fake_list_providers():
@@ -802,6 +810,14 @@ async def test_provider_resolve_skips_providers_without_a_readable_key(monkeypat
 
 
 async def test_provider_raises_when_nothing_is_configured(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app.modules.ai_ml.default_model import DefaultModelSettings
+
+    monkeypatch.setattr(
+        "app.modules.ai_ml.default_model.read_default_model",
+        AsyncMock(return_value=DefaultModelSettings()),
+    )
     client = AssistantProviderClient()
 
     async def empty():

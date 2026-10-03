@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # --- Redis (session store) ---
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    QUERY_AUTOPILOT_LOCAL_LOG_FIXTURES: dict[str, list[Path]] = {}
+
     SMART_MAX_AGENT_DEPTH: int = 4
     SMART_MAX_CONCURRENT_AGENTS: int = 8
     SMART_MAX_TOTAL_AGENT_SESSIONS: int = 32

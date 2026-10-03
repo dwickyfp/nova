@@ -1,0 +1,858 @@
+{
+  "evidence_kind": "real_native_engine_and_declared_controlled_fixtures",
+  "cases": [
+    {
+      "case": "A",
+      "ground_truth": "high_frequency",
+      "status": "PASS",
+      "count": 120,
+      "latency": {
+        "bins": {
+          "292": 1,
+          "275": 1,
+          "254": 2,
+          "272": 2,
+          "267": 1,
+          "208": 1,
+          "203": 1,
+          "181": 1,
+          "196": 2,
+          "217": 2,
+          "246": 3,
+          "242": 1,
+          "193": 1,
+          "195": 3,
+          "198": 1,
+          "200": 1,
+          "223": 2,
+          "265": 1,
+          "238": 5,
+          "322": 1,
+          "244": 2,
+          "245": 1,
+          "225": 2,
+          "271": 1,
+          "218": 4,
+          "216": 3,
+          "241": 2,
+          "235": 2,
+          "202": 1,
+          "204": 2,
+          "212": 1,
+          "185": 1,
+          "219": 3,
+          "190": 3,
+          "268": 1,
+          "224": 2,
+          "248": 2,
+          "243": 3,
+          "274": 1,
+          "205": 2,
+          "284": 1,
+          "283": 1,
+          "252": 2,
+          "299": 1,
+          "297": 1,
+          "300": 1,
+          "325": 1,
+          "317": 1,
+          "360": 1,
+          "231": 1,
+          "210": 2,
+          "182": 2,
+          "240": 2,
+          "184": 1,
+          "192": 2,
+          "503": 1,
+          "302": 1,
+          "353": 1,
+          "295": 1,
+          "333": 1,
+          "304": 1,
+          "395": 1,
+          "301": 1,
+          "291": 1,
+          "327": 1,
+          "232": 1,
+          "237": 1,
+          "199": 2,
+          "220": 1,
+          "264": 1,
+          "234": 2,
+          "194": 1,
+          "191": 1,
+          "178": 1,
+          "180": 1,
+          "228": 1,
+          "260": 1,
+          "229": 1,
+          "188": 1,
+          "215": 1,
+          "213": 1
+        },
+        "count": 120,
+        "total": 1533.5043360246345,
+        "maximum": 147.59420900372788
+      },
+      "priority": {
+        "score": 18.54,
+        "contributions": {
+          "workload_impact": 0.13,
+          "frequency": 10.41,
+          "degradation": 20,
+          "expected_gain": 3.0,
+          "confidence": 0,
+          "implementation_cost": -5.0,
+          "risk": -10.0
+        },
+        "estimated_gain": 0.2,
+        "historical_outcomes": 0,
+        "estimate_source": "heuristic"
+      },
+      "query_ids": [
+        "01a0f707-d228-7285-8759-71d051bd0800",
+        "01a0f707-d291-76c9-94cc-805558c8258b",
+        "01a0f707-d2fc-704e-9c57-9799f1c4fde8",
+        "01a0f707-d378-7f36-958d-5653095ae484",
+        "01a0f707-d3d5-741b-9b76-23ae4508a9b9",
+        "01a0f707-d43a-7eea-8886-2373032de5ac",
+        "01a0f707-d49f-776a-857b-7ca1068d8608",
+        "01a0f707-d50b-702d-848f-c95118c9973e",
+        "01a0f707-d56e-7a04-84b2-de0034dc5243",
+        "01a0f707-d5d8-7633-86d4-bd9d0b8868e9",
+        "01a0f707-d63c-7f02-9882-d9f6ca948f4c",
+        "01a0f707-d69c-7766-92db-8a6260d34ef6",
+        "01a0f707-d6fa-7fdd-a984-d0be699105a9",
+        "01a0f707-d76b-7bbd-8aea-4d247a6a40fd",
+        "01a0f707-d7cc-758d-8ca7-7de8fd3e3d3d",
+        "01a0f707-d82f-7f27-81a0-38cbcf54bc2a",
+        "01a0f707-d898-7fbe-8ac2-6a6bdbdb069b",
+        "01a0f707-d8ff-7605-b644-115f2ef94115",
+        "01a0f707-d961-7210-942d-788ada27f3de",
+        "01a0f707-d9cc-75b2-b962-b29249e0d422",
+        "01a0f707-da28-7469-a0f0-5a875a97d91d",
+        "01a0f707-da98-741f-a752-891f18ee7d7e",
+        "01a0f707-db05-7155-9f79-1826475c5262",
+        "01a0f707-db69-7179-ad81-18f1b95ac99d",
+        "01a0f707-dbcc-797a-8913-8e007f913f3a",
+        "01a0f707-dc2e-7ee5-9e84-7420e6684856",
+        "01a0f707-dcd5-7f17-aac6-eda9388640d4",
+        "01a0f707-dd2c-704b-ba5b-c7bf1ec50f83",
+        "01a0f707-dd90-7a98-b6cc-37a244903cad",
+        "01a0f707-de03-7129-a6ca-d075289e353a",
+        "01a0f707-de61-7535-8a71-c5194aedddcd",
+        "01a0f707-dec8-7d86-9222-60e983e45792",
+        "01a0f707-df2e-71a4-9bd9-c2845c141398",
+        "01a0f707-df97-77e1-b78f-ddfce6b316f8",
+        "01a0f707-e000-7fdd-820c-affe876a8e24",
+        "01a0f707-e07c-7245-a9a3-c1d9f3b69613",
+        "01a0f707-e0cc-79e8-a466-e07d32964630",
+        "01a0f707-e12e-7a5a-afb6-1accab5aff3d",
+        "01a0f707-e196-78c2-9bc8-fbd66faef699",
+        "01a0f707-e1fc-7b94-a29b-09ee5be4fe86",
+        "01a0f707-e262-7d4b-b0b1-7e90a63c9a6f",
+        "01a0f707-e2b8-7768-ba2e-45a301f2434a",
+        "01a0f707-e32d-7b49-bcd9-38862378f68b",
+        "01a0f707-e3a6-729a-874e-98e4649a0255",
+        "01a0f707-e3ff-797b-8af4-cc5c7a4c11c4",
+        "01a0f707-e467-7794-8f18-5e5b6647749b",
+        "01a0f707-e4bf-72b8-8ade-34c5d09cb3a4",
+        "01a0f707-e532-73cf-be7d-0b4d3f82557e",
+        "01a0f707-e591-7722-b09e-3a9072cfedbf",
+        "01a0f707-e5f5-774e-a8a1-a456b13e66a0",
+        "01a0f707-e65b-7968-8f8c-fe914cfe908a",
+        "01a0f707-e6bf-7927-8806-43f863bfeb4b",
+        "01a0f707-e739-7215-9342-75552c32b2c9",
+        "01a0f707-e7b7-711c-bf00-96f0edf22c68",
+        "01a0f707-e829-7bf4-9b01-e69fe2cf2f90",
+        "01a0f707-e8a7-7d45-bda7-5e684826f5fe",
+        "01a0f707-e92a-7581-a3cb-6dc4a6d724cc",
+        "01a0f707-e9e6-70ca-913c-f2eda91e1852",
+        "01a0f707-ea5a-736a-b698-7ac758c87364",
+        "01a0f707-eac6-7dab-95c5-bb40071ae880",
+        "01a0f707-eb3d-7c20-9de2-515280e144e6",
+        "01a0f707-ebb7-7e9b-a7b0-b8ecb7dabebd",
+        "01a0f707-ec38-7b79-881c-8a76262080c2",
+        "01a0f707-ecba-72e9-ae34-fab5fcbf7613",
+        "01a0f707-ed22-7163-988b-9041e8ab561b",
+        "01a0f707-ed83-7879-9b6e-27d46502f0ba",
+        "01a0f707-edeb-70a3-92ae-2420e07ab821",
+        "01a0f707-ee4c-77cd-9852-f9fd56789200",
+        "01a0f707-eeb6-7fa9-9f63-d91144bcdd02",
+        "01a0f707-ef18-7821-aaf1-bd4427ccc2b9",
+        "01a0f707-ef7f-7b6d-a3c5-98acd61abf65",
+        "01a0f707-efed-7893-a5f8-d6bf9aca6f4a",
+        "01a0f707-f04d-7268-881a-1bf088219c78",
+        "01a0f707-f0b4-795a-84c5-3a08b465873a",
+        "01a0f707-f116-778d-920e-74e9eafd768e",
+        "01a0f707-f205-7f15-be19-f2831b35805b",
+        "01a0f707-f2e4-7361-90fb-85264985954c",
+        "01a0f707-f384-751f-a517-9d819aa2d17d",
+        "01a0f707-f3f3-711b-802a-87f994c20368",
+        "01a0f707-f456-78fc-b90b-ec23688e78b6",
+        "01a0f707-f4e2-7fd2-bea2-868c756c0df3",
+        "01a0f707-f554-79d1-ab55-241d460c7434",
+        "01a0f707-f60f-72c2-9774-e1c41f74c63a",
+        "01a0f707-f678-7eef-bbd3-a13aabe74ba6",
+        "01a0f707-f6e3-719f-8941-cdf6d2668534",
+        "01a0f707-f75d-7f6a-ba3c-50c079e2832f",
+        "01a0f707-f7bd-76f0-9762-d168189d647b",
+        "01a0f707-f825-7bc4-91ef-3294ff1e2aee",
+        "01a0f707-f887-7289-befe-49a7232cc2dd",
+        "01a0f707-f8ee-72a7-971d-de393edb5010",
+        "01a0f707-f958-7805-9d27-e5a7f13ec07a",
+        "01a0f707-f9bc-7aad-987c-fd9db8908a79",
+        "01a0f707-fa19-7f5b-b05d-29bd04e6c56f",
+        "01a0f707-fa7d-7d3c-9521-cdb144b16ff8",
+        "01a0f707-faee-7380-b09e-ec59db8dfc15",
+        "01a0f707-fb57-776d-a5b5-a1d69e961d0c",
+        "01a0f707-fbb7-7219-a8bc-dba47f25d2cf",
+        "01a0f707-fc18-7a06-bad3-5d19bdcfb339",
+        "01a0f707-fc7c-7138-9cb0-f6dbcd8f7b66",
+        "01a0f707-fcef-7c84-b019-fd3d20c4d6f1",
+        "01a0f707-fd5a-7632-9a43-10884f436cf7",
+        "01a0f707-fdb7-78a3-92e1-c946474f000c",
+        "01a0f707-fe1f-7ad0-9185-ce732c3d46c8",
+        "01a0f707-fe7f-7010-bd95-c2920f58c1b8",
+        "01a0f707-fee7-76c4-ad59-f39f56073bf6",
+        "01a0f707-ff4b-70d3-a116-db05f9c6d243",
+        "01a0f707-ffbb-71ed-a47f-6939f6f35ae3",
+        "01a0f708-001a-7940-b53f-9564a71ef4fa",
+        "01a0f708-007f-745f-a962-23cb9215efc7",
+        "01a0f708-00e2-707e-b6f1-b7d56766df1a",
+        "01a0f708-014a-7d69-8b7c-1aefd6e1fcd8",
+        "01a0f708-01a8-7bc5-8578-cc9f5044be7e",
+        "01a0f708-021c-7f7d-943a-cb939b6fb6df",
+        "01a0f708-0271-7677-a358-a176e139af9f",
+        "01a0f708-02e0-7fed-b158-b4d18e440521",
+        "01a0f708-0346-7302-b68c-ca586a4245e4",
+        "01a0f708-03aa-7676-adb3-dc50dcae0695",
+        "01a0f708-040b-7390-b404-1dfdbe020740",
+        "01a0f708-0470-749b-b120-4a3e7da38a6e",
+        "01a0f708-04dc-7090-943b-33d0fc01f122"
+      ]
+    },
+    {
+      "case": "B",
+      "ground_truth": "rare_slow_lower_priority",
+      "status": "PASS",
+      "latency": {
+        "bins": {
+          "876": 1
+        },
+        "count": 1,
+        "total": 6020.7297499873675,
+        "maximum": 6020.7297499873675
+      },
+      "priority": {
+        "score": 0,
+        "contributions": {
+          "workload_impact": 0.5,
+          "frequency": 1.5,
+          "degradation": 20,
+          "expected_gain": 3.0,
+          "confidence": 0,
+          "implementation_cost": -5.0,
+          "risk": -10.0,
+          "rare_workload_discount": -30
+        },
+        "estimated_gain": 0.2,
+        "historical_outcomes": 0,
+        "estimate_source": "heuristic"
+      },
+      "query_ids": [
+        "01a0f708-054c-79d1-971a-8ad115ee96f2"
+      ],
+      "replay_eligible": false
+    },
+    {
+      "case": "C",
+      "ground_truth": "one_parameterized_family",
+      "status": "PASS",
+      "families": 1,
+      "distinct_parameters": 10
+    },
+    {
+      "case": "F-detection",
+      "ground_truth": "mv_opportunity",
+      "status": "PASS",
+      "findings": [
+        {
+          "detector": "high_frequency",
+          "severity": "info",
+          "measured": {
+            "count": 120
+          },
+          "evidence_ids": [
+            "measured-repeated-aggregate"
+          ]
+        },
+        {
+          "detector": "materialized_view",
+          "severity": "info",
+          "measured": {
+            "compatible_aggregates": 10,
+            "count": 120
+          },
+          "evidence_ids": [
+            "measured-repeated-aggregate"
+          ]
+        }
+      ],
+      "native_trial_report": "experiment-native.json"
+    },
+    {
+      "case": "H",
+      "ground_truth": "result_changing_candidate_rejected",
+      "status": "PASS",
+      "experiment": {
+        "status": "FAILED",
+        "reason": "result_changed",
+        "before": {
+          "count": 30,
+          "mean_ms": 4.219666665691572,
+          "stddev_ms": 2.1998143476778766,
+          "p95_ms": 9.362540993606672,
+          "plans": [],
+          "query_ids": [
+            "01a0f708-209a-7f36-99f7-6eb62f3cad9f",
+            "01a0f708-21dd-7d97-9933-afad94e210ee",
+            "01a0f708-2304-7ef8-9384-239991f568d3",
+            "01a0f708-2433-71c1-9cdc-44dd896905e4",
+            "01a0f708-2569-7754-81c4-1797dc647049",
+            "01a0f708-2698-7efb-9f69-d03daec23ded",
+            "01a0f708-27ca-7f4c-a404-bbfc359f1f97",
+            "01a0f708-2903-7675-81b4-58299d543b92",
+            "01a0f708-2a29-7218-91c0-c579a3f0bfad",
+            "01a0f708-2b7a-7dbc-be38-62df824bb4ac",
+            "01a0f708-2caa-7dfe-9c60-b1293a581179",
+            "01a0f708-2dcf-7bf6-aaa2-7cd5b5b911ae",
+            "01a0f708-2efc-7482-ad85-3bac82f7c84d",
+            "01a0f708-3034-7e77-915f-b5170e14f1b5",
+            "01a0f708-3166-7dda-90d0-e64d34a60b28",
+            "01a0f708-328f-75a5-8e40-21b93cb4a578",
+            "01a0f708-33c2-72bf-89b3-7840a94ff7b9",
+            "01a0f708-34ff-7628-a907-5a54a5a3b2f5",
+            "01a0f708-3627-7382-b809-7be3adbb1a4a",
+            "01a0f708-3755-7a6f-b5ca-fa9b7b9153fe",
+            "01a0f708-38f9-727a-8b35-be1c8de8f961",
+            "01a0f708-3a29-7c7f-8d24-21fb267ff48b",
+            "01a0f708-3b68-75bd-a011-d2c07b288b4c",
+            "01a0f708-3c93-7d19-a76f-f5452e5eb8e6",
+            "01a0f708-3db8-782b-8344-8e0bc5c8bc64",
+            "01a0f708-3ef2-732a-92d8-1d7a2d93f49b",
+            "01a0f708-4029-78c8-ac55-8b285a25eb33",
+            "01a0f708-4152-7591-a98a-458f9711b144",
+            "01a0f708-429f-7968-b898-a8cba6af6c60",
+            "01a0f708-43d1-702b-8006-9e57468c2e1c"
+          ],
+          "resource": []
+        },
+        "after": {
+          "count": 30,
+          "mean_ms": 4.814423670177348,
+          "stddev_ms": 2.9885592547606517,
+          "p95_ms": 11.768416996346787,
+          "plans": [],
+          "query_ids": [
+            "01a0f708-4824-7f60-89ea-2757018e189a",
+            "01a0f708-495b-7c8c-9ea8-b8bb3ef67fec",
+            "01a0f708-4a92-7f2f-bfee-6ce0716a9c60",
+            "01a0f708-4bb6-7e96-b630-dcfb1dc2051c",
+            "01a0f708-4ce9-7b66-b13f-88e81e25fc1d",
+            "01a0f708-4e11-7af2-a125-f66f0415ca95",
+            "01a0f708-4f50-752f-81f8-1926f1fc4c24",
+            "01a0f708-5080-7e51-8d88-f6b8bc05cd1c",
+            "01a0f708-51d6-7432-ac61-83d895391419",
+            "01a0f708-5300-7a00-911d-d11a8008be74",
+            "01a0f708-5425-74e6-b1be-6b800ea6cf83",
+            "01a0f708-5574-729e-bb37-fe7ce38c8598",
+            "01a0f708-56e8-7128-86bb-3ba80b666d2c",
+            "01a0f708-5857-7f17-9733-fa7a7835b9c0",
+            "01a0f708-5982-7f24-bb81-a1bcf4b9d149",
+            "01a0f708-5ac4-7efe-b168-c6842482293a",
+            "01a0f708-5beb-7592-8cf7-10f5be115480",
+            "01a0f708-5d23-702d-b75f-640f7036570c",
+            "01a0f708-5e58-7e42-b699-3e4cf52240b0",
+            "01a0f708-5f82-78b5-9d41-5dd54f3df76f",
+            "01a0f708-60a7-77f1-bffb-a48893925594",
+            "01a0f708-61e3-7125-bbe5-3d272a4c7515",
+            "01a0f708-6363-7379-a85a-015596274830",
+            "01a0f708-649e-7517-824e-154c1a0f6c3b",
+            "01a0f708-65e2-7a48-9a95-d66862673f0f",
+            "01a0f708-670e-7618-b718-f8f1b3383095",
+            "01a0f708-6841-752e-9387-ebc064f15652",
+            "01a0f708-6969-79d8-a52c-7faec8674501",
+            "01a0f708-6a9b-7473-a9f8-c9e78deb1e8f",
+            "01a0f708-6bdb-76ab-a00a-468ff175e50f"
+          ],
+          "resource": []
+        },
+        "controls": {
+          "before": {
+            "count": 30,
+            "mean_ms": 3.7112887657713145,
+            "stddev_ms": 1.794114732322173,
+            "p95_ms": 9.26299998536706,
+            "plans": [],
+            "query_ids": [
+              "01a0f708-2104-7e6f-982c-0a3bfd4d956c",
+              "01a0f708-2237-78a1-8f30-b082bb3e0c73",
+              "01a0f708-236c-78c5-8f52-6b88520c7f2c",
+              "01a0f708-2499-7a96-ae54-a0a0bc9bb33c",
+              "01a0f708-25d0-7a91-a075-8a66c2f5ffba",
+              "01a0f708-2703-7a77-90f5-a2ecc75ee3a4",
+              "01a0f708-2825-767b-b4e0-3f318494dadf",
+              "01a0f708-296a-7757-8037-7efba37c6e1e",
+              "01a0f708-2a9e-77b5-9c5a-658449db8b3c",
+              "01a0f708-2bdc-7599-89fd-44902e8a16e7",
+              "01a0f708-2d0e-79d5-825a-5ddc26fdbea2",
+              "01a0f708-2e32-79a4-a2a9-c5041d271386",
+              "01a0f708-2f6c-7cf2-978e-8b46a46fd63a",
+              "01a0f708-3092-7ef3-92da-18c21de5911a",
+              "01a0f708-31cc-7516-8c43-d821781e687a",
+              "01a0f708-32f7-736c-beab-17c9fce12f7a",
+              "01a0f708-342b-7c07-986e-2eefad18bdea",
+              "01a0f708-3557-7a0b-8026-e04aad6f811f",
+              "01a0f708-3687-7f51-a345-ff313b4754bf",
+              "01a0f708-37c1-7be1-bd34-54515ad18fe8",
+              "01a0f708-396a-7eaf-90d1-be60440d5e3c",
+              "01a0f708-3a94-7f56-a0c6-9a77e04854a5",
+              "01a0f708-3bca-7dba-ba5d-64e5930a40ed",
+              "01a0f708-3d06-76cd-96e9-9db2526c4076",
+              "01a0f708-3e24-76ec-aa7d-ed2d059915ab",
+              "01a0f708-3f53-7185-932f-8a296cffb7fa",
+              "01a0f708-408e-74f6-9428-d9cce5052973",
+              "01a0f708-41db-78de-a82f-531e11598f4f",
+              "01a0f708-431a-795b-a08b-aca98ef87f0d",
+              "01a0f708-443f-76d8-b1c3-2fe640b195dd"
+            ],
+            "resource": []
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 4.085491665561373,
+            "stddev_ms": 1.8858407628395608,
+            "p95_ms": 7.9211250122170895,
+            "plans": [],
+            "query_ids": [
+              "01a0f708-488e-7925-938b-35422dee60a6",
+              "01a0f708-49b9-756a-8762-e81e434bec97",
+              "01a0f708-4af2-7453-b787-e71157b714a5",
+              "01a0f708-4c1b-7248-a303-01e089b68917",
+              "01a0f708-4d4c-73a9-8adf-b3200bfb8747",
+              "01a0f708-4e82-7895-b955-0de07face761",
+              "01a0f708-4fa8-7618-97e4-dbdccbe17835",
+              "01a0f708-50e5-7379-827c-0207386890db",
+              "01a0f708-5232-728e-8ffa-2922b9bbdf4f",
+              "01a0f708-535b-7155-a7f9-99b04574854b",
+              "01a0f708-548f-7040-bb92-678afa9764f7",
+              "01a0f708-562c-74ed-9647-d2c48191b849",
+              "01a0f708-575d-7c39-adcf-e7cd07bae622",
+              "01a0f708-58b1-73e3-8240-6de046d6927d",
+              "01a0f708-59e8-773a-92ce-fd3311dbf645",
+              "01a0f708-5b2a-797e-b0ee-718d862f6fac",
+              "01a0f708-5c55-75f1-9eb8-80130a3e5907",
+              "01a0f708-5d80-74ca-861c-a88b59e91d98",
+              "01a0f708-5eb4-707a-a85c-4d6317bd89c7",
+              "01a0f708-5fe2-77fe-837b-2129ede861ad",
+              "01a0f708-6114-732f-b199-c45a641f34f7",
+              "01a0f708-624d-793b-843e-adaaefcd7282",
+              "01a0f708-63d2-70cf-b3b3-49229f36bc3d",
+              "01a0f708-6502-7491-83c3-63c4dd457b25",
+              "01a0f708-6648-7aec-b6ac-c4939f7bb56f",
+              "01a0f708-6778-765d-8557-1c22d3771d3b",
+              "01a0f708-68ad-7cb2-b2b4-220bfa216b55",
+              "01a0f708-69d0-74f5-8a18-f7ffbf93ebec",
+              "01a0f708-6b05-71f4-9224-d14680e25941",
+              "01a0f708-6c6f-729c-83cf-d7d2253ceda7"
+            ],
+            "resource": []
+          }
+        },
+        "correctness": "DIFFERENT",
+        "improvement": null,
+        "snapshot": "737392b147b62a9a13d65c77dbcf503a6c8540d48c60b4fe44a1aab8ed305ec0",
+        "repetitions": 30
+      }
+    },
+    {
+      "case": "I",
+      "ground_truth": "explicit_memory_limit_only_for_exact_execution",
+      "evidence_kind": "controlled_log_fixture",
+      "status": "PASS",
+      "diagnosis": [
+        {
+          "category": "ENGINE_MEMORY_LIMIT",
+          "confidence": 0.9,
+          "evidence_ids": [
+            "controlled-correlated-log"
+          ],
+          "counterevidence": [],
+          "explanation": "An exact query-correlated engine log reports exceeded memory limits."
+        }
+      ]
+    },
+    {
+      "case": "E",
+      "ground_truth": "planted_growth_after_statistics_collection",
+      "status": "PASS",
+      "evidence_kind": "real_native_engine_controlled_fixture",
+      "phases": {
+        "before": {
+          "query_id": "01a0f708-7ce4-7314-8848-cd59b6dacf2b",
+          "operators": {
+            "facts": {
+              "estimated_rows": 1.0,
+              "actual_rows": 50000.0
+            },
+            "operators": [
+              {
+                "operator": "AGGREGATION",
+                "node_id": 2,
+                "estimated_rows": 1.0,
+                "actual_rows": 1.0
+              },
+              {
+                "operator": "PROJECT",
+                "node_id": 1,
+                "actual_rows": 50000.0
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "node_id": 0,
+                "estimated_rows": 1.0,
+                "actual_rows": 50000.0
+              }
+            ],
+            "query_id_verified": true
+          },
+          "statistics": {
+            "facts": {
+              "statistics_missing": false,
+              "statistics_stale": true,
+              "table_growth_ratio": 0.009900990099009901
+            },
+            "tables": [
+              {
+                "database": "autopilot_retail_20261001",
+                "table": "autopilot_stats_1ada4e9246",
+                "health_percent": 0.0,
+                "row_count": 1,
+                "statistics_row_count": 101,
+                "growth_ratio": 0.009900990099009901
+              }
+            ]
+          },
+          "findings": [
+            {
+              "detector": "cardinality_error",
+              "severity": "warning",
+              "measured": {
+                "q_error": 50000.0
+              },
+              "evidence_ids": [
+                "01a0f708-7ce4-7314-8848-cd59b6dacf2b"
+              ]
+            },
+            {
+              "detector": "statistics",
+              "severity": "warning",
+              "measured": {
+                "q_error": 50000.0,
+                "growth_ratio": 0.009900990099009901
+              },
+              "evidence_ids": [
+                "01a0f708-7ce4-7314-8848-cd59b6dacf2b"
+              ]
+            }
+          ],
+          "diagnosis": [
+            {
+              "category": "CARDINALITY_ESTIMATE",
+              "confidence": 0.75,
+              "evidence_ids": [
+                "01a0f708-7ce4-7314-8848-cd59b6dacf2b"
+              ],
+              "counterevidence": [],
+              "explanation": "Measured operator rows differ materially from estimated rows."
+            },
+            {
+              "category": "STATISTICS",
+              "confidence": 0.7,
+              "evidence_ids": [
+                "01a0f708-7ce4-7314-8848-cd59b6dacf2b"
+              ],
+              "counterevidence": [],
+              "explanation": "Statistics state supports a possible contributor, but does not establish that refreshing statistics will improve the query. Test causality in the snapshot."
+            }
+          ]
+        },
+        "after": {
+          "query_id": "01a0f708-d347-7559-a642-1822a8c4c80f",
+          "operators": {
+            "facts": {
+              "estimated_rows": 25050.0,
+              "actual_rows": 50000.0
+            },
+            "operators": [
+              {
+                "operator": "AGGREGATION",
+                "node_id": 2,
+                "estimated_rows": 1.0,
+                "actual_rows": 1.0
+              },
+              {
+                "operator": "PROJECT",
+                "node_id": 1,
+                "actual_rows": 50000.0
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "node_id": 0,
+                "estimated_rows": 25050.0,
+                "actual_rows": 50000.0
+              }
+            ],
+            "query_id_verified": true
+          },
+          "statistics": {
+            "facts": {
+              "statistics_missing": false,
+              "statistics_stale": true,
+              "table_growth_ratio": 1.9959681443484163e-05
+            },
+            "tables": [
+              {
+                "database": "autopilot_retail_20261001",
+                "table": "autopilot_stats_1ada4e9246",
+                "health_percent": 0.0,
+                "row_count": 1,
+                "statistics_row_count": 50101,
+                "growth_ratio": 1.9959681443484163e-05
+              }
+            ]
+          },
+          "findings": [],
+          "diagnosis": [
+            {
+              "category": "UNKNOWN",
+              "confidence": 0,
+              "evidence_ids": [
+                "01a0f708-d347-7559-a642-1822a8c4c80f"
+              ],
+              "counterevidence": [],
+              "explanation": "The available measurements do not establish a root cause."
+            }
+          ]
+        }
+      },
+      "experiment": {
+        "status": "NO_IMPROVEMENT",
+        "reason": "benefit_not_repeatable_or_below_threshold",
+        "before": {
+          "count": 30,
+          "mean_ms": 32.92093479734225,
+          "stddev_ms": 19.670236723751135,
+          "p95_ms": 74.61320798029192,
+          "plans": [],
+          "query_ids": [
+            "01a0f708-7ce4-7314-8848-cd59b6dacf2b",
+            "01a0f708-8612-7a18-8526-7716ce7d36f7",
+            "01a0f708-877f-70b6-95c0-f3bf6fc6f36b",
+            "01a0f708-8945-70bb-955c-581cc8c8289b",
+            "01a0f708-8ac8-7cbd-bc86-b5d4999098d8",
+            "01a0f708-8c2f-73cf-b492-324a8354736e",
+            "01a0f708-8dc9-762d-9f82-d1a95dfe08d3",
+            "01a0f708-8f20-75a6-8782-c6776933d628",
+            "01a0f708-907a-742f-8f73-34c2fc7b00f4",
+            "01a0f708-920f-7fb5-b54c-360e79f9059d",
+            "01a0f708-934f-7d38-bc72-22834ef8aef4",
+            "01a0f708-9537-738c-8f2b-0b185808482d",
+            "01a0f708-980b-7a53-b7c4-86c7a61e14fd",
+            "01a0f708-9a3e-7300-a4b4-af0d202bfddd",
+            "01a0f708-9d6c-7f3a-ae8c-9fcc47ca3806",
+            "01a0f708-9ee1-7f6e-86a4-f835e7e17d50",
+            "01a0f708-a051-7d79-aa1a-222a4766493f",
+            "01a0f708-a199-78c6-97db-715fc6aebd14",
+            "01a0f708-a2d4-75e0-9a45-c59a9cb478f9",
+            "01a0f708-a60a-70d6-ba69-e463895d5d3c",
+            "01a0f708-a79e-7386-865c-0b854f84929c",
+            "01a0f708-a93a-78ca-b92a-c1698758ca21",
+            "01a0f708-ac06-7c90-8ca1-ecb09957c546",
+            "01a0f708-aeae-7458-be77-2886ce5c167a",
+            "01a0f708-b03a-74ab-940b-54968d192539",
+            "01a0f708-b319-7c7e-8bf8-6fb36d487549",
+            "01a0f708-b5b9-7594-a26c-a37bca8828d4",
+            "01a0f708-b88d-7d55-835d-a0978184c167",
+            "01a0f708-ba9c-7fb0-ae96-2b6478a12a24",
+            "01a0f708-bd87-76f1-ba6e-f81ade73f794"
+          ],
+          "resource": [
+            {
+              "cpu_ms": 9.686,
+              "execution_ms": 28.67,
+              "peak_memory_bytes": 737760.256,
+              "spill_bytes": 0.0,
+              "output_rows": 1
+            }
+          ]
+        },
+        "after": {
+          "count": 30,
+          "mean_ms": 36.78526933460186,
+          "stddev_ms": 24.210637553800222,
+          "p95_ms": 86.70937499846332,
+          "plans": [],
+          "query_ids": [
+            "01a0f708-d347-7559-a642-1822a8c4c80f",
+            "01a0f708-dec0-70f5-a296-e06ba3f192fe",
+            "01a0f708-e01a-7998-a2dd-75aa889170e9",
+            "01a0f708-e39d-7b25-9b74-cdbdbf25a257",
+            "01a0f708-e5b3-792e-82d8-6241c5adee46",
+            "01a0f708-e9ae-7c39-85bc-a28ce1d62a47",
+            "01a0f708-eede-78e6-8261-13fffe1cd5b6",
+            "01a0f708-f064-7072-9110-63f37c458ea7",
+            "01a0f708-f232-7aaf-8a12-94933abc3f9b",
+            "01a0f708-f3a4-7bf8-bc09-5b8c8d350f6a",
+            "01a0f708-f55e-7620-94fc-6d71c2c140eb",
+            "01a0f708-f691-746e-a60b-486b000e3b87",
+            "01a0f708-f7ed-7fd1-ae8a-50fa6b67cebd",
+            "01a0f708-f924-7636-9469-3770bc84bdad",
+            "01a0f708-fabe-70d3-906e-9dbd37d597fb",
+            "01a0f708-fc50-75a8-95d8-f9b78e4dcc6b",
+            "01a0f709-02d3-7b9f-9fc9-b83b146efdc3",
+            "01a0f709-05c8-7e0d-813f-a4cead3f93c7",
+            "01a0f709-08e2-747d-a383-89a6e4319463",
+            "01a0f709-0a6f-7ffa-ba76-1438eaacb35d",
+            "01a0f709-0fe1-7351-8d97-fcb17342a81a",
+            "01a0f709-11f3-7afc-8cc9-65084448bf4f",
+            "01a0f709-14ed-76a8-9849-8274544bb4b3",
+            "01a0f709-18b1-73df-a341-2dc57f3745d0",
+            "01a0f709-1ad1-7576-be09-f2df8c9ea36c",
+            "01a0f709-1c18-77d4-a602-8d441fc4a8bd",
+            "01a0f709-1dde-7f7f-812c-268897f1f4e0",
+            "01a0f709-2057-726c-8783-b6844648bf40",
+            "01a0f709-21ee-7593-a54f-7cc8375b3e40",
+            "01a0f709-23af-7661-812d-af72427d44ec"
+          ],
+          "resource": [
+            {
+              "cpu_ms": 3.171,
+              "execution_ms": 16.625,
+              "peak_memory_bytes": 848623.616,
+              "spill_bytes": 0.0,
+              "output_rows": 1
+            }
+          ]
+        },
+        "controls": {
+          "before": {
+            "count": 30,
+            "mean_ms": 9.720315299152086,
+            "stddev_ms": 5.889630540242602,
+            "p95_ms": 18.897540983743966,
+            "plans": [],
+            "query_ids": [
+              "01a0f708-83ef-78cd-9274-9dd135f1f3df",
+              "01a0f708-86a8-7770-81f1-644b7263aacd",
+              "01a0f708-8820-75ae-aa51-54ffc19b4701",
+              "01a0f708-89fd-7d83-8deb-5ab218adb70c",
+              "01a0f708-8b3c-718b-936e-a55572a290a3",
+              "01a0f708-8cd2-749f-9bb4-aec13f61506a",
+              "01a0f708-8e49-72ac-9146-79b7664a1888",
+              "01a0f708-8f8f-7559-9d38-e53b88c4741d",
+              "01a0f708-910d-7475-9c6c-2f8f7758923f",
+              "01a0f708-9281-7bc5-bb24-b7cabf0eb53c",
+              "01a0f708-93f1-7cfa-9a6e-0369464cea1d",
+              "01a0f708-9701-74e5-bb4f-023ccb35f999",
+              "01a0f708-98e0-703c-a43e-9495bc74a0ed",
+              "01a0f708-9b7a-708e-9491-47a6d011fc4c",
+              "01a0f708-9e05-7b1b-93a9-e7197f3acecd",
+              "01a0f708-9f44-756a-9d48-2bb83cdae90a",
+              "01a0f708-a0b2-7a7d-b4b4-3066adecb99c",
+              "01a0f708-a1f8-7a1f-b570-04828541cfde",
+              "01a0f708-a424-7bb6-8655-22972f84e7de",
+              "01a0f708-a698-7326-b6ea-8122214c6cd1",
+              "01a0f708-a831-729d-83f5-ef3d865c3b7c",
+              "01a0f708-aa0d-760b-b477-9e06f206a5db",
+              "01a0f708-accb-791c-9f2e-fcd264beb885",
+              "01a0f708-af31-7cd5-bec8-c98b308dc08f",
+              "01a0f708-b0f4-7a43-b6a3-64bc4ef009fa",
+              "01a0f708-b469-76db-98e0-672edb88e8e5",
+              "01a0f708-b6ef-7666-b430-7424d9a7fa19",
+              "01a0f708-b92e-73b1-bb53-4e88704cac98",
+              "01a0f708-bbba-714d-b0d8-2da0ab30fc4c",
+              "01a0f708-bf67-7c1c-8edf-4c1fadb78011"
+            ],
+            "resource": []
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 13.509633366872245,
+            "stddev_ms": 12.716361793553721,
+            "p95_ms": 43.396249995566905,
+            "plans": [],
+            "query_ids": [
+              "01a0f708-db38-7104-95a8-6c044810f324",
+              "01a0f708-df1a-7dc0-9f31-8710b177b3a4",
+              "01a0f708-e100-7115-ba5d-6b3a93ddf670",
+              "01a0f708-e474-7dbb-8072-60008f7594d3",
+              "01a0f708-e6a7-71b2-a8e8-285110765cb6",
+              "01a0f708-ea41-7285-8019-15b96d35a0cc",
+              "01a0f708-ef7d-7b05-bacf-9f306894ef7e",
+              "01a0f708-f0ed-75b2-90f2-24bac44a3482",
+              "01a0f708-f2ba-730c-8326-e569f3a8587c",
+              "01a0f708-f487-74ea-888c-fa403bd5a5aa",
+              "01a0f708-f5c1-74de-a120-82097e67551b",
+              "01a0f708-f71d-7ea1-b0ab-98a84364eb26",
+              "01a0f708-f860-79bd-a1c7-cc8acc4fe843",
+              "01a0f708-f98f-7e33-90e9-46202fa41f3a",
+              "01a0f708-fb23-7c9d-8d1e-2b797f624c91",
+              "01a0f708-fe4c-79b7-b36e-3de6a16be54e",
+              "01a0f709-03a7-7b91-ba94-c7c175d43157",
+              "01a0f709-073d-77cd-9709-b9c4b5399705",
+              "01a0f709-095a-78b2-a8ad-108c7f6a3ad0",
+              "01a0f709-0b20-74f0-993f-7a322c31c40a",
+              "01a0f709-1093-7c5f-a54b-382240d17f1c",
+              "01a0f709-13df-721d-97b4-4483f822abbd",
+              "01a0f709-15bd-70c5-98f7-b4e9a0510c10",
+              "01a0f709-193f-7b5b-8ec1-e74d8afd7363",
+              "01a0f709-1b35-79e5-8e1a-24fde0bbe271",
+              "01a0f709-1caf-7cd8-9d3d-b1b3480151ca",
+              "01a0f709-1e4a-7acf-9e73-68a07d528ead",
+              "01a0f709-2112-7417-9cd4-3022e9948cb9",
+              "01a0f709-226f-7a66-91af-305d4fba8628",
+              "01a0f709-2405-7d5e-9891-46b9bb0c62e0"
+            ],
+            "resource": []
+          }
+        },
+        "correctness": "EQUIVALENT",
+        "improvement": -0.11738228458724032,
+        "snapshot": "696c58fc227e521dde1602bcde6ad3601977e5ff0639aaa9b2f4c35abe063046",
+        "repetitions": 30
+      },
+      "production_actions": 0,
+      "causality": "refresh_reduced_estimate_error; latency_benefit_reported_separately"
+    },
+    {
+      "case": "D",
+      "status": "UNAVAILABLE",
+      "reason": "Three complete historical windows and sustained current windows not yet collected for a controlled native regression."
+    },
+    {
+      "case": "G",
+      "status": "UNAVAILABLE",
+      "reason": "No controlled resource saturation with query-bound queue evidence established on this shared host."
+    }
+  ],
+  "counts": {
+    "PASS": 7,
+    "FAIL": 0,
+    "UNAVAILABLE": 2
+  },
+  "complete_acceptance": false,
+  "production_actions": 0,
+  "accepted_result_changing_candidates": 0
+}

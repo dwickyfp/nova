@@ -56,6 +56,7 @@ from app.proxy.session import (
     split_statements,
     substitute_user_variables,
 )
+from app.sql_frontend.session_functions import CORRELATION_SESSION
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +236,7 @@ class ProxyQueryExecutor:
         if len(engine_statements) == 1 and is_show_databases(engine_statements[0]):
             return await self._show_databases(username=username, connection=connection)
 
+        correlation_token = CORRELATION_SESSION.set(self._session.correlation)
         try:
             results = await query_service.execute_statements(
                 source="mysql_proxy",
@@ -257,6 +259,9 @@ class ProxyQueryExecutor:
             return WireResult(
                 error=f"Query execution failed: {type(exc).__name__}", error_code=1064
             )
+
+        finally:
+            CORRELATION_SESSION.reset(correlation_token)
 
         return self._to_wire(results)
 
@@ -294,6 +299,7 @@ class ProxyQueryExecutor:
         connection *is* that user's session), so the list is exactly what that
         user may see minus the names in ``HIDDEN_DATABASES``.
         """
+        correlation_token = CORRELATION_SESSION.set(self._session.correlation)
         try:
             results = await query_service.execute_statements(
                 source="mysql_proxy",
@@ -311,6 +317,9 @@ class ProxyQueryExecutor:
             return WireResult(
                 error=f"Query execution failed: {type(exc).__name__}", error_code=1064
             )
+
+        finally:
+            CORRELATION_SESSION.reset(correlation_token)
 
         wire = self._to_wire(results)
         if not wire.is_resultset:

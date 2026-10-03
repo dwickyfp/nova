@@ -1,0 +1,292 @@
+{
+  "kind": "measured_native_engine_protocol",
+  "database": "autopilot_retail_20261001",
+  "measurements": [
+    {
+      "persona": "executive",
+      "collection_enabled": false,
+      "cycle": 0,
+      "count": 30,
+      "mean_ms": 225.8573820348829,
+      "nova_process_cpu_mean_ms": 22.992733333333327,
+      "stddev_ms": 56.10386940035787,
+      "p95_ms": 359.6329999854788,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        12,
+        1
+      ]
+    },
+    {
+      "persona": "executive",
+      "collection_enabled": true,
+      "cycle": 1,
+      "count": 30,
+      "mean_ms": 286.8771165657866,
+      "nova_process_cpu_mean_ms": 23.504233333333342,
+      "stddev_ms": 116.93488671306903,
+      "p95_ms": 658.7975829897914,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        12,
+        1
+      ]
+    },
+    {
+      "persona": "executive",
+      "collection_enabled": false,
+      "cycle": 2,
+      "count": 30,
+      "mean_ms": 230.84542783520496,
+      "nova_process_cpu_mean_ms": 20.37573333333335,
+      "stddev_ms": 45.928537571610356,
+      "p95_ms": 318.6220420175232,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        12,
+        1
+      ]
+    },
+    {
+      "persona": "executive",
+      "collection_enabled": true,
+      "cycle": 3,
+      "count": 30,
+      "mean_ms": 262.9858667680916,
+      "nova_process_cpu_mean_ms": 20.862766666666694,
+      "stddev_ms": 86.41154326708208,
+      "p95_ms": 494.7214159765281,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        12,
+        1
+      ]
+    },
+    {
+      "persona": "finance",
+      "collection_enabled": false,
+      "cycle": 0,
+      "count": 30,
+      "mean_ms": 226.2195388728287,
+      "nova_process_cpu_mean_ms": 21.959533333333383,
+      "stddev_ms": 30.49650048840548,
+      "p95_ms": 274.05174999148585,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        9,
+        152
+      ]
+    },
+    {
+      "persona": "finance",
+      "collection_enabled": true,
+      "cycle": 1,
+      "count": 30,
+      "mean_ms": 311.1711292673135,
+      "nova_process_cpu_mean_ms": 23.66159999999997,
+      "stddev_ms": 168.43342873692347,
+      "p95_ms": 619.8162920190953,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        9,
+        152
+      ]
+    },
+    {
+      "persona": "finance",
+      "collection_enabled": false,
+      "cycle": 2,
+      "count": 30,
+      "mean_ms": 212.56920430168975,
+      "nova_process_cpu_mean_ms": 20.34569999999996,
+      "stddev_ms": 18.715092919163634,
+      "p95_ms": 257.10274997982197,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        9,
+        152
+      ]
+    },
+    {
+      "persona": "finance",
+      "collection_enabled": true,
+      "cycle": 3,
+      "count": 30,
+      "mean_ms": 257.59874446763814,
+      "nova_process_cpu_mean_ms": 24.349533333333362,
+      "stddev_ms": 83.62004377999475,
+      "p95_ms": 423.56458300491795,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        9,
+        152
+      ]
+    },
+    {
+      "persona": "marketing",
+      "collection_enabled": false,
+      "cycle": 0,
+      "count": 30,
+      "mean_ms": 457.5909068652739,
+      "nova_process_cpu_mean_ms": 38.17590000000009,
+      "stddev_ms": 257.95399690854674,
+      "p95_ms": 911.3856669864617,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        3,
+        1
+      ]
+    },
+    {
+      "persona": "marketing",
+      "collection_enabled": true,
+      "cycle": 1,
+      "count": 30,
+      "mean_ms": 386.4197290657709,
+      "nova_process_cpu_mean_ms": 38.96530000000015,
+      "stddev_ms": 89.5697999777926,
+      "p95_ms": 577.9532080050558,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        3,
+        1
+      ]
+    },
+    {
+      "persona": "marketing",
+      "collection_enabled": false,
+      "cycle": 2,
+      "count": 30,
+      "mean_ms": 276.45024170342367,
+      "nova_process_cpu_mean_ms": 33.04203333333356,
+      "stddev_ms": 96.70160601455592,
+      "p95_ms": 524.3905000097584,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        3,
+        1
+      ]
+    },
+    {
+      "persona": "marketing",
+      "collection_enabled": true,
+      "cycle": 3,
+      "count": 30,
+      "mean_ms": 338.96075136920746,
+      "nova_process_cpu_mean_ms": 38.90199999999974,
+      "stddev_ms": 66.35307805094092,
+      "p95_ms": 446.09604199649766,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        3,
+        1
+      ]
+    },
+    {
+      "persona": "operations",
+      "collection_enabled": false,
+      "cycle": 0,
+      "count": 30,
+      "mean_ms": 212.82803190115374,
+      "nova_process_cpu_mean_ms": 12.25940000000012,
+      "stddev_ms": 20.636228983676485,
+      "p95_ms": 269.1761660098564,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        4,
+        12
+      ]
+    },
+    {
+      "persona": "operations",
+      "collection_enabled": true,
+      "cycle": 1,
+      "count": 30,
+      "mean_ms": 243.03794860218963,
+      "nova_process_cpu_mean_ms": 15.248466666666735,
+      "stddev_ms": 83.80748453279091,
+      "p95_ms": 502.1268330165185,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        4,
+        12
+      ]
+    },
+    {
+      "persona": "operations",
+      "collection_enabled": false,
+      "cycle": 2,
+      "count": 30,
+      "mean_ms": 241.49578606399396,
+      "nova_process_cpu_mean_ms": 12.015966666666719,
+      "stddev_ms": 106.4713090432649,
+      "p95_ms": 452.88579098996706,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        4,
+        12
+      ]
+    },
+    {
+      "persona": "operations",
+      "collection_enabled": true,
+      "cycle": 3,
+      "count": 30,
+      "mean_ms": 404.6105875012775,
+      "nova_process_cpu_mean_ms": 14.155366666666739,
+      "stddev_ms": 314.7151765078888,
+      "p95_ms": 1164.1930000041611,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        4,
+        12
+      ]
+    }
+  ],
+  "mysql_cli": [
+    {
+      "persona": "executive",
+      "status": "PASS",
+      "rows": 13
+    },
+    {
+      "persona": "finance",
+      "status": "PASS",
+      "rows": 497
+    },
+    {
+      "persona": "marketing",
+      "status": "PASS",
+      "rows": 4
+    },
+    {
+      "persona": "operations",
+      "status": "PASS",
+      "rows": 44
+    }
+  ],
+  "collection": {
+    "enabled": true,
+    "queued": 0,
+    "capacity": 2048,
+    "accepted": 544,
+    "persisted": 544,
+    "dropped": 0,
+    "failed_batches": 0,
+    "sample_dropped": 0,
+    "seconds_since_flush": 169.85017712501576
+  },
+  "logical_storage_before": {
+    "rows": 1112,
+    "json_bytes": 1079690
+  },
+  "logical_storage_after": {
+    "rows": 1656,
+    "json_bytes": 1662368
+  },
+  "overhead_mean_ms": 50.97566925360297,
+  "overhead_ratio": 0.1956974245574834,
+  "cpu_delta_mean_ms": 2.3102833333332775,
+  "ranger_acceptance": "NOT_RUN",
+  "note": "Includes paired query and drilldown round trips through QueryService; JSON bytes exclude indexes and replicas."
+}

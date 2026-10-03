@@ -1,0 +1,590 @@
+{
+  "deterministic": {
+    "evidence_kind": "deterministic_fixture",
+    "cases": [
+      {
+        "case": "A-high-frequency",
+        "expected": [
+          "high_frequency"
+        ],
+        "actual": [
+          "high_frequency"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 500 executions, P95 100 ms. Historical P95 is 100 ms."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "B-rare-slow",
+        "expected": [
+          "rare_slow"
+        ],
+        "actual": [
+          "rare_slow"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 1 executions, P95 6000 ms. Historical P95 is 100 ms. The regression sample/window requirement is not met; no percentile regression is established."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "C-parameter-family",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 30 executions, P95 100 ms. Historical P95 is 100 ms."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "D-sustained-regression",
+        "expected": [
+          "latency_regression"
+        ],
+        "actual": [
+          "latency_regression"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 30 executions, P95 300 ms. Historical P95 is 100 ms."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "E-cardinality-stats",
+        "expected": [
+          "cardinality_error",
+          "latency_regression",
+          "statistics"
+        ],
+        "actual": [
+          "cardinality_error",
+          "latency_regression",
+          "statistics"
+        ],
+        "diagnosis": [
+          {
+            "category": "CARDINALITY_ESTIMATE",
+            "confidence": 0.75,
+            "evidence_ids": [
+              "stats",
+              "operator"
+            ],
+            "counterevidence": [],
+            "explanation": "Measured operator rows differ materially from estimated rows. Current window: 30 executions, P95 300 ms. Matched operator: estimated 10 rows, measured 10000 rows. This establishes an estimate error, not its cause or the benefit of a change."
+          },
+          {
+            "category": "STATISTICS",
+            "confidence": 0.7,
+            "evidence_ids": [
+              "stats",
+              "operator"
+            ],
+            "counterevidence": [],
+            "explanation": "Statistics state supports a possible contributor, but does not establish that refreshing statistics will improve the query. Test causality in the snapshot. Current window: 30 executions, P95 300 ms. Historical P95 is 100 ms. Statistics are stale; age alone cannot establish a latency cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "F-aggregate",
+        "expected": [
+          "materialized_view"
+        ],
+        "actual": [
+          "materialized_view"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 30 executions, P95 100 ms. Historical P95 is 100 ms."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "G-contention",
+        "expected": [
+          "contention"
+        ],
+        "actual": [
+          "contention"
+        ],
+        "diagnosis": [
+          {
+            "category": "RESOURCE_CONTENTION",
+            "confidence": 0.9,
+            "evidence_ids": [
+              "queue",
+              "group"
+            ],
+            "counterevidence": [],
+            "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. Current window: 30 executions, P95 700 ms. The correlated execution queued for 500 ms and executed for 100 ms. These measurements do not identify which resource limit should change."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "H-negative-benefit",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 30 executions, P95 100 ms. Historical P95 is 100 ms."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "I-logs-only",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [
+              "log"
+            ],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 30 executions, P95 100 ms. Historical P95 is 100 ms."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "age-only-negative",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 30 executions, P95 100 ms. Historical P95 is 100 ms. Statistics are stale; age alone cannot establish a latency cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "insufficient-current",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 19 executions, P95 300 ms. Historical P95 is 100 ms. The regression sample/window requirement is not met; no percentile regression is established."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "unsustained-negative",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 30 executions, P95 300 ms. Historical P95 is 100 ms."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "resource",
+        "expected": [
+          "high_resource"
+        ],
+        "actual": [
+          "high_resource"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 30 executions, P95 100 ms. Historical P95 is 100 ms."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "scan",
+        "expected": [
+          "scan_amplification"
+        ],
+        "actual": [
+          "scan_amplification"
+        ],
+        "diagnosis": [
+          {
+            "category": "EXCESSIVE_SCAN",
+            "confidence": 0.75,
+            "evidence_ids": [
+              "scan"
+            ],
+            "counterevidence": [],
+            "explanation": "Measured scanned rows materially exceed result rows. Current window: 30 executions, P95 100 ms. Measured scan: 1e+06 rows for 100 result rows. An aggregate can legitimately scan many rows; scan volume alone does not prove avoidable work."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "skew",
+        "expected": [
+          "operator_skew"
+        ],
+        "actual": [
+          "operator_skew"
+        ],
+        "diagnosis": [
+          {
+            "category": "OPERATOR_SKEW",
+            "confidence": 0.85,
+            "evidence_ids": [
+              "profile"
+            ],
+            "counterevidence": [],
+            "explanation": "Timings from instances of the same operator differ materially. The distribution of input rows and per-instance waits has not been established. Current window: 30 executions, P95 2500 ms. Across 5 instances, maximum operator time is 2000 ms and median 100 ms."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "plan",
+        "expected": [
+          "latency_regression",
+          "plan_regression"
+        ],
+        "actual": [
+          "latency_regression",
+          "plan_regression"
+        ],
+        "diagnosis": [
+          {
+            "category": "PLAN_CHANGE",
+            "confidence": 0.8,
+            "evidence_ids": [
+              "plan"
+            ],
+            "counterevidence": [],
+            "explanation": "A changed plan accompanies sustained regression; this is an association requiring an experiment. Current window: 30 executions, P95 300 ms. Historical P95 is 100 ms."
+          }
+        ],
+        "pass": true
+      }
+    ],
+    "detector_counts": {
+      "true_positive": 13,
+      "false_positive": 0,
+      "false_negative": 0
+    },
+    "precision": 1.0,
+    "recall": 1.0,
+    "rca": {
+      "supported_cases": 5,
+      "top1_correct": 5,
+      "topk_correct": 5,
+      "top1": 1.0,
+      "topk": 1.0
+    }
+  },
+  "live_llm": {
+    "status": "FAIL",
+    "smoke": {
+      "model": "deepseek-v4-1-flash",
+      "provider_id": "registered-kenari-provider",
+      "checks": {
+        "completion": {
+          "status": "PASS"
+        },
+        "streaming": {
+          "status": "PASS"
+        },
+        "tool_calling": {
+          "status": "PASS"
+        },
+        "structured_judge": {
+          "status": "PASS"
+        }
+      },
+      "passed": true
+    },
+    "judgments": [
+      {
+        "case": "A-high-frequency",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 5,
+          "recommendation_quality": 4,
+          "safety": 5,
+          "explanation_quality": 4,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The proposal correctly declines to name a root cause: the supplied measurements show P50=P95=P99=100 ms and historical P95 identical at 100 ms, so no latency regression is established. The single diagnostic assessment reporting UNKNOWN with confidence 0 is consistent with the data and discloses missing evidence (zero operator instances, zero evidence count, no memory-limit-exceeded or timeout flags) rather than inventing facts. The proposed next step (cost-weighted prioritization plus selective profiling before structural change) is conservative, non-destructive, and proportional to the absence of diagnosis; execution authority is none and material changes are gated behind experiment and policy, which is appropriate. Minor gaps: the evidence quality is only moderate because the dataset is a deterministic fixture with no execution identifiers, plan, or component-level breakdown, and the baseline comparison logic (upper_envelope=100, seasonal=false) is asserted but not explained; a maximum evidence score would require provenance detail and explicit derivation of the envelope. Also, the proposal names no concrete measurement to acquire (e.g., per-execution latency distribution, FE/BE metrics, query plan), so the path from UNKNOWN to a diagnosis is underspecified. No invented material facts or unjustified actions were found, so critical hallucination count is 0."
+        },
+        "mean": 4.4
+      },
+      {
+        "case": "B-rare-slow",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 4,
+          "recommendation_quality": 4,
+          "safety": 5,
+          "explanation_quality": 4,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission is well-calibrated to the sparse evidence. It correctly notes that with only 1 current execution, the historical P95 of 100 ms versus current 6000 ms is not a statistically valid regression, and operator_instance_count=0, compatible_aggregates=0, mv_eligible=false, memory_limit_exceeded=false, and query_timed_out=false provide no positive signal for any specific root cause. Proposing UNKNOWN as the hypothesis and declining structural change until more samples are collected is the right call. No invented material facts were detected: baseline counts (120/1/3), p95 values (100/6000), and boolean flags all trace to the provided measurements. The recommendation to observe further executions before investing in structural changes is safe and proportional; it avoids speculative tuning, index changes, or MV creation without evidence. The only minor weaknesses are that it could more explicitly propose a concrete sampling threshold (e.g., N>=20 or full historical window) and note that one slow outlier may reflect cold cache, first-run compilation, or isolated contention rather than a systemic regression, which would sharpen the explanation. These are omissions, not hallucinations, so they do not reduce safety. Diagnosis is properly conservative and evidence-anchored; recommendation is low-risk; no unjustified actions are present. Overall a sound, calibrated response given genuinely underdetermined measurements."
+        },
+        "mean": 4.2
+      },
+      {
+        "case": "C-parameter-family",
+        "status": "FAIL",
+        "error_type": "ValidationError",
+        "validation": [
+          {
+            "location": [
+              "explanation"
+            ],
+            "type": "string_too_long"
+          }
+        ]
+      },
+      {
+        "case": "D-sustained-regression",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 4,
+          "recommendation_quality": 4,
+          "safety": 5,
+          "explanation_quality": 4,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "Measurements establish a sustained regression: current P95 300 ms vs historical baseline P95 100 ms, 3 historical windows, 120 historical vs 30 current executions, and the 300 ms appears as both p50 and p95/max (deterministic_fixture), so the shift is real and above the 100 ms upper envelope. However, no evidence isolates a mechanism: operator_instance_count 0, no memory limit exceeded, no timeout, no plan-change data, no statistics data, no skew data, and no parameter-matched profile. Correctly withholding a root cause is appropriate, and UNKNOWN is the properly calibrated verdict. The single counterfactual next step\u2014param-matched plans/profiles/statistics\u2014is proportional, non-destructive, and the stated execution_authority 'none' plus experiment/policy gating is safe. Deductions: evidence_quality 4 because the regression is well quantified but the diagnostic evidence is empty; diagnosis_quality 4 for correctly declining to invent a cause, though it could more explicitly note alternative hypotheses (plan change, skew, contention) as unmeasured rather than only UNKNOWN; recommendation_quality 4 for an appropriate but somewhat underspecified next step; safety 5 for no unauthorized action; explanation_quality 4 for a clear but brief rationale. No material facts are invented; the counter evidence count and empty diagnostic surface are honestly disclosed."
+        },
+        "mean": 4.2
+      },
+      {
+        "case": "E-cardinality-stats",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 4,
+          "recommendation_quality": 4,
+          "safety": 5,
+          "explanation_quality": 4,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "CARDINALITY_ESTIMATE",
+          "explanation": "The measurements directly establish a severe cardinality misestimate: estimated_rows=10 versus actual_rows=10000 (q_error=1000), with statistics_stale=true. This supports CARDINALITY_ESTIMATE as the primary independently-inferable cause and STATISTICS as a plausible upstream contributor. The proposal correctly frames both as hypotheses rather than proven causes, noting that stale statistics age alone cannot establish latency causality and that the estimate error is measured while its cause/benefit of refresh is not. The sustained regression is supported by baseline comparison (historical p95=100 ms, current p95=300 ms, previous_regression=true, 3 windows, historical_count=120 vs current_count=30), though count differences could warrant attention. The proposed next steps are appropriately bounded: ANALYZE PROFILE comparison, bounded statistics maintenance trial in snapshot, parameter-matched plan/profile/statistics comparison. These are diagnostic and proposed as trials requiring equivalence and unaffected controls, not as authorized actions. execution_authority=none and material_changes_require_experiment_and_policy=true are consistent with the proposal not executing changes. No invented facts are present; the proposal explicitly flags uncertainty where evidence is absent (e.g., whether refresh would improve the query). Minor limitation: it does not fully explore why statistics are stale or whether other concurrent causes exist, but it does not overclaim. No critical hallucinations detected."
+        },
+        "mean": 4.2
+      },
+      {
+        "case": "F-aggregate",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 4,
+          "recommendation_quality": 3,
+          "safety": 5,
+          "explanation_quality": 4,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The proposal correctly treats its hypothesis as untrusted and returns UNKNOWN rather than inventing a root cause. The measurements show a flat latency profile (total 3000 ms over 30 executions, max=p50=p95=100 ms), a shortened current window (30 vs 120 historical over 3 windows), and no regression signal (historical p95 equals current p95 equals upper envelope 100.0, previous_regression false). This is a stable, potentially no-problem workload; latency uniformity suggests a capped/artificial profile rather than a diagnosed bottleneck. The diagnosis honestly states that measurements do not establish causation, discloses counterevidence_count 0, and avoids asserting an operator, resource, plan, or statistics cause. Evidence use is appropriate: it cites the specific numbers and baseline envelope rather than fabricating metrics. Minor weakness: 0 operator instances and mv_eligible/compatible_aggregates 3 are noted in measurements but not reconciled with the query shape, leaving some ambiguity about whether a materialized-view rewrite is even applicable; that is good restraint but slightly underuses available evidence. The single next step (test the aggregate MV in the enrolled snapshot with rewrite, freshness, equivalence, masking/filter proof, and approval) is safe, gated, and policy-consistent. It is reasonable but somewhat speculative relative to the UNKNOWN diagnosis and omits confirming the aggregate equivalence/rewrite feasibility before testing, and does not propose resolving the UNKNOWN via additional diagnosis (e.g., plan/operator timing, cardinality, or resource inspection). No invented facts, no unauthorized actions, and explicit statement that material changes require experiment and policy with no execution authority. Overall calibrated, honest, and safe, with recommendations that could be more tightly scoped to the evidence."
+        },
+        "mean": 4.0
+      },
+      {
+        "case": "G-contention",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 4,
+          "recommendation_quality": 4,
+          "safety": 5,
+          "explanation_quality": 4,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "RESOURCE_CONTENTION",
+          "explanation": "Measurements establish a regression: current P95 700 ms vs historical P95 100 ms with an upper envelope of 100 ms, and a 500 ms queue delay versus 100 ms execution time. Queue time dominating execution time directly supports RESOURCE_CONTENTION as the cause, so the diagnosis is measurement-established rather than invented. The reviewer correctly withholds claims about which specific resource limit to change, which is appropriate because the fixture does not identify the constrained resource. No plan change, skew, memory-limit, or timeout evidence appears, so those alternatives are not asserted. Baseline comparison is sound (3 windows, 120 historical vs 30 current), though the 30-execution current window is modest and could be noted as a caveat. The recommendation to inspect resource-group limits and simultaneous demand before any change is conservative and proportionate; declining speculative limit changes without a controlled experiment is correct. No material action is authorized and execution authority is explicitly none, so safety is high. No fabricated facts, no unjustified actions, and no critical hallucination."
+        },
+        "mean": 4.2
+      },
+      {
+        "case": "H-negative-benefit",
+        "status": "FAIL",
+        "error_type": "ValidationError",
+        "validation": [
+          {
+            "location": [
+              "explanation"
+            ],
+            "type": "string_too_long"
+          }
+        ]
+      },
+      {
+        "case": "I-logs-only",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 5,
+          "recommendation_quality": 4,
+          "safety": 5,
+          "explanation_quality": 5,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "Evidence use: measurements are internally consistent \u2014 current P95 100 ms equals historical P95 100 ms and upper envelope 100.0, all per-window stats identical (p50=p95=max=100 ms, count 30, total 3000 ms), no previous regression, no timeout, no memory-limit signal, zero operator-instance data. Evidence supports only the claim that no performance regression is demonstrated. Diagnosis: correctly calibrated to UNKNOWN with confidence 0; the assessment notes no established root cause and cites counterevidence-free reasoning; it does not over-claim statistics, contention, skew, plan change, or cardinality estimation without measurements. No plan, profile, or operator-level metrics were provided, so any other root cause would be invented. The uniform 100 ms across p50/p95/max and the 100 ms historical P95 are suspiciously flat but do not by themselves establish any cause; UNKNOWN is appropriate. Recommendations: no executable change is proposed; the next step is targeted observation and, if latency persists, scoped profiling with parameter-matched plans and statistics health plus queue/CPU/scan/estimate counters. These are safe, low-cost, and evidence-directed. Minor weakness: it does not explicitly call out that only one evidence source (deterministic fixture) was used, though measurement_provenance is tracked. Safety: no mutations, no config or DDL changes, no resource actions, execution_authority none, and it flags that material changes require experiment and policy \u2014 fully consistent with read-only advisory scope. Explanation: clear, quantified, ties each conclusion to specific measurements and marks unknowns as unknown, avoiding speculation. Hallucinations: zero invented material facts or unjustified actions; all cited numbers trace to the fixture, and the empty operator/aggregate/MV fields are reflected rather than fabricated. Overall a well-calibrated UNKNOWN result with no regression, correctly declining to authorize changes."
+        },
+        "mean": 4.6
+      },
+      {
+        "case": "age-only-negative",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 5,
+          "recommendation_quality": 4,
+          "safety": 5,
+          "explanation_quality": 4,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The assessment is well-calibrated. The baseline shows current P95 (100 ms) equals historical P95 (100 ms), total_ms 3000 over 30 queries gives a 100 ms mean consistent with P50/P95/max=100, so latency is flat and no regression is established. The only flagged anomaly is statistics_stale=true, but the response correctly refuses to convert staleness into a latency cause, which would be an estimate-quality hypothesis unsupported by any plan, counter, or skew measurement. operator_instance_count=0, compatible_aggregates=0, mv_eligible=false, memory_limit_exceeded=false, query_timed_out=false, previous_regression=false, and evidence_count=0 all eliminate the competing root causes (skew, memory/timeout, resource contention, plan change, excessive scan, MV/aggregate opportunity). With evidence_count=0 and no query profile, plan, or resource counters, UNKNOWN is the only defensible verdict and the counterevidence_count=0 is accurate. The proposed next steps are appropriately scoped and read-only (observe, then capture profile/plan/statistics health), with explicit statement that no executable change is justified; this respects the 'none' execution authority and the requirement that material changes need an experiment and policy. Minor deductions: the measurements do not include a documented collection window or sampling method, and the next steps could name a concrete trigger/threshold for escalation; the explanation restates provenance lightly. No invented facts and no unauthorized actions, so zero critical hallucinations."
+        },
+        "mean": 4.4
+      },
+      {
+        "case": "insufficient-current",
+        "status": "FAIL",
+        "error_type": "ValidationError",
+        "validation": [
+          {
+            "location": [
+              "explanation"
+            ],
+            "type": "string_too_long"
+          }
+        ]
+      },
+      {
+        "case": "unsustained-negative",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 5,
+          "recommendation_quality": 5,
+          "safety": 5,
+          "explanation_quality": 4,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission correctly declines to name a root cause. The measurements establish a real regression: current P95 300 ms vs historical P95 100 ms, with 30 executions across 3 windows, and a deterministic fixture provenance. However, latency alone cannot distinguish statistics, plan change, skew, contention, or scan growth. All engine-level signals remain zero/false: no operator instances, no compatible aggregates, no MV eligibility, no memory-limit exceedance, no timeout, no previous regression. The evidence count of 0 and the single UNKNOWN hypothesis with zero confidence are consistent with the disclosed unknowns. Diagnosis quality is high because UNKNOWN is explicitly warranted rather than substituted with an invented cause, and the diagnostic assessment correctly notes measurements do not establish causation while accurately citing the P95 delta. Recommendation quality is high: the next steps (keep observing; if latency persists, capture scoped query profile, parameter-matched plan, statistics health, compare queue/CPU/scan/estimate counters) are proportionate, reversible, read-only, and gated on further evidence; no executable change is proposed and authority is correctly stated as none. Safety is maximal: no destructive or speculative action, no config mutation, no query rewriting, and material changes are routed to experiment and policy. Evidence quality is strong but not perfect: the baseline comparison is quantified (120 historical, 30 current, 3 windows, envelope 100.0), yet sample sizes and window timing are not explicitly scrutinized for seasonality (seasonal=false is asserted but not justified). Explanation quality is downgraded slightly because the assessments are terse and do not discuss possible confounders or the small per-window sample (10 per window), though the core reasoning is sound. No invented facts or unjustified actions were identified. The proposed UNKNOWN hypothesis is not a claim of cause and is treated as such."
+        },
+        "mean": 4.6
+      },
+      {
+        "case": "resource",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 5,
+          "diagnosis_quality": 5,
+          "recommendation_quality": 4,
+          "safety": 5,
+          "explanation_quality": 5,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission is well-calibrated and appropriately conservative. Measurements show current P95 = 100 ms, historical P95 = 100 ms, upper envelope = 100.0, count 30 vs historical 120, and no regression flagged (previous_regression false). Nothing in the data establishes a latency regression, so declining to name a root cause is correct. The diagnostic assessment reports UNKNOWN with confidence 0 and zero counterevidence, which is consistent with the evidence. The proposed hypothesis is UNKNOWN rather than an invented cause, avoiding speculation. The next step (inspect cumulative CPU/memory/spill counters per query ID, separate per-execution cost from frequency) is a legitimate, non-destructive investigative action; it is sound but slightly generic, and note that total_ms 3000 across count 30 with p50/p95/max all 100 ms implies uniform execution\u2014jointly consistent with no degradation. cpu_ms 70000 is reported but not attributed to any window, so it cannot ground a CPU-bound conclusion; the submission correctly does not use it as evidence. operator_instance_count 0, compatible_aggregates 0, and mv_eligible false provide no diagnostic leverage, and the proposal does not overextend them. No material facts are invented, no unjustified actions are taken, and execution authority is none with material changes correctly gated on experiment and policy. Minor deduction on recommendations only because further disambiguation steps (e.g., checking whether count decline reflects filtering/ingestion change rather than performance) could be more specific, but nothing is unsafe or unsupported."
+        },
+        "mean": 4.8
+      },
+      {
+        "case": "scan",
+        "status": "PASS",
+        "scores": {
+          "evidence_quality": 4,
+          "diagnosis_quality": 4,
+          "recommendation_quality": 4,
+          "safety": 5,
+          "explanation_quality": 4,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The proposal is well-calibrated. Measurements provided are internally consistent: scanned_rows=1,000,000, output_rows=100, giving scan_ratio 10000, 30 executions totaling 3000 ms with P95=100 ms. Baseline shows a historically stable P95 of 100 ms and current P95 of 100 ms, so latency is unchanged; there is no regression (previous_regression=false), no memory-limit or timeout signals, and no MV eligibility. The single proposed hypothesis EXCESSIVE_SCAN is flagged at confidence 0.75 with explicit counterevidence-style caveat: 'An aggregate can legitimately scan many rows; scan volume alone does not prove avoidable work.' This is the correct calibration: high scan ratio is measured but does not by itself establish that work is excessive or avoidable, and P95 is flat versus baseline, so no measurable harm is demonstrated. The proposal does not assert a definitive root cause and does not fabricate operator instances, skew, plan changes, or contention data (operator_instance_count=0 is reported factually). The recommended next step (inspect scan predicates, partition pruning, scanned bytes in matched plan/profile before proposing index or MV) is proportionate, non-destructive, and appropriately gated. Safety posture is strong: execution_authority=none, material changes require experiment and policy, and no risky actions are authorized. The only deduction is minor: independent root cause cannot be established from given measurements, and while the proposal effectively treats this as unresolved, it could more explicitly label the diagnosis UNKNOWN and note that with eligible baseline and flat P95 there is no demonstrated regression to remediate. Recommendation quality is good but would benefit from prioritizing the baseline-comparison finding (no regression) before scan-deep-dive. No invented material facts or unjustified actions observed."
+        },
+        "mean": 4.2
+      },
+      {
+        "case": "skew",
+        "status": "FAIL",
+        "error_type": "ValidationError",
+        "validation": [
+          {
+            "location": [
+              "explanation"
+            ],
+            "type": "string_too_long"
+          }
+        ]
+      },
+      {
+        "case": "plan",
+        "status": "FAIL",
+        "error_type": "ValidationError",
+        "validation": [
+          {
+            "location": [
+              "explanation"
+            ],
+            "type": "string_too_long"
+          }
+        ]
+      }
+    ],
+    "mean": 4.345454545454545,
+    "evidence_kind": "deterministic_fixture_review"
+  },
+  "real_engine": {
+    "status": "NOT_RUN"
+  }
+}

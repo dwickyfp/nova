@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+from ipaddress import ip_network
 
 from app.modules.query.service import query_service
 
@@ -89,11 +90,38 @@ def _serialize_classifier(spec: ClassifierSpec) -> str:
         if value is None:
             continue
         token = str(value)
+        if key == "source_ip":
+            try:
+                token = str(ip_network(token, strict=False))
+            except ValueError:
+                raise ResourceGroupError("Invalid classifier source_ip") from None
+            pairs.append((key, token))
+            continue
         if not re.fullmatch(r"[A-Za-z0-9_.*%:\-]+", token):
             raise ResourceGroupError(f"Invalid classifier {key}: {value!r}")
         pairs.append((key, token))
-    body = ", ".join(f"'{k}' = '{v}'" for k, v in pairs)
+    body = ", ".join(f"{k} = '{v}'" for k, v in pairs)
     return f"({body})"
+
+
+def build_alter_resource_group_sql(name: str, properties: dict) -> str:
+    safe_name = _safe_ident(name, "resource group name")
+    attrs = _serialize_properties(properties)
+    return f"ALTER RESOURCE GROUP {_quote(safe_name)} WITH ({attrs})"
+
+
+def build_create_resource_group_sql(
+    name: str, properties: dict, *, classifiers: tuple[ClassifierSpec, ...] = ()
+) -> str:
+    safe_name = _safe_ident(name, "resource group name")
+    selector = (
+        " TO " + ", ".join(_serialize_classifier(spec) for spec in classifiers)
+        if classifiers else ""
+    )
+    return (
+        f"CREATE RESOURCE GROUP {_quote(safe_name)}{selector} "
+        f"WITH ({_serialize_properties(properties)})"
+    )
 
 
 class ResourceGroupService:
@@ -170,8 +198,9 @@ class ResourceGroupService:
         role: str | None = None,
     ) -> dict:
         name = _safe_ident(body.name, "resource group name")
-        attrs = _serialize_properties(body.properties)
-        statement = f"CREATE RESOURCE GROUP {_quote(name)} WITH ({attrs})"
+        statement = build_create_resource_group_sql(
+            name, body.properties, classifiers=tuple(body.classifiers)
+        )
         await self._run(
             statement,
             username=username,
@@ -179,18 +208,11 @@ class ResourceGroupService:
             session_id=session_id,
             role=role,
         )
-        created: dict = {"name": name, "properties": dict(body.properties), "classifiers": []}
-        for spec in body.classifiers:
-            await self.add_classifier(
-                name,
-                spec,
-                username=username,
-                encrypted_password=encrypted_password,
-                session_id=session_id,
-                role=role,
-            )
-            created["classifiers"].append(spec.model_dump())
-        return created
+        return {
+            "name": name,
+            "properties": dict(body.properties),
+            "classifiers": [spec.model_dump() for spec in body.classifiers],
+        }
 
     async def alter_resource_group(
         self,
@@ -203,9 +225,8 @@ class ResourceGroupService:
         role: str | None = None,
     ) -> dict:
         safe_name = _safe_ident(name, "resource group name")
-        attrs = _serialize_properties(properties)
         await self._run(
-            f"ALTER RESOURCE GROUP {_quote(safe_name)} SET ({attrs})",
+            build_alter_resource_group_sql(safe_name, properties),
             username=username,
             encrypted_password=encrypted_password,
             session_id=session_id,

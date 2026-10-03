@@ -139,6 +139,13 @@ class QueryResponse(BaseModel):
     statement_kind: str | None = None
     effects: dict[str, bool] | None = None
     execution_failure: dict | None = None
+    nova_execution_id: str | None = None
+    engine_query_ids: list[str] = []
+    correlation_status: str = "unavailable"
+    truncated: bool = False
+    total_ms: float | None = None
+    engine_ms: float | None = None
+    nova_ms: float | None = None
 
 
 class CompletionItem(BaseModel):
@@ -244,6 +251,13 @@ async def execute_query(
                 statement_kind=result.statement_kind,
                 effects=result.effects,
                 execution_failure=result.execution_failure,
+                nova_execution_id=result.nova_execution_id,
+                engine_query_ids=result.engine_query_ids,
+                correlation_status=result.correlation_status,
+                truncated=result.truncated,
+                total_ms=result.total_ms,
+                engine_ms=result.engine_ms,
+                nova_ms=result.nova_ms,
             )
         )
     if any(result.error_code == "security_rejection" for result in results):

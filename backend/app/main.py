@@ -49,6 +49,7 @@ from app.modules.monitoring.router import router as monitoring_router
 from app.modules.objects.router import router as objects_router
 from app.modules.pipes.router import router as pipes_router
 from app.modules.query.router import router as query_router
+from app.modules.query_autopilot.router import router as query_autopilot_router
 from app.modules.resource_groups.router import router as resource_groups_router
 from app.modules.stages.router import router as stages_router
 from app.modules.system.router import router as system_router
@@ -231,6 +232,13 @@ async def lifespan(app: FastAPI):
     await ml_engine_service.ephemeral_repository.ensure_schema()
     await search_service.start()
     ml_cleanup = asyncio.create_task(ml_engine_service.sweep_ephemeral())
+    from app.modules.query_autopilot.repository import repository as autopilot_repository
+    from app.modules.query_autopilot.telemetry import collector as autopilot_collector
+
+    autopilot_stop = asyncio.Event()
+    autopilot_flush = asyncio.create_task(
+        autopilot_collector.run(autopilot_stop, autopilot_repository)
+    )
     SERVICE_UP.labels(service="backend").set(1)
     try:
         yield
@@ -246,6 +254,8 @@ async def lifespan(app: FastAPI):
             await proxy_server.stop()
         except Exception as e:
             logger.warning("MySQL proxy did not stop cleanly: %s", e)
+    autopilot_stop.set()
+    await autopilot_flush
     await session_store.close()
     await db.close_system_pool()
 
@@ -277,6 +287,9 @@ def create_app() -> FastAPI:
     prefix = "/api/v1"
     app.include_router(auth_router, prefix=f"{prefix}/auth", tags=["auth"])
     app.include_router(query_router, prefix=f"{prefix}/query", tags=["query"])
+    app.include_router(
+        query_autopilot_router, prefix="/api/v1/query-autopilot", tags=["query-autopilot"]
+    )
     app.include_router(objects_router, prefix=f"{prefix}/objects", tags=["objects"])
     app.include_router(tables_router, prefix=f"{prefix}/tables", tags=["tables"])
     app.include_router(indexes_router, prefix=f"{prefix}/indexes", tags=["indexes"])

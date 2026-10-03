@@ -104,7 +104,7 @@ export async function streamAssistantTurn(
     if (event.type === "role_changed") {
       const auth = useAuthStore.getState().auth;
       if (auth.user)
-        auth.setUser({ ...auth.user, activeRole: event.active_role });
+        auth.setUser({ ...auth.user, activeRole: event.active_role, securityContextVersion: event.security_context_version });
     }
     onEvent(event);
   }

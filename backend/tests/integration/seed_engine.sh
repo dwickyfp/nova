@@ -21,7 +21,7 @@ COMPOSE_FILE="docker-compose.test.yml"
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "$BACKEND_DIR")}"
 
 SR_PORT="${STARROCKS_PORT:-29030}"
-S3_PORT="${S3_PORT:-29000}"
+S3_PORT="${S3_PORT:-${NOVA_TEST_MINIO_PORT:-29000}}"
 INIT_SQL="${INIT_SQL:-$REPO_ROOT/docker/init-nova.sql}"
 MC_IMAGE="ghcr.io/teableio/minio-mc:RELEASE.2025-04-16T18-13-26Z"
 
@@ -73,7 +73,10 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (
   active_role   VARCHAR(128),
   security_context_version BIGINT,
   decision      VARCHAR(32),
-  ranger_policy_ids VARCHAR(2048)
+  ranger_policy_ids VARCHAR(2048),
+  nova_execution_id VARCHAR(64),
+  engine_query_ids JSON,
+  execution_purpose VARCHAR(16)
 ) DUPLICATE KEY(log_id, query_id, event_type, event_time)
 DISTRIBUTED BY HASH(log_id) BUCKETS 8
 PROPERTIES('replication_num'='1');

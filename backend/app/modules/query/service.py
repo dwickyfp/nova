@@ -11,6 +11,7 @@ import time
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import asdict
 from functools import wraps
+from inspect import signature
 from typing import Any, ParamSpec
 
 import asyncmy
@@ -57,19 +58,55 @@ _P = ParamSpec("_P")
 def _observe_sql_execution(
     execute: Callable[_P, Awaitable[QueryResult]],
 ) -> Callable[_P, Awaitable[QueryResult]]:
+    parameters = signature(execute)
+
     @wraps(execute)
     async def observed(*args: _P.args, **kwargs: _P.kwargs) -> QueryResult:
+        from app.modules.query_autopilot.telemetry import EXECUTION, ExecutionIdentity, collector
+
+        bound = parameters.bind(*args, **kwargs).arguments
         started = time.perf_counter()
         status = "error"
         source = SQL_SOURCE.get()
+        identity = ExecutionIdentity()
+        parent = EXECUTION.get()
+        token = EXECUTION.set(identity if parent is None else parent)
+        result = None
         try:
-            result = await execute(*args, **kwargs)
-            status = "error" if result.error else "success"
-            return result
-        except asyncio.CancelledError:
-            status = "cancelled"
-            raise
+            with parsing_scope():
+                if parent is None:
+                    identity.capture_profile = collector.request_profile(
+                        identity, str(bound.get("sql", "")), bound
+                    )
+                try:
+                    result = await execute(*args, **kwargs)
+                    status = "error" if result.error else "success"
+                    return result
+                except asyncio.CancelledError:
+                    status = "cancelled"
+                    raise
+                finally:
+                    elapsed = (time.perf_counter() - started) * 1000
+                    if parent is None:
+                        if result is not None:
+                            result.nova_execution_id = identity.id
+                            result.engine_query_ids = list(identity.query_ids)
+                            result.total_ms = elapsed
+                            if identity.engine_roundtrip_ms:
+                                result.engine_roundtrip_ms = identity.engine_roundtrip_ms
+                                result.fetch_ms = identity.fetch_ms
+                            result.nova_ms = max(0, elapsed - (result.engine_roundtrip_ms or 0))
+                        collector.observe(
+                            identity=identity,
+                            sql=str(bound.get("sql", "")),
+                            source=source,
+                            status=status,
+                            elapsed_ms=elapsed,
+                            kwargs=bound,
+                            result=result,
+                        )
         finally:
+            EXECUTION.reset(token)
             SQL_QUERIES.labels(source=source, status=status).inc()
             SQL_QUERY_DURATION.labels(source=source, status=status).observe(
                 time.perf_counter() - started

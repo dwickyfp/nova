@@ -60,6 +60,7 @@ describe("toConsentPayload", () => {
       username: "alice",
       roles: ["finance", "marketing"],
       activeRole: "marketing",
+      securityContextVersion: 2,
     });
     expect(onEvent).toHaveBeenCalledWith({
       type: "role_changed",

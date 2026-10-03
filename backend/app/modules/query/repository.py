@@ -13,6 +13,7 @@ method, router or helper — can forget it.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -72,6 +73,16 @@ class QueryResult:
     statement_kind: str | None = None
     effects: dict[str, bool] | None = None
     execution_failure: dict | None = None
+    nova_execution_id: str | None = None
+    engine_query_ids: list[str] = field(default_factory=list)
+    correlation_status: str = "unavailable"
+    column_types: tuple[str, ...] = ()
+    truncated: bool = False
+    fetch_ms: float | None = None
+    engine_roundtrip_ms: float | None = None
+    engine_ms: float | None = None
+    nova_ms: float | None = None
+    total_ms: float | None = None
 
     def __post_init__(self) -> None:
         self.original_sql = redact_sql_credentials(self.original_sql)
@@ -197,38 +208,123 @@ class QueryRepository:
         database: str | None = None,
         session_prepared: bool = False,
     ) -> QueryResult:
+        from app.modules.query_autopilot.telemetry import EXECUTION, collector
+        from app.sql_frontend.session_functions import CORRELATION_SESSION, preserve_last_query_id
+
+        identity = EXECUTION.get()
+        session = CORRELATION_SESSION.get()
+        wire_sql, labels = preserve_last_query_id(sql, session)
+        restore_profile = False
         try:
+            if identity is not None and identity.capture_profile:
+                try:
+                    async with conn.cursor() as setup:
+                        await setup.execute("SELECT @@enable_profile")
+                        previous = await setup.fetchone()
+                        enabled = (
+                            next(iter(previous.values()))
+                            if isinstance(previous, Mapping)
+                            else previous[0]
+                        )
+                        if not bool(int(enabled)):
+                            # Mark before the write: an uncertain SET still needs restoration.
+                            restore_profile = True
+                            await setup.execute("SET enable_profile = true")
+                        identity.profile_enabled = True
+                except Exception:
+                    identity.profile_enabled = False
+
             cursor_type = asyncmy.cursors.SSDictCursor if max_rows else asyncmy.cursors.DictCursor
             async with conn.cursor(cursor_type) as cur:
                 if role and not session_prepared:
                     await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
                 if database and not session_prepared:
                     await conn.select_db(database)
-                await cur.execute(sql)
-                elapsed = (time.monotonic() - start) * 1000
-
+                submitted = time.monotonic()
+                await cur.execute(wire_sql)
+                fetched = time.monotonic()
+                result = QueryResult(executed_sql=sql)
                 if cur.description:
-                    columns = [desc[0] for desc in cur.description]
-                    raw_rows = await cur.fetchmany(max_rows) if max_rows else await cur.fetchall()
-                    rows = [
+                    result.columns = [
+                        labels.get(i, desc[0]) for i, desc in enumerate(cur.description)
+                    ]
+                    result.column_types = tuple(
+                        str((desc[1], desc[4], desc[5])) for desc in cur.description
+                    )
+                    raw_rows = (
+                        await cur.fetchmany(max_rows + 1) if max_rows else await cur.fetchall()
+                    )
+                    result.truncated = bool(max_rows and len(raw_rows) > max_rows)
+                    if max_rows:
+                        raw_rows = raw_rows[:max_rows]
+                    result.rows = [
                         list(r.values()) if isinstance(r, Mapping) else list(r) for r in raw_rows
                     ]
-                    return QueryResult(
-                        columns=columns,
-                        rows=rows,
-                        row_count=len(rows),
-                        elapsed_ms=round(elapsed, 2),
-                        executed_sql=sql,
-                    )
-                return QueryResult(
-                    affected_rows=cur.rowcount,
-                    elapsed_ms=round(elapsed, 2),
-                    executed_sql=sql,
-                )
+                    result.row_count = len(result.rows)
+                else:
+                    result.affected_rows = cur.rowcount
+            result.fetch_ms = (time.monotonic() - fetched) * 1000
+            # Closing an unbuffered cursor drains the wire before asking the same
+            # authenticated session for its engine identity.
+            result.elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            result.engine_roundtrip_ms = (time.monotonic() - submitted) * 1000
+            if identity is not None:
+                identity.engine_roundtrip_ms += result.engine_roundtrip_ms
+                identity.fetch_ms += result.fetch_ms
+            from app.modules.query_autopilot.telemetry import PURPOSE
+
+            if identity is not None and (collector.enabled or PURPOSE.get() != "workload"):
+                try:
+                    async with conn.cursor(asyncmy.cursors.DictCursor) as correlation:
+                        identity.scope_checked = True
+                        await correlation.execute(
+                            "SELECT LAST_QUERY_ID() AS nova_engine_query_id, "
+                            "CATALOG() AS nova_catalog, DATABASE() AS nova_database"
+                        )
+                        row = await correlation.fetchone()
+                        if isinstance(row, Mapping):
+                            catalog = row.get("nova_catalog")
+                            database_context = row.get("nova_database")
+                            if isinstance(catalog, str) and catalog:
+                                identity.catalog = catalog
+                                identity.database = (
+                                    database_context if isinstance(database_context, str) else None
+                                )
+                        value = (
+                            row.get("nova_engine_query_id") if isinstance(row, Mapping) else row[0]
+                        )
+                        from uuid import UUID
+
+                        engine_id = str(UUID(str(value)))
+                        identity.query_ids.append(engine_id)
+                        result.engine_query_ids = [engine_id]
+                        result.correlation_status = "available"
+                        if session is not None:
+                            session.last_query_id = engine_id
+                            session.instrumented = True
+                except Exception:
+                    # Never retry the user's statement because telemetry failed.
+                    if session is not None:
+                        session.last_query_id = None
+                        session.instrumented = True
+            elif session is not None:
+                session.instrumented = False
+            return result
+        except asyncio.CancelledError:
+            conn.close()
+            raise
         except asyncmy.errors.OperationalError as e:
             raise StarRocksError(f"Connection error: {e}") from e
         except asyncmy.errors.ProgrammingError as e:
             raise StarRocksError(f"SQL error: {e}") from e
+        finally:
+            if restore_profile:
+                try:
+                    async with conn.cursor() as cleanup:
+                        await cleanup.execute("SET enable_profile = false")
+                except Exception:
+                    # A session whose setting cannot be restored must not be reused.
+                    conn.close()
 
     @staticmethod
     async def _set_role(cur: asyncmy.cursors.DictCursor, role: str) -> None:

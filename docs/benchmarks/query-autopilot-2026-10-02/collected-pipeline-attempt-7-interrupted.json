@@ -1,0 +1,10 @@
+{
+  "status": "INTERRUPTED_CONFIGURATION_RESTORED",
+  "reason": "restart_with_final_window_completion_validation",
+  "phase": "COLLECTION_FAILED_CONFIGURATION_RESTORED",
+  "newly_persisted": 40,
+  "dropped": 0,
+  "failed_batches": 0,
+  "database": "autopilot_snapshot_fresh_20261003",
+  "production_actions": 0
+}

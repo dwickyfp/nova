@@ -1,0 +1,379 @@
+{
+  "case": "E",
+  "ground_truth": "planted_growth_after_statistics_collection",
+  "status": "PASS",
+  "evidence_kind": "real_native_engine_controlled_fixture",
+  "planting": {
+    "growth_source": "order_items",
+    "inserted_rows": 1500,
+    "cardinality_support_floor": 1000
+  },
+  "phases": {
+    "before": {
+      "query_id": "01a0f9b1-137e-7976-abbd-265feac57f13",
+      "operators": {
+        "facts": {
+          "estimated_rows": 1.0,
+          "actual_rows": 1500.0
+        },
+        "operators": [
+          {
+            "operator": "AGGREGATION",
+            "node_id": 2,
+            "estimated_rows": 1.0,
+            "actual_rows": 1.0
+          },
+          {
+            "operator": "PROJECT",
+            "node_id": 1,
+            "actual_rows": 1500.0
+          },
+          {
+            "operator": "OLAP_SCAN",
+            "node_id": 0,
+            "estimated_rows": 1.0,
+            "actual_rows": 1500.0
+          }
+        ],
+        "query_id_verified": true
+      },
+      "statistics": {
+        "facts": {
+          "statistics_missing": false,
+          "statistics_stale": true,
+          "table_growth_ratio": 0.009900990099009901
+        },
+        "tables": [
+          {
+            "database": "autopilot_final_retail_20261002",
+            "table": "autopilot_stats_b9f831b69d",
+            "health_percent": 0.0,
+            "row_count": 1,
+            "statistics_row_count": 101,
+            "growth_ratio": 0.009900990099009901
+          }
+        ]
+      },
+      "findings": [
+        {
+          "detector": "cardinality_error",
+          "severity": "warning",
+          "measured": {
+            "q_error": 1500.0
+          },
+          "evidence_ids": [
+            "01a0f9b1-137e-7976-abbd-265feac57f13"
+          ]
+        },
+        {
+          "detector": "statistics",
+          "severity": "warning",
+          "measured": {
+            "q_error": 1500.0,
+            "growth_ratio": 0.009900990099009901
+          },
+          "evidence_ids": [
+            "01a0f9b1-137e-7976-abbd-265feac57f13"
+          ]
+        }
+      ],
+      "diagnosis": [
+        {
+          "category": "CARDINALITY_ESTIMATE",
+          "confidence": 0.75,
+          "evidence_ids": [
+            "01a0f9b1-137e-7976-abbd-265feac57f13"
+          ],
+          "counterevidence": [],
+          "explanation": "Measured operator rows differ materially from estimated rows. Current window: 30 executions, P95 209.208 ms. Matched operator: estimated 1 rows, measured 1500 rows. This establishes an estimate error, not its cause or the benefit of a change."
+        },
+        {
+          "category": "STATISTICS",
+          "confidence": 0.7,
+          "evidence_ids": [
+            "01a0f9b1-137e-7976-abbd-265feac57f13"
+          ],
+          "counterevidence": [],
+          "explanation": "Statistics state supports a possible contributor, but does not establish that refreshing statistics will improve the query. Test causality in the snapshot. Current window: 30 executions, P95 209.208 ms. The regression sample/window requirement is not met; no percentile regression is established. Statistics are stale; age alone cannot establish a latency cause."
+        }
+      ]
+    },
+    "after": {
+      "query_id": "01a0f9b1-a587-70c3-8997-04451d7eabda",
+      "operators": {
+        "facts": {
+          "estimated_rows": 800.0,
+          "actual_rows": 1500.0
+        },
+        "operators": [
+          {
+            "operator": "AGGREGATION",
+            "node_id": 2,
+            "estimated_rows": 1.0,
+            "actual_rows": 1.0
+          },
+          {
+            "operator": "PROJECT",
+            "node_id": 1,
+            "actual_rows": 1500.0
+          },
+          {
+            "operator": "OLAP_SCAN",
+            "node_id": 0,
+            "estimated_rows": 800.0,
+            "actual_rows": 1500.0
+          }
+        ],
+        "query_id_verified": true
+      },
+      "statistics": {
+        "facts": {
+          "statistics_missing": false,
+          "statistics_stale": true,
+          "table_growth_ratio": 0.0006246096189881324
+        },
+        "tables": [
+          {
+            "database": "autopilot_final_retail_20261002",
+            "table": "autopilot_stats_b9f831b69d",
+            "health_percent": 0.0,
+            "row_count": 1,
+            "statistics_row_count": 1601,
+            "growth_ratio": 0.0006246096189881324
+          }
+        ]
+      },
+      "findings": [],
+      "diagnosis": [
+        {
+          "category": "UNKNOWN",
+          "confidence": 0,
+          "evidence_ids": [
+            "01a0f9b1-a587-70c3-8997-04451d7eabda"
+          ],
+          "counterevidence": [],
+          "explanation": "The available measurements do not establish a root cause. Current window: 30 executions, P95 281.98 ms. The regression sample/window requirement is not met; no percentile regression is established. Statistics are stale; age alone cannot establish a latency cause."
+        }
+      ]
+    }
+  },
+  "experiment": {
+    "status": "NO_IMPROVEMENT",
+    "reason": "benefit_not_repeatable_or_below_threshold",
+    "before": {
+      "count": 30,
+      "mean_ms": 59.81570266885683,
+      "stddev_ms": 75.2148252276528,
+      "p95_ms": 208.8558330142405,
+      "plans": [],
+      "query_ids": [
+        "01a0f9b1-137e-7976-abbd-265feac57f13",
+        "01a0f9b1-1cd7-79af-add3-3cd4399c92c3",
+        "01a0f9b1-1f5b-7b87-8702-4877a281bfd5",
+        "01a0f9b1-21e3-71ec-9aee-2377d1335cdf",
+        "01a0f9b1-241f-7d80-9e16-b47b03ca9406",
+        "01a0f9b1-2574-7b39-9527-ea1f3f4fff3b",
+        "01a0f9b1-2779-7dc9-bff9-b448081b8a78",
+        "01a0f9b1-2959-777c-afca-30a1b69b9d57",
+        "01a0f9b1-2add-7c88-9fce-23f049d779b1",
+        "01a0f9b1-2c33-771f-b855-aa3a1842e019",
+        "01a0f9b1-2da0-7fb4-a030-30e8a617f866",
+        "01a0f9b1-2f1a-744d-8d86-a05ba93e72a4",
+        "01a0f9b1-3120-7fd7-bc21-ddb5bc3ee816",
+        "01a0f9b1-32f0-79c0-ac82-70b549b28533",
+        "01a0f9b1-348c-7968-98e0-82e73a62eaaf",
+        "01a0f9b1-3635-731c-b1dc-0a9e2e494d0e",
+        "01a0f9b1-3b6f-7eac-9520-485fb9b9e349",
+        "01a0f9b1-3f6c-77db-aeea-72c26ee48187",
+        "01a0f9b1-419f-752b-b859-aeedfbc77fee",
+        "01a0f9b1-4914-7ccc-a202-4229e8ecde0d",
+        "01a0f9b1-4c23-75b3-aa87-083ccd20ab71",
+        "01a0f9b1-5274-7d04-ad83-f2ec1116e38b",
+        "01a0f9b1-64d5-7254-9dfc-caec657d6e5d",
+        "01a0f9b1-6c1a-7336-99e5-4fb73ee83dd1",
+        "01a0f9b1-6d78-7900-950c-e62f8909ce16",
+        "01a0f9b1-6f16-7b69-b660-0384c796c8e5",
+        "01a0f9b1-7292-7a8b-94ae-7b7864ca0630",
+        "01a0f9b1-7876-773e-8e5a-b38b7a85be69",
+        "01a0f9b1-7abf-75c9-a730-1551b831deb1",
+        "01a0f9b1-80e1-7c2b-b1f8-c5f98367b8be"
+      ],
+      "resource": [
+        {
+          "queue_ms": 0.0,
+          "cpu_ms": 4.111,
+          "execution_ms": 12.506,
+          "peak_memory_bytes": 379024.384,
+          "spill_bytes": 0.0,
+          "scanned_rows": 1500,
+          "output_rows": 1
+        }
+      ]
+    },
+    "after": {
+      "count": 30,
+      "mean_ms": 90.97217366603824,
+      "stddev_ms": 103.2229463366593,
+      "p95_ms": 281.85654201661237,
+      "plans": [],
+      "query_ids": [
+        "01a0f9b1-a587-70c3-8997-04451d7eabda",
+        "01a0f9b1-afce-7929-9ad4-dece811fe9ce",
+        "01a0f9b1-b2f4-7cd9-bda5-7e4c6fea3b13",
+        "01a0f9b1-b670-7fe9-9016-74add219b25f",
+        "01a0f9b1-b8df-78b8-85e3-4b6c495f166f",
+        "01a0f9b1-bffd-7aa3-8db2-0f215234b4ab",
+        "01a0f9b1-c774-79f4-a0d7-c163a109c9d2",
+        "01a0f9b1-cc3a-78c2-9959-f4b8b56b5539",
+        "01a0f9b1-d142-71c8-b5ce-9013ade1830f",
+        "01a0f9b1-d4d5-762e-9328-3e722ca11bbf",
+        "01a0f9b1-d880-760f-9c12-08a155a7eeaf",
+        "01a0f9b1-e474-7f91-abef-73dbf3fba049",
+        "01a0f9b1-e984-7ab3-a16d-b6e04bc2d245",
+        "01a0f9b1-ec0d-751f-b123-2d61d73a7c82",
+        "01a0f9b1-ee0d-7228-827e-0db95f6f9838",
+        "01a0f9b1-ef8a-7d93-8866-5a2c610506bb",
+        "01a0f9b1-f0dc-73da-affa-1818c95cad21",
+        "01a0f9b1-f2f3-71f7-8bd5-bfcc3e84df84",
+        "01a0f9b1-f46d-7afd-8a57-f10578ed00ad",
+        "01a0f9b1-f84a-7cf8-b50f-7033df24675a",
+        "01a0f9b2-027e-75e6-a527-4b074b0d8589",
+        "01a0f9b2-078e-72c6-ab4c-59fdf3634657",
+        "01a0f9b2-0ecc-77fb-8826-e9cf752fb669",
+        "01a0f9b2-1405-7591-b787-b80dc07fe500",
+        "01a0f9b2-166c-7643-b8b1-27ccf43f7bca",
+        "01a0f9b2-17eb-730a-a7f7-f6144f3e781d",
+        "01a0f9b2-1936-759a-abf5-b3cb90943b3d",
+        "01a0f9b2-1cc4-78c5-b0d1-4626d40b8d17",
+        "01a0f9b2-1fdc-7576-bfc6-5d9426804984",
+        "01a0f9b2-28fb-7564-a682-1be7d11eea0b"
+      ],
+      "resource": [
+        {
+          "queue_ms": 0.0,
+          "cpu_ms": 8.96,
+          "execution_ms": 15.997,
+          "peak_memory_bytes": 379008.0,
+          "spill_bytes": 0.0,
+          "scanned_rows": 1500,
+          "output_rows": 1
+        }
+      ]
+    },
+    "controls": {
+      "before": {
+        "count": 30,
+        "mean_ms": 20.939026398506638,
+        "stddev_ms": 25.393515994826384,
+        "p95_ms": 73.0952080048155,
+        "plans": [],
+        "query_ids": [
+          "01a0f9b1-19c5-7baf-9aae-60501ad7a346",
+          "01a0f9b1-1dbb-7f66-9163-76ea3f4be8b8",
+          "01a0f9b1-205c-7b56-a33f-9766bffe2ed9",
+          "01a0f9b1-22b3-7bd4-9e3f-f3109e497fe3",
+          "01a0f9b1-2492-7bd1-9d81-0b47d7e4f872",
+          "01a0f9b1-268d-7b19-a750-246f8b783716",
+          "01a0f9b1-282c-7fe8-9af7-ffdc59b2f967",
+          "01a0f9b1-29c0-7660-9a04-c7d738d0fdcf",
+          "01a0f9b1-2b6b-7da0-bf5f-4c35e8df2c50",
+          "01a0f9b1-2cca-7584-a6a2-6f3ed849fc01",
+          "01a0f9b1-2e08-7248-b48c-ded04f7d1228",
+          "01a0f9b1-304a-74a4-bea8-03f2015428f8",
+          "01a0f9b1-3193-7b11-a98b-37475c922f81",
+          "01a0f9b1-3388-7648-8991-3d27e588b751",
+          "01a0f9b1-3517-7c3d-a250-ec38417f8cc2",
+          "01a0f9b1-374c-7e14-8731-2bd32d24a209",
+          "01a0f9b1-3c96-7cdc-bd4d-2392269c3379",
+          "01a0f9b1-4083-760f-84d6-b1d5c903288f",
+          "01a0f9b1-4275-7619-a5ff-1b1da1d8b6b8",
+          "01a0f9b1-4a63-7c74-a501-0674f7f34bee",
+          "01a0f9b1-4cec-7a12-9bf8-a46421c5a98b",
+          "01a0f9b1-5687-71e6-b506-0409aad9128c",
+          "01a0f9b1-6911-7319-aa98-0d65932df388",
+          "01a0f9b1-6c81-7afc-8890-e69c32891920",
+          "01a0f9b1-6e33-7a46-b3ec-f908f2ee0b1e",
+          "01a0f9b1-6f9c-7d0d-9b62-30fbf56c128b",
+          "01a0f9b1-75ce-78c9-849b-528249ff7907",
+          "01a0f9b1-79ba-76e5-b9f1-f23526ae6eda",
+          "01a0f9b1-7c32-74d9-b67d-a3f757b629ed",
+          "01a0f9b1-840a-7ec0-9260-6e5d7c7c4c56"
+        ],
+        "resource": []
+      },
+      "after": {
+        "count": 30,
+        "mean_ms": 42.607136066847794,
+        "stddev_ms": 86.51114596306424,
+        "p95_ms": 186.76529100048356,
+        "plans": [],
+        "query_ids": [
+          "01a0f9b1-ad18-708c-be64-ded61ca7bd0f",
+          "01a0f9b1-b12c-79db-a913-c8b5cffa9bdc",
+          "01a0f9b1-b3dc-7c81-a90c-6fac8d557f9f",
+          "01a0f9b1-b7a0-78cb-a9ca-d84a90397e7a",
+          "01a0f9b1-b9e2-750e-997f-ce17446fdd72",
+          "01a0f9b1-c3ad-7165-9caf-dc436ba3f5da",
+          "01a0f9b1-c8c4-7b97-84f9-7c41bb5759d8",
+          "01a0f9b1-cf63-7f31-a9a1-ff7d230e048d",
+          "01a0f9b1-d2d1-7106-b13c-b84279378794",
+          "01a0f9b1-d688-7076-9b96-126c8e7fecab",
+          "01a0f9b1-da6e-7128-af56-ec45dbfa85b3",
+          "01a0f9b1-e6b1-72aa-b5e0-1c37423c48f7",
+          "01a0f9b1-e9fa-795a-924b-68dfad68ad27",
+          "01a0f9b1-ecf3-7d76-8543-b54a3f26d5de",
+          "01a0f9b1-eec0-7454-9378-7eed7d7cee55",
+          "01a0f9b1-eff3-7b00-b67b-895e6c37d42e",
+          "01a0f9b1-f155-7ccb-b158-d7014a75f975",
+          "01a0f9b1-f35c-7d8b-9bb9-da1863c38740",
+          "01a0f9b1-f689-7594-9992-ebebddd2c48a",
+          "01a0f9b1-fb23-74a5-a652-fc003510b73a",
+          "01a0f9b2-0581-735a-a0d2-8b9343b00a6b",
+          "01a0f9b2-0849-79dd-b00e-d7c1b2713062",
+          "01a0f9b2-11ec-7fe0-ad76-572373f2c9d9",
+          "01a0f9b2-156c-7619-95ab-69bcff13437a",
+          "01a0f9b2-171a-725f-a26b-b5f7b8e24596",
+          "01a0f9b2-1856-7d32-8dee-96b156e89c36",
+          "01a0f9b2-1a55-7c0b-8745-ca6b0301505e",
+          "01a0f9b2-1da9-726f-b95b-0c2946876789",
+          "01a0f9b2-2367-77d7-8b21-a76e11a6d264",
+          "01a0f9b2-2af4-76a3-921c-e5f4719392dd"
+        ],
+        "resource": []
+      }
+    },
+    "correctness": "EQUIVALENT",
+    "improvement": -0.5208744461243802,
+    "snapshot": "cb16f8deae25c66d7eb4b7f6fe22d768e911dfa221c31f30391eb20303eb9982",
+    "repetitions": 30,
+    "result_comparison": {
+      "before_proof": {
+        "digest": "2d43397cfca24456b550ed9878a3e9cb53173ac0408498722a7491153b42fa7e",
+        "row_count": 1,
+        "bytes_compared": 19,
+        "types": [
+          "(8, 20, 0)"
+        ],
+        "ordered": false,
+        "reason": null
+      },
+      "after_proof": {
+        "digest": "2d43397cfca24456b550ed9878a3e9cb53173ac0408498722a7491153b42fa7e",
+        "row_count": 1,
+        "bytes_compared": 19,
+        "types": [
+          "(8, 20, 0)"
+        ],
+        "ordered": false,
+        "reason": null
+      },
+      "checked_target_samples": 60,
+      "checked_control_samples": 60,
+      "target_equivalent": true,
+      "control_equivalent": true,
+      "snapshot_verified": true
+    }
+  },
+  "production_actions": 0,
+  "causality": "refresh_reduced_estimate_error; latency_benefit_reported_separately"
+}
