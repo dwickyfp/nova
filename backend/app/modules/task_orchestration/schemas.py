@@ -60,6 +60,8 @@ class Task(TaskCreate):
     """A task definition row from CONFIG_TASKS."""
 
     id: str
+    handler: str = "sql"
+    handler_config: dict | str | None = Field(default=None, exclude=True)
     created_by: str | None = None
     version: int = 1
     created_at: datetime | None = None

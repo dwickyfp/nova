@@ -1,0 +1,12 @@
+{
+  "view_id": "38de16f1-b54b-4d2b-8389-9f13a1374854",
+  "agents": {
+    "Finance": "c1dc552b-225d-44a1-9fba-66af55b418c5",
+    "Marketing": "2e98f494-3b7a-40fc-8e8c-90f2ca9f3b9d",
+    "Operations": "94ad9a08-e1cb-4b5a-8f31-46107120ff69",
+    "Executive": "761c9f56-7513-4328-9b75-d0c3851484ee"
+  },
+  "principal": "bench_78d969f5971d",
+  "active_role": "BENCH_78d969f5971d",
+  "namespace": "bi_27a7f2266bc24ee6"
+}

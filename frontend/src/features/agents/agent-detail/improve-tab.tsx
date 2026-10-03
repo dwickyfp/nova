@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { CircleAlert, CircleCheck, CircleX } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AgentMemoryDialog } from "@/features/studio/agent-memory-dialog";
+import { api } from "@/lib/api-client";
 import {
   learningApi,
   type ReadinessCheck,
@@ -18,8 +21,23 @@ import {
  * version of the Semantic View, which is published from the view's own page.
  */
 export function AgentImproveTab({ agentId }: { agentId: string }) {
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const consolidation = useMutation({
+    mutationFn: () => api.post<{ queued: number }>(`/agents/${encodeURIComponent(agentId)}/knowledge/consolidate`),
+    onSuccess: result => toast.success(`${result.queued} learning tasks queued`),
+    onError: () => toast.error('Learning could not be queued. Check your current session and retry.'),
+  });
   return (
     <div className="grid max-w-4xl gap-8">
+      <section className="space-y-3">
+        <h2 className="text-base font-medium">Business knowledge</h2>
+        <p className="text-sm text-muted-foreground">Review private statements, supporting evidence, conflicts, and published definitions. Learning from pending conversations runs under your current access.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setKnowledgeOpen(true)}>Review knowledge</Button>
+          <Button variant="outline" disabled={consolidation.isPending} onClick={() => consolidation.mutate()}>{consolidation.isPending ? 'Queuing…' : 'Consolidate pending learning'}</Button>
+        </div>
+      </section>
+      <AgentMemoryDialog agentId={agentId} open={knowledgeOpen} onOpenChange={setKnowledgeOpen} />
       <Readiness agentId={agentId} />
       <Candidates agentId={agentId} />
       <Suggestions agentId={agentId} />

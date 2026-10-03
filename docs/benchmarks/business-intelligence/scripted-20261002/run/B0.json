@@ -1,0 +1,1365 @@
+[
+  {
+    "case_id": "A-business_term-1",
+    "category": "business_term",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "9b0cd2df-9ae8-4c2c-a194-0bdea86231c9",
+    "message_id": "0b769715-38ac-42a8-b4b5-bbcecb86b72d",
+    "latency_ms": 13107.89924999699,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-business_term-2",
+    "category": "business_term",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "1e3479a2-6e89-49ef-bde4-aa1a16492bd8",
+    "message_id": "0a6120b7-a192-43d2-8026-be83686a459c",
+    "latency_ms": 9633.033708989387,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-business_term-3",
+    "category": "business_term",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "f05a4acb-dcd1-421a-98f8-60e04153f408",
+    "message_id": "1207c9b8-a767-44db-b045-64053e2676f8",
+    "latency_ms": 9630.81804200192,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-business_term-4",
+    "category": "business_term",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "232458ba-1615-4abf-91a3-7eae7a8885e2",
+    "message_id": "cd62a508-d498-4a98-a129-cd5fba667c91",
+    "latency_ms": 10366.402332991129,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-canonical_metric-1",
+    "category": "canonical_metric",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "60d10ea2-69f5-4583-aad2-d865d0eb7e81",
+    "message_id": "5ca03133-d37a-40bc-8ac2-81a4f597dc18",
+    "latency_ms": 11378.991167002823,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-canonical_metric-2",
+    "category": "canonical_metric",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "a64b7a78-f63f-42ab-a914-cff9216cd332",
+    "message_id": "80f27602-dcd2-40fa-9d23-9edc8371a334",
+    "latency_ms": 11395.361875009257,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-canonical_metric-3",
+    "category": "canonical_metric",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "07d8f611-78ee-4f52-ab51-14303ee36d45",
+    "message_id": "1a34643a-2626-4264-b967-8718222d4973",
+    "latency_ms": 10449.601041007554,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-canonical_metric-4",
+    "category": "canonical_metric",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "6abc48c7-3aec-4fc0-8089-e97aaf610ea9",
+    "message_id": "c32b1d52-57c2-483a-9869-158aab1d3551",
+    "latency_ms": 13528.945042024134,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-business_rule-1",
+    "category": "business_rule",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "20775aa5-8ab7-427a-8fbd-24e97a341374",
+    "message_id": "6ec61468-46de-4c5a-b37e-afcf39c15e96",
+    "latency_ms": 17031.457709003007,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-business_rule-2",
+    "category": "business_rule",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "307c694c-b90d-4778-b5cc-a76afcb3c7b2",
+    "message_id": "5ffb0b60-9886-495a-8060-c956542d164e",
+    "latency_ms": 10608.705041988287,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-business_rule-3",
+    "category": "business_rule",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "cd37f4dc-516c-4e69-98df-a4fff03e8d16",
+    "message_id": "7d41e0c3-8206-486f-a185-c292842d6a41",
+    "latency_ms": 10664.830249996157,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-business_rule-4",
+    "category": "business_rule",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "dbf08043-2b6d-4a28-9a4d-aa74733228a3",
+    "message_id": "5f634e6b-9cb5-468a-a9cc-8578984a6b25",
+    "latency_ms": 10656.899791996693,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-semantic_resolution-1",
+    "category": "semantic_resolution",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "e1bfb6ec-109f-4c9c-9da6-b4d28edcfd54",
+    "message_id": "62421b1a-3ffa-47d3-a040-234f617fc85c",
+    "latency_ms": 11493.337749998318,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-semantic_resolution-2",
+    "category": "semantic_resolution",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "5ef8d7cb-7656-478a-b2ab-6e9b01a2b0fd",
+    "message_id": "ec3d6087-d12a-4445-939a-e7ec0468b33c",
+    "latency_ms": 11392.819667002186,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-semantic_resolution-3",
+    "category": "semantic_resolution",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "3eefaa2c-d0df-4631-856e-ad3cdb3a4ee6",
+    "message_id": "f968db70-a1d4-45cf-8d2b-fad9ebc3cd3a",
+    "latency_ms": 11035.261290991912,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-semantic_resolution-4",
+    "category": "semantic_resolution",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "145f7979-83c5-4fd0-93e1-bc1e226e4222",
+    "message_id": "61c2fdf8-3fed-4f57-9c56-d00f73a808ea",
+    "latency_ms": 10525.688916997751,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-cross_domain_reasoning-1",
+    "category": "cross_domain_reasoning",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "ff01b14e-85c3-47f8-95d1-552021c2a100",
+    "message_id": "38d5023b-60d7-4d8f-a32e-ac383d02494f",
+    "latency_ms": 20467.75120901293,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-cross_domain_reasoning-2",
+    "category": "cross_domain_reasoning",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "a1e50b1d-d4cb-4f21-b186-c85db6862b74",
+    "message_id": "9ed4c8f5-13da-44df-9730-d299e7c1cda9",
+    "latency_ms": 26824.208125006407,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-cross_domain_reasoning-3",
+    "category": "cross_domain_reasoning",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "6fd3fb24-1f70-4701-8a27-5f2be35b069d",
+    "message_id": "0d2e12d3-5f55-419d-88cd-1ab0af92f8b6",
+    "latency_ms": 15412.800958001753,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-cross_domain_reasoning-4",
+    "category": "cross_domain_reasoning",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "8e9d1e59-fcd2-4165-a6de-659a84e7b0bd",
+    "message_id": "364f0b59-e30f-47da-8887-9a4f0c4dbe4c",
+    "latency_ms": 13717.78637499665,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": false,
+      "rule_accuracy": false,
+      "plan_accuracy": false
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": false,
+    "review_rubric": []
+  },
+  {
+    "case_id": "A-root_cause-1",
+    "category": "root_cause",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "a237251f-6a5c-4e79-b227-c55bbbbf1b3c",
+    "message_id": "79198a02-2404-46ff-b9cb-485189a8130f",
+    "latency_ms": 10235.823291994166,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ]
+  },
+  {
+    "case_id": "A-root_cause-2",
+    "category": "root_cause",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "6c742537-abd0-42bc-ad7e-e2062eef6d3c",
+    "message_id": "79c13882-ce77-4e77-aefa-f2bd92e988d9",
+    "latency_ms": 10744.39612502465,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ]
+  },
+  {
+    "case_id": "A-root_cause-3",
+    "category": "root_cause",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "57a03934-bdaa-4b9e-a650-a7d39be2e5a7",
+    "message_id": "fd174cfa-c9fc-4bf6-93e6-201a80b29240",
+    "latency_ms": 12494.825082976604,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ]
+  },
+  {
+    "case_id": "A-root_cause-4",
+    "category": "root_cause",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "fe5372cb-9162-4be1-8870-e0dea3f1d355",
+    "message_id": "f5dfeeeb-7c85-488b-b57f-b159a304386d",
+    "latency_ms": 10582.93429200421,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ]
+  },
+  {
+    "case_id": "A-business_system_link-1",
+    "category": "business_system_link",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "2529bfbc-fbc0-48ad-ac9e-1821aba038ce",
+    "message_id": "7d802f71-2b65-4b3c-81a9-b2fd9cee1562",
+    "latency_ms": 10393.548874999397,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ]
+  },
+  {
+    "case_id": "A-business_system_link-2",
+    "category": "business_system_link",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "fc566b62-b240-46cb-9bdb-ca60888cb853",
+    "message_id": "888196a9-98be-4114-9821-a48c8dcf6458",
+    "latency_ms": 11108.953500021016,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ]
+  },
+  {
+    "case_id": "A-business_system_link-3",
+    "category": "business_system_link",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "428e1b68-3e96-4f1c-ba79-b85385350151",
+    "message_id": "4190e69b-086c-441f-9561-452e8e1bd70e",
+    "latency_ms": 10575.729292002507,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ]
+  },
+  {
+    "case_id": "A-business_system_link-4",
+    "category": "business_system_link",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "ad56ff73-61f5-40cb-be2f-32665d1cea83",
+    "message_id": "b689119b-e9c6-4940-87dd-de538f15f4c0",
+    "latency_ms": 11894.947332999436,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ]
+  },
+  {
+    "case_id": "A-forecast-1",
+    "category": "forecast",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "43bf30a9-6d0d-4b12-a487-9a0c50f06219",
+    "message_id": "d128a303-0616-4cf3-a273-b5ef172ad6e0",
+    "latency_ms": 12318.56008298928,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ]
+  },
+  {
+    "case_id": "A-forecast-2",
+    "category": "forecast",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "24363360-5695-4efd-a2e5-4312a307ca28",
+    "message_id": "facaea91-cd8c-4fbc-9e2b-f17b953a7fcd",
+    "latency_ms": 10161.2089999835,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ]
+  },
+  {
+    "case_id": "A-forecast-3",
+    "category": "forecast",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "3c885582-93ff-481b-be8c-9181ae72b666",
+    "message_id": "c4b807d9-8d7c-46b4-ad26-c377e7dc4dac",
+    "latency_ms": 10158.573124994291,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ]
+  },
+  {
+    "case_id": "A-forecast-4",
+    "category": "forecast",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "cd6a6b3e-490b-4803-8c86-096d680e3960",
+    "message_id": "10540624-1a33-4ea5-b420-efdc46cfd6e9",
+    "latency_ms": 11477.03566600103,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ]
+  },
+  {
+    "case_id": "A-causal_effect-1",
+    "category": "causal_effect",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "0cfe977e-dd9c-4027-a2fe-1dbfb2a8cc2c",
+    "message_id": "a8e1226e-b8b1-4429-a71a-5c3ba2f5d376",
+    "latency_ms": 13110.62520800624,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ]
+  },
+  {
+    "case_id": "A-causal_effect-2",
+    "category": "causal_effect",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "aae20984-39bb-4e21-a4ef-543649abd413",
+    "message_id": "e521bb38-d736-4905-b46a-ae4252e17fcf",
+    "latency_ms": 16075.858958007302,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ]
+  },
+  {
+    "case_id": "A-causal_effect-3",
+    "category": "causal_effect",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "a1175f0d-bc59-4fc1-9724-10b6a628c812",
+    "message_id": "3f580dd6-976f-4352-885a-47e204b1172c",
+    "latency_ms": 26667.18225000659,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ]
+  },
+  {
+    "case_id": "A-causal_effect-4",
+    "category": "causal_effect",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "81aee655-e531-4bb9-b928-77b054043140",
+    "message_id": "066764eb-6113-414a-8d74-3ada3b589ed2",
+    "latency_ms": 32301.96995800361,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ]
+  },
+  {
+    "case_id": "A-decision_option-1",
+    "category": "decision_option",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "32c7d916-4df7-4bc5-bae0-599a6612de26",
+    "message_id": "3e61295b-6003-4110-a2dc-17eeb3ff2d40",
+    "latency_ms": 17993.877417000476,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ]
+  },
+  {
+    "case_id": "A-decision_option-2",
+    "category": "decision_option",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "e61d67eb-530f-4f63-8d5d-d7cc8829ee56",
+    "message_id": "c5140be3-9e94-425a-ba8c-a31700129009",
+    "latency_ms": 11615.540083002998,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ]
+  },
+  {
+    "case_id": "A-decision_option-3",
+    "category": "decision_option",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "36e5451f-b5ed-4a80-a8a7-569b281df86e",
+    "message_id": "d2143946-c05d-4856-b5ab-7d7d0cfdc93e",
+    "latency_ms": 16923.14462500508,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ]
+  },
+  {
+    "case_id": "A-decision_option-4",
+    "category": "decision_option",
+    "repetition": 0,
+    "learning_sensitive": true,
+    "thread_id": "c6637b12-676d-42dc-b17b-825ceb0f92a3",
+    "message_id": "5b8361cc-523e-460b-bb3c-26fd78f7fc0f",
+    "latency_ms": 12457.559250004124,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ]
+  },
+  {
+    "case_id": "A-policy-1",
+    "category": "policy",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "8fdbba0c-6336-403c-ae93-826ad972b98b",
+    "message_id": "e3487bf8-fcf1-4dfb-b464-725f475e06f5",
+    "latency_ms": 15029.745874984656,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ]
+  },
+  {
+    "case_id": "A-policy-2",
+    "category": "policy",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "bacee14e-5c24-4188-a560-a37136fc6b28",
+    "message_id": "45b50391-8e31-4c84-8079-f567bacae9d8",
+    "latency_ms": 11411.374708026415,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ]
+  },
+  {
+    "case_id": "A-policy-3",
+    "category": "policy",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "45a3c138-0664-4199-9354-4ddae766fef4",
+    "message_id": "581c418e-02a6-4293-aa11-f53824007773",
+    "latency_ms": 10909.038374986267,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ]
+  },
+  {
+    "case_id": "A-policy-4",
+    "category": "policy",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "3c3dadce-0968-4afd-9845-26bf9ed81b3a",
+    "message_id": "dabac527-7075-446d-92a0-820f2ad50832",
+    "latency_ms": 10189.269750000676,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ]
+  },
+  {
+    "case_id": "A-lineage-1",
+    "category": "lineage",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "2b87e1bf-ca3a-4ad4-9656-6171999ae9bc",
+    "message_id": "8a2ca7b6-351f-452b-bbd6-886dd0f105cb",
+    "latency_ms": 14939.9179170141,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ]
+  },
+  {
+    "case_id": "A-lineage-2",
+    "category": "lineage",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "971e4549-5b90-4b87-bcbd-763d96482f94",
+    "message_id": "b5708809-a87d-4cbf-ba14-2b887351440c",
+    "latency_ms": 10128.329541999847,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ]
+  },
+  {
+    "case_id": "A-lineage-3",
+    "category": "lineage",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "9c7b7e33-e98f-44cd-b537-0635a6fc70d6",
+    "message_id": "0007582c-f748-4ce7-8e39-067212c6cf11",
+    "latency_ms": 13625.894416007213,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ]
+  },
+  {
+    "case_id": "A-lineage-4",
+    "category": "lineage",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "4e2d75b6-0d8c-42cc-b723-c8009cbe3489",
+    "message_id": "62b9628a-3cba-446a-8215-9ec3da432615",
+    "latency_ms": 14196.665124996798,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ]
+  },
+  {
+    "case_id": "A-outcome-1",
+    "category": "outcome",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "650690f0-8b87-4a76-acff-c7b0a46e0e74",
+    "message_id": "e58c2bd5-d8b9-485a-9a19-c4acf1aac863",
+    "latency_ms": 63079.289792018244,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ]
+  },
+  {
+    "case_id": "A-outcome-2",
+    "category": "outcome",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "cad376b4-b119-4e9c-8644-1d6a428bfbbb",
+    "message_id": "09f802bc-7361-4699-81d1-c2531c66838b",
+    "latency_ms": 40552.53316700691,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ]
+  },
+  {
+    "case_id": "A-outcome-3",
+    "category": "outcome",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "8c525f4a-775b-47cb-9e2e-60068d070bc9",
+    "message_id": "629af0fd-339d-405b-a0ff-55dd555b28bd",
+    "latency_ms": 17113.09870801051,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ]
+  },
+  {
+    "case_id": "A-outcome-4",
+    "category": "outcome",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "ec6a6550-4df8-44a8-ad9b-2c60fb4a0174",
+    "message_id": "e91f481c-41b8-4b3e-9613-64f925e16d8f",
+    "latency_ms": 16575.880125019467,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ]
+  },
+  {
+    "case_id": "A-confidence-1",
+    "category": "confidence",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "9f68555f-eaee-4529-bb1e-ebafc1fdc9ae",
+    "message_id": "9a1a1711-b4bf-494f-adce-dd0dce4e9ad9",
+    "latency_ms": 12878.95587499952,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ]
+  },
+  {
+    "case_id": "A-confidence-2",
+    "category": "confidence",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "d6cb0a71-e6f9-487b-8091-7df95c051b46",
+    "message_id": "e4f686fd-1683-4e82-b940-b8e3440af371",
+    "latency_ms": 11520.451459015021,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ]
+  },
+  {
+    "case_id": "A-confidence-3",
+    "category": "confidence",
+    "repetition": 0,
+    "learning_sensitive": false,
+    "thread_id": "f094064e-e1fa-4801-ac7d-be15c78043e1",
+    "message_id": "754e6a61-3950-421b-8451-030bef239008",
+    "latency_ms": 12449.795166990953,
+    "tokens": 0,
+    "finish_reason": "stop",
+    "provider_calls": null,
+    "traced_provider_steps": 1,
+    "tool_calls": 0,
+    "scores": {
+      "answer_accuracy": null
+    },
+    "severe_unsupported_causal_claims": null,
+    "authorization_bypasses": null,
+    "silent_wrong": null,
+    "review_rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ]
+  }
+]

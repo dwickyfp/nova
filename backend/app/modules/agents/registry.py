@@ -33,6 +33,8 @@ KNOWN_TOOLS = frozenset(
         "feature_lookup",
         "data_to_chart",
         "diagnose_change",
+        "context_graph",
+        "decision_lab",
         "compute_metrics",
         "schedule_automation",
         "ml_execute",
@@ -112,6 +114,13 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
         from app.modules.agents.tools.diagnose_change import diagnose_change_tool
 
         registry.register(diagnose_change_tool)
+
+    if selected & {"context_graph", "decision_lab"}:
+        from app.modules.agents.tools.intelligence import context_graph_tool, decision_lab_tool
+
+        for tool in (context_graph_tool, decision_lab_tool):
+            if tool.name in selected:
+                registry.register(tool)
 
     if "ml_execute" in selected:
         from app.modules.agents.tools.ml_execute import ml_execute_tool

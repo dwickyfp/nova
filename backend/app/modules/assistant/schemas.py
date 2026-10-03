@@ -120,6 +120,7 @@ class ThreadCreateRequest(BaseModel):
 
     title: str | None = Field(default=None, max_length=256)
     workspace_file_id: str | None = Field(default=None, max_length=64)
+    learning_enabled: bool = True
 
 
 class ThreadUpdateRequest(BaseModel):

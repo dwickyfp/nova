@@ -802,6 +802,7 @@ async def verify_agent_access(
             username=user["username"],
             encrypted_password=user.get("encrypted_password", ""),
             session_id=user.get("session_id"),
+            security_context_version=int(user.get("security_context_version") or 1),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1056,8 +1057,11 @@ async def revoke_share(share_id: str, user: dict = Depends(get_current_user)) ->
 async def list_shared_with_me(user: dict = Depends(get_current_user)) -> dict:
     from app.modules.agents.sharing import share_repository
 
-    shares = [share for share in await share_repository.visible(user)
-              if share["owner_name"] != user["username"]]
+    shares = [
+        share for share in await share_repository.visible(user)
+        if share["owner_name"] != user["username"]
+        and share["object_type"] in {"thread", "dashboard"}
+    ]
     unique = {(item["object_type"], item["object_id"]): item for item in shares}
     return {"shared": list(unique.values()), "count": len(unique)}
 

@@ -16,16 +16,21 @@ from app.modules.intelligence.semantic_views import SemanticViewQuery, semantic_
 def test_search_rejects_ambiguous_or_unsafe_source_columns(columns):
     with pytest.raises(ValidationError):
         SearchIndexCreate(
-            name="catalog", source_relation="NOVA_SYSTEM.docs",
-            key_columns=["id"], content_columns=columns,
+            name="catalog",
+            source_relation="NOVA_SYSTEM.docs",
+            key_columns=["id"],
+            content_columns=columns,
         )
 
 
 def test_feature_view_rejects_duplicate_columns():
     with pytest.raises(ValidationError):
         FeatureViewDefinition(
-            name="orders", entity_id="entity-1", source_relation="NOVA_SYSTEM.orders",
-            event_timestamp="at", feature_columns=["amount", "AMOUNT"],
+            name="orders",
+            entity_id="entity-1",
+            source_relation="NOVA_SYSTEM.orders",
+            event_timestamp="at",
+            feature_columns=["amount", "AMOUNT"],
         )
 
 

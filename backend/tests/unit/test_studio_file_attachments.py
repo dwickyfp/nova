@@ -379,7 +379,7 @@ async def test_studio_endpoint_persists_attachment_and_streams_answer(monkeypatc
     )
     monkeypatch.setattr(agent_router, "_resolve_database", AsyncMock(return_value="sales"))
     monkeypatch.setattr(agent_router, "_generate_thread_title", AsyncMock(return_value="File test"))
-    monkeypatch.setattr(agent_router, "remember_user_message", AsyncMock())
+    monkeypatch.setattr(repo, "learning_enabled", AsyncMock(return_value=False), raising=False)
     monkeypatch.setattr(agent_router, "write_audit_log", AsyncMock())
     monkeypatch.setattr(agent_router.run_journal, "start", AsyncMock())
     monkeypatch.setattr(agent_router.run_journal, "append", AsyncMock())

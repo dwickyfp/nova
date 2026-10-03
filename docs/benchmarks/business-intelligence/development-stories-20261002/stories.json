@@ -1,0 +1,4815 @@
+{
+  "evidence_type": "development_real_engine",
+  "observation_dataset_unchanged": true,
+  "observation_manifest": {
+    "schema": "NOVA_INTELLIGENCE_BENCH",
+    "profile": "small",
+    "seed": 20260930,
+    "clock": "2026-03-26T00:00:00+00:00",
+    "tables": {
+      "customers": {
+        "rows": 1000,
+        "columns": [
+          "customer_id",
+          "full_name",
+          "city",
+          "segment"
+        ],
+        "sha256": "61dc156d65cd30b0e45c119532e19af5e54dfffa371e275dee4036300e65e01b"
+      },
+      "products": {
+        "rows": 60,
+        "columns": [
+          "product_id",
+          "name",
+          "brand",
+          "category"
+        ],
+        "sha256": "2a50aaf10716965489861defb04f2a695014b699c89a32dacaff733189a2502e"
+      },
+      "orders": {
+        "rows": 5000,
+        "columns": [
+          "order_id",
+          "customer_id",
+          "ordered_at",
+          "city",
+          "category",
+          "product_id",
+          "gross_amount",
+          "refund_amount",
+          "status",
+          "reason",
+          "channel",
+          "payment_method",
+          "complete"
+        ],
+        "sha256": "35a40a542079444f7f7639a7a74e50b6b5207f67689394ef2c4369db65aa781c"
+      },
+      "order_items": {
+        "rows": 12358,
+        "columns": [
+          "item_id",
+          "order_id",
+          "product_id",
+          "quantity",
+          "unit_price",
+          "unit_cost",
+          "discount",
+          "net_amount"
+        ],
+        "sha256": "d24fe079f8953517df607d088612ec1ab4f59c418aff6c07ec111f02f18195e6"
+      },
+      "product_cost_history": {
+        "rows": 180,
+        "columns": [
+          "cost_id",
+          "product_id",
+          "valid_from",
+          "valid_to",
+          "unit_cost"
+        ],
+        "sha256": "b56dab7612fef5a78351856b85886124a797f8ffd5d8d0fd4363ba01bcb865d2"
+      },
+      "refunds": {
+        "rows": 253,
+        "columns": [
+          "refund_id",
+          "order_id",
+          "posted_at",
+          "amount",
+          "status"
+        ],
+        "sha256": "a3e194124a21dd1ab14590b224e71e94b37b6371c6e4eae6b1b66390ddf4ba31"
+      },
+      "warehouses": {
+        "rows": 4,
+        "columns": [
+          "warehouse_id",
+          "city",
+          "capacity"
+        ],
+        "sha256": "5086ccb7b14f383de98f03c86808b6fd6480b27559e6c48d46aea8caea45b28f"
+      },
+      "inventory_snapshots": {
+        "rows": 20160,
+        "columns": [
+          "snapshot_id",
+          "observed_at",
+          "warehouse_id",
+          "product_id",
+          "city",
+          "sellable_units",
+          "daily_demand",
+          "complete"
+        ],
+        "sha256": "a5b10d3e23c8eee293485948f0b422177f14b9b2f6f9ad9bb31ca91b1d15fbea"
+      },
+      "stock_movements": {
+        "rows": 20,
+        "columns": [
+          "movement_id",
+          "product_id",
+          "warehouse_id",
+          "occurred_at",
+          "quantity",
+          "reason"
+        ],
+        "sha256": "0fbb29af746b83849ecc213b191adf672dd8fd6c235d1f628d34e79787ec79e9"
+      },
+      "fulfillment_events": {
+        "rows": 4941,
+        "columns": [
+          "event_id",
+          "order_id",
+          "occurred_at",
+          "status",
+          "reason"
+        ],
+        "sha256": "ffda857fb38b819938b33596c3f69c2b62900ef3b69ae4103642c40aff3b5cef"
+      },
+      "campaigns": {
+        "rows": 1,
+        "columns": [
+          "campaign_id",
+          "name",
+          "channel",
+          "starts_at",
+          "objective"
+        ],
+        "sha256": "4cbcd4be429716ea053b62d6e931dc4e6cce0ba428079833ab0503c426a7e48d"
+      },
+      "campaign_spend": {
+        "rows": 336,
+        "columns": [
+          "spend_id",
+          "campaign_id",
+          "spent_at",
+          "city",
+          "spend"
+        ],
+        "sha256": "629dba9df926d6677b7082fead9b784a5e3ac46d42ac2a04309819ce570cfa0d"
+      },
+      "campaign_exposures": {
+        "rows": 1000,
+        "columns": [
+          "customer_id",
+          "campaign_id",
+          "assigned_at",
+          "treatment",
+          "converted",
+          "session_id"
+        ],
+        "sha256": "6a0bcdffac6ee437913e93d09e7b2c7b1fdbf957572dfcc1f7045dd719ca19ad"
+      },
+      "web_sessions": {
+        "rows": 6000,
+        "columns": [
+          "session_id",
+          "customer_id",
+          "started_at",
+          "city",
+          "channel",
+          "qualified"
+        ],
+        "sha256": "22af39867652927ccc5de1d62bb7475a8ef9306acc2ad44ee7db3886f670a4f9"
+      },
+      "checkout_events": {
+        "rows": 5000,
+        "columns": [
+          "checkout_id",
+          "session_id",
+          "occurred_at",
+          "shipping_selected",
+          "converted",
+          "city"
+        ],
+        "sha256": "29abad19b37732a89be55187fa2cf98664f1a9f7e137dd92c763ce13af83ddbc"
+      },
+      "payment_attempts": {
+        "rows": 4634,
+        "columns": [
+          "attempt_id",
+          "order_id",
+          "attempted_at",
+          "method",
+          "success",
+          "failure_code",
+          "service_id",
+          "city"
+        ],
+        "sha256": "662cef218ecf9af4b98356ff9d2ef127a2fcf63a4c02659c621e8510660ac1eb"
+      },
+      "payment_failures": {
+        "rows": 356,
+        "columns": [
+          "failure_id",
+          "attempt_id",
+          "occurred_at",
+          "code"
+        ],
+        "sha256": "9dddbd1924cdd16c03208c171bab4648ff4924affba8691393adb56526c6b367"
+      },
+      "support_tickets": {
+        "rows": 583,
+        "columns": [
+          "ticket_id",
+          "customer_id",
+          "created_at",
+          "category",
+          "resolution_hours"
+        ],
+        "sha256": "25b35128090379fc9eace584457d84586af361acfd35d9c24c22b4bca3a267ec"
+      },
+      "customer_health_events": {
+        "rows": 31,
+        "columns": [
+          "event_id",
+          "customer_id",
+          "occurred_at",
+          "risk",
+          "reason"
+        ],
+        "sha256": "64eccbb1c1e2059064dadaab644d2b771be6611f4fa696b0046b6f388aafe04f"
+      },
+      "services": {
+        "rows": 2,
+        "columns": [
+          "service_id",
+          "business_function"
+        ],
+        "sha256": "1370dca90890b354d143c27a9ee4069f058822918d6c572a05de80398f1e949c"
+      },
+      "deployments": {
+        "rows": 2,
+        "columns": [
+          "deployment_id",
+          "service_id",
+          "deployed_at",
+          "city"
+        ],
+        "sha256": "7dbf894da02618354b85fd1dea4b5890b922e09c7e4324ecf907e762a7d1bb6c"
+      },
+      "service_metrics": {
+        "rows": 4032,
+        "columns": [
+          "metric_id",
+          "observed_at",
+          "service_id",
+          "latency_ms",
+          "error_rate",
+          "requests",
+          "complete"
+        ],
+        "sha256": "1d75587d3fe700f73ceeb5abbac6ccde4dbc9584575ec037957a23e10542ec82"
+      },
+      "incidents": {
+        "rows": 1,
+        "columns": [
+          "incident_id",
+          "service_id",
+          "starts_at",
+          "ends_at",
+          "status"
+        ],
+        "sha256": "8cc9c4b9401065c939d29a0eb4c12c84a7cb9f61086433e45c1d89ce62da6f24"
+      }
+    },
+    "dataset_hash": "2a9e53bafa8053eec985f4ca9b1e5bf9911bb641bef6b891d7292a4a5ce35981"
+  },
+  "synthetic_future_training_separate": true,
+  "external_business_actions_executed": false,
+  "empirical_llm_improvement": null,
+  "stories": [
+    {
+      "title": "Jakarta stockout recovery",
+      "news": {
+        "id": "0ec3a6f35fe7a708afa88622dbfdcfe61ec007d2913b3e87d02cb64fb537f27c",
+        "revision": 1,
+        "created_at": "2026-10-01T21:25:55.427296Z",
+        "updated_at": "2026-10-01T21:25:55.506606Z",
+        "monitor_id": "03530d78bf7a6f672489698fd08d507a2068c659c9bcb8893ffce0e4b10a8084",
+        "monitor_revision": 1,
+        "title": "Jakarta stockout recovery: material change",
+        "summary": "Change against matched weekday baselines. The cause has not been established.",
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "window": {
+          "start": "2026-03-11T17:00:00Z",
+          "end": "2026-03-18T17:00:00Z"
+        },
+        "before": 16055440.0,
+        "after": 3259200.0,
+        "change": -12796240.0,
+        "relative_change": -0.7970033832769454,
+        "severity": "critical",
+        "status": "open",
+        "dedup_key": "0ec3a6f35fe7a708afa88622dbfdcfe61ec007d2913b3e87d02cb64fb537f27c",
+        "confidence": {
+          "dimension": "detection",
+          "method": "matched-weekday-median-mad-v1",
+          "value": null,
+          "label": "medium",
+          "evidence_ids": [
+            "90a8b0335184f11e85c4561e0371060e735aff2bf36a72ffcd4e4ea9a13ff161",
+            "bd9e7e5710153f30dd8e66f2c0096cda585cac12e87126e1ab955806efa32071",
+            "fffaccdabf0444ab3d3d3e34e37f105640bdbb1a52f4f8b16c13b4b5cb7664ae",
+            "35ef05fd431080ce4f17ea1c3468f3acac68a2d2b6987bf2022c91bb9774fbd2",
+            "809007bb9c88f163ebf180d00e59eb6789ab3d0ec6dfe6c6bbeb8192f0309a1b",
+            "1372c65ae97dea28f1b3ce63d95da6227912596b6fb3f44af3f0efaaba933901",
+            "3a45d682a3d2c589117825fd4e152b618929ba1d363f415d5565d6eb1497874d"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "90a8b0335184f11e85c4561e0371060e735aff2bf36a72ffcd4e4ea9a13ff161",
+            "source_type": "query",
+            "source_id": "ff57f0d04ebeff3c6b5966035fde4ee45381b34ca649f76374a3a5bb11db2dec",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "9e150371b3c1fb540b1bb767eb241207df42ee9257d45eb78c558dd83234bc31",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-03-11T17:00:00Z",
+            "window_end": "2026-03-18T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-19 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "bd9e7e5710153f30dd8e66f2c0096cda585cac12e87126e1ab955806efa32071",
+            "source_type": "query",
+            "source_id": "4c43653b5290a9998a98e20fdd77de914aadaac5cf0d7b3e55dd1e0845301eac",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "84dca5356fe79c14d79504e09e4cdc5c7f242e773eda0ed732bda861f6ac1f13",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-03-04T17:00:00Z",
+            "window_end": "2026-03-11T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-12 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "fffaccdabf0444ab3d3d3e34e37f105640bdbb1a52f4f8b16c13b4b5cb7664ae",
+            "source_type": "query",
+            "source_id": "7fb68fd265ee246b15263bd4f94c40d516e4c8d8b0e74cbc42f0d8533ac90e49",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "e8698b11302a2a5d27d853e225198189ac0da1111bb4019c694462472d5b5f3d",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-25T17:00:00Z",
+            "window_end": "2026-03-04T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-26 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-05 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "35ef05fd431080ce4f17ea1c3468f3acac68a2d2b6987bf2022c91bb9774fbd2",
+            "source_type": "query",
+            "source_id": "54de2b180416ae6632c8a62912dbe8ef3c132fd967f8f1895b32c378f3909b74",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "672017497c05d0209c2a231cccb3131e5c949dade63df6d668dacfafcddab9c5",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-18T17:00:00Z",
+            "window_end": "2026-02-25T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-19 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-26 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "809007bb9c88f163ebf180d00e59eb6789ab3d0ec6dfe6c6bbeb8192f0309a1b",
+            "source_type": "query",
+            "source_id": "f5f10ffb0f7ada1828268f3abc396403dd590caea5e1753cb094ea0f9038d36c",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "630a8b180049b920391740798c51c4632b08b0e243e5b9f1446e289e2dbd295a",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-11T17:00:00Z",
+            "window_end": "2026-02-18T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-19 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "1372c65ae97dea28f1b3ce63d95da6227912596b6fb3f44af3f0efaaba933901",
+            "source_type": "query",
+            "source_id": "3f2af31e928d83ba99422003286a676c3b886964b13a1654fd5fe63309a84eea",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "a62d437259699135567f3affd56c63b2bfb1bb00155b690d55cabfa5dc0067bf",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-04T17:00:00Z",
+            "window_end": "2026-02-11T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-12 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "3a45d682a3d2c589117825fd4e152b618929ba1d363f415d5565d6eb1497874d",
+            "source_type": "query",
+            "source_id": "bab68e70ee730a5a8864f9b13f29fe1f7d0cddbeb7dd2412c0f9c510bcd91e9f",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "bfe6eae01768a4a829cdf4155f35d67b0cd34e5a01eed547a103e395850cec22",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-01-28T17:00:00Z",
+            "window_end": "2026-02-04T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-01-29 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-05 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          }
+        ],
+        "investigation_id": null,
+        "baseline_windows": [
+          {
+            "start": "2026-02-18T17:00:00Z",
+            "end": "2026-02-25T17:00:00Z"
+          },
+          {
+            "start": "2026-02-11T17:00:00Z",
+            "end": "2026-02-18T17:00:00Z"
+          }
+        ],
+        "status_operation_id": null,
+        "status_request_digest": null,
+        "status_note": ""
+      },
+      "investigation": {
+        "id": "f308cbaed7dbad2eda4d0dad7ac228f1fbf359d655f6839ef099935d1420be7f",
+        "revision": 1,
+        "created_at": "2026-10-01T21:26:12.272880Z",
+        "updated_at": "2026-10-01T21:26:12.294474Z",
+        "news_id": "0ec3a6f35fe7a708afa88622dbfdcfe61ec007d2913b3e87d02cb64fb537f27c",
+        "news_revision": 1,
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "hypotheses": [
+          {
+            "id": "a1f975085bc6a03c2e9e9b4a054d316051b172c407c482727057dfd1147e83d0",
+            "label": "orders.category = \"Electronics\"",
+            "contribution": -12796240.0,
+            "dimension": "orders.category",
+            "causal_status": "arithmetic",
+            "confidence": {
+              "dimension": "causal",
+              "method": "dimension-difference-v1",
+              "value": null,
+              "label": "insufficient",
+              "evidence_ids": []
+            },
+            "evidence_ids": [
+              "cb7b09886370ed3472b057bd065182ef94516f832077bd816cfac262a74c5340",
+              "8d05194e0a2919c52ec640b12e1ad4ce6efdff13fbc27e57838215c6928f546d",
+              "5d98d416b52a99ef1d5ec1385703dd32448baeb762a93c8e69cfceb4db0c5431"
+            ],
+            "contradicting_ids": [],
+            "next_test": "Validate this hypothesis with an explicit experimental design."
+          }
+        ],
+        "evidence": [
+          {
+            "id": "90a8b0335184f11e85c4561e0371060e735aff2bf36a72ffcd4e4ea9a13ff161",
+            "source_type": "query",
+            "source_id": "ff57f0d04ebeff3c6b5966035fde4ee45381b34ca649f76374a3a5bb11db2dec",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "9e150371b3c1fb540b1bb767eb241207df42ee9257d45eb78c558dd83234bc31",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-03-11T17:00:00Z",
+            "window_end": "2026-03-18T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-19 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "bd9e7e5710153f30dd8e66f2c0096cda585cac12e87126e1ab955806efa32071",
+            "source_type": "query",
+            "source_id": "4c43653b5290a9998a98e20fdd77de914aadaac5cf0d7b3e55dd1e0845301eac",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "84dca5356fe79c14d79504e09e4cdc5c7f242e773eda0ed732bda861f6ac1f13",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-03-04T17:00:00Z",
+            "window_end": "2026-03-11T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-12 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "fffaccdabf0444ab3d3d3e34e37f105640bdbb1a52f4f8b16c13b4b5cb7664ae",
+            "source_type": "query",
+            "source_id": "7fb68fd265ee246b15263bd4f94c40d516e4c8d8b0e74cbc42f0d8533ac90e49",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "e8698b11302a2a5d27d853e225198189ac0da1111bb4019c694462472d5b5f3d",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-25T17:00:00Z",
+            "window_end": "2026-03-04T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-26 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-05 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "35ef05fd431080ce4f17ea1c3468f3acac68a2d2b6987bf2022c91bb9774fbd2",
+            "source_type": "query",
+            "source_id": "54de2b180416ae6632c8a62912dbe8ef3c132fd967f8f1895b32c378f3909b74",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "672017497c05d0209c2a231cccb3131e5c949dade63df6d668dacfafcddab9c5",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-18T17:00:00Z",
+            "window_end": "2026-02-25T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-19 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-26 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "809007bb9c88f163ebf180d00e59eb6789ab3d0ec6dfe6c6bbeb8192f0309a1b",
+            "source_type": "query",
+            "source_id": "f5f10ffb0f7ada1828268f3abc396403dd590caea5e1753cb094ea0f9038d36c",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "630a8b180049b920391740798c51c4632b08b0e243e5b9f1446e289e2dbd295a",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-11T17:00:00Z",
+            "window_end": "2026-02-18T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-19 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "1372c65ae97dea28f1b3ce63d95da6227912596b6fb3f44af3f0efaaba933901",
+            "source_type": "query",
+            "source_id": "3f2af31e928d83ba99422003286a676c3b886964b13a1654fd5fe63309a84eea",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "a62d437259699135567f3affd56c63b2bfb1bb00155b690d55cabfa5dc0067bf",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-04T17:00:00Z",
+            "window_end": "2026-02-11T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-12 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "3a45d682a3d2c589117825fd4e152b618929ba1d363f415d5565d6eb1497874d",
+            "source_type": "query",
+            "source_id": "bab68e70ee730a5a8864f9b13f29fe1f7d0cddbeb7dd2412c0f9c510bcd91e9f",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "bfe6eae01768a4a829cdf4155f35d67b0cd34e5a01eed547a103e395850cec22",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-01-28T17:00:00Z",
+            "window_end": "2026-02-04T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-01-29 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-05 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "cb7b09886370ed3472b057bd065182ef94516f832077bd816cfac262a74c5340",
+            "source_type": "query",
+            "source_id": "762c96dd6c1df7fd1855bcf1d36e78f89ad5ecf3a5cd203dae4c4cc34fdc6bcc",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "c19d225a3e0e8bc341a33685556e56ef4532bc6235e45b4e4e39c4ffb846421a",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-19 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-26 00:00:00.000000"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 1000,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          },
+          {
+            "id": "8d05194e0a2919c52ec640b12e1ad4ce6efdff13fbc27e57838215c6928f546d",
+            "source_type": "query",
+            "source_id": "6c08ea87ea3bd0d939ccd260e08fa338b5d2c43769d97a4cc1dec9b8c45fe8dc",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "43575867886283242e25f3a99e0987331c0474fdfee2c4373597a46d6c45187f",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-19 00:00:00.000000"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 1000,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          },
+          {
+            "id": "5d98d416b52a99ef1d5ec1385703dd32448baeb762a93c8e69cfceb4db0c5431",
+            "source_type": "query",
+            "source_id": "01380b6785d57fd60da2c89795d618be57e32c7cc776d35794aa08a7787e73ed",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "f715a5c3952042db94bf507709a0d2ce00c2eb28e1542c0e87e62df01320411c",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-19 00:00:00.000000"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 1000,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          },
+          {
+            "id": "8d8ce54eb1b9760c37fc92c99767f31c20624c17ca6a8d887e8ecb0e3092717a",
+            "source_type": "query",
+            "source_id": "a6993567fa4eb4a0ec82102e6c425b738f3552510f8f2166216045396af420ea",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "cddb9e0f6245d6237309f5f61ba0498b4ddd4f1d3d4afe8fd7738d1dd529d041",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "metrics": [],
+              "dimensions": [
+                "deployments.deployed_at",
+                "deployments.deployment_id",
+                "deployments.service_id"
+              ],
+              "filters": [
+                {
+                  "field": "deployments.deployed_at",
+                  "operator": ">=",
+                  "value": "2026-03-12 00:00:00"
+                },
+                {
+                  "field": "deployments.deployed_at",
+                  "operator": "<",
+                  "value": "2026-03-19 00:00:00"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 31,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          }
+        ],
+        "timeline": [
+          {
+            "at": "2026-03-11T17:00:00+00:00",
+            "kind": "deployment",
+            "reference": "catalog-v9",
+            "label": "catalog-service",
+            "evidence_id": "8d8ce54eb1b9760c37fc92c99767f31c20624c17ca6a8d887e8ecb0e3092717a",
+            "causal_status": "association"
+          },
+          {
+            "at": "2026-03-18T17:00:00+00:00",
+            "kind": "detection",
+            "reference": "0ec3a6f35fe7a708afa88622dbfdcfe61ec007d2913b3e87d02cb64fb537f27c"
+          }
+        ],
+        "residual": 0.0,
+        "decompositions": [
+          {
+            "dimension": "orders.category",
+            "change": "-12796240.0",
+            "components": [
+              {
+                "segment": "\"Electronics\"",
+                "contribution": "-12796240.000000"
+              }
+            ],
+            "residual": "0.000000",
+            "reconciled": true,
+            "baseline": "matched-weekday-median-windows"
+          }
+        ],
+        "method": "dimension-difference-median-windows-v2",
+        "status": "complete"
+      },
+      "decision": {
+        "id": "8f4b4c116f69492a52edd6bfc9923456510696cd40ce86e5ca9aea9e4894b8e9",
+        "revision": 3,
+        "created_at": "2026-10-01T21:26:43.360727Z",
+        "updated_at": "2026-10-01T21:27:19.485645Z",
+        "title": "Jakarta stockout recovery",
+        "agent_id": "63173cea-62c1-4249-bd8b-cd75b7562e81",
+        "thread_id": null,
+        "learning_enabled": true,
+        "investigation_id": "f308cbaed7dbad2eda4d0dad7ac228f1fbf359d655f6839ef099935d1420be7f",
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "target_metric": "net_booked_revenue",
+        "baseline": 3259200.0,
+        "currency": "IDR",
+        "outcome_window": {
+          "start": "2026-03-25T17:00:00Z",
+          "end": "2026-04-01T17:00:00Z"
+        },
+        "options": [
+          {
+            "id": "recovery",
+            "description": "Conditional recovery assuming average unit value IDR 500000 and 25% more units",
+            "action_type": "inventory_transfer",
+            "assumptions": {
+              "action_cost": 1000.0,
+              "action_type": "inventory_transfer",
+              "baseline_units": 6.5184,
+              "capacity": 13.0368,
+              "discount": 0.0,
+              "expected_unit_change": 1.6296,
+              "max_budget": 2000.0,
+              "price": 500000.0,
+              "unit_change_uncertainty": 0.65184,
+              "unit_cost": 200000.0
+            },
+            "prediction": 4074000.0,
+            "lower_bound": 3748080.0,
+            "upper_bound": 4399920.0,
+            "cost": 1000.0,
+            "incremental_gross_profit": 488880.0,
+            "risk": "medium",
+            "feasible": true,
+            "method": "conditional-unit-economics-v1",
+            "run_id": "8f70a03b-97e2-5d75-80d8-afb108bec1eb",
+            "evidence_ids": [
+              "90a8b0335184f11e85c4561e0371060e735aff2bf36a72ffcd4e4ea9a13ff161",
+              "bd9e7e5710153f30dd8e66f2c0096cda585cac12e87126e1ab955806efa32071",
+              "fffaccdabf0444ab3d3d3e34e37f105640bdbb1a52f4f8b16c13b4b5cb7664ae",
+              "35ef05fd431080ce4f17ea1c3468f3acac68a2d2b6987bf2022c91bb9774fbd2",
+              "809007bb9c88f163ebf180d00e59eb6789ab3d0ec6dfe6c6bbeb8192f0309a1b",
+              "1372c65ae97dea28f1b3ce63d95da6227912596b6fb3f44af3f0efaaba933901",
+              "3a45d682a3d2c589117825fd4e152b618929ba1d363f415d5565d6eb1497874d",
+              "cb7b09886370ed3472b057bd065182ef94516f832077bd816cfac262a74c5340",
+              "8d05194e0a2919c52ec640b12e1ad4ce6efdff13fbc27e57838215c6928f546d",
+              "5d98d416b52a99ef1d5ec1385703dd32448baeb762a93c8e69cfceb4db0c5431",
+              "8d8ce54eb1b9760c37fc92c99767f31c20624c17ca6a8d887e8ecb0e3092717a"
+            ]
+          }
+        ],
+        "selected_option_id": "recovery",
+        "last_operation_id": "3b655687-56a7-4780-bad8-86a66df3d050",
+        "request_digest": "143e1c18c77203fa4772dbf731bfcf755596c5b95ff6742ffd9ac9f8c0452a92",
+        "last_operation_digest": "8658836e5e530ef036eb7700b2898f1ffa32f4e054e1bcd96694084981c9d612",
+        "policy": {
+          "decision": "REQUIRE_APPROVAL",
+          "reason": "An authorized reviewer must approve this revision",
+          "policy_id": "default",
+          "policy_revision": 24,
+          "context_digest": "85aa38e51f63f0023dcb7a445cc207e4dbc4a8a4ec2d4857543cf9a22bd80fdd"
+        },
+        "status": "approved",
+        "evidence": [
+          {
+            "id": "90a8b0335184f11e85c4561e0371060e735aff2bf36a72ffcd4e4ea9a13ff161",
+            "source_type": "query",
+            "source_id": "ff57f0d04ebeff3c6b5966035fde4ee45381b34ca649f76374a3a5bb11db2dec",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "9e150371b3c1fb540b1bb767eb241207df42ee9257d45eb78c558dd83234bc31",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-03-11T17:00:00Z",
+            "window_end": "2026-03-18T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-19 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "bd9e7e5710153f30dd8e66f2c0096cda585cac12e87126e1ab955806efa32071",
+            "source_type": "query",
+            "source_id": "4c43653b5290a9998a98e20fdd77de914aadaac5cf0d7b3e55dd1e0845301eac",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "84dca5356fe79c14d79504e09e4cdc5c7f242e773eda0ed732bda861f6ac1f13",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-03-04T17:00:00Z",
+            "window_end": "2026-03-11T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-12 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "fffaccdabf0444ab3d3d3e34e37f105640bdbb1a52f4f8b16c13b4b5cb7664ae",
+            "source_type": "query",
+            "source_id": "7fb68fd265ee246b15263bd4f94c40d516e4c8d8b0e74cbc42f0d8533ac90e49",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "e8698b11302a2a5d27d853e225198189ac0da1111bb4019c694462472d5b5f3d",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-25T17:00:00Z",
+            "window_end": "2026-03-04T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-26 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-05 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "35ef05fd431080ce4f17ea1c3468f3acac68a2d2b6987bf2022c91bb9774fbd2",
+            "source_type": "query",
+            "source_id": "54de2b180416ae6632c8a62912dbe8ef3c132fd967f8f1895b32c378f3909b74",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "672017497c05d0209c2a231cccb3131e5c949dade63df6d668dacfafcddab9c5",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-18T17:00:00Z",
+            "window_end": "2026-02-25T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-19 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-26 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "809007bb9c88f163ebf180d00e59eb6789ab3d0ec6dfe6c6bbeb8192f0309a1b",
+            "source_type": "query",
+            "source_id": "f5f10ffb0f7ada1828268f3abc396403dd590caea5e1753cb094ea0f9038d36c",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "630a8b180049b920391740798c51c4632b08b0e243e5b9f1446e289e2dbd295a",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-11T17:00:00Z",
+            "window_end": "2026-02-18T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-19 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "1372c65ae97dea28f1b3ce63d95da6227912596b6fb3f44af3f0efaaba933901",
+            "source_type": "query",
+            "source_id": "3f2af31e928d83ba99422003286a676c3b886964b13a1654fd5fe63309a84eea",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "a62d437259699135567f3affd56c63b2bfb1bb00155b690d55cabfa5dc0067bf",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-02-04T17:00:00Z",
+            "window_end": "2026-02-11T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-12 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "3a45d682a3d2c589117825fd4e152b618929ba1d363f415d5565d6eb1497874d",
+            "source_type": "query",
+            "source_id": "bab68e70ee730a5a8864f9b13f29fe1f7d0cddbeb7dd2412c0f9c510bcd91e9f",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "bfe6eae01768a4a829cdf4155f35d67b0cd34e5a01eed547a103e395850cec22",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": "2026-01-28T17:00:00Z",
+            "window_end": "2026-02-04T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-01-29 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-05 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "cb7b09886370ed3472b057bd065182ef94516f832077bd816cfac262a74c5340",
+            "source_type": "query",
+            "source_id": "762c96dd6c1df7fd1855bcf1d36e78f89ad5ecf3a5cd203dae4c4cc34fdc6bcc",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "c19d225a3e0e8bc341a33685556e56ef4532bc6235e45b4e4e39c4ffb846421a",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-19 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-26 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 1000,
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "8d05194e0a2919c52ec640b12e1ad4ce6efdff13fbc27e57838215c6928f546d",
+            "source_type": "query",
+            "source_id": "6c08ea87ea3bd0d939ccd260e08fa338b5d2c43769d97a4cc1dec9b8c45fe8dc",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "43575867886283242e25f3a99e0987331c0474fdfee2c4373597a46d6c45187f",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-19 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 1000,
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "5d98d416b52a99ef1d5ec1385703dd32448baeb762a93c8e69cfceb4db0c5431",
+            "source_type": "query",
+            "source_id": "01380b6785d57fd60da2c89795d618be57e32c7cc776d35794aa08a7787e73ed",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "f715a5c3952042db94bf507709a0d2ce00c2eb28e1542c0e87e62df01320411c",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-19 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 1000,
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "8d8ce54eb1b9760c37fc92c99767f31c20624c17ca6a8d887e8ecb0e3092717a",
+            "source_type": "query",
+            "source_id": "a6993567fa4eb4a0ec82102e6c425b738f3552510f8f2166216045396af420ea",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "cddb9e0f6245d6237309f5f61ba0498b4ddd4f1d3d4afe8fd7738d1dd529d041",
+            "observed_at": "2026-03-19T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "dimensions": [
+                "deployments.deployed_at",
+                "deployments.deployment_id",
+                "deployments.service_id"
+              ],
+              "filters": [
+                {
+                  "field": "deployments.deployed_at",
+                  "operator": ">=",
+                  "value": "2026-03-12 00:00:00"
+                },
+                {
+                  "field": "deployments.deployed_at",
+                  "operator": "<",
+                  "value": "2026-03-19 00:00:00"
+                }
+              ],
+              "having": [],
+              "limit": 31,
+              "metrics": [],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          }
+        ]
+      },
+      "events": [
+        {
+          "id": "9c8dac06ffd6d01a3aec7b21f4de260098dd68fcb263a1731a9942ec73275ac5",
+          "revision": 1,
+          "created_at": "2026-10-01T21:26:43.369944Z",
+          "updated_at": "2026-10-01T21:26:43.383734Z",
+          "decision_id": "8f4b4c116f69492a52edd6bfc9923456510696cd40ce86e5ca9aea9e4894b8e9",
+          "decision_revision": 1,
+          "event": "created",
+          "actor": "bi_35878546e902",
+          "context_digest": "d9553343f293c52fea6b90015c1022e35f8b7dcac35aa588a9564f317df16cbd",
+          "references": [
+            "f308cbaed7dbad2eda4d0dad7ac228f1fbf359d655f6839ef099935d1420be7f",
+            "fe9a1b11-95fd-4a8b-9426-90c3712d7c49"
+          ]
+        },
+        {
+          "id": "73770dddb4049d519b55bd56d7be69d04e7627c23830a7d14ecfa57e022b9fe2",
+          "revision": 1,
+          "created_at": "2026-10-01T21:26:59.771940Z",
+          "updated_at": "2026-10-01T21:26:59.780186Z",
+          "decision_id": "8f4b4c116f69492a52edd6bfc9923456510696cd40ce86e5ca9aea9e4894b8e9",
+          "decision_revision": 2,
+          "event": "selected",
+          "actor": "bi_35878546e902",
+          "context_digest": "fe142250936ce22f8b1622bd09fc59357015bbb047e68e654b0e81c290e7dc8f",
+          "references": [
+            "f308cbaed7dbad2eda4d0dad7ac228f1fbf359d655f6839ef099935d1420be7f",
+            "af9d06a1-df48-4bba-bc74-cbce5c7e27ac"
+          ]
+        },
+        {
+          "id": "23e9372446608156fba2492eb37aa432875af30f380e234525c2eae106ab20b2",
+          "revision": 1,
+          "created_at": "2026-10-01T21:27:19.351453Z",
+          "updated_at": "2026-10-01T21:27:19.369468Z",
+          "decision_id": "8f4b4c116f69492a52edd6bfc9923456510696cd40ce86e5ca9aea9e4894b8e9",
+          "decision_revision": 3,
+          "event": "approved",
+          "actor": "bi_35878546e902",
+          "context_digest": "2062576f8e5cc23124f6bb63747d6ce482d86c5b46cce9d8f07de986e0d56930",
+          "references": [
+            "f308cbaed7dbad2eda4d0dad7ac228f1fbf359d655f6839ef099935d1420be7f",
+            "3b655687-56a7-4780-bad8-86a66df3d050"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "90a8b0335184f11e85c4561e0371060e735aff2bf36a72ffcd4e4ea9a13ff161",
+          "source_type": "query",
+          "source_id": "ff57f0d04ebeff3c6b5966035fde4ee45381b34ca649f76374a3a5bb11db2dec",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "9e150371b3c1fb540b1bb767eb241207df42ee9257d45eb78c558dd83234bc31",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": "2026-03-11T17:00:00Z",
+          "window_end": "2026-03-18T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-03-12 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-03-19 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "bd9e7e5710153f30dd8e66f2c0096cda585cac12e87126e1ab955806efa32071",
+          "source_type": "query",
+          "source_id": "4c43653b5290a9998a98e20fdd77de914aadaac5cf0d7b3e55dd1e0845301eac",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "84dca5356fe79c14d79504e09e4cdc5c7f242e773eda0ed732bda861f6ac1f13",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": "2026-03-04T17:00:00Z",
+          "window_end": "2026-03-11T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-03-05 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-03-12 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "fffaccdabf0444ab3d3d3e34e37f105640bdbb1a52f4f8b16c13b4b5cb7664ae",
+          "source_type": "query",
+          "source_id": "7fb68fd265ee246b15263bd4f94c40d516e4c8d8b0e74cbc42f0d8533ac90e49",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "e8698b11302a2a5d27d853e225198189ac0da1111bb4019c694462472d5b5f3d",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": "2026-02-25T17:00:00Z",
+          "window_end": "2026-03-04T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-26 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-03-05 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "35ef05fd431080ce4f17ea1c3468f3acac68a2d2b6987bf2022c91bb9774fbd2",
+          "source_type": "query",
+          "source_id": "54de2b180416ae6632c8a62912dbe8ef3c132fd967f8f1895b32c378f3909b74",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "672017497c05d0209c2a231cccb3131e5c949dade63df6d668dacfafcddab9c5",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": "2026-02-18T17:00:00Z",
+          "window_end": "2026-02-25T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-19 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-26 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "809007bb9c88f163ebf180d00e59eb6789ab3d0ec6dfe6c6bbeb8192f0309a1b",
+          "source_type": "query",
+          "source_id": "f5f10ffb0f7ada1828268f3abc396403dd590caea5e1753cb094ea0f9038d36c",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "630a8b180049b920391740798c51c4632b08b0e243e5b9f1446e289e2dbd295a",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": "2026-02-11T17:00:00Z",
+          "window_end": "2026-02-18T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-12 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-19 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "1372c65ae97dea28f1b3ce63d95da6227912596b6fb3f44af3f0efaaba933901",
+          "source_type": "query",
+          "source_id": "3f2af31e928d83ba99422003286a676c3b886964b13a1654fd5fe63309a84eea",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "a62d437259699135567f3affd56c63b2bfb1bb00155b690d55cabfa5dc0067bf",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": "2026-02-04T17:00:00Z",
+          "window_end": "2026-02-11T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-05 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-12 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "3a45d682a3d2c589117825fd4e152b618929ba1d363f415d5565d6eb1497874d",
+          "source_type": "query",
+          "source_id": "bab68e70ee730a5a8864f9b13f29fe1f7d0cddbeb7dd2412c0f9c510bcd91e9f",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "bfe6eae01768a4a829cdf4155f35d67b0cd34e5a01eed547a103e395850cec22",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": "2026-01-28T17:00:00Z",
+          "window_end": "2026-02-04T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-01-29 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-05 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "cb7b09886370ed3472b057bd065182ef94516f832077bd816cfac262a74c5340",
+          "source_type": "query",
+          "source_id": "762c96dd6c1df7fd1855bcf1d36e78f89ad5ecf3a5cd203dae4c4cc34fdc6bcc",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "c19d225a3e0e8bc341a33685556e56ef4532bc6235e45b4e4e39c4ffb846421a",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": null,
+          "window_end": null,
+          "semantic_plan": {
+            "dimensions": [
+              "orders.category"
+            ],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-19 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-26 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 1000,
+            "metrics": [
+              "net_booked_revenue"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "8d05194e0a2919c52ec640b12e1ad4ce6efdff13fbc27e57838215c6928f546d",
+          "source_type": "query",
+          "source_id": "6c08ea87ea3bd0d939ccd260e08fa338b5d2c43769d97a4cc1dec9b8c45fe8dc",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "43575867886283242e25f3a99e0987331c0474fdfee2c4373597a46d6c45187f",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": null,
+          "window_end": null,
+          "semantic_plan": {
+            "dimensions": [
+              "orders.category"
+            ],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-12 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-19 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 1000,
+            "metrics": [
+              "net_booked_revenue"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "5d98d416b52a99ef1d5ec1385703dd32448baeb762a93c8e69cfceb4db0c5431",
+          "source_type": "query",
+          "source_id": "01380b6785d57fd60da2c89795d618be57e32c7cc776d35794aa08a7787e73ed",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "f715a5c3952042db94bf507709a0d2ce00c2eb28e1542c0e87e62df01320411c",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": null,
+          "window_end": null,
+          "semantic_plan": {
+            "dimensions": [
+              "orders.category"
+            ],
+            "filters": [
+              {
+                "field": "orders.city",
+                "operator": "=",
+                "value": "Jakarta"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-03-12 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-03-19 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 1000,
+            "metrics": [
+              "net_booked_revenue"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "8d8ce54eb1b9760c37fc92c99767f31c20624c17ca6a8d887e8ecb0e3092717a",
+          "source_type": "query",
+          "source_id": "a6993567fa4eb4a0ec82102e6c425b738f3552510f8f2166216045396af420ea",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "cddb9e0f6245d6237309f5f61ba0498b4ddd4f1d3d4afe8fd7738d1dd529d041",
+          "observed_at": "2026-03-19T00:00:00+07:00",
+          "window_start": null,
+          "window_end": null,
+          "semantic_plan": {
+            "dimensions": [
+              "deployments.deployed_at",
+              "deployments.deployment_id",
+              "deployments.service_id"
+            ],
+            "filters": [
+              {
+                "field": "deployments.deployed_at",
+                "operator": ">=",
+                "value": "2026-03-12 00:00:00"
+              },
+              {
+                "field": "deployments.deployed_at",
+                "operator": "<",
+                "value": "2026-03-19 00:00:00"
+              }
+            ],
+            "having": [],
+            "limit": 31,
+            "metrics": [],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        }
+      ],
+      "outcome": {
+        "id": "83fd8562e1a264b49da12fa53eaade437c32f9ca58dbe4503f3af0af8688e8ba",
+        "revision": 3,
+        "created_at": "2026-10-01T21:27:35.952619Z",
+        "updated_at": "2026-10-01T21:31:00.242233Z",
+        "decision_id": "8f4b4c116f69492a52edd6bfc9923456510696cd40ce86e5ca9aea9e4894b8e9",
+        "decision_revision": 3,
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "target_metric": "net_booked_revenue",
+        "currency": "IDR",
+        "window": {
+          "start": "2026-03-25T17:00:00Z",
+          "end": "2026-04-01T17:00:00Z"
+        },
+        "predicted": 4074000.0,
+        "actual": 14666400.0,
+        "completeness": 1.0,
+        "attribution": "observed_after",
+        "status": "complete",
+        "overlapping_decisions": [],
+        "dimensions": {
+          "forecast_absolute_error": 10592400.0,
+          "forecast_relative_error": 0.7222222222222222,
+          "interval_covered": false,
+          "expected_change": 814800.0,
+          "observed_change": 11407200.0,
+          "attributed_business_impact": null,
+          "attribution": "observed_after",
+          "completeness": 1.0,
+          "policy_compliance": true,
+          "time_to_insight_seconds": 16.845584
+        },
+        "evidence": [
+          {
+            "id": "3f239873e2ec756261f4d540d96362b1df224ae0a7d301fa8e673478b11ad343",
+            "source_type": "query",
+            "source_id": "cf6fb6fb32141f37958121c6e1260be2c8448be441cf8a7742c200ceea195178",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "0f8addebd6a23e2a10d0be765bdc082a4f10fe40754c88661822f39ebde00332",
+            "observed_at": "2026-04-07T00:00:00+07:00",
+            "window_start": "2026-03-25T17:00:00Z",
+            "window_end": "2026-04-01T17:00:00Z",
+            "semantic_plan": {
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.city",
+                  "operator": "=",
+                  "value": "Jakarta"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-26 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-04-02 00:00:00.000000"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 2,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          }
+        ]
+      },
+      "knowledge": {
+        "memory_id": "05655f69fb4150b0782c544f613b0b87241cd1b193c756042d32a216112daaa0",
+        "revision": 1,
+        "fact": "Prediction for net_booked_revenue was 4.074e+06; observed 1.46664e+07. Attribution: observed_after.",
+        "state": "INFERRED",
+        "visibility": "PRIVATE",
+        "authority": "observed_outcome",
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "definition": {
+          "outcome_id": "83fd8562e1a264b49da12fa53eaade437c32f9ca58dbe4503f3af0af8688e8ba",
+          "outcome_revision": 3
+        },
+        "alternatives": [],
+        "evidence_ids": [
+          "bf612a1377e03bb0b292383454bf54a8"
+        ],
+        "reviewed_by": null,
+        "review_note": "",
+        "needs_revalidation": false,
+        "review_operation_id": null,
+        "review_request_hash": null,
+        "recorded_at": "2026-10-01T21:31:00.516373Z",
+        "last_observed_at": "2026-10-01T21:31:00.242233Z",
+        "confidence": {
+          "dimension": "knowledge",
+          "method": "knowledge-evidence-review-v1",
+          "value": null,
+          "label": "insufficient",
+          "evidence_ids": [
+            "bf612a1377e03bb0b292383454bf54a8"
+          ]
+        }
+      },
+      "independent_actual": 14666400.0,
+      "retry_retained_outcome_revision": true,
+      "outcome_states": [
+        "pending",
+        "missing_data",
+        "complete"
+      ]
+    },
+    {
+      "title": "Payment-service degradation",
+      "news": {
+        "id": "6df27a99a2c623522dffc3e61553c07210761ef5a39370e39ac7102d4e67e9c7",
+        "revision": 1,
+        "created_at": "2026-10-01T21:27:53.454219Z",
+        "updated_at": "2026-10-01T21:27:53.486507Z",
+        "monitor_id": "94db9e4b3baf108a2761e94a1237aec5b06c516b7271a6dacf3d205a79e824cf",
+        "monitor_revision": 1,
+        "title": "Payment-service degradation: material change",
+        "summary": "Change against matched weekday baselines. The cause has not been established.",
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "window": {
+          "start": "2026-03-04T17:00:00Z",
+          "end": "2026-03-08T17:00:00Z"
+        },
+        "before": 67779720.0,
+        "after": 20990800.0,
+        "change": -46788920.0,
+        "relative_change": -0.6903085465682065,
+        "severity": "critical",
+        "status": "open",
+        "dedup_key": "6df27a99a2c623522dffc3e61553c07210761ef5a39370e39ac7102d4e67e9c7",
+        "confidence": {
+          "dimension": "detection",
+          "method": "matched-weekday-median-mad-v1",
+          "value": null,
+          "label": "medium",
+          "evidence_ids": [
+            "d7cb27d371fd96458a7afe7395cf69801f9bb6ff968d34b199dc2ee9d03f01e5",
+            "a0be3ac52cf45db4cccb927b8bf1736964b43c4896f9c8522d2171d14b6798c8",
+            "64ecdf825ca4c8b9028a43e62ac0832c53561cdf5330055d7c3f1cd45569a1a9",
+            "e5c58c76e21ce74746fb9b2a6b38ea3e05359155f80f6b89cbdbd8aa32c5f51e",
+            "1c5b2ecd8686cfd8d4fddc1203d0bd7d34a706359adaeb9309b7d16596708a82",
+            "ae89e25c87aa2c63b6d945fd557351d0dad9f889a82edfd32dd667f4bd4f5004",
+            "c265f3236c03f94d8702c7983b7ba7f03bb16449ec16392c835c32bc08342dcf"
+          ]
+        },
+        "evidence": [
+          {
+            "id": "d7cb27d371fd96458a7afe7395cf69801f9bb6ff968d34b199dc2ee9d03f01e5",
+            "source_type": "query",
+            "source_id": "f87a10bfc05c69741b77fd20660077b66bad60b245deec83481226a6383a9f0c",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "0b60b8638de24a7138035c1caa67fb1c7764bc29341d6e296cffbdf496719026",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-03-04T17:00:00Z",
+            "window_end": "2026-03-08T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-09 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "a0be3ac52cf45db4cccb927b8bf1736964b43c4896f9c8522d2171d14b6798c8",
+            "source_type": "query",
+            "source_id": "db72b69f51122db43f6bc13dc5d7a4fff95da1d84f6a3138895fe7f66c137f9e",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "24da26a3daa57b8a2e98998b8791a8891d541629b67c5d06be6d35380a2fe0ce",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-25T17:00:00Z",
+            "window_end": "2026-03-01T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-26 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-02 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "64ecdf825ca4c8b9028a43e62ac0832c53561cdf5330055d7c3f1cd45569a1a9",
+            "source_type": "query",
+            "source_id": "ec48b259c2e78f8591ece7734c2658ecc29d1aab4015a9a08ab844704d52cd68",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "c95487e89377b93e79c62b8f274d7b75e118086619c1c8fea17a862a99828e71",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-18T17:00:00Z",
+            "window_end": "2026-02-22T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-19 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-23 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "e5c58c76e21ce74746fb9b2a6b38ea3e05359155f80f6b89cbdbd8aa32c5f51e",
+            "source_type": "query",
+            "source_id": "56933b4b2cef399eaaa9af28659f7330438a9d10ae81f0c4a20ec2de0fdf5623",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "c9f1e06723f442ae2ab92b280307663816e46e612a09890a48935d2070c5819e",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-11T17:00:00Z",
+            "window_end": "2026-02-15T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-16 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "1c5b2ecd8686cfd8d4fddc1203d0bd7d34a706359adaeb9309b7d16596708a82",
+            "source_type": "query",
+            "source_id": "d533040af57854b8ccf267a6c611713bca4886cbc6f07e38cc42886214d90ab8",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "9980fa94a172da8c5218dc4c5c1c70e6cbc1f0b2d673618331600360e3958224",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-04T17:00:00Z",
+            "window_end": "2026-02-08T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-09 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "ae89e25c87aa2c63b6d945fd557351d0dad9f889a82edfd32dd667f4bd4f5004",
+            "source_type": "query",
+            "source_id": "a3b561659c3c71c46c876b4fa386675e21456836f03f2a204a0e1a0cd43e9765",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "6a9f2f42413386cd54cf2a1536f3416f401d752babfd9733483022ce67d2e212",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-01-28T17:00:00Z",
+            "window_end": "2026-02-01T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-01-29 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-02 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "c265f3236c03f94d8702c7983b7ba7f03bb16449ec16392c835c32bc08342dcf",
+            "source_type": "query",
+            "source_id": "924daeccc65e891fbbf560bbfb32cfef6329c11cf544581d79b9208d46e68163",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "5af0c1b20650073022206661c6ee229e284b038a91199e947b02a8a033f7971a",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-01-21T17:00:00Z",
+            "window_end": "2026-01-25T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-01-22 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-01-26 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          }
+        ],
+        "investigation_id": null,
+        "baseline_windows": [
+          {
+            "start": "2026-02-04T17:00:00Z",
+            "end": "2026-02-08T17:00:00Z"
+          },
+          {
+            "start": "2026-02-11T17:00:00Z",
+            "end": "2026-02-15T17:00:00Z"
+          }
+        ],
+        "status_operation_id": null,
+        "status_request_digest": null,
+        "status_note": ""
+      },
+      "investigation": {
+        "id": "ad64f75fb85586e63e69eaa8e8995e5937bcf5d9d889134fdedcf55eef338287",
+        "revision": 1,
+        "created_at": "2026-10-01T21:28:11.852712Z",
+        "updated_at": "2026-10-01T21:28:11.868844Z",
+        "news_id": "6df27a99a2c623522dffc3e61553c07210761ef5a39370e39ac7102d4e67e9c7",
+        "news_revision": 1,
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "hypotheses": [
+          {
+            "id": "cc5f34de519ca4b0c71fddb931e72477f274db04d8b77412a5461d853b52850e",
+            "label": "orders.category = \"Home\"",
+            "contribution": -25188960.0,
+            "dimension": "orders.category",
+            "causal_status": "arithmetic",
+            "confidence": {
+              "dimension": "causal",
+              "method": "dimension-difference-v1",
+              "value": null,
+              "label": "insufficient",
+              "evidence_ids": []
+            },
+            "evidence_ids": [
+              "805dcd280bacb9e11bc5df5ed0227fd5af54f7c07531199906ce37716ea6fbe1",
+              "a679b78b1ef536587844724c4ee4d6e17a0b920822450dc46770fa41c9c51f6d",
+              "e714879c4aab9dac2b95ddbad7d6ae683b2735e79f6cdaa4f8cf0255ac73f84d"
+            ],
+            "contradicting_ids": [],
+            "next_test": "Validate this hypothesis with an explicit experimental design."
+          },
+          {
+            "id": "a1f975085bc6a03c2e9e9b4a054d316051b172c407c482727057dfd1147e83d0",
+            "label": "orders.category = \"Electronics\"",
+            "contribution": -14022320.0,
+            "dimension": "orders.category",
+            "causal_status": "arithmetic",
+            "confidence": {
+              "dimension": "causal",
+              "method": "dimension-difference-v1",
+              "value": null,
+              "label": "insufficient",
+              "evidence_ids": []
+            },
+            "evidence_ids": [
+              "805dcd280bacb9e11bc5df5ed0227fd5af54f7c07531199906ce37716ea6fbe1",
+              "a679b78b1ef536587844724c4ee4d6e17a0b920822450dc46770fa41c9c51f6d",
+              "e714879c4aab9dac2b95ddbad7d6ae683b2735e79f6cdaa4f8cf0255ac73f84d"
+            ],
+            "contradicting_ids": [],
+            "next_test": "Validate this hypothesis with an explicit experimental design."
+          },
+          {
+            "id": "a65bc0803d4507a79ccea3a0780b39e8518302360824b5d70b0bc2bb0ac9bf95",
+            "label": "orders.category = \"Beauty\"",
+            "contribution": -7577640.0,
+            "dimension": "orders.category",
+            "causal_status": "arithmetic",
+            "confidence": {
+              "dimension": "causal",
+              "method": "dimension-difference-v1",
+              "value": null,
+              "label": "insufficient",
+              "evidence_ids": []
+            },
+            "evidence_ids": [
+              "805dcd280bacb9e11bc5df5ed0227fd5af54f7c07531199906ce37716ea6fbe1",
+              "a679b78b1ef536587844724c4ee4d6e17a0b920822450dc46770fa41c9c51f6d",
+              "e714879c4aab9dac2b95ddbad7d6ae683b2735e79f6cdaa4f8cf0255ac73f84d"
+            ],
+            "contradicting_ids": [],
+            "next_test": "Validate this hypothesis with an explicit experimental design."
+          }
+        ],
+        "evidence": [
+          {
+            "id": "d7cb27d371fd96458a7afe7395cf69801f9bb6ff968d34b199dc2ee9d03f01e5",
+            "source_type": "query",
+            "source_id": "f87a10bfc05c69741b77fd20660077b66bad60b245deec83481226a6383a9f0c",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "0b60b8638de24a7138035c1caa67fb1c7764bc29341d6e296cffbdf496719026",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-03-04T17:00:00Z",
+            "window_end": "2026-03-08T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-09 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "a0be3ac52cf45db4cccb927b8bf1736964b43c4896f9c8522d2171d14b6798c8",
+            "source_type": "query",
+            "source_id": "db72b69f51122db43f6bc13dc5d7a4fff95da1d84f6a3138895fe7f66c137f9e",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "24da26a3daa57b8a2e98998b8791a8891d541629b67c5d06be6d35380a2fe0ce",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-25T17:00:00Z",
+            "window_end": "2026-03-01T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-26 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-02 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "64ecdf825ca4c8b9028a43e62ac0832c53561cdf5330055d7c3f1cd45569a1a9",
+            "source_type": "query",
+            "source_id": "ec48b259c2e78f8591ece7734c2658ecc29d1aab4015a9a08ab844704d52cd68",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "c95487e89377b93e79c62b8f274d7b75e118086619c1c8fea17a862a99828e71",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-18T17:00:00Z",
+            "window_end": "2026-02-22T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-19 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-23 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "e5c58c76e21ce74746fb9b2a6b38ea3e05359155f80f6b89cbdbd8aa32c5f51e",
+            "source_type": "query",
+            "source_id": "56933b4b2cef399eaaa9af28659f7330438a9d10ae81f0c4a20ec2de0fdf5623",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "c9f1e06723f442ae2ab92b280307663816e46e612a09890a48935d2070c5819e",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-11T17:00:00Z",
+            "window_end": "2026-02-15T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-16 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "1c5b2ecd8686cfd8d4fddc1203d0bd7d34a706359adaeb9309b7d16596708a82",
+            "source_type": "query",
+            "source_id": "d533040af57854b8ccf267a6c611713bca4886cbc6f07e38cc42886214d90ab8",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "9980fa94a172da8c5218dc4c5c1c70e6cbc1f0b2d673618331600360e3958224",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-04T17:00:00Z",
+            "window_end": "2026-02-08T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-09 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "ae89e25c87aa2c63b6d945fd557351d0dad9f889a82edfd32dd667f4bd4f5004",
+            "source_type": "query",
+            "source_id": "a3b561659c3c71c46c876b4fa386675e21456836f03f2a204a0e1a0cd43e9765",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "6a9f2f42413386cd54cf2a1536f3416f401d752babfd9733483022ce67d2e212",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-01-28T17:00:00Z",
+            "window_end": "2026-02-01T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-01-29 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-02 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "c265f3236c03f94d8702c7983b7ba7f03bb16449ec16392c835c32bc08342dcf",
+            "source_type": "query",
+            "source_id": "924daeccc65e891fbbf560bbfb32cfef6329c11cf544581d79b9208d46e68163",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "5af0c1b20650073022206661c6ee229e284b038a91199e947b02a8a033f7971a",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-01-21T17:00:00Z",
+            "window_end": "2026-01-25T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-01-22 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-01-26 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "805dcd280bacb9e11bc5df5ed0227fd5af54f7c07531199906ce37716ea6fbe1",
+            "source_type": "query",
+            "source_id": "f7bcf70ddf33af487348fe26a127eaf13e2a6c3dcb4ac1603b189d939e42ff07",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "30681af7ff610b1d4faf103eee4ad1205dea13a956d39a9771ceafd513b092a4",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-09 00:00:00.000000"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 1000,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          },
+          {
+            "id": "a679b78b1ef536587844724c4ee4d6e17a0b920822450dc46770fa41c9c51f6d",
+            "source_type": "query",
+            "source_id": "4bc8b217f60d0252ad14662498356e4c5dded32de8923b939dd80a9bb2176d58",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "27706aadcb7278bfb3a7f48971bb381c1a41cf398b8fb8e6b66a249d8ec90e68",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-16 00:00:00.000000"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 1000,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          },
+          {
+            "id": "e714879c4aab9dac2b95ddbad7d6ae683b2735e79f6cdaa4f8cf0255ac73f84d",
+            "source_type": "query",
+            "source_id": "d30fbe6f08567a69c61a19f23caee61a217ab82d3d4a6ce96e5e4a575446988f",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "8cc62b30e8d0e6f822552b20e82138c3e6e43fe743b16265dca259efbd9c6d86",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-09 00:00:00.000000"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 1000,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          },
+          {
+            "id": "7da04bb90bb30d104f301438822deccfac306336740de9499ac74946de430d3a",
+            "source_type": "query",
+            "source_id": "c07042884aa6c4ae6dcc8371399dae479650e6ad38dda29043bfb2fad356fb7c",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "710946b6ea607292500697718c40230f0a44b15326fe89e02af48309c5227051",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "metrics": [],
+              "dimensions": [
+                "deployments.deployed_at",
+                "deployments.deployment_id",
+                "deployments.service_id"
+              ],
+              "filters": [
+                {
+                  "field": "deployments.deployed_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00"
+                },
+                {
+                  "field": "deployments.deployed_at",
+                  "operator": "<",
+                  "value": "2026-03-09 00:00:00"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 31,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          }
+        ],
+        "timeline": [
+          {
+            "at": "2026-03-04T17:00:00+00:00",
+            "kind": "deployment",
+            "reference": "pay-v2",
+            "label": "payment-service",
+            "evidence_id": "7da04bb90bb30d104f301438822deccfac306336740de9499ac74946de430d3a",
+            "causal_status": "association"
+          },
+          {
+            "at": "2026-03-08T17:00:00+00:00",
+            "kind": "detection",
+            "reference": "6df27a99a2c623522dffc3e61553c07210761ef5a39370e39ac7102d4e67e9c7"
+          }
+        ],
+        "residual": 0.0,
+        "decompositions": [
+          {
+            "dimension": "orders.category",
+            "change": "-46788920.0",
+            "components": [
+              {
+                "segment": "\"Home\"",
+                "contribution": "-25188960.000000"
+              },
+              {
+                "segment": "\"Electronics\"",
+                "contribution": "-14022320.000000"
+              },
+              {
+                "segment": "\"Beauty\"",
+                "contribution": "-7577640.000000"
+              }
+            ],
+            "residual": "0.000000",
+            "reconciled": true,
+            "baseline": "matched-weekday-median-windows"
+          }
+        ],
+        "method": "dimension-difference-median-windows-v2",
+        "status": "complete"
+      },
+      "decision": {
+        "id": "9d6bf9927280fc0664f5d9b204fef87bb36dfe64e797d3d41a6ebdba28189306",
+        "revision": 3,
+        "created_at": "2026-10-01T21:28:43.832064Z",
+        "updated_at": "2026-10-01T21:29:25.883478Z",
+        "title": "Payment-service degradation",
+        "agent_id": "63173cea-62c1-4249-bd8b-cd75b7562e81",
+        "thread_id": null,
+        "learning_enabled": true,
+        "investigation_id": "ad64f75fb85586e63e69eaa8e8995e5937bcf5d9d889134fdedcf55eef338287",
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "target_metric": "net_booked_revenue",
+        "baseline": 20990800.0,
+        "currency": "IDR",
+        "outcome_window": {
+          "start": "2026-04-01T17:00:00Z",
+          "end": "2026-04-05T17:00:00Z"
+        },
+        "options": [
+          {
+            "id": "recovery",
+            "description": "Conditional recovery assuming average unit value IDR 500000 and 25% more units",
+            "action_type": "rollback",
+            "assumptions": {
+              "action_cost": 1000.0,
+              "action_type": "rollback",
+              "baseline_units": 41.9816,
+              "capacity": 83.9632,
+              "discount": 0.0,
+              "expected_unit_change": 10.4954,
+              "max_budget": 2000.0,
+              "price": 500000.0,
+              "unit_change_uncertainty": 4.198160000000001,
+              "unit_cost": 200000.0
+            },
+            "prediction": 26238500.000000004,
+            "lower_bound": 24139420.0,
+            "upper_bound": 28337580.000000004,
+            "cost": 1000.0,
+            "incremental_gross_profit": 3148620.000000002,
+            "risk": "medium",
+            "feasible": true,
+            "method": "conditional-unit-economics-v1",
+            "run_id": "fa98c1df-666d-5ffb-9984-0a42a410fa8a",
+            "evidence_ids": [
+              "d7cb27d371fd96458a7afe7395cf69801f9bb6ff968d34b199dc2ee9d03f01e5",
+              "a0be3ac52cf45db4cccb927b8bf1736964b43c4896f9c8522d2171d14b6798c8",
+              "64ecdf825ca4c8b9028a43e62ac0832c53561cdf5330055d7c3f1cd45569a1a9",
+              "e5c58c76e21ce74746fb9b2a6b38ea3e05359155f80f6b89cbdbd8aa32c5f51e",
+              "1c5b2ecd8686cfd8d4fddc1203d0bd7d34a706359adaeb9309b7d16596708a82",
+              "ae89e25c87aa2c63b6d945fd557351d0dad9f889a82edfd32dd667f4bd4f5004",
+              "c265f3236c03f94d8702c7983b7ba7f03bb16449ec16392c835c32bc08342dcf",
+              "805dcd280bacb9e11bc5df5ed0227fd5af54f7c07531199906ce37716ea6fbe1",
+              "a679b78b1ef536587844724c4ee4d6e17a0b920822450dc46770fa41c9c51f6d",
+              "e714879c4aab9dac2b95ddbad7d6ae683b2735e79f6cdaa4f8cf0255ac73f84d",
+              "7da04bb90bb30d104f301438822deccfac306336740de9499ac74946de430d3a"
+            ]
+          }
+        ],
+        "selected_option_id": "recovery",
+        "last_operation_id": "bc1922c3-327a-489e-bf11-433d0e823d14",
+        "request_digest": "f66f74f37d33c228f701c9d0e69c825f2b46563c69beccb3fdbcebf4c1fac2d9",
+        "last_operation_digest": "6078e47500770a5fdd4bb93606dfd3c39673dede43e6df6d3a2b96323e168deb",
+        "policy": {
+          "decision": "REQUIRE_APPROVAL",
+          "reason": "An authorized reviewer must approve this revision",
+          "policy_id": "default",
+          "policy_revision": 24,
+          "context_digest": "b432267666a043daaace32960b34d8cd888cd0ce5f3f8aaffbae7c5ae427bb5a"
+        },
+        "status": "approved",
+        "evidence": [
+          {
+            "id": "d7cb27d371fd96458a7afe7395cf69801f9bb6ff968d34b199dc2ee9d03f01e5",
+            "source_type": "query",
+            "source_id": "f87a10bfc05c69741b77fd20660077b66bad60b245deec83481226a6383a9f0c",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "0b60b8638de24a7138035c1caa67fb1c7764bc29341d6e296cffbdf496719026",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-03-04T17:00:00Z",
+            "window_end": "2026-03-08T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-09 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "a0be3ac52cf45db4cccb927b8bf1736964b43c4896f9c8522d2171d14b6798c8",
+            "source_type": "query",
+            "source_id": "db72b69f51122db43f6bc13dc5d7a4fff95da1d84f6a3138895fe7f66c137f9e",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "24da26a3daa57b8a2e98998b8791a8891d541629b67c5d06be6d35380a2fe0ce",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-25T17:00:00Z",
+            "window_end": "2026-03-01T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-26 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-02 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "64ecdf825ca4c8b9028a43e62ac0832c53561cdf5330055d7c3f1cd45569a1a9",
+            "source_type": "query",
+            "source_id": "ec48b259c2e78f8591ece7734c2658ecc29d1aab4015a9a08ab844704d52cd68",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "c95487e89377b93e79c62b8f274d7b75e118086619c1c8fea17a862a99828e71",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-18T17:00:00Z",
+            "window_end": "2026-02-22T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-19 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-23 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "e5c58c76e21ce74746fb9b2a6b38ea3e05359155f80f6b89cbdbd8aa32c5f51e",
+            "source_type": "query",
+            "source_id": "56933b4b2cef399eaaa9af28659f7330438a9d10ae81f0c4a20ec2de0fdf5623",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "c9f1e06723f442ae2ab92b280307663816e46e612a09890a48935d2070c5819e",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-11T17:00:00Z",
+            "window_end": "2026-02-15T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-16 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "1c5b2ecd8686cfd8d4fddc1203d0bd7d34a706359adaeb9309b7d16596708a82",
+            "source_type": "query",
+            "source_id": "d533040af57854b8ccf267a6c611713bca4886cbc6f07e38cc42886214d90ab8",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "9980fa94a172da8c5218dc4c5c1c70e6cbc1f0b2d673618331600360e3958224",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-02-04T17:00:00Z",
+            "window_end": "2026-02-08T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-09 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "ae89e25c87aa2c63b6d945fd557351d0dad9f889a82edfd32dd667f4bd4f5004",
+            "source_type": "query",
+            "source_id": "a3b561659c3c71c46c876b4fa386675e21456836f03f2a204a0e1a0cd43e9765",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "6a9f2f42413386cd54cf2a1536f3416f401d752babfd9733483022ce67d2e212",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-01-28T17:00:00Z",
+            "window_end": "2026-02-01T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-01-29 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-02 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "c265f3236c03f94d8702c7983b7ba7f03bb16449ec16392c835c32bc08342dcf",
+            "source_type": "query",
+            "source_id": "924daeccc65e891fbbf560bbfb32cfef6329c11cf544581d79b9208d46e68163",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "5af0c1b20650073022206661c6ee229e284b038a91199e947b02a8a033f7971a",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": "2026-01-21T17:00:00Z",
+            "window_end": "2026-01-25T17:00:00Z",
+            "semantic_plan": {
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-01-22 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-01-26 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 2,
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "805dcd280bacb9e11bc5df5ed0227fd5af54f7c07531199906ce37716ea6fbe1",
+            "source_type": "query",
+            "source_id": "f7bcf70ddf33af487348fe26a127eaf13e2a6c3dcb4ac1603b189d939e42ff07",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "30681af7ff610b1d4faf103eee4ad1205dea13a956d39a9771ceafd513b092a4",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-09 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 1000,
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "a679b78b1ef536587844724c4ee4d6e17a0b920822450dc46770fa41c9c51f6d",
+            "source_type": "query",
+            "source_id": "4bc8b217f60d0252ad14662498356e4c5dded32de8923b939dd80a9bb2176d58",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "27706aadcb7278bfb3a7f48971bb381c1a41cf398b8fb8e6b66a249d8ec90e68",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-02-12 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-02-16 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 1000,
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "e714879c4aab9dac2b95ddbad7d6ae683b2735e79f6cdaa4f8cf0255ac73f84d",
+            "source_type": "query",
+            "source_id": "d30fbe6f08567a69c61a19f23caee61a217ab82d3d4a6ce96e5e4a575446988f",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "8cc62b30e8d0e6f822552b20e82138c3e6e43fe743b16265dca259efbd9c6d86",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "dimensions": [
+                "orders.category"
+              ],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-03-09 00:00:00.000000"
+                }
+              ],
+              "having": [],
+              "limit": 1000,
+              "metrics": [
+                "net_booked_revenue"
+              ],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          },
+          {
+            "id": "7da04bb90bb30d104f301438822deccfac306336740de9499ac74946de430d3a",
+            "source_type": "query",
+            "source_id": "c07042884aa6c4ae6dcc8371399dae479650e6ad38dda29043bfb2fad356fb7c",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "710946b6ea607292500697718c40230f0a44b15326fe89e02af48309c5227051",
+            "observed_at": "2026-03-09T00:00:00+07:00",
+            "window_start": null,
+            "window_end": null,
+            "semantic_plan": {
+              "dimensions": [
+                "deployments.deployed_at",
+                "deployments.deployment_id",
+                "deployments.service_id"
+              ],
+              "filters": [
+                {
+                  "field": "deployments.deployed_at",
+                  "operator": ">=",
+                  "value": "2026-03-05 00:00:00"
+                },
+                {
+                  "field": "deployments.deployed_at",
+                  "operator": "<",
+                  "value": "2026-03-09 00:00:00"
+                }
+              ],
+              "having": [],
+              "limit": 31,
+              "metrics": [],
+              "named_filters": [],
+              "order_by": [],
+              "time": null,
+              "top_n_per_group": null,
+              "transforms": [],
+              "unresolved_concepts": []
+            }
+          }
+        ]
+      },
+      "events": [
+        {
+          "id": "2bb2b7530b05d851dd760677be708010a8148e37d5fa1ca348155565d42437af",
+          "revision": 1,
+          "created_at": "2026-10-01T21:28:43.835048Z",
+          "updated_at": "2026-10-01T21:28:43.858105Z",
+          "decision_id": "9d6bf9927280fc0664f5d9b204fef87bb36dfe64e797d3d41a6ebdba28189306",
+          "decision_revision": 1,
+          "event": "created",
+          "actor": "bi_35878546e902",
+          "context_digest": "d78e900766c86c59dd5ce8ae8466deaf48c685273b73553e7570b4b7612d34e0",
+          "references": [
+            "ad64f75fb85586e63e69eaa8e8995e5937bcf5d9d889134fdedcf55eef338287",
+            "11c144ff-e5f1-4ddc-8264-25578a64c5c4"
+          ]
+        },
+        {
+          "id": "7558226f85b117bf31b9c2d869ac0a98e6bccc57d65672dd52785069d768b7cc",
+          "revision": 1,
+          "created_at": "2026-10-01T21:29:04.982862Z",
+          "updated_at": "2026-10-01T21:29:04.991487Z",
+          "decision_id": "9d6bf9927280fc0664f5d9b204fef87bb36dfe64e797d3d41a6ebdba28189306",
+          "decision_revision": 2,
+          "event": "selected",
+          "actor": "bi_35878546e902",
+          "context_digest": "f13d670a76597d9874d57b8c8b2165153148f8f4a68c980eeba03db016a1f0a3",
+          "references": [
+            "ad64f75fb85586e63e69eaa8e8995e5937bcf5d9d889134fdedcf55eef338287",
+            "6887156c-3039-46ae-9611-0fbffab5eefe"
+          ]
+        },
+        {
+          "id": "f9f6f97bd7366574400432b3fb23a57d867ba4a3f1f04203a56bfa6d5ae7a3b6",
+          "revision": 1,
+          "created_at": "2026-10-01T21:29:25.777215Z",
+          "updated_at": "2026-10-01T21:29:25.790728Z",
+          "decision_id": "9d6bf9927280fc0664f5d9b204fef87bb36dfe64e797d3d41a6ebdba28189306",
+          "decision_revision": 3,
+          "event": "approved",
+          "actor": "bi_35878546e902",
+          "context_digest": "fe2732a5ad7df4450e2b9900b57cf23c7e3bf44aa120a091f4c7e89511f370a5",
+          "references": [
+            "ad64f75fb85586e63e69eaa8e8995e5937bcf5d9d889134fdedcf55eef338287",
+            "bc1922c3-327a-489e-bf11-433d0e823d14"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "d7cb27d371fd96458a7afe7395cf69801f9bb6ff968d34b199dc2ee9d03f01e5",
+          "source_type": "query",
+          "source_id": "f87a10bfc05c69741b77fd20660077b66bad60b245deec83481226a6383a9f0c",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "0b60b8638de24a7138035c1caa67fb1c7764bc29341d6e296cffbdf496719026",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": "2026-03-04T17:00:00Z",
+          "window_end": "2026-03-08T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-03-05 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-03-09 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "a0be3ac52cf45db4cccb927b8bf1736964b43c4896f9c8522d2171d14b6798c8",
+          "source_type": "query",
+          "source_id": "db72b69f51122db43f6bc13dc5d7a4fff95da1d84f6a3138895fe7f66c137f9e",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "24da26a3daa57b8a2e98998b8791a8891d541629b67c5d06be6d35380a2fe0ce",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": "2026-02-25T17:00:00Z",
+          "window_end": "2026-03-01T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-26 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-03-02 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "64ecdf825ca4c8b9028a43e62ac0832c53561cdf5330055d7c3f1cd45569a1a9",
+          "source_type": "query",
+          "source_id": "ec48b259c2e78f8591ece7734c2658ecc29d1aab4015a9a08ab844704d52cd68",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "c95487e89377b93e79c62b8f274d7b75e118086619c1c8fea17a862a99828e71",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": "2026-02-18T17:00:00Z",
+          "window_end": "2026-02-22T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-19 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-23 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "e5c58c76e21ce74746fb9b2a6b38ea3e05359155f80f6b89cbdbd8aa32c5f51e",
+          "source_type": "query",
+          "source_id": "56933b4b2cef399eaaa9af28659f7330438a9d10ae81f0c4a20ec2de0fdf5623",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "c9f1e06723f442ae2ab92b280307663816e46e612a09890a48935d2070c5819e",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": "2026-02-11T17:00:00Z",
+          "window_end": "2026-02-15T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-12 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-16 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "1c5b2ecd8686cfd8d4fddc1203d0bd7d34a706359adaeb9309b7d16596708a82",
+          "source_type": "query",
+          "source_id": "d533040af57854b8ccf267a6c611713bca4886cbc6f07e38cc42886214d90ab8",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "9980fa94a172da8c5218dc4c5c1c70e6cbc1f0b2d673618331600360e3958224",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": "2026-02-04T17:00:00Z",
+          "window_end": "2026-02-08T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-05 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-09 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "ae89e25c87aa2c63b6d945fd557351d0dad9f889a82edfd32dd667f4bd4f5004",
+          "source_type": "query",
+          "source_id": "a3b561659c3c71c46c876b4fa386675e21456836f03f2a204a0e1a0cd43e9765",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "6a9f2f42413386cd54cf2a1536f3416f401d752babfd9733483022ce67d2e212",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": "2026-01-28T17:00:00Z",
+          "window_end": "2026-02-01T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-01-29 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-02 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "c265f3236c03f94d8702c7983b7ba7f03bb16449ec16392c835c32bc08342dcf",
+          "source_type": "query",
+          "source_id": "924daeccc65e891fbbf560bbfb32cfef6329c11cf544581d79b9208d46e68163",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "5af0c1b20650073022206661c6ee229e284b038a91199e947b02a8a033f7971a",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": "2026-01-21T17:00:00Z",
+          "window_end": "2026-01-25T17:00:00Z",
+          "semantic_plan": {
+            "dimensions": [],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-01-22 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-01-26 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 2,
+            "metrics": [
+              "net_booked_revenue",
+              "order_count",
+              "order_completeness"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "805dcd280bacb9e11bc5df5ed0227fd5af54f7c07531199906ce37716ea6fbe1",
+          "source_type": "query",
+          "source_id": "f7bcf70ddf33af487348fe26a127eaf13e2a6c3dcb4ac1603b189d939e42ff07",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "30681af7ff610b1d4faf103eee4ad1205dea13a956d39a9771ceafd513b092a4",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": null,
+          "window_end": null,
+          "semantic_plan": {
+            "dimensions": [
+              "orders.category"
+            ],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-05 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-09 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 1000,
+            "metrics": [
+              "net_booked_revenue"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "a679b78b1ef536587844724c4ee4d6e17a0b920822450dc46770fa41c9c51f6d",
+          "source_type": "query",
+          "source_id": "4bc8b217f60d0252ad14662498356e4c5dded32de8923b939dd80a9bb2176d58",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "27706aadcb7278bfb3a7f48971bb381c1a41cf398b8fb8e6b66a249d8ec90e68",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": null,
+          "window_end": null,
+          "semantic_plan": {
+            "dimensions": [
+              "orders.category"
+            ],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-02-12 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-02-16 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 1000,
+            "metrics": [
+              "net_booked_revenue"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "e714879c4aab9dac2b95ddbad7d6ae683b2735e79f6cdaa4f8cf0255ac73f84d",
+          "source_type": "query",
+          "source_id": "d30fbe6f08567a69c61a19f23caee61a217ab82d3d4a6ce96e5e4a575446988f",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "8cc62b30e8d0e6f822552b20e82138c3e6e43fe743b16265dca259efbd9c6d86",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": null,
+          "window_end": null,
+          "semantic_plan": {
+            "dimensions": [
+              "orders.category"
+            ],
+            "filters": [
+              {
+                "field": "orders.ordered_at",
+                "operator": ">=",
+                "value": "2026-03-05 00:00:00.000000"
+              },
+              {
+                "field": "orders.ordered_at",
+                "operator": "<",
+                "value": "2026-03-09 00:00:00.000000"
+              }
+            ],
+            "having": [],
+            "limit": 1000,
+            "metrics": [
+              "net_booked_revenue"
+            ],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        },
+        {
+          "id": "7da04bb90bb30d104f301438822deccfac306336740de9499ac74946de430d3a",
+          "source_type": "query",
+          "source_id": "c07042884aa6c4ae6dcc8371399dae479650e6ad38dda29043bfb2fad356fb7c",
+          "semantic": {
+            "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+            "version": 2,
+            "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+          },
+          "relations": [],
+          "method": "semantic-compiler-v1",
+          "digest": "710946b6ea607292500697718c40230f0a44b15326fe89e02af48309c5227051",
+          "observed_at": "2026-03-09T00:00:00+07:00",
+          "window_start": null,
+          "window_end": null,
+          "semantic_plan": {
+            "dimensions": [
+              "deployments.deployed_at",
+              "deployments.deployment_id",
+              "deployments.service_id"
+            ],
+            "filters": [
+              {
+                "field": "deployments.deployed_at",
+                "operator": ">=",
+                "value": "2026-03-05 00:00:00"
+              },
+              {
+                "field": "deployments.deployed_at",
+                "operator": "<",
+                "value": "2026-03-09 00:00:00"
+              }
+            ],
+            "having": [],
+            "limit": 31,
+            "metrics": [],
+            "named_filters": [],
+            "order_by": [],
+            "time": null,
+            "top_n_per_group": null,
+            "transforms": [],
+            "unresolved_concepts": []
+          }
+        }
+      ],
+      "outcome": {
+        "id": "9732c76c39bccc7856886848bb926a77dd3decee7c32670b53caf3b19a12cc5f",
+        "revision": 3,
+        "created_at": "2026-10-01T21:29:51.233198Z",
+        "updated_at": "2026-10-01T21:33:04.799133Z",
+        "decision_id": "9d6bf9927280fc0664f5d9b204fef87bb36dfe64e797d3d41a6ebdba28189306",
+        "decision_revision": 3,
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "target_metric": "net_booked_revenue",
+        "currency": "IDR",
+        "window": {
+          "start": "2026-04-01T17:00:00Z",
+          "end": "2026-04-05T17:00:00Z"
+        },
+        "predicted": 26238500.000000004,
+        "actual": 53854400.0,
+        "completeness": 1.0,
+        "attribution": "observed_after",
+        "status": "complete",
+        "overlapping_decisions": [],
+        "dimensions": {
+          "forecast_absolute_error": 27615899.999999996,
+          "forecast_relative_error": 0.5127881844380403,
+          "interval_covered": false,
+          "expected_change": 5247700.000000004,
+          "observed_change": 32863600.0,
+          "attributed_business_impact": null,
+          "attribution": "observed_after",
+          "completeness": 1.0,
+          "policy_compliance": true,
+          "time_to_insight_seconds": 18.398493
+        },
+        "evidence": [
+          {
+            "id": "98fa5079e3c4b9d11e42e8a84023ee8491891ce42677195e6048c41a402d62f6",
+            "source_type": "query",
+            "source_id": "3390ce5b7040d14a77707599b8ba707c2edbf77b2e4aac67ebc8de2c49535f1c",
+            "semantic": {
+              "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+              "version": 2,
+              "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+            },
+            "relations": [],
+            "method": "semantic-compiler-v1",
+            "digest": "b8f5b16cd7be7e792a702ba3e3c624f87121febae9bbb3b0ef69e2bc7917ca50",
+            "observed_at": "2026-04-07T00:00:00+07:00",
+            "window_start": "2026-04-01T17:00:00Z",
+            "window_end": "2026-04-05T17:00:00Z",
+            "semantic_plan": {
+              "metrics": [
+                "net_booked_revenue",
+                "order_count",
+                "order_completeness"
+              ],
+              "dimensions": [],
+              "filters": [
+                {
+                  "field": "orders.ordered_at",
+                  "operator": ">=",
+                  "value": "2026-04-02 00:00:00.000000"
+                },
+                {
+                  "field": "orders.ordered_at",
+                  "operator": "<",
+                  "value": "2026-04-06 00:00:00.000000"
+                }
+              ],
+              "named_filters": [],
+              "time": null,
+              "order_by": [],
+              "limit": 2,
+              "unresolved_concepts": [],
+              "having": [],
+              "transforms": [],
+              "top_n_per_group": null
+            }
+          }
+        ]
+      },
+      "knowledge": {
+        "memory_id": "71bbea34d5556fa2a287bde5a67dd3356c666f8b8214a1a1aca46aa0d4262d29",
+        "revision": 1,
+        "fact": "Prediction for net_booked_revenue was 2.62385e+07; observed 5.38544e+07. Attribution: observed_after.",
+        "state": "INFERRED",
+        "visibility": "PRIVATE",
+        "authority": "observed_outcome",
+        "semantic": {
+          "view_id": "9d90b54d-0ed4-4c63-b37e-df83ce7baf7a",
+          "version": 2,
+          "fingerprint": "342ec10b4428de5741790c9c2e1fda0ec50b6049b62f8e647ba7c4990ecab50f"
+        },
+        "definition": {
+          "outcome_id": "9732c76c39bccc7856886848bb926a77dd3decee7c32670b53caf3b19a12cc5f",
+          "outcome_revision": 3
+        },
+        "alternatives": [],
+        "evidence_ids": [
+          "ba12b8258bebbfe3db4f849c52ecf378"
+        ],
+        "reviewed_by": null,
+        "review_note": "",
+        "needs_revalidation": false,
+        "review_operation_id": null,
+        "review_request_hash": null,
+        "recorded_at": "2026-10-01T21:33:05.186348Z",
+        "last_observed_at": "2026-10-01T21:33:04.799133Z",
+        "confidence": {
+          "dimension": "knowledge",
+          "method": "knowledge-evidence-review-v1",
+          "value": null,
+          "label": "insufficient",
+          "evidence_ids": [
+            "ba12b8258bebbfe3db4f849c52ecf378"
+          ]
+        }
+      },
+      "independent_actual": 53854400.0,
+      "retry_retained_outcome_revision": true,
+      "outcome_states": [
+        "pending",
+        "missing_data",
+        "complete"
+      ]
+    }
+  ]
+}

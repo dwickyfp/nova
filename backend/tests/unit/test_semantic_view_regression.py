@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -12,6 +13,17 @@ from app.modules.agents.semantic.planning import SemanticPlan
 from app.modules.intelligence.semantic_regression import MAX_RESULT_ROWS, compare_semantic_versions
 
 
+@pytest.fixture
+def publication_lease(monkeypatch):
+    from app.modules.intelligence import engine_repository
+
+    @asynccontextmanager
+    async def lease(_key):
+        yield type("Lease", (), {"renew": AsyncMock(return_value=True)})()
+
+    monkeypatch.setattr(engine_repository, "metadata_lock", lease)
+
+
 def _fixture():
     definition = parse_ossie(
         Path("app/modules/agents/examples/nova_sales.ossie.yaml").read_text()
@@ -19,8 +31,10 @@ def _fixture():
     plan = SemanticPlan(metrics=("total_revenue",))
     sql = SemanticCompiler().compile(SemanticModelIR.from_ossie(definition), plan).sql
     query = {
-        "verified_query_id": "revenue", "question": "Total revenue?",
-        "semantic_plan": plan.as_dict(), "verified_sql": sql,
+        "verified_query_id": "revenue",
+        "question": "Total revenue?",
+        "semantic_plan": plan.as_dict(),
+        "verified_sql": sql,
     }
     return definition, query
 
@@ -66,20 +80,46 @@ async def test_semantic_regression_marks_capped_result_inconclusive():
 
 
 @pytest.mark.asyncio
-async def test_semantic_publish_requires_acknowledgement_for_regression(monkeypatch):
+async def test_semantic_publish_requires_acknowledgement_for_regression(
+    monkeypatch, publication_lease
+):
     import app.modules.intelligence.semantic_views as module
 
     service = module.SemanticViewService()
-    monkeypatch.setattr(service, "_owned", AsyncMock(return_value={
-        "name": "sales", "active_version": 1,
-    }))
-    monkeypatch.setattr(service, "_version", AsyncMock(return_value={
-        "status": "VALIDATED", "validation": {
-            "valid": True, "regression": {"changed": 1}, "baseline_version": 1,
-        },
-        "definition": {},
-    }))
-    user = {"username": "nova_admin", "active_role": "ACCOUNTADMIN"}
+    monkeypatch.setattr(
+        service,
+        "_owned",
+        AsyncMock(
+            return_value={
+                "name": "sales",
+                "database_name": "sales_db",
+                "active_version": 1,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_version",
+        AsyncMock(
+            return_value={
+                "status": "VALIDATED",
+                "validation": {
+                    "valid": True,
+                    "regression": {"changed": 1},
+                    "baseline_version": 1,
+                },
+                "definition": {},
+            }
+        ),
+    )
+    user = {
+        "username": "nova_admin",
+        "active_role": "ACCOUNTADMIN",
+        "encrypted_password": "opaque",
+        "session_id": "admin-session",
+        "security_context_version": 7,
+        "roles": ["ACCOUNTADMIN"],
+    }
     with pytest.raises(HTTPException) as error:
         await service.publish("view-id", 2, user)
     assert error.value.status_code == 409
@@ -87,26 +127,61 @@ async def test_semantic_publish_requires_acknowledgement_for_regression(monkeypa
     monkeypatch.setattr(service, "_source_access", AsyncMock(return_value=True))
     monkeypatch.setattr(service, "describe", AsyncMock(return_value={"active_version": 2}))
     monkeypatch.setattr(service, "_audit", AsyncMock())
+    from types import SimpleNamespace
+
+    identity_check = AsyncMock(return_value=SimpleNamespace(error=None))
+    monkeypatch.setattr(module.query_service, "execute", identity_check)
+    from app.core.redis import session_store
+
+    monkeypatch.setattr(session_store, "get", AsyncMock(return_value=deepcopy(user)))
     execute = AsyncMock(return_value={"rows": []})
     monkeypatch.setattr(module.db, "execute_system", execute)
     result = await service.publish("view-id", 2, user, acknowledge_regressions=True)
     assert result["active_version"] == 2
     assert execute.await_count == 3
+    identity_check.assert_awaited_once_with(
+        sql="SELECT 1",
+        username="nova_admin",
+        encrypted_password="opaque",
+        database="sales_db",
+        role="ACCOUNTADMIN",
+        session_id="admin-session",
+        security_context_version=7,
+        max_rows=0,
+    )
 
 
 @pytest.mark.asyncio
-async def test_semantic_publish_revalidates_after_active_version_changes(monkeypatch):
+async def test_semantic_publish_revalidates_after_active_version_changes(
+    monkeypatch, publication_lease
+):
     import app.modules.intelligence.semantic_views as module
 
     service = module.SemanticViewService()
-    monkeypatch.setattr(service, "_owned", AsyncMock(return_value={
-        "name": "sales", "active_version": 2,
-    }))
-    monkeypatch.setattr(service, "_version", AsyncMock(return_value={
-        "status": "VALIDATED", "validation": {
-            "valid": True, "regression": {"changed": 0}, "baseline_version": 1,
-        },
-    }))
+    monkeypatch.setattr(
+        service,
+        "_owned",
+        AsyncMock(
+            return_value={
+                "name": "sales",
+                "active_version": 2,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_version",
+        AsyncMock(
+            return_value={
+                "status": "VALIDATED",
+                "validation": {
+                    "valid": True,
+                    "regression": {"changed": 0},
+                    "baseline_version": 1,
+                },
+            }
+        ),
+    )
     with pytest.raises(HTTPException, match="Active version changed") as error:
         await service.publish("view-id", 3, {"username": "nova_admin"})
     assert error.value.status_code == 409
@@ -117,15 +192,31 @@ async def test_accountadmin_can_manage_semantic_view_owned_by_another_user(monke
     import app.modules.intelligence.semantic_views as module
 
     service = module.SemanticViewService()
-    monkeypatch.setattr(service, "_get", AsyncMock(return_value={
-        "id": "view-id", "owner_name": "alice", "name": "sales",
-    }))
-    admin = await service._owned("view-id", {
-        "username": "nova_admin", "active_role": "ACCOUNTADMIN",
-    })
+    monkeypatch.setattr(
+        service,
+        "_get",
+        AsyncMock(
+            return_value={
+                "id": "view-id",
+                "owner_name": "alice",
+                "name": "sales",
+            }
+        ),
+    )
+    admin = await service._owned(
+        "view-id",
+        {
+            "username": "nova_admin",
+            "active_role": "ACCOUNTADMIN",
+        },
+    )
     assert admin["id"] == "view-id"
     with pytest.raises(HTTPException):
-        await service._owned("view-id", {
-            "username": "bob", "active_role": "ANALYST",
-            "assigned_roles": ["ACCOUNTADMIN"],
-        })
+        await service._owned(
+            "view-id",
+            {
+                "username": "bob",
+                "active_role": "ANALYST",
+                "assigned_roles": ["ACCOUNTADMIN"],
+            },
+        )

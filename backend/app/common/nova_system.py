@@ -107,6 +107,8 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_TASKS (
     created_by     VARCHAR(128),
     consecutive_fail_count INT DEFAULT "0",
     version        BIGINT DEFAULT "1",
+    handler        VARCHAR(64) DEFAULT "sql",
+    handler_config JSON,
     created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
 ) PRIMARY KEY(id)
@@ -317,6 +319,8 @@ PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
 #: the caller's job: each entry is ``(table, column, type)`` and the migration
 #: is applied only when ``information_schema.columns`` says it is absent.
 TASK_ORCHESTRATION_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("CONFIG_TASKS", "handler", 'VARCHAR(64) DEFAULT "sql"'),
+    ("CONFIG_TASKS", "handler_config", "JSON"),
     ("CONFIG_TASK_GRAPH_RUNS", "execution_session_id", "VARCHAR(128)"),
     ("CONFIG_TASK_GRAPH_RUNS", "execution_user", "VARCHAR(128)"),
     ("CONFIG_TASK_GRAPH_RUNS", "execution_role", "VARCHAR(128)"),

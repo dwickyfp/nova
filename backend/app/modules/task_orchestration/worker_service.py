@@ -113,6 +113,14 @@ class WorkerService:
             if run.get("state") in {"success", "failed", "cancelled"}:
                 continue
             await self._requeue(run)
+        from app.modules.agents.learning_work import enqueue_pending_learning
+
+        try:
+            await enqueue_pending_learning(repository=self._repository)
+        except Exception:
+            logger.warning(
+                "Learning admission is unavailable; pending source messages are retained"
+            )
         return native_ok and heartbeat_ok
 
     async def _reconcile_native(self) -> bool:

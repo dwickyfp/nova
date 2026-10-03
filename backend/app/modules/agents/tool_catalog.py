@@ -21,6 +21,7 @@ from app.modules.agents.tools.analyze_documents_spec import PARAMETERS as ANALYZ
 from app.modules.agents.tools.compute_metrics import PARAMETERS as COMPUTE_PARAMETERS
 from app.modules.agents.tools.compute_metrics import ComputeMetricsTool
 from app.modules.agents.tools.describe_agent import DESCRIPTION, PARAMETERS
+from app.modules.agents.tools.intelligence import context_graph_tool, decision_lab_tool
 from app.modules.agents.tools.schedule_automation import PARAMETERS as SCHEDULE_PARAMETERS
 from app.modules.agents.tools.schedule_automation import ScheduleAutomationTool
 
@@ -29,6 +30,8 @@ SCHEDULE_DESCRIPTION = ScheduleAutomationTool.description
 
 #: name -> (description, input_schema)
 BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
+    "context_graph": (context_graph_tool.description, context_graph_tool.parameters),
+    "decision_lab": (decision_lab_tool.description, decision_lab_tool.parameters),
     **COLLABORATION_TOOLS,
     "describe_agent": (DESCRIPTION, PARAMETERS),
     "send_agent_message": (
@@ -349,6 +352,8 @@ AGENT_BUNDLEABLE_TOOLS = (
     "feature_lookup",
     "data_to_chart",
     "diagnose_change",
+    "context_graph",
+    "decision_lab",
     "compute_metrics",
     "schedule_automation",
     "ml_execute",

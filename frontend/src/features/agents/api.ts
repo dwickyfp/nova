@@ -137,6 +137,7 @@ export type AutoThreadRun = {
 };
 
 export type AgentMemory = {
+  knowledge?: KnowledgeRevision;
   memory_id: string;
   user_name: string;
   agent_id: string;
@@ -147,6 +148,30 @@ export type AgentMemory = {
   source_thread_id: string;
   created_at: string;
   updated_at: string;
+};
+
+export type KnowledgeRevision = {
+  memory_id: string;
+  revision: number;
+  fact: string;
+  state: 'HYPOTHESIS' | 'INFERRED' | 'VERIFIED' | 'CONFLICTED' | 'REJECTED' | 'SUPERSEDED';
+  visibility: 'PRIVATE' | 'DOMAIN';
+  authority: string;
+  semantic?: { view_id: string; version: number; fingerprint: string } | null;
+  alternatives: string[];
+  evidence_ids: string[];
+  reviewed_by?: string | null;
+  review_note: string;
+  needs_revalidation: boolean;
+  recorded_at?: string | null;
+  last_observed_at?: string | null;
+  confidence?: {
+    dimension: 'knowledge';
+    method: string;
+    value: number | null;
+    label: string;
+    evidence_ids: string[];
+  };
 };
 
 export type RuleProposal = {

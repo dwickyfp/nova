@@ -85,6 +85,27 @@ def shared_steps(steps: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
 
 
 class ShareRepository:
+    async def active_grants(
+        self, user: dict, *, object_type: str, object_id: str | None = None,
+        owner_name: str | None = None, after: str = "", limit: int = 101,
+    ) -> list[dict]:
+        """Intelligence grants use only the current role and support bounded paging."""
+        await self.ensure_schema()
+        clauses = ["object_type=%s", "object_id>%s",
+                   "((target_type='user' AND target_name=%s) OR "
+                   "(target_type='role' AND target_name=%s))"]
+        params = [object_type, after, user["username"], user["active_role"]]
+        for name, value in (("object_id", object_id), ("owner_name", owner_name)):
+            if value is not None:
+                clauses.append(f"{name}=%s")
+                params.append(value)
+        result = await db.execute_system(
+            f"SELECT {_COLUMNS} FROM NOVA_SYSTEM.CONFIG_STUDIO_SHARES WHERE "
+            + " AND ".join(clauses) + " ORDER BY object_id,share_id LIMIT %s",
+            [*params, min(max(limit, 1), 101)],
+        )
+        return [_row(row) for row in result.get("rows") or []]
+
     async def ensure_schema(self) -> None:
         await db.execute_system(SHARES_DDL)
 

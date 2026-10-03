@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 from typing import Annotated, Any, Literal
@@ -14,6 +15,7 @@ from pydantic import BaseModel, Field
 from app.common.audit import write_audit_log
 from app.common.responses import SanitizingJSONResponse
 from app.common.sql_guard import split_sql_statements
+from app.core.config import settings
 from app.core.database import db
 from app.core.deps import get_current_user
 from app.modules.agents.semantic.compiler import SemanticCompiler
@@ -169,31 +171,69 @@ class SemanticViewService:
     async def _source_access(definition: dict, user: dict) -> bool:
         if not user.get("username") or not user.get("encrypted_password"):
             return False
-        for dataset in definition.get("datasets") or []:
-            source = str(dataset.get("source") or "")
+        sources = list(
+            dict.fromkeys(
+                str(dataset.get("source") or "") for dataset in definition.get("datasets") or []
+            )
+        )
+        for source in sources:
             if len(source.split(".")) not in (2, 3) or not all(
                 _IDENT.fullmatch(part) for part in source.split(".")
             ):
                 return False
-            quoted = ".".join(f"`{part}`" for part in source.split("."))
+        from app.modules.query.service import delegated_connection_for
+
+        semaphore = asyncio.Semaphore(1 if delegated_connection_for(user["username"]) else 4)
+
+        async def check_sources(batch):
+            from app.modules.access_control.service import access_control_service
+
             try:
-                result = await asyncio.wait_for(
-                    query_service.execute(
-                        sql=f"SELECT 1 FROM {quoted} WHERE 1=0",
-                        username=user["username"],
-                        encrypted_password=user["encrypted_password"],
-                        database=source.split(".")[-2],
-                        role=user.get("active_role"),
-                        session_id=user.get("session_id"),
-                        max_rows=0,
-                    ),
-                    timeout=5,
-                )
-                if result.error:
-                    return False
+                async with semaphore:
+                    for source in batch:
+                        if settings.RANGER_ENABLED:
+                            access = await access_control_service.effective_access(
+                                principal=user["username"],
+                                active_role=user.get("active_role"),
+                                resource=source,
+                            )
+                            if not {"SELECT", "ALL"}.intersection(access["object_access"]):
+                                return False
+                        result = await asyncio.wait_for(
+                            query_service.execute(
+                                sql="SELECT * FROM "
+                                + ".".join(f"`{part}`" for part in source.split("."))
+                                + " LIMIT 1",
+                                username=user["username"],
+                                encrypted_password=user["encrypted_password"],
+                                database=source.split(".")[-2],
+                                role=user.get("active_role"),
+                                session_id=user.get("session_id"),
+                                security_context_version=int(
+                                    user.get("security_context_version") or 1
+                                ),
+                                max_rows=0,
+                            ),
+                            timeout=10,
+                        )
+                        if result.error:
+                            return False
+                    return True
             except Exception:
                 return False
-        return True
+
+        try:
+            async with asyncio.timeout(120):
+                return all(
+                    await asyncio.gather(
+                        *(
+                            check_sources(sources[index : index + 8])
+                            for index in range(0, len(sources), 8)
+                        )
+                    )
+                )
+        except TimeoutError:
+            return False
 
     @staticmethod
     async def _entity_access(ir: SemanticModelIR, user: dict) -> bool:
@@ -339,9 +379,7 @@ class SemanticViewService:
             "database_name": view["database_name"],
         }
 
-    async def list_active_for_agent(
-        self, user: dict, *, agent_id: str | None = None
-    ) -> list[dict]:
+    async def list_active_for_agent(self, user: dict, *, agent_id: str | None = None) -> list[dict]:
         result = await db.execute_system(
             "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
             "WHERE status='ACTIVE' AND active_version IS NOT NULL ORDER BY name"
@@ -397,7 +435,10 @@ class SemanticViewService:
 
         try:
             plan = await generate_plan(
-                AssistantProviderClient(), ir, await planning_catalog(ir, question), question,
+                AssistantProviderClient(),
+                ir,
+                await planning_catalog(ir, question),
+                question,
                 SimpleNamespace(usage=None, model_provider_id=None, model_name=None),
             )
         except AssistantProviderError as exc:
@@ -565,7 +606,9 @@ class SemanticViewService:
             view_id,
             latest,
             SemanticViewVerifiedQueryCreate(
-                question=question, semantic_plan=plan.as_dict(), verified_sql=sql,
+                question=question,
+                semantic_plan=plan.as_dict(),
+                verified_sql=sql,
                 tags=["from_feedback"],
             ),
             user,
@@ -643,6 +686,7 @@ class SemanticViewService:
                 role=user.get("active_role"),
                 session_id=user.get("session_id"),
                 max_rows=MAX_RESULT_ROWS,
+                security_context_version=int(user.get("security_context_version") or 1),
             ),
             timeout=15,
         )
@@ -687,10 +731,10 @@ class SemanticViewService:
             if active:
                 active_queries = active["definition"].get("verified_queries") or []
                 regression = await compare_semantic_versions(
-                    definition, active["definition"], active_queries[:MAX_VERIFIED_QUERIES],
-                    lambda sql: self._run_validation_query(
-                        sql, user, view["database_name"]
-                    ),
+                    definition,
+                    active["definition"],
+                    active_queries[:MAX_VERIFIED_QUERIES],
+                    lambda sql: self._run_validation_query(sql, user, view["database_name"]),
                 )
                 excess = active_queries[MAX_VERIFIED_QUERIES:]
                 if excess:
@@ -704,12 +748,15 @@ class SemanticViewService:
                             "question": str(item.get("question") or ""),
                             "status": "not_evaluated",
                         }
-                        for item in excess if isinstance(item, dict)
+                        for item in excess
+                        if isinstance(item, dict)
                     )
                     regression["total"] = len(active_queries)
                     regression["changed"] += len(excess)
-                if any(case["status"] in {"execution_failed", "compile_failed"}
-                       for case in regression["cases"]):
+                if any(
+                    case["status"] in {"execution_failed", "compile_failed"}
+                    for case in regression["cases"]
+                ):
                     errors.append("Active verified queries could not be evaluated")
         report = {
             "valid": not errors,
@@ -728,14 +775,75 @@ class SemanticViewService:
         return report
 
     async def publish(
-        self, view_id: str, version: int, user: dict,
+        self,
+        view_id: str,
+        version: int,
+        user: dict,
         acknowledge_regressions: bool = False,
     ) -> dict:
+        from app.modules.intelligence.engine_repository import metadata_lock
+
         view = await self._owned(view_id, user)
         row = await self._version(view_id, version)
-        if not row or row["status"] != "VALIDATED" or not row["validation"]["valid"]:
+        self._require_publishable(view, row, version, acknowledge_regressions)
+        signature = self._publication_signature(row)
+        if not await self._source_access(row["definition"], user):
+            raise HTTPException(status_code=403, detail="Semantic source is unavailable")
+        # Data probes can span a large catalog. Keep the write lease for the
+        # projection, and bind that projection to the exact checked candidate.
+        try:
+            current = await asyncio.wait_for(
+                query_service.execute(
+                    sql="SELECT 1",
+                    username=user["username"],
+                    encrypted_password=user["encrypted_password"],
+                    database=view["database_name"],
+                    role=user.get("active_role"),
+                    session_id=user.get("session_id"),
+                    security_context_version=int(user.get("security_context_version") or 1),
+                    max_rows=0,
+                ),
+                timeout=10,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=403, detail="Publication execution context is unavailable"
+            ) from exc
+        if current.error:
+            raise HTTPException(
+                status_code=403, detail="Publication execution context is unavailable"
+            )
+        async with metadata_lock(f"semantic-publish:{view_id}") as lease:
+            await self._publish_locked(
+                view_id,
+                version,
+                user,
+                acknowledge_regressions,
+                lease,
+                preflight_signature=signature,
+            )
+        return await self.describe(view_id, user)
+
+    @staticmethod
+    def _publication_signature(row: dict) -> str:
+        checked = {key: row.get(key) for key in ("definition", "fingerprint", "validation")}
+        return hashlib.sha256(
+            json.dumps(checked, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+    @staticmethod
+    def _require_publishable(view, row, version, acknowledge_regressions) -> None:
+        if (
+            not row
+            or row["status"] not in {"VALIDATED", "ACTIVE"}
+            or not (row.get("validation") or {}).get("valid")
+        ):
             raise HTTPException(status_code=409, detail="Only validated versions may be published")
-        if row["validation"].get("baseline_version") != view["active_version"]:
+        recovering_published = row["status"] == "ACTIVE" and view["active_version"] == version
+        if (
+            not recovering_published
+            and row["validation"].get("baseline_version") != view["active_version"]
+        ):
             raise HTTPException(status_code=409, detail="Active version changed; validate again")
         regression = row["validation"].get("regression") or {}
         if regression.get("changed", 0) and not acknowledge_regressions:
@@ -743,25 +851,70 @@ class SemanticViewService:
                 status_code=409,
                 detail="Verified-query regressions require explicit acknowledgement",
             )
-        if not await self._source_access(row["definition"], user):
+
+    async def _publish_locked(
+        self,
+        view_id: str,
+        version: int,
+        user: dict,
+        acknowledge_regressions: bool,
+        lease,
+        *,
+        preflight_signature: str | None = None,
+    ) -> dict:
+        view = await self._owned(view_id, user)
+        row = await self._version(view_id, version)
+        self._require_publishable(view, row, version, acknowledge_regressions)
+        if preflight_signature is not None:
+            if self._publication_signature(row) != preflight_signature:
+                raise HTTPException(
+                    status_code=409, detail="Publication inputs changed; review and validate again"
+                )
+            if user.get("session_id"):
+                from app.core.redis import session_store
+                from app.modules.assistant.security import session_security
+
+                session = await session_store.get(user["session_id"])
+                if not session or session_security(
+                    {**session, "session_id": user["session_id"]}
+                ) != session_security(user):
+                    raise HTTPException(
+                        status_code=403, detail="Publication execution context is unavailable"
+                    )
+        elif not await self._source_access(row["definition"], user):
             raise HTTPException(status_code=403, detail="Semantic source is unavailable")
-        await db.execute_system(
-            "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS SET status='DEPRECATED' "
-            "WHERE view_id=%s AND status='ACTIVE'",
-            [view_id],
-        )
+        if not await lease.renew():
+            raise HTTPException(status_code=409, detail="Publication lease expired; retry")
+        # Make the new version readable before moving the catalog pointer. Each
+        # partial state can be replayed without leaving the previous version unavailable.
         await db.execute_system(
             "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS "
             "SET status='ACTIVE',activated_at=NOW() WHERE view_id=%s AND version=%s",
             [view_id, version],
         )
-        await db.execute_system(
+        if not await lease.renew():
+            raise HTTPException(status_code=409, detail="Publication lease expired; retry")
+        changed = await db.execute_system(
             "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
-            "SET active_version=%s,status='ACTIVE',updated_at=NOW() WHERE id=%s",
-            [version, view_id],
+            "SET active_version=%s,status='ACTIVE',updated_at=NOW() WHERE id=%s "
+            "AND (active_version <=> %s OR active_version=%s)",
+            [version, view_id, view["active_version"], version],
+        )
+        if changed.get("affected") == 0:
+            current = await self._get(view_id)
+            if not current or current["active_version"] != version:
+                raise HTTPException(
+                    status_code=409, detail="Active version changed; validate again"
+                )
+        if not await lease.renew():
+            raise HTTPException(status_code=409, detail="Publication lease expired; retry")
+        await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_SEMANTIC_VIEW_VERSIONS SET status='DEPRECATED' "
+            "WHERE view_id=%s AND status='ACTIVE' AND version<>%s",
+            [view_id, version],
         )
         await self._audit("PUBLISH", view["name"], user)
-        return await self.describe(view_id, user)
+        return {**view, "active_version": version, "status": "ACTIVE"}
 
     async def deprecate(self, view_id: str, user: dict) -> None:
         view = await self._owned(view_id, user)
@@ -807,8 +960,11 @@ class SemanticViewService:
         time = None
         if body.time is not None and (body.time.range or body.time.grain):
             default = next(
-                (metric.default_time_dimension for metric in ir.metrics
-                 if metric.name in body.metrics and metric.default_time_dimension),
+                (
+                    metric.default_time_dimension
+                    for metric in ir.metrics
+                    if metric.name in body.metrics and metric.default_time_dimension
+                ),
                 None,
             )
             time = {
@@ -833,6 +989,29 @@ class SemanticViewService:
                 "limit": body.limit,
             }
         )
+        return await self._execute_plan(view, row, ir, plan, user, body.limit)
+
+    async def execute_plan(
+        self, view_id: str, version: int, plan: SemanticPlan, user: dict
+    ) -> dict:
+        """Execute a pinned plan through the same authorization and compiler as QUERY."""
+        view, row = await self._readable_version(view_id, version, user)
+        if row["status"] not in {"ACTIVE", "DEPRECATED"}:
+            raise HTTPException(status_code=409, detail="A published definition is required")
+        ir = SemanticModelIR.from_ossie(row["definition"])
+        if ir.fingerprint != row["fingerprint"]:
+            raise HTTPException(status_code=409, detail="Semantic fingerprint does not match")
+        return await self._execute_plan(view, row, ir, plan, user, plan.limit or 1000)
+
+    async def _execute_plan(
+        self,
+        view: dict,
+        row: dict,
+        ir: SemanticModelIR,
+        plan: SemanticPlan,
+        user: dict,
+        limit: int,
+    ) -> dict:
         compiled = SemanticCompiler().compile(ir, plan)
         result = await query_service.execute(
             sql=compiled.sql,
@@ -841,19 +1020,21 @@ class SemanticViewService:
             database=view["database_name"],
             role=user.get("active_role"),
             session_id=user.get("session_id"),
-            max_rows=body.limit,
+            max_rows=limit,
+            security_context_version=int(user.get("security_context_version") or 1),
         )
         if result.error:
             raise HTTPException(status_code=422, detail="Semantic query failed")
         await self._audit("QUERY", view["name"], user)
         return {
-            "view_id": view_id,
-            "version": version,
+            "view_id": row["view_id"],
+            "version": row["version"],
             "model_fingerprint": ir.fingerprint,
             "plan": plan.as_dict(),
             "sql": compiled.sql,
             "columns": result.columns,
             "rows": result.rows,
+            "query_id": getattr(result, "query_id", None),
         }
 
     @staticmethod
@@ -923,11 +1104,15 @@ async def validate_semantic_view(view_id: str, version: int, user: CurrentUser):
 
 @router.post("/{view_id}/versions/{version}/publish", response_class=SanitizingJSONResponse)
 async def publish_semantic_view(
-    view_id: str, version: int, user: CurrentUser,
+    view_id: str,
+    version: int,
+    user: CurrentUser,
     body: SemanticViewPublish | None = None,
 ):
     return await semantic_view_service.publish(
-        view_id, version, user,
+        view_id,
+        version,
+        user,
         acknowledge_regressions=body.acknowledge_regressions if body else False,
     )
 

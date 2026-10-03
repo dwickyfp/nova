@@ -83,7 +83,9 @@ async def test_slow_subscriber_replays_bounded_queue_while_run_completes(monkeyp
     monkeypatch.setattr(router.assistant_repository, "list_messages", AsyncMock(return_value=[]))
     monkeypatch.setattr(router.assistant_repository, "rename_thread", AsyncMock())
     monkeypatch.setattr(router.assistant_repository, "append_message", AsyncMock())
-    monkeypatch.setattr(router, "remember_user_message", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        router.assistant_repository, "learning_enabled", AsyncMock(return_value=False),
+    )
     monkeypatch.setattr(router, "write_audit_log", AsyncMock())
     monkeypatch.setattr(router.run_journal, "start", AsyncMock())
     append = AsyncMock()

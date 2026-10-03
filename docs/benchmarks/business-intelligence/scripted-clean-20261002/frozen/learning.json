@@ -1,0 +1,722 @@
+[
+  {
+    "id": "L01-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Finance",
+    "content": "Di perusahaan kita, net booked revenue menjumlahkan nilai bruto dikurangi refund yang sudah diposting, hanya untuk pesanan completed atau fulfilled.",
+    "rule_key": "net_booked_revenue",
+    "like": false
+  },
+  {
+    "id": "L02-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Operations",
+    "content": "Pesanan sehat di sini hanya completed atau fulfilled. Status fraud_review dan cancelled tidak termasuk.",
+    "rule_key": "healthy_order",
+    "like": false
+  },
+  {
+    "id": "L03-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Marketing",
+    "content": "Checkout berkualitas dimulai saat metode pengiriman dipilih. Pengunjung yang berhenti di keranjang tidak masuk denominator konversi checkout.",
+    "rule_key": "qualified_checkout",
+    "like": false
+  },
+  {
+    "id": "L04-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Finance",
+    "content": "VIP Growth berarti pelanggan dengan net booked revenue 90 hari terakhir di atas Rp1.500.000 dan sedikitnya lima pesanan sehat.",
+    "rule_key": "vip_growth",
+    "like": false
+  },
+  {
+    "id": "L05-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Operations",
+    "content": "Stok zona merah adalah SKU dengan permintaan minimal 20 unit sehari dan cakupan stok layak jual kurang dari dua hari.",
+    "rule_key": "red_zone_stockout",
+    "like": false
+  },
+  {
+    "id": "L06-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Marketing",
+    "content": "Campaign margin-safe mensyaratkan tambahan laba kotor lebih besar dari tambahan belanja. ROAS positif saja belum cukup.",
+    "rule_key": "margin_safe_campaign",
+    "like": false
+  },
+  {
+    "id": "L07-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Operations",
+    "content": "Kegagalan pembayaran yang bisa dipulihkan hanya payment_timeout. Hard decline dan blokir fraud tidak termasuk.",
+    "rule_key": "recoverable_payment",
+    "like": false
+  },
+  {
+    "id": "L08-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Executive",
+    "content": "Finance adalah pemilik definisi revenue resmi. Nilai pesanan bruto milik Marketing merupakan metrik yang berbeda.",
+    "rule_key": "revenue_authority",
+    "like": false
+  },
+  {
+    "id": "L09-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Operations",
+    "content": "Kode internal JKT Core merujuk city Jakarta saja, tanpa Bandung, Surabaya, dan Medan.",
+    "rule_key": "jakarta_alias",
+    "like": false
+  },
+  {
+    "id": "L10-1",
+    "episode": 1,
+    "category": "definition",
+    "domain": "Operations",
+    "content": "Pelanggan aktif di perusahaan kita memiliki setidaknya satu pesanan sehat dalam 45 hari sebelum cutoff observasi.",
+    "rule_key": "active_customer",
+    "like": false
+  },
+  {
+    "id": "L01-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Finance",
+    "content": "Our net booked revenue includes completed and fulfilled orders, subtracts posted refunds, and excludes every other order status.",
+    "rule_key": "net_booked_revenue",
+    "like": false
+  },
+  {
+    "id": "L02-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "Our healthy-order rule accepts completed or fulfilled, and never accepts fraud_review or cancelled.",
+    "rule_key": "healthy_order",
+    "like": false
+  },
+  {
+    "id": "L03-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Marketing",
+    "content": "We measure qualified checkout conversion only among sessions with a selected shipping method, including their failed conversions.",
+    "rule_key": "qualified_checkout",
+    "like": false
+  },
+  {
+    "id": "L04-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Finance",
+    "content": "Our VIP Growth customers exceed IDR 1,500,000 in trailing-90-day net booked revenue and have at least five healthy orders.",
+    "rule_key": "vip_growth",
+    "like": false
+  },
+  {
+    "id": "L05-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "A SKU enters our red zone when demand is at least twenty units per day and sellable stock covers less than two days.",
+    "rule_key": "red_zone_stockout",
+    "like": false
+  },
+  {
+    "id": "L06-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Marketing",
+    "content": "We call a campaign margin-safe only when incremental gross profit exceeds incremental spend.",
+    "rule_key": "margin_safe_campaign",
+    "like": false
+  },
+  {
+    "id": "L07-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "Our recoverable payment failures are timeouts, excluding hard declines and fraud or risk-review blocks.",
+    "rule_key": "recoverable_payment",
+    "like": false
+  },
+  {
+    "id": "L08-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Executive",
+    "content": "Finance owns canonical business revenue even when Marketing has a similarly named gross-value metric.",
+    "rule_key": "revenue_authority",
+    "like": false
+  },
+  {
+    "id": "L09-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "Within our governed geography, JKT Core maps precisely to city Jakarta.",
+    "rule_key": "jakarta_alias",
+    "like": false
+  },
+  {
+    "id": "L10-2",
+    "episode": 2,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "We classify a customer as active after at least one healthy order during the trailing forty-five days.",
+    "rule_key": "active_customer",
+    "like": false
+  },
+  {
+    "id": "L01-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Finance",
+    "content": "Koreksi: refund yang masih diminta belum mengurangi pendapatan; hanya refund posted yang dikurangkan.",
+    "rule_key": "net_booked_revenue",
+    "like": false
+  },
+  {
+    "id": "L02-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Operations",
+    "content": "Koreksi: pemeriksaan fraud yang belum selesai bukan pesanan sehat.",
+    "rule_key": "healthy_order",
+    "like": false
+  },
+  {
+    "id": "L03-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Marketing",
+    "content": "Koreksi: denominator checkout mencakup semua yang memilih pengiriman, bukan hanya pembayaran berhasil.",
+    "rule_key": "qualified_checkout",
+    "like": false
+  },
+  {
+    "id": "L04-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Finance",
+    "content": "Koreksi: lima pesanan saja belum cukup untuk VIP Growth; nilai net booked revenue juga harus lebih dari Rp1.500.000.",
+    "rule_key": "vip_growth",
+    "like": false
+  },
+  {
+    "id": "L05-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Operations",
+    "content": "Koreksi: stok rendah untuk SKU berpermintaan lima unit sehari tidak memenuhi aturan zona merah.",
+    "rule_key": "red_zone_stockout",
+    "like": false
+  },
+  {
+    "id": "L06-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Marketing",
+    "content": "Koreksi: pertumbuhan revenue dengan ROAS positif tidak otomatis aman untuk margin.",
+    "rule_key": "margin_safe_campaign",
+    "like": false
+  },
+  {
+    "id": "L07-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Operations",
+    "content": "Koreksi: payment_hard_decline tidak boleh dianggap sebagai peluang retry yang dapat dipulihkan.",
+    "rule_key": "recoverable_payment",
+    "like": false
+  },
+  {
+    "id": "L08-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Executive",
+    "content": "Koreksi: istilah revenue yang dipakai Marketing tidak menggantikan definisi resmi Finance.",
+    "rule_key": "revenue_authority",
+    "like": false
+  },
+  {
+    "id": "L09-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Operations",
+    "content": "Koreksi: JKT Core tidak mencakup Bandung meskipun keduanya ada di Pulau Jawa.",
+    "rule_key": "jakarta_alias",
+    "like": false
+  },
+  {
+    "id": "L10-3",
+    "episode": 3,
+    "category": "correction",
+    "domain": "Operations",
+    "content": "Koreksi: active customer memakai jendela 45 hari, bukan sekadar bulan kalender berjalan.",
+    "rule_key": "active_customer",
+    "like": false
+  },
+  {
+    "id": "L01-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Finance",
+    "content": "Konfirmasi definisi lengkap: Net booked revenue sums gross_amount less posted refund_amount for completed or fulfilled orders.",
+    "rule_key": "net_booked_revenue",
+    "like": false
+  },
+  {
+    "id": "L02-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "Konfirmasi definisi lengkap: A healthy order has status completed or fulfilled; fraud_review and cancelled orders are excluded.",
+    "rule_key": "healthy_order",
+    "like": false
+  },
+  {
+    "id": "L03-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Marketing",
+    "content": "Konfirmasi definisi lengkap: Qualified checkout conversion divides converted shipping-selected sessions by all shipping-selected sessions.",
+    "rule_key": "qualified_checkout",
+    "like": false
+  },
+  {
+    "id": "L04-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Finance",
+    "content": "Konfirmasi definisi lengkap: VIP Growth requires trailing-90-day net booked revenue above IDR 1500000 and at least 5 healthy orders per customer.",
+    "rule_key": "vip_growth",
+    "like": false
+  },
+  {
+    "id": "L05-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "Konfirmasi definisi lengkap: Red-zone stockout means sellable coverage below 2 days for SKUs with daily demand of at least 20 units.",
+    "rule_key": "red_zone_stockout",
+    "like": false
+  },
+  {
+    "id": "L06-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Marketing",
+    "content": "Konfirmasi definisi lengkap: A margin-safe campaign requires incremental gross profit greater than incremental spend; positive ROAS alone is insufficient.",
+    "rule_key": "margin_safe_campaign",
+    "like": false
+  },
+  {
+    "id": "L07-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "Konfirmasi definisi lengkap: Recoverable payment failures are payment_timeout events; hard declines and risk_review blocks are excluded.",
+    "rule_key": "recoverable_payment",
+    "like": false
+  },
+  {
+    "id": "L08-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Executive",
+    "content": "Konfirmasi definisi lengkap: Finance owns the canonical revenue definition; Marketing gross order value is a different metric.",
+    "rule_key": "revenue_authority",
+    "like": false
+  },
+  {
+    "id": "L09-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "Konfirmasi definisi lengkap: The internal geography alias JKT Core means city Jakarta, excluding Bandung, Surabaya and Medan.",
+    "rule_key": "jakarta_alias",
+    "like": false
+  },
+  {
+    "id": "L10-4",
+    "episode": 4,
+    "category": "confirmation",
+    "domain": "Operations",
+    "content": "Konfirmasi definisi lengkap: An active customer has at least one healthy order in the 45 days before the observation cutoff.",
+    "rule_key": "active_customer",
+    "like": false
+  },
+  {
+    "id": "L01-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Finance",
+    "content": "Hitung net_booked_revenue dari 2026-01-01 sampai sebelum 2026-01-08 untuk review net_booked_revenue.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L02-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Operations",
+    "content": "Hitung healthy_orders dari 2026-01-02 sampai sebelum 2026-01-09 untuk review healthy_order.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L03-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Marketing",
+    "content": "Hitung qualified_checkout_conversion dari 2026-01-03 sampai sebelum 2026-01-10 untuk review qualified_checkout.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L04-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Finance",
+    "content": "Hitung order_count dari 2026-01-04 sampai sebelum 2026-01-11 untuk review vip_growth.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L05-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Operations",
+    "content": "Hitung red_zone_skus dari 2026-01-05 sampai sebelum 2026-01-12 untuk review red_zone_stockout.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L06-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Marketing",
+    "content": "Hitung order_count dari 2026-01-06 sampai sebelum 2026-01-13 untuk review margin_safe_campaign.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L07-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Operations",
+    "content": "Hitung recoverable_payment_failures dari 2026-01-07 sampai sebelum 2026-01-14 untuk review recoverable_payment.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L08-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Executive",
+    "content": "Hitung net_booked_revenue dari 2026-01-08 sampai sebelum 2026-01-15 untuk review revenue_authority.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L09-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Operations",
+    "content": "Hitung order_count dari 2026-01-09 sampai sebelum 2026-01-16 untuk review jakarta_alias.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L10-5",
+    "episode": 5,
+    "category": "semantic_use",
+    "domain": "Operations",
+    "content": "Hitung active_customers dari 2026-01-10 sampai sebelum 2026-01-17 untuk review active_customer.",
+    "rule_key": null,
+    "like": true
+  },
+  {
+    "id": "L01-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Finance",
+    "content": "How would the rule for net booked revenue affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L02-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Operations",
+    "content": "How would the rule for healthy order affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L03-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Marketing",
+    "content": "How would the rule for qualified checkout affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L04-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Finance",
+    "content": "How would the rule for vip growth affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L05-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Operations",
+    "content": "How would the rule for red zone stockout affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L06-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Marketing",
+    "content": "How would the rule for margin safe campaign affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L07-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Operations",
+    "content": "How would the rule for recoverable payment affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L08-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Executive",
+    "content": "How would the rule for revenue authority affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L09-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Operations",
+    "content": "How would the rule for jakarta alias affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L10-6",
+    "episode": 6,
+    "category": "cross_domain",
+    "domain": "Operations",
+    "content": "How would the rule for active customer affect an investigation combining orders, stock, payments and support? Separate associations from causes.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L01-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Finance",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait net booked revenue?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L02-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Operations",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait healthy order?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L03-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Marketing",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait qualified checkout?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L04-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Finance",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait vip growth?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L05-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Operations",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait red zone stockout?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L06-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Marketing",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait margin safe campaign?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L07-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Operations",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait recoverable payment?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L08-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Executive",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait revenue authority?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L09-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Operations",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait jakarta alias?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L10-7",
+    "episode": 7,
+    "category": "decision",
+    "domain": "Operations",
+    "content": "Saat mempertimbangkan inventory, discount, atau spend, apa asumsi dan batas bukti yang perlu dicatat terkait active customer?",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L01-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Finance",
+    "content": "Explain how to compare a recorded prediction and observed outcome for net booked revenue when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L02-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Operations",
+    "content": "Explain how to compare a recorded prediction and observed outcome for healthy order when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L03-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Marketing",
+    "content": "Explain how to compare a recorded prediction and observed outcome for qualified checkout when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L04-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Finance",
+    "content": "Explain how to compare a recorded prediction and observed outcome for vip growth when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L05-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Operations",
+    "content": "Explain how to compare a recorded prediction and observed outcome for red zone stockout when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L06-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Marketing",
+    "content": "Explain how to compare a recorded prediction and observed outcome for margin safe campaign when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L07-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Operations",
+    "content": "Explain how to compare a recorded prediction and observed outcome for recoverable payment when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L08-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Executive",
+    "content": "Explain how to compare a recorded prediction and observed outcome for revenue authority when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L09-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Operations",
+    "content": "Explain how to compare a recorded prediction and observed outcome for jakarta alias when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  },
+  {
+    "id": "L10-8",
+    "episode": 8,
+    "category": "outcome",
+    "domain": "Operations",
+    "content": "Explain how to compare a recorded prediction and observed outcome for active customer when no randomized control exists. Do not invent an outcome.",
+    "rule_key": null,
+    "like": false
+  }
+]

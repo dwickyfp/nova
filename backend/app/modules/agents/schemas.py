@@ -274,6 +274,8 @@ class RuleProposalView(BaseModel):
     proposed_expression: str
     prior_fingerprint: str
     proposed_fingerprint: str
+    proposal_kind: Literal["metric", "autopilot"] = "metric"
+    details: dict | None = None
     status: Literal["pending", "approved", "rejected"]
     previewed_at: datetime | None = None
     reviewed_by: str | None = None

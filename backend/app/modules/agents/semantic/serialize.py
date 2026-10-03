@@ -14,9 +14,28 @@ documents the backend parser accepts. The authoritative gate remains
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 OSSIE_VERSION = "0.1.1"
+
+
+def to_ossie_document(definition: dict[str, Any]) -> dict[str, Any]:
+    """Restore dialect envelopes when editing a stored, normalized definition."""
+    document = copy.deepcopy(definition)
+    expressions = [
+        field for dataset in document.get("datasets") or [] for field in dataset.get("fields") or []
+    ] + list(document.get("metrics") or [])
+    for item in expressions:
+        if isinstance(item.get("expression"), str):
+            item["expression"] = {
+                "dialects": [{"dialect": "ANSI_SQL", "expression": item["expression"]}]
+            }
+    for metric in document.get("metrics") or []:
+        for field in ("owner_domain", "authority"):
+            if metric.get(field) is None:
+                metric.pop(field, None)
+    return document
 
 
 def _scalar(value: Any) -> str:
@@ -76,9 +95,7 @@ def build_ossie_yaml(spec: dict[str, Any]) -> str:
                 out.append("        expression:")
                 out.append("          dialects:")
                 out.append("            - dialect: ANSI_SQL")
-                out.append(
-                    f"              expression: {_scalar(field.get('name'))}"
-                )
+                out.append(f"              expression: {_scalar(field.get('name'))}")
                 if field.get("datatype"):
                     out.append(f"        datatype: {_scalar(field.get('datatype'))}")
                 if field.get("is_time"):
@@ -118,9 +135,7 @@ def build_ossie_yaml(spec: dict[str, Any]) -> str:
             out.append("    expression:")
             out.append("      dialects:")
             out.append("        - dialect: ANSI_SQL")
-            out.append(
-                f"          expression: {_scalar(metric.get('expression'))}"
-            )
+            out.append(f"          expression: {_scalar(metric.get('expression'))}")
             if metric.get("datatype"):
                 out.append(f"    datatype: {_scalar(metric.get('datatype'))}")
             mdesc = _lines("    ", "description", metric.get("description"))

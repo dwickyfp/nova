@@ -415,6 +415,8 @@ async def test_effective_access_includes_accountadmin_bootstrap_policy(monkeypat
 
     from app.modules.agents import access as agent_access
 
+    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
+
     async def dependencies(_agent):
         return [("table", "NOVA_SALES.fact_sales"), ("database", "NOVA_SALES")]
 

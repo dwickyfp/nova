@@ -22,7 +22,7 @@ _ROLE_BINDINGS = "NOVA_SYSTEM.CONFIG_TASK_ROLE_BINDINGS"
 _TASK_COLUMNS = (
     "id, name, database_name, schema_name, definition, schedule_kind, schedule_expr, "
     "timezone, when_expr, overlap_policy, owner_role, created_by, "
-    "consecutive_fail_count, version, created_at, updated_at"
+    "consecutive_fail_count, version, created_at, updated_at, handler, handler_config"
 )
 _EDGE_COLUMNS = "id, graph_id, parent_task, child_task, edge_kind, created_at"
 _GRAPH_RUN_COLUMNS = (
@@ -49,6 +49,7 @@ _UPDATABLE_COLUMNS: dict[str, frozenset[str]] = {
             "when_expr",
             "overlap_policy",
             "owner_role",
+            "handler_config",
         }
     ),
     "edge": frozenset({"parent_task", "child_task"}),
@@ -200,8 +201,8 @@ class TaskOrchestrationRepository:
             INSERT INTO {_TASKS}
             (id, name, database_name, schema_name, definition, schedule_kind,
              schedule_expr, timezone, when_expr, overlap_policy, owner_role,
-             created_by, version, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, NOW(), NOW())
+             created_by, version, created_at, updated_at, handler, handler_config)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, NOW(), NOW(), %s, %s)
             """,
             [
                 task_id,
@@ -216,6 +217,8 @@ class TaskOrchestrationRepository:
                 data.get("overlap_policy", "skip"),
                 data.get("owner_role"),
                 created_by,
+                data.get("handler", "sql"),
+                json.dumps(data["handler_config"]) if data.get("handler_config") else None,
             ],
         )
         created = await self.get_task(task_id)
@@ -874,7 +877,7 @@ class TaskOrchestrationRepository:
         return bool(result.get("affected"))
 
     async def create_task_run_once(
-        self, graph_run_id: str, task_id: str, attempt: int = 1
+        self, graph_run_id: str, task_id: str, attempt: int = 1, *, delegated: bool = True
     ) -> dict[str, Any]:
         """Create a node run, or return the one that already exists.
 
@@ -895,10 +898,10 @@ class TaskOrchestrationRepository:
             INSERT INTO {_TASK_RUNS}
             (id, graph_run_id, task_id, attempt, state, delegated,
              starrocks_query_id, error_message, started_at, finished_at)
-            SELECT %s, %s, %s, %s, 'pending', 1, NULL, NULL, NOW(), NULL
+            SELECT %s, %s, %s, %s, 'pending', %s, NULL, NULL, NOW(), NULL
             WHERE NOT EXISTS (SELECT 1 FROM {_TASK_RUNS} WHERE id = %s)
             """,
-            [run_id, graph_run_id, task_id, attempt, run_id],
+            [run_id, graph_run_id, task_id, attempt, delegated, run_id],
         )
         created = await self.get_task_run(run_id)
         assert created is not None

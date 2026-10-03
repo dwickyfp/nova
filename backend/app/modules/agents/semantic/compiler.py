@@ -77,7 +77,9 @@ class SemanticCompiler:
             for order_item in order_by:
                 if order_item.field not in columns:
                     raise SemanticPlanError(f"Order field {order_item.field!r} is not selected.")
-                order_parts.append(f"{_quote(order_item.field)} {order_item.direction.upper()}")
+                order_parts.append(
+                    f"{_quote_output(order_item.field)} {order_item.direction.upper()}"
+                )
             lines.append("ORDER BY " + ", ".join(order_parts))
         if plan.limit:
             lines.append(f"LIMIT {plan.limit}")
@@ -108,10 +110,16 @@ class SemanticCompiler:
         graph = SemanticGraph(model)
 
         def reach(base: str, field_name: str) -> str | None:
-            candidates = [field_name, *(
-                member for group in model.conformed_dimensions if field_name in group
-                for member in group if member != field_name
-            )]
+            candidates = [
+                field_name,
+                *(
+                    member
+                    for group in model.conformed_dimensions
+                    if field_name in group
+                    for member in group
+                    if member != field_name
+                ),
+            ]
             for candidate in candidates:
                 field = model.field(candidate)
                 if field is None:
@@ -151,8 +159,8 @@ class SemanticCompiler:
             for name in plan.named_filters:
                 named_filter = model.named_filter(name)
                 if named_filter is None or (
-                    named_filter.dataset and reach(base, _any_field(model, named_filter.dataset))
-                    is None
+                    named_filter.dataset
+                    and reach(base, _any_field(model, named_filter.dataset)) is None
                 ):
                     raise MultiFactCompilationError(
                         f"Named filter {name!r} does not apply to {base!r}."
@@ -169,8 +177,11 @@ class SemanticCompiler:
                 time = replace(plan.time, dimension=dimension)
                 alias_map[dimension] = "period"
             sub_plan = SemanticPlan(
-                metrics=tuple(names), dimensions=tuple(mapped_dimensions),
-                filters=tuple(mapped_filters), named_filters=tuple(named), time=time,
+                metrics=tuple(names),
+                dimensions=tuple(mapped_dimensions),
+                filters=tuple(mapped_filters),
+                named_filters=tuple(named),
+                time=time,
             )
             cores.append((f"f{index}", self._single(model, sub_plan, alias_map=alias_map), names))
 
@@ -178,8 +189,9 @@ class SemanticCompiler:
         select = []
         for key in keys:
             select.append(
-                "COALESCE(" + ", ".join(f"{alias}.{_quote(key)}" for alias, _c, _n in cores)
-                + f") AS {_quote(key)}"
+                "COALESCE("
+                + ", ".join(f"{alias}.{_quote_output(key)}" for alias, _c, _n in cores)
+                + f") AS {_quote_output(key)}"
             )
         for alias, _core, names in cores:
             select.extend(f"{alias}.{_quote(name)} AS {_quote(name)}" for name in names)
@@ -192,10 +204,11 @@ class SemanticCompiler:
             previous = [item[0] for item in cores[:position]]
             conditions = [
                 (
-                    f"COALESCE({', '.join(f'{p}.{_quote(key)}' for p in previous)})"
-                    if len(previous) > 1 else f"{previous[0]}.{_quote(key)}"
+                    f"COALESCE({', '.join(f'{p}.{_quote_output(key)}' for p in previous)})"
+                    if len(previous) > 1
+                    else f"{previous[0]}.{_quote_output(key)}"
                 )
-                + f" <=> {alias}.{_quote(key)}"
+                + f" <=> {alias}.{_quote_output(key)}"
                 for key in keys
             ]
             body += f"\nFULL OUTER JOIN {alias} ON " + " AND ".join(conditions)
@@ -206,9 +219,7 @@ class SemanticCompiler:
             relationships=tuple(
                 name for _alias, core, _names in cores for name in core.relationships
             ),
-            warnings=tuple(
-                warning for _alias, core, _names in cores for warning in core.warnings
-            ),
+            warnings=tuple(warning for _alias, core, _names in cores for warning in core.warnings),
         )
 
     def _single(
@@ -303,14 +314,16 @@ class SemanticCompiler:
             expression = _qualified_expression(time_field)
             grouped_time = f"DATE_TRUNC('{_safe_grain(plan.time.grain)}', {expression})"
             time_alias = alias_map.get(plan.time.dimension, plan.time.dimension)
-            select_parts.append(f"{grouped_time} AS {_quote(time_alias)}")
+            select_parts.append(f"{grouped_time} AS {_quote_output(time_alias)}")
             group_parts.append(grouped_time)
-        for field in dimension_fields:
-            if plan.time and field.name == plan.time.dimension and plan.time.grain:
+        for requested, field in zip(plan.dimensions, dimensions, strict=True):
+            if field is None:
+                continue
+            if plan.time and field == time_field and plan.time.grain:
                 continue
             expression = _qualified_expression(field)
             select_parts.append(
-                f"{expression} AS {_quote(alias_map.get(field.name, field.name))}"
+                f"{expression} AS {_quote_output(alias_map.get(requested, requested))}"
             )
             group_parts.append(expression)
         for metric in metrics:
@@ -402,9 +415,9 @@ class SemanticCompiler:
         if plan.time and plan.time.grain and time_field is not None:
             columns.append(alias_map.get(plan.time.dimension, plan.time.dimension))
         columns.extend(
-            alias_map.get(field.name, field.name)
-            for field in dimension_fields
-            if not (plan.time and field.name == plan.time.dimension and plan.time.grain)
+            alias_map.get(requested, requested)
+            for requested, field in zip(plan.dimensions, dimensions, strict=True)
+            if field is not None and not (plan.time and field == time_field and plan.time.grain)
         )
         columns.extend(metric.name for metric in metrics)
         return _Core(
@@ -486,13 +499,11 @@ def _wrap(sql: str, columns: list[str], plan: SemanticPlan) -> tuple[str, list[s
     """
     compare = bool(plan.time and plan.time.compare)
     time_column = next(
-        (column for column in columns
-         if plan.time and column in {plan.time.dimension, "period"}),
+        (column for column in columns if plan.time and column in {plan.time.dimension, "period"}),
         None,
     )
     other_dimensions = [
-        column for column in columns
-        if column in plan.dimensions and column != time_column
+        column for column in columns if column in plan.dimensions and column != time_column
     ]
     windows: list[str] = []
     added: list[str] = []
@@ -507,28 +518,28 @@ def _wrap(sql: str, columns: list[str], plan: SemanticPlan) -> tuple[str, list[s
             if plan.top_n_per_group is not None:
                 # Ranked within the same groups the top-N keeps.
                 partition = "PARTITION BY " + ", ".join(
-                    f"q.{_quote(column)}" for column in plan.top_n_per_group.partition_by
+                    f"q.{_quote_output(column)}" for column in plan.top_n_per_group.partition_by
                 )
             prefix = partition + " " if partition else ""
             expression = f"RANK() OVER ({prefix}ORDER BY q.{metric} DESC)"
         else:
             name = f"{transform.metric}_running_total"
-            partition_by = ", ".join(f"q.{_quote(column)}" for column in other_dimensions)
+            partition_by = ", ".join(f"q.{_quote_output(column)}" for column in other_dimensions)
             partition = f"PARTITION BY {partition_by} " if partition_by else ""
             expression = (
-                f"SUM(q.{metric}) OVER ({partition}ORDER BY q.{_quote(str(time_column))} "
+                f"SUM(q.{metric}) OVER ({partition}ORDER BY q.{_quote_output(str(time_column))} "
                 "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
             )
         windows.append(f"{expression} AS {_quote(name)}")
         added.append(name)
     if plan.top_n_per_group is not None:
         top = plan.top_n_per_group
-        partition = ", ".join(f"q.{_quote(column)}" for column in top.partition_by)
+        partition = ", ".join(f"q.{_quote_output(column)}" for column in top.partition_by)
         windows.append(
             f"ROW_NUMBER() OVER (PARTITION BY {partition} ORDER BY q.{_quote(top.metric)} DESC)"
             " AS `_nova_row`"
         )
-    inner_select = ", ".join([*(f"q.{_quote(column)}" for column in columns), *windows])
+    inner_select = ", ".join([*(f"q.{_quote_output(column)}" for column in columns), *windows])
     conditions = [
         f"w.{_quote(item.metric)} {item.operator} {_literal(item.value)}" for item in plan.having
     ]
@@ -536,12 +547,20 @@ def _wrap(sql: str, columns: list[str], plan: SemanticPlan) -> tuple[str, list[s
         conditions.append(f"w.`_nova_row` <= {int(plan.top_n_per_group.n)}")
     output = [*columns, *added]
     wrapped = (
-        "SELECT " + ", ".join(f"w.{_quote(column)}" for column in output)
+        "SELECT "
+        + ", ".join(f"w.{_quote_output(column)}" for column in output)
         + f"\nFROM (\nSELECT {inner_select}\nFROM (\n{sql}\n) AS q\n) AS w"
     )
     if conditions:
         wrapped += "\nWHERE " + " AND ".join(conditions)
     return wrapped, output
+
+
+def _quote_output(identifier: str) -> str:
+    # Qualified semantic time names are one output alias, not SQL qualification.
+    if not all(_IDENT.fullmatch(part) for part in identifier.split(".")):
+        raise SemanticPlanError(f"Unsafe semantic output identifier {identifier!r}.")
+    return f"`{identifier}`"
 
 
 def _quote(identifier: str) -> str:
@@ -636,9 +655,7 @@ def _comparison_expression(expression: str, range_value: str | None, comparison:
 
 
 def _comparison_predicates(expression: str, range_value: str, comparison: str | None) -> list[str]:
-    current_start, current_end, prior_start, prior_end = comparison_bounds(
-        range_value, comparison
-    )
+    current_start, current_end, prior_start, prior_end = comparison_bounds(range_value, comparison)
     return [
         f"(({expression} >= {current_start} AND {expression} < {current_end}) OR "
         f"({expression} >= {prior_start} AND {expression} < {prior_end}))"

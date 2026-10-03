@@ -122,6 +122,9 @@ async def test_verify_only_marks_assigned_role_after_success(monkeypatch) -> Non
 
 @pytest.mark.asyncio
 async def test_verify_requires_actual_privilege_not_just_matching_policy(monkeypatch) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
     monkeypatch.setattr(
         access, "resolve_agent_dependencies",
         AsyncMock(return_value=[("table", "sales.orders"), ("database", "sales")]),
@@ -164,3 +167,16 @@ def test_http_studio_and_thread_access_after_switching_roles(monkeypatch) -> Non
     assert client.get("/agents/sales/threads").status_code == 200
     role["active"] = "ACCOUNTADMIN"
     assert client.get("/agents/sales/threads").status_code == 404
+
+
+@pytest.mark.parametrize("grant,allowed", [
+    ("GRANT USAGE ON FUNCTION db.fn(INT) TO ROLE analyst", True),
+    ("GRANT USAGE ON ALL FUNCTIONS IN DATABASE db TO ROLE analyst", True),
+    ("GRANT USAGE ON FUNCTION db.fn_other(INT) TO ROLE analyst", False),
+    ("GRANT DROP ON FUNCTION db.fn(INT) TO ROLE analyst", False),
+    ("GRANT SELECT ON TABLE db.fn TO ROLE analyst", False),
+    ("GRANT ALL ON *.* TO ROLE analyst", False),
+    ("GRANT USAGE ON ALL FUNCTIONS IN DATABASE other_db TO ROLE analyst", False),
+])
+def test_native_function_verification_requires_usage_on_exact_scope(grant, allowed):
+    assert access._native_function_usage([grant], "db.fn") is allowed

@@ -50,6 +50,9 @@ async def test_replay_includes_stored_feedback(monkeypatch):
 
 
 async def test_feedback_endpoint_checks_agent_thread_and_audits(monkeypatch):
+    monkeypatch.setattr(
+        router.assistant_repository, "learning_enabled", AsyncMock(return_value=False),
+    )
     agent = AsyncMock()
     thread = AsyncMock()
     save = AsyncMock(return_value=True)
@@ -80,6 +83,9 @@ def test_invalid_feedback_is_rejected():
 
 
 async def test_stream_persists_the_terminal_message_id_before_sending_done(monkeypatch):
+    monkeypatch.setattr(
+        router.assistant_repository, "learning_enabled", AsyncMock(return_value=False),
+    )
     from app.modules.assistant.tools import ToolRegistry
 
     agent = {"agent_id": "a1", "name": "Analyst", "owner_name": "alice", "database_name": "sales"}

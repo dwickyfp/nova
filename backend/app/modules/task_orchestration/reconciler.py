@@ -276,6 +276,8 @@ class Reconciler:
             return report
 
         tasks = {str(t["id"]): t for t in await self._repository.list_tasks()}
+        running = [row for row in running
+                   if (tasks.get(str(row.get("task_id")), {}).get("handler") or "sql") == "sql"]
         names = sorted(
             {
                 _native_lookup_name(row, tasks[str(row["task_id"])])

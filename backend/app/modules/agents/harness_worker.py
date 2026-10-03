@@ -887,6 +887,14 @@ class AgentHarnessWorker:
                 role_name=child["role_name"],
             )
             selected = await select_relevant_memories(memories, child["objective"])
+            from app.modules.agents.memory import governed_memories, shared_memories
+
+            selected = await governed_memories(selected, user)
+            try:
+                selected.extend(await select_relevant_memories(
+                    await shared_memories(child["agent_id"], user), child["objective"]))
+            except Exception as exc:
+                logger.warning("Could not load shared knowledge: %s", type(exc).__name__)
             if selected:
                 system_prompt += "\n\n" + memory_prompt(selected)
         except Exception as exc:

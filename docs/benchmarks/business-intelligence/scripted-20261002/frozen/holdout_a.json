@@ -1,0 +1,1430 @@
+[
+  {
+    "id": "A-business_term-1",
+    "category": "business_term",
+    "question": "Berapa omzet yang diakui di Jakarta, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Jakarta"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Jakarta",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-business_term-2",
+    "category": "business_term",
+    "question": "Calculate the booked income after posted returns di Bandung, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Bandung"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Bandung",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-business_term-3",
+    "category": "business_term",
+    "question": "Berapa omzet yang diakui di Surabaya, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Surabaya",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-business_term-4",
+    "category": "business_term",
+    "question": "Calculate the booked income after posted returns di Medan, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Medan",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-canonical_metric-1",
+    "category": "canonical_metric",
+    "question": "Gunakan definisi revenue resmi Finance untuk menghitung pendapatan di Jakarta, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Jakarta"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Jakarta",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-canonical_metric-2",
+    "category": "canonical_metric",
+    "question": "Report the authoritative Finance revenue di Bandung, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Bandung"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Bandung",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-canonical_metric-3",
+    "category": "canonical_metric",
+    "question": "Gunakan definisi revenue resmi Finance untuk menghitung pendapatan di Surabaya, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Surabaya",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-canonical_metric-4",
+    "category": "canonical_metric",
+    "question": "Report the authoritative Finance revenue di Medan, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Medan",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-business_rule-1",
+    "category": "business_rule",
+    "question": "Hitung pesanan sehat menurut aturan perusahaan di Jakarta, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "healthy_orders"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Jakarta"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "healthy_orders",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Jakarta",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-business_rule-2",
+    "category": "business_rule",
+    "question": "Count eligible healthy purchases under our company rule di Bandung, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "healthy_orders"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Bandung"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "healthy_orders",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Bandung",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-business_rule-3",
+    "category": "business_rule",
+    "question": "Hitung pesanan sehat menurut aturan perusahaan di Surabaya, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "healthy_orders"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "healthy_orders",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Surabaya",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-business_rule-4",
+    "category": "business_rule",
+    "question": "Count eligible healthy purchases under our company rule di Medan, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "healthy_orders"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "healthy_orders",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Medan",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-semantic_resolution-1",
+    "category": "semantic_resolution",
+    "question": "Hitung konversi checkout berkualitas di Jakarta, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "qualified_checkout_conversion"
+      ],
+      "filters": [
+        {
+          "field": "checkout_events.city",
+          "operator": "=",
+          "value": "Jakarta"
+        }
+      ],
+      "time": {
+        "dimension": "checkout_events.occurred_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "qualified_checkout_conversion",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Jakarta",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-semantic_resolution-2",
+    "category": "semantic_resolution",
+    "question": "Calculate conversion among qualified checkout sessions di Bandung, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "qualified_checkout_conversion"
+      ],
+      "filters": [
+        {
+          "field": "checkout_events.city",
+          "operator": "=",
+          "value": "Bandung"
+        }
+      ],
+      "time": {
+        "dimension": "checkout_events.occurred_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "qualified_checkout_conversion",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Bandung",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-semantic_resolution-3",
+    "category": "semantic_resolution",
+    "question": "Hitung konversi checkout berkualitas di Surabaya, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "qualified_checkout_conversion"
+      ],
+      "filters": [
+        {
+          "field": "checkout_events.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "checkout_events.occurred_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "qualified_checkout_conversion",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Surabaya",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-semantic_resolution-4",
+    "category": "semantic_resolution",
+    "question": "Calculate conversion among qualified checkout sessions di Medan, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "qualified_checkout_conversion"
+      ],
+      "filters": [
+        {
+          "field": "checkout_events.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "checkout_events.occurred_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "qualified_checkout_conversion",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Medan",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-cross_domain_reasoning-1",
+    "category": "cross_domain_reasoning",
+    "question": "Gabungkan eligibility pesanan dengan biaya item untuk menghitung laba kotor di Jakarta, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "recognized_gross_profit"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Jakarta"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "recognized_gross_profit",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Jakarta",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-cross_domain_reasoning-2",
+    "category": "cross_domain_reasoning",
+    "question": "Combine eligible orders and their item costs to calculate recognized gross profit di Bandung, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "recognized_gross_profit"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Bandung"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "recognized_gross_profit",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Bandung",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-cross_domain_reasoning-3",
+    "category": "cross_domain_reasoning",
+    "question": "Gabungkan eligibility pesanan dengan biaya item untuk menghitung laba kotor di Surabaya, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "recognized_gross_profit"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "recognized_gross_profit",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Surabaya",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-cross_domain_reasoning-4",
+    "category": "cross_domain_reasoning",
+    "question": "Combine eligible orders and their item costs to calculate recognized gross profit di Medan, 2026-02-01 sampai sebelum 2026-03-01.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "recognized_gross_profit"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-02-01..2026-02-28",
+        "grain": null
+      },
+      "limit": 100,
+      "order_by": []
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "recognized_gross_profit",
+      "start": "2026-02-01",
+      "end": "2026-03-01",
+      "city": "Medan",
+      "daily": false
+    }
+  },
+  {
+    "id": "A-root_cause-1",
+    "category": "root_cause",
+    "question": "Investigate the Jakarta Electronics revenue decline during 12–18 March 2026, rank stock availability, spend, and payment evidence, and reconcile arithmetic contributions. Show only conclusions supported by authorized observations.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-root_cause-2",
+    "category": "root_cause",
+    "question": "Selidiki penurunan omzet Electronics Jakarta tanggal 12–18 Maret 2026. Bandingkan stok, belanja, dan pembayaran serta rekonsiliasi kontribusinya. Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-root_cause-3",
+    "category": "root_cause",
+    "question": "Investigate the Jakarta Electronics revenue decline during 12–18 March 2026, rank stock availability, spend, and payment evidence, and reconcile arithmetic contributions. Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-root_cause-4",
+    "category": "root_cause",
+    "question": "Selidiki penurunan omzet Electronics Jakarta tanggal 12–18 Maret 2026. Bandingkan stok, belanja, dan pembayaran serta rekonsiliasi kontribusinya. Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-business_system_link-1",
+    "category": "business_system_link",
+    "question": "Compare payment-service latency, timeout events and checkout conversion during 5–8 March 2026 with the preceding matched weekdays. What evidence links the deployment and business change? Show only conclusions supported by authorized observations.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-business_system_link-2",
+    "category": "business_system_link",
+    "question": "Bandingkan latency payment-service, timeout, dan konversi checkout tanggal 5–8 Maret 2026 dengan hari yang sama minggu sebelumnya. Jelaskan batas bukti deployment. Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-business_system_link-3",
+    "category": "business_system_link",
+    "question": "Compare payment-service latency, timeout events and checkout conversion during 5–8 March 2026 with the preceding matched weekdays. What evidence links the deployment and business change? Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-business_system_link-4",
+    "category": "business_system_link",
+    "question": "Bandingkan latency payment-service, timeout, dan konversi checkout tanggal 5–8 Maret 2026 dengan hari yang sama minggu sebelumnya. Jelaskan batas bukti deployment. Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-forecast-1",
+    "category": "forecast",
+    "question": "Forecast daily recognized revenue for seven days after 25 March 2026, using chronological validation and prediction intervals. Explain missing or incomplete observations. Show only conclusions supported by authorized observations.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-forecast-2",
+    "category": "forecast",
+    "question": "Buat forecast omzet harian tujuh hari setelah 25 Maret 2026 dengan validasi kronologis dan interval prediksi. Jelaskan kelengkapan datanya. Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-forecast-3",
+    "category": "forecast",
+    "question": "Forecast daily recognized revenue for seven days after 25 March 2026, using chronological validation and prediction intervals. Explain missing or incomplete observations. Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-forecast-4",
+    "category": "forecast",
+    "question": "Buat forecast omzet harian tujuh hari setelah 25 Maret 2026 dengan validasi kronologis dan interval prediksi. Jelaskan kelengkapan datanya. Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-causal_effect-1",
+    "category": "causal_effect",
+    "question": "Estimate the conversion effect of the independently randomized Growth experiment using one outcome per assigned customer and assignment-aware uncertainty. Show only conclusions supported by authorized observations.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-causal_effect-2",
+    "category": "causal_effect",
+    "question": "Estimasi efek konversi eksperimen Growth yang diacak independen, satu outcome per pelanggan dan ketidakpastian sesuai unit assignment. Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-causal_effect-3",
+    "category": "causal_effect",
+    "question": "Estimate the conversion effect of the independently randomized Growth experiment using one outcome per assigned customer and assignment-aware uncertainty. Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-causal_effect-4",
+    "category": "causal_effect",
+    "question": "Estimasi efek konversi eksperimen Growth yang diacak independen, satu outcome per pelanggan dan ketidakpastian sesuai unit assignment. Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-decision_option-1",
+    "category": "decision_option",
+    "question": "Compare Jakarta stock-transfer options with campaign spend under bounded cost and capacity. Show gross-profit economics, explicit assumptions and uncertainty; prepare recommendations only. Show only conclusions supported by authorized observations.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-decision_option-2",
+    "category": "decision_option",
+    "question": "Bandingkan opsi transfer stok Jakarta dan tambahan spend dengan batas biaya dan kapasitas. Tampilkan ekonomi laba kotor, asumsi, serta ketidakpastian sebagai rekomendasi. Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-decision_option-3",
+    "category": "decision_option",
+    "question": "Compare Jakarta stock-transfer options with campaign spend under bounded cost and capacity. Show gross-profit economics, explicit assumptions and uncertainty; prepare recommendations only. Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-decision_option-4",
+    "category": "decision_option",
+    "question": "Bandingkan opsi transfer stok Jakarta dan tambahan spend dengan batas biaya dan kapasitas. Tampilkan ekonomi laba kotor, asumsi, serta ketidakpastian sebagai rekomendasi. Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-policy-1",
+    "category": "policy",
+    "question": "A costly inventory transfer needs approval. Explain whether an approval can authorize data reads, survive changed inputs, or apply after a policy revision. Show only conclusions supported by authorized observations.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-policy-2",
+    "category": "policy",
+    "question": "Transfer stok berbiaya memerlukan approval. Apakah approval memberi akses data, berlaku untuk input berubah, atau bertahan setelah kebijakan direvisi? Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-policy-3",
+    "category": "policy",
+    "question": "A costly inventory transfer needs approval. Explain whether an approval can authorize data reads, survive changed inputs, or apply after a policy revision. Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-policy-4",
+    "category": "policy",
+    "question": "Transfer stok berbiaya memerlukan approval. Apakah approval memberi akses data, berlaku untuk input berubah, atau bertahan setelah kebijakan direvisi? Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-lineage-1",
+    "category": "lineage",
+    "question": "What must the evidence chain contain for a revenue decision, from News through investigation, numerical tools, selected option and approval to an outcome? Mark unavailable references. Show only conclusions supported by authorized observations.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-lineage-2",
+    "category": "lineage",
+    "question": "Jelaskan bukti yang diperlukan untuk keputusan revenue dari News, investigasi, tools, opsi terpilih, approval, sampai outcome. Tandai referensi yang belum tersedia. Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-lineage-3",
+    "category": "lineage",
+    "question": "What must the evidence chain contain for a revenue decision, from News through investigation, numerical tools, selected option and approval to an outcome? Mark unavailable references. Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-lineage-4",
+    "category": "lineage",
+    "question": "Jelaskan bukti yang diperlukan untuk keputusan revenue dari News, investigasi, tools, opsi terpilih, approval, sampai outcome. Tandai referensi yang belum tersedia. Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-outcome-1",
+    "category": "outcome",
+    "question": "Evaluate a decision when its outcome window has missing observations and overlaps another decision. Separate observed change, forecast error, completeness and attributable effect. Show only conclusions supported by authorized observations.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-outcome-2",
+    "category": "outcome",
+    "question": "Evaluasi keputusan yang jendela outcomenya kekurangan data dan tumpang tindih dengan keputusan lain. Pisahkan perubahan teramati, error forecast, kelengkapan, dan efek teratribusi. Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-outcome-3",
+    "category": "outcome",
+    "question": "Evaluate a decision when its outcome window has missing observations and overlaps another decision. Separate observed change, forecast error, completeness and attributable effect. Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-outcome-4",
+    "category": "outcome",
+    "question": "Evaluasi keputusan yang jendela outcomenya kekurangan data dan tumpang tindih dengan keputusan lain. Pisahkan perubahan teramati, error forecast, kelengkapan, dan efek teratribusi. Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-confidence-1",
+    "category": "confidence",
+    "question": "An exact dimensional decomposition explains a revenue change. Distinguish semantic, detection, statistical, causal and recommendation confidence without treating arithmetic reconciliation as causal proof. Show only conclusions supported by authorized observations.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-confidence-2",
+    "category": "confidence",
+    "question": "Dekomposisi dimensi tepat merekonsiliasi perubahan revenue. Pisahkan confidence semantik, deteksi, statistik, kausal, dan rekomendasi tanpa menganggap aritmetika sebagai bukti kausal. Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-confidence-3",
+    "category": "confidence",
+    "question": "An exact dimensional decomposition explains a revenue change. Distinguish semantic, detection, statistical, causal and recommendation confidence without treating arithmetic reconciliation as causal proof. Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-confidence-4",
+    "category": "confidence",
+    "question": "Dekomposisi dimensi tepat merekonsiliasi perubahan revenue. Pisahkan confidence semantik, deteksi, statistik, kausal, dan rekomendasi tanpa menganggap aritmetika sebagai bukti kausal. Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-unknown_or_insufficient_evidence-1",
+    "category": "unknown_or_insufficient_evidence",
+    "question": "Did the Bandung catalog-v9 deployment cause the Jakarta Electronics stockout on 12 March 2026? Check scope, coincidence, sample sizes and counterfactual evidence. Show only conclusions supported by authorized observations.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "unrelated_deployment_rejected",
+      "no_temporal_causation",
+      "insufficient_causal_evidence"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-unknown_or_insufficient_evidence-2",
+    "category": "unknown_or_insufficient_evidence",
+    "question": "Apakah deployment catalog-v9 di Bandung menyebabkan stockout Electronics Jakarta tanggal 12 Maret 2026? Periksa scope, kebetulan waktu, sampel, dan bukti kontrafaktual. Sebutkan bukti yang masih diperlukan sebelum keputusan disetujui.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "unrelated_deployment_rejected",
+      "no_temporal_causation",
+      "insufficient_causal_evidence"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-unknown_or_insufficient_evidence-3",
+    "category": "unknown_or_insufficient_evidence",
+    "question": "Did the Bandung catalog-v9 deployment cause the Jakarta Electronics stockout on 12 March 2026? Check scope, coincidence, sample sizes and counterfactual evidence. Keep competing hypotheses visible when evidence is inconclusive.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "unrelated_deployment_rejected",
+      "no_temporal_causation",
+      "insufficient_causal_evidence"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "A-unknown_or_insufficient_evidence-4",
+    "category": "unknown_or_insufficient_evidence",
+    "question": "Apakah deployment catalog-v9 di Bandung menyebabkan stockout Electronics Jakarta tanggal 12 Maret 2026? Periksa scope, kebetulan waktu, sampel, dan bukti kontrafaktual. Jelaskan apa yang perlu direvisi bila data datang terlambat.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "unrelated_deployment_rejected",
+      "no_temporal_causation",
+      "insufficient_causal_evidence"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  }
+]
