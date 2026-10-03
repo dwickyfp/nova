@@ -182,7 +182,6 @@ describe("workspace table hover card", () => {
         .element();
       expect(details.scrollHeight).toBeGreaterThan(details.clientHeight);
 
-      await userEvent.unhover(trigger);
       await userEvent.hover(
         page.getByRole("tab", { name: "Preview Data", exact: true }),
       );

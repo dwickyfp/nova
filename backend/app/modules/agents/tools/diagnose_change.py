@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -29,6 +30,7 @@ def decompose_change(
     revenue_column: str,
     units_column: str | None = None,
     returns_column: str | None = None,
+    dimension_columns: list[str] | None = None,
 ) -> dict[str, Any]:
     """Explain arithmetic change, leaving unknown causes explicitly unassigned."""
     columns = [str(column) for column in table.get("columns") or []]
@@ -43,9 +45,19 @@ def decompose_change(
         raise ValueError("The selected returns column is missing.")
     if prior_period == current_period:
         raise ValueError("Choose two different periods.")
-    rows = list(table.get("rows") or [])[:200]
+    rows = list(table.get("rows") or [])
+    if len(rows) > 200:
+        raise ValueError("The result exceeds the decomposition limit; narrow the query.")
     if any(len(row) != len(columns) for row in rows):
         raise ValueError("The result contains incomplete rows.")
+    if dimension_columns:
+        if (len(dimension_columns) > 3 or len(set(dimension_columns)) != len(dimension_columns)
+                or any(name not in columns or name == period_column for name in dimension_columns)):
+            raise ValueError("Select up to three distinct dimension columns.")
+        return _dimension_change(
+            rows, columns, period_column, prior_period, current_period,
+            revenue_column, returns_column, dimension_columns,
+        )
     labels = [str(row[columns.index(period_column)]) for row in rows]
     if labels.count(prior_period) != 1 or labels.count(current_period) != 1:
         raise ValueError("Each selected period must appear exactly once.")
@@ -97,11 +109,44 @@ def decompose_change(
     }
 
 
+def _dimension_change(rows, columns, period, prior, current, revenue, returns, dimensions):
+    periods = {prior: {}, current: {}}
+    for row in rows:
+        label = str(row[columns.index(period)])
+        if label not in periods:
+            continue
+        key = json.dumps([row[columns.index(name)] for name in dimensions], default=str)
+        if key in periods[label]:
+            raise ValueError("Each dimension tuple must appear once per period.")
+        periods[label][key] = _decimal(row[columns.index(revenue)]) - (
+            _decimal(row[columns.index(returns)]) if returns else Decimal(0)
+        )
+    if not all(periods.values()):
+        raise ValueError("Both selected periods need observations.")
+    before, after = periods[prior], periods[current]
+    changes = {key: after.get(key, Decimal(0)) - before.get(key, Decimal(0))
+               for key in before.keys() | after.keys()}
+    ranked = sorted(changes, key=lambda key: (-abs(changes[key]), key))[:10]
+    total = sum(after.values(), Decimal(0)) - sum(before.values(), Decimal(0))
+    residual = total - sum((changes[key] for key in ranked), Decimal(0))
+    components = [{"name": key, "change": str(changes[key])} for key in ranked]
+    components.append({"name": "unassigned", "change": str(residual)})
+    return {
+        "prior_period": prior, "current_period": current,
+        "prior_net": str(sum(before.values(), Decimal(0))),
+        "current_net": str(sum(after.values(), Decimal(0))), "net_change": str(total),
+        "dimensions": dimensions, "components": components, "residual": str(residual),
+        "reconciled": sum((_decimal(item["change"]) for item in components), Decimal(0)) == total,
+        "causal_status": "arithmetic", "method": "exact-dimension-difference-v1",
+    }
+
+
 class DiagnoseChangeTool:
     name = "diagnose_change"
     description = (
         "Decompose the last authorized two-period result into exact volume, unit-value, "
         "interaction, and returns contributions when those columns exist. "
+        "For grouped comparisons, rank dimensional contributions using dimension_columns. "
         "Unexplained change stays unassigned; arithmetic contribution is not causal proof."
     )
     parameters = {
@@ -112,6 +157,7 @@ class DiagnoseChangeTool:
             "revenue_column": {"type": "string"},
             "units_column": {"type": "string"},
             "returns_column": {"type": "string"},
+            "dimension_columns": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
         },
         "required": ["prior_period", "current_period", "revenue_column"],
         "additionalProperties": False,
@@ -140,6 +186,7 @@ class DiagnoseChangeTool:
                 revenue_column=str(args.get("revenue_column") or ""),
                 units_column=str(args["units_column"]) if args.get("units_column") else None,
                 returns_column=str(args["returns_column"]) if args.get("returns_column") else None,
+                dimension_columns=args.get("dimension_columns"),
             )
         except ValueError as exc:
             return ToolOutcome(ok=False, summary="", error=str(exc))

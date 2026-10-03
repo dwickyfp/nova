@@ -1,3 +1,20 @@
+<!-- DEVMESH:START version="1" -->
+
+## DevMesh Collaboration
+
+This repository is attached to DevMesh. For substantial work in a DevMesh session:
+- Retrieve the current handoff and preserve its goal, constraints, non-goals, and acceptance criteria.
+- Answer repository-local questions using source, tests, documentation, and runtime evidence.
+- Request ChatGPT research only for consequential external uncertainty or architecture reasoning.
+- Report conflicts with the handoff; provide concrete evidence for code investigations.
+- Preserve the session and Codex thread across collaboration round-trips.
+- Checkpoint before blocking collaboration and satisfy the Definition of Done before completion.
+
+Skills provide the workflow; DevMesh MCP provides dynamic state.
+Project configuration: `.devmesh/project.json`.
+
+<!-- DEVMESH:END -->
+
 # Nova Agent Guide
 
 ## Nova in 30 seconds

@@ -13,6 +13,7 @@ import { StudioArtifacts } from "./studio-artifacts";
 import { StudioCapabilities } from "./studio-capabilities";
 import { StudioDashboards } from "./studio-dashboards";
 import { StudioShared } from "./studio-shared";
+import { StudioIntelligence } from "./studio-intelligence";
 import { ShareDialog } from "./share-dialog";
 import { CREATE_SKILL_COMMAND, SKILL_AUTHOR_ID } from "./skill-document";
 
@@ -349,6 +350,17 @@ function StudioAppContent() {
             newChatNonce={newChatNonce}
             initialPrompt={initialPrompt}
           />
+        ) : view === "news" || view === "decisions" ? (
+          <StudioIntelligence view={view} item={search.item}
+            onDecision={(item) => { setView("decisions"); navigate({ to: "/studio", search: { view: "decisions", item }, replace: true }); }}
+            onOpen={(item) => navigate({ to: "/studio", search: { view, item }, replace: true })}
+            onFollowUp={(prompt) => {
+              setInitialPrompt(prompt);
+              setFreshChat(true);
+              setNewChatNonce((value) => value + 1);
+              setView("chat");
+              navigate({ to: "/studio", search: { agent: agentId ?? undefined }, replace: true });
+            }} />
         ) : view === "artifacts" ? (
           <StudioArtifacts onSelectAgent={selectAgent} />
         ) : view === "dashboards" ? (

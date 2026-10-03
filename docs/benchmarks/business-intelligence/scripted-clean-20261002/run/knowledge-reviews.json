@@ -1,0 +1,37 @@
+[
+  {
+    "memory_id": "5b4daead3e8c9d4b0ba81059406333922978bb05726a6adeae8f2333dbe55db0",
+    "revision": 5,
+    "state": "VERIFIED"
+  },
+  {
+    "memory_id": "dd688f279f8411f4e12a1dd1a9e4cb1d26e657ee6e9e605046b9d67107141cb2",
+    "revision": 5,
+    "state": "VERIFIED"
+  },
+  {
+    "memory_id": "3b42b0a6a3b43e9bf1d9bd842d3870e3ededc062d31869b7144f7ec8bd79682f",
+    "revision": 5,
+    "state": "VERIFIED"
+  },
+  {
+    "memory_id": "6b456a413cc65ff69ef52ff603dafb4d52a0aef43137ffbc48d6d42c46c005f1",
+    "revision": 5,
+    "state": "VERIFIED"
+  },
+  {
+    "memory_id": "ce54ed24b15357a19c71d06e6a0d8a264ce98de0a02cbce5a185a12546f724be",
+    "revision": 5,
+    "state": "VERIFIED"
+  },
+  {
+    "memory_id": "eb0400740056b9347cec5ec24bb4d04bb520efa3915105cdd12339d976c5cfcf",
+    "revision": 5,
+    "state": "VERIFIED"
+  },
+  {
+    "memory_id": "ac6a85d0bf1796a3c79ecbdec68bdb12d92aa1bb982660600372945f06671e59",
+    "revision": 5,
+    "state": "VERIFIED"
+  }
+]

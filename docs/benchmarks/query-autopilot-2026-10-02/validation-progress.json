@@ -205,14 +205,14 @@
   },
   "persisted_pipeline": "ATTEMPT_9_FAILED_HISTORY_WINDOW_EXPIRED_CONFIGURATION_RESTORED",
   "governed_cycle": "ATTEMPT_19_SUCCESS_ACTUAL_100_REPETITIONS_COMPLETE_30_MINUTE_WINDOW",
-  "commit_push_merge": "USER_AUTHORIZED_EXCEPTION_PENDING_DELIVERY",
+  "commit_push_merge": "FEATURE_BRANCHES_PUSHED_MERGE_AUTHORIZED_PENDING",
   "primary_runtime": "PRIMARY_FE_HEALTHY_ORIGINAL_LIMITS_RESTORED_DEV_SH_RUNNING",
   "notes": [
     "Earlier failed attempts are retained; provider errors are not passes.",
     "Production Python unchanged since seeded integration51; benchmark binding/counter changes covered by unit56.",
     "DeepSeek14/14 valid, zero critical hallucinations; mean below required target.",
     "Attempt6 older runner reused a stale incident; final hardened validation rejects this raw PASS.",
-    "Runner7/8 were interrupted with configuration restoration; final runner9 uses the unit56 source and a distinct generated fixture cohort."
+    "Runner7/8 were interrupted with configuration restoration; runner9 used the unit56 source and stopped with history_window_expired after 80 observations."
   ],
   "rolling_window_tests": {
     "passed": 53,
@@ -401,8 +401,8 @@
     "history_anchor": "2026-10-02T17:30:00+00:00",
     "recent_anchor": "2026-10-02T19:00:00+00:00",
     "counters_at_checkpoint": {
-      "newly_persisted": 40,
-      "accepted": 40,
+      "newly_persisted": 80,
+      "accepted": 80,
       "dropped": 0,
       "failed_batches": 0,
       "queued": 0
@@ -420,7 +420,24 @@
     "fixed": "unit56_5059_passed"
   },
   "live_acceptance_blockers": [
-    "Fresh collected-history run9 remains in progress and cannot pass before actual windows complete.",
+    "Collected-history run9 failed with history_window_expired after 80 persisted observations; configuration restored.",
     "DeepSeek measured judge mean3.7857142857142856 below4.2 target; 14 valid cases and zero critical hallucinations."
-  ]
+  ],
+  "delivery_validation": {
+    "backend_unit_passed": 5243,
+    "backend_coverage_percent": 55,
+    "eval_trajectories_passed": 270,
+    "eval_scenarios": "48/48",
+    "eval_checks": "165/165",
+    "frontend_tests_passed": 970,
+    "frontend_files_passed": 125,
+    "frontend_line_coverage_percent": 46.13,
+    "frontend_lint": "PASS_25_EXISTING_WARNINGS",
+    "frontend_build": "PASS",
+    "changed_file_ruff": "PASS",
+    "user_data_boundary": "PASS",
+    "grammar": "PASS_PIN_DRIFT_BYTE_IDENTICAL",
+    "seeded_integration": "IN_PROGRESS",
+    "acceptance_complete": false
+  }
 }

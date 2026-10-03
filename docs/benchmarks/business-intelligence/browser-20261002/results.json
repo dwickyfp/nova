@@ -1,0 +1,79 @@
+{
+  "evidence_type": "local_actual_browser_patched_fe",
+  "results": [
+    {
+      "stage": "populated",
+      "name": "desktop",
+      "theme": "light",
+      "dimensions": {
+        "width": 1280,
+        "documentWidth": 1280,
+        "height": 900,
+        "documentHeight": 900
+      },
+      "pageErrors": 0
+    },
+    {
+      "stage": "populated",
+      "name": "mobile",
+      "theme": "dark",
+      "dimensions": {
+        "width": 360,
+        "documentWidth": 360,
+        "height": 740,
+        "documentHeight": 740
+      },
+      "pageErrors": 0
+    },
+    {
+      "stage": "stale",
+      "name": "desktop",
+      "theme": "light",
+      "dimensions": {
+        "width": 1280,
+        "documentWidth": 1280,
+        "height": 900,
+        "documentHeight": 900
+      },
+      "pageErrors": 0
+    },
+    {
+      "stage": "stale",
+      "name": "mobile",
+      "theme": "dark",
+      "dimensions": {
+        "width": 360,
+        "documentWidth": 360,
+        "height": 740,
+        "documentHeight": 740
+      },
+      "pageErrors": 0
+    },
+    {
+      "stage": "empty_denied",
+      "name": "desktop",
+      "theme": "light",
+      "dimensions": {
+        "width": 1280,
+        "documentWidth": 1280,
+        "height": 900,
+        "documentHeight": 900
+      },
+      "pageErrors": 0
+    },
+    {
+      "stage": "empty_denied",
+      "name": "mobile",
+      "theme": "dark",
+      "dimensions": {
+        "width": 360,
+        "documentWidth": 360,
+        "height": 740,
+        "documentHeight": 740
+      },
+      "pageErrors": 0
+    }
+  ],
+  "production_payloads_substituted": false,
+  "fixture": "synthetic isolated Ranger acceptance"
+}

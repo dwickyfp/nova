@@ -1,3 +1,4 @@
+import { useAuthStore } from '@/stores/auth-store';
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight } from "lucide-react";
@@ -70,10 +71,17 @@ function editableSemanticDefinition(definition: SemanticDefinition): string {
   }, null, 2);
 }
 
-export function IntelligencePage({ section, semanticViewId }: {
+type IntelligencePageProps = {
   section: "entities" | "search" | "semantic" | "features";
   semanticViewId?: string;
-}) {
+};
+
+export function IntelligencePage(props: IntelligencePageProps) {
+  const epoch = useAuthStore((state) => state.securityEpoch);
+  return <IntelligenceWorkspace key={epoch} {...props} epoch={epoch} />;
+}
+
+function IntelligenceWorkspace({ section, semanticViewId, epoch }: IntelligencePageProps & { epoch: number }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tab = section;
@@ -116,49 +124,49 @@ export function IntelligencePage({ section, semanticViewId }: {
   const [semanticResult, setSemanticResult] = useState<unknown>(null);
 
   const entities = useQuery({
-    queryKey: ["intelligence", "entities"],
+    queryKey: ["intelligence", "entities", epoch],
     queryFn: () => api.get<Entity[]>("/entities"),
     enabled: tab === "entities" || tab === "features",
   });
   const indexes = useQuery({
-    queryKey: ["intelligence", "search"],
+    queryKey: ["intelligence", "search", epoch],
     queryFn: () => api.get<SearchIndex[]>("/ai/search"),
     enabled: tab === "search",
   });
   const semantic = useQuery({
-    queryKey: ["intelligence", "semantic"],
+    queryKey: ["intelligence", "semantic", epoch],
     queryFn: () => api.get<SemanticView[]>("/semantic-views"),
     enabled: tab === "semantic" && !semanticViewId,
   });
   const views = useQuery({
-    queryKey: ["intelligence", "feature-views"],
+    queryKey: ["intelligence", "feature-views", epoch],
     queryFn: () => api.get<FeatureView[]>("/features/views"),
     enabled: tab === "features",
   });
   const groups = useQuery({
-    queryKey: ["intelligence", "feature-groups"],
+    queryKey: ["intelligence", "feature-groups", epoch],
     queryFn: () => api.get<FeatureGroup[]>("/features/groups"),
     enabled: tab === "features",
   });
   const searchDetail = useQuery({
-    queryKey: ["intelligence", "search", selectedSearch],
+    queryKey: ["intelligence", "search", selectedSearch, epoch],
     queryFn: () => api.get<Detail>(`/ai/search/${encodeURIComponent(selectedSearch)}`),
     enabled: tab === "search" && Boolean(selectedSearch),
   });
   const semanticDetail = useQuery({
-    queryKey: ["intelligence", "semantic", selectedSemantic],
+    queryKey: ["intelligence", "semantic", selectedSemantic, epoch],
     queryFn: () => api.get<SemanticView & { versions: SemanticVersion[] }>(
       `/semantic-views/${encodeURIComponent(selectedSemantic)}`,
     ),
     enabled: tab === "semantic" && Boolean(selectedSemantic),
   });
   const databases = useQuery({
-    queryKey: ["intelligence", "databases"],
+    queryKey: ["intelligence", "databases", epoch],
     queryFn: () => metadataApi.listDatabases(true),
     enabled: tab === "semantic",
   });
   const embeddingModels = useQuery({
-    queryKey: ["intelligence", "embedding-models"],
+    queryKey: ["intelligence", "embedding-models", epoch],
     enabled: tab === "search",
     queryFn: async () => {
       const providers = await api.get<{ providers: { id: string }[] }>("/ai/providers");
@@ -522,11 +530,11 @@ export function IntelligencePage({ section, semanticViewId }: {
         </section>}
 
         {tab === "semantic" && semanticViewId && <section className="min-w-0 space-y-6" aria-label="Semantic View details">
-            {semanticDetail.isPending ? <LoadingOverlay label="Loading Semantic View details" /> : null}
+            {semanticDetail.isFetching ? <LoadingOverlay label="Loading Semantic View details" /> : null}
             {semanticDetail.isError ? <div role="alert" className="space-y-2 rounded-lg border border-destructive p-4 text-sm">
               <p>Could not load this Semantic View.</p><Button variant="outline" onClick={() => void semanticDetail.refetch()}>Retry</Button>
             </div> : null}
-            {semanticDetail.data ? <div className="min-w-0 space-y-6">
+            {semanticDetail.data && !semanticDetail.isError && !semanticDetail.isFetching ? <div className="min-w-0 space-y-6">
               <dl className="grid gap-4 rounded-lg border bg-surface-1 p-4 text-sm sm:grid-cols-3 sm:p-5">
                 <div><dt className="text-muted-foreground">Availability</dt><dd className="mt-1 font-medium">{selectedSemanticView?.status === "DEPRECATED" ? "Deprecated · unavailable to agents"
                   : selectedSemanticView?.active_version ? "Published for agents" : "Draft · not available to agents"}</dd></div>

@@ -32,16 +32,16 @@ Fragment 0
       │   PeakMemory: ?, AllocatedMemory: ?
       │   AggExprs: [sum(6: total)]
       │   GroupingExprs: [3: store_id]
-      │   SubordinateOperators: 
+      │   SubordinateOperators:
       │       LOCAL_EXCHANGE [Partition(BUCKET_SHUFFLE_HASH_PARTITIONED)]
       │       NOOP
       │       SPILL_PROCESS
-      └──OLAP_SCAN (id=0) 
+      └──OLAP_SCAN (id=0)
              Estimates: [row: 50000, cpu: 600000.00, memory: 0.00, network: 0.00, cost: 300000.00]
              TotalTime: 6.031ms (80.80%) [CPUTime: 2.009ms, ScanTime: 4.022ms]
              OutputRows: 50.000K (50000)
              Table: orders
-             SubordinateOperators: 
+             SubordinateOperators:
                  NOOP
                  OLAP_SCAN_PREPARE
              Detail Timers: [ScanTime = IOTaskExecTime + IOTaskWaitTime]

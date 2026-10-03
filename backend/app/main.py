@@ -20,6 +20,7 @@ from app.core.database import db
 from app.core.exceptions import register_exception_handlers
 from app.core.redis import session_store
 from app.modules.access_control.router import router as access_control_router
+from app.modules.agents.knowledge_router import router as knowledge_router
 
 # --- Module routers ---
 from app.modules.agents.router import router as agents_router
@@ -33,6 +34,9 @@ from app.modules.external_catalogs.router import router as external_catalogs_rou
 from app.modules.functions.router import router as functions_router
 from app.modules.governance.router import router as governance_router
 from app.modules.indexes.router import router as indexes_router
+from app.modules.intelligence.autopilot import router as semantic_autopilot_router
+from app.modules.intelligence.engine_router import router as intelligence_engine_router
+from app.modules.intelligence.engine_schema import ensure_engine_schema
 from app.modules.intelligence.entities import router as entities_router
 from app.modules.intelligence.feature_schema import ensure_feature_schema
 from app.modules.intelligence.feature_store import router as feature_store_router
@@ -95,6 +99,7 @@ async def lifespan(app: FastAPI):
     await ensure_search_schema()
     await ensure_semantic_view_schema()
     await ensure_feature_schema()
+    await ensure_engine_schema()
 
     # Workspace object storage (NOVA-137). Idempotent: creates the configured
     # bucket if absent so the first "create file" does not fail with
@@ -310,6 +315,9 @@ def create_app() -> FastAPI:
         prefix=f"{prefix}/semantic-views",
         tags=["semantic-views"],
     )
+    app.include_router(
+        semantic_autopilot_router, prefix=f"{prefix}/semantic-views", tags=["semantic-views"]
+    )
     app.include_router(entities_router, prefix=f"{prefix}/entities", tags=["entities"])
     app.include_router(feature_store_router, prefix=f"{prefix}/features", tags=["features"])
     app.include_router(llm_fn_router, prefix=f"{prefix}/ai", tags=["ai"])
@@ -357,6 +365,9 @@ def create_app() -> FastAPI:
     # order, so the literal routes must come first.
     app.include_router(studio_router, prefix=f"{prefix}/agents", tags=["agents"])
     app.include_router(agents_router, prefix=f"{prefix}/agents", tags=["agents"])
+    app.include_router(knowledge_router, prefix=f"{prefix}/agents", tags=["agent-knowledge"])
+    app.include_router(intelligence_engine_router, prefix=f"{prefix}/intelligence",
+                       tags=["intelligence"])
     # External catalogs (Iceberg + Hive, GA-only) — NOVA-62 / Phase 0 #9.
     app.include_router(
         external_catalogs_router,

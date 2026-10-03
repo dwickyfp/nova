@@ -336,7 +336,11 @@ class GraphRunWorker:
                 continue
             row = existing.get(task["id"])
             if row is None:
-                row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
+                if (task.get("handler") or "sql") != "sql":
+                    row = await self._repository.create_task_run_once(
+                        job.graph_run_id, task["id"], delegated=False)
+                else:
+                    row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
             moved = await self._repository.transition_task_run(
                 row["id"],
                 [NodeState.PENDING.value, NodeState.ABANDONED.value],
@@ -372,7 +376,11 @@ class GraphRunWorker:
             task = by_name[name]
             row = existing.get(task["id"])
             if row is None:
-                row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
+                if (task.get("handler") or "sql") != "sql":
+                    row = await self._repository.create_task_run_once(
+                        job.graph_run_id, task["id"], delegated=False)
+                else:
+                    row = await self._repository.create_task_run_once(job.graph_run_id, task["id"])
             current = _to_node_state(str(row["state"] or "pending"))
             if current not in _RUNNABLE:
                 # Another delivery already handled this node, or a live worker
@@ -449,6 +457,19 @@ class GraphRunWorker:
                 NodeState.FAILED,
                 error="task has no owner; delegate-first cannot run",
             )
+            return
+
+        handler = task.get("handler") or "sql"
+        if handler != "sql":
+            from app.modules.task_orchestration.internal_handlers import run_internal_task
+
+            try:
+                await run_internal_task(task, job, run_id, self._executor, self._repository)
+            except Exception as exc:
+                await self._finalize(job, task, run_id, owner, NodeState.FAILED,
+                                     error=_safe_message(exc))
+            else:
+                await self._finalize(job, task, run_id, owner, NodeState.SUCCESS)
             return
 
         body = task.get("definition") or ""

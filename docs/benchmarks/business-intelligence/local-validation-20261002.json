@@ -1,0 +1,926 @@
+{
+  "status": "validation_blocked",
+  "date": "2026-10-02",
+  "evidence_type": "local_program_snapshot",
+  "snapshot_base_commit": "6e3cb0d",
+  "implementation_hash": "52ae51de6efba3ee1b33eb4cd93c1fff23d82cbcadd84b6427d3a2dc3c8047c0",
+  "unrelated_sql_and_workspace_changes_included": false,
+  "checks": {
+    "backend_unit": {
+      "status": "passed",
+      "passed": 4765,
+      "warnings": 3,
+      "duration_seconds": 122.69,
+      "coverage_percent": 53,
+      "tested_implementation_hash": "52ae51de6efba3ee1b33eb4cd93c1fff23d82cbcadd84b6427d3a2dc3c8047c0",
+      "local_evidence_sha256": "0ad1c931942bb8a98b362c33c886624f317a3ebdcb1d765bbc150af2764ac4fc",
+      "coverage_xml_sha256": "8393ba7b3e21d02957e8d97508e15a14d4595aeb5d69f81aa2cd8c02137006ee",
+      "verification_includes_program_documentation_fixtures": true
+    },
+    "agent_trajectories": {
+      "status": "passed",
+      "tests": 270,
+      "command": "python -m pytest tests/eval",
+      "local_evidence_sha256": "f49b85ff9c2999f16b907dd2131c6ab817786a46d23fff6089ea0234f8a1f41a",
+      "previous_snapshot_status": "passed",
+      "source_revision": "public-memory-evidence session projection",
+      "tested_implementation_hash": "52ae51de6efba3ee1b33eb4cd93c1fff23d82cbcadd84b6427d3a2dc3c8047c0",
+      "duration_seconds": 28.66,
+      "passed": 270
+    },
+    "agent_scorecard": {
+      "status": "passed",
+      "scenarios": 48,
+      "checks": 165,
+      "command": "python -m tests.eval.report",
+      "local_evidence_sha256": "cfd3d46bc07f300cdc22c5ffb598858771b193ff7db0071da0c609d500822083",
+      "previous_snapshot_status": "passed",
+      "source_revision": "public-memory-evidence session projection",
+      "tested_implementation_hash": "52ae51de6efba3ee1b33eb4cd93c1fff23d82cbcadd84b6427d3a2dc3c8047c0"
+    },
+    "changed_file_ruff": {
+      "status": "passed",
+      "command": "ruff check --force-exclude <program Python paths>",
+      "tested_implementation_hash": "52ae51de6efba3ee1b33eb4cd93c1fff23d82cbcadd84b6427d3a2dc3c8047c0",
+      "source_revision": "public-memory-evidence session projection",
+      "local_evidence_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    "user_data_boundary": {
+      "status": "passed",
+      "command": "python scripts/check_user_data_system_access.py",
+      "tested_implementation_hash": "52ae51de6efba3ee1b33eb4cd93c1fff23d82cbcadd84b6427d3a2dc3c8047c0",
+      "source_revision": "public-memory-evidence session projection",
+      "local_evidence_sha256": "9d34429ae6f676eb0d44a8e27c078cc7b4c82413cdafe7283b5063dbec36f78a"
+    },
+    "frontend_lint": {
+      "status": "passed",
+      "errors": 0,
+      "warnings": 23,
+      "command": "pnpm lint"
+    },
+    "frontend_build": {
+      "status": "passed",
+      "command": "pnpm build"
+    },
+    "frontend_coverage": {
+      "status": "passed",
+      "files": 123,
+      "tests": 959,
+      "command": "pnpm test:coverage",
+      "dependencies": "separate locked offline installation",
+      "local_evidence_sha256": "e9f865c7eb67cafcb064affabfb9d1b6b6f132bac464f28499da4b893191f0ee"
+    },
+    "studio_l0": {
+      "status": "passed",
+      "summary": {
+        "accuracy": 1.0,
+        "cases": 387,
+        "skipped": 45,
+        "silent_wrong": 0,
+        "categories": {
+          "comparison": {
+            "passed": 34,
+            "total": 34,
+            "accuracy": 1.0
+          },
+          "derived": {
+            "passed": 25,
+            "total": 25,
+            "accuracy": 1.0
+          },
+          "dimension": {
+            "passed": 46,
+            "total": 46,
+            "accuracy": 1.0
+          },
+          "filter": {
+            "passed": 31,
+            "total": 31,
+            "accuracy": 1.0
+          },
+          "having": {
+            "passed": 12,
+            "total": 12,
+            "accuracy": 1.0
+          },
+          "multi_fact": {
+            "passed": 12,
+            "total": 12,
+            "accuracy": 1.0
+          },
+          "multi_metric": {
+            "passed": 13,
+            "total": 13,
+            "accuracy": 1.0
+          },
+          "paraphrase": {
+            "passed": 6,
+            "total": 6,
+            "accuracy": 1.0
+          },
+          "ranking": {
+            "passed": 25,
+            "total": 25,
+            "accuracy": 1.0
+          },
+          "share": {
+            "passed": 12,
+            "total": 12,
+            "accuracy": 1.0
+          },
+          "synonym": {
+            "passed": 29,
+            "total": 29,
+            "accuracy": 1.0
+          },
+          "time_grain": {
+            "passed": 17,
+            "total": 17,
+            "accuracy": 1.0
+          },
+          "time_range": {
+            "passed": 113,
+            "total": 113,
+            "accuracy": 1.0
+          },
+          "top_per_group": {
+            "passed": 12,
+            "total": 12,
+            "accuracy": 1.0
+          }
+        },
+        "languages": {
+          "ar": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "de": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "en": {
+            "passed": 75,
+            "total": 75,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "es": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "fr": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "hi": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "id": {
+            "passed": 70,
+            "total": 70,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "ja": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "ko": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "pt": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "th": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "vi": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "zh": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          }
+        },
+        "p50_ms": null,
+        "mean_timing_ms": null,
+        "p95_ms": null
+      },
+      "gate_failures": []
+    },
+    "assistant_microbenchmarks": {
+      "status": "passed_offline_only",
+      "passed": 11,
+      "engine_skipped": 1,
+      "engine_skip_reason": "Verification clone does not own the Compose working-directory label"
+    },
+    "native_engine": {
+      "status": "failed_infrastructure_oom",
+      "command": "python -m pytest tests/integration -m engine -v -rs --log-cli-level=WARNING",
+      "source_deadline_revision": "10-second probes / 120-second total",
+      "skips": [
+        "Set NOVA_CUSTOM_SQL_LIVE=1 for the isolated custom-tool engine test",
+        "Set NOVA_CUSTOM_SQL_LLM_LIVE=1 and NOVA_CUSTOM_SQL_LLM_PORT for the live provider probe",
+        "Requires an isolated patched-FE Ranger acceptance installation",
+        "engine has UDFs disabled (enable_udf=false)",
+        "engine does not support CREATE TASK",
+        "set NOVA_MIGRATION_SOURCE_PORT to opt in to cross-cluster migration",
+        "Requires isolated patched StarRocks/Ranger fixture: NOVA_FRONTEND_RANGER_URL and NOVA_FRONTEND_RANGER_TOKEN (security-admin session)"
+      ],
+      "local_evidence_sha256": "9a121721b3b3fed17efedf5e01cdaacc1954f95e61c6ec741a2f2f8287b2732b",
+      "engine_planner_timeout_changed": false,
+      "previous_attempt": {
+        "passed": 4,
+        "failed": 1,
+        "skipped": 2,
+        "deselected": 29,
+        "duration_seconds": 396.85
+      },
+      "passed": 159,
+      "skipped": 7,
+      "deselected": 29,
+      "duration_seconds": 1815.88,
+      "source_revision": "complete-assignment-cohort guard",
+      "tested_implementation_hash": "18f1dcb044368b62577fec943e18eb94893ce918ad159a639d31efedc8dcfdd0",
+      "failed": 2
+    },
+    "studio_l2": {
+      "status": "passed",
+      "summary": {
+        "accuracy": 1.0,
+        "cases": 391,
+        "skipped": 0,
+        "silent_wrong": 0,
+        "categories": {
+          "comparison": {
+            "passed": 34,
+            "total": 34,
+            "accuracy": 1.0
+          },
+          "derived": {
+            "passed": 25,
+            "total": 25,
+            "accuracy": 1.0
+          },
+          "dimension": {
+            "passed": 46,
+            "total": 46,
+            "accuracy": 1.0
+          },
+          "filter": {
+            "passed": 31,
+            "total": 31,
+            "accuracy": 1.0
+          },
+          "follow_up": {
+            "passed": 4,
+            "total": 4,
+            "accuracy": 1.0
+          },
+          "having": {
+            "passed": 12,
+            "total": 12,
+            "accuracy": 1.0
+          },
+          "multi_fact": {
+            "passed": 12,
+            "total": 12,
+            "accuracy": 1.0
+          },
+          "multi_metric": {
+            "passed": 13,
+            "total": 13,
+            "accuracy": 1.0
+          },
+          "paraphrase": {
+            "passed": 6,
+            "total": 6,
+            "accuracy": 1.0
+          },
+          "ranking": {
+            "passed": 25,
+            "total": 25,
+            "accuracy": 1.0
+          },
+          "share": {
+            "passed": 12,
+            "total": 12,
+            "accuracy": 1.0
+          },
+          "synonym": {
+            "passed": 29,
+            "total": 29,
+            "accuracy": 1.0
+          },
+          "time_grain": {
+            "passed": 17,
+            "total": 17,
+            "accuracy": 1.0
+          },
+          "time_range": {
+            "passed": 113,
+            "total": 113,
+            "accuracy": 1.0
+          },
+          "top_per_group": {
+            "passed": 12,
+            "total": 12,
+            "accuracy": 1.0
+          }
+        },
+        "languages": {
+          "ar": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "de": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "en": {
+            "passed": 77,
+            "total": 77,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "es": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "fr": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "hi": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "id": {
+            "passed": 72,
+            "total": 72,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "ja": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "ko": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "pt": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "th": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "vi": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          },
+          "zh": {
+            "passed": 22,
+            "total": 22,
+            "silent_wrong": 0,
+            "accuracy": 1.0
+          }
+        },
+        "p50_ms": 62.56500000017695,
+        "mean_timing_ms": null,
+        "p95_ms": 285.6141250231303
+      },
+      "gate_failures": []
+    },
+    "patched_fe_ranger": {
+      "status": "passed",
+      "lifecycle_tests": 1,
+      "duration_seconds": 168.96,
+      "proxy_and_assistant_baseline": "passed",
+      "baseline_harness": "Existing role-activation fixture copied to a temporary path; production snapshot unchanged",
+      "coverage": [
+        "same-role principals with different row filters",
+        "restricted finance role",
+        "masking",
+        "mask change invalidates stored evidence",
+        "shared listings",
+        "graph endpoints",
+        "role and security-context changes",
+        "dataset revocation"
+      ],
+      "local_evidence_sha256": "243223ae4524985aa588d2cf8b701316e747d0857f25ad500cf3835353d252e0",
+      "tested_implementation_hash": "e2f274e06cd6ffaa3246466d59c8ef4c7e902c0e9b6e1d814ca2bb85419daae5",
+      "reuse_reason": "Later edits reject selected causal cohorts and omit authentication session IDs from the private-memory evidence HTTP response. Tested row-filter, masking, simulation, persisted-decision and frontend paths are unchanged; both changed boundaries have separate HTTP/agent checks and the latest native suite exercises the public evidence endpoint.",
+      "publication_extension_recheck": "infrastructure_unavailable_after_startup_readiness",
+      "current_snapshot_accepted": false
+    },
+    "actual_studio_browser": {
+      "status": "passed",
+      "checkpoints": [
+        "populated",
+        "stale",
+        "empty_denied"
+      ],
+      "viewports": [
+        {
+          "width": 1280,
+          "height": 900,
+          "theme": "light"
+        },
+        {
+          "width": 360,
+          "height": 740,
+          "theme": "dark"
+        }
+      ],
+      "page_errors": 0,
+      "document_overflow": false,
+      "keyboard_selection_and_retry": "passed",
+      "unauthorized_approval_control": "absent",
+      "artifact": "browser-20261002/results.json",
+      "local_evidence_sha256": "9377e3d3b9ca83e5af9b66a678470072e71be277bd3c62e97628af0aeed40e1c",
+      "tested_implementation_hash": "e2f274e06cd6ffaa3246466d59c8ef4c7e902c0e9b6e1d814ca2bb85419daae5",
+      "reuse_reason": "Later edits reject selected causal cohorts and omit authentication session IDs from the private-memory evidence HTTP response. Tested row-filter, masking, simulation, persisted-decision and frontend paths are unchanged; both changed boundaries have separate HTTP/agent checks and the latest native suite exercises the public evidence endpoint."
+    },
+    "frozen_scripted_experiment": {
+      "status": "requires_new_freeze_after_public_evidence_guard"
+    },
+    "benchmark_error_redaction": {
+      "status": "passed",
+      "tests": 3,
+      "command": "python -m pytest tests/unit/test_intelligence_evaluation.py"
+    },
+    "source_authorization_deadlines": {
+      "status": "passed_focused",
+      "tests": 39,
+      "per_probe_seconds": 10,
+      "whole_check_seconds": 120,
+      "timeout_grants_access": false
+    },
+    "native_stories_diagnostic_retry": {
+      "status": "passed",
+      "tests": 1,
+      "duration_seconds": 933.98,
+      "artifact": "development-stories-20261002/stories.json",
+      "evidence_type": "development_real_engine",
+      "external_actions_executed": false,
+      "reuse_for_extended_story_acceptance": false
+    },
+    "native_engine_final_retry": {
+      "status": "infrastructure_unavailable_full_suite_not_accepted",
+      "passed": 160,
+      "skipped": 7,
+      "deselected": 29,
+      "duration_seconds": 1886.6,
+      "command": "python -m pytest tests/integration -m engine -v -rs --log-cli-level=WARNING",
+      "source_deadline_revision": "10-second probes / 120-second total",
+      "skips": [
+        "Set NOVA_CUSTOM_SQL_LIVE=1 for the isolated custom-tool engine test",
+        "Set NOVA_CUSTOM_SQL_LLM_LIVE=1 and NOVA_CUSTOM_SQL_LLM_PORT for the live provider probe",
+        "Requires an isolated patched-FE Ranger acceptance installation",
+        "engine has UDFs disabled (enable_udf=false)",
+        "engine does not support CREATE TASK",
+        "set NOVA_MIGRATION_SOURCE_PORT to opt in to cross-cluster migration",
+        "Requires isolated patched StarRocks/Ranger fixture: NOVA_FRONTEND_RANGER_URL and NOVA_FRONTEND_RANGER_TOKEN (security-admin session)"
+      ]
+    },
+    "causal_cohort_guard": {
+      "status": "passed_focused",
+      "tests": 34,
+      "complete_cohort_effect_validated": true,
+      "selected_cohort_queries": 0,
+      "selected_cohort_causal_claims": 0,
+      "agent_failure_stops_success_claim": true
+    },
+    "causal_real_engine": {
+      "status": "passed",
+      "tests": 1,
+      "duration_seconds": 46.85,
+      "complete_cohort_effect": 10,
+      "independent_interval_validation": true,
+      "selected_cohort_http_status": 422,
+      "selected_cohort_queries": 0,
+      "evidence_principal_checked": true,
+      "local_evidence_sha256": "1355d913803cb9858b3261257556f9c3b32e9613f29fa87550c1f21ff307a7fd"
+    },
+    "native_planner_failure_retry": {
+      "status": "passed",
+      "tests": 1,
+      "duration_seconds": 138.36,
+      "application_edits": false,
+      "engine_planner_timeout_changed": false,
+      "local_evidence_sha256": "f31dd76353ba0c4cfd7f112f29348eeb795feac5220b2dba6e84756da6085f5f"
+    },
+    "public_memory_evidence": {
+      "status": "passed_focused",
+      "tests": 28,
+      "response_session_ids": 0,
+      "internal_provenance_preserved": true,
+      "real_engine_response_checks": "passed before later story deadline"
+    },
+    "native_engine_current_diagnostic": {
+      "status": "failed_publication_lock_timeout",
+      "tests": 1,
+      "duration_seconds": 355.3,
+      "failure": "production Studio thread creation returned HTTP 404 after earlier resource verification",
+      "fe_oom_killed": false,
+      "instrumentation_totals": {
+        "_source_access": {
+          "calls": 15,
+          "errors": 0,
+          "max_seconds": 29.86747112503508,
+          "seconds": 125.34789587499108
+        },
+        "system_metadata": {
+          "calls": 914,
+          "errors": 24,
+          "max_seconds": 9.82303241698537,
+          "seconds": 491.6154557085247
+        }
+      },
+      "local_evidence_sha256": "9bc82a9fb22407f53d0ff25919bd6973885a4bc4d64c589872d9c5499f925edd",
+      "implementation_hash": "18f1dcb044368b62577fec943e18eb94893ce918ad159a639d31efedc8dcfdd0",
+      "source_changed": false,
+      "followup": "publication preflight fix; repeat exact full backend and engine gates"
+    },
+    "development_story_cross_domain_extension": {
+      "status": "passed",
+      "tests": 1,
+      "duration_seconds": 1053.33,
+      "artifact": "development-stories-cross-domain-20261002/stories.json",
+      "tested_implementation_hash": "52ae51de6efba3ee1b33eb4cd93c1fff23d82cbcadd84b6427d3a2dc3c8047c0",
+      "evidence_type": "real_engine_with_scripted_provider",
+      "paid_provider_calls": 0,
+      "empirical_llm_improvement": null,
+      "coverage": [
+        "independent inventory and service-latency comparisons",
+        "stable marketing comparison",
+        "two numerical options",
+        "approval and complete lineage",
+        "pending missing and complete outcomes",
+        "retry retains revision",
+        "later Studio private inferred context"
+      ],
+      "artifact_sha256": "af8b262d2623ebba714d33ddd61ae4ad0933e08057dc1e68eea77be28780ba42"
+    },
+    "source_probe_concurrency_diagnostic": {
+      "status": "complete_inconclusive",
+      "evidence_type": "development_resource_diagnostic",
+      "results": [
+        {
+          "source_probe_concurrency": 4,
+          "allowed": true,
+          "seconds": 24.984,
+          "evidence_type": "development_resource_diagnostic"
+        },
+        {
+          "source_probe_concurrency": 2,
+          "allowed": true,
+          "seconds": 15.524,
+          "evidence_type": "development_resource_diagnostic"
+        },
+        {
+          "source_probe_concurrency": 2,
+          "allowed": true,
+          "seconds": 24.842,
+          "evidence_type": "development_resource_diagnostic"
+        },
+        {
+          "source_probe_concurrency": 4,
+          "allowed": true,
+          "seconds": 11.174,
+          "evidence_type": "development_resource_diagnostic"
+        }
+      ],
+      "production_concurrency_changed": false,
+      "authorization_changed": false,
+      "timeouts_changed": false,
+      "provider_calls": 0
+    },
+    "publication_preflight": {
+      "status": "targeted_engine_passed_full_native_failure_under_diagnosis",
+      "focused_tests": 21,
+      "write_lease_limit_seconds": 20,
+      "source_probe_timeout_seconds": 10,
+      "source_total_timeout_seconds": 120,
+      "changes": [
+        "source probes outside write lease",
+        "candidate and validation signature checked under lease",
+        "baseline and regression gates preserved",
+        "caller context checked through existing SQL path",
+        "originating session rechecked under lease",
+        "existing fencing and partial-write recovery preserved"
+      ]
+    },
+    "documentation_references": {
+      "status": "passed",
+      "local_links_checked": 11,
+      "broken_links": 0,
+      "program_reports_scanned": 30,
+      "credential_tokens_detected": 0
+    },
+    "independent_dependency_backend_unit": {
+      "status": "passed",
+      "passed": 4765,
+      "warnings": 7,
+      "duration_seconds": 340.62,
+      "coverage_percent": 53,
+      "dependencies": "fresh virtual environment from uv.lock using offline locked sync",
+      "tested_implementation_hash": "52ae51de6efba3ee1b33eb4cd93c1fff23d82cbcadd84b6427d3a2dc3c8047c0",
+      "local_evidence_sha256": "9bc406a2a115592d85b84229da995c67ada9c5d2a9944b66841535871c73e9ab",
+      "coverage_xml_sha256": "28cf943ea6f455cc1ae7b75365576d0df4be5f44ce0017330465d7f2a5683bdc",
+      "delivered_commit_verification": false
+    },
+    "independent_dependency_eval": {
+      "status": "passed",
+      "passed": 270,
+      "duration_seconds": 33.42,
+      "tested_implementation_hash": "52ae51de6efba3ee1b33eb4cd93c1fff23d82cbcadd84b6427d3a2dc3c8047c0",
+      "local_evidence_sha256": "17d2ab2faa39e63801719118297bc4f1125beccbd8379a45ec3c175601a96ca5"
+    },
+    "independent_dependency_scorecard": {
+      "status": "passed",
+      "scenarios": 48,
+      "checks": 165,
+      "local_evidence_sha256": "cfd3d46bc07f300cdc22c5ffb598858771b193ff7db0071da0c609d500822083"
+    }
+  },
+  "failed_attempts": [
+    {
+      "check": "native_development_stories",
+      "result": "failed",
+      "reason": "Planner timeout and a later unavailable Semantic View during outcome retry; no acceptance claimed"
+    },
+    {
+      "check": "native_development_stories",
+      "result": "failed",
+      "reason": "Post-publication access verification failed under concurrent frontend load; separate serial four-agent verification passed"
+    },
+    {
+      "check": "clean_frontend_coverage_shared_dependencies",
+      "result": "failed",
+      "reason": "Vitest dynamic module loading errors and a click timeout; separate dependency installation passed"
+    },
+    {
+      "check": "full_native_engine",
+      "result": "failed",
+      "reason": "Development-story approval returned HTTP 404; policy cleanup also returned HTTP 401. Diagnostic retry retains fail-closed authorization and reauthenticates for cleanup."
+    },
+    {
+      "check": "source_authorization_diagnostic",
+      "result": "failed",
+      "reason": "Source SELECT probes were cancelled at the five-second deadline. Deadline raised to ten seconds; whole check remains bounded to 120 seconds and fails closed."
+    },
+    {
+      "check": "ranger_proxy_and_assistant_baseline",
+      "result": "failed_before_fixture_role_activation",
+      "reason": "Legacy fixture omitted assigned roles; the existing updated fixture uses production role activation and passed against unchanged production sources."
+    },
+    {
+      "check": "scripted_experiment_pre_freeze_startup",
+      "result": "failed_before_freeze",
+      "reason": "Resumed native engine temporarily blacklisted its backend after connection failures during startup. All four backend ports were verified reachable; the isolated engine backend blacklist was cleared, and the unchanged orders count was 5000. No B0 rows were produced."
+    },
+    {
+      "check": "frozen_scripted_experiment",
+      "result": "interrupted_for_causal_guard_hardening",
+      "artifact": "scripted-clean-20261002/run/report.json",
+      "reason": "A separate development reproduction showed that a cohort selected using an outcome HAVING condition could produce supported_effect. The run was stopped before B1/B2; paired acceptance is not claimed. The guard and its checks require a new snapshot and experiment freeze."
+    },
+    {
+      "check": "causal_real_engine",
+      "result": "fixture_failed",
+      "reason": "The development metric helper required a known benchmark dataset; replaced it with an explicit semantic metric for the isolated assignment table. No causal acceptance was claimed from this failed run."
+    },
+    {
+      "check": "full_native_engine_after_causal_guard",
+      "result": "failed_then_stopped",
+      "reason": "External-catalog metadata read exceeded the engine five-second planner deadline (5160 ms). The prior full suite passed; the new randomized API test, 4748 unit tests and 270 evals passed. Other isolated engine suites were concurrently active. No new paired run started."
+    },
+    {
+      "check": "frozen_scripted_cohort_experiment",
+      "result": "interrupted_for_public_evidence_guard",
+      "reason": "Separate HTTP response audit confirmed that memory provenance included an authentication session ID. The cold-stage run was stopped; its holdout data were not used to change implementation. Public projection now omits session IDs while preserving durable provenance."
+    },
+    {
+      "check": "native_engine_public_evidence_retry",
+      "result": "failed_infrastructure_oom",
+      "reason": "Owned FE was confirmed OOMKilled (exit 137). Decision selection hit the unchanged 120-second cycle ceiling and workspace metadata became unavailable. 159 tests passed; 2 failed. The diagnostic retry collected only skips because FE was down, so it is not a pass. No new frozen experiment started."
+    },
+    {
+      "attempt": "native_l_interrupted",
+      "result": "interrupted_without_final_report",
+      "observed_test_failure": true,
+      "observed_teardown_error": true,
+      "acceptance": false,
+      "fe_running_at_last_check": true,
+      "fe_oom_killed_at_last_check": false,
+      "implementation_hash": "18f1dcb044368b62577fec943e18eb94893ce918ad159a639d31efedc8dcfdd0"
+    },
+    {
+      "attempt": "native_m_focused",
+      "result": "failed",
+      "acceptance": false,
+      "tests": 1,
+      "duration_seconds": 355.3,
+      "failure": "Studio thread POST HTTP 404",
+      "source_access_max_seconds": 29.86747112503508,
+      "fe_running": true,
+      "fe_oom_killed": false
+    },
+    {
+      "attempt": "native_n_diagnostic_interrupted",
+      "result": "interrupted_for_resource_recovery_and_extended_story_checks",
+      "acceptance": false,
+      "duration_seconds": 1084.57,
+      "completed_tests": 0,
+      "source_probe_max_observed_seconds": 102.27,
+      "metadata_max_observed_seconds": 99.065,
+      "application_timeouts_changed": false
+    },
+    {
+      "attempt": "backend_unit_o",
+      "result": "verification_setup_failure",
+      "passed": 4750,
+      "failed": 4,
+      "duration_seconds": 230.93,
+      "reason": "new story-export tests referenced a program artifact omitted from the verification copy; copied all program documentation and reran focused tests (12 passed)"
+    },
+    {
+      "attempt": "native_o_extended_story",
+      "result": "failed_before_story_execution",
+      "passed": 0,
+      "failed": 1,
+      "duration_seconds": 204.29,
+      "failure": "Studio message POST HTTP 404 after source-probe timeout",
+      "application_timeout_changed": false
+    },
+    {
+      "attempt": "extended_story_q",
+      "result": "failed_before_story_execution",
+      "passed": 0,
+      "failed": 1,
+      "duration_seconds": 282.96,
+      "reason": "source authorization exceeded the 20-second metadata publication lock; fixed by preflight outside lease plus exact-input and execution-context revalidation"
+    },
+    {
+      "attempt": "native_u_full_suite",
+      "result": "interrupted_full_suite_after_403_source_preflight_and_engine_stall",
+      "tests_before_failure": "migration and causal analysis passed; extended Studio story failed",
+      "observed_health": {
+        "mysql_endpoint": "connection accepts but handshake timed out at 2 seconds",
+        "redis_endpoint": "reachable",
+        "storage_endpoint": "reachable",
+        "docker_inspection": "stalled",
+        "fe_http": "Both / and /api/health timed out after 2 seconds"
+      },
+      "action": "SIGINT twice only owned pytest PID 92758 because fixture cleanup also stalled; bounded stop requested only for own FE; no shared services restarted",
+      "acceptance": false,
+      "counts": {
+        "failed": 2,
+        "passed": 24,
+        "skipped": 3,
+        "deselected": 29
+      },
+      "duration_seconds": 1157.14,
+      "diagnosis": "Training Semantic View source preflight returned HTTP 403 before story creation. Later FE query stalled; cleanup reported a 9111ms planner delay. GC log showed a 7382.788ms young pause with only 1.75s CPU. Own FE stopped without OOM; paid experiment never launched.",
+      "local_evidence_sha256": "1d99d37398c9c65df5ca1085dc6b1514e310cef686218afa00ef84de9e7d1f99"
+    },
+    {
+      "attempt": "ranger_publication_recheck_a",
+      "result": "failed_before_lifecycle",
+      "duration_seconds": 9.82,
+      "reason": "Owned BE was alive but blacklisted after its startup registration retry. Added operator readiness check of all four BE ports and metadata execution, clearing only that isolated backend entry before retry.",
+      "production_authentication_changed": false,
+      "acceptance": false
+    },
+    {
+      "attempt": "ranger_publication_recheck_b",
+      "result": "harness_preflight_failed_no_test_run",
+      "reason": "Temporary readiness script needed PYTHONPATH=/opt/nova/backend for existing application imports. Fixed execution environment; no production source changed.",
+      "acceptance": false
+    },
+    {
+      "attempt": "ranger_publication_recheck_c",
+      "result": "stalled_after_policy_request_retries",
+      "test_completed": false,
+      "readiness": "all four BE ports and metadata query passed; backend startup blacklist cleared before test",
+      "observed_failure": "Ranger policy POST and DELETE retries; later FE probe and Docker inspection stalled",
+      "action": "cancelled only dependent native/benchmark driver; requested stop only own Ranger containers",
+      "acceptance": false
+    }
+  ],
+  "paid_provider_calls": 0,
+  "empirical_llm_improvement": null,
+  "github_actions_verified": false,
+  "final_delivered_commit_verified": false,
+  "commit_pushed": false,
+  "main_integration_complete": false,
+  "previous_implementation_hash": "7270b457b5125001cf2d9b1a4e51ef3e823134fd1102e39eedb34894d540c3bf",
+  "remote_baseline_ci": {
+    "commit": "a96ce2f938ed47e70acbef0048a6a5f29732ba1f",
+    "run_url": "https://github.com/dwickyfp/nova/actions/runs/36699303720",
+    "conclusion": "failure",
+    "passed_jobs": [
+      "Backend static",
+      "Backend unit",
+      "Frontend",
+      "Grammar drift"
+    ],
+    "failed_job": "Backend integration",
+    "failure": "CONFIG_TASKS.consecutive_fail_count missing from fresh bootstrap",
+    "program_bootstrap_contains_column": true,
+    "new_commit_ci_verified": false
+  },
+  "primary_provider": {
+    "status": "verified_registry_and_default_reference",
+    "model": "deepseek-v4-1-flash",
+    "model_id": "96e750eb-0ce2-4412-9afe-bdb38ac1a5ad",
+    "type": "llm",
+    "active": true,
+    "paid_probe_executed": false
+  },
+  "native_test_resource_configuration": {
+    "fe_heap_mib": 1024,
+    "fe_container_memory_mib": 1536,
+    "fe_container_memory_and_swap_mib": 3072,
+    "configuration_scope": "owned local test container only",
+    "application_source_changed": false,
+    "data_volumes_preserved": true,
+    "planner_timeout_changed": false,
+    "be_container_memory_mib": 1536,
+    "be_container_memory_and_swap_mib": 3072,
+    "be_memory_limit_mib": 1024,
+    "ranger_recheck": {
+      "own_fe_memory_limit_mib": 2048,
+      "own_fe_memory_swap_total_mib": 3072,
+      "own_be_memory_limit_mib": 1536,
+      "own_be_memory_swap_total_mib": 3072,
+      "shared_configs_changed": false,
+      "status": "stalled_in_policy_fixture_cleanup_stop_requested",
+      "startup_repair": "BE registration timed out before FE recovered its existing metadata; restarted only own BE after FE health became healthy",
+      "shutdown_confirmed": false,
+      "stop_request_result": "Docker stop for only own stack exceeded 30 seconds; global runtime was not restarted"
+    },
+    "next_native_retry": {
+      "own_fe_heap_limit_mib": 1536,
+      "own_fe_memory_limit_mib": 2048,
+      "own_fe_memory_swap_total_mib": 3072,
+      "reason": "observed GC and planner delays during full suite",
+      "application_and_planner_timeouts_changed": false,
+      "unrelated_containers_changed": false,
+      "data_reset": false
+    }
+  },
+  "remaining_validation_prerequisite": "Responsive isolated Docker/StarRocks/Ranger services; full native gate, publication Ranger recheck and official paired benchmark still required before commit, push or main integration.",
+  "automatic_official_benchmark_queued": false
+}

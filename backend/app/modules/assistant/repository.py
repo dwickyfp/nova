@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS (
     title             VARCHAR(256) NOT NULL,
     workspace_file_id VARCHAR(64),
     agent_id          VARCHAR(64),
+    learning_enabled  BOOLEAN NOT NULL DEFAULT "true",
     created_at        DATETIME NOT NULL,
     updated_at        DATETIME NOT NULL
 ) PRIMARY KEY(thread_id)
@@ -70,7 +71,8 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES (
     instructions      TEXT,
     security_context  JSON,
     feedback          VARCHAR(16),
-    attachments       JSON
+    attachments       JSON,
+    learning_state    VARCHAR(32)
 ) PRIMARY KEY(message_id)
 DISTRIBUTED BY HASH(message_id) BUCKETS 1
 ORDER BY (thread_id, seq)
@@ -151,6 +153,17 @@ class AssistantRepository:
             if "already exists" not in message and "duplicate" not in message:
                 raise
         await db.execute_system(MESSAGES_DDL)
+        from app.common.nova_system import _column_exists
+
+        if not await _column_exists("CONFIG_ASSISTANT_THREADS", "learning_enabled"):
+            try:
+                await db.execute_system(
+                    "ALTER TABLE NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS "
+                    'ADD COLUMN learning_enabled BOOLEAN NOT NULL DEFAULT "true"'
+                )
+            except Exception:
+                if not await _column_exists("CONFIG_ASSISTANT_THREADS", "learning_enabled"):
+                    raise
         # Additive columns on the messages table (agent binding + token usage).
         for column, column_type in (
             ("agent_id", "VARCHAR(64)"),
@@ -163,6 +176,7 @@ class AssistantRepository:
             ("security_context", "JSON"),
             ("feedback", "VARCHAR(16)"),
             ("attachments", "JSON"),
+            ("learning_state", "VARCHAR(32)"),
         ):
             try:
                 await db.execute_system(
@@ -174,6 +188,140 @@ class AssistantRepository:
                     raise
 
     # ── Threads ────────────────────────────────────────────────
+
+    async def disable_learning(self, thread_id: str, *, user_name: str) -> None:
+        await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS SET learning_enabled=false "
+            "WHERE thread_id=%s AND user_name=%s",
+            [thread_id, user_name],
+        )
+
+    async def learning_enabled(self, thread_id: str, *, user_name: str) -> bool:
+        result = await db.execute_system(
+            "SELECT learning_enabled FROM NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS "
+            "WHERE thread_id=%s AND user_name=%s",
+            [thread_id, user_name],
+        )
+        return bool(
+            result["rows"] and result["rows"][0][0] is not None and int(result["rows"][0][0]) == 1
+        )
+
+    async def learning_source(
+        self,
+        thread_id: str,
+        message_id: str,
+        *,
+        user_name: str,
+    ) -> dict | None:
+        if not await self.learning_enabled(thread_id, user_name=user_name):
+            return None
+        result = await db.execute_system(
+            "SELECT content,security_context,created_at FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
+            "WHERE thread_id=%s AND message_id=%s AND user_name=%s AND role='user' "
+            "AND learning_state='pending'",
+            [thread_id, message_id, user_name],
+        )
+        if not result["rows"]:
+            return None
+        import json
+
+        content, stamp, created_at = result["rows"][0]
+        return {
+            "content": content,
+            "security_context": json.loads(stamp) if isinstance(stamp, str) else stamp,
+            "created_at": created_at.replace(tzinfo=UTC)
+            if created_at.tzinfo is None
+            else created_at,
+        }
+
+    async def mark_learning_complete(self, message_id: str, *, user_name: str) -> None:
+        await db.execute_system(
+            "UPDATE NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES SET learning_state='complete' "
+            "WHERE message_id=%s AND user_name=%s AND learning_state='pending'",
+            [message_id, user_name],
+        )
+
+    async def record_learning_trace(
+        self,
+        message_id: str,
+        *,
+        user_name: str,
+        trace: dict,
+    ) -> None:
+        import json
+
+        from fastapi import HTTPException
+
+        from app.modules.intelligence.engine_repository import metadata_lock
+
+        async with metadata_lock(f"learning-trace:{message_id}") as lease:
+            result = await db.execute_system(
+                "SELECT steps FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
+                "WHERE message_id=%s AND user_name=%s AND role='user' "
+                "AND learning_state='pending'",
+                [message_id, user_name],
+            )
+            if not result["rows"]:
+                raise HTTPException(status_code=409, detail="Learning source is no longer pending")
+            raw = result["rows"][0][0]
+            try:
+                steps = json.loads(raw) if isinstance(raw, str) else raw or []
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=409, detail="Learning trace needs reconciliation"
+                ) from exc
+            if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
+                raise HTTPException(status_code=409, detail="Learning trace needs reconciliation")
+            position = next(
+                (i for i, step in enumerate(steps) if step.get("id") == trace["id"]), None
+            )
+            if position is None:
+                steps.append(trace)
+            else:
+                steps[position] = trace
+            if not await lease.renew():
+                raise HTTPException(status_code=409, detail="Learning trace lease expired")
+            await db.execute_system(
+                "UPDATE NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES SET steps=%s "
+                "WHERE message_id=%s AND user_name=%s AND role='user' "
+                "AND learning_state='pending'",
+                [_dump(steps), message_id, user_name],
+            )
+
+    async def pending_learning(
+        self,
+        *,
+        limit: int = 100,
+        after: str = "",
+        user_name: str | None = None,
+        agent_id: str | None = None,
+    ) -> list[dict]:
+        filters, params = ["m.message_id>%s"], [after]
+        for column, value in (("m.user_name", user_name), ("m.agent_id", agent_id)):
+            if value is not None:
+                filters.append(f"{column}=%s")
+                params.append(value)
+        result = await db.execute_system(
+            "SELECT m.message_id,m.thread_id,m.user_name,m.agent_id,m.security_context "
+            "FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES m "
+            "JOIN NOVA_SYSTEM.CONFIG_ASSISTANT_THREADS t "
+            "ON m.thread_id=t.thread_id AND m.user_name=t.user_name "
+            "WHERE m.learning_state='pending' AND m.role='user' AND t.learning_enabled=true "
+            "AND " + " AND ".join(filters) + " ORDER BY m.message_id LIMIT %s",
+            [*params, min(max(limit, 1), 100)],
+        )
+        import json
+
+        return [
+            {
+                "message_id": row[0],
+                "thread_id": row[1],
+                "user_name": row[2],
+                "agent_id": row[3],
+                "scope": json.loads(row[4]) if isinstance(row[4], str) else row[4],
+            }
+            for row in result["rows"]
+        ]
 
     async def create_thread(
         self,
@@ -262,13 +410,9 @@ class AssistantRepository:
                 thread_ids = [row[0] for row in rows]
                 if len(thread_ids) != len(set(thread_ids)):
                     raise ValueError("Assistant thread list returned duplicate rows")
-                count_result = await db.execute_system(
-                    count_sql, [user_name, agent_id, *params]
-                )
+                count_result = await db.execute_system(count_sql, [user_name, agent_id, *params])
                 count_rows = count_result["rows"]
-                if not _valid_thread_count_row(
-                    count_rows, user_name=user_name, agent_id=agent_id
-                ):
+                if not _valid_thread_count_row(count_rows, user_name=user_name, agent_id=agent_id):
                     raise ValueError("Assistant thread count returned invalid rows")
                 if int(count_rows[0][2]) != len(rows):
                     confirmed_empty = 0
@@ -439,6 +583,7 @@ class AssistantRepository:
         instructions: str | None = None,
         security_context: dict | None = None,
         attachments: list[dict] | None = None,
+        learning_enabled: bool = False,
     ) -> dict:
         """Append one message and bump the thread's ``updated_at``.
 
@@ -487,8 +632,8 @@ class AssistantRepository:
             "INSERT INTO NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
             "(message_id, thread_id, user_name, seq, role, content, created_at, "
             "agent_id, model_name, prompt_tokens, completion_tokens, total_tokens, "
-            "steps, instructions, security_context, attachments) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "steps, instructions, security_context, attachments, learning_state) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 mid,
                 thread_id,
@@ -506,6 +651,7 @@ class AssistantRepository:
                 instructions,
                 _dump(security_context) if security_context else None,
                 _dump(attachments or []),
+                "pending" if learning_enabled and role == "user" and agent_id else None,
             ],
         )
         await self.touch_thread(thread_id, user_name=user_name)
@@ -568,9 +714,7 @@ def _valid_thread_list_row(
 ) -> bool:
     if not isinstance(row, (list, tuple)) or len(row) != 8:
         return False
-    agent_matches = (
-        isinstance(row[4], str) and bool(row[4]) if all_agents else row[4] == agent_id
-    )
+    agent_matches = isinstance(row[4], str) and bool(row[4]) if all_agents else row[4] == agent_id
     if (
         not isinstance(row[0], str)
         or not row[0]
@@ -597,9 +741,7 @@ def _valid_thread_list_row(
         return False
 
 
-def _valid_thread_count_row(
-    rows: object, *, user_name: str, agent_id: str | None
-) -> bool:
+def _valid_thread_count_row(rows: object, *, user_name: str, agent_id: str | None) -> bool:
     if not isinstance(rows, (list, tuple)) or len(rows) != 1:
         return False
     row = rows[0]
@@ -622,6 +764,9 @@ assistant_repository = AssistantRepository()
 
 
 __all__ = [
-    "AssistantRepository", "AssistantThreadListUnavailable", "assistant_repository",
-    "THREADS_DDL", "MESSAGES_DDL",
+    "AssistantRepository",
+    "AssistantThreadListUnavailable",
+    "assistant_repository",
+    "THREADS_DDL",
+    "MESSAGES_DDL",
 ]

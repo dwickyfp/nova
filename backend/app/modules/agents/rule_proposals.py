@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_RULE_PROPOSALS (
     reviewed_by VARCHAR(128) NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
+    ,proposal_kind VARCHAR(32) DEFAULT 'metric'
+    ,details JSON
 ) PRIMARY KEY(proposal_id)
 DISTRIBUTED BY HASH(proposal_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -56,7 +58,7 @@ _COLUMNS = (
     "proposal_id", "owner_name", "agent_id", "role_name", "memory_id",
     "semantic_model_id", "metric_name", "prior_expression", "proposed_expression",
     "prior_fingerprint", "proposed_fingerprint", "status", "previewed_at",
-    "reviewed_by", "created_at", "updated_at",
+    "reviewed_by", "created_at", "updated_at", "proposal_kind", "details",
 )
 
 
@@ -65,7 +67,10 @@ def _now() -> datetime:
 
 
 def _proposal_row(row: list[Any]) -> dict[str, Any]:
-    return dict(zip(_COLUMNS, row, strict=True))
+    result = dict(zip(_COLUMNS, [*row, *(["metric", None] if len(row) == 16 else [])], strict=True))
+    if isinstance(result.get("details"), str):
+        result["details"] = json.loads(result["details"])
+    return result
 
 
 def candidate_definition(
@@ -102,16 +107,31 @@ class RuleProposalRepository:
     async def ensure_schema(self) -> None:
         await db.execute_system(PROPOSALS_DDL)
         await db.execute_system(VERSIONS_DDL)
+        from app.common.nova_system import _column_exists
+
+        for column, definition in (
+            ("proposal_kind", "VARCHAR(32) DEFAULT 'metric'"), ("details", "JSON"),
+        ):
+            if not await _column_exists("CONFIG_AGENT_RULE_PROPOSALS", column):
+                try:
+                    await db.execute_system(
+                        "ALTER TABLE NOVA_SYSTEM.CONFIG_AGENT_RULE_PROPOSALS "
+                        f"ADD COLUMN {column} {definition}"
+                    )
+                except Exception:
+                    if not await _column_exists("CONFIG_AGENT_RULE_PROPOSALS", column):
+                        raise
 
     async def create(self, fields: dict[str, Any]) -> dict[str, Any]:
-        proposal_id = str(uuid4())
+        proposal_id = fields.get("proposal_id") or str(uuid4())
         now = _now()
         values = [
             proposal_id, fields["owner_name"], fields["agent_id"], fields["role_name"],
             fields["memory_id"], fields["semantic_model_id"], fields["metric_name"],
             fields["prior_expression"], fields["proposed_expression"],
             fields["prior_fingerprint"], fields["proposed_fingerprint"], "pending",
-            None, None, now, now,
+            None, None, now, now, fields.get("proposal_kind", "metric"),
+            json.dumps(fields.get("details")) if fields.get("details") is not None else None,
         ]
         await db.execute_system(
             "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_RULE_PROPOSALS ("
@@ -119,7 +139,7 @@ class RuleProposalRepository:
             + ") VALUES (" + ", ".join(["%s"] * len(_COLUMNS)) + ")",
             values,
         )
-        return dict(zip(_COLUMNS, values, strict=True))
+        return _proposal_row(values)
 
     async def get(self, proposal_id: str, *, owner_name: str, role_name: str) -> dict | None:
         result = await db.execute_system(

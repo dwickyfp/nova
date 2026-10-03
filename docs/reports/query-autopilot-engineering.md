@@ -120,14 +120,15 @@ cohort stopped with `history_window_expired`; previous measurements remain retai
 
 The final runner `nova-autopilot-pipeline9-acceptance` used the unit56 source
 against `autopilot_snapshot_fresh_20261003`, generated from the nine-table CI
-fixture. It remains running across chat turns. Output and checkpoints are in
+fixture. It stopped after a window expired and restored queue configuration.
+Output and checkpoints are in
 `/tmp/nova-autopilot-pipeline9`. It uses actual wall-clock observations; no
 observation timestamp is changed. Initial collection reserves ten minutes of
 window headroom, and comparison waits for the final second-batch sample as well
 as the completed previous window. Interrupted fixture runs restored their queue
 configuration; their normal observations remain in history. Four unit failures
 exposed a recursive window-anchor edit; the corrected complete suite passes
-5,059 tests. This new live acceptance is still pending.
+5,059 tests. This live attempt failed; full acceptance remains incomplete.
 
 
 
@@ -319,3 +320,23 @@ The user explicitly authorized commit/push despite the disclosed open live gates
 Acceptance completion remains blocked. Retained attempts document failures; they
 are not passing evidence. Runner9 restored configuration after collecting 80
 observations with zero drops and failed batches, then reported `history_window_expired`.
+
+## Code delivery on 2026-10-03
+
+The user explicitly requested committing all code and pushing despite the
+previously disclosed live acceptance limitations. SQL hardening `6f897d8`,
+default LLM configuration `7d409b6`, Intelligence `3843ff1`, and Query Autopilot
+`3a0a5be` are separate commits. Both feature branches have been pushed.
+
+The integrated source passes 5,243 backend unit tests with 55% coverage, 270 eval
+trajectories, the 48/48 scenario and 165/165 check scorecard, changed-file Ruff,
+the user-data boundary checker, grammar pin/drift and byte-identical regeneration.
+Frontend lint and build pass; all 970 tests in 125 files pass with 46.13% line
+coverage. One earlier component run failed with an unstable locator; the full
+integrated rerun passes. Seeded real-engine integration is still running.
+
+The integration preserves both domains, resolves only a provider-test formatting
+conflict, and excludes generated coverage files. No stored deployment credentials
+are included. Source hashes confirm the tested code and configuration have not
+changed during validation. Live Query Autopilot acceptance remains incomplete;
+the explicit delivery exception does not count failed attempts as passing.

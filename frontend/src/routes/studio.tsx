@@ -15,7 +15,8 @@ import { useAuthStore } from '@/stores/auth-store'
 const searchSchema = z.object({
   agent: z.string().optional(),
   thread: z.string().optional(),
-  view: z.enum(['chat', 'artifacts', 'dashboards', 'shared', 'capabilities']).optional(),
+  view: z.enum(['chat', 'artifacts', 'dashboards', 'shared', 'capabilities', 'news', 'decisions']).optional(),
+  item: z.string().max(64).optional(),
 })
 
 export const Route = createFileRoute('/studio')({

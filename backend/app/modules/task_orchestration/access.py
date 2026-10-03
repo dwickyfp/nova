@@ -16,6 +16,9 @@ def is_task_admin(user: dict[str, Any]) -> bool:
 
 
 def owns_task(task: dict[str, Any], user: dict[str, Any]) -> bool:
+    if (task.get("handler") or "sql") != "sql":
+        return (task.get("created_by") == user.get("username")
+                and task.get("owner_role") == user.get("active_role"))
     role = task.get("owner_role")
     if role:
         return role == user.get("active_role")

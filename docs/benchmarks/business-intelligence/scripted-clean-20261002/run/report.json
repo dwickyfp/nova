@@ -1,0 +1,76 @@
+{
+  "manifest_sha256": "2a5e6ef43ba26603b258aca27ed9e807c226af76dc3d165c33cb48a78d44551a",
+  "provider": {
+    "mode": "scripted",
+    "provider_id": "scripted-bi",
+    "model": "scripted-pipeline-v1",
+    "transport_fingerprint": "3d1889a36d2df8f4506c1172d1c2e168dde9916b41e077342d7e893eb36217fb",
+    "capabilities": {
+      "supports_tools": true,
+      "supports_tool_choice": false,
+      "supports_required_tool": false,
+      "supports_strict_tool_schema": false,
+      "supports_json_schema": false,
+      "supports_structured_output": false,
+      "supports_parallel_tool_calls": false,
+      "supports_tool_role_messages": true,
+      "context_window": 32000,
+      "preferred_temperature_controls": false,
+      "supports_prompt_cache_key": false,
+      "reasoning_effort": null,
+      "benchmark_memory_retrieval": "lexical"
+    },
+    "max_output_tokens": 2048
+  },
+  "repetitions": 1,
+  "status": "interrupted",
+  "stages": {
+    "B0": {
+      "cases": 60,
+      "dimensions": {
+        "answer_accuracy": {
+          "value": 0.0,
+          "scored": 20,
+          "unavailable": 40,
+          "confidence_interval_95": [
+            0,
+            0.16112515805281938
+          ]
+        },
+        "plan_accuracy": {
+          "value": 0.0,
+          "scored": 20,
+          "unavailable": 40,
+          "confidence_interval_95": [
+            0,
+            0.16112515805281938
+          ]
+        },
+        "rule_accuracy": {
+          "value": 0.0,
+          "scored": 20,
+          "unavailable": 40,
+          "confidence_interval_95": [
+            0,
+            0.16112515805281938
+          ]
+        }
+      },
+      "consistency": null,
+      "flaky_cases": [],
+      "brier": null,
+      "latency_ms": {
+        "p50": 13128.985687493696,
+        "p95": 16396.518569077307
+      },
+      "tokens": 0,
+      "tokens_unavailable": 0,
+      "provider_calls": 0,
+      "provider_calls_unavailable": 60
+    }
+  },
+  "evidence_type": "scripted_pipeline",
+  "empirical_llm_improvement": null,
+  "manual_review_required": true,
+  "failure_type": "CancelledError"
+}

@@ -17,7 +17,9 @@ vi.mock("@/components/layout/header", () => ({
 }));
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete: vi.fn() }));
-vi.mock("@/lib/api-client", () => ({ api: mocks }));
+vi.mock("@/lib/api-client", async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/api-client')>(), api: mocks,
+}));
 
 function renderIntelligence(section: "entities" | "search" | "semantic" | "features" = "search", semanticViewId?: string) {
   return render(

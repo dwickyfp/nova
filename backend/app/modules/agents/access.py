@@ -9,8 +9,9 @@ What is resolved:
 * **Semantic Views bound to the agent** → the active version and its sources;
 * **the agent's database** → ``USAGE`` on that database (needed to run queries).
 
-No native StarRocks object grant is consulted. StarRocks roles are session
-markers in full Ranger mode and would be a misleading authorization source.
+In Ranger mode only policy authorization establishes data access. Explicit
+native-RBAC mode probes resources with the caller and checks native function
+USAGE grants without invoking functions.
 """
 
 from __future__ import annotations
@@ -66,12 +67,41 @@ def matches_object(grants: list[str], kind: str, name: str) -> bool:
     return False
 
 
+def _native_function_usage(grants: list[str], name: str) -> bool:
+    """Admit only explicit USAGE grants for a matching native function scope."""
+    database, separator, function = name.lower().partition(".")
+    if not separator:
+        return False
+    for line in grants:
+        text = line.replace("`", "").strip().lower()
+        matched = re.fullmatch(
+            (
+                "grant (usage|all(?: privileges)?) on (?:function|functions) "
+                "([a-z0-9_$.]+)(?:\\([^)]*\\))? to role [a-z0-9_$]+"
+            ),
+            text,
+        )
+        if matched and matched[2] == name.lower():
+            return True
+        matched = re.fullmatch(
+            (
+                "grant (usage|all(?: privileges)?) on all functions in database "
+                "([a-z0-9_$]+) to role [a-z0-9_$]+"
+            ),
+            text,
+        )
+        if matched and matched[2] == database:
+            return True
+    return False
+
+
 async def _show_grants(
     *,
     username: str,
     encrypted_password: str,
     role: str | None,
     session_id: str | None,
+    security_context_version: int = 1,
 ) -> list[str]:
     """Read the role's grants from the engine, on the caller's connection."""
     from app.modules.query.service import query_service
@@ -83,12 +113,13 @@ async def _show_grants(
             username=username,
             encrypted_password=encrypted_password,
             database=None,
-            role=None,
+            role=role,
             session_id=session_id,
+            security_context_version=security_context_version,
             max_rows=1000,
         )
         if result.error:
-            logger.warning("Verify Access: grants read failed: %s", result.error)
+            logger.warning("Verify Access: grants read failed")
             return []
         return _grant_rows(result.rows)
     except Exception:  # noqa: BLE001 - a failed read is reported as unknown
@@ -166,6 +197,7 @@ async def verify_access(
     username: str,
     encrypted_password: str,
     session_id: str | None,
+    security_context_version: int = 1,
 ) -> list[AccessItem]:
     """Check every agent dependency against Ranger policy state."""
     from app.modules.access_control.service import access_control_service
@@ -183,6 +215,7 @@ async def verify_access(
                     "encrypted_password": encrypted_password,
                     "active_role": role_name,
                     "session_id": session_id,
+                    "security_context_version": security_context_version,
                 },
             )
             available = (
@@ -211,6 +244,7 @@ async def verify_access(
                     "encrypted_password": encrypted_password,
                     "active_role": role_name,
                     "session_id": session_id,
+                    "security_context_version": security_context_version,
                 },
                 agent_id=agent.get("agent_id"),
             )
@@ -221,8 +255,53 @@ async def verify_access(
                     granted=view is not None,
                     detail=(
                         "Published Semantic View is accessible"
-                        if view else "Semantic View is unavailable"
+                        if view
+                        else "Semantic View is unavailable"
                     ),
+                )
+            )
+            continue
+        from app.core.config import settings
+
+        if not settings.RANGER_ENABLED:
+            from app.modules.query.service import query_service
+
+            parts = name.split(".")
+            if not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", part) for part in parts):
+                items.append(
+                    AccessItem(kind=kind, name=name, granted=False, detail="Invalid resource name")
+                )
+                continue
+            quoted = ".".join(f"`{part}`" for part in parts)
+            if kind == "function":
+                grants = await _show_grants(
+                    username=username,
+                    encrypted_password=encrypted_password,
+                    role=role_name,
+                    session_id=session_id,
+                    security_context_version=security_context_version,
+                )
+                granted = _native_function_usage(grants, name)
+            else:
+                result = await query_service.execute(
+                    sql=f"SELECT * FROM {quoted} LIMIT 1" if kind == "table" else "SELECT 1",
+                    username=username,
+                    encrypted_password=encrypted_password,
+                    database=parts[-2] if kind == "table" else name,
+                    role=role_name,
+                    session_id=session_id,
+                    security_context_version=security_context_version,
+                    max_rows=1,
+                )
+                granted = result.error is None
+            items.append(
+                AccessItem(
+                    kind=kind,
+                    name=name,
+                    granted=granted,
+                    detail="Native-RBAC permission check passed"
+                    if granted
+                    else "Native-RBAC permission denied",
                 )
             )
             continue
@@ -254,13 +333,15 @@ async def access_fingerprint(agent: dict) -> str:
         active_version = view.get("active_version") if view else None
         version = (
             await semantic_view_service._version(view_id, active_version)
-            if active_version else None
+            if active_version
+            else None
         )
         versions.append((view_id, active_version, version.get("fingerprint") if version else None))
     # Loop limits (``budget_profile``) change cost, not what the agent can read,
     # so they do not invalidate a verified grant.
     configured = {
-        key: value for key, value in agent.items()
+        key: value
+        for key, value in agent.items()
         if key not in {"created_at", "config_revision", "resource_bindings", "budget_profile"}
     }
     resources = agent.get("resource_bindings") or {}
@@ -295,6 +376,7 @@ async def has_verified_access(agent: dict, *, role_name: str, user: dict) -> boo
                 username=user["username"],
                 encrypted_password=user.get("encrypted_password", ""),
                 session_id=user.get("session_id"),
+                security_context_version=int(user.get("security_context_version") or 1),
             )
             return all(item.granted for item in items)
         except Exception:  # noqa: BLE001 - an errored check is unavailable, never a denial

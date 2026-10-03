@@ -65,7 +65,6 @@ from app.modules.agents.instructions import (
 from app.modules.agents.memory import (
     memory_prompt,
     memory_repository,
-    remember_user_message,
     select_relevant_memories,
 )
 from app.modules.agents.repository import AgentMetadataUnavailable, agent_repository
@@ -97,6 +96,7 @@ from app.modules.agents.schemas import (
     VerifiedQueryView,
 )
 from app.modules.agents.semantic.access import bound_view_ids
+from app.modules.agents.semantic.serialize import to_ossie_document
 from app.modules.agents.service import BUDGET_PROFILES, agent_service, loop_limits
 from app.modules.agents.skill_author import SKILL_AUTHOR_ID, skill_author_config
 from app.modules.agents.skill_catalog import is_builtin_skill_id, merge_skill_rows
@@ -195,6 +195,8 @@ KNOWN_TOOLS = {
     "feature_lookup",
     "data_to_chart",
     "diagnose_change",
+    "context_graph",
+    "decision_lab",
     "ml_execute",
 }
 
@@ -869,8 +871,20 @@ async def list_rule_proposals(model_id: str, user: dict = Depends(get_current_us
     rows = await rule_proposal_repository.list(
         owner_name=owner, role_name=role, semantic_model_id=model_id
     )
+    visible = []
+    for row in rows:
+        if row.get("proposal_kind") == "autopilot":
+            from app.modules.intelligence.autopilot import _proposal
+
+            try:
+                await _proposal(model_id, row["proposal_id"], user)
+            except HTTPException as exc:
+                if exc.status_code in {403, 404, 409}:
+                    continue
+                raise
+        visible.append(row)
     return RuleProposalListResponse(
-        proposals=[RuleProposalView(**row) for row in rows], count=len(rows)
+        proposals=[RuleProposalView(**row) for row in visible], count=len(visible)
     )
 
 
@@ -888,6 +902,10 @@ async def _pending_rule_proposal(model_id: str, proposal_id: str, user: dict) ->
         raise HTTPException(status_code=404, detail="Rule proposal not found")
     if proposal["status"] != "pending":
         raise HTTPException(status_code=409, detail="Rule proposal is no longer pending")
+    if proposal.get("proposal_kind") == "autopilot":
+        from app.modules.intelligence.autopilot import _proposal
+
+        await _proposal(model_id, proposal_id, user)
     return proposal, model
 
 
@@ -904,6 +922,8 @@ async def preview_rule_proposal(
     from app.modules.query.service import query_service
 
     proposal, model = await _pending_rule_proposal(model_id, proposal_id, user)
+    if proposal.get("proposal_kind") == "autopilot":
+        raise HTTPException(status_code=422, detail="Use the Autopilot preview operation")
     try:
         _, _, prior_fp, proposed_fp, old_sql, new_sql = candidate_definition(
             model.get("definition") or {},
@@ -983,6 +1003,8 @@ async def approve_rule_proposal(
     )
 
     proposal, model = await _pending_rule_proposal(model_id, proposal_id, user)
+    if proposal.get("proposal_kind") == "autopilot":
+        raise HTTPException(status_code=422, detail="Use the Autopilot approval operation")
     if proposal["previewed_at"] is None:
         raise HTTPException(status_code=409, detail="Preview the impact before approval")
     active_fingerprint = SemanticModelIR.from_ossie(model["definition"]).fingerprint
@@ -1031,7 +1053,9 @@ async def approve_rule_proposal(
     else:
         draft = await semantic_view_service.add_version(
             model_id,
-            SemanticViewVersionCreate(definition=json.dumps(candidate, ensure_ascii=False)),
+            SemanticViewVersionCreate(definition=json.dumps(
+                to_ossie_document(candidate), ensure_ascii=False,
+            )),
             user,
         )
         version = draft["version"]
@@ -1683,9 +1707,12 @@ async def list_agent_memories(
         offset=offset,
     )
     has_more = len(memories) > page_size
+    from app.modules.agents.memory import governed_memories
+
+    visible = await governed_memories(memories[:page_size], user)
     return {
-        "memories": memories[:page_size],
-        "count": min(len(memories), page_size),
+        "memories": visible,
+        "count": len(visible),
         "next_offset": offset + page_size if has_more else None,
     }
 
@@ -1769,6 +1796,8 @@ async def create_agent_thread(
         workspace_file_id=body.workspace_file_id,
         agent_id=agent_id,
     )
+    if not body.learning_enabled:
+        await assistant_repository.disable_learning(thread["thread_id"], user_name=user["username"])
     thread_store.register(
         thread_id=thread["thread_id"],
         user_name=user["username"],
@@ -1833,7 +1862,9 @@ async def update_message_feedback(
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Message not found")
-    if body.feedback == "like":
+    if body.feedback == "like" and await assistant_repository.learning_enabled(
+        thread_id, user_name=user["username"]
+    ):
         await _propose_verified_queries(agent, agent_id, thread_id, message_id, user)
     await write_audit_log(
         event_type="ASSISTANT",
@@ -2302,6 +2333,8 @@ async def send_agent_message(
     agent = await _require_agent(agent_id, user)
     user_name = user["username"]
     thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
+    learning_enabled = agent_id != SKILL_AUTHOR_ID and await assistant_repository.learning_enabled(
+        thread_id, user_name=user_name)
     if agent_id in SMART_AGENT_IDS:
         if attachments:
             raise HTTPException(status_code=422, detail="Smart does not yet support attachments")
@@ -2320,6 +2353,8 @@ async def send_agent_message(
                 role="user",
                 content=body.content,
                 security_context=stamp,
+                agent_id=agent_id,
+                learning_enabled=learning_enabled,
             )
             if thread_row["title"] in {"New chat", "New conversation"}:
                 await assistant_repository.rename_thread(
@@ -2384,6 +2419,15 @@ async def send_agent_message(
                 role_name=security.active_role,
             )
             selected = await select_relevant_memories(memories, body.content)
+            from app.modules.agents.memory import governed_memories, shared_memories
+
+            selected = await governed_memories(selected, user)
+            try:
+                selected.extend(await select_relevant_memories(
+                    await shared_memories(agent_id, user), body.content,
+                ))
+            except Exception as exc:
+                logger.warning("Could not load shared knowledge: %s", type(exc).__name__)
             if selected:
                 system_prompt += "\n\n" + memory_prompt(selected)
         except Exception as exc:
@@ -2419,6 +2463,8 @@ async def send_agent_message(
         content=body.content,
         security_context=stamp,
         attachments=attachments,
+        agent_id=agent_id,
+        learning_enabled=learning_enabled,
     )
     if attachments:
         await write_audit_log(
@@ -2517,7 +2563,6 @@ async def send_agent_message(
         reply_stamp = stamp
         reply_message_id = str(uuid4())
         done_frame: str | None = None
-        finish_reason: str | None = None
         try:
             async for frame in loop.run(
                 thread=runtime,
@@ -2536,7 +2581,6 @@ async def send_agent_message(
                 if frame.startswith(f"event: {events.EVENT_DONE}\n"):
                     payload = json.loads(frame.split("data: ", 1)[1])
                     reply_message_id = payload["message_id"]
-                    finish_reason = payload.get("finish_reason")
                     done_frame = frame
                     continue
                 yield frame
@@ -2584,35 +2628,6 @@ async def send_agent_message(
                     )
                 except Exception:
                     logger.exception("Could not persist the agent reply")
-            if (
-                finish_reason
-                in {
-                    "stop",
-                    "error",
-                    "required_capability_incomplete",
-                    "required_capability_unavailable",
-                }
-                and agent_id != SKILL_AUTHOR_ID
-            ):
-                # Memory extraction is a model call; it must not hold the
-                # answer's ``done`` frame, so it runs after the turn is released.
-                _run_in_background(
-                    asyncio.wait_for(
-                        remember_user_message(
-                            user_name=user_name,
-                            agent_id=agent_id,
-                            role_name=security.active_role,
-                            thread_id=thread_id,
-                            message=body.content,
-                            provider_id=body.provider_id or agent.get("model_provider_id"),
-                            model=body.model or agent.get("model_name"),
-                            provider=assistant_provider,
-                            session_id=user.get("session_id"),
-                        ),
-                        timeout=15.0,
-                    ),
-                    label="agent memory",
-                )
         if done_frame is not None:
             yield done_frame
 

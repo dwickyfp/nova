@@ -17,6 +17,8 @@ class MLTask(StrEnum):
     FORECAST = "forecast"
     ANOMALY_DETECTION = "anomaly_detection"
     CLUSTERING = "clustering"
+    SIMULATION = "simulation"
+    ANALYSIS = "analysis"
 
 
 class MLMode(StrEnum):

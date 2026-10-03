@@ -1,3 +1,4 @@
+import { useAuthStore } from '@/stores/auth-store'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -8,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ContextInspector } from './context-inspector'
+import { AutopilotPanel } from './autopilot-panel'
 import { semanticViewsApi, type SemanticExpression,
   type SemanticPreview, type SemanticViewDetail, type SemanticVersion } from './semantic-views-api'
 
@@ -197,6 +200,7 @@ export function SemanticViewDetailPanel({ view, version, onVersionCreated }: {
   onVersionCreated: (version: number) => void
 }) {
   const queryClient = useQueryClient()
+  const epoch = useAuthStore((state) => state.securityEpoch)
   const [question, setQuestion] = useState('')
   const [preview, setPreview] = useState<SemanticPreview | null>(null)
   const [previewQuestion, setPreviewQuestion] = useState('')
@@ -228,7 +232,7 @@ export function SemanticViewDetailPanel({ view, version, onVersionCreated }: {
     onError: (error: Error) => toast.error(error.message),
   })
   const quality = useQuery({
-    queryKey: ['intelligence', 'semantic', view.id, 'quality', version.version],
+    queryKey: ['intelligence', 'semantic', view.id, 'quality', version.version, epoch],
     queryFn: () => semanticViewsApi.quality(view.id, version.version),
     enabled: activeTab === 'quality',
   })
@@ -243,7 +247,15 @@ export function SemanticViewDetailPanel({ view, version, onVersionCreated }: {
       <TabsTrigger value='definition'>Definition</TabsTrigger>
       <TabsTrigger value='quality'>Quality</TabsTrigger>
       <TabsTrigger value='verified'>Verified questions</TabsTrigger>
+      <TabsTrigger value='context'>Context Graph</TabsTrigger>
+      <TabsTrigger value='autopilot'>Autopilot</TabsTrigger>
     </TabsList>
+    <TabsContent value='context' className='mt-0 min-w-0'>
+      <ContextInspector semantic={{ view_id: view.id, version: version.version, fingerprint: version.fingerprint }} />
+    </TabsContent>
+    <TabsContent value='autopilot' className='mt-0 min-w-0'>
+      <AutopilotPanel view={view} version={version} onVersionCreated={onVersionCreated} />
+    </TabsContent>
     <TabsContent value='definition' className='mt-0 min-w-0'>
       <DefinitionDetail view={view} version={version} />
     </TabsContent>

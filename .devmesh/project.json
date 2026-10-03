@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "projectId": "proj_1ce3eb23-46f6-42cc-9457-7a7dafe02571",
+  "projectName": "Nova",
+  "repository": {
+    "root": "."
+  },
+  "collaboration": {
+    "enabled": true,
+    "defaultMode": "smart"
+  }
+}

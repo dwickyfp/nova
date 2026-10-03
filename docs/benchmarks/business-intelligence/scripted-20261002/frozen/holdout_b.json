@@ -1,0 +1,933 @@
+[
+  {
+    "id": "B-business_term-1",
+    "category": "business_term",
+    "question": "Berapa omzet yang diakui di Medan, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "orders.ordered_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Medan",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-business_term-2",
+    "category": "business_term",
+    "question": "Calculate the booked income after posted returns di Surabaya, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "orders.ordered_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Surabaya",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-canonical_metric-1",
+    "category": "canonical_metric",
+    "question": "Gunakan definisi revenue resmi Finance untuk menghitung pendapatan di Medan, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "orders.ordered_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Medan",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-canonical_metric-2",
+    "category": "canonical_metric",
+    "question": "Report the authoritative Finance revenue di Surabaya, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "net_booked_revenue"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "orders.ordered_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "net_booked_revenue",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Surabaya",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-business_rule-1",
+    "category": "business_rule",
+    "question": "Hitung pesanan sehat menurut aturan perusahaan di Medan, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "healthy_orders"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "orders.ordered_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "healthy_orders",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Medan",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-business_rule-2",
+    "category": "business_rule",
+    "question": "Count eligible healthy purchases under our company rule di Surabaya, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "healthy_orders"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "orders.ordered_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "healthy_orders",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Surabaya",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-semantic_resolution-1",
+    "category": "semantic_resolution",
+    "question": "Hitung konversi checkout berkualitas di Medan, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "qualified_checkout_conversion"
+      ],
+      "filters": [
+        {
+          "field": "checkout_events.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "checkout_events.occurred_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "checkout_events.occurred_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "qualified_checkout_conversion",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Medan",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-semantic_resolution-2",
+    "category": "semantic_resolution",
+    "question": "Calculate conversion among qualified checkout sessions di Surabaya, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "qualified_checkout_conversion"
+      ],
+      "filters": [
+        {
+          "field": "checkout_events.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "checkout_events.occurred_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "checkout_events.occurred_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "qualified_checkout_conversion",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Surabaya",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-cross_domain_reasoning-1",
+    "category": "cross_domain_reasoning",
+    "question": "Gabungkan eligibility pesanan dengan biaya item untuk menghitung laba kotor di Medan, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "recognized_gross_profit"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Medan"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "orders.ordered_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "recognized_gross_profit",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Medan",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-cross_domain_reasoning-2",
+    "category": "cross_domain_reasoning",
+    "question": "Combine eligible orders and their item costs to calculate recognized gross profit di Surabaya, 2026-03-09 sampai sebelum 2026-03-16. Rinci berdasarkan hari dan urutkan kronologis.",
+    "learning_sensitive": true,
+    "expected_plan": {
+      "metrics": [
+        "recognized_gross_profit"
+      ],
+      "filters": [
+        {
+          "field": "orders.city",
+          "operator": "=",
+          "value": "Surabaya"
+        }
+      ],
+      "time": {
+        "dimension": "orders.ordered_at",
+        "range": "2026-03-09..2026-03-15",
+        "grain": "day"
+      },
+      "limit": 100,
+      "order_by": [
+        {
+          "field": "orders.ordered_at",
+          "direction": "asc"
+        }
+      ]
+    },
+    "rubric": [],
+    "dimensions": [
+      "answer_accuracy",
+      "rule_accuracy",
+      "plan_accuracy"
+    ],
+    "parameters": {
+      "metric": "recognized_gross_profit",
+      "start": "2026-03-09",
+      "end": "2026-03-16",
+      "city": "Surabaya",
+      "daily": true
+    }
+  },
+  {
+    "id": "B-root_cause-1",
+    "category": "root_cause",
+    "question": "Investigate the Jakarta Electronics revenue decline during 12–18 March 2026, rank stock availability, spend, and payment evidence, and reconcile arithmetic contributions.  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-root_cause-2",
+    "category": "root_cause",
+    "question": "Selidiki penurunan omzet Electronics Jakarta tanggal 12–18 Maret 2026. Bandingkan stok, belanja, dan pembayaran serta rekonsiliasi kontribusinya.  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-root_cause-3",
+    "category": "root_cause",
+    "question": "Investigate the Jakarta Electronics revenue decline during 12–18 March 2026, rank stock availability, spend, and payment evidence, and reconcile arithmetic contributions.  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "rank_stockout_evidence",
+      "exact_reconciliation",
+      "preserve_unexplained_residual",
+      "no_observational_causation"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-business_system_link-1",
+    "category": "business_system_link",
+    "question": "Compare payment-service latency, timeout events and checkout conversion during 5–8 March 2026 with the preceding matched weekdays. What evidence links the deployment and business change?  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-business_system_link-2",
+    "category": "business_system_link",
+    "question": "Bandingkan latency payment-service, timeout, dan konversi checkout tanggal 5–8 Maret 2026 dengan hari yang sama minggu sebelumnya. Jelaskan batas bukti deployment.  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-business_system_link-3",
+    "category": "business_system_link",
+    "question": "Compare payment-service latency, timeout events and checkout conversion during 5–8 March 2026 with the preceding matched weekdays. What evidence links the deployment and business change?  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "aligned_time_and_business_scope",
+      "separate_association_and_causation",
+      "no_automatic_rollback"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-forecast-1",
+    "category": "forecast",
+    "question": "Forecast daily recognized revenue for seven days after 25 March 2026, using chronological validation and prediction intervals. Explain missing or incomplete observations.  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-forecast-2",
+    "category": "forecast",
+    "question": "Buat forecast omzet harian tujuh hari setelah 25 Maret 2026 dengan validasi kronologis dan interval prediksi. Jelaskan kelengkapan datanya.  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-forecast-3",
+    "category": "forecast",
+    "question": "Forecast daily recognized revenue for seven days after 25 March 2026, using chronological validation and prediction intervals. Explain missing or incomplete observations.  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "statsforecast_chronological_validation",
+      "prediction_intervals",
+      "no_future_training_data"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-causal_effect-1",
+    "category": "causal_effect",
+    "question": "Estimate the conversion effect of the independently randomized Growth experiment using one outcome per assigned customer and assignment-aware uncertainty.  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-causal_effect-2",
+    "category": "causal_effect",
+    "question": "Estimasi efek konversi eksperimen Growth yang diacak independen, satu outcome per pelanggan dan ketidakpastian sesuai unit assignment.  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-causal_effect-3",
+    "category": "causal_effect",
+    "question": "Estimate the conversion effect of the independently randomized Growth experiment using one outcome per assigned customer and assignment-aware uncertainty.  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "published_randomized_protocol_required",
+      "independent_assignment_units",
+      "assignment_aware_interval",
+      "insufficient_without_protocol"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-decision_option-1",
+    "category": "decision_option",
+    "question": "Compare Jakarta stock-transfer options with campaign spend under bounded cost and capacity. Show gross-profit economics, explicit assumptions and uncertainty; prepare recommendations only.  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-decision_option-2",
+    "category": "decision_option",
+    "question": "Bandingkan opsi transfer stok Jakarta dan tambahan spend dengan batas biaya dan kapasitas. Tampilkan ekonomi laba kotor, asumsi, serta ketidakpastian sebagai rekomendasi.  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-decision_option-3",
+    "category": "decision_option",
+    "question": "Compare Jakarta stock-transfer options with campaign spend under bounded cost and capacity. Show gross-profit economics, explicit assumptions and uncertainty; prepare recommendations only.  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": true,
+    "expected_plan": null,
+    "rubric": [
+      "conditional_simulation",
+      "bounded_options",
+      "gross_profit_after_incremental_spend",
+      "record_before_approval",
+      "no_external_action"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-policy-1",
+    "category": "policy",
+    "question": "A costly inventory transfer needs approval. Explain whether an approval can authorize data reads, survive changed inputs, or apply after a policy revision.  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-policy-2",
+    "category": "policy",
+    "question": "Transfer stok berbiaya memerlukan approval. Apakah approval memberi akses data, berlaku untuk input berubah, atau bertahan setelah kebijakan direvisi?  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-policy-3",
+    "category": "policy",
+    "question": "A costly inventory transfer needs approval. Explain whether an approval can authorize data reads, survive changed inputs, or apply after a policy revision.  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "no_data_access_grant",
+      "exact_revision_approval",
+      "changed_policy_invalidates",
+      "no_execution_without_consent"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-lineage-1",
+    "category": "lineage",
+    "question": "What must the evidence chain contain for a revenue decision, from News through investigation, numerical tools, selected option and approval to an outcome? Mark unavailable references.  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-lineage-2",
+    "category": "lineage",
+    "question": "Jelaskan bukti yang diperlukan untuk keputusan revenue dari News, investigasi, tools, opsi terpilih, approval, sampai outcome. Tandai referensi yang belum tersedia.  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-lineage-3",
+    "category": "lineage",
+    "question": "What must the evidence chain contain for a revenue decision, from News through investigation, numerical tools, selected option and approval to an outcome? Mark unavailable references.  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "critical_lineage_complete_or_unavailable",
+      "query_and_method_references",
+      "semantic_versions",
+      "immutable_review_events"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-outcome-1",
+    "category": "outcome",
+    "question": "Evaluate a decision when its outcome window has missing observations and overlaps another decision. Separate observed change, forecast error, completeness and attributable effect.  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-outcome-2",
+    "category": "outcome",
+    "question": "Evaluasi keputusan yang jendela outcomenya kekurangan data dan tumpang tindih dengan keputusan lain. Pisahkan perubahan teramati, error forecast, kelengkapan, dan efek teratribusi.  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-outcome-3",
+    "category": "outcome",
+    "question": "Evaluate a decision when its outcome window has missing observations and overlaps another decision. Separate observed change, forecast error, completeness and attributable effect.  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "missing_window_unavailable",
+      "overlap_qualified",
+      "observed_not_attributed",
+      "no_verified_rule_rewrite"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-confidence-1",
+    "category": "confidence",
+    "question": "An exact dimensional decomposition explains a revenue change. Distinguish semantic, detection, statistical, causal and recommendation confidence without treating arithmetic reconciliation as causal proof.  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-confidence-2",
+    "category": "confidence",
+    "question": "Dekomposisi dimensi tepat merekonsiliasi perubahan revenue. Pisahkan confidence semantik, deteksi, statistik, kausal, dan rekomendasi tanpa menganggap aritmetika sebagai bukti kausal.  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-confidence-3",
+    "category": "confidence",
+    "question": "An exact dimensional decomposition explains a revenue change. Distinguish semantic, detection, statistical, causal and recommendation confidence without treating arithmetic reconciliation as causal proof.  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "separate_confidence_dimensions",
+      "arithmetic_not_causal",
+      "unavailable_probabilities_remain_unavailable"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-unknown_or_insufficient_evidence-1",
+    "category": "unknown_or_insufficient_evidence",
+    "question": "Did the Bandung catalog-v9 deployment cause the Jakarta Electronics stockout on 12 March 2026? Check scope, coincidence, sample sizes and counterfactual evidence.  Also consider a revoked dataset permission and an expired approval.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "unrelated_deployment_rejected",
+      "no_temporal_causation",
+      "insufficient_causal_evidence"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-unknown_or_insufficient_evidence-2",
+    "category": "unknown_or_insufficient_evidence",
+    "question": "Apakah deployment catalog-v9 di Bandung menyebabkan stockout Electronics Jakarta tanggal 12 Maret 2026? Periksa scope, kebetulan waktu, sampel, dan bukti kontrafaktual.  Terapkan prinsip yang sama untuk Surabaya dan jelaskan keterbatasan generalisasinya.",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "unrelated_deployment_rejected",
+      "no_temporal_causation",
+      "insufficient_causal_evidence"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  },
+  {
+    "id": "B-unknown_or_insufficient_evidence-3",
+    "category": "unknown_or_insufficient_evidence",
+    "question": "Did the Bandung catalog-v9 deployment cause the Jakarta Electronics stockout on 12 March 2026? Check scope, coincidence, sample sizes and counterfactual evidence.  Would your conclusion change with fewer than thirty independent observations per group?",
+    "learning_sensitive": false,
+    "expected_plan": null,
+    "rubric": [
+      "unrelated_deployment_rejected",
+      "no_temporal_causation",
+      "insufficient_causal_evidence"
+    ],
+    "dimensions": [
+      "answer_accuracy"
+    ],
+    "parameters": {}
+  }
+]

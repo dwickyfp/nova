@@ -250,6 +250,9 @@ def test_cancelled_child_drawer_repairs_missing_terminal_before_replay(monkeypat
 
 @pytest.mark.asyncio
 async def test_concurrent_auto_posts_admit_only_one_root(monkeypatch) -> None:
+    monkeypatch.setattr(
+        router.assistant_repository, "learning_enabled", AsyncMock(return_value=False),
+    )
     lock = asyncio.Lock()
     active = False
 
@@ -299,6 +302,9 @@ async def test_concurrent_auto_posts_admit_only_one_root(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_auto_admission_outage_is_503_without_appending_a_message(monkeypatch) -> None:
+    monkeypatch.setattr(
+        router.assistant_repository, "learning_enabled", AsyncMock(return_value=False),
+    )
     @asynccontextmanager
     async def unavailable(_thread_id: str, _owner_name: str):
         raise AutoAdmissionUnavailable("Redis unavailable")

@@ -11,6 +11,7 @@ export interface AuthUser {
 }
 
 interface AuthState {
+  securityEpoch: number
   auth: {
     user: AuthUser | null
     setUser: (user: AuthUser | null) => void
@@ -25,26 +26,28 @@ export const useAuthStore = create<AuthState>()((set) => {
   const stored = getCookie(TOKEN_KEY)
   const initToken = stored || ''
   return {
+    securityEpoch: 0,
     auth: {
       user: null,
       setUser: (user) =>
-        set((state) => ({ ...state, auth: { ...state.auth, user } })),
+        set((state) => ({ ...state, securityEpoch: state.securityEpoch + 1, auth: { ...state.auth, user } })),
       accessToken: initToken,
       setAccessToken: (accessToken) =>
         set((state) => {
           setCookie(TOKEN_KEY, accessToken)
-          return { ...state, auth: { ...state.auth, accessToken } }
+          return { ...state, securityEpoch: state.securityEpoch + 1, auth: { ...state.auth, accessToken } }
         }),
       resetAccessToken: () =>
         set((state) => {
           removeCookie(TOKEN_KEY)
-          return { ...state, auth: { ...state.auth, accessToken: '' } }
+          return { ...state, securityEpoch: state.securityEpoch + 1, auth: { ...state.auth, accessToken: '' } }
         }),
       reset: () =>
         set((state) => {
           removeCookie(TOKEN_KEY)
           return {
             ...state,
+            securityEpoch: state.securityEpoch + 1,
             auth: { ...state.auth, user: null, accessToken: '' },
           }
         }),

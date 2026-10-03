@@ -16,6 +16,45 @@ Semantic Views are also the single semantic object selected in Agent Studio. An 
 
 Publishing a new View version changes the agent access fingerprint. Bound agents must verify access again before their next run, so a new source or formula is checked against the roles allowed to use that agent.
 
+## Intelligence lifecycle
+
+The Intelligence Engine extends these owners with Context Graph references,
+semantic monitors, News, investigations, decisions and outcome evaluation.
+Its implementation and acceptance status are tracked in
+[the delivery matrix](benchmarks/business-intelligence/delivery.md). Local
+deterministic tests and ordinary StarRocks integration do not establish patched-FE
+Ranger acceptance or live-provider improvement.
+
+Lifecycle APIs use `/api/v1/intelligence`. Graph nodes reference published
+Semantic View versions or immutable knowledge and decision revisions. Graph
+traversal checks every endpoint under the viewer's current access. Opening a
+shared decision rechecks its stored query evidence with the viewer's principal,
+active role and current session. A role match cannot substitute for that check.
+
+Monitors pin a semantic plan, observation period, baseline, sample threshold and
+materiality threshold. News records deduplicated observations; investigation
+records exact arithmetic contributions and separately labelled associations.
+Decision options retain their assumptions, numerical method, uncertainty and
+evidence before selection. Approval applies to the exact decision and policy
+revision. Inventory transfers and rollbacks remain recommendations; these APIs
+do not execute the external business action.
+
+Outcome evaluation distinguishes an open window, missing observations, complete
+observations, cancellation and supersession. Complete outcomes can produce
+private inferred knowledge with a pinned outcome revision. Outcome learning
+cannot publish a Semantic View or verify a shared business calculation.
+Effectiveness reports keep forecast error, coverage, policy compliance, timing
+and attribution separate. Monetary aggregates require the same metric, currency
+and semantic version.
+
+Apply `backend/migrations/20261001_intelligence_engine.sql` before deploying
+the compatible API and workers, then deploy Studio surfaces. New schedules are
+disabled by default. Enabling monitoring or outcome schedules requires the
+current principal's authorized role execution binding; the default cadence is
+15 minutes. Disabling a schedule stops new scheduled work and preserves its
+history. See the [learning and operating guide](benchmarks/business-intelligence/operations.md)
+for review, recovery and evaluation boundaries.
+
 ## Operations
 
 API examples below use the authenticated `/api/v1` base. Create a shared identity before a Feature View:

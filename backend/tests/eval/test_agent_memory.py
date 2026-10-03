@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -71,7 +72,9 @@ class ExtractionModel:
         return object()
 
     async def complete(self, **_kwargs):
-        return {"content": json.dumps(self.answers.pop(0), ensure_ascii=False)}
+        return {"content": json.dumps(
+            [{"speech_act": "statement", **item} for item in self.answers.pop(0)],
+            ensure_ascii=False)}
 
 
 @pytest.mark.asyncio
@@ -187,13 +190,35 @@ class RecordingDB:
 
     async def execute_system(self, sql, params=None):
         self.calls.append((" ".join(sql.split()), params))
+        if "SELECT memory_id, user_name" in sql and "WHERE memory_id" in sql:
+            return {
+                "rows": [
+                    [
+                        "memory-1",
+                        "alice",
+                        "sales",
+                        "analyst",
+                        "omzet",
+                        "Omzet adalah pembayaran lunas.",
+                        "Omzet adalah pembayaran lunas",
+                        "t1",
+                        None,
+                        None,
+                    ]
+                ]
+            }
         return {"rows": [], "affected": 1}
 
 
 @pytest.mark.asyncio
 async def test_repository_enforces_all_scope_fields_in_sql(monkeypatch):
+    @asynccontextmanager
+    async def coordinated(_key):
+        yield
+
     db = RecordingDB()
     monkeypatch.setattr(memory_module, "db", db)
+    monkeypatch.setattr(memory_module, "metadata_lock", coordinated)
     repo = AgentMemoryRepository()
     await repo.list(user_name="alice", agent_id="sales", role_name="analyst")
     await repo.delete("memory-1", user_name="alice", agent_id="sales", role_name="analyst")
@@ -208,8 +233,24 @@ async def test_repository_enforces_all_scope_fields_in_sql(monkeypatch):
         existing_id="memory-1",
     )
     for sql, params in db.calls:
-        assert "user_name = %s AND agent_id = %s AND role_name = %s" in sql
+        if sql.startswith("INSERT"):
+            columns = sql.partition("(")[2].partition(")")[0].replace(" ", "").split(",")
+            assert {"user_name", "agent_id", "role_name"}.issubset(columns)
+            bound = dict(zip(columns[:-1], params, strict=True))
+            assert bound["user_name"] == "alice"
+            assert bound["agent_id"] == "sales"
+            assert bound["role_name"] == "analyst"
+        else:
+            compact = sql.replace(" ", "")
+            assert "user_name=%sANDagent_id=%sANDrole_name=%s" in compact
         assert "alice" in params and "sales" in params and "analyst" in params
+    revision_insert = next(
+        i
+        for i, (sql, _) in enumerate(db.calls)
+        if sql.startswith("INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_MEMORY_REVISIONS")
+    )
+    projection_update = next(i for i, (sql, _) in enumerate(db.calls) if sql.startswith("UPDATE"))
+    assert revision_insert < projection_update
 
 
 @pytest.mark.asyncio
