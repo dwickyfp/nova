@@ -205,7 +205,7 @@
   },
   "persisted_pipeline": "ATTEMPT_9_FAILED_HISTORY_WINDOW_EXPIRED_CONFIGURATION_RESTORED",
   "governed_cycle": "ATTEMPT_19_SUCCESS_ACTUAL_100_REPETITIONS_COMPLETE_30_MINUTE_WINDOW",
-  "commit_push_merge": "FEATURE_BRANCHES_PUSHED_MERGE_AUTHORIZED_PENDING",
+  "commit_push_merge": "FEATURE_BRANCHES_PUSHED_MAIN_163_INTEGRATED",
   "primary_runtime": "PRIMARY_FE_HEALTHY_ORIGINAL_LIMITS_RESTORED_DEV_SH_RUNNING",
   "notes": [
     "Earlier failed attempts are retained; provider errors are not passes.",
@@ -432,7 +432,7 @@
     "frontend_tests_passed": 970,
     "frontend_files_passed": 125,
     "frontend_line_coverage_percent": 46.13,
-    "frontend_lint": "PASS_25_EXISTING_WARNINGS",
+    "frontend_lint": "PASS_24_WARNINGS",
     "frontend_build": "PASS",
     "changed_file_ruff": "PASS",
     "user_data_boundary": "PASS",
