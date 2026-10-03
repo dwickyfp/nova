@@ -29,6 +29,11 @@ from app.modules.ai_ml.decision_settings import (
     read_decision_settings,
     save_decision_settings,
 )
+from app.modules.ai_ml.default_model import (
+    DefaultModelSettings,
+    read_default_model,
+    save_default_model,
+)
 from app.modules.ai_ml.schemas import (
     AIModelCreate,
     AIModelListResponse,
@@ -72,6 +77,25 @@ def _validate_provider_endpoint(endpoint: str) -> None:
 
 
 # ── Providers ──────────────────────────────────────────────────
+
+
+@router.get("/default-model", response_model=DefaultModelSettings)
+async def get_default_model(user: dict = require_user):
+    return await read_default_model()
+
+
+@router.put("/default-model", response_model=DefaultModelSettings)
+async def update_default_model(body: DefaultModelSettings, user: dict = require_admin):
+    try:
+        result = await save_default_model(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    await write_audit_log(
+        event_type="AI_PROVIDER", user_name=user["username"], action="UPDATE",
+        object_type="DEFAULT_MODEL", object_name=body.model_id or "automatic", status="SUCCESS",
+        session_id=user.get("session_id"), active_role=user.get("active_role"),
+    )
+    return result
 
 
 @router.get("/decision-settings", response_model=DecisionSettings)
