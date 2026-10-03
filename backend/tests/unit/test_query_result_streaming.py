@@ -5,7 +5,7 @@ from app.modules.query.repository import QueryRepository
 
 
 class Cursor:
-    description = [("value",)]
+    description = [("value", 3, None, None, None, None, True)]
 
     async def __aenter__(self):
         return self
@@ -17,8 +17,8 @@ class Cursor:
         self.sql = sql
 
     async def fetchmany(self, size):
-        assert size == 2
-        return [(1,), (2,)]
+        assert size == 3
+        return [(1,), (2,), (3,)]
 
     async def fetchall(self):
         raise AssertionError("bounded result must not fetch all rows")
@@ -43,3 +43,5 @@ async def test_bounded_user_query_uses_unbuffered_cursor():
 
     assert conn.cursor_type is asyncmy.cursors.SSDictCursor
     assert result.rows == [[1], [2]]
+    assert result.truncated is True
+    assert result.row_count == 2

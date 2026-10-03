@@ -1,0 +1,50 @@
+Summary
+    QueryId: 00000000-0000-0000-0000-000000000001
+    Version: 4.1.4-4a9848e
+    State: Finished
+    TotalTime: 100ms
+        ExecutionTime: 32.551ms [Scan: 4.022ms (12.36%), Network: 0ns (0.00%), ResultDeliverTime: 0ns (0.00%), ScheduleTime: 0ns (0.00%)]
+        CollectProfileTime: 0
+        FrontendProfileMergeTime: 2.892ms
+    QueryPeakMemoryUsage: ?, QueryAllocatedMemoryUsage: 4.634 MB
+    Top Most Time-consuming Nodes:
+        1. OLAP_SCAN (id=0) : 6.031ms (80.80%)
+        2. AGGREGATION (id=1) [finalize, update]: 1.406ms (18.84%)
+        3. RESULT_SINK: 26.040us (0.35%)
+    Top Most Memory-consuming Nodes:
+    NonDefaultVariables:
+        enable_adaptive_sink_dop: false -> true
+        enable_profile: false -> true
+        enable_spill: false -> true
+        time_zone: Etc/UTC -> Asia/Jakarta
+Fragment 0
+│   BackendNum: 1
+│   InstancePeakMemoryUsage: 1.462 MB, InstanceAllocatedMemoryUsage: 4.634 MB
+│   PrepareTime: 21.410ms
+└──RESULT_SINK
+   │   TotalTime: 26.040us (0.35%) [CPUTime: 26.040us]
+   │   OutputRows: 30
+   │   SinkType: MYSQL_PROTOCAL
+   └──AGGREGATION (id=1) [finalize, update]
+      │   Estimates: [row: 30, cpu: 600000.00, memory: 360.00, network: 0.00, cost: 600720.00]
+      │   TotalTime: 1.406ms (18.84%) [CPUTime: 1.406ms]
+      │   OutputRows: 30
+      │   PeakMemory: ?, AllocatedMemory: ?
+      │   AggExprs: [sum(6: total)]
+      │   GroupingExprs: [3: store_id]
+      │   SubordinateOperators: 
+      │       LOCAL_EXCHANGE [Partition(BUCKET_SHUFFLE_HASH_PARTITIONED)]
+      │       NOOP
+      │       SPILL_PROCESS
+      └──OLAP_SCAN (id=0) 
+             Estimates: [row: 50000, cpu: 600000.00, memory: 0.00, network: 0.00, cost: 300000.00]
+             TotalTime: 6.031ms (80.80%) [CPUTime: 2.009ms, ScanTime: 4.022ms]
+             OutputRows: 50.000K (50000)
+             Table: orders
+             SubordinateOperators: 
+                 NOOP
+                 OLAP_SCAN_PREPARE
+             Detail Timers: [ScanTime = IOTaskExecTime + IOTaskWaitTime]
+                 IOTaskExecTime: 3.880ms
+                     SegmentRead: 2.740ms
+                 IOTaskWaitTime: 142.203us

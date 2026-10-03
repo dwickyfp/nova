@@ -6,6 +6,7 @@ import pytest
 from app.core.exceptions import ForbiddenSQLError
 from app.sql_frontend.analysis.analyzer import analyze
 from app.sql_frontend.analysis.effects import PlanEffects
+from app.sql_frontend.analysis.semantics import StatementSemantics, default_semantics
 from app.sql_frontend.ast.builder import ast_builders
 from app.sql_frontend.ast.statements import Statement
 from app.sql_frontend.binding.catalog import Binder
@@ -14,7 +15,12 @@ from app.sql_frontend.capabilities.starrocks import EngineCapabilities
 from app.sql_frontend.context import PlanningContext
 from app.sql_frontend.errors import SemanticError
 from app.sql_frontend.parser import parse_statement
-from app.sql_frontend.planning.execution import CompositePlan, EngineSqlPlan, NovaActionPlan
+from app.sql_frontend.planning.execution import (
+    Atomicity,
+    CompositePlan,
+    EngineSqlPlan,
+    NovaActionPlan,
+)
 from app.sql_frontend.planning.planner import SQLPlanner
 from app.sql_frontend.planning.registry import PlannerRegistry
 from app.sql_frontend.rules.registry import RuleRegistry
@@ -29,15 +35,15 @@ def statement(sql):
     [
         ("SELECT 1", {"reads_data"}, False),
         ("INSERT INTO t SELECT 1", {"reads_data", "writes_data"}, False),
-        ("UPDATE t SET x=1 WHERE x=2", {"writes_data"}, True),
-        ("DELETE FROM t WHERE x=1", {"writes_data", "deletes_rows"}, True),
+        ("UPDATE t SET x=1 WHERE x=2", {"reads_data", "writes_data", "updates_rows"}, True),
+        ("DELETE FROM t WHERE x=1", {"reads_data", "writes_data", "deletes_rows"}, True),
         ("CREATE TABLE t AS SELECT 1", {"reads_data", "writes_data", "changes_schema"}, False),
-        ("DROP TABLE t", {"changes_schema"}, True),
-        ("ALTER TABLE t DROP COLUMN x", {"changes_schema"}, True),
+        ("DROP TABLE t", {"changes_schema", "drops_objects"}, True),
+        ("ALTER TABLE t DROP COLUMN x", {"changes_schema", "drops_objects"}, True),
         ("GRANT SELECT ON db.t TO ROLE analyst", {"changes_security"}, False),
         ("SELECT * FROM @s.a.csv", {"reads_data", "external_io"}, False),
         ("EXPLAIN INSERT INTO t SELECT 1", {"reads_data"}, False),
-        ("CREATE TASK t AS INSERT INTO sink SELECT 1", {"writes_data", "changes_schema"}, False),
+        ("CREATE TASK t AS INSERT INTO sink SELECT 1", {"writes_metadata"}, False),
     ],
 )
 def test_effects_and_confirmation(sql, flags, confirmation):
@@ -110,8 +116,15 @@ async def test_unsupported_existing_options_are_rejected(sql):
 
 
 async def test_semantic_confirmation_is_enforced_independently():
+    from app.sql_frontend.context import ExecutionContext
+    from app.sql_frontend.execution.executor import SQLExecutor
+
+    plan = await SQLPlanner().plan(statement("UPDATE t SET x=1 WHERE x=2"), PlanningContext())
+    assert plan.requires_confirmation
+    engine = AsyncMock()
     with pytest.raises(ForbiddenSQLError):
-        await SQLPlanner().plan(statement("UPDATE t SET x=1 WHERE x=2"), PlanningContext())
+        await SQLExecutor(engine).execute(plan, ExecutionContext("alice"))
+    engine.assert_not_awaited()
 
 
 async def test_rules_run_once_in_order_and_cannot_reduce_effects():
@@ -120,6 +133,7 @@ async def test_rules_run_once_in_order_and_cannot_reduce_effects():
     class Rule:
         def __init__(self, name, effects):
             self.name, self.effects = name, effects
+            self.effect_bound = effects
 
         def matches(self, plan, context):
             return True
@@ -161,7 +175,8 @@ async def test_extension_requests_binding_and_capability_lowering_without_query_
                 (
                     EngineSqlPlan(sql, sql, logical.analysis.effects),
                     EngineSqlPlan("SELECT 3", "SELECT 3", PlanEffects(reads_data=True)),
-                )
+                ),
+                Atomicity.BEST_EFFORT,
             )
 
     registry = PlannerRegistry()
@@ -169,7 +184,9 @@ async def test_extension_requests_binding_and_capability_lowering_without_query_
     with pytest.raises(ValueError):
         registry.register(DummyStatement, DummyPlanner())
     dummy = DummyStatement(parse_statement("SELECT 1"))
-    planner = SQLPlanner(registry=registry)
+    semantics = default_semantics()
+    semantics.register(DummyStatement, StatementSemantics(lambda _: PlanEffects(reads_data=True)))
+    planner = SQLPlanner(registry=registry, semantics=semantics)
     context = PlanningContext(binder=Binder(catalog), capabilities=EngineCapabilities())
     plan = await planner.plan(dummy, context)
     assert plan.steps[0].engine_sql == "SELECT 1"

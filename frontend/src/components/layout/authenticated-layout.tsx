@@ -92,9 +92,10 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         username: string;
         roles: string[];
         active_role?: string | null;
+        security_context_version?: number;
         must_change_password?: boolean;
       }>("/auth/me")
-      .then(({ username, roles, active_role, must_change_password }) => {
+      .then(({ username, roles, active_role, must_change_password, security_context_version }) => {
         // A required password change gates every authenticated route. A reload
         // must not let the user skip it: drop the session and send them back to
         // sign-in, where the change flow runs.
@@ -103,7 +104,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
           window.location.href = "/sign-in";
           return;
         }
-        setUser({ username, roles, activeRole: active_role ?? null });
+        setUser({ username, roles, activeRole: active_role ?? null, securityContextVersion: security_context_version });
       });
   }, [accessToken, setUser, user]);
 

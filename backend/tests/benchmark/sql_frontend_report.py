@@ -33,6 +33,7 @@ async def report() -> dict:
     planner = SQLPlanner()
     baseline: list[float] = []
     frontend: list[float] = []
+    select_one: list[float] = []
     for iteration in range(55):
         for sql in CORPUS:
             start = time.perf_counter_ns()
@@ -48,11 +49,14 @@ async def report() -> dict:
             assert isinstance(plan, EngineSqlPlan) and plan.engine_sql == sql
             if iteration >= 5:
                 frontend.append(elapsed)
+                if sql == "SELECT 1":
+                    select_one.append(elapsed)
     return {
         "samples_per_path": len(frontend),
         "corpus_statements": len(CORPUS),
         "baseline_native_compatibility": metrics(baseline),
         "frontend_parse_build_plan": metrics(frontend),
+        "select_one_parse_build_plan": metrics(select_one),
         "median_added_us": round(statistics.median(frontend) - statistics.median(baseline), 2),
         "scope": "Warm CPU only; no binding, capability detection, secrets, audit or engine I/O",
     }

@@ -88,7 +88,10 @@ async def test_show_create_details_preserve_key_and_partition():
         "CREATE TABLE db.t (id INT NOT NULL, x INT) PRIMARY KEY(id) PARTITION BY RANGE(id) "
         "(PARTITION p1 VALUES LESS THAN ('10')) DISTRIBUTED BY HASH(id) BUCKETS 1"
     )
-    repo.execute_as_user.return_value = QueryResult(rows=[["t", ddl]])
+    repo.execute_as_user.side_effect = [
+        QueryResult(rows=[["t", ddl]]),
+        QueryResult(rows=[["id", "INT", 1, "NO", None, ""], ["x", "INT", 2, "YES", None, ""]]),
+    ]
     provider = StarRocksCatalogProvider(
         repo, ExecutionContext("alice", database="db", role="analyst"), lambda: "pw"
     )
@@ -97,6 +100,9 @@ async def test_show_create_details_preserve_key_and_partition():
     assert details.primary_key_columns == ("id",)
     assert details.partition_sql.startswith("PARTITION BY RANGE(id)")
     assert "VALUES LESS THAN ('10')" in details.partition_sql
+    assert details.columns[0].key_column and details.columns[0].partition_column
+    assert details.columns[0].auto_increment is False
+    assert details.schema_version is None
 
 
 async def test_metadata_failure_does_not_echo_engine_sql():

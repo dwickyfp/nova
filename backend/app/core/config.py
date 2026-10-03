@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -48,6 +48,8 @@ class Settings(BaseSettings):
 
     # --- Redis (session store) ---
     REDIS_URL: str = "redis://localhost:6379/0"
+
+    QUERY_AUTOPILOT_LOCAL_LOG_FIXTURES: dict[str, list[Path]] = {}
 
     SMART_MAX_AGENT_DEPTH: int = 4
     SMART_MAX_CONCURRENT_AGENTS: int = 8
@@ -253,9 +255,29 @@ class WorkspaceStorageConfig:
 
 
 @dataclass(frozen=True)
+class EngineConfig:
+    deployment_mode: str | None = None
+    feature_overrides: tuple[tuple[str, bool], ...] = ()
+
+    @classmethod
+    def from_mapping(cls, config: dict[str, Any]) -> EngineConfig:
+        from app.sql_frontend.capabilities.starrocks import validate_overrides
+
+        mode = config.get("deployment_mode")
+        if mode not in {None, "shared_data", "shared_nothing"}:
+            raise ValueError("Invalid SQL frontend engine deployment mode")
+        overrides = config.get("feature_overrides", {})
+        if not isinstance(overrides, dict):
+            raise ValueError("Engine feature overrides must be a mapping")
+        validate_overrides(overrides)
+        return cls(mode, tuple(sorted(overrides.items())))
+
+
+@dataclass(frozen=True)
 class NovaAppConfig:
     storage_connections: dict[str, StorageConnectionConfig]
     workspace: WorkspaceStorageConfig
+    engine: EngineConfig = field(default_factory=EngineConfig)
 
 
 _ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
@@ -357,7 +379,16 @@ def load_nova_app_config() -> NovaAppConfig:
     return NovaAppConfig(
         storage_connections=storage_connections,
         workspace=workspace,
+        engine=EngineConfig.from_mapping(parsed.get("sql_frontend", {}).get("engine", {})),
     )
+
+
+def reload_nova_app_config() -> NovaAppConfig:
+    from app.sql_frontend.capabilities.starrocks import capability_provider
+
+    load_nova_app_config.cache_clear()
+    capability_provider.invalidate()
+    return load_nova_app_config()
 
 
 def get_storage_connection(name: str | None) -> StorageConnectionConfig:

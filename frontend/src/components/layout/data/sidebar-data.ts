@@ -193,6 +193,11 @@ export const sidebarData: SidebarData = {
               icon: ListTodo,
             },
             {
+              title: "Query Autopilot",
+              url: "/monitoring/autopilot",
+              icon: Activity,
+            },
+            {
               title: "Query Cost",
               url: "/query-cost",
               icon: TrendingUp,

@@ -1,0 +1,275 @@
+{
+  "kind": "measured_native_engine_protocol",
+  "database": "autopilot_retail_20261001",
+  "measurements": [
+    {
+      "persona": "executive",
+      "collection_enabled": false,
+      "cycle": 0,
+      "count": 30,
+      "mean_ms": 250.71489169689207,
+      "stddev_ms": 106.33355179379282,
+      "p95_ms": 601.3786249968689,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        12,
+        1
+      ]
+    },
+    {
+      "persona": "executive",
+      "collection_enabled": true,
+      "cycle": 1,
+      "count": 30,
+      "mean_ms": 271.1920958313082,
+      "stddev_ms": 125.06968613917223,
+      "p95_ms": 621.20004199096,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        12,
+        1
+      ]
+    },
+    {
+      "persona": "executive",
+      "collection_enabled": false,
+      "cycle": 2,
+      "count": 30,
+      "mean_ms": 208.41116793550705,
+      "stddev_ms": 12.023547906597102,
+      "p95_ms": 232.7587910112925,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        12,
+        1
+      ]
+    },
+    {
+      "persona": "executive",
+      "collection_enabled": true,
+      "cycle": 3,
+      "count": 30,
+      "mean_ms": 251.79767772982208,
+      "stddev_ms": 72.0291388338178,
+      "p95_ms": 377.5649580056779,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        12,
+        1
+      ]
+    },
+    {
+      "persona": "finance",
+      "collection_enabled": false,
+      "cycle": 0,
+      "count": 30,
+      "mean_ms": 282.2182888999426,
+      "stddev_ms": 108.51317760348259,
+      "p95_ms": 576.6907920187805,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        9,
+        152
+      ]
+    },
+    {
+      "persona": "finance",
+      "collection_enabled": true,
+      "cycle": 1,
+      "count": 30,
+      "mean_ms": 517.5476638658438,
+      "stddev_ms": 253.45219167949847,
+      "p95_ms": 824.8071249981876,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        9,
+        152
+      ]
+    },
+    {
+      "persona": "finance",
+      "collection_enabled": false,
+      "cycle": 2,
+      "count": 30,
+      "mean_ms": 312.47212793192983,
+      "stddev_ms": 108.59523037494061,
+      "p95_ms": 584.7710829984862,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        9,
+        152
+      ]
+    },
+    {
+      "persona": "finance",
+      "collection_enabled": true,
+      "cycle": 3,
+      "count": 30,
+      "mean_ms": 316.18003332890413,
+      "stddev_ms": 91.16027560201283,
+      "p95_ms": 485.080416983692,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        9,
+        152
+      ]
+    },
+    {
+      "persona": "marketing",
+      "collection_enabled": false,
+      "cycle": 0,
+      "count": 30,
+      "mean_ms": 477.17413610080257,
+      "stddev_ms": 240.54032214513975,
+      "p95_ms": 857.5042079901323,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        3,
+        1
+      ]
+    },
+    {
+      "persona": "marketing",
+      "collection_enabled": true,
+      "cycle": 1,
+      "count": 30,
+      "mean_ms": 516.3406416026797,
+      "stddev_ms": 553.2786458456161,
+      "p95_ms": 850.7084999873769,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        3,
+        1
+      ]
+    },
+    {
+      "persona": "marketing",
+      "collection_enabled": false,
+      "cycle": 2,
+      "count": 30,
+      "mean_ms": 558.0775512673426,
+      "stddev_ms": 291.63645518666874,
+      "p95_ms": 1125.6655000033788,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        3,
+        1
+      ]
+    },
+    {
+      "persona": "marketing",
+      "collection_enabled": true,
+      "cycle": 3,
+      "count": 30,
+      "mean_ms": 400.0756528684481,
+      "stddev_ms": 149.70740152465797,
+      "p95_ms": 643.9598750148434,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        3,
+        1
+      ]
+    },
+    {
+      "persona": "operations",
+      "collection_enabled": false,
+      "cycle": 0,
+      "count": 30,
+      "mean_ms": 496.4980304299388,
+      "stddev_ms": 313.8840275321952,
+      "p95_ms": 1013.0385410157032,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        4,
+        12
+      ]
+    },
+    {
+      "persona": "operations",
+      "collection_enabled": true,
+      "cycle": 1,
+      "count": 30,
+      "mean_ms": 579.6970152344633,
+      "stddev_ms": 333.3853180734678,
+      "p95_ms": 1455.9927920054179,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        4,
+        12
+      ]
+    },
+    {
+      "persona": "operations",
+      "collection_enabled": false,
+      "cycle": 2,
+      "count": 30,
+      "mean_ms": 257.6469777675811,
+      "stddev_ms": 84.43520696994598,
+      "p95_ms": 395.7179170101881,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        4,
+        12
+      ]
+    },
+    {
+      "persona": "operations",
+      "collection_enabled": true,
+      "cycle": 3,
+      "count": 30,
+      "mean_ms": 331.8868582660798,
+      "stddev_ms": 165.44923435993164,
+      "p95_ms": 627.1255000028759,
+      "parameters": "paired index modulo 10",
+      "last_result_rows": [
+        4,
+        12
+      ]
+    }
+  ],
+  "mysql_cli": [
+    {
+      "persona": "executive",
+      "status": "PASS",
+      "rows": 13
+    },
+    {
+      "persona": "finance",
+      "status": "PASS",
+      "rows": 497
+    },
+    {
+      "persona": "marketing",
+      "status": "PASS",
+      "rows": 4
+    },
+    {
+      "persona": "operations",
+      "status": "PASS",
+      "rows": 44
+    }
+  ],
+  "collection": {
+    "enabled": true,
+    "queued": 0,
+    "capacity": 2048,
+    "accepted": 540,
+    "persisted": 540,
+    "dropped": 4,
+    "failed_batches": 0,
+    "sample_dropped": 0,
+    "seconds_since_flush": 39.05289820799953
+  },
+  "logical_storage_before": {
+    "rows": 4,
+    "json_bytes": 3659
+  },
+  "logical_storage_after": {
+    "rows": 544,
+    "json_bytes": 582819
+  },
+  "overhead_mean_ms": 42.68805833720154,
+  "overhead_ratio": 0.12011215692764687,
+  "ranger_acceptance": "NOT_RUN",
+  "note": "Includes paired query and drilldown round trips through QueryService; JSON bytes exclude indexes and replicas."
+}

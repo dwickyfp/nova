@@ -1,0 +1,19 @@
+{
+  "model": "deepseek-v4-1-flash",
+  "provider_id": "ce9e537c-b5cd-4727-babe-85a180e558a7",
+  "checks": {
+    "completion": {
+      "status": "PASS"
+    },
+    "streaming": {
+      "status": "PASS"
+    },
+    "tool_calling": {
+      "status": "PASS"
+    },
+    "structured_judge": {
+      "status": "PASS"
+    }
+  },
+  "passed": true
+}

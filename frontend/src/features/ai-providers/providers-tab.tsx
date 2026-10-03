@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/select'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
+import { DefaultModelControl } from './default-model-control'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -456,6 +457,7 @@ export function ProvidersTab() {
 
   return (
     <div className='space-y-4'>
+      <DefaultModelControl providers={providers} loading={loading} />
       {/* Filters */}
       <SimpleTableToolbar
         search={search}

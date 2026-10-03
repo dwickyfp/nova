@@ -1,0 +1,770 @@
+{
+  "status": "FAIL",
+  "evidence_kind": "isolated_governed_complete_cycle",
+  "database": "autopilot_gov_2286739e4521",
+  "snapshot": "autopilot_gov_2286739e4521_snapshot",
+  "fixture_rows": {
+    "sales": 1000000,
+    "customers": 200
+  },
+  "fixture_phone_type": "VARCHAR(32)",
+  "candidate_id": "governed-cycle-2286739e4521",
+  "production_actions": 0,
+  "fixture_actions": 0,
+  "expected_outcome": "SUCCESS",
+  "phase": "TRIAL_NOT_ACCEPTED",
+  "managed_storage_preflight": "PASS",
+  "fixture_security_probes": {
+    "source_filtered_sales": 500000,
+    "builder_snapshot_sales": 1000000,
+    "raw_phone_values_absent": true,
+    "builder_source_access": "DENIED"
+  },
+  "experiments": [
+    {
+      "application_definition_digest": "2cc5b742d35fe3919a03eb26ad4c11b174583f0249656de50c8e16e466fe9977",
+      "candidate_binding": "468a7d1dc8510ca5075388a4dd2df305114cd8f6a33182cc963f55d481e6d5ea",
+      "candidate_id": "governed-cycle-2286739e4521",
+      "cleanup": "verified_object_removed",
+      "enrollment_binding": "999a45593ea29a89f6370970444a89e6529611325138c3a757fe2e9cb37c7818",
+      "id": "7369ea149bfdfdc05d4434c1a05223f5ec87cb268ccf33448cabfef0866b4ba6",
+      "owned_object": {
+        "definition_digest": "9e727751b951e64138316d3cc59441898d230528ee9fdf450b4e33c2cd630b24",
+        "exists": true,
+        "identity": "26669",
+        "ready": true
+      },
+      "plan_diff": [
+        {
+          "after": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 2,
+            "operator": "EXCHANGE",
+            "ordinal": 0
+          },
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 10,
+            "operator": "EXCHANGE",
+            "ordinal": 0
+          },
+          "ordinal": 0
+        },
+        {
+          "after": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 1,
+            "operator": "Project",
+            "ordinal": 1
+          },
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 9,
+            "operator": "Project",
+            "ordinal": 1
+          },
+          "ordinal": 1
+        },
+        {
+          "after": {
+            "attributes": {
+              "rollup": "nova_ap_2286739e4521"
+            },
+            "estimates": {
+              "avgrowsize": 40,
+              "cardinality": 200
+            },
+            "node_id": 0,
+            "operator": "OlapScanNode",
+            "ordinal": 2
+          },
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 7,
+            "operator": "EXCHANGE",
+            "ordinal": 2
+          },
+          "ordinal": 2
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 5,
+            "operator": "Project",
+            "ordinal": 3
+          },
+          "ordinal": 3
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {
+              "join op": "INNER JOIN (BROADCAST)"
+            },
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 4,
+            "operator": "HASH JOIN",
+            "ordinal": 4
+          },
+          "ordinal": 4
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 2
+            },
+            "node_id": 3,
+            "operator": "EXCHANGE",
+            "ordinal": 5
+          },
+          "ordinal": 5
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {
+              "rollup": "customers"
+            },
+            "estimates": {
+              "avgrowsize": 20,
+              "cardinality": 2
+            },
+            "node_id": 0,
+            "operator": "OlapScanNode",
+            "ordinal": 6
+          },
+          "ordinal": 6
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {
+              "rollup": "sales"
+            },
+            "estimates": {
+              "avgrowsize": 15,
+              "cardinality": 1000000
+            },
+            "node_id": 1,
+            "operator": "OlapScanNode",
+            "ordinal": 7
+          },
+          "ordinal": 7
+        }
+      ],
+      "plans": {
+        "after": {
+          "hash": "9f214086967c38f174e2681e414041b3d3267e3efa03139b0783c253296edf78",
+          "operators": [
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 2,
+              "operator": "EXCHANGE",
+              "ordinal": 0
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 1,
+              "operator": "Project",
+              "ordinal": 1
+            },
+            {
+              "attributes": {
+                "rollup": "nova_ap_2286739e4521"
+              },
+              "estimates": {
+                "avgrowsize": 40,
+                "cardinality": 200
+              },
+              "node_id": 0,
+              "operator": "OlapScanNode",
+              "ordinal": 2
+            }
+          ]
+        },
+        "before": {
+          "hash": "f90225d0c4e169303ee48752874b4ca4af1426d105462e51d97059d444b855a4",
+          "operators": [
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 10,
+              "operator": "EXCHANGE",
+              "ordinal": 0
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 9,
+              "operator": "Project",
+              "ordinal": 1
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 7,
+              "operator": "EXCHANGE",
+              "ordinal": 2
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 5,
+              "operator": "Project",
+              "ordinal": 3
+            },
+            {
+              "attributes": {
+                "join op": "INNER JOIN (BROADCAST)"
+              },
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 4,
+              "operator": "HASH JOIN",
+              "ordinal": 4
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 2
+              },
+              "node_id": 3,
+              "operator": "EXCHANGE",
+              "ordinal": 5
+            },
+            {
+              "attributes": {
+                "rollup": "customers"
+              },
+              "estimates": {
+                "avgrowsize": 20,
+                "cardinality": 2
+              },
+              "node_id": 0,
+              "operator": "OlapScanNode",
+              "ordinal": 6
+            },
+            {
+              "attributes": {
+                "rollup": "sales"
+              },
+              "estimates": {
+                "avgrowsize": 15,
+                "cardinality": 1000000
+              },
+              "node_id": 1,
+              "operator": "OlapScanNode",
+              "ordinal": 7
+            }
+          ]
+        }
+      },
+      "refresh_source": null,
+      "resource_budget": null,
+      "resource_source": null,
+      "result": {
+        "after": {
+          "count": 30,
+          "mean_ms": 67.57921876851469,
+          "p95_ms": 177.62438900535926,
+          "plans": [],
+          "query_ids": [
+            "01a0fce3-0699-7907-a79b-010c92e1477d",
+            "01a0fce3-0e35-70a8-8058-32b23dc56761",
+            "01a0fce3-107c-7762-9e56-3ea017292f82",
+            "01a0fce3-1333-71a0-84dc-46d516d53dab",
+            "01a0fce3-168e-7278-90d9-5e2738c19a2d",
+            "01a0fce3-198e-7cc5-9389-8072c7da6df3",
+            "01a0fce3-1bd8-7858-a4e4-f13adc7146ed",
+            "01a0fce3-1f04-7dfa-a61b-6752ca893a25",
+            "01a0fce3-2273-7444-bfff-afe8cdf89f77",
+            "01a0fce3-2513-7b05-b493-9a69520ee395",
+            "01a0fce3-280f-7da6-beb4-154f8fd813d6",
+            "01a0fce3-29f0-7c50-ab8f-fba026a3af42",
+            "01a0fce3-2c39-708a-8f74-593d77514fad",
+            "01a0fce3-2e59-7543-9d63-b50c6025fcab",
+            "01a0fce3-30a0-7412-adc1-f536ed77036d",
+            "01a0fce3-374d-78d2-9888-e4c809366c5f",
+            "01a0fce3-3c63-72cf-bb19-42a416b7ee83",
+            "01a0fce3-3fbd-791d-bcd6-5bbd7af94fe5",
+            "01a0fce3-414f-7e47-9a27-788953c0176d",
+            "01a0fce3-4328-7f5d-878d-753d1f521f2f",
+            "01a0fce3-4568-70f8-8800-638172105cdd",
+            "01a0fce3-46dd-741e-a84f-18ebfd54b21c",
+            "01a0fce3-4b8e-770c-a489-c6d885868101",
+            "01a0fce3-509b-72b4-b66a-47045b10d4d0",
+            "01a0fce3-53e3-7d1f-a0a4-7d66c04ba711",
+            "01a0fce3-5740-784b-849e-b22b363e79df",
+            "01a0fce3-5a35-7711-90f8-9009aa3deea8",
+            "01a0fce3-5cb9-7907-9830-411d4699521c",
+            "01a0fce3-5ed5-724b-a2d8-06bd1d9c8b2e",
+            "01a0fce3-614c-7a4c-8b75-5d37b88fdd97"
+          ],
+          "resource": [
+            {
+              "cpu_ms": 24.57,
+              "execution_ms": 12.732,
+              "output_rows": 200,
+              "peak_memory_bytes": 1463812.096,
+              "queue_ms": 0,
+              "scanned_rows": 200,
+              "spill_bytes": 0
+            },
+            {
+              "cpu_ms": 18.932,
+              "execution_ms": 12.715,
+              "output_rows": 200,
+              "peak_memory_bytes": 1548746.752,
+              "queue_ms": 0,
+              "scanned_rows": 200,
+              "spill_bytes": 0
+            }
+          ],
+          "stddev_ms": 60.688373976573175
+        },
+        "before": {
+          "count": 30,
+          "mean_ms": 102.21007413347252,
+          "p95_ms": 235.16664298949763,
+          "plans": [],
+          "query_ids": [
+            "01a0fce2-9a27-7213-8809-d92505b63853",
+            "01a0fce2-a1f8-7ea8-95b1-5795c236ab89",
+            "01a0fce2-a3dc-76ae-af18-d209f6f1ff0b",
+            "01a0fce2-a65d-7fe4-b4bd-fb2bdd7c86ae",
+            "01a0fce2-a7c4-7a7f-b3fa-80ff78503e23",
+            "01a0fce2-a9a9-7a17-8b5f-e7be8628b9db",
+            "01a0fce2-ab9e-729e-8781-422b746e51dc",
+            "01a0fce2-b076-7dcb-9387-0d988c47b2ac",
+            "01a0fce2-b3fa-7ca0-920e-134bf62744df",
+            "01a0fce2-b67e-718b-87da-2a821b8b47af",
+            "01a0fce2-b852-7de5-830c-0ccddc4efe74",
+            "01a0fce2-b9d9-7a7f-ae26-1d0f261bca19",
+            "01a0fce2-bb3d-7d37-8298-a16052c1e6ee",
+            "01a0fce2-bc85-7139-925c-e32f86b56bbf",
+            "01a0fce2-bdc7-7160-9eb3-6eaac35b8f14",
+            "01a0fce2-bfdb-7eab-acef-7f57c07592b2",
+            "01a0fce2-c41e-76f2-86bf-bf93a9eff895",
+            "01a0fce2-c5ca-7bc4-a0b3-42860e28dbb7",
+            "01a0fce2-c72a-7732-a551-7d2ee91da9f5",
+            "01a0fce2-c8ba-7135-bfda-6b902d8cb1ac",
+            "01a0fce2-cb71-77c5-adbf-8e42e3eeff0c",
+            "01a0fce2-ce07-7de0-988e-c845f4944e1b",
+            "01a0fce2-d06c-73c3-a57e-852bb55934cd",
+            "01a0fce2-d239-7e8c-9ad2-ecc22ae4e9e4",
+            "01a0fce2-d3fc-724a-b123-7527db62b9eb",
+            "01a0fce2-d65e-7ad4-b3cd-ae48d3174281",
+            "01a0fce2-d8dd-7d00-8a03-bc3b7035278a",
+            "01a0fce2-da5d-7ee4-85b7-b70ae34c02ef",
+            "01a0fce2-dcb4-7043-8d31-6327afee64f8",
+            "01a0fce2-e183-7c57-a981-eaae211b10b9"
+          ],
+          "resource": [
+            {
+              "cpu_ms": 252.047,
+              "execution_ms": 120.931,
+              "max_operator_ms": 0.018001000000000003,
+              "median_operator_ms": 0.010349500000000001,
+              "operator_instance_count": 2,
+              "output_rows": 200,
+              "peak_memory_bytes": 5605687.296,
+              "queue_ms": 0,
+              "scanned_rows": 1000200,
+              "spill_bytes": 0
+            },
+            {
+              "cpu_ms": 359.874,
+              "execution_ms": 173.924,
+              "max_operator_ms": 0.030791000000000002,
+              "median_operator_ms": 0.0208225,
+              "operator_instance_count": 2,
+              "output_rows": 200,
+              "peak_memory_bytes": 6131023.872,
+              "queue_ms": 0,
+              "scanned_rows": 1000200,
+              "spill_bytes": 0
+            }
+          ],
+          "stddev_ms": 102.04280551755103
+        },
+        "controls": {
+          "after": {
+            "count": 30,
+            "mean_ms": 23.96505406650249,
+            "p95_ms": 55.36779799149372,
+            "plans": [],
+            "query_ids": [
+              "01a0fce3-0ad5-7b2e-8a2d-7106158bd5f1",
+              "01a0fce3-0eca-7704-87fe-f8f622d7583a",
+              "01a0fce3-1179-71d5-b753-896add5d2d71",
+              "01a0fce3-14e1-7f0f-88aa-8090e856bca7",
+              "01a0fce3-1744-72e1-b044-135f1648d83c",
+              "01a0fce3-1a4f-7015-8af1-661fa4e825f3",
+              "01a0fce3-1ce9-76bd-b529-402e6f5a5917",
+              "01a0fce3-2055-7e6b-96f8-f75a652f27f4",
+              "01a0fce3-231b-7248-9dc1-64784fa646d9",
+              "01a0fce3-2626-7cd0-ae25-b36a677fd916",
+              "01a0fce3-28db-7d4f-b1f7-6d73bf7bdf1d",
+              "01a0fce3-2aa4-7cbb-93f4-dc8bd751dd2e",
+              "01a0fce3-2d3f-7270-9a23-35a664541b1e",
+              "01a0fce3-2f03-70d6-88aa-98dad07de3a1",
+              "01a0fce3-311c-7d56-9d68-025ef85c9b49",
+              "01a0fce3-3949-7a5e-a849-abcd4d53fac2",
+              "01a0fce3-3d3c-7718-8adc-6199b5ccb432",
+              "01a0fce3-4059-7020-89e7-e9238a55fc10",
+              "01a0fce3-41dd-7497-8328-c79dd6abe268",
+              "01a0fce3-43b3-7270-941d-96fd9b05350c",
+              "01a0fce3-45e5-7f92-9e29-224d7af0bb0c",
+              "01a0fce3-4781-7979-aac6-ccd73fe26498",
+              "01a0fce3-4df8-7d1f-bf6f-ca12b3584582",
+              "01a0fce3-5177-7998-a197-1d0df5fdf916",
+              "01a0fce3-549f-7a9b-83b5-b51fb37b3b2e",
+              "01a0fce3-5857-7046-98ed-d3728870f796",
+              "01a0fce3-5af5-7fa4-afbb-813d1776b174",
+              "01a0fce3-5daf-7c93-9e65-536a1d876a66",
+              "01a0fce3-6043-701c-b817-a9d7411e1c4f",
+              "01a0fce3-648e-71cc-b59f-1cd921bf7f64"
+            ],
+            "resource": [
+              {
+                "cpu_ms": 3.647,
+                "execution_ms": 7.539,
+                "output_rows": 1,
+                "peak_memory_bytes": 479960.064,
+                "queue_ms": 0,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 0.952014,
+                "execution_ms": 4.774,
+                "output_rows": 1,
+                "peak_memory_bytes": 478623.744,
+                "queue_ms": 0,
+                "spill_bytes": 0
+              }
+            ],
+            "stddev_ms": 15.173011219084428
+          },
+          "before": {
+            "count": 30,
+            "mean_ms": 22.21497343465065,
+            "p95_ms": 82.19951699720696,
+            "plans": [],
+            "query_ids": [
+              "01a0fce2-9ec7-771f-9e5b-b20a72fdf015",
+              "01a0fce2-a2ef-7a60-b6bd-b4ecbb138ffa",
+              "01a0fce2-a487-7bbf-b6d5-11e2d846735d",
+              "01a0fce2-a6e6-73bf-9fb0-c472dcc044ea",
+              "01a0fce2-a860-7bfa-9e61-330417cd76f1",
+              "01a0fce2-aa82-7ad5-af90-b2f1563b1ea4",
+              "01a0fce2-ad78-709d-9708-6e63a79b1105",
+              "01a0fce2-b160-74a0-a1ea-a7147c54033d",
+              "01a0fce2-b50b-7279-9a1b-ba7f27d74396",
+              "01a0fce2-b718-7ade-88e5-76cdf5f322b1",
+              "01a0fce2-b8e7-7f2b-b5a4-af487137fc92",
+              "01a0fce2-ba77-7c21-a1ce-29c23ba9ec4b",
+              "01a0fce2-bbaf-75bf-8a28-0dffb75d5e3e",
+              "01a0fce2-bcf6-7ff0-82ba-977e7425e2ea",
+              "01a0fce2-be43-7faf-b9ff-74f4a556ac56",
+              "01a0fce2-c2e3-7170-9d53-6da35648a17c",
+              "01a0fce2-c4c9-7a4f-9bb6-6f38c4084228",
+              "01a0fce2-c63d-7388-a1a0-6ad6f3a95077",
+              "01a0fce2-c7d9-746e-81c6-09a9e6addd03",
+              "01a0fce2-c98e-7f7e-8440-05a604612af9",
+              "01a0fce2-cc07-79a0-a755-f58eae75d5c8",
+              "01a0fce2-cf04-7fe4-af74-4fd9d580f2e3",
+              "01a0fce2-d117-73aa-9460-fbbb7d1b7e46",
+              "01a0fce2-d2ca-7527-aaa9-a412ca2bfdb1",
+              "01a0fce2-d4a8-77f6-ad23-4a586970061a",
+              "01a0fce2-d768-7505-9211-2134d36708a3",
+              "01a0fce2-d96c-705d-ac38-7c4421b76f18",
+              "01a0fce2-db4e-7101-a21a-d7bd42b413ba",
+              "01a0fce2-df6c-7c13-b160-bd1b0d8a6f6f",
+              "01a0fce2-e6e3-754e-9af2-fffc094c2580"
+            ],
+            "resource": [
+              {
+                "cpu_ms": 1.419,
+                "execution_ms": 4.667,
+                "output_rows": 1,
+                "peak_memory_bytes": 483791.872,
+                "queue_ms": 0,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 1.08,
+                "execution_ms": 7.245,
+                "output_rows": 1,
+                "peak_memory_bytes": 478623.744,
+                "queue_ms": 0,
+                "spill_bytes": 0
+              }
+            ],
+            "stddev_ms": 35.04626964527641
+          }
+        },
+        "correctness": "EQUIVALENT",
+        "improvement": 0.3388203722436852,
+        "reason": "benefit_not_repeatable_or_below_threshold",
+        "repetitions": 30,
+        "result_comparison": {
+          "after_proof": {
+            "bytes_compared": 8000,
+            "digest": "24c55f2c6927ff8887d155d46b4e99c539340c206cb5517f04ae645119b5dc93",
+            "ordered": false,
+            "reason": null,
+            "row_count": 200,
+            "types": [
+              "(3, 11, 0)",
+              "(246, 42, 2)"
+            ]
+          },
+          "before_proof": {
+            "bytes_compared": 8000,
+            "digest": "24c55f2c6927ff8887d155d46b4e99c539340c206cb5517f04ae645119b5dc93",
+            "ordered": false,
+            "reason": null,
+            "row_count": 200,
+            "types": [
+              "(3, 11, 0)",
+              "(246, 42, 2)"
+            ]
+          },
+          "checked_control_samples": 60,
+          "checked_target_samples": 60,
+          "control_equivalent": true,
+          "snapshot_verified": true,
+          "target_equivalent": true
+        },
+        "snapshot": "b2673fdde745bbb730afc09149d50d30aa9c49ee9b6ae354e5bdf32cc19e92da",
+        "status": "NO_IMPROVEMENT"
+      },
+      "result_digest": "88261555d5ce576a95e79d4e111a60a31dc1486ce1fcbf14e64b5cc06220ced5",
+      "sample_id": "governed-cycle-2286739e4521-sample-0",
+      "snapshot_id": "governed-cycle-2286739e4521",
+      "state": "NO_IMPROVEMENT",
+      "trial_candidate": {
+        "approval_digest": null,
+        "approval_expires_at": null,
+        "approved_by": null,
+        "enrollment_id": "governed-cycle-2286739e4521",
+        "enrollment_version": 1,
+        "evidence_digest": "50d503632a8c57de5d12d08049dae02d5db99a79c8a9a679d1c3dc4729f3fd4c",
+        "evidence_ids": [
+          "governed-cycle-2286739e4521-sample-0"
+        ],
+        "experiment_digest": null,
+        "experiment_id": null,
+        "family_id": "b5cfc560d872184f8009f395e9a50c0a64791359cfaace4a9a0a2403580f705c",
+        "id": "governed-cycle-2286739e4521",
+        "kind": "MATERIALIZED_VIEW",
+        "owned_object": null,
+        "parameters": {
+          "name": "nova_ap_2286739e4521"
+        },
+        "policy_version": 1,
+        "proposed_at": "2026-10-02T13:51:39.441953Z",
+        "reason": null,
+        "scope": {
+          "active_role": "marketing",
+          "catalog": "default_catalog",
+          "database": "autopilot_gov_2286739e4521",
+          "policy_revision": "3:203:5",
+          "principal": "alice",
+          "security_context_version": 1,
+          "settings_hash": ""
+        },
+        "state": "VALIDATING",
+        "targets": [
+          "autopilot_gov_2286739e4521_snapshot.sales",
+          "autopilot_gov_2286739e4521_snapshot.customers"
+        ],
+        "version": 2
+      }
+    }
+  ],
+  "candidate": {
+    "id": "governed-cycle-2286739e4521",
+    "version": 2,
+    "family_id": "b5cfc560d872184f8009f395e9a50c0a64791359cfaace4a9a0a2403580f705c",
+    "scope": {
+      "principal": "alice",
+      "active_role": "marketing",
+      "security_context_version": 1,
+      "catalog": "default_catalog",
+      "database": "autopilot_gov_2286739e4521",
+      "policy_revision": "3:203:5",
+      "settings_hash": ""
+    },
+    "kind": "MATERIALIZED_VIEW",
+    "targets": [
+      "sales",
+      "customers"
+    ],
+    "evidence_ids": [
+      "governed-cycle-2286739e4521-sample-0",
+      "ranger-acceptance-c21d98d5b8e8475487f1423eb5412413"
+    ],
+    "evidence_digest": "6a52e56e7ddf083ea9b0e5f8e9543b85136a2f643d2f7b779fd11d977b6273fd",
+    "enrollment_id": "governed-cycle-2286739e4521",
+    "enrollment_version": 1,
+    "policy_version": 1,
+    "experiment_id": null,
+    "experiment_digest": null,
+    "state": "INCONCLUSIVE",
+    "reason": "benefit_not_repeatable_or_below_threshold",
+    "parameters": {
+      "name": "nova_ap_2286739e4521"
+    },
+    "proposed_at": "2026-10-02T13:51:39.441953Z",
+    "approved_by": null,
+    "approval_digest": null,
+    "approval_expires_at": null,
+    "owned_object": null
+  },
+  "ranger_acceptance": [
+    {
+      "availability": "available",
+      "cohort_id": "6d58cc948044d447a13c3b14a960962f88e14bc869070f3889f211d94fc34f0d",
+      "collected_at": "2026-10-02T13:52:36.732042Z",
+      "expires_at": "2026-10-03T13:52:36.731899Z",
+      "family_id": "b5cfc560d872184f8009f395e9a50c0a64791359cfaace4a9a0a2403580f705c",
+      "id": "ranger-acceptance-c21d98d5b8e8475487f1423eb5412413",
+      "kind": "ranger_acceptance",
+      "query_ids": [
+        "01a0fce3-6e59-7943-96bb-7be94886e167",
+        "01a0fce3-6ecf-7ec6-b377-41c3b90fdf27",
+        "01a0fce3-6f3c-74f6-b185-2ddd1147e1b9",
+        "01a0fce3-6fbc-7ea0-b2a0-ccf86ddad2e9",
+        "01a0fce3-703c-7ee2-8956-c1087b5bb948",
+        "01a0fce3-70f3-7a58-87d4-37f57e3bdaa8",
+        "01a0fce3-717f-7536-af87-d7e8a8da034d",
+        "01a0fce3-71f9-7dbb-8e08-0acd1cac13b6",
+        "01a0fce3-727e-74ba-a103-ccafda10be40",
+        "01a0fce3-737d-76db-8262-71d136becbba",
+        "01a0fce3-7440-7621-8ed2-a21aad70dad5",
+        "01a0fce3-74ba-7320-8d8a-24f41a0823d6",
+        "01a0fce3-75a5-7aed-b6a4-ad216213515d",
+        "01a0fce3-7654-7186-a19c-9b2b6cca9ed8",
+        "01a0fce3-76f4-7090-bcba-1d8991464169",
+        "01a0fce3-7793-7c2a-95fa-051b37844577",
+        "01a0fce3-7879-791d-862d-060d14c4fcd7",
+        "01a0fce3-7913-7eff-adfa-7d8f458357c5",
+        "01a0fce3-79b1-77a0-a101-9c8b7e9c0d00",
+        "01a0fce3-7a51-7c3f-a3f9-71efc372e4a4",
+        "01a0fce3-7adc-7d0d-8398-370327087310",
+        "01a0fce3-7b6e-79b8-bafd-8a49282c3029",
+        "01a0fce3-7bec-79f5-87f2-40b21d7c061d",
+        "01a0fce3-7c7e-76a0-8bc7-e020d5cb6eea",
+        "01a0fce3-7cf2-73f5-843c-f52a2710e07f",
+        "01a0fce3-7d62-77b8-b1fe-c62b87a7b977",
+        "01a0fce3-7de3-7f8d-95ad-f18fe4729921",
+        "01a0fce3-7e4e-70cc-bdec-11e26578f91c",
+        "01a0fce3-7ee7-79cc-bc14-786898b5098a",
+        "01a0fce3-7f78-77fb-9f9f-e9f100918c57",
+        "01a0fce3-8287-75d8-82f2-3184bd82ab80",
+        "01a0fce3-830e-7644-ac20-366c721b9288",
+        "01a0fce3-837d-7ad5-9522-41a780544009",
+        "01a0fce3-83e2-7e8a-a87d-a7b47ab247cc",
+        "01a0fce3-8447-714a-80b0-3cdde1292d6d",
+        "01a0fce3-8550-7848-9e3e-ad2c87e6d62d",
+        "01a0fce3-85eb-7138-bfa5-3655db779df0",
+        "01a0fce3-8652-7f5f-9474-40b0da9f5e8a",
+        "01a0fce3-86bd-7e51-b70c-63f1a95e3237",
+        "01a0fce3-871e-7464-9169-08515f2472f9",
+        "01a0fce3-8794-7a7f-b7ec-f7c4d568ad63",
+        "01a0fce3-884b-7f42-8784-a551dd4ea3bb",
+        "01a0fce3-88e5-75a0-9192-bccfc94a25e4",
+        "01a0fce3-895d-7cab-8225-a3dbfd78a470",
+        "01a0fce3-89df-7f13-bc05-2469193445f7",
+        "01a0fce3-8a8d-7c44-9f4b-d3e4c4b10111",
+        "01a0fce3-8b1f-7ca5-9e3f-e441db4afab2",
+        "01a0fce3-8b8c-7f9d-a873-800aab021942",
+        "01a0fce3-8bfa-722f-bc5e-44e284e7beed",
+        "01a0fce3-8c67-7ca5-b4d7-36468d389ba1",
+        "01a0fce3-8cd0-715d-973b-8ac2739fb97a",
+        "01a0fce3-8d46-7c65-ae78-ca951850a118",
+        "01a0fce3-8dc2-7cab-9c74-f33e552749e4",
+        "01a0fce3-8e35-7e36-a816-75d7bd9d5dc8",
+        "01a0fce3-8ea0-78ea-a582-6d0ce026cf37",
+        "01a0fce3-8f1a-77b5-86b1-2193f13ba12e",
+        "01a0fce3-8fa8-75fe-9177-fcd7c403de3b",
+        "01a0fce3-900f-7bd1-9d6b-dd9af8bc56b1",
+        "01a0fce3-9075-7f42-8ed2-b01522c0646f",
+        "01a0fce3-90e4-7d80-af78-829c6e905d00"
+      ],
+      "reason": null,
+      "source": "patched_fe_acceptance",
+      "summary": {
+        "candidate_shape": "e3ed60ce4566ccd2c9e0896e37593b9389a93f149b61cde1ec89f6773e4ca5ad",
+        "complete_result_comparisons": 60,
+        "execution_scope": {
+          "active_role": "autopilot_gov_builder",
+          "catalog": "default_catalog",
+          "database": "autopilot_gov_2286739e4521_snapshot",
+          "policy_revision": "3:203:5",
+          "principal": "nova_admin",
+          "security_context_version": 1,
+          "settings_hash": ""
+        },
+        "masking": "PASS",
+        "policy_effects_matched": true,
+        "repetitions_per_phase": 30,
+        "row_filter": "PASS",
+        "scope": {
+          "active_role": "marketing",
+          "catalog": "default_catalog",
+          "database": "autopilot_gov_2286739e4521",
+          "policy_revision": "3:203:5",
+          "principal": "alice",
+          "security_context_version": 1,
+          "settings_hash": ""
+        },
+        "semantics": "governed_result_preservation",
+        "snapshot_id": "governed-cycle-2286739e4521",
+        "snapshot_state": "b2673fdde745bbb730afc09149d50d30aa9c49ee9b6ae354e5bdf32cc19e92da",
+        "trial_object_binding": "263d94374e27b8fafff41fa97a2c56ac1990e9be87256e9e36dea329af15d10f",
+        "warmups_per_phase": 3
+      }
+    }
+  ],
+  "reason": "measured_governed_trial_not_successful"
+}

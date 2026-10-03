@@ -96,6 +96,7 @@ describe("UserAuthForm", () => {
       username: "analyst",
       roles: ["analyst"],
       activeRole: "analyst",
+      securityContextVersion: 1,
     });
     expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true });
   });

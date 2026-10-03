@@ -1,0 +1,163 @@
+{
+  "evidence_kind": "retained_real_engine_measurements",
+  "cases": [
+    {
+      "case": "A",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [
+        "high_frequency"
+      ],
+      "actual": [
+        "high_frequency"
+      ],
+      "expected_root_cause": null,
+      "diagnosis": []
+    },
+    {
+      "case": "B",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [
+        "rare_slow"
+      ],
+      "actual": [
+        "rare_slow"
+      ],
+      "expected_root_cause": null,
+      "diagnosis": []
+    },
+    {
+      "case": "F-detection",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [
+        "high_frequency",
+        "materialized_view"
+      ],
+      "actual": [
+        "high_frequency",
+        "materialized_view"
+      ],
+      "expected_root_cause": null,
+      "diagnosis": []
+    },
+    {
+      "case": "E-before",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [
+        "cardinality_error",
+        "statistics"
+      ],
+      "actual": [
+        "cardinality_error",
+        "statistics"
+      ],
+      "expected_root_cause": "CARDINALITY_ESTIMATE",
+      "diagnosis": [
+        "CARDINALITY_ESTIMATE",
+        "STATISTICS"
+      ]
+    },
+    {
+      "case": "E-after",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [],
+      "actual": [],
+      "expected_root_cause": null,
+      "diagnosis": [
+        "UNKNOWN"
+      ]
+    },
+    {
+      "case": "G-uncontended",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [
+        "high_frequency"
+      ],
+      "actual": [
+        "high_frequency"
+      ],
+      "expected_root_cause": null,
+      "diagnosis": [
+        "UNKNOWN"
+      ]
+    },
+    {
+      "case": "G-contended",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [
+        "contention"
+      ],
+      "actual": [
+        "contention"
+      ],
+      "expected_root_cause": "RESOURCE_CONTENTION",
+      "diagnosis": [
+        "RESOURCE_CONTENTION"
+      ]
+    },
+    {
+      "case": "D",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [
+        "latency_regression"
+      ],
+      "actual": [
+        "latency_regression"
+      ],
+      "expected_root_cause": null,
+      "diagnosis": []
+    },
+    {
+      "case": "D-unsustained_rejected",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [],
+      "actual": [],
+      "expected_root_cause": null,
+      "diagnosis": []
+    },
+    {
+      "case": "D-insufficient_current_rejected",
+      "status": "PASS",
+      "source": "real_native_engine",
+      "expected": [],
+      "actual": [],
+      "expected_root_cause": null,
+      "diagnosis": []
+    }
+  ],
+  "measured_cases": 10,
+  "unavailable_cases": 0,
+  "detector_counts": {
+    "true_positive": 9,
+    "false_positive": 0,
+    "false_negative": 0
+  },
+  "precision": 1.0,
+  "recall": 1.0,
+  "rca": {
+    "supported_cases": 2,
+    "top1_correct": 2,
+    "topk_correct": 2,
+    "top1": 1.0,
+    "topk": 1.0
+  },
+  "coverage": {
+    "parameter_family": "PASS",
+    "result_change_rejection": "PASS",
+    "controlled_log_fixture": "PASS"
+  },
+  "complete_acceptance": false,
+  "limitations": [
+    "Controlled log evidence is excluded from live detector and RCA denominators.",
+    "Production application, risk classification and verification remain separate gates.",
+    "The measured sample covers the declared scenarios and detector labels only."
+  ]
+}

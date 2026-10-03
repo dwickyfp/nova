@@ -1,499 +1,166 @@
-# AGENTS.md — Nova Project Guide
-
-> This file is the single source of truth for any AI agent working on Nova.
-> Read this before making any changes. Follow it strictly.
-
----
-
-## What is Nova?
-
-Nova is a **Snowflake-grade management console for StarRocks**. It provides:
-- Web UI (React + Monaco Editor) on port 8000
-- MySQL Protocol Proxy on port 4406 (any MySQL client can connect)
-- SQL Dialect Engine with `@stage` syntax
-- Storage-agnostic file management via Stages
-- ML functions (forecast, classify, anomaly detection)
-- LLM integration (AI_COMPLETE, AI_SENTIMENT, etc.)
-
-**Engine:** StarRocks 4.1.x
-**Backend:** FastAPI + Python 3.11
-**Frontend:** React / Next.js / shadcn/ui / Monaco Editor
-
----
-
-## Project Structure
-
-```
-~/public/Research/nova/
-├── docs/                          # Feature specs + architecture docs (35 files)
-│   ├── 01-overview.md             # Master overview
-│   ├── 02 ~ 27-*.md              # Feature modules
-│   ├── arch-01 ~ arch-07-*.md    # Architecture docs
-│   └── gap-analysis.md           # Missing features analysis
-│
-├── backend/                       # FastAPI application
-│   ├── pyproject.toml
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── core/                  # config.py, security.py
-│   │   ├── db/                    # starrocks.py (MySQL connector)
-│   │   ├── models/                # stage_repo.py, etc.
-│   │   ├── schemas/               # Pydantic schemas
-│   │   ├── services/              # Business logic
-│   │   ├── sql_dialect/           # Parser, translator, injector
-│   │   ├── storage/               # Provider abstraction
-│   │   ├── proxy/                 # MySQL protocol proxy
-│   │   └── api/v1/endpoints/      # HTTP API routes
-│   └── tests/
-│
-├── frontend/                      # React/Next.js app
-│   ├── app/                       # Next.js pages
-│   ├── components/                # UI components
-│   ├── lib/                       # API client, utils
-│   └── stores/                    # Zustand stores
-│
-├── nova.yaml                      # Storage connection config (git-versioned)
-└── .env                           # Secrets (git-ignored)
-```
-
----
-
-## Architecture Rules (NEVER VIOLATE)
-
-### 1. Storage-Agnostic UI
-
-**Rule:** No S3, MinIO, Azure, GCS references in any user-facing UI element.
-
-```
-❌ "Upload to s3://bucket/path"
-❌ "MinIO endpoint: http://minio:9000"
-❌ "AWS S3 credentials"
-
-✅ "Upload to @stage1"
-✅ "Browse stage1/data/"
-✅ "Storage: Production Storage" (connection name from nova.yaml)
-```
-
-### 2. Credential-Invisible
-
-**Rule:** Credentials NEVER appear in UI, API responses, or database.
-
-```
-Credentials location:
-  nova.yaml + .env → storage credentials (static, git-versioned)
-  Memory (encrypted) → StarRocks user password (per-session only)
-
-Credentials NEVER in:
-  ❌ NOVA_SYSTEM tables
-  ❌ API JSON responses
-  ❌ Frontend state
-  ❌ Logs
-  ❌ Error messages
-```
-
-### 3. Single Database
-
-**Rule:** All persistent state in StarRocks `NOVA_SYSTEM`. No SQLite, no PostgreSQL.
-
-```
-nova.yaml     → storage credentials, StarRocks connection (static)
-NOVA_SYSTEM   → everything else (config + analytics)
-```
-
-### 4. @stage Syntax is Sacred
-
-**Rule:** `@stage_name.file.csv` is the primary user-facing abstraction for file access.
-
-```
-User writes:     SELECT * FROM @stage1.data.csv
-StarRocks gets:  SELECT * FROM FILES('path'='s3://...', 'format'='csv', creds...)
-Nova rewrites:   @stage → FILES() + auto-detected format + injected credentials
-```
-
-**Access control:** Stages are schema-bound. User must have SELECT/INSERT on the parent database.schema to access stage files. See `04-stage-manager.md` for full access matrix.
-
-### 5. StarRocks = Auth Source of Truth
-
-**Rule:** Nova authenticates against StarRocks directly. No separate user table. All login users ARE StarRocks users.
-
-```
-root       → empty password, Docker internal only (FE↔BE), NOT exposed
-nova_admin → default 'nova', first login forces password change
-Others     → created by nova_admin via Nova UI or SQL
-
-Auth: pymysql.connect(user=username, password=password) → success = authenticated
-RBAC: SHOW GRANTS → UI adjusts based on privileges
-```
-
-### 6. ACCOUNTADMIN Role is Immutable SUPER USER
-
-**Rule:** The `ACCOUNTADMIN` role is the **SUPER USER** role in Nova. It has the **highest privilege level** in StarRocks and **MUST NEVER be dropped, renamed, or revoked**.
-
-**Privilege Level: MAXIMUM**
-```
--- Object-level (ALL databases, tables, views, functions)
-GRANT ALL ON *.* TO ROLE ACCOUNTADMIN WITH GRANT OPTION;
-
--- System-level (explicit — NOT covered by ALL ON *.*)
-GRANT OPERATE ON SYSTEM TO ROLE ACCOUNTADMIN;           -- cluster/node management
-GRANT CREATE RESOURCE GROUP ON SYSTEM TO ROLE ACCOUNTADMIN;  -- resource groups
-GRANT CREATE RESOURCE ON SYSTEM TO ROLE ACCOUNTADMIN;   -- external resources
-GRANT CREATE EXTERNAL CATALOG ON SYSTEM TO ROLE ACCOUNTADMIN; -- Hive, Iceberg, etc.
-GRANT REPOSITORY ON SYSTEM TO ROLE ACCOUNTADMIN;        -- backup/restore
-GRANT CREATE STORAGE VOLUME ON SYSTEM TO ROLE ACCOUNTADMIN;   -- shared-data storage
-GRANT BLACKLIST ON SYSTEM TO ROLE ACCOUNTADMIN;          -- SQL blacklists
-GRANT FILE ON SYSTEM TO ROLE ACCOUNTADMIN;               -- UDF jars, files
-GRANT SECURITY ON SYSTEM TO ROLE ACCOUNTADMIN;           -- security policies
-```
-
-**Operations blocked:**
-```
-❌ DROP ROLE ACCOUNTADMIN;
-❌ REVOKE ALL ON *.* FROM ROLE ACCOUNTADMIN;
-❌ REVOKE USAGE ON *.* FROM ROLE ACCOUNTADMIN;
-❌ REVOKE SELECT ON *.* FROM ROLE ACCOUNTADMIN;
-❌ ALTER ROLE ACCOUNTADMIN ...;
-
-✅ CREATE ROLE analyst;          ← create new roles freely
-✅ DROP ROLE analyst;            ← drop non-system roles freely
-```
-
-**Guardrails in code:**
-- Backend MUST intercept any `DROP ROLE` or `REVOKE` statement targeting `ACCOUNTADMIN` and reject it
-- Admin UI MUST NOT show a "Delete" button for `ACCOUNTADMIN`
-- `starrocks-init` creates `ACCOUNTADMIN WITH GRANT OPTION` — this cannot be recovered if dropped
-
-**Why:** `ACCOUNTADMIN` is the only role with `GRANT OPTION`. If dropped, no user can grant privileges to others, effectively locking the entire system.
-
-### 7. StarRocks Primary Key Tables for CRUD
-
-**Rule:** Low-volume config data (stages, pins, prefs) uses Primary Key tables in NOVA_SYSTEM.CONFIG.
-
-```sql
--- Primary Key = supports UPDATE/DELETE
-CREATE TABLE NOVA_SYSTEM.CONFIG.STAGES (...) PRIMARY KEY(id)
-    PROPERTIES("enable_persistent_index"="true");
-
--- Duplicate Key = append-only analytics
-CREATE TABLE NOVA_SYSTEM.AUDIT.LOG (...) PRIMARY KEY(log_id);
-```
-
-### 8. Agentic Harness (Assistant + Agent Studio)
-
-**Rule:** The agent loop is one bounded engine. Agent Studio **composes** it; it does
-not fork it. Any change to loop control flow goes in `app/modules/assistant/` and is
-covered by `tests/eval/`, not just unit tests.
-
-```
-app/modules/assistant/     ← the engine (loop, provider, consent, tools, context)
-app/modules/agents/        ← config layer: registry + prompt + semantic grounding
-tests/eval/                ← behaviour gate: scripted trajectories, no provider key
-tests/benchmark/           ← overhead gate: fake provider + fake tool
-```
-
-- **Context is finite.** Never replay an unbounded transcript. `ContextManager`
-  (`app/modules/assistant/context.py`) clears old tool results, drops the oldest
-  turns into a bounded note, and pins the system prompt plus the recent window.
-  An over-budget turn stops with `context_overflow`, never a provider error.
-- **Bounds are mandatory.** Iteration cap, wall-clock budget, per-tool cap, and a
-  per-agent context token budget (`budget_tokens`). A new tool inherits consent
-  (fail-closed) and must be added to `tool_catalog.py` to be selectable.
-- **Behaviour is tested by trajectory, not wall-clock.** A new tool, guard, or
-  termination path gets an `tests/eval/` scenario asserting tool selection,
-  consent, redaction, and the finish reason. Run
-  `uv run python -m tests.eval.report` for the scorecard.
-
-See `docs/benchmarks/nova-124-agentic-harness.md` for the design, findings, and
-measured cost.
-
-### 9. Page Viewport, Header, and Scroll
-
-**Rule:** Every Nova console page has a visible header and a viewport-bounded
-main area. The application shell and the page's content container do not grow
-with long content. Vertical scrolling belongs to the content area inside the
-page, or to a specific card/panel when that panel owns the content. Keep headers,
-toolbars, and adjacent panels outside that scroller.
-
-Use `Main scroll` for simple pages. Use `Main fixed` or `data-layout="fixed"`
-with `min-h-0`, `flex-1`, and an explicit inner scroller for multi-panel pages.
-Follow the Home page as the reference and read
-[`skills/nova-page-layout/SKILL.md`](skills/nova-page-layout/SKILL.md) whenever
-creating, changing, or reviewing a frontend page layout. Verify short and long
-content at desktop and narrow viewport widths, including the assistant panel
-when the page supports it.
-
----
-
-## Coding Conventions
-
-### Python (Backend)
-
-```python
-# Type hints always
-def find_stage(db: str, schema: str, name: str) -> Stage | None:
-    ...
-
-# Dataclasses for data models
-@dataclass
-class StorageConnectionConfig:
-    name: str
-    type: str
-    endpoint: str
-    ...
-
-# Pydantic for API schemas
-class SQLRequest(BaseModel):
-    sql: str
-    database: str = "default_catalog"
-
-# Context managers for DB connections
-with sr_connection(database) as conn:
-    with conn.cursor() as cur:
-        cur.execute(sql)
-
-# NEVER hardcode credentials
-# ALWAYS use config.storage_connections[name]
-```
-
-### TypeScript (Frontend)
-
-```tsx
-// Functional components with hooks
-export function FileBrowser({ stageId }: { stageId: string }) {
-  const { files, loading } = useStageFiles(stageId);
-  ...
-}
-
-// API calls via centralized client
-import { api } from "@/lib/api";
-const result = await api.executeSQL(sql, database, schema);
-
-// shadcn/ui components always
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-
-# NEVER use hardcoded heights → flex-1 + min-h-0
-# NEVER use overflow-x-scroll → use overflow-x-auto
-```
-
-### SQL (Dialect)
-
-```sql
--- @stage syntax: dots for path, auto-detect format
-SELECT * FROM @stage1.folder.file.csv;
-
--- Full qualified when crossing schemas
-SELECT * FROM @silver.stage1.data.parquet;
-
--- ML functions: Nova-style DDL
-CREATE ML_MODEL model_name TYPE = FORECAST
-    INPUT = (SELECT ...) TIMESTAMP = 'col' TARGET = 'col';
-
--- AI functions: convenience wrappers
-SELECT AI_SENTIMENT(text) FROM table;
-SELECT AI_SUMMARIZE(text, 100) FROM table;
-```
-
----
-
-## Doc Conventions
-
-Every module doc follows this structure:
-
-```markdown
-# Module N: Feature Name
-
-> One-line description.
-
----
-
-## Concept/Overview
-## Operations (with SQL examples)
-## Nova UI (ASCII mockups)
-## Implementation Notes (if architecture doc)
-## Limitations
-```
-
-Every architecture doc follows this structure:
-
-```markdown
-# Architecture N: Component Name
-
-> One-line description.
-
----
-
-## Architecture (diagram)
-## Implementation (Python/TypeScript code)
-## Integration Points
-## Configuration
-```
-
----
-
-## Key Data Flows
-
-### SQL Execution (Web UI)
-
-```
-User types SQL in Monaco Editor
-  → POST /api/v1/sql/execute
-  → SQLPipeline.execute(sql, context)
-    → DialectParser.parse(sql) → CommandType
-    → DialectTranslator.translate(parsed) → StarRocks SQL
-    → SQLCredentialInjector.inject(sql) → final SQL
-  → StarRocks.execute(final_sql) → {columns, rows}
-  → NOVA_SYSTEM.AUDIT.LOG → insert audit record
-  → Return SQLResponse to frontend
-```
-
-### SQL Execution (MySQL Proxy)
-
-```
-MySQL client connects to port 4406
-  → NovaMySQLProxy authenticates against StarRocks
-  → COM_QUERY received
-  → SQLPipeline.rewrite(sql, context) → final SQL
-  → StarRocks.execute(final_sql) → result set
-  → MySQL protocol response to client
-  → NOVA_SYSTEM.AUDIT.LOG → insert audit record
-```
-
-### Stage File Access
-
-```
-User: SELECT * FROM @stage1.data.csv
-  → Parser: STAGE_QUERY detected
-  → Translator: @stage1.data.csv → FILES(...)
-    → Find stage in NOVA_SYSTEM.CONFIG.STAGES
-    → Get storage_connection name
-    → Load config from nova.yaml
-    → Generate FILES() params via provider.get_files_params()
-  → Inject remaining creds
-  → Execute on StarRocks
-```
-
----
-
-## NOVA_SYSTEM Schema Map
-
-```
-NOVA_SYSTEM
-├── CONFIG                      ← CRUD (Primary Key tables)
-│   ├── STAGES                  ← Stage definitions (schema-scoped)
-│   ├── TASKS                   ← Nova CREATE TASK definitions (schema-scoped)
-│   ├── TASK_EDGES              ← Task DAG edges (single-schema graphs)
-│   ├── TASK_GRAPH_RUNS         ← One row per graph execution
-│   ├── TASK_RUNS               ← One row per node attempt
-│   ├── PINNED_QUERIES          ← Saved queries
-│   ├── USER_PREFERENCES        ← UI settings
-│   ├── AI_PROVIDERS            ← LLM provider connections (OpenAI, Anthropic, etc.)
-│   ├── AI_MODELS               ← LLM/Embedding models per provider
-│   ├── OBJECT_TAGS             ← Tag metadata
-│   ├── DASHBOARDS              ← Dashboard definitions
-│   └── DASHBOARD_WIDGETS       ← Dashboard widgets
-│
-├── ML                          ← Model metadata
-│   ├── MODELS                  ← ML model registry
-│   ├── MODEL_VERSIONS          ← Version history
-│   └── MODEL_ALIASES           ← Named aliases
-│
-├── AUDIT                       ← Append-only analytics
-│   └── LOG                     ← Every action logged
-│
-├── STAGE                       ← Stage analytics
-│   └── FILE_MANIFEST           ← File inventory
-│
-├── LINEAGE                     ← Data provenance
-│   └── LOAD_HISTORY            ← Load job history
-│
-├── QUALITY                     ← Data health
-│   └── TABLE_STATS             ← Table snapshots
-│
-└── USAGE                       ← Query analytics
-    └── QUERY_STATS             ← Per-user daily aggregation
-```
-
----
-
-## What NOT to Do
-
-| ❌ Don't | ✅ Do Instead |
-|----------|--------------|
-| Hardcode S3/MinIO in UI | Use "stage name" or "storage connection name" |
-| Store credentials in DB | Store in nova.yaml + .env |
-| Create SQLite/PG database | Use NOVA_SYSTEM for all state |
-| Create separate user table | Authenticate against StarRocks |
-| Use `echo/cat` for file I/O | Use `write_file`/`read_file` tools |
-| Use `grep/rg/find` in terminal | Use `search_files` tool |
-| Use `sed/awk` for edits | Use `patch` tool |
-| Invent StarRocks SQL syntax | Check docs.starrocks.io first |
-| Break @stage → FILES() rewrite | Always preserve the dialect pipeline |
-| Ship without audit logging | Every action → NOVA_SYSTEM.AUDIT.LOG |
-| Hardcode heights in CSS | Use flex-1 + min-h-0 |
-| Use overflow-x-scroll | Use overflow-x-auto |
-| Write Java/Spring Boot | Python only (FastAPI) |
-| Replay the full transcript unbounded | Curate with `ContextManager` (NOVA-124) |
-| Test the agent loop only by wall-clock | Add a scenario to `tests/eval/` for behaviour |
-
-**Build-tooling carve-out (NOVA-17, 2026-09-17):** the row above governs **application code**. A Java toolchain is permitted **at build/CI time only** for parser generation — currently `antlr-4.13.2`, used to regenerate Nova's SQL parser from `StarRocks.g4`/`StarRocksLex.g4`. The rule that matters is unchanged: **no JVM in the runtime or request path**, and the generated parser is committed as Python. See the Decision Log in `README.md`.
-
----
+# Nova Agent Guide
+
+## Nova in 30 seconds
+
+Nova is a governed analytics and AI platform built on StarRocks. Console and
+Studio share authentication, governed data access, SQL execution, storage, and
+the bounded assistant engine. The MySQL proxy exposes the same Nova SQL path.
+Read [README.md](README.md) for product context and [HOW_TO_RUN.md](HOW_TO_RUN.md)
+for local operation.
+
+## Source of truth
+
+This file defines development invariants, not an inventory of implementation
+facts. Read the applicable nested `AGENTS.md` before editing its scope. Nested
+instructions refine these contracts; they must not weaken them. The task router
+also names guides to read for changes outside their directory scope.
+
+For implementation facts, verify code and tests first, then manifests and
+configuration, current architecture docs, operational docs, historical specs,
+and finally proposals/research. An explicit migration can describe intended
+behavior that is not implemented yet: check its status and tests rather than
+treating either old code or a proposal as an automatic replacement mandate.
+
+Not every document in `docs/` describes the current runtime. Smart and the SQL
+frontend are current extension points; Auto is legacy recovery. Historical
+architecture examples, dated benchmarks, proposals, and research are
+non-normative unless current code/tests or a requested migration establish them.
+Do not copy stale examples into production. Report unrelated documentation debt.
+
+## Architecture invariants
+
+### Security and authorization
+
+- StarRocks authenticates Nova users; do not create another user/password store.
+- In Ranger-enabled execution, preserve the authenticated principal, exactly
+  one named active role, and security-context version across SQL, Studio,
+  Semantic Views, ML, delegation, and data-derived caches. Ranger policies,
+  row filters, and masks govern user data through the patched StarRocks FE.
+- Do not substitute root, system, service, or agent-owner credentials for a
+  caller's data access. Existing explicitly authorized service-principal work
+  and native-RBAC compatibility are separate supported paths, not bypasses.
+- `SHOW GRANTS` can establish role-marker assignments and support native-RBAC
+  compatibility; it cannot replace Ranger authorization. Reject ambiguous
+  security contexts and preserve fail-closed checks and consent boundaries.
+- Preserve `ACCOUNTADMIN` protection in SQL guards, administration services,
+  bootstrap, and UI. Do not drop, alter, rename, or revoke its privileges.
+
+### State, storage, and credentials
+
+- Durable relational Nova control-plane metadata belongs in StarRocks
+  `NOVA_SYSTEM`. Do not introduce another relational Nova metadata database.
+  Ranger's own policy database belongs to Ranger, not Nova's control plane.
+- Redis owns runtime sessions, caches, locks, leases, and wakeups. It is not a
+  second durable relational source of truth. Object/file payloads belong in
+  the existing managed storage abstraction.
+- Inspect [docker/init-nova.sql](docker/init-nova.sql) and the owning schema
+  initialization before changing tables. Follow the flat names already used
+  there, such as `CONFIG_STAGES` and `AUDIT_LOG`; do not invent nested schemas.
+- User-facing file access uses `@stage` and configured connection names. Keep
+  storage vendors, physical endpoints, and credential-bearing paths out of UI.
+- Never commit raw deployment secrets. Configuration may hold metadata,
+  environment placeholders, and supported secret references. Session passwords
+  use encrypted Redis state; supported provider keys use encrypted persistence.
+  Never expose stored secret material or credential-bearing execution state in
+  responses, logs, diagnostics, frontend state, or provider context. Keep
+  deliberate credential-entry flows separate from stored-secret readback.
+- Preserve redacted audit logging for governed actions, including refusals.
+
+### SQL and agents
+
+- Nova owns SQL syntax, semantic analysis, policy, and execution routing;
+  StarRocks owns physical planning and distributed execution. New syntax goes
+  through `backend/app/sql_frontend/`, not ad-hoc service detection or a new
+  parser. Existing guard and stage-lowering helpers retain their responsibilities.
+- Plans remain credential-free. Authorize stage access before resolving storage
+  secrets at execution. Never forward unsupported managed Nova syntax silently.
+- Studio and specialists compose the shared bounded engine in
+  `backend/app/modules/assistant/`. Do not create a second inference/tool loop.
+  Smart is current; extend Auto only for explicitly requested compatibility or
+  recovery. Delegation cannot broaden access or turn coordination text into
+  trusted data evidence.
+- Find the existing owner before adding infrastructure. Do not introduce a
+  parallel parser/planner, authorization engine, storage abstraction, repository
+  layer, semantic execution path, scheduler, agent loop, or audit subsystem
+  unless the task explicitly replaces that architecture.
+- Verify engine-sensitive behavior against the pin, patches, and tests; do not
+  infer support from another database or newer upstream documentation.
+
+## Task routing
+
+| Task | Read before changing code |
+| --- | --- |
+| Backend domains, repositories, APIs, metadata | [backend guide](backend/AGENTS.md) |
+| SQL frontend, query/proxy consumers, grammar/generated parser, dialect compatibility | [SQL guide](backend/app/sql_frontend/AGENTS.md), [current SQL architecture](docs/arch-13-sql-frontend.md) |
+| Auth, active roles, stages, Ranger adapters, filtering/masking | [access-control guide](backend/app/modules/access_control/AGENTS.md), [Ranger architecture](docs/arch-08-ranger-authorization.md) |
+| Shared agent loop, context, providers, consent, tools | [assistant guide](backend/app/modules/assistant/AGENTS.md) |
+| Studio, Smart, delegation, resources, memory, recovery | [agents guide](backend/app/modules/agents/AGENTS.md), [Smart architecture](docs/arch-11-smart-collaboration.md) |
+| Decision-mode model/tool/skill selection | [assistant guide](backend/app/modules/assistant/AGENTS.md), [decision architecture](docs/arch-12-studio-decision-mode.md) |
+| Frontend routes, components, copy, layout | [frontend guide](frontend/AGENTS.md), [design system](DESIGN.md) |
+| Compose, bootstrap, backend test infrastructure | [Docker guide](docker/AGENTS.md) |
+| StarRocks patches or FE image | [patch guide](patches/starrocks/AGENTS.md), [patch baseline](patches/starrocks/README.md) |
+
+## Validation routing
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) owns CI commands and setup.
+Read it before selecting checks; scoped guides give commands and additional
+behavior gates. Focused tests diagnose changes, but do not replace applicable
+CI suites. Changes spanning backend and frontend require both sets of checks.
+
+| Change | Required validation |
+| --- | --- |
+| Documentation/instructions only | Diff, references, stale claims, hierarchy consistency, task routing |
+| Backend code | Unit suite with coverage, agent eval scorecard, blocking Ruff on changed Python |
+| DB access, SQL execution, auth, storage, proxy | Backend checks plus seeded real-engine integration |
+| SQL grammar/generated parser | Grammar pin/drift, regeneration and artifact diff, relevant SQL tests and consumer regressions |
+| Agent behavior | Backend checks plus affected `tests/eval/` trajectories; benchmarks when overhead changes |
+| Ranger/security or engine patch | Backend/integration checks as applicable plus patched-FE policy/role acceptance |
+| Frontend code | `pnpm lint`, `pnpm build`, `pnpm test:coverage`, CI browser setup and affected layout/state checks |
+
+Full-tree Ruff and mypy are currently report-only in CI; changed-file Ruff is
+blocking. Do not disable tests, weaken assertions, or bypass gates. No tests
+collected or every test skipped is not a pass. If a required check cannot run,
+report the missing prerequisite and stop before commit/push unless the user
+explicitly authorizes an exception.
+
+## Safe autonomy and completion
+
+Inspect, implement, test, fix, and verify within the user's authorized scope.
+Ask only for genuinely missing product decisions or actions requiring approval;
+do not interrupt clear reversible work for routine choices. Use safe repository
+search/editing tools and shell commands suited to the environment. Preserve
+unrelated changes; avoid destructive or broad edits.
+
+For implementation requests, finish the requested behavior and validation rather
+than leaving scaffolding, required TODOs, or only a happy path. Review the final
+diff, security/secret boundaries, and affected documentation. Remove temporary
+debug work. Report what changed, commands/results, and remaining limitations;
+distinguish local checks from verified GitHub Actions results.
+
+- New branches use `feat/<goals>` with a short lowercase kebab-case goal. Do not
+  use `codex/` or include `codex` in branch names.
+- After completing a coding goal, pass applicable checks, commit only that
+  goal's changes, and push before reporting completion. Set upstream on the
+  first push. Use a commit message describing the result.
+- Before every commit and again before pushing, fetch the latest remote `main`
+  and check for missing commits against that fetched branch. Integrate new
+  commits, preserve uncommitted work, resolve conflicts, and rerun relevant checks.
+- Checks must cover the exact delivered changes after the final edit and any
+  integration/conflict resolution. Reuse a passing result only when tested code,
+  dependencies, and configuration remain unchanged. Documentation-only work
+  needs documentation checks; code/configuration edits need application checks.
+- A synchronization, required-check, commit, or push failure blocks completion.
 
 <!-- antislop:start -->
-## antislop
-For UI, copy, people, mobile layout, or code comments work, load the antislop skill for the task:
-- Core filter, always on: [antislop](.agents/skills/antislop/SKILL.md)
-- UI / visual: [antislop-ui](.agents/skills/antislop-ui/SKILL.md)
-- Copy & text: [antislop-copywriting](.agents/skills/antislop-copywriting/SKILL.md)
-- People: [antislop-human](.agents/skills/antislop-human/SKILL.md)
-- Mobile / responsive: [antislop-layoutmobile](.agents/skills/antislop-layoutmobile/SKILL.md)
-- Code comments: [antislop-code](.agents/skills/antislop-code/SKILL.md)
+## Task-specific skills
 
-These project skills live in `.agents/skills/` for Codex discovery. Within the
-bundled instructions, `antislop.md` refers to `.agents/skills/antislop/SKILL.md`,
-and `skills/antislop-*/` refers to the corresponding folder in `.agents/skills/`.
-
-Before starting, ask the user when antislop applies: during the work, or after it is done.
+Apply only relevant project skills: [antislop core](.agents/skills/antislop/SKILL.md)
+plus `antislop-copywriting` for prose, `antislop-ui` for visuals, `antislop-human`
+for accessibility, `antislop-layoutmobile` for responsive layout, or
+`antislop-code` for comment hygiene, from `.agents/skills/`. Backend work does not require
+unrelated design skills. Clear implementation tasks apply guidance during work;
+explicit audits use audit mode without a mandatory mode-selection question.
+Frontend-specific precedence and layout activation live in its scoped guide.
+Within these packaged skills, `antislop.md` means the core file linked above;
+`skills/antislop-*/` means the corresponding folder under `.agents/skills/`.
 <!-- antislop:end -->
-
----
-
-## Dependencies
-
-### Backend
-
-```
-fastapi>=0.115          # Web framework
-uvicorn[standard]>=0.34 # ASGI server
-sqlalchemy>=2.0         # ORM (for type hints, not as primary DB)
-aiomysql>=0.2           # Async MySQL
-pymysql>=1.1            # Sync MySQL (StarRocks connector)
-boto3>=1.38             # S3/MinIO client
-cryptography>=44        # Credential encryption
-pydantic>=2.11          # Validation
-pydantic-settings>=2.9  # Config from env
-python-multipart>=0.0.20 # File uploads
-httpx>=0.28             # HTTP client
-```
-
-### Frontend
-
-```
-next                    # React framework
-@monaco-editor/react    # SQL editor
-shadcn/ui + radix       # UI components
-tailwindcss             # Styling
-zustand                 # State management
-tanstack-table          # Data tables
-recharts                # Charts
-lucide-react            # Icons
-```
-
----
-
-## Version History
-
-| Date | Change |
-|------|--------|
-| 2026-06-18 | Initial docs: 35 files, 7,254 lines |

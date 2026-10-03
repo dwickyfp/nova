@@ -1,0 +1,12 @@
+{
+  "provider": "Kenari",
+  "model": "deepseek-v4-1-flash",
+  "model_id": "96e750eb-0ce2-4412-9afe-bdb38ac1a5ad",
+  "global_default": "verified",
+  "light_and_heavy": "verified",
+  "decision_and_routing_parameters": "preserved",
+  "actual_default_resolution": {
+    "provider_id": "ce9e537c-b5cd-4727-babe-85a180e558a7",
+    "model": "deepseek-v4-1-flash"
+  }
+}

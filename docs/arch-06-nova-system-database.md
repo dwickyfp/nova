@@ -1,5 +1,12 @@
 # Architecture 06: NOVA_SYSTEM — Internal Metadata Database
 
+> Status: HISTORICAL DESIGN, NON-NORMATIVE. Do not use the schema examples or
+> absolute state/secret claims below as implementation guidance. `NOVA_SYSTEM`
+> owns durable relational Nova metadata with flat table names; Redis owns runtime
+> state, storage owns object payloads, and Ranger owns its separate policy store.
+> See [bootstrap SQL](../docker/init-nova.sql), owning schema initialization,
+> and [root contracts](../AGENTS.md) for current boundaries.
+
 > Single database for ALL Nova state: config + analytics.
 > Similar to Snowflake's SNOWFLAKE database — exists in StarRocks, queryable via SQL.
 > No SQLite, no PostgreSQL. Nova is a pure StarRocks application.

@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import Any
 
@@ -17,6 +18,7 @@ from app.common.ml_intercept import (
     rewrite_ml_predict_projection,
 )
 from app.common.sql_guard import CredentialsRedactionError
+from app.core.database import db
 from app.core.exceptions import ForbiddenSQLError
 from app.modules.query.dialect.force_password_change import parse_force_password_change
 from app.modules.query.dialect.ml_model import parse_create_ml_model
@@ -25,14 +27,24 @@ from app.modules.query.repository import QueryResult
 from app.modules.query.sql_pipeline import prepare_stage_sql, redact_for_output
 from app.modules.task_orchestration.ddl import TaskDDLError, parse_create_task
 from app.modules.task_orchestration.lowering import TaskLoweringError, persist_lowered_task
-from app.sql_frontend.ast.statements import MLPredictStatement
 from app.sql_frontend.context import ExecutionContext
 from app.sql_frontend.errors import SemanticError
 from app.sql_frontend.execution.executor import ActionHandler, SQLExecutor
 from app.sql_frontend.execution.stages import StageRuntime
 from app.sql_frontend.parser import ParsedStatement
-from app.sql_frontend.planning.execution import ActionKind, EngineSqlPlan, NovaActionPlan
-from app.sql_frontend.stages import stage_view
+from app.sql_frontend.planning.execution import (
+    EngineSqlPlan,
+    ForecastPayload,
+    MaterializePayload,
+    ModelPayload,
+    NovaActionPlan,
+    PasswordPolicyPayload,
+    PredictionPayload,
+    SecurityPayload,
+    TaskPayload,
+)
+from app.sql_frontend.runtime_sql import lower_private_sql
+from app.sql_frontend.stages import planned_stages
 from app.storage.secrets import SecretResolutionError
 
 logger = logging.getLogger(__name__)
@@ -75,41 +87,138 @@ class FeatureAdapters:
         return await self._audit_sink(**kwargs)
 
     def executor(self) -> SQLExecutor:
-        executor = SQLExecutor(self.execute_engine)
-        handlers: dict[ActionKind, Callable[..., Awaitable[QueryResult]]] = {
-            ActionKind.CREATE_TASK: self._execute_create_task,
-            ActionKind.CREATE_ML_MODEL: self._execute_create_ml_model,
-            ActionKind.ML_PREDICT: self._execute_ml_predict,
-            ActionKind.ML_FORECAST: self._execute_ml_forecast,
-            ActionKind.FORCE_PASSWORD_CHANGE: self._execute_force_password_change,
+        from app.sql_frontend.execution.transactions import TransactionRunner
+
+        executor = SQLExecutor(
+            self.execute_engine,
+            transactions=TransactionRunner(self._transaction_connection, self._transaction_audit),
+        )
+        handlers: dict[type, Callable[..., Awaitable[QueryResult]]] = {
+            TaskPayload: self._execute_create_task,
+            ModelPayload: self._execute_create_ml_model,
+            PredictionPayload: self._execute_ml_predict,
+            ForecastPayload: self._execute_ml_forecast,
+            PasswordPolicyPayload: self._execute_force_password_change,
         }
         for action, method in handlers.items():
             executor.register(action, self._handler(method))
-        executor.register(ActionKind.ML_MATERIALIZE, self.materialize)
-        executor.register(ActionKind.SECURITY, self.security)
+        executor.register(MaterializePayload, self.materialize)
+        executor.register(SecurityPayload, self.security)
         return executor
+
+    @asynccontextmanager
+    async def _transaction_connection(self, context):
+        if not context.encrypted_password:
+            raise SemanticError("Dedicated authenticated transaction connection is unavailable")
+        async with db.user_conn(
+            context.username, self._decrypt(context.encrypted_password)
+        ) as conn:
+            yield conn
+
+    async def _transaction_audit(self, context, outcome, completed, failed):
+        await self._audit(
+            event_type="query",
+            user_name=context.username,
+            action="transaction_" + outcome,
+            object_type="sql",
+            object_name=context.database or "workspace",
+            status="SUCCESS" if outcome == "committed" else "ERROR",
+            error_message=json.dumps(
+                {"outcome": outcome, "completed_steps": completed, "failed_step": failed}
+            ),
+            active_role=context.role,
+            session_id=context.session_id,
+            file_id=context.file_id,
+            database_name=context.database,
+            schema_name=context.schema,
+        )
+
+    def stage_schema_provider(self, context):
+        async def schema(reference):
+            from app.sql_frontend.binding.models import BoundOutputColumn, BoundRelation
+            from app.sql_frontend.binding.types import parse_sql_type
+            from app.sql_frontend.errors import BindingError
+
+            if not context.capabilities or not context.capabilities.describe_files:
+                raise BindingError("Engine cannot describe a stage relation")
+            source = "SELECT * FROM " + reference.full_match
+            from dataclasses import replace as replace_ref
+
+            ref = replace_ref(reference, start=len("SELECT * FROM "), end=len(source))
+            parsed = ParsedSQL(
+                command_type=CommandType.STAGE_QUERY,
+                original_sql=source,
+                stage_refs=[ref],
+                base_sql=source,
+                errors=[],
+            )
+            parsed, configs = await self._host._resolve_stage_refs(
+                parsed,
+                database=context.database,
+                schema=context.schema,
+                username=context.username,
+                role=context.role,
+                connection=context.connection,
+                password="" if context.connection else self._decrypt(context.encrypted_password),
+            )
+            params, columns = await self._host._detect_csv_params(
+                parsed, {parsed.stage_refs[0].stage_name: configs[ref.start]}
+            )
+            prepared = await prepare_stage_sql(
+                source,
+                parsed=parsed,
+                stage_configs_by_ref=configs,
+                csv_params_by_ref={ref.start: params},
+                csv_columns=columns,
+            )
+            # Credentials exist only in this execution helper, never the binder.
+            sql = "DESC " + prepared.engine_sql[len("SELECT * FROM ") :]
+            try:
+                result = await self._repo.execute_as_user(
+                    sql=sql,
+                    username=context.username,
+                    password=""
+                    if context.connection
+                    else self._decrypt(context.encrypted_password),
+                    database=context.database,
+                    role=context.role,
+                    connected=context.connection,
+                )
+                if result.error:
+                    raise BindingError("Stage metadata is unavailable")
+                return BoundRelation(
+                    tuple(
+                        BoundOutputColumn(
+                            columns[index] if columns and index < len(columns) else str(row[0]),
+                            parse_sql_type(str(row[1])),
+                            str(row[2]).upper() == "YES" if len(row) > 2 else None,
+                        )
+                        for index, row in enumerate(result.rows)
+                    )
+                )
+            except Exception:
+                raise BindingError("Stage metadata is unavailable or not accessible") from None
+            finally:
+                await self._host._audit_secret_resolutions(username=context.username)
+
+        return schema
 
     def _handler(self, method: Callable[..., Awaitable[QueryResult]]) -> ActionHandler:
         parameters = inspect.signature(method).parameters
 
         async def handle(plan: NovaActionPlan, context: ExecutionContext) -> QueryResult:
+            if hasattr(plan.payload, "definition") and plan.payload.definition is None:
+                raise SemanticError("Action payload requires a validated definition")
             statement = context.statements[plan.payload.source_key]
             parsed = statement.parsed
             kwargs = vars_context(context)
             kwargs.update(
                 sql=parsed.original_sql,
                 normalized_sql=parsed.normalized_sql,
-                parsed_frontend=parsed,
-                validated_frontend=context.validated.get(plan.payload.source_key),
+                validated_frontend=getattr(plan.payload, "definition", plan.payload),
+                match=None,
+                call=getattr(plan.payload, "definition", None),
             )
-            if plan.action == ActionKind.ML_PREDICT:
-                if not isinstance(statement, MLPredictStatement):
-                    raise SemanticError("Prediction action requires a prediction statement")
-                kwargs["match"] = statement.call
-            if plan.action == ActionKind.ML_FORECAST:
-                kwargs["call"] = context.validated.get(plan.payload.source_key) or forecast_call(
-                    parsed
-                )
             return await method(
                 **{key: value for key, value in kwargs.items() if key in parameters}
             )
@@ -122,10 +231,11 @@ class FeatureAdapters:
         sql = source.original_sql
         normalized_sql = (
             source.normalized_sql
-            if plan.engine_sql == redact_for_output(source.normalized_sql)
+            if not plan.private_bindings
+            and plan.engine_sql == redact_for_output(source.normalized_sql)
             else plan.engine_sql
         )
-        parsed = stage_view(source)
+        parsed = planned_stages(plan)
         if parsed.stage_refs and not plan.stage_aware:
             raise ValueError("Stage references require a stage lowering rule")
         username, encrypted_password = context.username, context.encrypted_password
@@ -224,6 +334,8 @@ class FeatureAdapters:
             executed_sql = prepared.engine_sql
             warnings = prepared.warnings
 
+        executed_sql = lower_private_sql(plan, executed_sql, source.normalized_sql)
+
         # 5. Execute
         #
         # ``connection`` is an already-authenticated engine session supplied by
@@ -254,6 +366,7 @@ class FeatureAdapters:
                 role=role,
                 max_rows=max_rows,
                 connected=connection,
+                **({"session_prepared": True} if context.engine_session_prepared else {}),
             )
 
             result.original_sql = redact_for_output(sql)
@@ -271,7 +384,9 @@ class FeatureAdapters:
                 action="execute",
                 object_type="sql",
                 object_name=(database or "") if database else "workspace",
-                status="SUCCESS",
+                status="ERROR"
+                if result.error
+                else ("EXECUTED" if context.transaction_active else "SUCCESS"),
                 sql_text=redacted_sql,
                 rewritten_sql=redacted_sql,
                 duration_ms=int(result.elapsed_ms),
@@ -857,10 +972,9 @@ class FeatureAdapters:
         from app.modules.ml_engine.service import ml_engine_service
         from app.modules.ml_engine.spec import MLSecurityContext
 
-        validated = context.validated.get(plan.payload.source_key)
-        if validated is None:
+        if not isinstance(plan.payload, MaterializePayload) or not plan.payload.input_sql:
             raise SemanticError("Materialization requires validated prediction input")
-        alias, input_sql = validated
+        alias, input_sql = plan.payload.model_alias, plan.payload.input_sql
         started = time.monotonic()
         try:
             if connection is not None and not encrypted_password:
@@ -914,8 +1028,10 @@ class FeatureAdapters:
 
     async def security(self, plan: NovaActionPlan, context: ExecutionContext) -> QueryResult:
         from app.modules.access_control.security_context import require_security_context
-        from app.sql_frontend.security import execute_security
+        from app.sql_frontend.security import SecurityOperation, execute_security_operation
 
+        if not isinstance(plan.payload, SecurityPayload):
+            raise SemanticError("Security action requires a typed security payload")
         parsed = context.statements[plan.payload.source_key].parsed
         security = require_security_context(
             principal=context.username,
@@ -925,7 +1041,11 @@ class FeatureAdapters:
             security_context_version=context.security_context_version,
         )
         try:
-            result = await execute_security(parsed, security)
+            result = await execute_security_operation(
+                SecurityOperation(plan.payload.operation, plan.payload.identifiers),
+                security,
+                parsed.original_sql,
+            )
         except Exception as exc:
             await self._audit(
                 event_type="query",

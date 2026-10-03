@@ -15,15 +15,15 @@ from app.sql_frontend.planning.execution import (
 
 _PAYLOADS: dict[ActionKind, Callable[[int, Any], SourcePayload]] = {
     ActionKind.CREATE_TASK: lambda key, value: TaskPayload(
-        key, value.name, value.database_name, value.schema_name, value.schedule_kind
+        key, value.name, value.database_name, value.schema_name, value.schedule_kind, value
     ),
     ActionKind.CREATE_ML_MODEL: lambda key, value: ModelPayload(
-        key, value.model_name, value.model_type
+        key, value.model_name, value.model_type, value
     ),
-    ActionKind.ML_PREDICT: lambda key, value: PredictionPayload(key, value.alias),
-    ActionKind.ML_MATERIALIZE: lambda key, value: MaterializePayload(key, value[0]),
+    ActionKind.ML_PREDICT: lambda key, value: PredictionPayload(key, value.alias, value),
+    ActionKind.ML_MATERIALIZE: lambda key, value: MaterializePayload(key, value[0], value[1]),
     ActionKind.ML_FORECAST: lambda key, value: ForecastPayload(
-        key, value.model_alias, value.model_id, value.horizon
+        key, value.model_alias, value.model_id, value.horizon, value
     ),
     ActionKind.FORCE_PASSWORD_CHANGE: lambda key, value: PasswordPolicyPayload(
         key, value.username, value.required

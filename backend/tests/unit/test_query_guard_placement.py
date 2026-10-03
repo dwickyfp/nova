@@ -167,8 +167,8 @@ class TestExecuteStatementsPath:
             username="analyst",
             encrypted_password="enc",
         )
-        # SELECT 1 runs; the DROP is refused and reported as an error result.
-        assert created["repo"].calls == ["SELECT 1"]
+        assert created["repo"].calls == []
+        assert len(results) == 1 and results[0].needs_confirmation
         assert results[-1].warnings, "the refused statement must be reported"
         assert "confirmation" in results[-1].warnings[0].lower()
 

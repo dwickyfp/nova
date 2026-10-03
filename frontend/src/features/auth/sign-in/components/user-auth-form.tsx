@@ -59,6 +59,7 @@ type LoginResult = {
   user: string | AuthUser | null;
   roles?: string[];
   active_role?: string | null;
+  security_context_version?: number;
 };
 
 function getAuthUser(result: LoginResult): AuthUser | null {
@@ -68,6 +69,7 @@ function getAuthUser(result: LoginResult): AuthUser | null {
       username: result.user,
       roles: result.roles ?? [],
       activeRole: result.active_role ?? null,
+      securityContextVersion: result.security_context_version,
     };
   }
   return result.user;

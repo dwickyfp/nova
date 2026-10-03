@@ -37,6 +37,7 @@ import { Route as AuthenticatedMonitoringIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedMonitoringActiveRouteImport } from './routes/_authenticated/monitoring/active'
 import { Route as AuthenticatedMonitoringAiRouteImport } from './routes/_authenticated/monitoring/ai'
 import { Route as AuthenticatedMonitoringAuditRouteImport } from './routes/_authenticated/monitoring/audit'
+import { Route as AuthenticatedMonitoringAutopilotRouteImport } from './routes/_authenticated/monitoring/autopilot'
 import { Route as AuthenticatedMonitoringClusterRouteImport } from './routes/_authenticated/monitoring/cluster'
 import { Route as AuthenticatedMonitoringHealthRouteImport } from './routes/_authenticated/monitoring/health'
 import { Route as AuthenticatedMonitoringLoadsRouteImport } from './routes/_authenticated/monitoring/loads'
@@ -215,6 +216,12 @@ const AuthenticatedMonitoringAuditRoute =
     path: '/audit',
     getParentRoute: () => AuthenticatedMonitoringRouteRoute,
   } as any)
+const AuthenticatedMonitoringAutopilotRoute =
+  AuthenticatedMonitoringAutopilotRouteImport.update({
+    id: '/autopilot',
+    path: '/autopilot',
+    getParentRoute: () => AuthenticatedMonitoringRouteRoute,
+  } as any)
 const AuthenticatedMonitoringClusterRoute =
   AuthenticatedMonitoringClusterRouteImport.update({
     id: '/cluster',
@@ -342,6 +349,7 @@ export interface FileRoutesByFullPath {
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/ai': typeof AuthenticatedMonitoringAiRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
+  '/monitoring/autopilot': typeof AuthenticatedMonitoringAutopilotRoute
   '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
   '/monitoring/health': typeof AuthenticatedMonitoringHealthRoute
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
@@ -388,6 +396,7 @@ export interface FileRoutesByTo {
   '/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/monitoring/ai': typeof AuthenticatedMonitoringAiRoute
   '/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
+  '/monitoring/autopilot': typeof AuthenticatedMonitoringAutopilotRoute
   '/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
   '/monitoring/health': typeof AuthenticatedMonitoringHealthRoute
   '/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
@@ -437,6 +446,7 @@ export interface FileRoutesById {
   '/_authenticated/monitoring/active': typeof AuthenticatedMonitoringActiveRoute
   '/_authenticated/monitoring/ai': typeof AuthenticatedMonitoringAiRoute
   '/_authenticated/monitoring/audit': typeof AuthenticatedMonitoringAuditRoute
+  '/_authenticated/monitoring/autopilot': typeof AuthenticatedMonitoringAutopilotRoute
   '/_authenticated/monitoring/cluster': typeof AuthenticatedMonitoringClusterRoute
   '/_authenticated/monitoring/health': typeof AuthenticatedMonitoringHealthRoute
   '/_authenticated/monitoring/loads': typeof AuthenticatedMonitoringLoadsRoute
@@ -486,6 +496,7 @@ export interface FileRouteTypes {
     | '/monitoring/active'
     | '/monitoring/ai'
     | '/monitoring/audit'
+    | '/monitoring/autopilot'
     | '/monitoring/cluster'
     | '/monitoring/health'
     | '/monitoring/loads'
@@ -532,6 +543,7 @@ export interface FileRouteTypes {
     | '/monitoring/active'
     | '/monitoring/ai'
     | '/monitoring/audit'
+    | '/monitoring/autopilot'
     | '/monitoring/cluster'
     | '/monitoring/health'
     | '/monitoring/loads'
@@ -580,6 +592,7 @@ export interface FileRouteTypes {
     | '/_authenticated/monitoring/active'
     | '/_authenticated/monitoring/ai'
     | '/_authenticated/monitoring/audit'
+    | '/_authenticated/monitoring/autopilot'
     | '/_authenticated/monitoring/cluster'
     | '/_authenticated/monitoring/health'
     | '/_authenticated/monitoring/loads'
@@ -810,6 +823,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMonitoringAuditRouteImport
       parentRoute: typeof AuthenticatedMonitoringRouteRoute
     }
+    '/_authenticated/monitoring/autopilot': {
+      id: '/_authenticated/monitoring/autopilot'
+      path: '/autopilot'
+      fullPath: '/monitoring/autopilot'
+      preLoaderRoute: typeof AuthenticatedMonitoringAutopilotRouteImport
+      parentRoute: typeof AuthenticatedMonitoringRouteRoute
+    }
     '/_authenticated/monitoring/cluster': {
       id: '/_authenticated/monitoring/cluster'
       path: '/cluster'
@@ -943,6 +963,7 @@ interface AuthenticatedMonitoringRouteRouteChildren {
   AuthenticatedMonitoringActiveRoute: typeof AuthenticatedMonitoringActiveRoute
   AuthenticatedMonitoringAiRoute: typeof AuthenticatedMonitoringAiRoute
   AuthenticatedMonitoringAuditRoute: typeof AuthenticatedMonitoringAuditRoute
+  AuthenticatedMonitoringAutopilotRoute: typeof AuthenticatedMonitoringAutopilotRoute
   AuthenticatedMonitoringClusterRoute: typeof AuthenticatedMonitoringClusterRoute
   AuthenticatedMonitoringHealthRoute: typeof AuthenticatedMonitoringHealthRoute
   AuthenticatedMonitoringLoadsRoute: typeof AuthenticatedMonitoringLoadsRoute
@@ -955,6 +976,8 @@ const AuthenticatedMonitoringRouteRouteChildren: AuthenticatedMonitoringRouteRou
     AuthenticatedMonitoringActiveRoute: AuthenticatedMonitoringActiveRoute,
     AuthenticatedMonitoringAiRoute: AuthenticatedMonitoringAiRoute,
     AuthenticatedMonitoringAuditRoute: AuthenticatedMonitoringAuditRoute,
+    AuthenticatedMonitoringAutopilotRoute:
+      AuthenticatedMonitoringAutopilotRoute,
     AuthenticatedMonitoringClusterRoute: AuthenticatedMonitoringClusterRoute,
     AuthenticatedMonitoringHealthRoute: AuthenticatedMonitoringHealthRoute,
     AuthenticatedMonitoringLoadsRoute: AuthenticatedMonitoringLoadsRoute,

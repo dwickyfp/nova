@@ -1,0 +1,2056 @@
+{
+  "evidence_kind": "retained_real_engine_judge_review",
+  "model": "deepseek-v4-1-flash",
+  "cases": [
+    {
+      "case": "A",
+      "status": "VALID",
+      "mean": 4.25,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 4,
+        "diagnosis_quality": 5,
+        "recommendation_quality": 3,
+        "safety": 5,
+        "experiment_validity": 4,
+        "outcome_interpretation": 5,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Detection flags only high frequency (120 calls, P95 23.9 ms, max 163 ms) and makes no regression claim, appropriate since the baseline is ineligible (0 historical windows). Operator profiles and plan comparison are disclosed unavailable; hypotheses stay UNKNOWN at confidence 0, so no root cause is invented. Next steps (prioritize by cumulative cost, collect selective profiles before structural change) are safe but generic, with no validation design. Action, experiment and outcome are correctly disclosed NOT_ASSESSED, with no fabricated results, causality or applied optimization."
+      },
+      "input": {
+        "measurements": {
+          "count": 120,
+          "total_ms": 1553.726256970549,
+          "max_ms": 163.1444999948144,
+          "p95_ms": 23.906623206580772
+        },
+        "detected_findings": [
+          {
+            "detector": "high_frequency",
+            "severity": "info",
+            "measured": {
+              "count": 120
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 120,
+        "baseline": {
+          "eligible": false,
+          "historical_count": 0,
+          "current_count": 120,
+          "windows": 0,
+          "current_p95": 23.906623206580772,
+          "seasonal": false
+        },
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause. Current window: 120 executions, P95 23.9066 ms. The regression sample/window requirement is not met; no percentile regression is established.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Prioritize by cumulative workload cost; collect selective profiles before proposing a structural change."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "NOT_ASSESSED",
+          "experiment": "NOT_ASSESSED",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "INSUFFICIENT_HISTORY",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "UNAVAILABLE"
+        },
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "B",
+      "status": "FAIL",
+      "error_type": "ValidationError"
+    },
+    {
+      "case": "F-detection",
+      "status": "VALID",
+      "mean": 3.75,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 3,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Detectors correctly surface high-frequency workload and MV eligibility as info without claiming a regression or root cause. Baseline ineligible, operator/plan evidence unavailable, and UNKNOWN diagnosis are properly disclosed rather than fabricated. Recommendations frame the MV as requiring experiment, rewrite/freshness/equivalence/Ranger proof and approval, and defer selective profiles\u2014appropriately conservative. No trials or outcomes are claimed. Minor: p95 23.9ms and 120 executions are low-severity signals, so prioritization rationale could be sharper, but nothing material is invented. Experiment/outcome correctly marked not assessed."
+      },
+      "input": {
+        "measurements": {
+          "compatible_aggregates": 10,
+          "mv_eligible": true,
+          "grouping_key_count": 1,
+          "aggregate_expression_count": 1,
+          "replay_eligible": true,
+          "count": 120,
+          "total_ms": 1553.726256970549,
+          "max_ms": 163.1444999948144,
+          "p95_ms": 23.906623206580772
+        },
+        "detected_findings": [
+          {
+            "detector": "high_frequency",
+            "severity": "info",
+            "measured": {
+              "count": 120
+            }
+          },
+          {
+            "detector": "materialized_view",
+            "severity": "info",
+            "measured": {
+              "compatible_aggregates": 10,
+              "count": 120
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 121,
+        "baseline": {
+          "eligible": false,
+          "historical_count": 0,
+          "current_count": 120,
+          "windows": 0,
+          "current_p95": 23.906623206580772,
+          "seasonal": false
+        },
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause. Current window: 120 executions, P95 23.9066 ms. The regression sample/window requirement is not met; no percentile regression is established.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval.",
+          "Prioritize by cumulative workload cost; collect selective profiles before proposing a structural change."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "AVAILABLE",
+          "experiment": "NOT_ASSESSED",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "INSUFFICIENT_HISTORY",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "UNAVAILABLE"
+        },
+        "action": {
+          "kind": "MATERIALIZED_VIEW",
+          "risk": "APPROVAL",
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "E-before",
+      "status": "VALID",
+      "mean": 4.0,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 4,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 4,
+        "experiment_validity": 4,
+        "outcome_interpretation": 4,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "CARDINALITY_ESTIMATE",
+        "explanation": "Detectors correctly flag a 1500x q-error between estimated (1) and actual (1500) rows at OLAP_SCAN, establishing an estimate error while treating stale statistics as only a possible contributor, not a proven cause. Evidence is scoped and provenance disclosed; plan comparison and historical baseline are correctly marked unavailable. The proposed ANALYZE PROFILE and bounded snapshot statistics test are appropriate and remain unapproved (execution_authority none). The experiment shows no improvement (-0.52) with equivalence and controls affected, correctly interpreted as non-repeatable benefit; outcome is properly NOT_ASSESSED. No invented facts or unauthorized actions."
+      },
+      "input": {
+        "measurements": {
+          "statistics_missing": false,
+          "statistics_stale": true,
+          "table_growth_ratio": 0.009900990099009901,
+          "estimated_rows": 1.0,
+          "actual_rows": 1500.0,
+          "q_error": 1500.0,
+          "growth_ratio": 0.009900990099009901
+        },
+        "detected_findings": [
+          {
+            "detector": "cardinality_error",
+            "severity": "warning",
+            "measured": {
+              "q_error": 1500.0
+            }
+          },
+          {
+            "detector": "statistics",
+            "severity": "warning",
+            "measured": {
+              "q_error": 1500.0,
+              "growth_ratio": 0.009900990099009901
+            }
+          }
+        ],
+        "operator_evidence": [
+          {
+            "operator": "AGGREGATION",
+            "node_id": 2,
+            "estimated_rows": 1.0,
+            "actual_rows": 1.0
+          },
+          {
+            "operator": "PROJECT",
+            "node_id": 1,
+            "actual_rows": 1500.0
+          },
+          {
+            "operator": "OLAP_SCAN",
+            "node_id": 0,
+            "estimated_rows": 1.0,
+            "actual_rows": 1500.0
+          }
+        ],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "CARDINALITY_ESTIMATE",
+          "STATISTICS"
+        ],
+        "evidence_count": 1,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "CARDINALITY_ESTIMATE",
+            "confidence": 0.75,
+            "explanation": "Measured operator rows differ materially from estimated rows. Matched operator: estimated 1 rows, measured 1500 rows. This establishes an estimate error, not its cause or the benefit of a change.",
+            "counterevidence_count": 0
+          },
+          {
+            "category": "STATISTICS",
+            "confidence": 0.7,
+            "explanation": "Statistics state supports a possible contributor, but does not establish that refreshing statistics will improve the query. Test causality in the snapshot. Statistics are stale; age alone cannot establish a latency cause.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Use ANALYZE PROFILE for the same query ID to compare estimated and actual rows at the same plan node; inspect table growth and statistics health before a snapshot trial.",
+          "Test bounded statistics maintenance in the enrolled snapshot; require equivalence, repeatable gain and unaffected controls before policy evaluation."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "AVAILABLE",
+          "experiment": "AVAILABLE",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "UNAVAILABLE",
+          "operator_profile": "AVAILABLE",
+          "plan_comparison": "UNAVAILABLE"
+        },
+        "action": {
+          "kind": "STATISTICS",
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": "NO_IMPROVEMENT",
+          "correctness": "EQUIVALENT",
+          "improvement": -0.5208744461243802,
+          "repetitions": 30,
+          "reason": "benefit_not_repeatable_or_below_threshold",
+          "before": {
+            "count": 30,
+            "mean_ms": 59.81570266885683,
+            "stddev_ms": 75.2148252276528,
+            "p95_ms": 208.8558330142405,
+            "resource_samples": [
+              {
+                "queue_ms": 0.0,
+                "cpu_ms": 4.111,
+                "execution_ms": 12.506,
+                "peak_memory_bytes": 379024.384,
+                "spill_bytes": 0.0,
+                "scanned_rows": 1500,
+                "output_rows": 1
+              }
+            ]
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 90.97217366603824,
+            "stddev_ms": 103.2229463366593,
+            "p95_ms": 281.85654201661237,
+            "resource_samples": [
+              {
+                "queue_ms": 0.0,
+                "cpu_ms": 8.96,
+                "execution_ms": 15.997,
+                "peak_memory_bytes": 379008.0,
+                "spill_bytes": 0.0,
+                "scanned_rows": 1500,
+                "output_rows": 1
+              }
+            ]
+          },
+          "controls": {
+            "before": {
+              "count": 30,
+              "mean_ms": 20.939026398506638,
+              "stddev_ms": 25.393515994826384,
+              "p95_ms": 73.0952080048155
+            },
+            "after": {
+              "count": 30,
+              "mean_ms": 42.607136066847794,
+              "stddev_ms": 86.51114596306424,
+              "p95_ms": 186.76529100048356
+            }
+          },
+          "result_comparison": {
+            "checked_target_samples": 60,
+            "checked_control_samples": 60,
+            "target_equivalent": true,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "digest_match": true,
+            "before_proof": {
+              "row_count": 1,
+              "bytes_compared": 19,
+              "ordered": false,
+              "column_count": 1
+            },
+            "after_proof": {
+              "row_count": 1,
+              "bytes_compared": 19,
+              "ordered": false,
+              "column_count": 1
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "E-after",
+      "status": "VALID",
+      "mean": 3.5,
+      "scores": {
+        "detection_validity": 3,
+        "evidence_quality": 3,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 4,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Proposal correctly refuses to assert a root cause: statistics are stale only in age, not proven causal for latency. Operator evidence shows modest scan estimate deviation (800 vs 1500) but no demonstrated latency link, so UNKNOWN is calibrated. It discloses missing baseline/plan comparison and no outcome; no invented results. The AGGREGATION estimate is accurate. Experiment shows no improvement (after worse, mean 90.97 vs 59.82ms) and correctly reports NO_IMPROVEMENT, with equivalence proofs. Recommend a scoped query profile and parameter-matched plan with queue/CPU/scan counters before any statistics change."
+      },
+      "input": {
+        "measurements": {
+          "statistics_missing": false,
+          "statistics_stale": true,
+          "table_growth_ratio": 0.0006246096189881324,
+          "estimated_rows": 800.0,
+          "actual_rows": 1500.0
+        },
+        "detected_findings": [],
+        "operator_evidence": [
+          {
+            "operator": "AGGREGATION",
+            "node_id": 2,
+            "estimated_rows": 1.0,
+            "actual_rows": 1.0
+          },
+          {
+            "operator": "PROJECT",
+            "node_id": 1,
+            "actual_rows": 1500.0
+          },
+          {
+            "operator": "OLAP_SCAN",
+            "node_id": 0,
+            "estimated_rows": 800.0,
+            "actual_rows": 1500.0
+          }
+        ],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 1,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause. Statistics are stale; age alone cannot establish a latency cause.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Keep observing; no executable change is justified by the current evidence. If latency persists, capture a scoped query profile, parameter-matched plan and statistics health; compare queue, CPU, scan and estimate counters."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "AVAILABLE",
+          "experiment": "AVAILABLE",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "UNAVAILABLE",
+          "operator_profile": "AVAILABLE",
+          "plan_comparison": "UNAVAILABLE"
+        },
+        "action": {
+          "kind": "STATISTICS",
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": "NO_IMPROVEMENT",
+          "correctness": "EQUIVALENT",
+          "improvement": -0.5208744461243802,
+          "repetitions": 30,
+          "reason": "benefit_not_repeatable_or_below_threshold",
+          "before": {
+            "count": 30,
+            "mean_ms": 59.81570266885683,
+            "stddev_ms": 75.2148252276528,
+            "p95_ms": 208.8558330142405,
+            "resource_samples": [
+              {
+                "queue_ms": 0.0,
+                "cpu_ms": 4.111,
+                "execution_ms": 12.506,
+                "peak_memory_bytes": 379024.384,
+                "spill_bytes": 0.0,
+                "scanned_rows": 1500,
+                "output_rows": 1
+              }
+            ]
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 90.97217366603824,
+            "stddev_ms": 103.2229463366593,
+            "p95_ms": 281.85654201661237,
+            "resource_samples": [
+              {
+                "queue_ms": 0.0,
+                "cpu_ms": 8.96,
+                "execution_ms": 15.997,
+                "peak_memory_bytes": 379008.0,
+                "spill_bytes": 0.0,
+                "scanned_rows": 1500,
+                "output_rows": 1
+              }
+            ]
+          },
+          "controls": {
+            "before": {
+              "count": 30,
+              "mean_ms": 20.939026398506638,
+              "stddev_ms": 25.393515994826384,
+              "p95_ms": 73.0952080048155
+            },
+            "after": {
+              "count": 30,
+              "mean_ms": 42.607136066847794,
+              "stddev_ms": 86.51114596306424,
+              "p95_ms": 186.76529100048356
+            }
+          },
+          "result_comparison": {
+            "checked_target_samples": 60,
+            "checked_control_samples": 60,
+            "target_equivalent": true,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "digest_match": true,
+            "before_proof": {
+              "row_count": 1,
+              "bytes_compared": 19,
+              "ordered": false,
+              "column_count": 1
+            },
+            "after_proof": {
+              "row_count": 1,
+              "bytes_compared": 19,
+              "ordered": false,
+              "column_count": 1
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "G-uncontended",
+      "status": "VALID",
+      "mean": 3.625,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 3,
+        "diagnosis_quality": 5,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 2,
+        "outcome_interpretation": 2,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Proposal correctly abstains: measurements (queue 16ms, exec 6.3ms, 500 rows, one counter pair) don't establish a root cause. The info-level high-frequency detector is reported at measured severity. UNKNOWN hypotheses and confidence-0 diagnosis are calibrated. Baseline, operator profiles and plan comparison disclosed UNAVAILABLE; action/experiment/outcome correctly marked NOT_ASSESSED, so no invented trial or success. Next steps (prioritize by workload cost, collect selective profiles) are non-mutating and proportionate. No material facts or unjustified actions invented."
+      },
+      "input": {
+        "measurements": {
+          "queue_ms": 16.0,
+          "cpu_ms": 0.79255,
+          "execution_ms": 6.324,
+          "scanned_rows": 500,
+          "output_rows": 1,
+          "count": 120,
+          "saturated": false,
+          "bound_pending_samples": 0,
+          "counter_pair_sample_count": 1
+        },
+        "detected_findings": [
+          {
+            "detector": "high_frequency",
+            "severity": "info",
+            "measured": {
+              "count": 120
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "UNKNOWN"
+        ],
+        "evidence_count": 120,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "explanation": "The available measurements do not establish a root cause.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Prioritize by cumulative workload cost; collect selective profiles before proposing a structural change."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "NOT_ASSESSED",
+          "experiment": "NOT_ASSESSED",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "UNAVAILABLE",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "UNAVAILABLE"
+        },
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "G-contended",
+      "status": "VALID",
+      "mean": 3.75,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 3,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "RESOURCE_CONTENTION",
+        "explanation": "Detection is supported: measured queue_ms 756 vs execution_ms 4.096 with saturated=true justifies a contention warning. Evidence is scoped and provenance disclosed, but baseline, operator_profile, and plan_comparison are unavailable, and only one counter-pair sample limits strength. Diagnosis is calibrated: it attributes queueing to contention while explicitly stating the specific resource limit is not identified; no invented resource or query cause. Recommendations are conservative and require controlled experiment/approval. Safety is appropriate: execution authority none, no action taken, no limits changed. Experiment and outcome correctly NOT_ASSESSED; no invented results. No critical hallucinations."
+      },
+      "input": {
+        "measurements": {
+          "queue_ms": 756.0,
+          "cpu_ms": 6.496,
+          "execution_ms": 4.096,
+          "scanned_rows": 500,
+          "output_rows": 1,
+          "count": 60,
+          "saturated": true,
+          "bound_pending_samples": 55,
+          "counter_pair_sample_count": 1
+        },
+        "detected_findings": [
+          {
+            "detector": "contention",
+            "severity": "warning",
+            "measured": {
+              "queue_ms": 756.0,
+              "execution_ms": 4.096
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "RESOURCE_CONTENTION"
+        ],
+        "evidence_count": 60,
+        "baseline": {},
+        "diagnostic_assessment": [
+          {
+            "category": "RESOURCE_CONTENTION",
+            "confidence": 0.9,
+            "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. The correlated execution queued for 756 ms and executed for 4.096 ms. These measurements do not identify which resource limit should change.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Inspect resource-group limits and simultaneous demand; do not attribute queueing to bad SQL or change limits without an approved controlled experiment."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "NOT_ASSESSED",
+          "experiment": "NOT_ASSESSED",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "UNAVAILABLE",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "UNAVAILABLE"
+        },
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "D",
+      "status": "VALID",
+      "mean": 3.875,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 4,
+        "diagnosis_quality": 4,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 3,
+        "outcome_interpretation": 3,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "RESOURCE_CONTENTION",
+        "explanation": "Latency regression is well supported: current P95 850.9ms vs baseline 37.0ms across 30 vs 120 samples, seasonal=false. Contention evidence (queue 923ms vs execution 32ms) establishes queuing as the mechanism, though it does not pinpoint the specific resource. The proposal correctly limits the diagnosis to RESOURCE_CONTENTION and explicitly states the resource limit is unidentified, avoiding overreach. No operator/profile or plan evidence exists, and the proposal properly marks experiment/action/outcome as NOT_ASSESSED rather than inventing results. Recommendations are conservative and require approved experiments. No fabrications detected."
+      },
+      "input": {
+        "measurements": {
+          "count": 30,
+          "total_ms": 24585.641292011132,
+          "p95_ms": 850.9252768640498,
+          "saturated": true,
+          "bound_pending_samples": 55,
+          "counter_pair_sample_count": 1,
+          "queue_ms": 923.0,
+          "execution_ms": 32.04,
+          "current_p95_ms": 850.9252768640498,
+          "baseline_p95_ms": 37.03895140955522
+        },
+        "detected_findings": [
+          {
+            "detector": "latency_regression",
+            "severity": "critical",
+            "measured": {
+              "current_p95_ms": 850.9252768640498,
+              "baseline_p95_ms": 37.03895140955522
+            }
+          },
+          {
+            "detector": "contention",
+            "severity": "warning",
+            "measured": {
+              "queue_ms": 923.0,
+              "execution_ms": 32.04
+            }
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {},
+        "proposed_hypotheses": [
+          "RESOURCE_CONTENTION"
+        ],
+        "evidence_count": 60,
+        "baseline": {
+          "eligible": true,
+          "historical_count": 120,
+          "current_count": 30,
+          "windows": 3,
+          "historical_p95": 37.03895140955522,
+          "current_p95": 850.9252768640498,
+          "upper_envelope": 31.949671470073028,
+          "seasonal": false
+        },
+        "diagnostic_assessment": [
+          {
+            "category": "RESOURCE_CONTENTION",
+            "confidence": 0.9,
+            "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. Current window: 30 executions, P95 850.925 ms. The correlated execution queued for 923 ms and executed for 32.04 ms. These measurements do not identify which resource limit should change.",
+            "counterevidence_count": 0
+          }
+        ],
+        "proposed_next_steps": [
+          "Inspect resource-group limits and simultaneous demand; do not attribute queueing to bad SQL or change limits without an approved controlled experiment.",
+          "Compare parameter-matched plans, profiles and statistics to identify a mechanism for the sustained regression."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "NOT_ASSESSED",
+          "experiment": "NOT_ASSESSED",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "AVAILABLE",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "UNAVAILABLE"
+        },
+        "action": {
+          "kind": null,
+          "risk": null,
+          "mode": null,
+          "state": null
+        },
+        "experiment": {
+          "status": null,
+          "correctness": null
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "F-experiment",
+      "status": "VALID",
+      "mean": 3.75,
+      "scores": {
+        "detection_validity": 4,
+        "evidence_quality": 4,
+        "diagnosis_quality": 3,
+        "recommendation_quality": 4,
+        "safety": 5,
+        "experiment_validity": 4,
+        "outcome_interpretation": 2,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Detection: MV finding plus plan shift (500\u21925 rows, 12\u219256 avg row size) supports rewrite; freshness proven, Ranger acceptance not. No hypotheses, operator or baseline evidence disclosed as unavailable. Diagnosis remains UNKNOWN: plan change and rewrite observed, but no latency benefit proven (means 311.7 vs 328.5 ms, overlapping variance; controls moved opposite). Action correctly INCONCLUSIVE with APPROVAL risk and no execution authority; recommendations require equivalence, masking and approval proof. Experiment 30 reps, digest-equivalent both sides \u2014 good, but action outcome NOT_ASSESSED is properly disclosed, not invented. No material hallucinations."
+      },
+      "input": {
+        "measurements": {
+          "rewrite_observed": true,
+          "freshness_proven": true,
+          "ranger_acceptance_proven": false
+        },
+        "detected_findings": [
+          {
+            "detector": "materialized_view"
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {
+          "before": {
+            "operators": [
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 12,
+                  "cardinality": 500
+                }
+              }
+            ]
+          },
+          "after": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 5
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 5
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 56,
+                  "cardinality": 5
+                }
+              }
+            ]
+          }
+        },
+        "proposed_hypotheses": [],
+        "evidence_count": 59,
+        "baseline": {},
+        "diagnostic_assessment": [],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "AVAILABLE",
+          "experiment": "AVAILABLE",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "UNAVAILABLE",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "AVAILABLE"
+        },
+        "action": {
+          "kind": "MATERIALIZED_VIEW",
+          "risk": "APPROVAL",
+          "mode": null,
+          "state": "INCONCLUSIVE"
+        },
+        "experiment": {
+          "status": "INCONCLUSIVE",
+          "correctness": "EQUIVALENT",
+          "repetitions": 30,
+          "reason": "ranger_acceptance_unavailable",
+          "before": {
+            "count": 30,
+            "mean_ms": 311.7061111329046,
+            "p95_ms": 909.5435829949565,
+            "stddev_ms": 392.9716804218091,
+            "resource_samples": [
+              {
+                "cpu_ms": 19.407,
+                "execution_ms": 83.824,
+                "output_rows": 5,
+                "peak_memory_bytes": 839744.512,
+                "queue_ms": 0,
+                "scanned_rows": 500,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 1.463,
+                "execution_ms": 11.876,
+                "output_rows": 5,
+                "peak_memory_bytes": 830784.512,
+                "queue_ms": 0,
+                "scanned_rows": 500,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 328.47255006587756,
+            "p95_ms": 834.731249982724,
+            "stddev_ms": 264.3719695368575,
+            "resource_samples": [
+              {
+                "cpu_ms": 20.154,
+                "execution_ms": 14.561,
+                "output_rows": 5,
+                "peak_memory_bytes": 2337275.904,
+                "queue_ms": 0,
+                "scanned_rows": 5,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 68.029,
+                "execution_ms": 27.581,
+                "output_rows": 5,
+                "peak_memory_bytes": 2549088.256,
+                "queue_ms": 0,
+                "scanned_rows": 5,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "controls": {
+            "after": {
+              "count": 30,
+              "mean_ms": 40.907192900582835,
+              "p95_ms": 115.25808298029006,
+              "stddev_ms": 37.5349494226195
+            },
+            "before": {
+              "count": 30,
+              "mean_ms": 83.05597920358802,
+              "p95_ms": 242.3326660064049,
+              "stddev_ms": 82.32653089794465
+            }
+          },
+          "result_comparison": {
+            "checked_control_samples": 60,
+            "checked_target_samples": 60,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "target_equivalent": true,
+            "digest_match": true,
+            "before_proof": {
+              "bytes_compared": 255,
+              "ordered": false,
+              "row_count": 5,
+              "column_count": 3
+            },
+            "after_proof": {
+              "bytes_compared": 255,
+              "ordered": false,
+              "row_count": 5,
+              "column_count": 3
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "governed-cycle-1",
+      "status": "VALID",
+      "mean": 3.75,
+      "scores": {
+        "detection_validity": 3,
+        "evidence_quality": 4,
+        "diagnosis_quality": 3,
+        "recommendation_quality": 3,
+        "safety": 5,
+        "experiment_validity": 4,
+        "outcome_interpretation": 4,
+        "explanation_quality": 4,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Plan comparison is real (MV rewrite 50k->200 rows scanned) and 30-rep regression is evidenced, so detection and experiment are grounded. But no operator profile, no historical baseline, and MV detector is only info\u2014root cause of the regression remains UNKNOWN; causality is correctly null and outcome NOT_ASSESSED, which is properly disclosed. Correctly gates on rewrite/freshness/equivalence/Ranger proof and approval, avoiding unjustified action. Ranger acceptance is only a flag; the proposal rightly requires explicit masking proof rather than assuming it. No material hallucination; recommendation valid but conclusion INCONCLUSIVE fits."
+      },
+      "input": {
+        "measurements": {
+          "ranger_acceptance_proven": true
+        },
+        "detected_findings": [
+          {
+            "detector": "materialized_view",
+            "severity": "info"
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {
+          "before": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "HASH_JOIN",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 2
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 20,
+                  "cardinality": 2
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 15,
+                  "cardinality": 50000
+                }
+              }
+            ]
+          },
+          "after": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 40,
+                  "cardinality": 200
+                }
+              }
+            ]
+          }
+        },
+        "proposed_hypotheses": [],
+        "evidence_count": 60,
+        "baseline": {},
+        "diagnostic_assessment": [],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "AVAILABLE",
+          "experiment": "AVAILABLE",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "UNAVAILABLE",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "AVAILABLE"
+        },
+        "action": {
+          "kind": "MATERIALIZED_VIEW",
+          "risk": "APPROVAL",
+          "mode": "GOVERNED",
+          "state": "INCONCLUSIVE"
+        },
+        "experiment": {
+          "status": "REGRESSED",
+          "correctness": "EQUIVALENT",
+          "improvement": -1.4008799087607278,
+          "repetitions": 30,
+          "reason": "target_regressed",
+          "before": {
+            "count": 30,
+            "mean_ms": 65.17420793534257,
+            "p95_ms": 136.4635000063572,
+            "stddev_ms": 36.74187463386707,
+            "resource_samples": [
+              {
+                "cpu_ms": 30.773,
+                "execution_ms": 49.751,
+                "output_rows": 200,
+                "peak_memory_bytes": 3876585.472,
+                "queue_ms": 0,
+                "scanned_rows": 50200,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 19.412,
+                "execution_ms": 52.736,
+                "output_rows": 200,
+                "peak_memory_bytes": 3900702.72,
+                "queue_ms": 0,
+                "scanned_rows": 50200,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 156.47544640135797,
+            "p95_ms": 526.1764170136303,
+            "stddev_ms": 141.84424867238624,
+            "resource_samples": [
+              {
+                "cpu_ms": 104.096,
+                "execution_ms": 30.081,
+                "output_rows": 200,
+                "peak_memory_bytes": 1580204.032,
+                "queue_ms": 0,
+                "scanned_rows": 200,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 20.078,
+                "execution_ms": 11.406,
+                "output_rows": 200,
+                "peak_memory_bytes": 1531969.536,
+                "queue_ms": 0,
+                "scanned_rows": 200,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "controls": {
+            "after": {
+              "count": 30,
+              "mean_ms": 80.81720660071976,
+              "p95_ms": 280.55477602174506,
+              "stddev_ms": 95.10714125368347
+            },
+            "before": {
+              "count": 30,
+              "mean_ms": 41.99873953281591,
+              "p95_ms": 25.52227900014259,
+              "stddev_ms": 163.37115158306912
+            }
+          },
+          "result_comparison": {
+            "checked_control_samples": 60,
+            "checked_target_samples": 60,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "target_equivalent": true,
+            "digest_match": true,
+            "before_proof": {
+              "bytes_compared": 7800,
+              "ordered": false,
+              "row_count": 200,
+              "column_count": 2
+            },
+            "after_proof": {
+              "bytes_compared": 7800,
+              "ordered": false,
+              "row_count": 200,
+              "column_count": 2
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "governed-cycle-2",
+      "status": "VALID",
+      "mean": 3.25,
+      "scores": {
+        "detection_validity": 3,
+        "evidence_quality": 4,
+        "diagnosis_quality": 2,
+        "recommendation_quality": 3,
+        "safety": 4,
+        "experiment_validity": 4,
+        "outcome_interpretation": 3,
+        "explanation_quality": 3,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Detector flagged MV as info; plan comparison shows scan reduction (250k\u2192200 rows) but no operator profile or historical baseline, so root cause stays UNKNOWN. Experiment reports 76% improvement with 30 reps and equivalence proof, yet outcome is REGRESSED on untargeted workload\u2014observational causality. Proposal correctly withholds rollout, requires real rewrite/freshness/equivalence/Ranger proof and approval, and discloses unavailable evidence. No invented results. Diagnosis remains thin: it does not reconcile sandbox gain with workload regression. Recommend confirming equivalence via full MV rewrite proof before any governed action."
+      },
+      "input": {
+        "measurements": {
+          "ranger_acceptance_proven": true
+        },
+        "detected_findings": [
+          {
+            "detector": "materialized_view",
+            "severity": "info"
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {
+          "before": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "HASH_JOIN",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 2
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 20,
+                  "cardinality": 2
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 15,
+                  "cardinality": 250000
+                }
+              }
+            ]
+          },
+          "after": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 40,
+                  "cardinality": 200
+                }
+              }
+            ]
+          }
+        },
+        "proposed_hypotheses": [],
+        "evidence_count": 60,
+        "baseline": {},
+        "diagnostic_assessment": [],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "AVAILABLE",
+          "experiment": "AVAILABLE",
+          "outcome": "AVAILABLE"
+        },
+        "evidence_availability": {
+          "historical_baseline": "UNAVAILABLE",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "AVAILABLE"
+        },
+        "action": {
+          "kind": "MATERIALIZED_VIEW",
+          "risk": "APPROVAL",
+          "mode": "GOVERNED",
+          "state": "ROLLED_BACK"
+        },
+        "experiment": {
+          "status": "SUCCESS",
+          "correctness": "EQUIVALENT",
+          "improvement": 0.7632870599358791,
+          "repetitions": 30,
+          "before": {
+            "count": 30,
+            "mean_ms": 247.3528561007697,
+            "p95_ms": 501.0208390012849,
+            "stddev_ms": 210.6999713491017,
+            "resource_samples": [
+              {
+                "cpu_ms": 53.35,
+                "execution_ms": 123.598,
+                "output_rows": 200,
+                "peak_memory_bytes": 5694816.256,
+                "queue_ms": 0,
+                "scanned_rows": 250200,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 123.38,
+                "execution_ms": 240.917,
+                "output_rows": 200,
+                "peak_memory_bytes": 4995416.064,
+                "queue_ms": 0,
+                "scanned_rows": 250200,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 58.551621800870635,
+            "p95_ms": 227.08483698079363,
+            "stddev_ms": 77.12238358860554,
+            "resource_samples": [
+              {
+                "cpu_ms": 18.362,
+                "execution_ms": 10.772,
+                "output_rows": 200,
+                "peak_memory_bytes": 1508900.864,
+                "queue_ms": 0,
+                "scanned_rows": 200,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 11.129,
+                "execution_ms": 5.707,
+                "output_rows": 200,
+                "peak_memory_bytes": 1373634.56,
+                "queue_ms": 0,
+                "scanned_rows": 200,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "controls": {
+            "after": {
+              "count": 30,
+              "mean_ms": 25.42716050132488,
+              "p95_ms": 58.541899983538315,
+              "stddev_ms": 45.6500087750759
+            },
+            "before": {
+              "count": 30,
+              "mean_ms": 84.54213436343707,
+              "p95_ms": 296.8331950251013,
+              "stddev_ms": 82.94914108618003
+            }
+          },
+          "result_comparison": {
+            "checked_control_samples": 60,
+            "checked_target_samples": 60,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "target_equivalent": true,
+            "digest_match": true,
+            "before_proof": {
+              "bytes_compared": 8000,
+              "ordered": false,
+              "row_count": 200,
+              "column_count": 2
+            },
+            "after_proof": {
+              "bytes_compared": 8000,
+              "ordered": false,
+              "row_count": 200,
+              "column_count": 2
+            }
+          }
+        },
+        "outcome": {
+          "state": "REGRESSED",
+          "correctness": "sandbox_equivalence_only",
+          "reason": "untargeted_workload_regressed",
+          "rollback": "verified_object_removed",
+          "causality": "observational_post_application_window",
+          "gain_evidence": {
+            "after_mean_ms": 588.0226688333399,
+            "before_mean_ms": 472.3707723314874,
+            "mean_difference_margin_ms": 286.0290052034204,
+            "repeatable_gain": false
+          },
+          "before": {
+            "count": 30,
+            "maximum": 1747.407649003435,
+            "total": 14171.123169944622
+          },
+          "after": {
+            "count": 30,
+            "maximum": 3626.6193769988604,
+            "total": 17640.680065000197
+          },
+          "controls": [
+            {
+              "after": {
+                "count": 30,
+                "maximum": 1389.2461989889853,
+                "total": 9765.29228698928
+              },
+              "before": {
+                "count": 30,
+                "maximum": 1967.9548230196815,
+                "total": 7695.282481901813
+              }
+            }
+          ]
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "governed-cycle-3",
+      "status": "VALID",
+      "mean": 3.0,
+      "scores": {
+        "detection_validity": 3,
+        "evidence_quality": 3,
+        "diagnosis_quality": 2,
+        "recommendation_quality": 3,
+        "safety": 4,
+        "experiment_validity": 4,
+        "outcome_interpretation": 2,
+        "explanation_quality": 3,
+        "critical_hallucinations": 0,
+        "independent_root_cause": "EXCESSIVE_SCAN",
+        "explanation": "Plan comparison validly shows scans dropping from ~1,000,000 to 200 rows via MV rewrite, supporting EXCESSIVE_SCAN. But proposed_hypotheses empty and diagnostic_assessment empty, so no explicit causal diagnosis. Experiment is well-run (30 reps, controls, equivalence, digest match) yet improvement 0.34 flagged NO_IMPROVEMENT as non-repeatable/below threshold\u2014internally contradictory and unexplained. Ranger acceptance claimed proven but acceptance alone doesn't prove masking/equivalence; next step correctly demands rewrite, freshness, equivalence, masking and approval. No optimization authorized; outcome NOT_ASSESSED honestly disclosed. No invented facts."
+      },
+      "input": {
+        "measurements": {
+          "ranger_acceptance_proven": true
+        },
+        "detected_findings": [
+          {
+            "detector": "materialized_view",
+            "severity": "info"
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {
+          "before": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "HASH_JOIN",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 2
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 20,
+                  "cardinality": 2
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 15,
+                  "cardinality": 1000000
+                }
+              }
+            ]
+          },
+          "after": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 40,
+                  "cardinality": 200
+                }
+              }
+            ]
+          }
+        },
+        "proposed_hypotheses": [],
+        "evidence_count": 60,
+        "baseline": {},
+        "diagnostic_assessment": [],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "AVAILABLE",
+          "experiment": "AVAILABLE",
+          "outcome": "NOT_ASSESSED"
+        },
+        "evidence_availability": {
+          "historical_baseline": "UNAVAILABLE",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "AVAILABLE"
+        },
+        "action": {
+          "kind": "MATERIALIZED_VIEW",
+          "risk": "APPROVAL",
+          "mode": "GOVERNED",
+          "state": "INCONCLUSIVE"
+        },
+        "experiment": {
+          "status": "NO_IMPROVEMENT",
+          "correctness": "EQUIVALENT",
+          "improvement": 0.3388203722436852,
+          "repetitions": 30,
+          "reason": "benefit_not_repeatable_or_below_threshold",
+          "before": {
+            "count": 30,
+            "mean_ms": 102.21007413347252,
+            "p95_ms": 235.16664298949763,
+            "stddev_ms": 102.04280551755103,
+            "resource_samples": [
+              {
+                "cpu_ms": 252.047,
+                "execution_ms": 120.931,
+                "output_rows": 200,
+                "peak_memory_bytes": 5605687.296,
+                "queue_ms": 0,
+                "scanned_rows": 1000200,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 359.874,
+                "execution_ms": 173.924,
+                "output_rows": 200,
+                "peak_memory_bytes": 6131023.872,
+                "queue_ms": 0,
+                "scanned_rows": 1000200,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "after": {
+            "count": 30,
+            "mean_ms": 67.57921876851469,
+            "p95_ms": 177.62438900535926,
+            "stddev_ms": 60.688373976573175,
+            "resource_samples": [
+              {
+                "cpu_ms": 24.57,
+                "execution_ms": 12.732,
+                "output_rows": 200,
+                "peak_memory_bytes": 1463812.096,
+                "queue_ms": 0,
+                "scanned_rows": 200,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 18.932,
+                "execution_ms": 12.715,
+                "output_rows": 200,
+                "peak_memory_bytes": 1548746.752,
+                "queue_ms": 0,
+                "scanned_rows": 200,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "controls": {
+            "after": {
+              "count": 30,
+              "mean_ms": 23.96505406650249,
+              "p95_ms": 55.36779799149372,
+              "stddev_ms": 15.173011219084428
+            },
+            "before": {
+              "count": 30,
+              "mean_ms": 22.21497343465065,
+              "p95_ms": 82.19951699720696,
+              "stddev_ms": 35.04626964527641
+            }
+          },
+          "result_comparison": {
+            "checked_control_samples": 60,
+            "checked_target_samples": 60,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "target_equivalent": true,
+            "digest_match": true,
+            "before_proof": {
+              "bytes_compared": 8000,
+              "ordered": false,
+              "row_count": 200,
+              "column_count": 2
+            },
+            "after_proof": {
+              "bytes_compared": 8000,
+              "ordered": false,
+              "row_count": 200,
+              "column_count": 2
+            }
+          }
+        },
+        "outcome": {
+          "state": null,
+          "correctness": null,
+          "reason": null,
+          "rollback": null,
+          "causality": null
+        },
+        "rubric_version": 2
+      }
+    },
+    {
+      "case": "governed-cycle-4",
+      "status": "VALID",
+      "mean": 2.625,
+      "scores": {
+        "detection_validity": 2,
+        "evidence_quality": 3,
+        "diagnosis_quality": 2,
+        "recommendation_quality": 3,
+        "safety": 4,
+        "experiment_validity": 3,
+        "outcome_interpretation": 2,
+        "explanation_quality": 2,
+        "critical_hallucinations": 2,
+        "independent_root_cause": "UNKNOWN",
+        "explanation": "Plan comparison is available and shows MV rewrite reducing scans, so detection of an MV opportunity is plausible. However proposed_hypotheses is empty, and the root cause of the original latency is never established. The action is reported as SUCCESS/GOVERNED with experiment EQUIVALENT and outcome SUCCESS, but these conflict with execution_authority 'none' and required experiment/approval; no approval record is shown, and the outcome claims are observational sandbox equivalence only, not production-verified. Experiment is stated, but the raw resource samples are inconsistent with stated means. No operator evidence is provided. Correctly labels gain as observational and equivalence as sandbox-only, but overstates success. UNKNOWN root cause."
+      },
+      "input": {
+        "measurements": {
+          "ranger_acceptance_proven": true
+        },
+        "detected_findings": [
+          {
+            "detector": "materialized_view",
+            "severity": "info"
+          }
+        ],
+        "operator_evidence": [],
+        "plan_evidence": {
+          "before": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "HASH_JOIN",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 2
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 20,
+                  "cardinality": 2
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 15,
+                  "cardinality": 1000000
+                }
+              }
+            ]
+          },
+          "after": {
+            "operators": [
+              {
+                "operator": "EXCHANGE",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "PROJECT",
+                "estimates": {
+                  "cardinality": 200
+                }
+              },
+              {
+                "operator": "OLAP_SCAN",
+                "estimates": {
+                  "avgrowsize": 40,
+                  "cardinality": 200
+                }
+              }
+            ]
+          }
+        },
+        "proposed_hypotheses": [],
+        "evidence_count": 200,
+        "baseline": {},
+        "diagnostic_assessment": [],
+        "proposed_next_steps": [
+          "Test the aggregate MV in the enrolled snapshot; require real rewrite, freshness, equivalence, Ranger masking/filter proof and administrative approval."
+        ],
+        "measurement_provenance": "provided_scoped_measurements",
+        "execution_authority": "none",
+        "material_changes_require_experiment_and_policy": true,
+        "stage_availability": {
+          "action": "AVAILABLE",
+          "experiment": "AVAILABLE",
+          "outcome": "AVAILABLE"
+        },
+        "evidence_availability": {
+          "historical_baseline": "UNAVAILABLE",
+          "operator_profile": "UNAVAILABLE",
+          "plan_comparison": "AVAILABLE"
+        },
+        "action": {
+          "kind": "MATERIALIZED_VIEW",
+          "risk": "APPROVAL",
+          "mode": "GOVERNED",
+          "state": "SUCCESS"
+        },
+        "experiment": {
+          "status": "SUCCESS",
+          "correctness": "EQUIVALENT",
+          "improvement": 0.5187779775109489,
+          "repetitions": 100,
+          "before": {
+            "count": 100,
+            "mean_ms": 53.59483247913886,
+            "p95_ms": 101.32564799278043,
+            "stddev_ms": 27.981552416203026,
+            "resource_samples": [
+              {
+                "cpu_ms": 79.682,
+                "execution_ms": 31.391,
+                "output_rows": 200,
+                "peak_memory_bytes": 7196377.088,
+                "queue_ms": 0,
+                "scanned_rows": 1000200,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 70.035,
+                "execution_ms": 27.418,
+                "output_rows": 200,
+                "peak_memory_bytes": 8719958.016,
+                "queue_ms": 0,
+                "scanned_rows": 1000200,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "after": {
+            "count": 100,
+            "mean_ms": 25.791013680573087,
+            "p95_ms": 59.786444006022066,
+            "stddev_ms": 21.82714800163814,
+            "resource_samples": [
+              {
+                "cpu_ms": 7.705,
+                "execution_ms": 4.826,
+                "output_rows": 200,
+                "peak_memory_bytes": 1666187.264,
+                "queue_ms": 0,
+                "scanned_rows": 200,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 5.931,
+                "execution_ms": 5.136,
+                "output_rows": 200,
+                "peak_memory_bytes": 1701838.848,
+                "queue_ms": 0,
+                "scanned_rows": 200,
+                "spill_bytes": 0
+              }
+            ]
+          },
+          "controls": {
+            "after": {
+              "count": 100,
+              "mean_ms": 3.0949280588538386,
+              "p95_ms": 5.6010289990808815,
+              "stddev_ms": 2.1352402117860123
+            },
+            "before": {
+              "count": 100,
+              "mean_ms": 4.485420440323651,
+              "p95_ms": 11.374810012057424,
+              "stddev_ms": 4.37698020346901
+            }
+          },
+          "result_comparison": {
+            "checked_control_samples": 200,
+            "checked_target_samples": 200,
+            "control_equivalent": true,
+            "snapshot_verified": true,
+            "target_equivalent": true,
+            "digest_match": true,
+            "before_proof": {
+              "bytes_compared": 8000,
+              "ordered": false,
+              "row_count": 200,
+              "column_count": 2
+            },
+            "after_proof": {
+              "bytes_compared": 8000,
+              "ordered": false,
+              "row_count": 200,
+              "column_count": 2
+            }
+          }
+        },
+        "outcome": {
+          "state": "SUCCESS",
+          "measured_gain": 0.13003703042333725,
+          "correctness": "sandbox_equivalence_only",
+          "reason": null,
+          "rollback": "not_needed",
+          "causality": "observational_post_application_window",
+          "gain_evidence": {
+            "after_mean_ms": 115.45494102028897,
+            "before_mean_ms": 142.8008875309024,
+            "mean_difference_margin_ms": 14.012969738560685,
+            "repeatable_gain": true
+          },
+          "before": {
+            "count": 100,
+            "maximum": 405.0661099900026,
+            "total": 14280.08875309024
+          },
+          "after": {
+            "count": 100,
+            "maximum": 265.9385480219498,
+            "total": 11545.494102028897
+          },
+          "controls": [
+            {
+              "after": {
+                "count": 100,
+                "maximum": 659.2757450125646,
+                "total": 9271.016268030507
+              },
+              "before": {
+                "count": 100,
+                "maximum": 322.7788920048624,
+                "total": 8741.671099036466
+              }
+            }
+          ]
+        },
+        "rubric_version": 2
+      }
+    }
+  ],
+  "valid_cases": 12,
+  "requested_cases": 13,
+  "mean": 3.59375,
+  "critical_hallucinations": 2,
+  "status": "FAIL",
+  "execution_authority": "none",
+  "rubric_version": 2
+}

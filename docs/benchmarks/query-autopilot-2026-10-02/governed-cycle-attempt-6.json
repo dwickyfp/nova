@@ -1,0 +1,20 @@
+{
+  "status": "FAIL",
+  "evidence_kind": "isolated_governed_complete_cycle",
+  "database": "autopilot_gov_617029968342",
+  "snapshot": "autopilot_gov_617029968342_snapshot",
+  "fixture_rows": {
+    "sales": 50000,
+    "customers": 200
+  },
+  "candidate_id": "governed-cycle-617029968342",
+  "production_actions": 0,
+  "fixture_actions": 0,
+  "phase": "FAILED",
+  "fixture_security_probes": {
+    "source_filtered_sales": 25000,
+    "builder_snapshot_sales": 50000,
+    "raw_phone_values_absent": true
+  },
+  "error_type": "RuntimeError"
+}

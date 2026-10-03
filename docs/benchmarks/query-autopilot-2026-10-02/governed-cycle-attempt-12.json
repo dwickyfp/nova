@@ -1,0 +1,682 @@
+{
+  "status": "FAIL",
+  "evidence_kind": "isolated_governed_complete_cycle",
+  "database": "autopilot_gov_1fd8d2478aa2",
+  "snapshot": "autopilot_gov_1fd8d2478aa2_snapshot",
+  "fixture_rows": {
+    "sales": 50000,
+    "customers": 200
+  },
+  "candidate_id": "governed-cycle-1fd8d2478aa2",
+  "production_actions": 0,
+  "fixture_actions": 0,
+  "phase": "TRIAL_NOT_ACCEPTED",
+  "managed_storage_preflight": "PASS",
+  "fixture_security_probes": {
+    "source_filtered_sales": 25000,
+    "builder_snapshot_sales": 50000,
+    "raw_phone_values_absent": true,
+    "builder_source_access": "DENIED"
+  },
+  "experiments": [
+    {
+      "candidate_binding": "c611e8101573c1e34bbeea5bc64bfa3b1a335a194c636d4a2f092bcbdca8ec4d",
+      "candidate_id": "governed-cycle-1fd8d2478aa2",
+      "cleanup": "verified_object_removed",
+      "enrollment_binding": "cbca25e6cfc7a19ae70c269253ec0cb1bde32670fb5c1699db46421f379fa6de",
+      "id": "3d3e170b1fe8dd4f1f2c886c897c0fa29e5eac0c4afc9f5ceb69259608e3fc28",
+      "owned_object": {
+        "definition_digest": "8f2016181ebb48f78839712fb5fb263246ded663da188802be7ef31949875892",
+        "exists": true,
+        "identity": "21194",
+        "ready": true
+      },
+      "plan_diff": [
+        {
+          "after": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 2,
+            "operator": "EXCHANGE",
+            "ordinal": 0
+          },
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 11,
+            "operator": "EXCHANGE",
+            "ordinal": 0
+          },
+          "ordinal": 0
+        },
+        {
+          "after": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 1,
+            "operator": "Project",
+            "ordinal": 1
+          },
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 10,
+            "operator": "Decode",
+            "ordinal": 1
+          },
+          "ordinal": 1
+        },
+        {
+          "after": {
+            "attributes": {
+              "rollup": "nova_ap_1fd8d2478aa2"
+            },
+            "estimates": {
+              "avgrowsize": 58,
+              "cardinality": 200
+            },
+            "node_id": 0,
+            "operator": "OlapScanNode",
+            "ordinal": 2
+          },
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 9,
+            "operator": "Project",
+            "ordinal": 2
+          },
+          "ordinal": 2
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 7,
+            "operator": "EXCHANGE",
+            "ordinal": 3
+          },
+          "ordinal": 3
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 5,
+            "operator": "Project",
+            "ordinal": 4
+          },
+          "ordinal": 4
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {
+              "join op": "INNER JOIN (BROADCAST)"
+            },
+            "estimates": {
+              "cardinality": 200
+            },
+            "node_id": 4,
+            "operator": "HASH JOIN",
+            "ordinal": 5
+          },
+          "ordinal": 5
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {},
+            "estimates": {
+              "cardinality": 2
+            },
+            "node_id": 3,
+            "operator": "EXCHANGE",
+            "ordinal": 6
+          },
+          "ordinal": 6
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {
+              "rollup": "customers"
+            },
+            "estimates": {
+              "avgrowsize": 20,
+              "cardinality": 2
+            },
+            "node_id": 0,
+            "operator": "OlapScanNode",
+            "ordinal": 7
+          },
+          "ordinal": 7
+        },
+        {
+          "after": null,
+          "before": {
+            "attributes": {
+              "rollup": "sales"
+            },
+            "estimates": {
+              "avgrowsize": 15,
+              "cardinality": 50000
+            },
+            "node_id": 1,
+            "operator": "OlapScanNode",
+            "ordinal": 8
+          },
+          "ordinal": 8
+        }
+      ],
+      "plans": {
+        "after": {
+          "hash": "a504540916824b1c12e7594608831e3482bc998908ff4c0421b9ef3ea61c72a6",
+          "operators": [
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 2,
+              "operator": "EXCHANGE",
+              "ordinal": 0
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 1,
+              "operator": "Project",
+              "ordinal": 1
+            },
+            {
+              "attributes": {
+                "rollup": "nova_ap_1fd8d2478aa2"
+              },
+              "estimates": {
+                "avgrowsize": 58,
+                "cardinality": 200
+              },
+              "node_id": 0,
+              "operator": "OlapScanNode",
+              "ordinal": 2
+            }
+          ]
+        },
+        "before": {
+          "hash": "9d2ce71a4c355df2cad9f5b1b5e3187641a983c163489f0291918dd9c216c3f7",
+          "operators": [
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 11,
+              "operator": "EXCHANGE",
+              "ordinal": 0
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 10,
+              "operator": "Decode",
+              "ordinal": 1
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 9,
+              "operator": "Project",
+              "ordinal": 2
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 7,
+              "operator": "EXCHANGE",
+              "ordinal": 3
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 5,
+              "operator": "Project",
+              "ordinal": 4
+            },
+            {
+              "attributes": {
+                "join op": "INNER JOIN (BROADCAST)"
+              },
+              "estimates": {
+                "cardinality": 200
+              },
+              "node_id": 4,
+              "operator": "HASH JOIN",
+              "ordinal": 5
+            },
+            {
+              "attributes": {},
+              "estimates": {
+                "cardinality": 2
+              },
+              "node_id": 3,
+              "operator": "EXCHANGE",
+              "ordinal": 6
+            },
+            {
+              "attributes": {
+                "rollup": "customers"
+              },
+              "estimates": {
+                "avgrowsize": 20,
+                "cardinality": 2
+              },
+              "node_id": 0,
+              "operator": "OlapScanNode",
+              "ordinal": 7
+            },
+            {
+              "attributes": {
+                "rollup": "sales"
+              },
+              "estimates": {
+                "avgrowsize": 15,
+                "cardinality": 50000
+              },
+              "node_id": 1,
+              "operator": "OlapScanNode",
+              "ordinal": 8
+            }
+          ]
+        }
+      },
+      "refresh_source": null,
+      "resource_budget": null,
+      "resource_source": null,
+      "result": {
+        "after": {
+          "count": 30,
+          "mean_ms": 25.73415826773271,
+          "p95_ms": 51.38838099082932,
+          "plans": [],
+          "query_ids": [
+            "01a0fc70-977f-76f4-b472-d6c620b0b290",
+            "01a0fc70-9e51-7bdd-8d82-ae7437bd153b",
+            "01a0fc70-9f82-7c0e-b83a-f8582dc99211",
+            "01a0fc70-a0b8-7c02-9e55-003af70c8fba",
+            "01a0fc70-a1eb-7b8b-b2a2-d8fb07f22acd",
+            "01a0fc70-a313-7c15-8e02-829c7e9ad07e",
+            "01a0fc70-a44a-7c67-bb6e-37a141f736b4",
+            "01a0fc70-a57a-7b21-9475-13679c148c14",
+            "01a0fc70-a6b1-74c5-8521-11ed826aaaf7",
+            "01a0fc70-a802-7a6e-b3d7-c615a4677cd5",
+            "01a0fc70-a965-7ecc-960f-c13c08813df9",
+            "01a0fc70-aa9f-7faa-b17c-19b1081d1e5f",
+            "01a0fc70-abca-7a22-8329-403361892c98",
+            "01a0fc70-acf5-75d0-a190-c54e0786c57b",
+            "01a0fc70-ae34-74c4-8e94-55832d602838",
+            "01a0fc70-af5f-7466-80be-9dd77d391573",
+            "01a0fc70-b0e2-7699-ad95-7b26005e391b",
+            "01a0fc70-b223-7740-8126-78c5108cecd9",
+            "01a0fc70-b364-7ac1-9e24-686159161098",
+            "01a0fc70-b558-76b9-a070-6c65d0e6d533",
+            "01a0fc70-b707-79d8-a869-a4011493aa81",
+            "01a0fc70-b948-75c0-a1b8-fc31601aae9c",
+            "01a0fc70-bc5f-7423-a551-e8f67188b9a3",
+            "01a0fc70-be79-76c7-960f-b10d962c465c",
+            "01a0fc70-bfbe-7f4b-a467-ed8aab380554",
+            "01a0fc70-c0fd-702e-8ab4-f8f0f9574e51",
+            "01a0fc70-c22a-7a26-8b95-43fe068fa25e",
+            "01a0fc70-c375-705a-ab50-a7d1289b6b3d",
+            "01a0fc70-c4d7-7da0-a596-4fbedc353391",
+            "01a0fc70-c616-7ed7-b888-aa05684ea32f"
+          ],
+          "resource": [
+            {
+              "cpu_ms": 12.943,
+              "execution_ms": 10.039,
+              "output_rows": 200,
+              "peak_memory_bytes": 1620049.92,
+              "queue_ms": 0,
+              "scanned_rows": 200,
+              "spill_bytes": 0
+            },
+            {
+              "cpu_ms": 5.405,
+              "execution_ms": 4.016,
+              "output_rows": 200,
+              "peak_memory_bytes": 1472200.704,
+              "queue_ms": 0,
+              "scanned_rows": 200,
+              "spill_bytes": 0
+            }
+          ],
+          "stddev_ms": 13.14761325735338
+        },
+        "before": {
+          "count": 30,
+          "mean_ms": 45.804176166226775,
+          "p95_ms": 105.40555597981438,
+          "plans": [],
+          "query_ids": [
+            "01a0fc70-5367-7b94-90da-48ea688ce94c",
+            "01a0fc70-5855-762a-9c13-d89d5530094c",
+            "01a0fc70-5989-7022-bc9b-f75a443e17b2",
+            "01a0fc70-5ac7-76cf-b09c-7dd8cd44f900",
+            "01a0fc70-5c2c-7203-b6f3-a996e76b8160",
+            "01a0fc70-5e07-70bd-ad8a-685e985567f2",
+            "01a0fc70-5f4c-76d3-b225-94ec8c71ee6f",
+            "01a0fc70-6105-71b4-8312-265e6ad20b6f",
+            "01a0fc70-6262-785e-bb73-9f0657d51c8d",
+            "01a0fc70-63b0-7e9a-a371-3561fc65141b",
+            "01a0fc70-64e6-78e6-a504-e674b4f755d6",
+            "01a0fc70-6674-707b-80ca-f5236a5a7251",
+            "01a0fc70-67ae-7efc-b5ec-b12664f69ecb",
+            "01a0fc70-691a-7259-8323-8bc1fcda56d7",
+            "01a0fc70-6af7-740f-bb89-95d9ad075ebb",
+            "01a0fc70-6c34-733a-a3da-0b8c98681e02",
+            "01a0fc70-6d61-72d0-9e00-638ff3c51d97",
+            "01a0fc70-6e91-7893-83f1-30b1103292bc",
+            "01a0fc70-6fd3-7b6f-a736-fba1d4027d48",
+            "01a0fc70-7119-7075-bfac-70039793969d",
+            "01a0fc70-7277-7695-aa29-eb1b2e3289fd",
+            "01a0fc70-73f1-70b3-b10d-ccbc72ecd880",
+            "01a0fc70-7549-73dd-a0a7-c711fcaf0e05",
+            "01a0fc70-769e-70dc-b86b-0c27e273ff7d",
+            "01a0fc70-7824-76cb-83c3-31121e6badc2",
+            "01a0fc70-7a8a-757d-b26f-6d543dc5f225",
+            "01a0fc70-7bc7-7e8b-b383-44fca04f650e",
+            "01a0fc70-7f62-7678-86e0-409d23b48e42",
+            "01a0fc70-81a9-78f5-a3d4-3a098e64bb90",
+            "01a0fc70-83cf-77a7-8c96-d5148c9b5012"
+          ],
+          "resource": [
+            {
+              "cpu_ms": 9.519,
+              "execution_ms": 13.861,
+              "max_operator_ms": 0.001333,
+              "median_operator_ms": 0.0009735,
+              "operator_instance_count": 2,
+              "output_rows": 200,
+              "peak_memory_bytes": 3869245.44,
+              "queue_ms": 0,
+              "scanned_rows": 50200,
+              "spill_bytes": 0
+            },
+            {
+              "cpu_ms": 28.944,
+              "execution_ms": 40.263,
+              "max_operator_ms": 0.0045910000000000005,
+              "median_operator_ms": 0.003066,
+              "operator_instance_count": 2,
+              "output_rows": 200,
+              "peak_memory_bytes": 4010803.2,
+              "queue_ms": 0,
+              "scanned_rows": 50200,
+              "spill_bytes": 0
+            }
+          ],
+          "stddev_ms": 23.641285605128502
+        },
+        "controls": {
+          "after": {
+            "count": 30,
+            "mean_ms": 12.914971632805342,
+            "p95_ms": 26.96815598756075,
+            "plans": [],
+            "query_ids": [
+              "01a0fc70-9a5f-7fdf-951a-7c14f4b18e67",
+              "01a0fc70-9ebe-732e-a574-b752d4af08e9",
+              "01a0fc70-9fef-7142-850b-60e6f7590ce3",
+              "01a0fc70-a119-760d-9bb3-3471a175a643",
+              "01a0fc70-a24c-70da-ba41-009636544ea7",
+              "01a0fc70-a382-786d-99fc-1563a9fa6217",
+              "01a0fc70-a4ae-787d-a74f-396e129f4011",
+              "01a0fc70-a5e2-7b90-a572-78f9da44ee04",
+              "01a0fc70-a736-794a-ad23-5861a5bdd3c1",
+              "01a0fc70-a863-763c-ab52-0c9facf00d5e",
+              "01a0fc70-a9cc-75da-8f32-e54cf82c434f",
+              "01a0fc70-aafd-7562-ae80-7c634d7c6ec8",
+              "01a0fc70-ac30-7743-8dd3-420d2e7b1a52",
+              "01a0fc70-ad5e-77b2-a571-61ea94e763e5",
+              "01a0fc70-ae96-79b3-8a7c-dae8c481097a",
+              "01a0fc70-afca-7f18-aba3-fd072e17f426",
+              "01a0fc70-b15e-7a81-8520-59abbdcf5902",
+              "01a0fc70-b297-722e-a41d-bd9cf6a22a99",
+              "01a0fc70-b430-7f25-8c2d-efa93b3c6c8d",
+              "01a0fc70-b5ea-7cf1-9a44-52218dad4c7f",
+              "01a0fc70-b77c-7255-95e8-3e6943d85986",
+              "01a0fc70-baa9-7487-815e-69601e127767",
+              "01a0fc70-bd1b-70eb-a06d-af7217ea8ddf",
+              "01a0fc70-bef0-7027-8b05-6815a122cf29",
+              "01a0fc70-c021-7631-a228-3c280fd6dc9a",
+              "01a0fc70-c15f-7ebc-a6de-4eb9cb997a0c",
+              "01a0fc70-c2a0-7704-b05c-0970a1f0567b",
+              "01a0fc70-c3d9-77d6-9d92-6572d04229cc",
+              "01a0fc70-c566-775d-874d-d95e10331314",
+              "01a0fc70-c848-7612-8137-4df1b4f3a260"
+            ],
+            "resource": [
+              {
+                "cpu_ms": 2.837,
+                "execution_ms": 9.109,
+                "output_rows": 1,
+                "peak_memory_bytes": 474288.128,
+                "queue_ms": 0,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 2.407,
+                "execution_ms": 6.278,
+                "output_rows": 1,
+                "peak_memory_bytes": 483248.128,
+                "queue_ms": 0,
+                "spill_bytes": 0
+              }
+            ],
+            "stddev_ms": 9.300170288716735
+          },
+          "before": {
+            "count": 30,
+            "mean_ms": 9.903072367887944,
+            "p95_ms": 18.11233500484377,
+            "plans": [],
+            "query_ids": [
+              "01a0fc70-55a0-7079-b0db-0675e3d875c6",
+              "01a0fc70-58cd-7a44-b868-d3fb6ef14db7",
+              "01a0fc70-59f5-78e7-a555-4fa781ae6025",
+              "01a0fc70-5b59-7730-8ec4-df74baeec631",
+              "01a0fc70-5c9f-79f4-85b2-0b0e824ef68b",
+              "01a0fc70-5e82-765f-bef4-f0abd1b98cb9",
+              "01a0fc70-5fe6-74af-82f9-a519aecd3dec",
+              "01a0fc70-6195-7ba9-b3bf-b8724178abca",
+              "01a0fc70-62e6-75f4-9365-71301a87f63f",
+              "01a0fc70-6410-7845-9d83-7aed1f15dd11",
+              "01a0fc70-65a9-79dc-aaf9-a10e407b79ce",
+              "01a0fc70-66d6-7e05-950b-3710de9e8ee0",
+              "01a0fc70-6827-775e-956d-2ca8b995872a",
+              "01a0fc70-69a5-7ee3-9881-0d7bc2cb1678",
+              "01a0fc70-6b70-7a9d-8dac-36d42630b3ab",
+              "01a0fc70-6c9c-7fb5-831e-2fd5bb68ff33",
+              "01a0fc70-6dc8-7e2d-a595-d8c8dfa6e0ca",
+              "01a0fc70-6f06-7854-b177-e4e81957bd4c",
+              "01a0fc70-704b-70c6-9e81-5ac46ee5c543",
+              "01a0fc70-7198-7659-bd88-39ad21131520",
+              "01a0fc70-72da-7b49-8fee-e5cf6ca60360",
+              "01a0fc70-7476-7f4a-8da4-8917d4a3fe0d",
+              "01a0fc70-75e5-7d1a-a2c5-95f0f711b226",
+              "01a0fc70-7704-78f4-9a64-4ec6e4507ce8",
+              "01a0fc70-7933-71e8-9e3a-4d8899b05acf",
+              "01a0fc70-7afc-7f94-be12-4fc4ce53d6cc",
+              "01a0fc70-7c3d-70bd-bce0-0be008cad650",
+              "01a0fc70-804c-72e9-9968-140dc8791215",
+              "01a0fc70-8277-7917-93ab-39519b3427de",
+              "01a0fc70-8648-7dbf-b6eb-66e603de1fbe"
+            ],
+            "resource": [
+              {
+                "cpu_ms": 0.29630399999999996,
+                "execution_ms": 3.06,
+                "output_rows": 1,
+                "peak_memory_bytes": 478239.744,
+                "queue_ms": 0,
+                "spill_bytes": 0
+              },
+              {
+                "cpu_ms": 0.427636,
+                "execution_ms": 3.015,
+                "output_rows": 1,
+                "peak_memory_bytes": 483311.616,
+                "queue_ms": 0,
+                "spill_bytes": 0
+              }
+            ],
+            "stddev_ms": 3.91182911782615
+          }
+        },
+        "correctness": "DIFFERENT",
+        "improvement": null,
+        "reason": "result_changed",
+        "repetitions": 30,
+        "result_comparison": {
+          "after_proof": {
+            "bytes_compared": 10000,
+            "digest": "b822892642e967a40b61222b01b9eb1f8135ab7f9a3c9b3a992a80acbf3a3d00",
+            "ordered": false,
+            "reason": null,
+            "row_count": 200,
+            "types": [
+              "(253, 1048576, 0)",
+              "(246, 42, 2)"
+            ]
+          },
+          "before_proof": {
+            "bytes_compared": 10000,
+            "digest": "7bbbc8659c93160b4df424ca0f36d620a6ad69eb0785e87946214bfab2a28c7e",
+            "ordered": false,
+            "reason": null,
+            "row_count": 200,
+            "types": [
+              "(253, 32, 0)",
+              "(246, 42, 2)"
+            ]
+          },
+          "checked_control_samples": 60,
+          "checked_target_samples": 60,
+          "control_equivalent": true,
+          "snapshot_verified": true,
+          "target_equivalent": false
+        },
+        "snapshot": "2b69bf91529961b475cf71d4710a809a25ae5ac869ab1c56d1d610288a05e9d6",
+        "status": "FAILED"
+      },
+      "result_digest": "321382bda953cc865cabb6dd949b942b97098e0df4ebbd78371cd1d05b658eb6",
+      "sample_id": "governed-cycle-1fd8d2478aa2-sample-0",
+      "snapshot_id": "governed-cycle-1fd8d2478aa2",
+      "state": "FAILED",
+      "trial_candidate": {
+        "approval_digest": null,
+        "approval_expires_at": null,
+        "approved_by": null,
+        "enrollment_id": "governed-cycle-1fd8d2478aa2",
+        "enrollment_version": 1,
+        "evidence_digest": "8bcb52676cded2b27c20ced470b4ae1b5f2bd51d6a270c783d45babb78aa9572",
+        "evidence_ids": [
+          "governed-cycle-1fd8d2478aa2-sample-0"
+        ],
+        "experiment_digest": null,
+        "experiment_id": null,
+        "family_id": "9718c542138abc8da76cec1883a9355a036fe589cae0e8db4614fa676012e517",
+        "id": "governed-cycle-1fd8d2478aa2",
+        "kind": "MATERIALIZED_VIEW",
+        "owned_object": null,
+        "parameters": {
+          "name": "nova_ap_1fd8d2478aa2"
+        },
+        "policy_version": 1,
+        "proposed_at": "2026-10-02T11:46:52.481600Z",
+        "reason": null,
+        "scope": {
+          "active_role": "marketing",
+          "catalog": "default_catalog",
+          "database": "autopilot_gov_1fd8d2478aa2",
+          "policy_revision": "3:138:5",
+          "principal": "alice",
+          "security_context_version": 1,
+          "settings_hash": ""
+        },
+        "state": "VALIDATING",
+        "targets": [
+          "autopilot_gov_1fd8d2478aa2_snapshot.sales",
+          "autopilot_gov_1fd8d2478aa2_snapshot.customers"
+        ],
+        "version": 2
+      }
+    }
+  ],
+  "candidate": {
+    "id": "governed-cycle-1fd8d2478aa2",
+    "version": 2,
+    "family_id": "9718c542138abc8da76cec1883a9355a036fe589cae0e8db4614fa676012e517",
+    "scope": {
+      "principal": "alice",
+      "active_role": "marketing",
+      "security_context_version": 1,
+      "catalog": "default_catalog",
+      "database": "autopilot_gov_1fd8d2478aa2",
+      "policy_revision": "3:138:5",
+      "settings_hash": ""
+    },
+    "kind": "MATERIALIZED_VIEW",
+    "targets": [
+      "sales",
+      "customers"
+    ],
+    "evidence_ids": [
+      "governed-cycle-1fd8d2478aa2-sample-0"
+    ],
+    "evidence_digest": "8bcb52676cded2b27c20ced470b4ae1b5f2bd51d6a270c783d45babb78aa9572",
+    "enrollment_id": "governed-cycle-1fd8d2478aa2",
+    "enrollment_version": 1,
+    "policy_version": 1,
+    "experiment_id": null,
+    "experiment_digest": null,
+    "state": "INCONCLUSIVE",
+    "reason": "result_changed",
+    "parameters": {
+      "name": "nova_ap_1fd8d2478aa2"
+    },
+    "proposed_at": "2026-10-02T11:46:52.481600Z",
+    "approved_by": null,
+    "approval_digest": null,
+    "approval_expires_at": null,
+    "owned_object": null
+  },
+  "reason": "measured_governed_trial_not_successful"
+}

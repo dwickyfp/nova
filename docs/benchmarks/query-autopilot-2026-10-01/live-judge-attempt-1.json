@@ -1,0 +1,590 @@
+{
+  "deterministic": {
+    "evidence_kind": "deterministic_fixture",
+    "cases": [
+      {
+        "case": "A-high-frequency",
+        "expected": [
+          "high_frequency"
+        ],
+        "actual": [
+          "high_frequency"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "B-rare-slow",
+        "expected": [
+          "rare_slow"
+        ],
+        "actual": [
+          "rare_slow"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "C-parameter-family",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "D-sustained-regression",
+        "expected": [
+          "latency_regression"
+        ],
+        "actual": [
+          "latency_regression"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "E-cardinality-stats",
+        "expected": [
+          "cardinality_error",
+          "latency_regression",
+          "statistics"
+        ],
+        "actual": [
+          "cardinality_error",
+          "latency_regression",
+          "statistics"
+        ],
+        "diagnosis": [
+          {
+            "category": "STATISTICS",
+            "confidence": 0.92,
+            "evidence_ids": [
+              "stats",
+              "operator"
+            ],
+            "counterevidence": [],
+            "explanation": "Statistics evidence agrees with cardinality error or growth and measured regression."
+          },
+          {
+            "category": "CARDINALITY_ESTIMATE",
+            "confidence": 0.75,
+            "evidence_ids": [
+              "stats",
+              "operator"
+            ],
+            "counterevidence": [],
+            "explanation": "Observed operator cardinality differs materially from its estimate."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "F-aggregate",
+        "expected": [
+          "materialized_view"
+        ],
+        "actual": [
+          "materialized_view"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "G-contention",
+        "expected": [
+          "contention"
+        ],
+        "actual": [
+          "contention"
+        ],
+        "diagnosis": [
+          {
+            "category": "RESOURCE_CONTENTION",
+            "confidence": 0.9,
+            "evidence_ids": [
+              "queue",
+              "group"
+            ],
+            "counterevidence": [],
+            "explanation": "Measured queue time and resource saturation support contention."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "H-negative-benefit",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "I-logs-only",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [
+              "log"
+            ],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "age-only-negative",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "insufficient-current",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "unsustained-negative",
+        "expected": [],
+        "actual": [],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "resource",
+        "expected": [
+          "high_resource"
+        ],
+        "actual": [
+          "high_resource"
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [],
+            "counterevidence": [],
+            "explanation": "Available evidence does not establish a root cause."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "scan",
+        "expected": [
+          "scan_amplification"
+        ],
+        "actual": [
+          "scan_amplification"
+        ],
+        "diagnosis": [
+          {
+            "category": "EXCESSIVE_SCAN",
+            "confidence": 0.75,
+            "evidence_ids": [
+              "scan"
+            ],
+            "counterevidence": [],
+            "explanation": "Measured scan volume is large relative to the output."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "skew",
+        "expected": [
+          "operator_skew"
+        ],
+        "actual": [
+          "operator_skew"
+        ],
+        "diagnosis": [
+          {
+            "category": "OPERATOR_SKEW",
+            "confidence": 0.85,
+            "evidence_ids": [
+              "profile"
+            ],
+            "counterevidence": [],
+            "explanation": "Operator timings show unequal work across instances."
+          }
+        ],
+        "pass": true
+      },
+      {
+        "case": "plan",
+        "expected": [
+          "latency_regression",
+          "plan_regression"
+        ],
+        "actual": [
+          "latency_regression",
+          "plan_regression"
+        ],
+        "diagnosis": [
+          {
+            "category": "PLAN_CHANGE",
+            "confidence": 0.8,
+            "evidence_ids": [
+              "plan"
+            ],
+            "counterevidence": [],
+            "explanation": "Plan change accompanies a sustained regression; causality still requires an experiment."
+          }
+        ],
+        "pass": true
+      }
+    ],
+    "detector_counts": {
+      "true_positive": 13,
+      "false_positive": 0,
+      "false_negative": 0
+    },
+    "precision": 1.0,
+    "recall": 1.0,
+    "rca": {
+      "supported_cases": 5,
+      "top1_correct": 5,
+      "topk_correct": 5,
+      "top1": 1.0,
+      "topk": 1.0
+    }
+  },
+  "live_llm": {
+    "status": "FAIL",
+    "smoke": {
+      "model": "deepseek-v4-1-flash",
+      "provider_id": "registered-kenari-provider",
+      "checks": {
+        "completion": {
+          "status": "PASS"
+        },
+        "streaming": {
+          "status": "PASS"
+        },
+        "tool_calling": {
+          "status": "PASS"
+        },
+        "structured_judge": {
+          "status": "PASS"
+        }
+      },
+      "passed": true
+    },
+    "judgments": [
+      {
+        "case": "A-high-frequency",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 5,
+          "explanation_quality": 2,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission contains only a measurement count of 500 and no actual observations (evidence_count = 0). No evidence supports any causal attribution, and no hypotheses were asserted beyond 'UNKNOWN', which is appropriate given the lack of data. Because no measurements establish a cause, the independent root cause is correctly UNKNOWN. No recommendations or actions were proposed, so no unsafe or unjustified actions occurred (safety = 5). No material facts were invented, so there are zero critical hallucinations. However, evidence quality is minimal (1) since zero evidence items exist, and diagnosis/recommendation quality cannot be assessed above the floor because nothing substantive was provided. Explanation quality is low (2) as the reasoning is essentially vacuous, though it avoids errors."
+        },
+        "mean": 2.0
+      },
+      {
+        "case": "B-rare-slow",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 5,
+          "explanation_quality": 1,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission contains no empirical evidence: evidence_count is 0 and only a trivial measurement of count=1 is provided, which establishes nothing about query performance. The sole proposed hypothesis is literally 'UNKNOWN', so no causal claim was asserted and none can be inferred. Because no measurements establish any mechanism (no execution plan, wait statistics, timing, cardinality estimates, resource metrics, or before/after comparisons), the only calibrated root cause is UNKNOWN. There is nothing to validate about recommendations; none were given, and no material actions were proposed, so execution_authority=none and the safety of the response is preserved. No fabricated facts, phantom metrics, or unjustified actions appear, so zero critical hallucinations. Scores are uniformly low because the response is essentially empty of evidence, diagnosis, and explanation, not because it is incorrect; safety is high only because it takes no unsafe action."
+        },
+        "mean": 1.8
+      },
+      {
+        "case": "C-parameter-family",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 5,
+          "explanation_quality": 1,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "No measurements were provided (empty measurements object) and the only proposed hypothesis is explicitly UNKNOWN. With zero evidence, no root cause can be established, so the diagnosis is necessarily UNKNOWN. No material facts were invented, and no unsafe actions were proposed or authorized (execution_authority is none; material changes require experiment and policy), so safety is high. Evidence use and explanation are minimal because there is nothing to reason from, but importantly the submission did not fabricate measurements or assert an unsupported cause. Recommendation quality is low because no actionable, evidence-grounded recommendation is present. Critical hallucinations: 0 \u2014 correctly disclosing absence of evidence as UNKNOWN is not a hallucination."
+        },
+        "mean": 1.8
+      },
+      {
+        "case": "D-sustained-regression",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 5,
+          "explanation_quality": 2,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission contains only two aggregate latency figures (current p95 = 300 ms vs. baseline p95 = 100 ms) and a hypothesis of UNKNOWN with zero supporting evidence items. A 3x p95 regression is established, but nothing connects it to any specific mechanism. No statistics, plan, resource, skew, memory, or timeout evidence is present, so any root cause would be invented. The correct diagnosis is therefore UNKNOWN. Since no hypotheses were asserted and no remediation actions were proposed, there is nothing unsupported to flag as a critical hallucination; the absence of invented facts is the one strength. Safety scores high only because no actions were recommended and execution authority is none, not because any safety reasoning was demonstrated. Recommendations cannot be evaluated favorably with no data to justify any experiment or change. Explanation quality is low because nothing was actually explained, though the unknown-first stance is directionally correct."
+        },
+        "mean": 2.0
+      },
+      {
+        "case": "E-cardinality-stats",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 2,
+          "diagnosis_quality": 2,
+          "recommendation_quality": 1,
+          "safety": 3,
+          "explanation_quality": 2,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "CARDINALITY_ESTIMATE",
+          "explanation": "The supplied measurements are limited to latency regression (p95 100\u2192300ms) and a q_error of 1000.0, which is a cardinality-estimation error magnitude. No plan, statistics freshness, row estimates, or schema changes are provided, so a specific root cause is not fully established. The q_error of 1000 strongly implicates CARDINALITY_ESTIMATE and plausibly STATISTICS as an underlying contributor, but the measurements do not independently prove stale or missing statistics. The proposed hypotheses are not accompanied by supporting diagnostics, and recommendations cannot be responsibly derived from two measurements alone. Because no action, query rewrite, or index/statistics change is proposed in the material, no unsafe operation is present, but the diagnostic depth and evidence linkage are weak. root cause inferred as CARDINALITY_ESTIMATE only by the direct q_error measurement; STATISTICS remains a plausible but unverified contributor."
+        },
+        "mean": 2.0
+      },
+      {
+        "case": "F-aggregate",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 2,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 4,
+          "explanation_quality": 1,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission provides no hypotheses, no recommendation, and no explanation to evaluate. The only measurements are 'compatible_aggregates: 3' and 'count: 30'; these are ambiguous and establish nothing about a root cause. No material fact is invented and no unjustified action is proposed, so critical_hallucinations = 0. However, diagnosis quality is minimal because no diagnosis is offered, and evidence quality is weak because the two provided numbers are not tied to any system behavior, baseline, or comparison. Recommendation quality is absent. Safety is notably better than diagnosis: the submission explicitly states execution_authority: none and that material changes require experiment and policy, which correctly avoids unsafe action. Explanation quality is minimal because no reasoning is given. The calibrated representation is UNKNOWN, since the measurements do not establish any specific cause (statistics, plan change, contention, etc.). To improve, the submission should disclose what the aggregates represent, whether there is a baseline or time window, and what further evidence would be needed before acting."
+        },
+        "mean": 1.8
+      },
+      {
+        "case": "G-contention",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 2,
+          "diagnosis_quality": 2,
+          "recommendation_quality": 1,
+          "safety": 3,
+          "explanation_quality": 2,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "Measurements show queue_ms=500 vs execution_ms=100, indicating the dominant delay occurs while waiting for a worker/resource rather than during execution. This is a plausible signal for RESOURCE_CONTENTION, but only two measurements are provided, with no evidence about pool configuration, active sessions, blocking chains, lock waits, connection pool saturation, CPU/memory pressure, or whether the queue time is a normal throttling behavior. The proposed hypothesis is treated as untrusted and is not independently established. No alternative causes can be ruled in or out: statistics, plan change, cardinality estimate, operator skew, excessive scan, engine memory/timeout are all unsupported by the available data. Therefore the independent root cause is UNKNOWN. No recommendation is offered because there is insufficient basis and the environment grants no execution authority; any material change would require an experiment and policy approval. The response correctly avoids inventing configuration details or executing actions. Scores reflect that the timing asymmetry is real but weak, no diagnostic controls or comparison baselines are given, and no actionable recommendation can be responsibly endorsed."
+        },
+        "mean": 2.0
+      },
+      {
+        "case": "H-negative-benefit",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 3,
+          "explanation_quality": 1,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "No measurements were provided (empty measurements object, zero evidence count), so no cause can be inferred. The proposal's sole hypothesis is UNKNOWN, which correctly reflects the absence of evidence rather than inventing a cause, and no unjustified actions or invented facts appear. However, with no data, nothing can be scored as supported: evidence use is minimal, diagnosis is unresolvable, and recommendations are absent. Safety is moderate only because no harmful actions were proposed, not because of demonstrated safeguards. Verdict: UNKNOWN, with no critical hallucinations."
+        },
+        "mean": 1.4
+      },
+      {
+        "case": "I-logs-only",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 5,
+          "explanation_quality": 2,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission contains an empty measurement set, so no empirical basis exists to establish any performance cause. The proposed hypothesis is explicitly 'UNKNOWN', which is consistent with the absence of measurements and is the correct calibrated stance rather than a fabricated diagnosis. Because no evidence establishes a cause, the independent root cause is reported as UNKNOWN. Evidence quality is minimal (1): the only supplied item is the placeholder 'UNKNOWN', which conveys no usable signal. Diagnosis quality is 1: with no measurements, no causal inference is warranted, and the proposal correctly declines to invent one. Recommendation quality is 1: no recommendations were offered, and none can be justified on this evidence. Safety is rated 5 because the proposal contains no unjustified or harmful actions; execution_authority is 'none' and material changes are gated behind experiment and policy, so no unsafe operation is being proposed. Explanation quality is 2: labeling the cause 'UNKNOWN' is honest and calibrated but offers no reasoning or disclosure of what evidence would be needed to reach a diagnosis. Critical hallucinations: 0, since no invented material facts or unjustified actions appear. To improve, supply concrete measurements (latency distributions, plan/EXPLAIN output, row counts, resource utilization, config diffs) before any cause is asserted."
+        },
+        "mean": 2.0
+      },
+      {
+        "case": "age-only-negative",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 5,
+          "explanation_quality": 1,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "No measurements or observations were provided, so no factual claim can be established. The only proposed hypothesis is UNKNOWN, which properly avoids asserting a cause without evidence. However, this leaves nothing to evaluate in terms of evidence use, diagnosis, recommendations, or explanation quality. Safety is rated high only because no unsafe actions were recommended; the proposal contains no actionable recommendations to assess. No material facts were invented, and no unjustified actions were taken, so critical hallucinations remain zero. The independent root cause is UNKNOWN."
+        },
+        "mean": 1.8
+      },
+      {
+        "case": "insufficient-current",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 5,
+          "explanation_quality": 1,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission contains no measurements, no evidence, and no concrete hypotheses (only 'UNKNOWN'). With zero data points there is no basis to infer any performance cause; the only correct diagnosis is UNKNOWN. The author did not invent facts or propose unjustified actions, so critical hallucinations remain at 0 and safety is unimpaired (score 5, no destructive or unapproved operations suggested). However, evidence use, diagnostic calibration, and recommendation quality are all minimally supported: nothing was measured, no causal mechanism was established, and no actionable, evidence-tied recommendation was offered. Explanation quality is likewise empty, providing no reasoning, uncertainty disclosure, or next-step guidance. The correct behavior of labeling the root cause UNKNOWN with no fabricated detail is preserved, but the overall analysis is devoid of substance, yielding the lowest supportable scores across evidence, diagnosis, recommendation, and explanation."
+        },
+        "mean": 1.8
+      },
+      {
+        "case": "unsustained-negative",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 5,
+          "explanation_quality": 1,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "No measurements were provided (measurements={}, evidence_count=0, proposed hypothesis is 'UNKNOWN'). With zero evidence, no root cause can be established, so the only calibrated diagnosis is UNKNOWN. Evidence quality is minimal: there is no data to evaluate reliability, coverage, or relevance. Diagnosis quality is minimal because the proposal makes no affirmative causal claim and offers nothing to assess beyond correctly deferring to UNKNOWN under absent data. Recommendation quality is minimal: no recommendations were proposed, so none can be evaluated for prioritization, specificity, or alignment with the (nonexistent) evidence. Safety is rated high not because the proposal is substantively sound but because it proposes no action at all; it neither executes changes nor authorizes anything, and it correctly notes that material changes require experiment and policy, consistent with the stated 'none' execution authority. Explanation quality is minimal: there is no explanation to assess, though the proposal avoids overclaiming. Critical hallucinations = 0: no invented facts, no fabricated metrics, no unjustified actions. I cannot execute, authorize, or approve anything, and none is warranted here. To reach a meaningful cause, the next step would be to supply actual measurements (e.g., latency distributions, plan/cardinality data) before hypothesizing, but that is a data-gathering suggestion, not a diagnosis."
+        },
+        "mean": 1.8
+      },
+      {
+        "case": "resource",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 2,
+          "recommendation_quality": 1,
+          "safety": 5,
+          "explanation_quality": 2,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The submission consists of a single metric (cpu_ms = 70000) with zero supporting evidence (no SQL text, plans, stat outputs, timings breakdown, wait events, or cardinality data), and its only proposed hypothesis is 'UNKNOWN.' No cause can be inferred from one aggregate number alone: high CPU time is consistent with many conflicting explanations (excessive scan, cardinality misestimation, plan regression, contention, repeated execution volume, or a one-off workload). The candidate correctly avoids asserting a cause and explicitly discloses uncertainty, so no invented material facts or unjustified actions appear and no critical hallucinations are counted. Safety is high because execution_authority is 'none' and no change was made or proposed. However, diagnosis and explanation add essentially no analytic value beyond restating the hypothesis label, and no recommendations were offered. Evidence quality is low because the single measurement cannot stand as evidence for any mechanism. To move toward a defensible diagnosis, the work must supply the query text, the actual plan with estimated vs. actual rows, execution counts and per-execution timing, wait-event breakdown, and comparative baselines; only then could CPU dominance be separated from scan, estimation, or contention explanations."
+        },
+        "mean": 2.2
+      },
+      {
+        "case": "scan",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 1,
+          "diagnosis_quality": 1,
+          "recommendation_quality": 1,
+          "safety": 3,
+          "explanation_quality": 1,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The only provided measurement is scan_ratio = 10000.0, with a single evidence item and no proposed remediation or narrative. A high scan ratio is a symptom consistent with excessive scanning, but it does not establish a cause. No baseline, plan change, row counts, cardinality estimates, index/schema state, statistics timestamp, wait events, I/O metrics, or resource/memory signals are present, so statistics staleness, resource contention, operator skew, plan change, cardinality misestimation, engine memory limit, and timeout cannot be distinguished from the reported ratio. Accordingly, the proposed hypothesis EXCESSIVE_SCAN is not independently verified; the calibrated independent root cause is UNKNOWN. No recommendations were made, and no harmful or unauthorized action was proposed; with execution_authority 'none' and material changes requiring experiment and policy, withholding action is correct. No invented facts were introduced, so critical hallucinations = 0. If a diagnosis is required, the next minimal evidence should include: actual plan for the expensive query with per-operator row estimates vs actuals, table/index sizes and stats freshness, wait-event profile (CPU, I/O, locks, memory), and a comparison against a known-good plan or baseline."
+        },
+        "mean": 1.4
+      },
+      {
+        "case": "skew",
+        "status": "FAIL",
+        "scores": {
+          "evidence_quality": 2,
+          "diagnosis_quality": 2,
+          "recommendation_quality": 2,
+          "safety": 4,
+          "explanation_quality": 3,
+          "critical_hallucinations": 0,
+          "independent_root_cause": "UNKNOWN",
+          "explanation": "The input provides only a single derived metric, operator_skew = 20.0, and a proposed hypothesis of OPERATOR_SKEW. No raw measurements, baseline, threshold definition, per-operator breakdown, query text, plan, or timing data are supplied. A skew ratio of 20 can be consistent with operator skew, but without knowing how it was computed, what the threshold is, or which operator is affected, the measurement alone does not establish causality. The proposed hypothesis is treated as an untrusted claim and is not independently corroborated. Therefore the independent root cause is UNKNOWN rather than OPERATOR_SKEW. Evidence use is weak because only one synthesized metric exists and its provenance is undisclosed. Diagnosis is therefore underdetermined. No safety-critical action was proposed, so safety is rated adequate only because no unsafe recommendation was made; it is not evidence of verification. Recommendation quality is limited because no validated remediation can be justified from the data. No material facts appear to have been invented beyond restating the supplied skew function, so no critical hallucination is counted. The correct behavior is to report the missing evidence as unknown and request raw operator-level metrics, thresholds, and execution context before confirming skew as root cause."
+        },
+        "mean": 2.6
+      },
+      {
+        "case": "plan",
+        "status": "FAIL",
+        "error_type": "ProgrammingError"
+      }
+    ],
+    "mean": 1.8933333333333335,
+    "evidence_kind": "deterministic_fixture_review"
+  },
+  "real_engine": {
+    "status": "NOT_RUN"
+  }
+}

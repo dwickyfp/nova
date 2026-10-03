@@ -21,6 +21,7 @@ async def test_frontend_ranger_managed_role_and_strict_rejection():
     async with httpx.AsyncClient(
         base_url=os.environ["NOVA_FRONTEND_RANGER_URL"],
         headers={"Authorization": "Bearer " + os.environ["NOVA_FRONTEND_RANGER_TOKEN"]},
+        timeout=30,
     ) as client:
 
         async def run(sql, confirm=False):

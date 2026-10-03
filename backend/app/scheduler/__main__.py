@@ -89,6 +89,9 @@ async def _run() -> None:
         # creates the tables when absent and adds late columns to a table an
         # older release (or init-nova.sql) created without them.
         await init_task_orchestration()
+        from app.modules.query_autopilot.schema import ensure_schema
+
+        await ensure_schema()
     except Exception:
         await db.close_system_pool()
         raise

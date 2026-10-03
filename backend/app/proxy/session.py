@@ -24,6 +24,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.sql_frontend.session_functions import QueryCorrelationSession
+
 #: Role assignment, e.g. ``SET ROLE ACCOUNTADMIN`` / ``SET ROLE 'analyst'``.
 #: StarRocks spells this without an ``=``, so it needs its own rule.
 _SET_ROLE = re.compile(
@@ -95,6 +97,7 @@ class SessionState:
     item, so this holds only what the current command set actually needs.
     """
 
+    correlation: QueryCorrelationSession = field(default_factory=QueryCorrelationSession)
     database: str | None = None
     principal: str | None = None
     assigned_roles: tuple[str, ...] = ()

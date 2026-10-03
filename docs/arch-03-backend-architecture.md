@@ -1,5 +1,10 @@
 # Architecture 03: Backend Architecture
 
+> Status: HISTORICAL DESIGN, NON-NORMATIVE. The directory tree, synchronous
+> database examples, and SQL pipeline below do not describe the current backend.
+> Use [backend instructions](../backend/AGENTS.md), the dependency manifests,
+> and [current SQL architecture](arch-13-sql-frontend.md) for implementation.
+
 > FastAPI application structure, API design, and data flow.
 
 ---

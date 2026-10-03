@@ -56,23 +56,22 @@ def _security(statement: ast.Statement) -> Any:
     return decode_security(statement.parsed)
 
 
-_VALIDATORS: dict[type[ast.Statement], Callable[..., Any]] = {
-    ast.CreateMLModelStatement: _model,
-    ast.CreateTaskStatement: _task,
-    ast.MLPredictStatement: _predict,
-    ast.MLMaterializeStatement: _materialize,
-    ast.MLForecastStatement: _forecast,
-    ast.ForcePasswordChangeStatement: _password,
-    ast.SecurityStatement: _security,
-}
+def _with_context(validator: Callable[..., Any]) -> Callable[..., Any]:
+    return lambda statement, context: validator(statement)
+
+
+_model_context = _with_context(_model)
+_predict_context = _with_context(_predict)
+_materialize_context = _with_context(_materialize)
+_forecast_context = _with_context(_forecast)
+_password_context = _with_context(_password)
+
+
+def _security_context(statement: ast.Statement, context: Any) -> Any:
+    return _security(statement) if context and context.ranger_enabled else None
 
 
 def validate_action(statement: ast.Statement, context=None) -> Any:
-    if isinstance(statement, ast.SecurityStatement) and (
-        context is None or not context.ranger_enabled
-    ):
-        return None
-    validator = _VALIDATORS.get(type(statement))
-    if validator is _task:
-        return validator(statement, context)
-    return validator(statement) if validator else None
+    from app.sql_frontend.analysis.semantics import semantics_registry
+
+    return semantics_registry.validate(statement, context)

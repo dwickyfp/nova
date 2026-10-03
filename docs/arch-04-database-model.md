@@ -1,5 +1,11 @@
 # Architecture 04: Database Model — NOVA_SYSTEM
 
+> Status: HISTORICAL DESIGN, NON-NORMATIVE. The nested schema diagram and
+> persistence/credential claims below are superseded. Current relational names
+> are flat tables in `NOVA_SYSTEM`; Redis holds runtime state and managed storage
+> holds object payloads. Inspect [bootstrap SQL](../docker/init-nova.sql), the
+> owning schema initialization, and [root contracts](../AGENTS.md).
+
 > All persistent state lives in StarRocks `NOVA_SYSTEM` database.
 > No SQLite, no PostgreSQL. Nova is a pure StarRocks application.
 

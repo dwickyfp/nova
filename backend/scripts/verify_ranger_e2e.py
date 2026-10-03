@@ -167,9 +167,7 @@ class MySQLClient:
         ]
         if self.database:
             response_parts.append(self.database.encode() + b"\0")
-        response_parts.extend(
-            [plugin + b"\0", _lenenc(len(encoded_attrs)) + encoded_attrs]
-        )
+        response_parts.extend([plugin + b"\0", _lenenc(len(encoded_attrs)) + encoded_attrs])
         response = b"".join(response_parts)
         self._send_packet(response, 1)
         verdict = self._read_packet()
@@ -227,9 +225,9 @@ def verify_proxy() -> None:
         assert alice.query("SELECT CURRENT_ROLE()") == [["marketing"]]
         _assert_metadata_visibility(alice, sales_visible=True)
         _assert_cities(alice.query("SELECT id, city, amount FROM analytics.sales"), {"Jakarta"})
-        assert alice.query(
-            "SELECT id, city, amount FROM analytics.sales WHERE city='Bandung'"
-        ) == []
+        assert (
+            alice.query("SELECT id, city, amount FROM analytics.sales WHERE city='Bandung'") == []
+        )
         alice.query("USE ROLE regional_manager")
         assert alice.query("SELECT CURRENT_ROLE()") == [["regional_manager"]]
         _assert_metadata_visibility(alice, sales_visible=True)
@@ -238,18 +236,14 @@ def verify_proxy() -> None:
             {"Jakarta", "Bandung"},
         )
         print("Proxy: alice / regional_manager -> Bandung, Jakarta")
-    print(
-        "Proxy: alice / marketing -> Jakarta; explicit Bandung predicate -> empty"
-    )
+    print("Proxy: alice / marketing -> Jakarta; explicit Bandung predicate -> empty")
 
     with MySQLClient("bob", "NovaBob2026!", role="marketing") as bob:
         assert bob.query("SELECT CURRENT_ROLE()") == [["marketing"]]
         _assert_cities(bob.query("SELECT id, city, amount FROM analytics.sales"), {"Bandung"})
     print("Proxy: bob / marketing -> Bandung")
 
-    with MySQLClient(
-        "alice", "NovaAlice2026!", database=None, role="finance"
-    ) as finance:
+    with MySQLClient("alice", "NovaAlice2026!", database=None, role="finance") as finance:
         assert finance.query("SELECT CURRENT_ROLE()") == [["finance"]]
         _assert_metadata_visibility(finance, sales_visible=False)
         try:
@@ -260,11 +254,10 @@ def verify_proxy() -> None:
             raise AssertionError("Assigned but inactive roles leaked into Ranger authorization")
     print("Proxy: alice / finance -> analytics.sales denied")
 
-    with MySQLClient(
-        "alice", "NovaAlice2026!", role="marketing"
-    ) as marketing_connection, MySQLClient(
-        "alice", "NovaAlice2026!", database=None, role="finance"
-    ) as finance_connection:
+    with (
+        MySQLClient("alice", "NovaAlice2026!", role="marketing") as marketing_connection,
+        MySQLClient("alice", "NovaAlice2026!", database=None, role="finance") as finance_connection,
+    ):
         assert marketing_connection.query("SELECT CURRENT_ROLE()") == [["marketing"]]
         assert finance_connection.query("SELECT CURRENT_ROLE()") == [["finance"]]
         _assert_cities(
@@ -334,43 +327,50 @@ def _inherit_pid_one_environment() -> None:
 async def verify_agent_tool() -> None:
     _inherit_pid_one_environment()
     from app.core.database import db
-    from app.core.security import encrypt_password
+    from app.core.redis import session_store
+    from app.core.security import decode_token
     from app.modules.assistant.service import LoopContext
     from app.modules.assistant.tools import ToolInvocation
     from app.modules.assistant.tools.query_execute import QueryExecuteTool
+    from app.modules.auth.service import auth_service
 
     async def run(username: str, password: str, expected: str, forbidden: str) -> None:
+        login = await auth_service.login(username, password)
+        session_id = decode_token(login["access_token"])["sid"]
+        await auth_service.switch_role(session_id, "marketing")
+        user = await session_store.get(session_id)
+        assert user is not None
+        user["session_id"] = session_id
         context = LoopContext(
             user_name=username,
             database="analytics",
             schema_name=None,
             role="marketing",
             workspace_file_id=None,
-            session_id=f"ranger-e2e-{username}",
+            session_id=session_id,
             thread_id=f"ranger-e2e-{username}",
-            user={
-                "username": username,
-                "encrypted_password": encrypt_password(password),
-                "active_role": "marketing",
-                "security_context_version": 1,
-                "session_id": f"ranger-e2e-{username}",
-            },
+            user=user,
         )
         invocation = ToolInvocation(
             tool_call_id=f"ranger-e2e-{username}",
             tool_name="query_execute",
             arguments={"sql": "SELECT id, city, amount FROM analytics.sales"},
         )
-        outcome = await QueryExecuteTool().run(invocation, context)
+        try:
+            outcome = await QueryExecuteTool().run(invocation, context)
+        finally:
+            await session_store.delete(session_id)
         if not outcome.ok or expected not in outcome.summary or forbidden in outcome.summary:
             raise AssertionError(f"Agent scope check failed for {username}: {outcome}")
         print(f"Agent: {username} / marketing -> {expected} only")
 
     await db.init_system_pool()
+    await session_store.init()
     try:
         await run("alice", "NovaAlice2026!", "Jakarta", "Bandung")
         await run("bob", "NovaBob2026!", "Bandung", "Jakarta")
     finally:
+        await session_store.close()
         await db.close_system_pool()
 
 

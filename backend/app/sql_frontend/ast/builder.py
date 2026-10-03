@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.modules.query.dialect.parser import _walk_nodes
 from app.sql_dialect.grammar import StarRocksParser
+from app.sql_frontend.antlr_utils import walk_nodes as _walk_nodes
 from app.sql_frontend.ast.statements import (
     CreateMLModelStatement,
     CreateTaskStatement,
@@ -80,6 +80,7 @@ def default_builders() -> AstBuilderRegistry:
         "CreateMlModelStatementContext": CreateMLModelStatement,
         "SubmitTaskStatementContext": _task,
         "QueryStatementContext": _query,
+        "NovaPlanAdvisorStatementContext": NativeStatement,
         "NovaForecastStatementContext": MLForecastStatement,
         "NovaForcePasswordStatementContext": ForcePasswordChangeStatement,
         "NovaListStatementContext": StageAwareStatement,

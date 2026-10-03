@@ -150,7 +150,8 @@ class AssistantProviderClient:
     ) -> ProviderConfig:
         """Pick the active provider/model pair.
 
-        Defaults to the first active provider that has an API key. A caller may
+        Uses the configured default LLM, or the first active keyed provider
+        when no default is configured. A caller may
         pin ``provider_id`` and/or ``model`` for one turn (the panel's model
         selector); a provider whose key is unreadable is skipped rather than
         crashing the turn.
@@ -160,6 +161,22 @@ class AssistantProviderClient:
         upstream, so a stale selection fails with a clear message instead of a
         provider-side error.
         """
+        if provider_id is None and model is None:
+            from app.modules.ai_ml.decision_settings import registered_model
+            from app.modules.ai_ml.default_model import read_default_model
+
+            try:
+                preference = await read_default_model()
+            except Exception as exc:
+                raise AssistantProviderError("Default LLM settings are unavailable") from exc
+            if preference.model_id:
+                try:
+                    selected, _ = await registered_model(preference.model_id, "llm")
+                except ValueError as exc:
+                    raise AssistantProviderError(
+                        "The default LLM is unavailable. Update it under AI Providers."
+                    ) from exc
+                provider_id, model = selected["provider_id"], selected["name"]
         providers = await ai_service.list_providers()
         for provider in providers:
             if provider.get("type") == "decision":
@@ -217,7 +234,7 @@ class AssistantProviderClient:
         models = await ai_service.list_models(provider_id)
         active = [
             m["name"] for m in models
-            if m.get("is_active", True) and m.get("type") != "decision"
+            if m.get("is_active", True) and m.get("type", "llm") == "llm"
         ]
         if requested:
             if requested not in active:

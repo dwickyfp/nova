@@ -19,6 +19,7 @@ services:
       - /bin/bash
       - -c
       - |
+        sed -i -E 's/-Xmx[0-9]+[mMgG]/-Xmx1024m/g' /opt/starrocks/fe/conf/fe.conf
         printf '\narrow_flight_port = 9408\n' >> /opt/starrocks/fe/conf/fe.conf
         /opt/starrocks/fe/bin/start_fe.sh --host_type IP --logconsole
     ports:

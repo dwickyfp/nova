@@ -65,6 +65,7 @@ export function NavUser({ user }: NavUserProps) {
       username: string;
       roles: string[];
       active_role: string;
+      security_context_version: number;
       session_id: string;
     }>("/auth/switch-role", { role });
 
@@ -72,6 +73,7 @@ export function NavUser({ user }: NavUserProps) {
       username: result.username,
       roles: result.roles,
       activeRole: result.active_role,
+      securityContextVersion: result.security_context_version,
     });
 
     window.location.reload();

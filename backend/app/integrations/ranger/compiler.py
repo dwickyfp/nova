@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import Literal
 
 from app.core.config import settings
 
@@ -47,12 +48,36 @@ def compile_access_policy(
     database: str,
     table: str,
     accesses: list[str],
+    resource_type: Literal["database", "table", "materialized_view"] | None = None,
 ) -> RangerPolicy:
+    resources = table_resources(catalog, database, table, "*")
+    name = managed_name("access", role, catalog, database, table)
+    if resource_type is not None:
+        allowed = {
+            "database": {"drop", "alter", "create table", "create view", "create function",
+                         "create materialized view"},
+            "table": {"drop", "insert", "update", "refresh", "delete", "export", "alter"},
+            "materialized_view": {"drop", "refresh", "alter"},
+        }
+        if resource_type not in allowed or not accesses or any(
+            access.lower() not in allowed[resource_type] for access in accesses
+        ):
+            raise ValueError("Unsupported access for the selected Ranger resource")
+        resources = {
+            "catalog": RangerPolicyResource(values=[catalog]),
+            "database": RangerPolicyResource(values=[database]),
+        }
+        if resource_type == "database":
+            if table != "*":
+                raise ValueError("Database access requires the database resource scope")
+        else:
+            resources[resource_type] = RangerPolicyResource(values=[table])
+        name = managed_name("access", resource_type, role, catalog, database, table)
     return RangerPolicy(
         service=settings.RANGER_SERVICE_NAME,
-        name=managed_name("access", role, catalog, database, table),
+        name=name,
         description="Managed by Nova. Object authorization is enforced by Ranger.",
-        resources=table_resources(catalog, database, table, "*"),
+        resources=resources,
         policyItems=[
             RangerPolicyItem(
                 roles=[role],

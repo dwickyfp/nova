@@ -5,8 +5,8 @@ from typing import Any
 
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.access_control.service import AccessControlError, access_control_service
-from app.modules.query.dialect.parser import _walk_nodes
 from app.modules.query.repository import QueryResult
+from app.sql_frontend.antlr_utils import walk_nodes as _walk_nodes
 from app.sql_frontend.parser import ParsedStatement
 
 
@@ -101,10 +101,9 @@ def decode_security(parsed: ParsedStatement) -> SecurityOperation | None:
     )
 
 
-async def execute_security(parsed: ParsedStatement, security: SecurityContext) -> QueryResult:
-    operation = decode_security(parsed)
-    if operation is None:
-        raise AccessControlError("Statement has no managed security operation")
+async def execute_security_operation(
+    operation: SecurityOperation, security: SecurityContext, original_sql: str = ""
+) -> QueryResult:
     identifiers = operation.identifiers
     service = access_control_service
     if operation.kind == "create_role":
@@ -140,14 +139,14 @@ async def execute_security(parsed: ParsedStatement, security: SecurityContext) -
             columns=["Role", "Authorization"],
             rows=rows,
             row_count=len(rows),
-            original_sql=parsed.original_sql,
+            original_sql=original_sql,
         )
     elif operation.kind == "current_access":
         return QueryResult(
             columns=["Principal", "Active Role", "Authorization", "Policy Health"],
             rows=[[security.principal, security.active_role, "Ranger", "Active"]],
             row_count=1,
-            original_sql=parsed.original_sql,
+            original_sql=original_sql,
         )
     elif operation.kind == "role_grants":
         policies = await service.list_managed_policies()
@@ -161,7 +160,7 @@ async def execute_security(parsed: ParsedStatement, security: SecurityContext) -
             columns=["Role", "Policy", "Authorization", "PolicyHealth"],
             rows=rows,
             row_count=len(rows),
-            original_sql=parsed.original_sql,
+            original_sql=original_sql,
         )
     action = operation.kind.replace("_", " ").upper()
     labels = {
@@ -181,5 +180,12 @@ async def execute_security(parsed: ParsedStatement, security: SecurityContext) -
         columns=["Action", "Role", "Authorization"],
         rows=[[labels.get(operation.kind, action), role, "Ranger"]],
         row_count=1,
-        original_sql=parsed.original_sql,
+        original_sql=original_sql,
     )
+
+
+async def execute_security(parsed: ParsedStatement, security: SecurityContext) -> QueryResult:
+    operation = decode_security(parsed)
+    if operation is None:
+        raise AccessControlError("Statement has no managed security operation")
+    return await execute_security_operation(operation, security, parsed.original_sql)

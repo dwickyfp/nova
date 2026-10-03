@@ -237,7 +237,7 @@ The official StarRocks 4.1.4 FE image contains Ranger audit core but not the
 Solr or Log4j destination providers. Enabling either destination makes FE fail
 at startup, so the local image keeps the embedded Ranger audit dispatcher
 disabled. Nova's own query, role-switch, and security-administration audit rows
-remain enabled in `NOVA_SYSTEM.AUDIT.LOG`; the Solr container is reproducible
+remain enabled in `NOVA_SYSTEM.AUDIT_LOG`; the Solr container is reproducible
 and health checked, but it does not receive FE authorization decisions until
 StarRocks ships the matching audit destination modules (or Nova pins and
 verifies that additional runtime set).

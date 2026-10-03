@@ -1,0 +1,4077 @@
+{
+  "evidence_kind": "isolated_collected_wall_clock_workload",
+  "status": "FAIL",
+  "contention": {
+    "case": "G",
+    "ground_truth": "controlled_global_admission_contention",
+    "status": "PASS",
+    "evidence_kind": "real_native_engine_controlled_fixture",
+    "phases": {
+      "uncontended": {
+        "count": 120,
+        "warmups": 3,
+        "latency": {
+          "bins": {
+            "429": 1,
+            "351": 1,
+            "485": 1,
+            "287": 3,
+            "392": 2,
+            "367": 2,
+            "380": 1,
+            "478": 1,
+            "394": 2,
+            "338": 1,
+            "359": 2,
+            "442": 2,
+            "298": 2,
+            "331": 1,
+            "293": 1,
+            "322": 1,
+            "530": 1,
+            "299": 2,
+            "416": 1,
+            "505": 1,
+            "584": 1,
+            "541": 1,
+            "446": 1,
+            "561": 1,
+            "358": 2,
+            "540": 1,
+            "377": 1,
+            "411": 1,
+            "306": 1,
+            "500": 1,
+            "450": 1,
+            "309": 1,
+            "369": 1,
+            "402": 1,
+            "428": 1,
+            "503": 1,
+            "409": 1,
+            "474": 1,
+            "608": 1,
+            "556": 1,
+            "686": 1,
+            "579": 1,
+            "554": 1,
+            "576": 1,
+            "460": 1,
+            "494": 1,
+            "509": 1,
+            "621": 1,
+            "558": 1,
+            "491": 1,
+            "395": 1,
+            "498": 1,
+            "451": 2,
+            "413": 1,
+            "231": 2,
+            "181": 1,
+            "199": 1,
+            "189": 1,
+            "203": 1,
+            "213": 1,
+            "179": 2,
+            "202": 1,
+            "212": 2,
+            "232": 3,
+            "291": 1,
+            "284": 1,
+            "226": 1,
+            "220": 1,
+            "262": 1,
+            "248": 1,
+            "303": 1,
+            "396": 2,
+            "300": 2,
+            "439": 1,
+            "328": 1,
+            "384": 1,
+            "371": 1,
+            "294": 1,
+            "321": 2,
+            "375": 1,
+            "314": 1,
+            "373": 1,
+            "347": 1,
+            "355": 1,
+            "421": 1,
+            "385": 1,
+            "348": 1,
+            "417": 1,
+            "313": 1,
+            "342": 1,
+            "223": 2,
+            "190": 1,
+            "224": 1,
+            "324": 1,
+            "437": 1,
+            "424": 1,
+            "241": 1,
+            "259": 1,
+            "235": 1,
+            "283": 1
+          },
+          "count": 120,
+          "total": 8931.460502673872,
+          "maximum": 908.7987500242889
+        },
+        "measured_latencies_ms": [
+          70.35733398515731,
+          32.282166997902095,
+          122.32708395458758,
+          17.172624997328967,
+          48.76637499546632,
+          37.93500002939254,
+          43.24249998899177,
+          114.49983296915889,
+          49.60283299442381,
+          28.511042008176446,
+          34.97729200171307,
+          80.44424996478483,
+          19.12845904007554,
+          49.6535410056822,
+          26.47195797180757,
+          18.13874999061227,
+          24.349374987650663,
+          192.30983301531523,
+          19.318875041790307,
+          61.69549998594448,
+          150.31791699584574,
+          328.950333991088,
+          215.07179201580584,
+          82.93495798716322,
+          261.4190839813091,
+          34.57000001799315,
+          211.75408299313858,
+          41.949499980546534,
+          58.84041602257639,
+          20.66104201367125,
+          143.19516700925305,
+          86.38704201439396,
+          21.23316697543487,
+          38.76274998765439,
+          53.78454196033999,
+          69.66095796087757,
+          146.46791596896946,
+          57.427332969382405,
+          110.66404200391844,
+          79.83104203594849,
+          418.79016696475446,
+          250.1429590047337,
+          908.7987500242889,
+          312.5225409748964,
+          243.01341699901968,
+          305.03570794826373,
+          96.20574995642528,
+          134.7878749947995,
+          156.1753749847412,
+          473.49995898548514,
+          253.29445803072304,
+          130.3921249927953,
+          50.20833300659433,
+          140.2107499889098,
+          87.22425001906231,
+          59.912291006185114,
+          9.784708032384515,
+          5.9523750096559525,
+          17.055667005479336,
+          7.163292029872537,
+          6.478082970716059,
+          7.4248340097256005,
+          8.241917006671429,
+          5.867625004611909,
+          9.76545800222084,
+          7.365208002738655,
+          8.115792006719857,
+          9.887500025797635,
+          17.86541601177305,
+          19.281749962829053,
+          16.553541994653642,
+          9.299124998506159,
+          8.753083006013185,
+          13.379833020735532,
+          5.859084019903094,
+          17.14262500172481,
+          11.650000000372529,
+          20.096417050808668,
+          50.57408398715779,
+          19.431290973443538,
+          77.73791701765731,
+          25.660999992396683,
+          45.04683299455792,
+          34.850167052354664,
+          88.01845897687599,
+          48.89220802579075,
+          39.5321249961853,
+          50.9262079722248,
+          18.39416695293039,
+          23.91820796765387,
+          41.140708955936134,
+          22.48891699127853,
+          38.03954098839313,
+          40.36354197887704,
+          31.16516600130126,
+          33.53629197226837,
+          65.03050000173971,
+          45.5633340170607,
+          31.445958011317998,
+          62.22495797555894,
+          22.16570801101625,
+          29.528082988690585,
+          9.036500006914139,
+          8.103832951746881,
+          6.551250000484288,
+          19.447125028818846,
+          9.148915996775031,
+          24.639541981741786,
+          75.96633298089728,
+          66.95633300114423,
+          35.08404199965298,
+          10.791332984808832,
+          9.080209012608975,
+          13.011167000513524,
+          9.954833018127829,
+          10.171542002353817,
+          23.96729198517278,
+          19.130167027469724,
+          9.959208022337407,
+          16.519750002771616
+        ],
+        "observations": [
+          {
+            "query_id": "01a0f9f3-278b-734f-b42f-e5b32978fc25",
+            "observed_at": "2026-10-02T00:10:57.481330Z",
+            "nova_execution_id": "c91f6c1f-8c7a-491a-b04e-fea06af651ef",
+            "facts": {
+              "queue_ms": 13.0,
+              "cpu_ms": 2.241,
+              "execution_ms": 13.45,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-2c20-7bc0-a32d-2efd61aa3e13",
+            "observed_at": "2026-10-02T00:10:58.950288Z",
+            "nova_execution_id": "3ef25ec9-9bac-4bd8-bf82-6dbbd3436432",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 0.9429270000000001,
+              "execution_ms": 3.819,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-33d3-7187-a598-b7daf21bd517",
+            "observed_at": "2026-10-02T00:11:00.683121Z",
+            "nova_execution_id": "50d842fd-37d8-4cde-883a-6e50ca4e4166",
+            "facts": {
+              "queue_ms": 7.0,
+              "cpu_ms": 3.328,
+              "execution_ms": 10.475,
+              "peak_memory_bytes": 335104.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-3784-7a99-8ff1-4243bd43c9f0",
+            "observed_at": "2026-10-02T00:11:01.480229Z",
+            "nova_execution_id": "c709b59e-e5db-47c6-8e33-fec55b63fbdf",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.286211,
+              "execution_ms": 4.629,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-3dcb-7731-9a12-dede9fcad10b",
+            "observed_at": "2026-10-02T00:11:03.138495Z",
+            "nova_execution_id": "5356274f-bce9-472f-b670-dcddf0adef03",
+            "facts": {
+              "queue_ms": 5.0,
+              "cpu_ms": 2.026,
+              "execution_ms": 7.575,
+              "peak_memory_bytes": 335215.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-425f-7825-9033-8073294a352a",
+            "observed_at": "2026-10-02T00:11:04.313475Z",
+            "nova_execution_id": "1815f69a-f523-42ab-b72e-b7f08587e75b",
+            "facts": {
+              "queue_ms": 4.0,
+              "cpu_ms": 1.435,
+              "execution_ms": 5.333,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-465e-739e-ae6c-805792cc4466",
+            "observed_at": "2026-10-02T00:11:05.293368Z",
+            "nova_execution_id": "4796ff85-48cb-4efb-b5f3-dc506cc2eac2",
+            "facts": {
+              "queue_ms": 16.0,
+              "cpu_ms": 0.665511,
+              "execution_ms": 8.504,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-49c6-7969-9779-e3bb2ad84eea",
+            "observed_at": "2026-10-02T00:11:06.294746Z",
+            "nova_execution_id": "b37ec190-ee3f-4dcd-a416-53d346e4306b",
+            "facts": {
+              "queue_ms": 4.0,
+              "cpu_ms": 2.343,
+              "execution_ms": 11.416,
+              "peak_memory_bytes": 338576.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-4ec2-7e04-b827-3f1acf716c92",
+            "observed_at": "2026-10-02T00:11:07.490005Z",
+            "nova_execution_id": "df67dd3c-d4c9-4f97-b1b1-931664c3b69f",
+            "facts": {
+              "queue_ms": 12.0,
+              "cpu_ms": 1.685,
+              "execution_ms": 2.861,
+              "peak_memory_bytes": 335104.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-5216-7627-8d94-8c88db62b120",
+            "observed_at": "2026-10-02T00:11:08.348820Z",
+            "nova_execution_id": "036f0d35-ffa4-423f-bc7c-b98c2cdbb710",
+            "facts": {
+              "queue_ms": 3.0,
+              "cpu_ms": 1.31,
+              "execution_ms": 7.656,
+              "peak_memory_bytes": 338576.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-56c9-7564-bc7c-39e2a6d4b3d6",
+            "observed_at": "2026-10-02T00:11:09.539192Z",
+            "nova_execution_id": "98456d2d-10cf-4d19-b631-49d8c9be373b",
+            "facts": {
+              "queue_ms": 5.0,
+              "cpu_ms": 1.578,
+              "execution_ms": 5.027,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-5ba3-7718-84b2-a1a2562e2cc5",
+            "observed_at": "2026-10-02T00:11:10.822504Z",
+            "nova_execution_id": "827358bd-2a01-4c0b-ad49-f7fd3fa3533f",
+            "facts": {
+              "queue_ms": 5.0,
+              "cpu_ms": 2.539,
+              "execution_ms": 10.274,
+              "peak_memory_bytes": 338576.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-5ef4-7f06-8ba6-878bd9ecee79",
+            "observed_at": "2026-10-02T00:11:11.576874Z",
+            "nova_execution_id": "a2c1db56-ee9d-48c5-97a9-840b39a641bc",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.771552,
+              "execution_ms": 5.008,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-61fa-7290-8b68-abe01b5fb8c7",
+            "observed_at": "2026-10-02T00:11:12.499523Z",
+            "nova_execution_id": "7b833a24-f9bb-459d-976e-2021272b808e",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.802428,
+              "execution_ms": 5.389,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-659c-705e-b121-d8cb71b626a9",
+            "observed_at": "2026-10-02T00:11:13.300567Z",
+            "nova_execution_id": "b6e84dfc-78b5-47f3-b4aa-377e13538eb8",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 0.407296,
+              "execution_ms": 4.152,
+              "peak_memory_bytes": 325480.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-6882-7764-8e3c-659faa22e42a",
+            "observed_at": "2026-10-02T00:11:14.009866Z",
+            "nova_execution_id": "d6ff4408-8759-4bfb-b0e1-b4d147c993f9",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 0.818928,
+              "execution_ms": 2.165,
+              "peak_memory_bytes": 338440.192,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-6bbe-7a3a-b0c8-fdee653e240f",
+            "observed_at": "2026-10-02T00:11:14.868616Z",
+            "nova_execution_id": "dd339b93-ff93-4dd5-a840-b2bfe2466016",
+            "facts": {
+              "queue_ms": 3.0,
+              "cpu_ms": 1.311,
+              "execution_ms": 4.453,
+              "peak_memory_bytes": 338440.192,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-6fc4-7182-a96a-a2c29382531e",
+            "observed_at": "2026-10-02T00:11:16.186980Z",
+            "nova_execution_id": "d56ca08d-f33e-4f5d-80d4-5f91bf22ebe5",
+            "facts": {
+              "queue_ms": 13.0,
+              "cpu_ms": 5.005,
+              "execution_ms": 19.646,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-73ff-7187-a648-ec67ebb50859",
+            "observed_at": "2026-10-02T00:11:16.959893Z",
+            "nova_execution_id": "394ccd92-019b-4947-8b02-d778ea1615cd",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.785386,
+              "execution_ms": 1.954,
+              "peak_memory_bytes": 338144.256,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-78a7-7e5d-bb43-97a50aff3e7f",
+            "observed_at": "2026-10-02T00:11:18.203786Z",
+            "nova_execution_id": "1ddf3659-e47a-451b-ad4f-88c5f9ea9309",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 2.01,
+              "execution_ms": 8.908,
+              "peak_memory_bytes": 338463.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-7c04-7015-8505-3e551994c3a0",
+            "observed_at": "2026-10-02T00:11:19.286763Z",
+            "nova_execution_id": "90b52401-8519-4c8c-93ab-82af89b09868",
+            "facts": {
+              "queue_ms": 12.0,
+              "cpu_ms": 4.438,
+              "execution_ms": 13.331,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-84c6-74df-b6ca-62a77bebf1aa",
+            "observed_at": "2026-10-02T00:11:21.760375Z",
+            "nova_execution_id": "1bafc51c-8613-4946-810e-344395d61efd",
+            "facts": {
+              "queue_ms": 18.0,
+              "cpu_ms": 7.859,
+              "execution_ms": 30.348,
+              "peak_memory_bytes": 338576.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-8bb7-7ca0-86a4-f7ab65340e1d",
+            "observed_at": "2026-10-02T00:11:23.499326Z",
+            "nova_execution_id": "9a573d97-3d99-46ba-abd9-c102ea77192e",
+            "facts": {
+              "queue_ms": 6.0,
+              "cpu_ms": 2.676,
+              "execution_ms": 11.418,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-940c-7abf-8f7b-96561e5f4760",
+            "observed_at": "2026-10-02T00:11:25.291043Z",
+            "nova_execution_id": "18fb8a66-64b5-4e54-a8e7-b9a70716c3f8",
+            "facts": {
+              "queue_ms": 9.0,
+              "cpu_ms": 2.293,
+              "execution_ms": 14.246,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-9956-7e4a-ba6a-86d42a0dd4e1",
+            "observed_at": "2026-10-02T00:11:26.790784Z",
+            "nova_execution_id": "51d6c674-bc99-4248-9cd2-e154e3a15730",
+            "facts": {
+              "queue_ms": 204.0,
+              "cpu_ms": 1.475,
+              "execution_ms": 5.154,
+              "peak_memory_bytes": 335055.872,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-9de6-76ba-a2e5-0f0e822057a2",
+            "observed_at": "2026-10-02T00:11:27.808264Z",
+            "nova_execution_id": "fa096da6-f03b-4cfe-b827-714e5103c64d",
+            "facts": {
+              "queue_ms": 6.0,
+              "cpu_ms": 0.573424,
+              "execution_ms": 5.865,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-a491-78b4-be82-c7d0a637205f",
+            "observed_at": "2026-10-02T00:11:30.207716Z",
+            "nova_execution_id": "dae1c551-2dd6-479e-a926-f3b6dc49a553",
+            "facts": {
+              "queue_ms": 14.0,
+              "cpu_ms": 1.641,
+              "execution_ms": 33.509,
+              "peak_memory_bytes": 333272.064,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-b366-7858-9559-7ccb734e39aa",
+            "observed_at": "2026-10-02T00:11:33.305979Z",
+            "nova_execution_id": "211be3f2-784c-4f64-8ceb-c588983c392b",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 4.824,
+              "execution_ms": 9.952,
+              "peak_memory_bytes": 338480.128,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-b8ab-7659-bcc0-7cd5ab5c1ed8",
+            "observed_at": "2026-10-02T00:11:34.737175Z",
+            "nova_execution_id": "fffd74ad-9b6b-46ae-86e8-c6960af97d4e",
+            "facts": {
+              "queue_ms": 8.0,
+              "cpu_ms": 2.503,
+              "execution_ms": 23.572,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-bd56-710a-8711-3a53f2bcc2ad",
+            "observed_at": "2026-10-02T00:11:35.749334Z",
+            "nova_execution_id": "6070a31a-cb8f-42c0-800a-dfaf06416d93",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 1.393,
+              "execution_ms": 3.009,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-c3cc-7ea6-8ec8-22d4bdb8e712",
+            "observed_at": "2026-10-02T00:11:37.764432Z",
+            "nova_execution_id": "e62e8e04-0cd6-4338-b40c-756480d2808e",
+            "facts": {
+              "queue_ms": 5.0,
+              "cpu_ms": 13.625,
+              "execution_ms": 31.751,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-ca3f-78be-bc79-9ab65aef6c4b",
+            "observed_at": "2026-10-02T00:11:39.149389Z",
+            "nova_execution_id": "8cce34f2-e3a0-488d-9fd9-4a54965fc431",
+            "facts": {
+              "queue_ms": 12.0,
+              "cpu_ms": 1.984,
+              "execution_ms": 15.227,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-cdd1-76df-b3cb-2a2fafb85850",
+            "observed_at": "2026-10-02T00:11:39.987151Z",
+            "nova_execution_id": "56ad7742-a87b-4262-aa43-06a60405e11c",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.34221100000000004,
+              "execution_ms": 2.201,
+              "peak_memory_bytes": 335120.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-d38e-7fe1-b58d-c1b0dff25309",
+            "observed_at": "2026-10-02T00:11:41.557032Z",
+            "nova_execution_id": "8e28ef09-941d-470b-92bd-0f8cd786cf7f",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.88901,
+              "execution_ms": 4.731,
+              "peak_memory_bytes": 335135.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-d715-7fb5-9a09-a915c9b1801b",
+            "observed_at": "2026-10-02T00:11:42.407956Z",
+            "nova_execution_id": "e1227c32-29c5-44c6-9c5f-f52f148ebb17",
+            "facts": {
+              "queue_ms": 5.0,
+              "cpu_ms": 1.879,
+              "execution_ms": 7.36,
+              "peak_memory_bytes": 335104.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-e005-7390-9afa-498516822330",
+            "observed_at": "2026-10-02T00:11:44.689269Z",
+            "nova_execution_id": "b7ca3a74-ee87-47d1-939e-d0708b70c5e9",
+            "facts": {
+              "queue_ms": 4.0,
+              "cpu_ms": 4.12,
+              "execution_ms": 11.037,
+              "peak_memory_bytes": 324968.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-e37a-7460-8edb-f5e028a30642",
+            "observed_at": "2026-10-02T00:11:45.709002Z",
+            "nova_execution_id": "f94ef71e-ce5c-486d-9a70-9c63b762ba32",
+            "facts": {
+              "queue_ms": 39.0,
+              "cpu_ms": 1.407,
+              "execution_ms": 10.388,
+              "peak_memory_bytes": 335215.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-e949-7395-8a86-985e43338c59",
+            "observed_at": "2026-10-02T00:11:47.233405Z",
+            "nova_execution_id": "88b74d8d-97de-4e1b-abd0-1ce3790ca3d3",
+            "facts": {
+              "queue_ms": 7.0,
+              "cpu_ms": 6.856,
+              "execution_ms": 12.506,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-ee8b-7420-86f8-a7caae79fa2a",
+            "observed_at": "2026-10-02T00:11:48.553737Z",
+            "nova_execution_id": "295c8e4b-b7e1-4687-a289-c92e85ddda0e",
+            "facts": {
+              "queue_ms": 4.0,
+              "cpu_ms": 1.515,
+              "execution_ms": 9.312,
+              "peak_memory_bytes": 324968.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0f9f3-f853-788e-b094-700d012680a8",
+            "observed_at": "2026-10-02T00:11:51.103776Z",
+            "nova_execution_id": "201efd9f-4f16-4c3c-b7ff-ed5a2ac9a6f9",
+            "facts": {
+              "queue_ms": 3.0,
+              "cpu_ms": 2.545,
+              "execution_ms": 13.742,
+              "peak_memory_bytes": 335104.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa04-a169-7d4e-80e0-4d6eea396497",
+            "observed_at": "2026-10-02T00:30:03.377663Z",
+            "nova_execution_id": "eafd0b11-3c36-4db0-9ec5-6b00e2c59b69",
+            "facts": {
+              "queue_ms": 18.0,
+              "cpu_ms": 13.6,
+              "execution_ms": 88.073,
+              "peak_memory_bytes": 335135.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa04-b0a1-7b94-a813-bdaa14d1fa90",
+            "observed_at": "2026-10-02T00:30:07.098654Z",
+            "nova_execution_id": "92fd25ef-e828-476c-b380-cc7874071fa7",
+            "facts": {
+              "queue_ms": 13.0,
+              "cpu_ms": 12.315,
+              "execution_ms": 32.811,
+              "peak_memory_bytes": 339063.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa04-bd55-7562-a7d9-8076bed1550c",
+            "observed_at": "2026-10-02T00:30:11.355077Z",
+            "nova_execution_id": "0c590ee9-8a66-4c18-a931-a3a0d15a1956",
+            "facts": {
+              "queue_ms": 69.0,
+              "cpu_ms": 25.765,
+              "execution_ms": 138.478,
+              "peak_memory_bytes": 335215.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa04-d75f-7988-a59b-fbd8b5827667",
+            "observed_at": "2026-10-02T00:30:17.970988Z",
+            "nova_execution_id": "a8532048-a999-4810-948f-0444c189be88",
+            "facts": {
+              "queue_ms": 17.0,
+              "cpu_ms": 31.017,
+              "execution_ms": 97.307,
+              "peak_memory_bytes": 310127.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa04-e901-705e-8cba-6ed3a341c977",
+            "observed_at": "2026-10-02T00:30:21.990384Z",
+            "nova_execution_id": "cd978f29-b543-4584-8d69-e0fec1c13b81",
+            "facts": {
+              "queue_ms": 21.0,
+              "cpu_ms": 8.685,
+              "execution_ms": 62.626,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa04-f49f-7114-aea5-74b84bd45c65",
+            "observed_at": "2026-10-02T00:30:24.405560Z",
+            "nova_execution_id": "ca1b172f-5779-4ea5-9962-3a73a6b01d71",
+            "facts": {
+              "queue_ms": 13.0,
+              "cpu_ms": 2.704,
+              "execution_ms": 14.727,
+              "peak_memory_bytes": 338624.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa04-f99f-785e-ba4e-cf29af1952cf",
+            "observed_at": "2026-10-02T00:30:25.611128Z",
+            "nova_execution_id": "f0b24ba7-315a-45ac-8bc2-729e29e1be58",
+            "facts": {
+              "queue_ms": 7.0,
+              "cpu_ms": 2.239,
+              "execution_ms": 10.156,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-0162-7647-8cd0-63008503972d",
+            "observed_at": "2026-10-02T00:30:27.732913Z",
+            "nova_execution_id": "9ae4f9e0-348c-4b24-a241-3612da29d3a7",
+            "facts": {
+              "queue_ms": 20.0,
+              "cpu_ms": 4.824,
+              "execution_ms": 26.867,
+              "peak_memory_bytes": 338576.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-0b1b-7a49-b1ad-81a22380d6a3",
+            "observed_at": "2026-10-02T00:30:30.097629Z",
+            "nova_execution_id": "6e8e9be2-2bf3-4479-840c-27d80ac986c0",
+            "facts": {
+              "queue_ms": 20.0,
+              "cpu_ms": 6.008,
+              "execution_ms": 17.941,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-1861-7e75-9583-6e2e1bad1c62",
+            "observed_at": "2026-10-02T00:30:34.270573Z",
+            "nova_execution_id": "8e33a0f6-1f9a-4a8c-8220-fb8186b73ba4",
+            "facts": {
+              "queue_ms": 61.0,
+              "cpu_ms": 81.539,
+              "execution_ms": 181.695,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-26f4-7182-80a9-0c1c4d8d284d",
+            "observed_at": "2026-10-02T00:30:37.916624Z",
+            "nova_execution_id": "470fe88f-69fa-4543-94d9-f926e35a437b",
+            "facts": {
+              "queue_ms": 6.0,
+              "cpu_ms": 14.176,
+              "execution_ms": 93.91,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-3a2b-7b0a-a824-d86c28643f94",
+            "observed_at": "2026-10-02T00:30:42.234520Z",
+            "nova_execution_id": "516f93f0-32c4-4458-b8e5-b0a21973663c",
+            "facts": {
+              "queue_ms": 29.0,
+              "cpu_ms": 5.076,
+              "execution_ms": 23.176,
+              "peak_memory_bytes": 338576.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-42b0-7c55-abce-c3164a33cb59",
+            "observed_at": "2026-10-02T00:30:44.055871Z",
+            "nova_execution_id": "58a7e040-e7cc-4fe3-af4d-baf4012814a5",
+            "facts": {
+              "queue_ms": 3.0,
+              "cpu_ms": 1.206,
+              "execution_ms": 10.52,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-49d6-72b0-ae23-5ae77095407d",
+            "observed_at": "2026-10-02T00:30:46.325401Z",
+            "nova_execution_id": "a27a85e3-55a0-4277-9543-2dab9945015d",
+            "facts": {
+              "queue_ms": 12.0,
+              "cpu_ms": 4.92,
+              "execution_ms": 14.556,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-52b9-7518-8df9-1755c0d5576a",
+            "observed_at": "2026-10-02T00:30:48.516552Z",
+            "nova_execution_id": "5e2ea4cc-dc4a-4773-a280-6d9c20a66226",
+            "facts": {
+              "queue_ms": 7.0,
+              "cpu_ms": 1.447,
+              "execution_ms": 19.039,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-5cc2-7e3d-9c34-e7096b7ca169",
+            "observed_at": "2026-10-02T00:30:50.848954Z",
+            "nova_execution_id": "d5aff54c-f76b-47d6-9bff-bb219daae800",
+            "facts": {
+              "queue_ms": 7.0,
+              "cpu_ms": 1.005,
+              "execution_ms": 8.886,
+              "peak_memory_bytes": 335087.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-60cc-7195-90bc-c8ed76890a1f",
+            "observed_at": "2026-10-02T00:30:51.676428Z",
+            "nova_execution_id": "ac13b881-1028-4ec3-9cd1-932584496ecc",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.418421,
+              "execution_ms": 1.508,
+              "peak_memory_bytes": 338471.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-636b-7b63-a957-86ba2d9272ce",
+            "observed_at": "2026-10-02T00:30:52.355993Z",
+            "nova_execution_id": "c87293d5-17e5-4fef-9fda-b2a08afc1933",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.207753,
+              "execution_ms": 1.222,
+              "peak_memory_bytes": 335215.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-6617-7c0e-9738-5babc7992766",
+            "observed_at": "2026-10-02T00:30:53.038937Z",
+            "nova_execution_id": "ea91c038-318b-4623-b59d-9aa4851e5bfa",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.600506,
+              "execution_ms": 2.049,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-68ce-75e4-ac1b-8a4adb40b388",
+            "observed_at": "2026-10-02T00:30:53.736369Z",
+            "nova_execution_id": "f7b9e002-dd13-415e-bc6c-0ee3f09df956",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.35617000000000004,
+              "execution_ms": 1.395,
+              "peak_memory_bytes": 335104.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-6b7e-78ee-8504-e7ba6e26fc4d",
+            "observed_at": "2026-10-02T00:30:54.415415Z",
+            "nova_execution_id": "dbaf3b16-c06e-400c-8286-ae11c31f2730",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.304252,
+              "execution_ms": 1.306,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-6e49-76ce-b8e5-4e832e18a01b",
+            "observed_at": "2026-10-02T00:30:55.144560Z",
+            "nova_execution_id": "7a420ea7-277d-41ae-bd5c-a96696db3840",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.349921,
+              "execution_ms": 1.268,
+              "peak_memory_bytes": 334720.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-70fc-783a-9f3c-518712b5a041",
+            "observed_at": "2026-10-02T00:30:55.838415Z",
+            "nova_execution_id": "34ab09a9-b3d2-4f1d-808c-14b10c0ff051",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.468797,
+              "execution_ms": 1.74,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-73eb-7297-8439-31615834417f",
+            "observed_at": "2026-10-02T00:30:56.583445Z",
+            "nova_execution_id": "babafcc1-fd81-433d-9692-27696c5b3efa",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.277128,
+              "execution_ms": 1.317,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-768e-7474-b572-1191c39530d4",
+            "observed_at": "2026-10-02T00:30:57.253066Z",
+            "nova_execution_id": "58394f77-86c4-49e0-bee9-25dee9e83a3e",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 0.43738,
+              "execution_ms": 1.674,
+              "peak_memory_bytes": 338463.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-7970-72eb-9314-6735116ae641",
+            "observed_at": "2026-10-02T00:30:57.999814Z",
+            "nova_execution_id": "f3288e63-fd4c-4adb-a989-d9278613a21f",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.5469210000000001,
+              "execution_ms": 1.94,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-7c20-772d-831d-b440bec84c61",
+            "observed_at": "2026-10-02T00:30:58.684599Z",
+            "nova_execution_id": "419d8edf-dd03-4eda-a8eb-4ef013b293b5",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.30012700000000003,
+              "execution_ms": 1.217,
+              "peak_memory_bytes": 335055.872,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-7ee9-75bc-ae5c-7560e4c3a0f0",
+            "observed_at": "2026-10-02T00:30:59.387046Z",
+            "nova_execution_id": "402186cd-5baa-4e41-9a99-660585c84f9b",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.301088,
+              "execution_ms": 2.189,
+              "peak_memory_bytes": 310200.32,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-81d4-7df1-bf79-da062121a28d",
+            "observed_at": "2026-10-02T00:31:00.142465Z",
+            "nova_execution_id": "6c024444-b659-4714-8d72-dea3060f21f9",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 1.256,
+              "execution_ms": 3.789,
+              "peak_memory_bytes": 335215.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-8492-700a-bd52-f7c41798022a",
+            "observed_at": "2026-10-02T00:31:00.830424Z",
+            "nova_execution_id": "6569813b-4547-472d-ac47-8cb7ed96ef98",
+            "facts": {
+              "queue_ms": 3.0,
+              "cpu_ms": 1.784,
+              "execution_ms": 4.116,
+              "peak_memory_bytes": 334879.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-8726-7d83-83f3-c214c1fe323c",
+            "observed_at": "2026-10-02T00:31:01.515035Z",
+            "nova_execution_id": "478dfab0-a1f0-4965-861d-d5238ace4896",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 0.564424,
+              "execution_ms": 4.239,
+              "peak_memory_bytes": 310127.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-89fd-71b8-877a-80c47ae99317",
+            "observed_at": "2026-10-02T00:31:02.224449Z",
+            "nova_execution_id": "b0a8ae92-c72f-4210-b77e-a43a866799dc",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.754717,
+              "execution_ms": 2.487,
+              "peak_memory_bytes": 338463.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-8cc7-75a3-9063-ed0cedfbcd87",
+            "observed_at": "2026-10-02T00:31:02.954255Z",
+            "nova_execution_id": "db25f221-3552-4dd4-b63a-6bb49145f7a5",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.249503,
+              "execution_ms": 1.377,
+              "peak_memory_bytes": 338215.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-8f75-727c-8595-12701b671229",
+            "observed_at": "2026-10-02T00:31:03.627442Z",
+            "nova_execution_id": "62bf8158-6531-4e54-96b4-275235b266aa",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.5660900000000001,
+              "execution_ms": 3.992,
+              "peak_memory_bytes": 332608.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-921b-775b-adc5-54cb456ba112",
+            "observed_at": "2026-10-02T00:31:04.305829Z",
+            "nova_execution_id": "450eaf0b-1e26-4893-bdf5-f3179a37092d",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.545507,
+              "execution_ms": 1.337,
+              "peak_memory_bytes": 338576.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-9515-782f-b34b-ce3006128ed7",
+            "observed_at": "2026-10-02T00:31:05.067767Z",
+            "nova_execution_id": "60325af8-c6c2-4663-b1ac-b32434ab8622",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.563424,
+              "execution_ms": 2.675,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-9813-77bb-a4e4-e15b4750c221",
+            "observed_at": "2026-10-02T00:31:05.822728Z",
+            "nova_execution_id": "6f651956-3a1c-4491-bd2a-adb3715de257",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.598631,
+              "execution_ms": 1.979,
+              "peak_memory_bytes": 335215.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-9aa5-7973-ab27-0ad532693f6b",
+            "observed_at": "2026-10-02T00:31:06.511393Z",
+            "nova_execution_id": "45a1702d-1ac0-4bd1-9655-b4f2e7b754d1",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.441962,
+              "execution_ms": 2.535,
+              "peak_memory_bytes": 338247.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-9e5f-7263-aa03-f4184d2ea699",
+            "observed_at": "2026-10-02T00:31:07.627855Z",
+            "nova_execution_id": "409b4de7-3481-438a-b03e-00c0ef1cab0f",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 1.808,
+              "execution_ms": 6.354,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa05-a221-7285-bcfa-cf56e114fc7f",
+            "observed_at": "2026-10-02T00:31:08.416680Z",
+            "nova_execution_id": "d98b7195-52ac-48d7-9c4d-8af5b6d016f4",
+            "facts": {
+              "queue_ms": 3.0,
+              "cpu_ms": 1.31,
+              "execution_ms": 2.635,
+              "peak_memory_bytes": 333303.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-10dc-7c72-9be5-c439e81afbc0",
+            "observed_at": "2026-10-02T01:00:00.871956Z",
+            "nova_execution_id": "c0a1f01c-6080-4dcd-8deb-4e9ea0c76324",
+            "facts": {
+              "queue_ms": 14.0,
+              "cpu_ms": 5.761,
+              "execution_ms": 18.972,
+              "peak_memory_bytes": 335135.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-151a-7a38-8125-1eb916e8c5b1",
+            "observed_at": "2026-10-02T01:00:01.873739Z",
+            "nova_execution_id": "cc80c0e3-0e87-4ebd-a018-4f8837145e13",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.8219500000000001,
+              "execution_ms": 6.836,
+              "peak_memory_bytes": 338224.128,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-1ade-7a0d-b388-a8f4548a1589",
+            "observed_at": "2026-10-02T01:00:03.381787Z",
+            "nova_execution_id": "a991c3cc-2dab-43b5-bf93-5a5951027ba1",
+            "facts": {
+              "queue_ms": 4.0,
+              "cpu_ms": 1.042,
+              "execution_ms": 6.747,
+              "peak_memory_bytes": 310127.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-1eec-7215-89e1-2dc05df7e4cd",
+            "observed_at": "2026-10-02T01:00:04.465137Z",
+            "nova_execution_id": "07681dd2-850b-44e1-969a-a4e1a4566d12",
+            "facts": {
+              "queue_ms": 4.0,
+              "cpu_ms": 2.251,
+              "execution_ms": 29.988,
+              "peak_memory_bytes": 338576.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-246f-7d0f-bb7f-7e1a715d0b31",
+            "observed_at": "2026-10-02T01:00:05.857538Z",
+            "nova_execution_id": "fb516c3b-7546-436c-b911-995f4354fc41",
+            "facts": {
+              "queue_ms": 18.0,
+              "cpu_ms": 1.683,
+              "execution_ms": 6.242,
+              "peak_memory_bytes": 338488.32,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-28da-78c6-9a2a-29b1a8bd75b4",
+            "observed_at": "2026-10-02T01:00:06.943592Z",
+            "nova_execution_id": "5f6dc1a4-e17d-4b29-abb9-9d1fde3f34cf",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 0.606369,
+              "execution_ms": 13.152,
+              "peak_memory_bytes": 335120.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-2cbe-71f5-9c15-6b1d2af40cc4",
+            "observed_at": "2026-10-02T01:00:07.899954Z",
+            "nova_execution_id": "deea8ae1-e2b1-4aad-948d-7d7ff96d4ee3",
+            "facts": {
+              "queue_ms": 7.0,
+              "cpu_ms": 1.595,
+              "execution_ms": 5.222,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-3163-77ef-bd16-2fece711f8c5",
+            "observed_at": "2026-10-02T01:00:09.099097Z",
+            "nova_execution_id": "73bf6679-399f-44d4-80f5-d96fe3167ad2",
+            "facts": {
+              "queue_ms": 7.0,
+              "cpu_ms": 10.559,
+              "execution_ms": 11.596,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-3553-74bf-9e81-88f41c36aea2",
+            "observed_at": "2026-10-02T01:00:10.043830Z",
+            "nova_execution_id": "f1476399-6212-4bfc-8382-1af64293e20f",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.734329,
+              "execution_ms": 2.726,
+              "peak_memory_bytes": 338432.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-387d-7571-88f2-3c329fa06001",
+            "observed_at": "2026-10-02T01:00:10.852839Z",
+            "nova_execution_id": "e31437ff-e77a-48b9-b9a3-c4158cabaf95",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.43008,
+              "execution_ms": 3.144,
+              "peak_memory_bytes": 324968.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-3c24-7fb0-971f-4a2d6d2ecdb0",
+            "observed_at": "2026-10-02T01:00:11.805933Z",
+            "nova_execution_id": "5588be59-5c5c-4549-a5d6-8e36409837ea",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 2.232,
+              "execution_ms": 13.275,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-3f12-702e-af99-cfbca06ecfad",
+            "observed_at": "2026-10-02T01:00:12.560405Z",
+            "nova_execution_id": "a40fa58e-7f73-47db-a7d2-69e76d8c63bb",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.62387,
+              "execution_ms": 3.691,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-41fe-7492-bf74-0bbd289ffd02",
+            "observed_at": "2026-10-02T01:00:13.340705Z",
+            "nova_execution_id": "9e620dbb-041e-4086-b185-f96192f4d146",
+            "facts": {
+              "queue_ms": 7.0,
+              "cpu_ms": 1.289,
+              "execution_ms": 7.165,
+              "peak_memory_bytes": 334879.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-4595-730b-843a-8fc18ce5c71f",
+            "observed_at": "2026-10-02T01:00:14.249488Z",
+            "nova_execution_id": "baa20d57-c636-438f-8950-b59fc9d23f3a",
+            "facts": {
+              "queue_ms": 3.0,
+              "cpu_ms": 2.75,
+              "execution_ms": 6.92,
+              "peak_memory_bytes": 338576.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-4916-73b1-b896-e4084a73649f",
+            "observed_at": "2026-10-02T01:00:15.128812Z",
+            "nova_execution_id": "8400312c-47d7-4858-bdc7-4a1d62dcb9cb",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 2.474,
+              "execution_ms": 9.384,
+              "peak_memory_bytes": 338192.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-4dea-7490-bbdd-7d8fc3d10732",
+            "observed_at": "2026-10-02T01:00:16.531410Z",
+            "nova_execution_id": "ea9a53fd-cacd-4885-96ef-1c575da58a2a",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 2.24,
+              "execution_ms": 10.084,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-5271-7c1e-b8b2-35311073e43f",
+            "observed_at": "2026-10-02T01:00:17.673018Z",
+            "nova_execution_id": "2071895e-677e-458a-839f-e38a5d59fdfb",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 1.533,
+              "execution_ms": 9.063,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-571d-77de-a3e8-72cda16e27e6",
+            "observed_at": "2026-10-02T01:00:18.770907Z",
+            "nova_execution_id": "0e3903dc-6406-4524-a1e4-bfc445e31829",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 8.739,
+              "execution_ms": 12.692,
+              "peak_memory_bytes": 338488.32,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-5ab3-754f-ac46-d4ddef403208",
+            "observed_at": "2026-10-02T01:00:19.616617Z",
+            "nova_execution_id": "8c28d4a2-2895-47d2-ba09-6f85707a906f",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 2.218,
+              "execution_ms": 5.029,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-5dbd-7933-b9fc-326dd527f1b1",
+            "observed_at": "2026-10-02T01:00:20.535026Z",
+            "nova_execution_id": "2625991d-56a0-42e1-ab1c-ff34aa32cbf2",
+            "facts": {
+              "queue_ms": 4.0,
+              "cpu_ms": 1.197,
+              "execution_ms": 3.812,
+              "peak_memory_bytes": 338624.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-618a-71f9-ab56-2db28dee97af",
+            "observed_at": "2026-10-02T01:00:21.353996Z",
+            "nova_execution_id": "c7b932b1-4c02-45f3-a880-c841f38edddc",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.290499,
+              "execution_ms": 5.171,
+              "peak_memory_bytes": 332655.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-644c-7483-9982-968121b5aee7",
+            "observed_at": "2026-10-02T01:00:22.142762Z",
+            "nova_execution_id": "89491d1c-cae3-4b38-8157-c391d4f1e713",
+            "facts": {
+              "queue_ms": 3.0,
+              "cpu_ms": 0.880577,
+              "execution_ms": 3.381,
+              "peak_memory_bytes": 338488.32,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-6785-7006-b55b-0bfaed3aecc7",
+            "observed_at": "2026-10-02T01:00:22.891993Z",
+            "nova_execution_id": "74f2173d-725f-4066-98b3-2b5ec99c7704",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.51258,
+              "execution_ms": 2.055,
+              "peak_memory_bytes": 335120.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-6a58-7082-8d3e-e187525a46c5",
+            "observed_at": "2026-10-02T01:00:23.597083Z",
+            "nova_execution_id": "92ad7550-712b-4da7-835e-4a907ee543c8",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.272372,
+              "execution_ms": 1.729,
+              "peak_memory_bytes": 335343.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-6d21-7d1f-bb60-628eb805f789",
+            "observed_at": "2026-10-02T01:00:24.324050Z",
+            "nova_execution_id": "4e3dac94-e193-4c4f-97ee-3d9ede1d3bf1",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.572996,
+              "execution_ms": 1.643,
+              "peak_memory_bytes": 334720.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-6ffa-7e3d-8599-18c88bab0523",
+            "observed_at": "2026-10-02T01:00:25.069292Z",
+            "nova_execution_id": "b2163e87-710c-4fcc-9d81-6734d669f65e",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 1.792,
+              "execution_ms": 3.932,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-72d7-7877-ba2a-ee243fab24e8",
+            "observed_at": "2026-10-02T01:00:25.784774Z",
+            "nova_execution_id": "84d7fbd6-d501-482f-bbac-74762beabe67",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.35507900000000003,
+              "execution_ms": 1.609,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-7664-7ebf-8eeb-2c7767866152",
+            "observed_at": "2026-10-02T01:00:26.689023Z",
+            "nova_execution_id": "6c91056c-1d31-413d-8ea5-e9d6d1fb121d",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 0.941326,
+              "execution_ms": 8.976,
+              "peak_memory_bytes": 324968.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-791c-7ac5-a94b-c16c799f11be",
+            "observed_at": "2026-10-02T01:00:27.442604Z",
+            "nova_execution_id": "ab6a2a24-72a3-438c-9dde-e403a8f2a27d",
+            "facts": {
+              "queue_ms": 5.0,
+              "cpu_ms": 0.638828,
+              "execution_ms": 3.774,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-7c15-7236-879c-84ed998ac4a5",
+            "observed_at": "2026-10-02T01:00:28.202588Z",
+            "nova_execution_id": "1c8460c2-0ca9-4510-9d1a-7e0aa64ce560",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 1.29,
+              "execution_ms": 6.627,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-7ef9-7a0b-b611-bb2bf5347e42",
+            "observed_at": "2026-10-02T01:00:28.938420Z",
+            "nova_execution_id": "ec252b33-575b-40c0-b5de-19203e76719a",
+            "facts": {
+              "queue_ms": 2.0,
+              "cpu_ms": 1.106,
+              "execution_ms": 6.542,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-81e1-7c80-a135-df6af5262745",
+            "observed_at": "2026-10-02T01:00:29.616253Z",
+            "nova_execution_id": "19bbbde1-6d8b-4775-bf0d-7993deb1c87e",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.5479109999999999,
+              "execution_ms": 2.02,
+              "peak_memory_bytes": 335072.256,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-8489-7587-9dc6-9fc0b033409d",
+            "observed_at": "2026-10-02T01:00:30.294157Z",
+            "nova_execution_id": "8f4f7d17-cbf1-47c9-9fb7-b354a90ede01",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.237497,
+              "execution_ms": 1.363,
+              "peak_memory_bytes": 335120.384,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-8740-71cb-9335-2454a7edd880",
+            "observed_at": "2026-10-02T01:00:30.993323Z",
+            "nova_execution_id": "ba8efe66-7811-4dcf-b256-581be9a1d815",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.353663,
+              "execution_ms": 2.616,
+              "peak_memory_bytes": 335087.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-89fb-7a93-a535-94dfb1c0bf29",
+            "observed_at": "2026-10-02T01:00:31.683536Z",
+            "nova_execution_id": "b82e3955-c573-4eaa-84dc-1c2d90556ea8",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.350955,
+              "execution_ms": 2.38,
+              "peak_memory_bytes": 335072.256,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-8ce9-7c21-a2b2-da770aa9fbfb",
+            "observed_at": "2026-10-02T01:00:32.447945Z",
+            "nova_execution_id": "2052af1a-2a7d-4a87-b3e7-83151014dfa2",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.596663,
+              "execution_ms": 2.367,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-9028-7c56-9021-a6dee7f97909",
+            "observed_at": "2026-10-02T01:00:33.291218Z",
+            "nova_execution_id": "fd0be322-c422-400a-b17e-46f948c90966",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 2.347,
+              "execution_ms": 6.062,
+              "peak_memory_bytes": 335215.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-92fc-79bb-bdde-b0e275590627",
+            "observed_at": "2026-10-02T01:00:34.017645Z",
+            "nova_execution_id": "40a2d458-397a-48be-b389-74533151608e",
+            "facts": {
+              "queue_ms": 5.0,
+              "cpu_ms": 0.611996,
+              "execution_ms": 3.904,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-95c0-72ff-86dd-d42509c1d56a",
+            "observed_at": "2026-10-02T01:00:34.713129Z",
+            "nova_execution_id": "e46ffcec-0795-4593-bbaf-6b28bb2815f4",
+            "facts": {
+              "queue_ms": 0.0,
+              "cpu_ms": 0.499664,
+              "execution_ms": 1.522,
+              "peak_memory_bytes": 338104.32,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          },
+          {
+            "query_id": "01a0fa20-9875-7c01-a48b-9015d53372cd",
+            "observed_at": "2026-10-02T01:00:35.425207Z",
+            "nova_execution_id": "59b22e90-9033-4167-bc93-e62ae6207a56",
+            "facts": {
+              "queue_ms": 1.0,
+              "cpu_ms": 1.07,
+              "execution_ms": 3.255,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": false,
+            "limit_occupied": false
+          }
+        ],
+        "results_equivalent": true,
+        "findings": [
+          {
+            "detector": "high_frequency",
+            "severity": "info",
+            "measured": {
+              "count": 120
+            },
+            "evidence_ids": [
+              "01a0f9f3-278b-734f-b42f-e5b32978fc25"
+            ]
+          }
+        ],
+        "diagnosis": [
+          {
+            "category": "UNKNOWN",
+            "confidence": 0,
+            "evidence_ids": [
+              "01a0f9f3-278b-734f-b42f-e5b32978fc25"
+            ],
+            "counterevidence": [],
+            "explanation": "The available measurements do not establish a root cause. Current window: 120 executions, P95 263.008 ms. The regression sample/window requirement is not met; no percentile regression is established."
+          }
+        ]
+      },
+      "contended": {
+        "count": 60,
+        "warmups": 3,
+        "latency": {
+          "bins": {
+            "833": 2,
+            "832": 8,
+            "835": 1,
+            "828": 2,
+            "884": 1,
+            "831": 32,
+            "837": 1,
+            "829": 1,
+            "830": 12
+          },
+          "count": 60,
+          "total": 233253.24021209963,
+          "maximum": 6480.940584035125
+        },
+        "measured_latencies_ms": [
+          3918.175875034649,
+          3883.610167016741,
+          3978.790749970358,
+          3712.2071249759756,
+          6480.940584035125,
+          3836.812583031133,
+          4077.0771660027094,
+          3784.2863330151886,
+          3872.631874983199,
+          3811.738457996398,
+          3844.7934160358272,
+          3744.172583974432,
+          3839.9992500199005,
+          3821.4009170187637,
+          3820.4675839515403,
+          3825.39741700748,
+          3822.89062498603,
+          3844.913250009995,
+          3865.5915840063244,
+          3874.137625040021,
+          3825.1399589935318,
+          3815.78033400001,
+          3828.6024580011144,
+          3820.11379202595,
+          3832.6707090018317,
+          3832.902166992426,
+          3807.246083044447,
+          3828.7967079668306,
+          3829.890457971487,
+          3842.5328340381384,
+          3832.375083002262,
+          3845.5144590116106,
+          3828.022208006587,
+          3846.2426670012064,
+          3833.096500020474,
+          3854.725999990478,
+          3844.003042031545,
+          3828.9843749953434,
+          3809.3156249960884,
+          3855.0606250064448,
+          3850.769417011179,
+          3829.1209579911083,
+          3857.965749979485,
+          3875.9838749538176,
+          3845.1169159961864,
+          3851.4013329986483,
+          3864.6406669868156,
+          3868.463457969483,
+          3916.4213750045747,
+          3801.285416993778,
+          3816.2113330326974,
+          3815.629417018499,
+          3861.4074169890955,
+          3846.5143329813145,
+          3856.5253330161795,
+          3850.747082964517,
+          3825.27004199801,
+          3857.9265419975854,
+          3843.758874980267,
+          3817.029417026788
+        ],
+        "observations": [
+          {
+            "query_id": "01a0fd21-fb5b-7573-a98e-e5c03d5727c6",
+            "observed_at": "2026-10-02T15:01:01.838627Z",
+            "nova_execution_id": "49b6f726-2c43-41a8-8ca6-6cb6d8d5d48e",
+            "facts": {
+              "queue_ms": 3885.0,
+              "cpu_ms": 4.011,
+              "execution_ms": 13.634,
+              "peak_memory_bytes": 338488.32,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-0f23-7887-a0b2-6092dd090d26",
+            "observed_at": "2026-10-02T15:01:06.952225Z",
+            "nova_execution_id": "f7d86df4-3913-4dbc-b399-1ff67c3b8c89",
+            "facts": {
+              "queue_ms": 3835.0,
+              "cpu_ms": 5.601,
+              "execution_ms": 13.65,
+              "peak_memory_bytes": 324775.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-22d5-7c99-880f-b2853d5cba1d",
+            "observed_at": "2026-10-02T15:01:12.915586Z",
+            "nova_execution_id": "b26792ca-796c-40b3-a555-26c4add59ea2",
+            "facts": {
+              "queue_ms": 3877.0,
+              "cpu_ms": 34.843,
+              "execution_ms": 63.797,
+              "peak_memory_bytes": 338152.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-4340-7b73-9e65-b683e77f0dcd",
+            "observed_at": "2026-10-02T15:01:20.100825Z",
+            "nova_execution_id": "8a99d943-bd53-4a42-a907-88837f62e88a",
+            "facts": {
+              "queue_ms": 3615.0,
+              "cpu_ms": 8.297,
+              "execution_ms": 40.326,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-569d-7ffd-be0e-1bab25cb9b9b",
+            "observed_at": "2026-10-02T15:01:28.164442Z",
+            "nova_execution_id": "8f470b50-16bf-45eb-ae00-d2321b6ee64a",
+            "facts": {
+              "queue_ms": 4181.0,
+              "cpu_ms": 154.514,
+              "execution_ms": 749.699,
+              "peak_memory_bytes": 336448.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-76c2-7e4e-bf54-0e12e49466b1",
+            "observed_at": "2026-10-02T15:01:33.459780Z",
+            "nova_execution_id": "c98ece81-11a4-4d34-bad0-c83ff1b1d758",
+            "facts": {
+              "queue_ms": 3609.0,
+              "cpu_ms": 6.506,
+              "execution_ms": 25.514,
+              "peak_memory_bytes": 338455.552,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-89ae-767e-80a4-139197c46488",
+            "observed_at": "2026-10-02T15:01:38.451896Z",
+            "nova_execution_id": "6d324719-5766-405b-bee1-80fae5c11e59",
+            "facts": {
+              "queue_ms": 3946.0,
+              "cpu_ms": 12.039,
+              "execution_ms": 43.939,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-9e46-7dec-a5b9-f6ab93bfa6ac",
+            "observed_at": "2026-10-02T15:01:43.676220Z",
+            "nova_execution_id": "ed5316f3-7716-468d-be4c-e94c72f506ad",
+            "facts": {
+              "queue_ms": 3753.0,
+              "cpu_ms": 2.605,
+              "execution_ms": 5.822,
+              "peak_memory_bytes": 338488.32,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-b214-74d2-a015-5415baf241c5",
+            "observed_at": "2026-10-02T15:01:48.644339Z",
+            "nova_execution_id": "cd63fa91-6150-4939-a673-903c2c4bb84e",
+            "facts": {
+              "queue_ms": 3816.0,
+              "cpu_ms": 2.123,
+              "execution_ms": 14.739,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-c514-7957-b07f-fd29ed3d4726",
+            "observed_at": "2026-10-02T15:01:53.467198Z",
+            "nova_execution_id": "a99633a1-e61c-463c-a365-df801026ad54",
+            "facts": {
+              "queue_ms": 3800.0,
+              "cpu_ms": 0.353702,
+              "execution_ms": 1.619,
+              "peak_memory_bytes": 309864.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-d7e9-7f56-bbdb-2d696e9c4bce",
+            "observed_at": "2026-10-02T15:01:58.293342Z",
+            "nova_execution_id": "32e83425-9573-4ff3-9176-312f4fbc1649",
+            "facts": {
+              "queue_ms": 3833.0,
+              "cpu_ms": 0.720405,
+              "execution_ms": 3.549,
+              "peak_memory_bytes": 324631.552,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-eb21-7f8b-b7f7-143c38265634",
+            "observed_at": "2026-10-02T15:02:03.012727Z",
+            "nova_execution_id": "0acd7b36-15ad-4632-825f-c48a67b676d7",
+            "facts": {
+              "queue_ms": 3735.0,
+              "cpu_ms": 0.9837319999999999,
+              "execution_ms": 1.849,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd22-fd23-7db6-91b0-603a56cdc56f",
+            "observed_at": "2026-10-02T15:02:07.760256Z",
+            "nova_execution_id": "ad8f7747-e301-4742-8105-883de78e6741",
+            "facts": {
+              "queue_ms": 3821.0,
+              "cpu_ms": 3.261,
+              "execution_ms": 9.052,
+              "peak_memory_bytes": 335055.872,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-0fe2-794e-ac3d-cfef04806c11",
+            "observed_at": "2026-10-02T15:02:12.589727Z",
+            "nova_execution_id": "656b0bfb-d66d-49fb-94c6-8319ba57225c",
+            "facts": {
+              "queue_ms": 3807.0,
+              "cpu_ms": 0.857278,
+              "execution_ms": 5.02,
+              "peak_memory_bytes": 324631.552,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-2288-7062-8f60-3ec62093a100",
+            "observed_at": "2026-10-02T15:02:17.269337Z",
+            "nova_execution_id": "4690ddc4-1441-4efb-b223-4342a911a45a",
+            "facts": {
+              "queue_ms": 3806.0,
+              "cpu_ms": 0.9177350000000001,
+              "execution_ms": 4.07,
+              "peak_memory_bytes": 334879.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-353e-7167-9002-8972dd056add",
+            "observed_at": "2026-10-02T15:02:22.065026Z",
+            "nova_execution_id": "e7a82453-156a-4cbe-8dd5-5fe7c2292a53",
+            "facts": {
+              "queue_ms": 3811.0,
+              "cpu_ms": 0.7841950000000001,
+              "execution_ms": 4.034,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-4787-7cf1-8ece-c3d8851ffec1",
+            "observed_at": "2026-10-02T15:02:26.746104Z",
+            "nova_execution_id": "34e5d723-76ed-4231-abb2-2cf460165f8b",
+            "facts": {
+              "queue_ms": 3813.0,
+              "cpu_ms": 0.392869,
+              "execution_ms": 2.314,
+              "peak_memory_bytes": 334495.744,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-59db-7fe9-a69e-15968c4159e4",
+            "observed_at": "2026-10-02T15:02:31.565275Z",
+            "nova_execution_id": "0ee758ec-8052-410a-b3ba-35151dd4ca13",
+            "facts": {
+              "queue_ms": 3829.0,
+              "cpu_ms": 3.179,
+              "execution_ms": 8.48,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-6c99-76a9-bd1f-3f53a76303fc",
+            "observed_at": "2026-10-02T15:02:36.397987Z",
+            "nova_execution_id": "c3635172-f124-450d-aefa-aa6ccec3d781",
+            "facts": {
+              "queue_ms": 3813.0,
+              "cpu_ms": 1.951,
+              "execution_ms": 5.434,
+              "peak_memory_bytes": 335104.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-7f90-756b-b30d-7d3b97d220fe",
+            "observed_at": "2026-10-02T15:02:41.152932Z",
+            "nova_execution_id": "0c86e767-e411-4569-a7fd-1c954fb045a0",
+            "facts": {
+              "queue_ms": 3857.0,
+              "cpu_ms": 2.343,
+              "execution_ms": 4.876,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-9224-73a3-9592-fdae334a8d30",
+            "observed_at": "2026-10-02T15:02:45.944458Z",
+            "nova_execution_id": "092371bd-f3e2-42cd-8d86-a307f2c6e74d",
+            "facts": {
+              "queue_ms": 3807.0,
+              "cpu_ms": 0.8964650000000001,
+              "execution_ms": 8.03,
+              "peak_memory_bytes": 324935.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-a4ed-7d22-bfc8-73b7a05f1c49",
+            "observed_at": "2026-10-02T15:02:50.651022Z",
+            "nova_execution_id": "1a29856b-2b20-4a01-9963-42939ee24d0e",
+            "facts": {
+              "queue_ms": 3792.0,
+              "cpu_ms": 3.962,
+              "execution_ms": 13.181,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-b74f-719f-a0ad-4e0f6e04ed86",
+            "observed_at": "2026-10-02T15:02:55.366993Z",
+            "nova_execution_id": "101eb272-53c9-4cdf-a069-dd92f1d7e750",
+            "facts": {
+              "queue_ms": 3802.0,
+              "cpu_ms": 10.467,
+              "execution_ms": 14.675,
+              "peak_memory_bytes": 338471.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-c9a6-7686-b57c-86a939d3c6b0",
+            "observed_at": "2026-10-02T15:03:00.242549Z",
+            "nova_execution_id": "aa196737-5a60-48fd-8e75-e610121ddbfe",
+            "facts": {
+              "queue_ms": 3810.0,
+              "cpu_ms": 1.185,
+              "execution_ms": 5.248,
+              "peak_memory_bytes": 310127.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-dc8c-71c5-8993-84e61298cbac",
+            "observed_at": "2026-10-02T15:03:05.045380Z",
+            "nova_execution_id": "f41a2897-6573-496a-81fa-5b97354e496a",
+            "facts": {
+              "queue_ms": 3803.0,
+              "cpu_ms": 2.457,
+              "execution_ms": 8.163,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd23-ef78-7a2e-8edc-ef435c5c4f03",
+            "observed_at": "2026-10-02T15:03:09.931497Z",
+            "nova_execution_id": "a8047e41-0384-4ed6-a53a-819892d46915",
+            "facts": {
+              "queue_ms": 3819.0,
+              "cpu_ms": 1.311,
+              "execution_ms": 4.811,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd24-02c8-786d-8ee1-f8f42062a1fb",
+            "observed_at": "2026-10-02T15:03:14.752302Z",
+            "nova_execution_id": "7605ed4b-d151-4f81-bf93-f49c796dfd86",
+            "facts": {
+              "queue_ms": 3793.0,
+              "cpu_ms": 1.444,
+              "execution_ms": 4.468,
+              "peak_memory_bytes": 324968.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd24-155d-73ef-b14f-27b3810508c2",
+            "observed_at": "2026-10-02T15:03:19.438878Z",
+            "nova_execution_id": "4af82919-7189-4443-90f7-3c002f3ec262",
+            "facts": {
+              "queue_ms": 3815.0,
+              "cpu_ms": 1.173,
+              "execution_ms": 3.179,
+              "peak_memory_bytes": 324631.552,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd24-2821-7f9e-8b8d-1597718132b4",
+            "observed_at": "2026-10-02T15:03:24.251072Z",
+            "nova_execution_id": "00b417c3-3044-4d3c-a819-fb403da6f2de",
+            "facts": {
+              "queue_ms": 3784.0,
+              "cpu_ms": 3.16,
+              "execution_ms": 10.45,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd24-3af6-7fac-afe0-7cdcf9957625",
+            "observed_at": "2026-10-02T15:03:29.185025Z",
+            "nova_execution_id": "09449025-e300-4f4d-8776-7b9eb8f29efb",
+            "facts": {
+              "queue_ms": 3822.0,
+              "cpu_ms": 0.90734,
+              "execution_ms": 4.533,
+              "peak_memory_bytes": 338264.064,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3c-9212-7560-a428-7755b1ef2124",
+            "observed_at": "2026-10-02T15:30:04.231911Z",
+            "nova_execution_id": "189e1420-9efd-43e4-ad50-d034ca703fa6",
+            "facts": {
+              "queue_ms": 3822.0,
+              "cpu_ms": 0.724092,
+              "execution_ms": 3.215,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3c-a48a-77e3-b00e-9cee9f3fb7d6",
+            "observed_at": "2026-10-02T15:30:09.000184Z",
+            "nova_execution_id": "fedbe22c-6e13-4a6d-b5da-c426b88aefa1",
+            "facts": {
+              "queue_ms": 3832.0,
+              "cpu_ms": 3.074,
+              "execution_ms": 7.758,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3c-b718-71aa-90a6-54f37977df8d",
+            "observed_at": "2026-10-02T15:30:13.713591Z",
+            "nova_execution_id": "4ae2183f-146e-4e70-b5ec-63c1b3cd396d",
+            "facts": {
+              "queue_ms": 3814.0,
+              "cpu_ms": 0.742717,
+              "execution_ms": 4.328,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3c-c9c8-7044-b59a-71766247ac08",
+            "observed_at": "2026-10-02T15:30:18.515824Z",
+            "nova_execution_id": "87f2a1d6-87cd-4911-8a10-275e361b5ecf",
+            "facts": {
+              "queue_ms": 3827.0,
+              "cpu_ms": 0.7575080000000001,
+              "execution_ms": 5.802,
+              "peak_memory_bytes": 310127.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3c-dca5-7f53-a938-80eadcc2f906",
+            "observed_at": "2026-10-02T15:30:23.428363Z",
+            "nova_execution_id": "00f8da91-868c-4e7c-84d5-5f88749374ad",
+            "facts": {
+              "queue_ms": 3822.0,
+              "cpu_ms": 0.588842,
+              "execution_ms": 2.195,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3c-ef67-73b8-a8d6-e8ef8d4308d9",
+            "observed_at": "2026-10-02T15:30:28.153110Z",
+            "nova_execution_id": "c70b5680-b50a-4660-9c1a-2a28bea5a093",
+            "facts": {
+              "queue_ms": 3833.0,
+              "cpu_ms": 3.568,
+              "execution_ms": 6.931,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-01e3-7087-bfb7-c207f2f7de3d",
+            "observed_at": "2026-10-02T15:30:32.881430Z",
+            "nova_execution_id": "b9b30489-1b9b-40f1-b8c5-69a206650740",
+            "facts": {
+              "queue_ms": 3831.0,
+              "cpu_ms": 0.915922,
+              "execution_ms": 6.824,
+              "peak_memory_bytes": 334784.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-1473-7b66-8df4-8f36b300638c",
+            "observed_at": "2026-10-02T15:30:37.616703Z",
+            "nova_execution_id": "0d16d8c8-bca9-4c67-9e40-de9a5e69220d",
+            "facts": {
+              "queue_ms": 3810.0,
+              "cpu_ms": 0.552605,
+              "execution_ms": 2.895,
+              "peak_memory_bytes": 338287.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-26ca-7eca-8da3-d26bf26ba0c3",
+            "observed_at": "2026-10-02T15:30:42.295505Z",
+            "nova_execution_id": "9258599b-f513-4332-8a2c-64223ac0d3f1",
+            "facts": {
+              "queue_ms": 3799.0,
+              "cpu_ms": 1.615,
+              "execution_ms": 3.298,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-392c-793f-8336-6284452eb128",
+            "observed_at": "2026-10-02T15:30:47.137090Z",
+            "nova_execution_id": "b74de818-f381-4340-9b8d-8320bc88f18b",
+            "facts": {
+              "queue_ms": 3839.0,
+              "cpu_ms": 1.343,
+              "execution_ms": 9.774,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-4c08-7d91-84af-a2f070cf4ddc",
+            "observed_at": "2026-10-02T15:30:52.037434Z",
+            "nova_execution_id": "d65c2759-10f6-4b67-93c2-8967800bfbaf",
+            "facts": {
+              "queue_ms": 3823.0,
+              "cpu_ms": 5.112,
+              "execution_ms": 9.86,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-5f59-7a70-8a78-97f661e5bfb1",
+            "observed_at": "2026-10-02T15:30:56.897229Z",
+            "nova_execution_id": "5579266e-c857-47fe-9e65-2ff71223693a",
+            "facts": {
+              "queue_ms": 3806.0,
+              "cpu_ms": 3.186,
+              "execution_ms": 13.043,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-7231-7f42-9c28-fc7cab57d842",
+            "observed_at": "2026-10-02T15:31:01.632027Z",
+            "nova_execution_id": "e0948a2b-afd0-479b-adbb-8688a8098435",
+            "facts": {
+              "queue_ms": 3839.0,
+              "cpu_ms": 0.98338,
+              "execution_ms": 6.343,
+              "peak_memory_bytes": 335215.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-853b-7dcc-8bc5-43904d59b7a8",
+            "observed_at": "2026-10-02T15:31:06.558030Z",
+            "nova_execution_id": "5ed4a512-a23a-4688-823e-0507f4d1809d",
+            "facts": {
+              "queue_ms": 3855.0,
+              "cpu_ms": 3.038,
+              "execution_ms": 12.07,
+              "peak_memory_bytes": 338215.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-97e7-71ed-8ee6-65bae2d6eb8b",
+            "observed_at": "2026-10-02T15:31:11.307459Z",
+            "nova_execution_id": "fbde0fd3-f362-42a2-b5d6-8594af0a0485",
+            "facts": {
+              "queue_ms": 3820.0,
+              "cpu_ms": 2.343,
+              "execution_ms": 10.041,
+              "peak_memory_bytes": 324968.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-aa72-7271-931e-6dfc0f6ed219",
+            "observed_at": "2026-10-02T15:31:16.093330Z",
+            "nova_execution_id": "4c6aed8a-fa45-4630-a97e-922f81bfc72c",
+            "facts": {
+              "queue_ms": 3826.0,
+              "cpu_ms": 8.873,
+              "execution_ms": 11.201,
+              "peak_memory_bytes": 335104.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-bd35-7356-a765-114faa673a8b",
+            "observed_at": "2026-10-02T15:31:20.876485Z",
+            "nova_execution_id": "62209b8d-3b13-4f5b-b076-ec5f4abd074c",
+            "facts": {
+              "queue_ms": 3847.0,
+              "cpu_ms": 2.018,
+              "execution_ms": 9.484,
+              "peak_memory_bytes": 335104.0,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-d028-7488-9740-5a3441373163",
+            "observed_at": "2026-10-02T15:31:25.714823Z",
+            "nova_execution_id": "ff5ddc25-d2f1-493b-b225-c855895f575e",
+            "facts": {
+              "queue_ms": 3835.0,
+              "cpu_ms": 1.969,
+              "execution_ms": 15.264,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-e2ad-7f0e-b1a6-17a4d60cdd96",
+            "observed_at": "2026-10-02T15:31:30.949499Z",
+            "nova_execution_id": "5e82c8cd-a490-49fc-a2f2-e2dd3818bd6a",
+            "facts": {
+              "queue_ms": 3859.0,
+              "cpu_ms": 5.45,
+              "execution_ms": 34.405,
+              "peak_memory_bytes": 310639.616,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3d-f7b8-70db-88fe-f68618bc7ee6",
+            "observed_at": "2026-10-02T15:31:35.868957Z",
+            "nova_execution_id": "3b9b1b15-2603-42a1-9882-df7bed113dda",
+            "facts": {
+              "queue_ms": 3787.0,
+              "cpu_ms": 0.673972,
+              "execution_ms": 5.846,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-0a70-7206-9b04-371284552919",
+            "observed_at": "2026-10-02T15:31:40.674748Z",
+            "nova_execution_id": "39df7eea-1016-419b-8fac-c82795569ef8",
+            "facts": {
+              "queue_ms": 3801.0,
+              "cpu_ms": 0.813009,
+              "execution_ms": 3.436,
+              "peak_memory_bytes": 338152.448,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-1d0b-74ce-92dc-f4ec6df92c0c",
+            "observed_at": "2026-10-02T15:31:45.410803Z",
+            "nova_execution_id": "c6b51ef3-f1e4-4708-b2f3-da3dbaea8eaa",
+            "facts": {
+              "queue_ms": 3798.0,
+              "cpu_ms": 1.379,
+              "execution_ms": 8.916,
+              "peak_memory_bytes": 338551.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-2fb7-7596-a5e9-5134cbfa70ca",
+            "observed_at": "2026-10-02T15:31:50.164237Z",
+            "nova_execution_id": "2f6e433e-2639-4ad4-a176-87e894852dcf",
+            "facts": {
+              "queue_ms": 3831.0,
+              "cpu_ms": 5.423,
+              "execution_ms": 13.367,
+              "peak_memory_bytes": 339032.064,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-42a1-703d-9122-ea0a1b5a5d0f",
+            "observed_at": "2026-10-02T15:31:55.199864Z",
+            "nova_execution_id": "5d0685d9-8462-4450-b9b7-cd112ff70f96",
+            "facts": {
+              "queue_ms": 3812.0,
+              "cpu_ms": 1.781,
+              "execution_ms": 6.485,
+              "peak_memory_bytes": 338503.68,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-55da-7e4a-b1d3-126019c207f2",
+            "observed_at": "2026-10-02T15:31:59.920699Z",
+            "nova_execution_id": "f27b9973-03c6-46a9-a952-f8eba5f08c0c",
+            "facts": {
+              "queue_ms": 3841.0,
+              "cpu_ms": 1.381,
+              "execution_ms": 4.945,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-686c-73f3-84f2-6ada01852de2",
+            "observed_at": "2026-10-02T15:32:04.775823Z",
+            "nova_execution_id": "40e3d92e-bc65-40e8-bee1-0858b5c88fe6",
+            "facts": {
+              "queue_ms": 3831.0,
+              "cpu_ms": 1.388,
+              "execution_ms": 5.986,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-7b4d-706c-80e2-b8d1d38253c1",
+            "observed_at": "2026-10-02T15:32:09.460626Z",
+            "nova_execution_id": "0ecd12a5-8378-4ad0-8168-781754667586",
+            "facts": {
+              "queue_ms": 3813.0,
+              "cpu_ms": 0.836427,
+              "execution_ms": 3.562,
+              "peak_memory_bytes": 339063.808,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-8d9c-725a-a107-dc02b9a80a31",
+            "observed_at": "2026-10-02T15:32:14.234347Z",
+            "nova_execution_id": "6daa7ac4-df70-45b6-8f97-f34923889f2f",
+            "facts": {
+              "queue_ms": 3833.0,
+              "cpu_ms": 2.278,
+              "execution_ms": 11.294,
+              "peak_memory_bytes": 338599.936,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-a09c-7860-a1e5-9793b429a985",
+            "observed_at": "2026-10-02T15:32:19.071380Z",
+            "nova_execution_id": "85e46c47-5d85-4f1f-a875-a8fc39b17253",
+            "facts": {
+              "queue_ms": 3828.0,
+              "cpu_ms": 2.201,
+              "execution_ms": 7.477,
+              "peak_memory_bytes": 335168.512,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          },
+          {
+            "query_id": "01a0fd3e-b32f-780d-afcb-3e3ba580582e",
+            "observed_at": "2026-10-02T15:32:23.777794Z",
+            "nova_execution_id": "0e867bc7-b170-416c-93ad-b20f4626f74c",
+            "facts": {
+              "queue_ms": 3805.0,
+              "cpu_ms": 0.564549,
+              "execution_ms": 3.258,
+              "peak_memory_bytes": 338520.064,
+              "spill_bytes": 0.0,
+              "scanned_rows": 500,
+              "output_rows": 1
+            },
+            "pending_observed": true,
+            "limit_occupied": true
+          }
+        ],
+        "results_equivalent": true,
+        "findings": [
+          {
+            "detector": "contention",
+            "severity": "warning",
+            "measured": {
+              "queue_ms": 3885.0,
+              "execution_ms": 13.634
+            },
+            "evidence_ids": [
+              "01a0fd21-fb5b-7573-a98e-e5c03d5727c6"
+            ]
+          }
+        ],
+        "diagnosis": [
+          {
+            "category": "RESOURCE_CONTENTION",
+            "confidence": 0.9,
+            "evidence_ids": [
+              "01a0fd21-fb5b-7573-a98e-e5c03d5727c6"
+            ],
+            "counterevidence": [],
+            "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. Current window: 60 executions, P95 3938.97 ms. The correlated execution queued for 3885 ms and executed for 13.634 ms. These measurements do not identify which resource limit should change."
+          }
+        ]
+      }
+    },
+    "queue_limit": 1,
+    "blocker_seconds": 4,
+    "queue_settings_restored": true,
+    "wall_clock_history": true,
+    "history_anchor": "2026-10-02T00:00:00+00:00",
+    "recent_anchor": "2026-10-02T15:00:00+00:00",
+    "snapshot_state": "5acfed19a3cc430953454180199301353ba5e7db7c4eedff9c1a9765e96379fa",
+    "production_actions": 0,
+    "durable_pipeline": {
+      "status": "FAIL",
+      "history_source": "query_service_collector_real_completion_timestamps",
+      "executions": 180,
+      "persisted": 180,
+      "newly_persisted": 60,
+      "retained_history_revalidated": 120,
+      "dropped": 0,
+      "failed_batches": 0,
+      "family_id": "44837ef329a0074a9e0876188bbae1b850f5799103d25784c9b0b6a385cfcdf2",
+      "scope": {
+        "active_role": "autopilot_replay_role",
+        "catalog": "default_catalog",
+        "database": "autopilot_final_snapshot_20261002",
+        "policy_revision": null,
+        "principal": "autopilot_replay",
+        "security_context_version": 1,
+        "settings_hash": ""
+      },
+      "family": {
+        "baseline": {
+          "current_count": 30,
+          "current_p95": 4181.299050858944,
+          "eligible": true,
+          "historical_count": 154,
+          "historical_p95": 1254.368103679604,
+          "reason": null,
+          "seasonal": false,
+          "upper_envelope": 4259.983868737214,
+          "windows": 6
+        },
+        "canonical": "select sum ( total ) from orders",
+        "classified": true,
+        "cohort_id": "ed9a1e46b4f7bb939e194594122d57397e63fb092d669a122c72eed81efddc71",
+        "diagnosis": [
+          {
+            "category": "RESOURCE_CONTENTION",
+            "confidence": 0.9,
+            "counterevidence": [],
+            "evidence_ids": [
+              "pipeline-profile-189e1420-9efd-43e4-ad50-d034ca703fa6",
+              "pipeline-profile-fedbe22c-6e13-4a6d-b5da-c426b88aefa1",
+              "pipeline-profile-4ae2183f-146e-4e70-b5ec-63c1b3cd396d",
+              "pipeline-profile-87f2a1d6-87cd-4911-8a10-275e361b5ecf",
+              "pipeline-profile-00f8da91-868c-4e7c-84d5-5f88749374ad",
+              "pipeline-profile-c70b5680-b50a-4660-9c1a-2a28bea5a093",
+              "pipeline-profile-b9b30489-1b9b-40f1-b8c5-69a206650740",
+              "pipeline-profile-0d16d8c8-bca9-4c67-9e40-de9a5e69220d",
+              "pipeline-profile-9258599b-f513-4332-8a2c-64223ac0d3f1",
+              "pipeline-profile-b74de818-f381-4340-9b8d-8320bc88f18b",
+              "pipeline-profile-d65c2759-10f6-4b67-93c2-8967800bfbaf",
+              "pipeline-profile-5579266e-c857-47fe-9e65-2ff71223693a",
+              "pipeline-profile-e0948a2b-afd0-479b-adbb-8688a8098435",
+              "pipeline-profile-5ed4a512-a23a-4688-823e-0507f4d1809d",
+              "pipeline-profile-fbde0fd3-f362-42a2-b5d6-8594af0a0485",
+              "pipeline-profile-4c6aed8a-fa45-4630-a97e-922f81bfc72c",
+              "pipeline-profile-62209b8d-3b13-4f5b-b076-ec5f4abd074c",
+              "pipeline-profile-ff5ddc25-d2f1-493b-b225-c855895f575e",
+              "pipeline-profile-5e82c8cd-a490-49fc-a2f2-e2dd3818bd6a",
+              "pipeline-profile-3b9b1b15-2603-42a1-9882-df7bed113dda",
+              "pipeline-profile-39df7eea-1016-419b-8fac-c82795569ef8",
+              "pipeline-profile-c6b51ef3-f1e4-4708-b2f3-da3dbaea8eaa",
+              "pipeline-profile-2f6e433e-2639-4ad4-a176-87e894852dcf",
+              "pipeline-profile-5d0685d9-8462-4450-b9b7-cd112ff70f96",
+              "pipeline-profile-f27b9973-03c6-46a9-a952-f8eba5f08c0c",
+              "pipeline-profile-40e3d92e-bc65-40e8-bee1-0858b5c88fe6",
+              "pipeline-profile-0ecd12a5-8378-4ad0-8168-781754667586",
+              "pipeline-profile-6daa7ac4-df70-45b6-8f97-f34923889f2f",
+              "pipeline-profile-85e46c47-5d85-4f1f-a875-a8fc39b17253",
+              "pipeline-profile-0e867bc7-b170-416c-93ad-b20f4626f74c",
+              "pipeline-queue-0e867bc7-b170-416c-93ad-b20f4626f74c"
+            ],
+            "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. Current window: 30 executions, P95 4181.3 ms. The correlated execution queued for 3805 ms and executed for 3.258 ms. These measurements do not identify which resource limit should change."
+          }
+        ],
+        "family_id": "44837ef329a0074a9e0876188bbae1b850f5799103d25784c9b0b6a385cfcdf2",
+        "findings": [
+          {
+            "detector": "contention",
+            "evidence_ids": [
+              "pipeline-profile-189e1420-9efd-43e4-ad50-d034ca703fa6",
+              "pipeline-profile-fedbe22c-6e13-4a6d-b5da-c426b88aefa1",
+              "pipeline-profile-4ae2183f-146e-4e70-b5ec-63c1b3cd396d",
+              "pipeline-profile-87f2a1d6-87cd-4911-8a10-275e361b5ecf",
+              "pipeline-profile-00f8da91-868c-4e7c-84d5-5f88749374ad",
+              "pipeline-profile-c70b5680-b50a-4660-9c1a-2a28bea5a093",
+              "pipeline-profile-b9b30489-1b9b-40f1-b8c5-69a206650740",
+              "pipeline-profile-0d16d8c8-bca9-4c67-9e40-de9a5e69220d",
+              "pipeline-profile-9258599b-f513-4332-8a2c-64223ac0d3f1",
+              "pipeline-profile-b74de818-f381-4340-9b8d-8320bc88f18b",
+              "pipeline-profile-d65c2759-10f6-4b67-93c2-8967800bfbaf",
+              "pipeline-profile-5579266e-c857-47fe-9e65-2ff71223693a",
+              "pipeline-profile-e0948a2b-afd0-479b-adbb-8688a8098435",
+              "pipeline-profile-5ed4a512-a23a-4688-823e-0507f4d1809d",
+              "pipeline-profile-fbde0fd3-f362-42a2-b5d6-8594af0a0485",
+              "pipeline-profile-4c6aed8a-fa45-4630-a97e-922f81bfc72c",
+              "pipeline-profile-62209b8d-3b13-4f5b-b076-ec5f4abd074c",
+              "pipeline-profile-ff5ddc25-d2f1-493b-b225-c855895f575e",
+              "pipeline-profile-5e82c8cd-a490-49fc-a2f2-e2dd3818bd6a",
+              "pipeline-profile-3b9b1b15-2603-42a1-9882-df7bed113dda",
+              "pipeline-profile-39df7eea-1016-419b-8fac-c82795569ef8",
+              "pipeline-profile-c6b51ef3-f1e4-4708-b2f3-da3dbaea8eaa",
+              "pipeline-profile-2f6e433e-2639-4ad4-a176-87e894852dcf",
+              "pipeline-profile-5d0685d9-8462-4450-b9b7-cd112ff70f96",
+              "pipeline-profile-f27b9973-03c6-46a9-a952-f8eba5f08c0c",
+              "pipeline-profile-40e3d92e-bc65-40e8-bee1-0858b5c88fe6",
+              "pipeline-profile-0ecd12a5-8378-4ad0-8168-781754667586",
+              "pipeline-profile-6daa7ac4-df70-45b6-8f97-f34923889f2f",
+              "pipeline-profile-85e46c47-5d85-4f1f-a875-a8fc39b17253",
+              "pipeline-profile-0e867bc7-b170-416c-93ad-b20f4626f74c",
+              "pipeline-queue-0e867bc7-b170-416c-93ad-b20f4626f74c"
+            ],
+            "measured": {
+              "execution_ms": 3.258,
+              "queue_ms": 3805
+            },
+            "severity": "warning"
+          }
+        ],
+        "id": "3426c16a489d900f3e885c7a906b89cddc14fc14b91fa1b83392ec3ad02f7fc2",
+        "last_observed_at": "2026-10-02T15:32:23.777794+00:00",
+        "next_steps": [
+          "Inspect resource-group limits and simultaneous demand; do not attribute queueing to bad SQL or change limits without an approved controlled experiment."
+        ],
+        "priority": {
+          "contributions": {
+            "confidence": 22.5,
+            "degradation": 20,
+            "expected_gain": 3,
+            "frequency": 7.46,
+            "implementation_cost": -5,
+            "risk": -10,
+            "workload_impact": 9.97
+          },
+          "estimate_source": "heuristic",
+          "estimated_gain": 0.2,
+          "historical_outcomes": 0,
+          "score": 47.92
+        },
+        "scope": {
+          "active_role": "autopilot_replay_role",
+          "catalog": "default_catalog",
+          "database": "autopilot_final_snapshot_20261002",
+          "policy_revision": null,
+          "principal": "autopilot_replay",
+          "security_context_version": 1,
+          "settings_hash": ""
+        },
+        "tables": [
+          "orders"
+        ],
+        "window": "2026-10-02T15:03:30.189572+00:00"
+      },
+      "incidents": [
+        {
+          "baseline": {
+            "current_count": 30,
+            "current_p95": 4181.299050858944,
+            "eligible": true,
+            "historical_count": 154,
+            "historical_p95": 1254.368103679604,
+            "reason": null,
+            "seasonal": false,
+            "upper_envelope": 4259.983868737214,
+            "windows": 6
+          },
+          "cohort_id": "ed9a1e46b4f7bb939e194594122d57397e63fb092d669a122c72eed81efddc71",
+          "detector": "contention",
+          "diagnosis": [
+            {
+              "category": "RESOURCE_CONTENTION",
+              "confidence": 0.9,
+              "counterevidence": [],
+              "evidence_ids": [
+                "pipeline-profile-189e1420-9efd-43e4-ad50-d034ca703fa6",
+                "pipeline-profile-fedbe22c-6e13-4a6d-b5da-c426b88aefa1",
+                "pipeline-profile-4ae2183f-146e-4e70-b5ec-63c1b3cd396d",
+                "pipeline-profile-87f2a1d6-87cd-4911-8a10-275e361b5ecf",
+                "pipeline-profile-00f8da91-868c-4e7c-84d5-5f88749374ad",
+                "pipeline-profile-c70b5680-b50a-4660-9c1a-2a28bea5a093",
+                "pipeline-profile-b9b30489-1b9b-40f1-b8c5-69a206650740",
+                "pipeline-profile-0d16d8c8-bca9-4c67-9e40-de9a5e69220d",
+                "pipeline-profile-9258599b-f513-4332-8a2c-64223ac0d3f1",
+                "pipeline-profile-b74de818-f381-4340-9b8d-8320bc88f18b",
+                "pipeline-profile-d65c2759-10f6-4b67-93c2-8967800bfbaf",
+                "pipeline-profile-5579266e-c857-47fe-9e65-2ff71223693a",
+                "pipeline-profile-e0948a2b-afd0-479b-adbb-8688a8098435",
+                "pipeline-profile-5ed4a512-a23a-4688-823e-0507f4d1809d",
+                "pipeline-profile-fbde0fd3-f362-42a2-b5d6-8594af0a0485",
+                "pipeline-profile-4c6aed8a-fa45-4630-a97e-922f81bfc72c",
+                "pipeline-profile-62209b8d-3b13-4f5b-b076-ec5f4abd074c",
+                "pipeline-profile-ff5ddc25-d2f1-493b-b225-c855895f575e",
+                "pipeline-profile-5e82c8cd-a490-49fc-a2f2-e2dd3818bd6a",
+                "pipeline-profile-3b9b1b15-2603-42a1-9882-df7bed113dda",
+                "pipeline-profile-39df7eea-1016-419b-8fac-c82795569ef8",
+                "pipeline-profile-c6b51ef3-f1e4-4708-b2f3-da3dbaea8eaa",
+                "pipeline-profile-2f6e433e-2639-4ad4-a176-87e894852dcf",
+                "pipeline-profile-5d0685d9-8462-4450-b9b7-cd112ff70f96",
+                "pipeline-profile-f27b9973-03c6-46a9-a952-f8eba5f08c0c",
+                "pipeline-profile-40e3d92e-bc65-40e8-bee1-0858b5c88fe6",
+                "pipeline-profile-0ecd12a5-8378-4ad0-8168-781754667586",
+                "pipeline-profile-6daa7ac4-df70-45b6-8f97-f34923889f2f",
+                "pipeline-profile-85e46c47-5d85-4f1f-a875-a8fc39b17253",
+                "pipeline-profile-0e867bc7-b170-416c-93ad-b20f4626f74c",
+                "pipeline-queue-0e867bc7-b170-416c-93ad-b20f4626f74c"
+              ],
+              "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. Current window: 30 executions, P95 4181.3 ms. The correlated execution queued for 3805 ms and executed for 3.258 ms. These measurements do not identify which resource limit should change."
+            }
+          ],
+          "family_id": "44837ef329a0074a9e0876188bbae1b850f5799103d25784c9b0b6a385cfcdf2",
+          "findings": [
+            {
+              "detector": "contention",
+              "evidence_ids": [
+                "pipeline-profile-189e1420-9efd-43e4-ad50-d034ca703fa6",
+                "pipeline-profile-fedbe22c-6e13-4a6d-b5da-c426b88aefa1",
+                "pipeline-profile-4ae2183f-146e-4e70-b5ec-63c1b3cd396d",
+                "pipeline-profile-87f2a1d6-87cd-4911-8a10-275e361b5ecf",
+                "pipeline-profile-00f8da91-868c-4e7c-84d5-5f88749374ad",
+                "pipeline-profile-c70b5680-b50a-4660-9c1a-2a28bea5a093",
+                "pipeline-profile-b9b30489-1b9b-40f1-b8c5-69a206650740",
+                "pipeline-profile-0d16d8c8-bca9-4c67-9e40-de9a5e69220d",
+                "pipeline-profile-9258599b-f513-4332-8a2c-64223ac0d3f1",
+                "pipeline-profile-b74de818-f381-4340-9b8d-8320bc88f18b",
+                "pipeline-profile-d65c2759-10f6-4b67-93c2-8967800bfbaf",
+                "pipeline-profile-5579266e-c857-47fe-9e65-2ff71223693a",
+                "pipeline-profile-e0948a2b-afd0-479b-adbb-8688a8098435",
+                "pipeline-profile-5ed4a512-a23a-4688-823e-0507f4d1809d",
+                "pipeline-profile-fbde0fd3-f362-42a2-b5d6-8594af0a0485",
+                "pipeline-profile-4c6aed8a-fa45-4630-a97e-922f81bfc72c",
+                "pipeline-profile-62209b8d-3b13-4f5b-b076-ec5f4abd074c",
+                "pipeline-profile-ff5ddc25-d2f1-493b-b225-c855895f575e",
+                "pipeline-profile-5e82c8cd-a490-49fc-a2f2-e2dd3818bd6a",
+                "pipeline-profile-3b9b1b15-2603-42a1-9882-df7bed113dda",
+                "pipeline-profile-39df7eea-1016-419b-8fac-c82795569ef8",
+                "pipeline-profile-c6b51ef3-f1e4-4708-b2f3-da3dbaea8eaa",
+                "pipeline-profile-2f6e433e-2639-4ad4-a176-87e894852dcf",
+                "pipeline-profile-5d0685d9-8462-4450-b9b7-cd112ff70f96",
+                "pipeline-profile-f27b9973-03c6-46a9-a952-f8eba5f08c0c",
+                "pipeline-profile-40e3d92e-bc65-40e8-bee1-0858b5c88fe6",
+                "pipeline-profile-0ecd12a5-8378-4ad0-8168-781754667586",
+                "pipeline-profile-6daa7ac4-df70-45b6-8f97-f34923889f2f",
+                "pipeline-profile-85e46c47-5d85-4f1f-a875-a8fc39b17253",
+                "pipeline-profile-0e867bc7-b170-416c-93ad-b20f4626f74c",
+                "pipeline-queue-0e867bc7-b170-416c-93ad-b20f4626f74c"
+              ],
+              "measured": {
+                "execution_ms": 3.258,
+                "queue_ms": 3805
+              },
+              "severity": "warning"
+            }
+          ],
+          "id": "bcb76c3fabfa907e98393d7543cb2e34ba473d9f049db7b7bca34015c59fbc29",
+          "next_steps": [
+            "Inspect resource-group limits and simultaneous demand; do not attribute queueing to bad SQL or change limits without an approved controlled experiment."
+          ],
+          "priority": {
+            "contributions": {
+              "confidence": 22.5,
+              "degradation": 20,
+              "expected_gain": 3,
+              "frequency": 7.46,
+              "implementation_cost": -5,
+              "risk": -10,
+              "workload_impact": 9.97
+            },
+            "estimate_source": "heuristic",
+            "estimated_gain": 0.2,
+            "historical_outcomes": 0,
+            "score": 47.92
+          },
+          "state": "OPEN",
+          "window": "2026-10-02T15:03:30.189572+00:00"
+        }
+      ]
+    }
+  },
+  "regression": {
+    "case": "D",
+    "status": "PASS",
+    "ground_truth": "same_query_slowed_by_controlled_admission_queue",
+    "evidence_kind": "real_engine_wall_clock_windows",
+    "wall_clock_historical_acceptance": "PASS",
+    "clock_method": "three 40-sample complete history windows and two 30-sample recent windows",
+    "history_written_to_nova": true,
+    "baseline": {
+      "eligible": true,
+      "historical_count": 120,
+      "current_count": 30,
+      "windows": 3,
+      "historical_p95": 263.00821772022755,
+      "current_p95": 3899.9731168659455,
+      "upper_envelope": 833.6412147847175,
+      "seasonal": false,
+      "reason": null
+    },
+    "findings": [
+      {
+        "detector": "latency_regression",
+        "severity": "critical",
+        "measured": {
+          "current_p95_ms": 3899.9731168659455,
+          "baseline_p95_ms": 263.00821772022755
+        },
+        "evidence_ids": [
+          "01a0fd22-569d-7ffd-be0e-1bab25cb9b9b"
+        ]
+      },
+      {
+        "detector": "contention",
+        "severity": "warning",
+        "measured": {
+          "queue_ms": 4181.0,
+          "execution_ms": 749.699
+        },
+        "evidence_ids": [
+          "01a0fd22-569d-7ffd-be0e-1bab25cb9b9b"
+        ]
+      }
+    ],
+    "diagnosis": [
+      {
+        "category": "RESOURCE_CONTENTION",
+        "confidence": 0.9,
+        "evidence_ids": [
+          "01a0fd22-569d-7ffd-be0e-1bab25cb9b9b"
+        ],
+        "counterevidence": [],
+        "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. Current window: 30 executions, P95 3899.97 ms. The correlated execution queued for 4181 ms and executed for 749.699 ms. These measurements do not identify which resource limit should change."
+      }
+    ],
+    "facts": {
+      "count": 30,
+      "total_ms": 115329.52954195207,
+      "p95_ms": 3899.9731168659455,
+      "saturated": true,
+      "bound_pending_samples": 60,
+      "counter_pair_sample_count": 1,
+      "queue_ms": 4181.0,
+      "execution_ms": 749.699
+    },
+    "negative_variants": {
+      "unsustained_rejected": true,
+      "insufficient_current_rejected": true
+    },
+    "before_query_ids": [
+      "01a0f9f3-278b-734f-b42f-e5b32978fc25",
+      "01a0f9f3-2c20-7bc0-a32d-2efd61aa3e13",
+      "01a0f9f3-33d3-7187-a598-b7daf21bd517",
+      "01a0f9f3-3784-7a99-8ff1-4243bd43c9f0",
+      "01a0f9f3-3dcb-7731-9a12-dede9fcad10b",
+      "01a0f9f3-425f-7825-9033-8073294a352a",
+      "01a0f9f3-465e-739e-ae6c-805792cc4466",
+      "01a0f9f3-49c6-7969-9779-e3bb2ad84eea",
+      "01a0f9f3-4ec2-7e04-b827-3f1acf716c92",
+      "01a0f9f3-5216-7627-8d94-8c88db62b120",
+      "01a0f9f3-56c9-7564-bc7c-39e2a6d4b3d6",
+      "01a0f9f3-5ba3-7718-84b2-a1a2562e2cc5",
+      "01a0f9f3-5ef4-7f06-8ba6-878bd9ecee79",
+      "01a0f9f3-61fa-7290-8b68-abe01b5fb8c7",
+      "01a0f9f3-659c-705e-b121-d8cb71b626a9",
+      "01a0f9f3-6882-7764-8e3c-659faa22e42a",
+      "01a0f9f3-6bbe-7a3a-b0c8-fdee653e240f",
+      "01a0f9f3-6fc4-7182-a96a-a2c29382531e",
+      "01a0f9f3-73ff-7187-a648-ec67ebb50859",
+      "01a0f9f3-78a7-7e5d-bb43-97a50aff3e7f",
+      "01a0f9f3-7c04-7015-8505-3e551994c3a0",
+      "01a0f9f3-84c6-74df-b6ca-62a77bebf1aa",
+      "01a0f9f3-8bb7-7ca0-86a4-f7ab65340e1d",
+      "01a0f9f3-940c-7abf-8f7b-96561e5f4760",
+      "01a0f9f3-9956-7e4a-ba6a-86d42a0dd4e1",
+      "01a0f9f3-9de6-76ba-a2e5-0f0e822057a2",
+      "01a0f9f3-a491-78b4-be82-c7d0a637205f",
+      "01a0f9f3-b366-7858-9559-7ccb734e39aa",
+      "01a0f9f3-b8ab-7659-bcc0-7cd5ab5c1ed8",
+      "01a0f9f3-bd56-710a-8711-3a53f2bcc2ad",
+      "01a0f9f3-c3cc-7ea6-8ec8-22d4bdb8e712",
+      "01a0f9f3-ca3f-78be-bc79-9ab65aef6c4b",
+      "01a0f9f3-cdd1-76df-b3cb-2a2fafb85850",
+      "01a0f9f3-d38e-7fe1-b58d-c1b0dff25309",
+      "01a0f9f3-d715-7fb5-9a09-a915c9b1801b",
+      "01a0f9f3-e005-7390-9afa-498516822330",
+      "01a0f9f3-e37a-7460-8edb-f5e028a30642",
+      "01a0f9f3-e949-7395-8a86-985e43338c59",
+      "01a0f9f3-ee8b-7420-86f8-a7caae79fa2a",
+      "01a0f9f3-f853-788e-b094-700d012680a8",
+      "01a0fa04-a169-7d4e-80e0-4d6eea396497",
+      "01a0fa04-b0a1-7b94-a813-bdaa14d1fa90",
+      "01a0fa04-bd55-7562-a7d9-8076bed1550c",
+      "01a0fa04-d75f-7988-a59b-fbd8b5827667",
+      "01a0fa04-e901-705e-8cba-6ed3a341c977",
+      "01a0fa04-f49f-7114-aea5-74b84bd45c65",
+      "01a0fa04-f99f-785e-ba4e-cf29af1952cf",
+      "01a0fa05-0162-7647-8cd0-63008503972d",
+      "01a0fa05-0b1b-7a49-b1ad-81a22380d6a3",
+      "01a0fa05-1861-7e75-9583-6e2e1bad1c62",
+      "01a0fa05-26f4-7182-80a9-0c1c4d8d284d",
+      "01a0fa05-3a2b-7b0a-a824-d86c28643f94",
+      "01a0fa05-42b0-7c55-abce-c3164a33cb59",
+      "01a0fa05-49d6-72b0-ae23-5ae77095407d",
+      "01a0fa05-52b9-7518-8df9-1755c0d5576a",
+      "01a0fa05-5cc2-7e3d-9c34-e7096b7ca169",
+      "01a0fa05-60cc-7195-90bc-c8ed76890a1f",
+      "01a0fa05-636b-7b63-a957-86ba2d9272ce",
+      "01a0fa05-6617-7c0e-9738-5babc7992766",
+      "01a0fa05-68ce-75e4-ac1b-8a4adb40b388",
+      "01a0fa05-6b7e-78ee-8504-e7ba6e26fc4d",
+      "01a0fa05-6e49-76ce-b8e5-4e832e18a01b",
+      "01a0fa05-70fc-783a-9f3c-518712b5a041",
+      "01a0fa05-73eb-7297-8439-31615834417f",
+      "01a0fa05-768e-7474-b572-1191c39530d4",
+      "01a0fa05-7970-72eb-9314-6735116ae641",
+      "01a0fa05-7c20-772d-831d-b440bec84c61",
+      "01a0fa05-7ee9-75bc-ae5c-7560e4c3a0f0",
+      "01a0fa05-81d4-7df1-bf79-da062121a28d",
+      "01a0fa05-8492-700a-bd52-f7c41798022a",
+      "01a0fa05-8726-7d83-83f3-c214c1fe323c",
+      "01a0fa05-89fd-71b8-877a-80c47ae99317",
+      "01a0fa05-8cc7-75a3-9063-ed0cedfbcd87",
+      "01a0fa05-8f75-727c-8595-12701b671229",
+      "01a0fa05-921b-775b-adc5-54cb456ba112",
+      "01a0fa05-9515-782f-b34b-ce3006128ed7",
+      "01a0fa05-9813-77bb-a4e4-e15b4750c221",
+      "01a0fa05-9aa5-7973-ab27-0ad532693f6b",
+      "01a0fa05-9e5f-7263-aa03-f4184d2ea699",
+      "01a0fa05-a221-7285-bcfa-cf56e114fc7f",
+      "01a0fa20-10dc-7c72-9be5-c439e81afbc0",
+      "01a0fa20-151a-7a38-8125-1eb916e8c5b1",
+      "01a0fa20-1ade-7a0d-b388-a8f4548a1589",
+      "01a0fa20-1eec-7215-89e1-2dc05df7e4cd",
+      "01a0fa20-246f-7d0f-bb7f-7e1a715d0b31",
+      "01a0fa20-28da-78c6-9a2a-29b1a8bd75b4",
+      "01a0fa20-2cbe-71f5-9c15-6b1d2af40cc4",
+      "01a0fa20-3163-77ef-bd16-2fece711f8c5",
+      "01a0fa20-3553-74bf-9e81-88f41c36aea2",
+      "01a0fa20-387d-7571-88f2-3c329fa06001",
+      "01a0fa20-3c24-7fb0-971f-4a2d6d2ecdb0",
+      "01a0fa20-3f12-702e-af99-cfbca06ecfad",
+      "01a0fa20-41fe-7492-bf74-0bbd289ffd02",
+      "01a0fa20-4595-730b-843a-8fc18ce5c71f",
+      "01a0fa20-4916-73b1-b896-e4084a73649f",
+      "01a0fa20-4dea-7490-bbdd-7d8fc3d10732",
+      "01a0fa20-5271-7c1e-b8b2-35311073e43f",
+      "01a0fa20-571d-77de-a3e8-72cda16e27e6",
+      "01a0fa20-5ab3-754f-ac46-d4ddef403208",
+      "01a0fa20-5dbd-7933-b9fc-326dd527f1b1",
+      "01a0fa20-618a-71f9-ab56-2db28dee97af",
+      "01a0fa20-644c-7483-9982-968121b5aee7",
+      "01a0fa20-6785-7006-b55b-0bfaed3aecc7",
+      "01a0fa20-6a58-7082-8d3e-e187525a46c5",
+      "01a0fa20-6d21-7d1f-bb60-628eb805f789",
+      "01a0fa20-6ffa-7e3d-8599-18c88bab0523",
+      "01a0fa20-72d7-7877-ba2a-ee243fab24e8",
+      "01a0fa20-7664-7ebf-8eeb-2c7767866152",
+      "01a0fa20-791c-7ac5-a94b-c16c799f11be",
+      "01a0fa20-7c15-7236-879c-84ed998ac4a5",
+      "01a0fa20-7ef9-7a0b-b611-bb2bf5347e42",
+      "01a0fa20-81e1-7c80-a135-df6af5262745",
+      "01a0fa20-8489-7587-9dc6-9fc0b033409d",
+      "01a0fa20-8740-71cb-9335-2454a7edd880",
+      "01a0fa20-89fb-7a93-a535-94dfb1c0bf29",
+      "01a0fa20-8ce9-7c21-a2b2-da770aa9fbfb",
+      "01a0fa20-9028-7c56-9021-a6dee7f97909",
+      "01a0fa20-92fc-79bb-bdde-b0e275590627",
+      "01a0fa20-95c0-72ff-86dd-d42509c1d56a",
+      "01a0fa20-9875-7c01-a48b-9015d53372cd"
+    ],
+    "after_query_ids": [
+      "01a0fd21-fb5b-7573-a98e-e5c03d5727c6",
+      "01a0fd22-0f23-7887-a0b2-6092dd090d26",
+      "01a0fd22-22d5-7c99-880f-b2853d5cba1d",
+      "01a0fd22-4340-7b73-9e65-b683e77f0dcd",
+      "01a0fd22-569d-7ffd-be0e-1bab25cb9b9b",
+      "01a0fd22-76c2-7e4e-bf54-0e12e49466b1",
+      "01a0fd22-89ae-767e-80a4-139197c46488",
+      "01a0fd22-9e46-7dec-a5b9-f6ab93bfa6ac",
+      "01a0fd22-b214-74d2-a015-5415baf241c5",
+      "01a0fd22-c514-7957-b07f-fd29ed3d4726",
+      "01a0fd22-d7e9-7f56-bbdb-2d696e9c4bce",
+      "01a0fd22-eb21-7f8b-b7f7-143c38265634",
+      "01a0fd22-fd23-7db6-91b0-603a56cdc56f",
+      "01a0fd23-0fe2-794e-ac3d-cfef04806c11",
+      "01a0fd23-2288-7062-8f60-3ec62093a100",
+      "01a0fd23-353e-7167-9002-8972dd056add",
+      "01a0fd23-4787-7cf1-8ece-c3d8851ffec1",
+      "01a0fd23-59db-7fe9-a69e-15968c4159e4",
+      "01a0fd23-6c99-76a9-bd1f-3f53a76303fc",
+      "01a0fd23-7f90-756b-b30d-7d3b97d220fe",
+      "01a0fd23-9224-73a3-9592-fdae334a8d30",
+      "01a0fd23-a4ed-7d22-bfc8-73b7a05f1c49",
+      "01a0fd23-b74f-719f-a0ad-4e0f6e04ed86",
+      "01a0fd23-c9a6-7686-b57c-86a939d3c6b0",
+      "01a0fd23-dc8c-71c5-8993-84e61298cbac",
+      "01a0fd23-ef78-7a2e-8edc-ef435c5c4f03",
+      "01a0fd24-02c8-786d-8ee1-f8f42062a1fb",
+      "01a0fd24-155d-73ef-b14f-27b3810508c2",
+      "01a0fd24-2821-7f9e-8b8d-1597718132b4",
+      "01a0fd24-3af6-7fac-afe0-7cdcf9957625",
+      "01a0fd3c-9212-7560-a428-7755b1ef2124",
+      "01a0fd3c-a48a-77e3-b00e-9cee9f3fb7d6",
+      "01a0fd3c-b718-71aa-90a6-54f37977df8d",
+      "01a0fd3c-c9c8-7044-b59a-71766247ac08",
+      "01a0fd3c-dca5-7f53-a938-80eadcc2f906",
+      "01a0fd3c-ef67-73b8-a8d6-e8ef8d4308d9",
+      "01a0fd3d-01e3-7087-bfb7-c207f2f7de3d",
+      "01a0fd3d-1473-7b66-8df4-8f36b300638c",
+      "01a0fd3d-26ca-7eca-8da3-d26bf26ba0c3",
+      "01a0fd3d-392c-793f-8336-6284452eb128",
+      "01a0fd3d-4c08-7d91-84af-a2f070cf4ddc",
+      "01a0fd3d-5f59-7a70-8a78-97f661e5bfb1",
+      "01a0fd3d-7231-7f42-9c28-fc7cab57d842",
+      "01a0fd3d-853b-7dcc-8bc5-43904d59b7a8",
+      "01a0fd3d-97e7-71ed-8ee6-65bae2d6eb8b",
+      "01a0fd3d-aa72-7271-931e-6dfc0f6ed219",
+      "01a0fd3d-bd35-7356-a765-114faa673a8b",
+      "01a0fd3d-d028-7488-9740-5a3441373163",
+      "01a0fd3d-e2ad-7f0e-b1a6-17a4d60cdd96",
+      "01a0fd3d-f7b8-70db-88fe-f68618bc7ee6",
+      "01a0fd3e-0a70-7206-9b04-371284552919",
+      "01a0fd3e-1d0b-74ce-92dc-f4ec6df92c0c",
+      "01a0fd3e-2fb7-7596-a5e9-5134cbfa70ca",
+      "01a0fd3e-42a1-703d-9122-ea0a1b5a5d0f",
+      "01a0fd3e-55da-7e4a-b1d3-126019c207f2",
+      "01a0fd3e-686c-73f3-84f2-6ada01852de2",
+      "01a0fd3e-7b4d-706c-80e2-b8d1d38253c1",
+      "01a0fd3e-8d9c-725a-a107-dc02b9a80a31",
+      "01a0fd3e-a09c-7860-a1e5-9793b429a985",
+      "01a0fd3e-b32f-780d-afcb-3e3ba580582e"
+    ],
+    "production_actions": 0
+  },
+  "durable_pipeline": {
+    "status": "FAIL",
+    "history_source": "query_service_collector_real_completion_timestamps",
+    "executions": 180,
+    "persisted": 180,
+    "newly_persisted": 60,
+    "retained_history_revalidated": 120,
+    "dropped": 0,
+    "failed_batches": 0,
+    "family_id": "44837ef329a0074a9e0876188bbae1b850f5799103d25784c9b0b6a385cfcdf2",
+    "scope": {
+      "active_role": "autopilot_replay_role",
+      "catalog": "default_catalog",
+      "database": "autopilot_final_snapshot_20261002",
+      "policy_revision": null,
+      "principal": "autopilot_replay",
+      "security_context_version": 1,
+      "settings_hash": ""
+    },
+    "family": {
+      "baseline": {
+        "current_count": 30,
+        "current_p95": 4181.299050858944,
+        "eligible": true,
+        "historical_count": 154,
+        "historical_p95": 1254.368103679604,
+        "reason": null,
+        "seasonal": false,
+        "upper_envelope": 4259.983868737214,
+        "windows": 6
+      },
+      "canonical": "select sum ( total ) from orders",
+      "classified": true,
+      "cohort_id": "ed9a1e46b4f7bb939e194594122d57397e63fb092d669a122c72eed81efddc71",
+      "diagnosis": [
+        {
+          "category": "RESOURCE_CONTENTION",
+          "confidence": 0.9,
+          "counterevidence": [],
+          "evidence_ids": [
+            "pipeline-profile-189e1420-9efd-43e4-ad50-d034ca703fa6",
+            "pipeline-profile-fedbe22c-6e13-4a6d-b5da-c426b88aefa1",
+            "pipeline-profile-4ae2183f-146e-4e70-b5ec-63c1b3cd396d",
+            "pipeline-profile-87f2a1d6-87cd-4911-8a10-275e361b5ecf",
+            "pipeline-profile-00f8da91-868c-4e7c-84d5-5f88749374ad",
+            "pipeline-profile-c70b5680-b50a-4660-9c1a-2a28bea5a093",
+            "pipeline-profile-b9b30489-1b9b-40f1-b8c5-69a206650740",
+            "pipeline-profile-0d16d8c8-bca9-4c67-9e40-de9a5e69220d",
+            "pipeline-profile-9258599b-f513-4332-8a2c-64223ac0d3f1",
+            "pipeline-profile-b74de818-f381-4340-9b8d-8320bc88f18b",
+            "pipeline-profile-d65c2759-10f6-4b67-93c2-8967800bfbaf",
+            "pipeline-profile-5579266e-c857-47fe-9e65-2ff71223693a",
+            "pipeline-profile-e0948a2b-afd0-479b-adbb-8688a8098435",
+            "pipeline-profile-5ed4a512-a23a-4688-823e-0507f4d1809d",
+            "pipeline-profile-fbde0fd3-f362-42a2-b5d6-8594af0a0485",
+            "pipeline-profile-4c6aed8a-fa45-4630-a97e-922f81bfc72c",
+            "pipeline-profile-62209b8d-3b13-4f5b-b076-ec5f4abd074c",
+            "pipeline-profile-ff5ddc25-d2f1-493b-b225-c855895f575e",
+            "pipeline-profile-5e82c8cd-a490-49fc-a2f2-e2dd3818bd6a",
+            "pipeline-profile-3b9b1b15-2603-42a1-9882-df7bed113dda",
+            "pipeline-profile-39df7eea-1016-419b-8fac-c82795569ef8",
+            "pipeline-profile-c6b51ef3-f1e4-4708-b2f3-da3dbaea8eaa",
+            "pipeline-profile-2f6e433e-2639-4ad4-a176-87e894852dcf",
+            "pipeline-profile-5d0685d9-8462-4450-b9b7-cd112ff70f96",
+            "pipeline-profile-f27b9973-03c6-46a9-a952-f8eba5f08c0c",
+            "pipeline-profile-40e3d92e-bc65-40e8-bee1-0858b5c88fe6",
+            "pipeline-profile-0ecd12a5-8378-4ad0-8168-781754667586",
+            "pipeline-profile-6daa7ac4-df70-45b6-8f97-f34923889f2f",
+            "pipeline-profile-85e46c47-5d85-4f1f-a875-a8fc39b17253",
+            "pipeline-profile-0e867bc7-b170-416c-93ad-b20f4626f74c",
+            "pipeline-queue-0e867bc7-b170-416c-93ad-b20f4626f74c"
+          ],
+          "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. Current window: 30 executions, P95 4181.3 ms. The correlated execution queued for 3805 ms and executed for 3.258 ms. These measurements do not identify which resource limit should change."
+        }
+      ],
+      "family_id": "44837ef329a0074a9e0876188bbae1b850f5799103d25784c9b0b6a385cfcdf2",
+      "findings": [
+        {
+          "detector": "contention",
+          "evidence_ids": [
+            "pipeline-profile-189e1420-9efd-43e4-ad50-d034ca703fa6",
+            "pipeline-profile-fedbe22c-6e13-4a6d-b5da-c426b88aefa1",
+            "pipeline-profile-4ae2183f-146e-4e70-b5ec-63c1b3cd396d",
+            "pipeline-profile-87f2a1d6-87cd-4911-8a10-275e361b5ecf",
+            "pipeline-profile-00f8da91-868c-4e7c-84d5-5f88749374ad",
+            "pipeline-profile-c70b5680-b50a-4660-9c1a-2a28bea5a093",
+            "pipeline-profile-b9b30489-1b9b-40f1-b8c5-69a206650740",
+            "pipeline-profile-0d16d8c8-bca9-4c67-9e40-de9a5e69220d",
+            "pipeline-profile-9258599b-f513-4332-8a2c-64223ac0d3f1",
+            "pipeline-profile-b74de818-f381-4340-9b8d-8320bc88f18b",
+            "pipeline-profile-d65c2759-10f6-4b67-93c2-8967800bfbaf",
+            "pipeline-profile-5579266e-c857-47fe-9e65-2ff71223693a",
+            "pipeline-profile-e0948a2b-afd0-479b-adbb-8688a8098435",
+            "pipeline-profile-5ed4a512-a23a-4688-823e-0507f4d1809d",
+            "pipeline-profile-fbde0fd3-f362-42a2-b5d6-8594af0a0485",
+            "pipeline-profile-4c6aed8a-fa45-4630-a97e-922f81bfc72c",
+            "pipeline-profile-62209b8d-3b13-4f5b-b076-ec5f4abd074c",
+            "pipeline-profile-ff5ddc25-d2f1-493b-b225-c855895f575e",
+            "pipeline-profile-5e82c8cd-a490-49fc-a2f2-e2dd3818bd6a",
+            "pipeline-profile-3b9b1b15-2603-42a1-9882-df7bed113dda",
+            "pipeline-profile-39df7eea-1016-419b-8fac-c82795569ef8",
+            "pipeline-profile-c6b51ef3-f1e4-4708-b2f3-da3dbaea8eaa",
+            "pipeline-profile-2f6e433e-2639-4ad4-a176-87e894852dcf",
+            "pipeline-profile-5d0685d9-8462-4450-b9b7-cd112ff70f96",
+            "pipeline-profile-f27b9973-03c6-46a9-a952-f8eba5f08c0c",
+            "pipeline-profile-40e3d92e-bc65-40e8-bee1-0858b5c88fe6",
+            "pipeline-profile-0ecd12a5-8378-4ad0-8168-781754667586",
+            "pipeline-profile-6daa7ac4-df70-45b6-8f97-f34923889f2f",
+            "pipeline-profile-85e46c47-5d85-4f1f-a875-a8fc39b17253",
+            "pipeline-profile-0e867bc7-b170-416c-93ad-b20f4626f74c",
+            "pipeline-queue-0e867bc7-b170-416c-93ad-b20f4626f74c"
+          ],
+          "measured": {
+            "execution_ms": 3.258,
+            "queue_ms": 3805
+          },
+          "severity": "warning"
+        }
+      ],
+      "id": "3426c16a489d900f3e885c7a906b89cddc14fc14b91fa1b83392ec3ad02f7fc2",
+      "last_observed_at": "2026-10-02T15:32:23.777794+00:00",
+      "next_steps": [
+        "Inspect resource-group limits and simultaneous demand; do not attribute queueing to bad SQL or change limits without an approved controlled experiment."
+      ],
+      "priority": {
+        "contributions": {
+          "confidence": 22.5,
+          "degradation": 20,
+          "expected_gain": 3,
+          "frequency": 7.46,
+          "implementation_cost": -5,
+          "risk": -10,
+          "workload_impact": 9.97
+        },
+        "estimate_source": "heuristic",
+        "estimated_gain": 0.2,
+        "historical_outcomes": 0,
+        "score": 47.92
+      },
+      "scope": {
+        "active_role": "autopilot_replay_role",
+        "catalog": "default_catalog",
+        "database": "autopilot_final_snapshot_20261002",
+        "policy_revision": null,
+        "principal": "autopilot_replay",
+        "security_context_version": 1,
+        "settings_hash": ""
+      },
+      "tables": [
+        "orders"
+      ],
+      "window": "2026-10-02T15:03:30.189572+00:00"
+    },
+    "incidents": [
+      {
+        "baseline": {
+          "current_count": 30,
+          "current_p95": 4181.299050858944,
+          "eligible": true,
+          "historical_count": 154,
+          "historical_p95": 1254.368103679604,
+          "reason": null,
+          "seasonal": false,
+          "upper_envelope": 4259.983868737214,
+          "windows": 6
+        },
+        "cohort_id": "ed9a1e46b4f7bb939e194594122d57397e63fb092d669a122c72eed81efddc71",
+        "detector": "contention",
+        "diagnosis": [
+          {
+            "category": "RESOURCE_CONTENTION",
+            "confidence": 0.9,
+            "counterevidence": [],
+            "evidence_ids": [
+              "pipeline-profile-189e1420-9efd-43e4-ad50-d034ca703fa6",
+              "pipeline-profile-fedbe22c-6e13-4a6d-b5da-c426b88aefa1",
+              "pipeline-profile-4ae2183f-146e-4e70-b5ec-63c1b3cd396d",
+              "pipeline-profile-87f2a1d6-87cd-4911-8a10-275e361b5ecf",
+              "pipeline-profile-00f8da91-868c-4e7c-84d5-5f88749374ad",
+              "pipeline-profile-c70b5680-b50a-4660-9c1a-2a28bea5a093",
+              "pipeline-profile-b9b30489-1b9b-40f1-b8c5-69a206650740",
+              "pipeline-profile-0d16d8c8-bca9-4c67-9e40-de9a5e69220d",
+              "pipeline-profile-9258599b-f513-4332-8a2c-64223ac0d3f1",
+              "pipeline-profile-b74de818-f381-4340-9b8d-8320bc88f18b",
+              "pipeline-profile-d65c2759-10f6-4b67-93c2-8967800bfbaf",
+              "pipeline-profile-5579266e-c857-47fe-9e65-2ff71223693a",
+              "pipeline-profile-e0948a2b-afd0-479b-adbb-8688a8098435",
+              "pipeline-profile-5ed4a512-a23a-4688-823e-0507f4d1809d",
+              "pipeline-profile-fbde0fd3-f362-42a2-b5d6-8594af0a0485",
+              "pipeline-profile-4c6aed8a-fa45-4630-a97e-922f81bfc72c",
+              "pipeline-profile-62209b8d-3b13-4f5b-b076-ec5f4abd074c",
+              "pipeline-profile-ff5ddc25-d2f1-493b-b225-c855895f575e",
+              "pipeline-profile-5e82c8cd-a490-49fc-a2f2-e2dd3818bd6a",
+              "pipeline-profile-3b9b1b15-2603-42a1-9882-df7bed113dda",
+              "pipeline-profile-39df7eea-1016-419b-8fac-c82795569ef8",
+              "pipeline-profile-c6b51ef3-f1e4-4708-b2f3-da3dbaea8eaa",
+              "pipeline-profile-2f6e433e-2639-4ad4-a176-87e894852dcf",
+              "pipeline-profile-5d0685d9-8462-4450-b9b7-cd112ff70f96",
+              "pipeline-profile-f27b9973-03c6-46a9-a952-f8eba5f08c0c",
+              "pipeline-profile-40e3d92e-bc65-40e8-bee1-0858b5c88fe6",
+              "pipeline-profile-0ecd12a5-8378-4ad0-8168-781754667586",
+              "pipeline-profile-6daa7ac4-df70-45b6-8f97-f34923889f2f",
+              "pipeline-profile-85e46c47-5d85-4f1f-a875-a8fc39b17253",
+              "pipeline-profile-0e867bc7-b170-416c-93ad-b20f4626f74c",
+              "pipeline-queue-0e867bc7-b170-416c-93ad-b20f4626f74c"
+            ],
+            "explanation": "Queue time and measured resource saturation support contention; inspect the enrolled resource budget before changing it. Current window: 30 executions, P95 4181.3 ms. The correlated execution queued for 3805 ms and executed for 3.258 ms. These measurements do not identify which resource limit should change."
+          }
+        ],
+        "family_id": "44837ef329a0074a9e0876188bbae1b850f5799103d25784c9b0b6a385cfcdf2",
+        "findings": [
+          {
+            "detector": "contention",
+            "evidence_ids": [
+              "pipeline-profile-189e1420-9efd-43e4-ad50-d034ca703fa6",
+              "pipeline-profile-fedbe22c-6e13-4a6d-b5da-c426b88aefa1",
+              "pipeline-profile-4ae2183f-146e-4e70-b5ec-63c1b3cd396d",
+              "pipeline-profile-87f2a1d6-87cd-4911-8a10-275e361b5ecf",
+              "pipeline-profile-00f8da91-868c-4e7c-84d5-5f88749374ad",
+              "pipeline-profile-c70b5680-b50a-4660-9c1a-2a28bea5a093",
+              "pipeline-profile-b9b30489-1b9b-40f1-b8c5-69a206650740",
+              "pipeline-profile-0d16d8c8-bca9-4c67-9e40-de9a5e69220d",
+              "pipeline-profile-9258599b-f513-4332-8a2c-64223ac0d3f1",
+              "pipeline-profile-b74de818-f381-4340-9b8d-8320bc88f18b",
+              "pipeline-profile-d65c2759-10f6-4b67-93c2-8967800bfbaf",
+              "pipeline-profile-5579266e-c857-47fe-9e65-2ff71223693a",
+              "pipeline-profile-e0948a2b-afd0-479b-adbb-8688a8098435",
+              "pipeline-profile-5ed4a512-a23a-4688-823e-0507f4d1809d",
+              "pipeline-profile-fbde0fd3-f362-42a2-b5d6-8594af0a0485",
+              "pipeline-profile-4c6aed8a-fa45-4630-a97e-922f81bfc72c",
+              "pipeline-profile-62209b8d-3b13-4f5b-b076-ec5f4abd074c",
+              "pipeline-profile-ff5ddc25-d2f1-493b-b225-c855895f575e",
+              "pipeline-profile-5e82c8cd-a490-49fc-a2f2-e2dd3818bd6a",
+              "pipeline-profile-3b9b1b15-2603-42a1-9882-df7bed113dda",
+              "pipeline-profile-39df7eea-1016-419b-8fac-c82795569ef8",
+              "pipeline-profile-c6b51ef3-f1e4-4708-b2f3-da3dbaea8eaa",
+              "pipeline-profile-2f6e433e-2639-4ad4-a176-87e894852dcf",
+              "pipeline-profile-5d0685d9-8462-4450-b9b7-cd112ff70f96",
+              "pipeline-profile-f27b9973-03c6-46a9-a952-f8eba5f08c0c",
+              "pipeline-profile-40e3d92e-bc65-40e8-bee1-0858b5c88fe6",
+              "pipeline-profile-0ecd12a5-8378-4ad0-8168-781754667586",
+              "pipeline-profile-6daa7ac4-df70-45b6-8f97-f34923889f2f",
+              "pipeline-profile-85e46c47-5d85-4f1f-a875-a8fc39b17253",
+              "pipeline-profile-0e867bc7-b170-416c-93ad-b20f4626f74c",
+              "pipeline-queue-0e867bc7-b170-416c-93ad-b20f4626f74c"
+            ],
+            "measured": {
+              "execution_ms": 3.258,
+              "queue_ms": 3805
+            },
+            "severity": "warning"
+          }
+        ],
+        "id": "bcb76c3fabfa907e98393d7543cb2e34ba473d9f049db7b7bca34015c59fbc29",
+        "next_steps": [
+          "Inspect resource-group limits and simultaneous demand; do not attribute queueing to bad SQL or change limits without an approved controlled experiment."
+        ],
+        "priority": {
+          "contributions": {
+            "confidence": 22.5,
+            "degradation": 20,
+            "expected_gain": 3,
+            "frequency": 7.46,
+            "implementation_cost": -5,
+            "risk": -10,
+            "workload_impact": 9.97
+          },
+          "estimate_source": "heuristic",
+          "estimated_gain": 0.2,
+          "historical_outcomes": 0,
+          "score": 47.92
+        },
+        "state": "OPEN",
+        "window": "2026-10-02T15:03:30.189572+00:00"
+      }
+    ]
+  },
+  "production_actions": 0
+}

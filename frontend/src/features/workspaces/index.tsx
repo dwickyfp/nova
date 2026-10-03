@@ -95,6 +95,11 @@ import { applyNovaSqlTheme } from "./monaco-theme";
 import { FileHistoryDialog } from "./file-history-dialog";
 import { WorkspaceTabStrip } from "./workspace-tab-strip";
 import {
+  QueryConfirmationDialog,
+  snapshotQuery,
+  type QuerySnapshot,
+} from "./query-confirmation";
+import {
   TableItemWithPopover,
   TablePopoverProvider,
 } from "./table-item-with-popover";
@@ -729,11 +734,8 @@ export function WorkspacesPage() {
   const [deleteEntryTarget, setDeleteEntryTarget] =
     useState<WorkspaceEntry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState(false);
-  const [pendingDestructiveSql, setPendingDestructiveSql] = useState<{
-    sql: string;
-    tabId: string;
-    correlationId?: string;
-  } | null>(null);
+  const [pendingDestructiveSql, setPendingDestructiveSql] =
+    useState<QuerySnapshot | null>(null);
 
   const activeTab = activeTabId ? tabs[activeTabId] : null;
   // The authenticated session is the single source of truth for the active role.
@@ -760,6 +762,7 @@ export function WorkspacesPage() {
 
   const {
     open: assistantOpen,
+    setOpen: setAssistantOpen,
     toggle: toggleAssistant,
     setBinding,
     attachQuery,
@@ -1612,6 +1615,11 @@ export function WorkspacesPage() {
     confirmDestructive = false,
     sqlOverride?: string,
     correlationId?: string,
+    snapshot?: {
+      tabId: string;
+      database: string | null;
+      schema: string | null;
+    },
   ): Promise<
     "success" | "error" | "cancelled" | "pending-confirmation" | undefined
   > {
@@ -1620,10 +1628,15 @@ export function WorkspacesPage() {
       sqlOverride?.trim() ||
       getSqlForExecution(editorContentRef.current || activeTab.content);
     if (!sql) return;
-    if (!confirmDestructive && isDestructiveSql(sql)) {
-      setPendingDestructiveSql({ sql, tabId: activeTab.id, correlationId });
-      return "pending-confirmation";
-    }
+    const requestSnapshot = snapshotQuery({
+      sql,
+      correlationId,
+      ...(snapshot ?? {
+        tabId: activeTab.id,
+        database: activeTab.database || null,
+        schema: activeTab.schema || null,
+      }),
+    });
     const executionId = crypto.randomUUID();
     currentExecutionIdRef.current = executionId;
     publishWorkspaceEvent({
@@ -1649,15 +1662,26 @@ export function WorkspacesPage() {
         "/query/execute",
         {
           sql,
-          database: activeTab.database || null,
-          schema: activeTab.schema || null,
+          database: requestSnapshot.database,
+          schema: requestSnapshot.schema,
           max_rows: 500,
-          file_id: activeTab.id,
+          file_id: requestSnapshot.tabId,
           confirm_destructive: confirmDestructive,
         },
         controller.signal,
       );
-      setQueryResults(response);
+      if (response.some((result) => result.needs_confirmation)) {
+        if (activeTabIdRef.current === requestSnapshot.tabId) {
+          setPendingDestructiveSql(requestSnapshot);
+        } else {
+          toast.error(
+            "The active SQL file changed. Run the query again from that file.",
+          );
+        }
+        return "pending-confirmation";
+      }
+      if (activeTabIdRef.current === requestSnapshot.tabId)
+        setQueryResults(response);
       const feedback = recordQueryFeedback(
         activeTab.id,
         executionId,
@@ -2710,30 +2734,27 @@ export function WorkspacesPage() {
         isLoading={deletingEntry}
         handleConfirm={() => void confirmDeleteEntry()}
       />
-      <ConfirmDialog
-        open={pendingDestructiveSql !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDestructiveSql(null);
-        }}
-        title="Run destructive query?"
-        desc="This query may change or delete data. Review the SQL before continuing."
-        confirmText="Run query"
-        destructive
-        handleConfirm={() => {
-          const pending = pendingDestructiveSql;
+      <QueryConfirmationDialog
+        pending={pendingDestructiveSql}
+        onAssistantOpenChange={setAssistantOpen}
+        onCancel={() => setPendingDestructiveSql(null)}
+        onConfirm={(pending) => {
           setPendingDestructiveSql(null);
           if (pending && pending.tabId === activeTabId)
-            void runQuery(true, pending.sql, pending.correlationId).then(
-              (outcome) => {
-                if (
-                  pending.correlationId &&
-                  (outcome === "success" || outcome === "error")
-                )
-                  void askFromWorkspace(
-                    "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
-                  );
-              },
-            );
+            void runQuery(
+              true,
+              pending.sql,
+              pending.correlationId,
+              pending,
+            ).then((outcome) => {
+              if (
+                pending.correlationId &&
+                (outcome === "success" || outcome === "error")
+              )
+                void askFromWorkspace(
+                  "Review the execution after the SQL rewrite. Report a verified fix only if the new query succeeded; if it failed, use the latest error to continue the repair.",
+                );
+            });
           else
             toast.error(
               "The active SQL file changed. Run the query again from that file.",
@@ -5343,11 +5364,4 @@ function extractTablesInScope(
 
 function lastWord(text: string) {
   return text.split(/\s+/).pop() ?? "";
-}
-
-function isDestructiveSql(sql: string) {
-  const pattern =
-    /^\s*(DROP|TRUNCATE|ALTER\s+TABLE\s+.+\s+DROP|DELETE\s+FROM|UPDATE\s+)/i;
-  // Check each statement in multi-statement SQL
-  return sql.split(";").some((stmt) => pattern.test(stmt));
 }

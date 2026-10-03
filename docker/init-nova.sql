@@ -477,7 +477,10 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_LOG (
   active_role   VARCHAR(128),
   security_context_version BIGINT,
   decision      VARCHAR(32),
-  ranger_policy_ids VARCHAR(2048)
+  ranger_policy_ids VARCHAR(2048),
+  nova_execution_id VARCHAR(64),
+  engine_query_ids JSON,
+  execution_purpose VARCHAR(16)
 ) DUPLICATE KEY(log_id, query_id, event_type, event_time)
 PARTITION BY RANGE(event_time) (
   PARTITION p202601 VALUES LESS THAN ("2026-02-01"),
@@ -1120,3 +1123,186 @@ INSERT INTO analytics.customers VALUES
   (2, 'Bandung', '+62-811-0002');
 
 SELECT 'Nova Ranger acceptance fixture created!' AS status;
+
+-- Query Autopilot
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_FAMILIES (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_OBSERVATIONS (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_ROLLUPS (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_BASELINES (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_EVIDENCE (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_INCIDENTS (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_OPPORTUNITIES (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_EXPERIMENTS (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_ACTIONS (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_OUTCOMES (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_POLICIES (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_ENROLLMENTS (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");
+
+CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.QUERY_AUTOPILOT_JOBS (
+    id VARCHAR(128) NOT NULL,
+    family_id VARCHAR(64) NOT NULL,
+    cohort_id VARCHAR(64) NOT NULL,
+    version BIGINT NOT NULL,
+    state VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    expires_at DATETIME
+) PRIMARY KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 4
+PROPERTIES("replication_num"="1", "enable_persistent_index"="true");

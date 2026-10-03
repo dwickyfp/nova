@@ -21,6 +21,87 @@ from app.modules.ml_engine.spec import MLSecurityContext
 from app.proxy.session import SessionState, parse_role_statement
 
 
+@pytest.mark.parametrize("resource_type,accesses,keys", [
+    ("database", ["create materialized view"], {"catalog", "database"}),
+    ("table", ["insert", "alter"], {"catalog", "database", "table"}),
+    ("materialized_view", ["refresh", "drop"], {"catalog", "database", "materialized_view"}),
+])
+def test_scoped_creation_and_maintenance_use_the_engine_resource_hierarchy(
+    resource_type, accesses, keys,
+):
+    value = compile_access_policy(
+        role="sandbox_builder", catalog="default_catalog", database="sandbox", table="*",
+        accesses=accesses, resource_type=resource_type,
+    )
+    assert set(value.resources) == keys
+    assert value.resources["database"].values == ["sandbox"]
+    assert value.policy_items[0].roles == ["sandbox_builder"]
+    assert {a.type for a in value.policy_items[0].accesses} == set(accesses)
+    assert resource_type in value.name.split("/")
+
+
+@pytest.mark.parametrize("resource_type,accesses,table", [
+    ("database", ["select"], "*"),
+    ("table", ["create materialized view"], "*"),
+    ("materialized_view", ["insert"], "*"),
+    ("database", ["create table"], "orders"),
+    ("system", ["operate"], "*"),
+])
+def test_scoped_access_rejects_incompatible_or_broader_resources(
+    resource_type, accesses, table,
+):
+    with pytest.raises(ValueError):
+        compile_access_policy(
+            role="sandbox_builder", catalog="default_catalog", database="sandbox", table=table,
+            accesses=accesses, resource_type=resource_type,
+        )
+
+
+async def test_scoped_grant_requires_security_administrator_before_ranger_io():
+    from unittest.mock import AsyncMock
+
+    ranger = AsyncMock()
+    with pytest.raises(RuntimeError, match="not authorized"):
+        await AccessControlService(ranger).grant_access(
+            SecurityContext(principal="alice", active_role="marketing"),
+            role="sandbox_builder", catalog="default_catalog", database="sandbox", table="*",
+            accesses=["create materialized view"], resource_type="database",
+        )
+    ranger.get_policy.assert_not_awaited()
+    ranger.put_policy.assert_not_awaited()
+
+
+@pytest.mark.parametrize("removed", [["drop"], ["drop", "refresh"]])
+async def test_scoped_revocation_matches_the_exact_granted_policy(monkeypatch, removed):
+    from unittest.mock import AsyncMock
+
+    policy = compile_access_policy(
+        role="sandbox_builder", catalog="default_catalog", database="sandbox", table="*",
+        accesses=["drop", "refresh"], resource_type="materialized_view",
+    ).model_copy(update={"id": 123})
+    ranger = AsyncMock()
+    ranger.get_policy.return_value = policy.to_api()
+    ranger.put_policy.return_value = {"id": 123}
+    service = AccessControlService(ranger)
+    monkeypatch.setattr(service, "_record_policy_state", AsyncMock())
+    monkeypatch.setattr(service, "_audit_admin", AsyncMock())
+    await service.revoke_access(
+        SecurityContext(principal="nova_admin", active_role="ACCOUNTADMIN"),
+        role="sandbox_builder", catalog="default_catalog", database="sandbox", table="*",
+        accesses=removed, resource_type="materialized_view",
+    )
+    ranger.get_policy.assert_awaited_once_with(policy.name)
+    if len(removed) == 2:
+        ranger.delete_policy.assert_awaited_once_with(123)
+        ranger.put_policy.assert_not_awaited()
+    else:
+        replacement = ranger.put_policy.await_args.args[0]
+        assert replacement.name == policy.name
+        assert replacement.resources == policy.resources
+        assert [a.type for a in replacement.policy_items[0].accesses] == ["refresh"]
+        ranger.delete_policy.assert_not_awaited()
+
+
 class _RedisRecorder:
     def __init__(self) -> None:
         self.mapping: dict = {}

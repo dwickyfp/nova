@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 
 from app.modules.query.repository import QueryRepository, QueryResult
 from app.sql_frontend.binding.models import BoundColumn, BoundTable, TableName
@@ -80,7 +81,7 @@ class StarRocksCatalogProvider:
                 str(row[0]),
                 str(row[1]),
                 int(row[2]),
-                str(row[3]).upper() == "YES",
+                {"YES": True, "NO": False}.get(str(row[3]).upper()),
                 row[4],
                 row[5] or None,
             )
@@ -88,7 +89,7 @@ class StarRocksCatalogProvider:
         )
 
     async def get_details(self, name: TableName) -> BoundTable:
-        from app.modules.query.dialect.parser import _walk_nodes
+        from app.sql_frontend.antlr_utils import walk_nodes as _walk_nodes
 
         result = await self._query(f"SHOW CREATE TABLE {self._qualified(name)}")
         if not result.rows:
@@ -97,6 +98,9 @@ class StarRocksCatalogProvider:
         key_type = None
         primary: tuple[str, ...] = ()
         partition = None
+        key_columns = None
+        partition_columns: tuple[str, ...] | None = ()
+        attributes = {}
         for node in _walk_nodes(parsed.statement_context):
             kind = type(node).__name__
             fragment = (
@@ -106,6 +110,9 @@ class StarRocksCatalogProvider:
             )
             if kind == "KeyDescContext":
                 key_type = node.start.text.upper()
+                key_columns = tuple(
+                    item.getText().strip("`") for item in node.identifierList().identifier()
+                )
                 if key_type == "PRIMARY":
                     primary = tuple(
                         identifier.getText().strip("`")
@@ -113,10 +120,48 @@ class StarRocksCatalogProvider:
                     )
             if kind == "PartitionDescContext":
                 partition = fragment
+                identifiers = [
+                    child
+                    for child in _walk_nodes(node)
+                    if type(child).__name__ == "IdentifierListContext"
+                ]
+                partition_columns = (
+                    tuple(
+                        item.getText().strip("`")
+                        for child in identifiers
+                        for item in child.identifier()
+                    )
+                    or None
+                )
+            if kind == "ColumnDescContext":
+                attributes[node.identifier().getText().strip("`").casefold()] = (
+                    any(
+                        child.getText().upper() == "AUTO_INCREMENT" for child in node.children or []
+                    ),
+                    node.generatedColumnDesc().getText() if node.generatedColumnDesc() else None,
+                )
+        columns = tuple(
+            replace(
+                column,
+                auto_increment=attributes.get(column.name.casefold(), (None, None))[0],
+                generated_expression=attributes.get(column.name.casefold(), (None, None))[1]
+                or column.generated_expression,
+                key_column=column.name.casefold() in {key.casefold() for key in key_columns}
+                if key_columns is not None
+                else None,
+                partition_column=column.name.casefold()
+                in {key.casefold() for key in partition_columns}
+                if partition_columns is not None
+                else None,
+            )
+            for column in await self.get_columns(name)
+        )
         return BoundTable(
             name,
             "BASE TABLE",
+            columns=columns,
             key_type=key_type,
             primary_key_columns=primary,
             partition_sql=partition,
+            partition_columns=partition_columns,
         )

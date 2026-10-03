@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.core.exceptions import ForbiddenSQLError
+from app.sql_frontend.analysis.effects import PlanEffects
+
 
 @dataclass(frozen=True, slots=True)
 class SyntaxDiagnostic:
@@ -14,10 +17,12 @@ class SyntaxDiagnostic:
 
 
 class SQLFrontendError(ValueError):
-    pass
+    code = "semantic_error"
 
 
 class SQLSyntaxError(SQLFrontendError):
+    code = "syntax_error"
+
     def __init__(self, diagnostics: tuple[SyntaxDiagnostic, ...]) -> None:
         self.diagnostics = diagnostics
         super().__init__("Invalid SQL: " + str(diagnostics[0]))
@@ -25,3 +30,20 @@ class SQLSyntaxError(SQLFrontendError):
 
 class SemanticError(SQLFrontendError):
     pass
+
+
+class BindingError(SemanticError):
+    code = "binding_error"
+
+
+class CapabilityUnsupportedError(SemanticError):
+    code = "capability_unsupported"
+
+
+class ConfirmationRequiredError(ForbiddenSQLError):
+    code = "confirmation_required"
+
+    def __init__(self, effects: PlanEffects, statement_kind: str = "statement") -> None:
+        self.effects = effects
+        self.statement_kind = statement_kind
+        super().__init__("Destructive SQL requires confirmation before execution.")

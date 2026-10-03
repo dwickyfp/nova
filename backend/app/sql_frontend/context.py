@@ -11,7 +11,9 @@ class PlanningContext:
     database: str | None = None
     schema: str | None = None
     binder: Any = None
+    relation_binder: Any = None
     capabilities: Any = None
+    semantics: Any = None
     ranger_enabled: bool = False
     confirm_destructive: bool = False
     validated: dict[int, Any] = field(default_factory=dict, repr=False)
@@ -32,5 +34,9 @@ class ExecutionContext:
     allow_stage_export: bool = False
     encrypted_password: str = field(default="", repr=False)
     connection: Any = field(default=None, repr=False)
+    capabilities: Any = None
+    engine_session_prepared: bool = False
+    transaction_active: bool = False
+    binder: Any = field(default=None, repr=False)
     statements: dict[int, Statement] = field(default_factory=dict, repr=False)
     validated: dict[int, Any] = field(default_factory=dict, repr=False)
