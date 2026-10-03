@@ -326,14 +326,17 @@ observations with zero drops and failed batches, then reported `history_window_e
 The user explicitly requested committing all code and pushing despite the
 previously disclosed live acceptance limitations. SQL hardening `6f897d8`,
 default LLM configuration `7d409b6`, Intelligence `3843ff1`, and Query Autopilot
-`3a0a5be` are separate commits. Both feature branches have been pushed.
+`3a0a5be` are separate commits. Both feature branches have been pushed. The combined source was merged into
+`main` and pushed as `69849ba`; remote main included the Autopilot squash merge
+`c100b49` (PR #163), which was integrated without changing tested source.
 
 The integrated source passes 5,243 backend unit tests with 55% coverage, 270 eval
 trajectories, the 48/48 scenario and 165/165 check scorecard, changed-file Ruff,
 the user-data boundary checker, grammar pin/drift and byte-identical regeneration.
 Frontend lint and build pass; all 970 tests in 125 files pass with 46.13% line
 coverage. One earlier component run failed with an unstable locator; the full
-integrated rerun passes. Seeded real-engine integration is still running.
+integrated rerun passes. Seeded real-engine integration is still running; it is not claimed as a pass.
+GitHub Actions results are separate from these local checks.
 
 The integration preserves both domains, resolves only a provider-test formatting
 conflict, and excludes generated coverage files. No stored deployment credentials

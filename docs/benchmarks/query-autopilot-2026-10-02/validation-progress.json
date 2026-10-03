@@ -205,7 +205,7 @@
   },
   "persisted_pipeline": "ATTEMPT_9_FAILED_HISTORY_WINDOW_EXPIRED_CONFIGURATION_RESTORED",
   "governed_cycle": "ATTEMPT_19_SUCCESS_ACTUAL_100_REPETITIONS_COMPLETE_30_MINUTE_WINDOW",
-  "commit_push_merge": "FEATURE_BRANCHES_PUSHED_MAIN_163_INTEGRATED",
+  "commit_push_merge": "COMMITTED_PUSHED_MERGED_TO_MAIN",
   "primary_runtime": "PRIMARY_FE_HEALTHY_ORIGINAL_LIMITS_RESTORED_DEV_SH_RUNNING",
   "notes": [
     "Earlier failed attempts are retained; provider errors are not passes.",
@@ -438,6 +438,17 @@
     "user_data_boundary": "PASS",
     "grammar": "PASS_PIN_DRIFT_BYTE_IDENTICAL",
     "seeded_integration": "IN_PROGRESS",
-    "acceptance_complete": false
+    "acceptance_complete": false,
+    "source_configuration_hashes_verified": 300,
+    "github_actions": "NOT_CLAIMED_PASS"
+  },
+  "delivery_commits": {
+    "sql_hardening": "6f897d8",
+    "default_llm": "7d409b6",
+    "intelligence": "3843ff1",
+    "query_autopilot": "3a0a5be",
+    "integration": "3334133",
+    "remote_main_integrated": "c100b49",
+    "delivered_main_source": "69849ba"
   }
 }
