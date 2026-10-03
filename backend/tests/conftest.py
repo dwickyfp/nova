@@ -121,7 +121,10 @@ def _preflight_failure() -> str | None:
         return "docker is not installed"
 
     try:
-        daemon = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=15)
+        daemon = subprocess.run(
+            ["docker", "version", "--format", "{{.Server.Version}}"],
+            capture_output=True, text=True, timeout=15,
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         return f"docker daemon is not reachable ({exc.__class__.__name__})"
     if daemon.returncode != 0:

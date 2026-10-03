@@ -163,6 +163,7 @@ AUTO_AGENT_ID = SMART_AGENT_ID
 
 
 class AutoMessageRequest(BaseModel):
+    resource_refs: list[str] | None = Field(default=None, max_length=3)
     operation_id: str = Field(min_length=1, max_length=123)
     content: str = Field(min_length=1, max_length=4000)
     correlation_id: str | None = Field(default=None, max_length=64)
@@ -240,7 +241,13 @@ async def _unavailable_mcp_tools(tools: list[str]) -> list[str]:
 def _agent_view(row: dict) -> AgentView:
     # Harness strategy is platform-owned. Older rows may contain an explicit
     # mode, but Studio now exposes one stable automatic contract.
-    return AgentView(**{**row, "harness_mode": "auto"})
+    return AgentView(
+        **{
+            **row,
+            "harness_mode": "auto",
+            "evaluation_status": "evaluated" if row.get("release_manifest_id") else "unevaluated",
+        }
+    )
 
 
 def _semantic_view(row: dict) -> SemanticModelView:
@@ -1436,7 +1443,8 @@ async def followup_smart_agent(
     root = await _scoped_auto_root(root_run_id, user)
     try:
         return await AgentControl(harness_repository, root, user).followup_task(
-            target=target, task=body.content, operation_id=f"user:{body.operation_id}"
+            target=target, task=body.content, operation_id=f"user:{body.operation_id}",
+            resource_refs=body.resource_refs,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1511,6 +1519,12 @@ async def update_agent(
         raise HTTPException(404, "Agent not found")
     existing = await _require_agent(agent_id, user["username"])
     fields = body.model_dump(exclude_unset=True)
+    from app.modules.agents.releases import RUNTIME_FIELDS
+
+    if existing.get("release_manifest_id") and RUNTIME_FIELDS & fields.keys():
+        raise HTTPException(
+            409, "This released agent requires draft → evaluation → publish for runtime changes"
+        )
     from app.modules.agents.resources import validate_resources
 
     await validate_resources(fields, user)
@@ -1591,6 +1605,15 @@ async def save_agent_draft(
         raise HTTPException(422, "Unknown agent tool")
     candidate = {**agent, **fields}
     candidate["harness_mode"] = "auto"
+    try:
+        candidate["compiled_instructions"] = compile_agent_instructions(
+            response=candidate.get("instructions_response", ""),
+            orchestration=candidate.get("instructions_orchestration", ""),
+            description=candidate.get("description", ""),
+            response_style=candidate.get("response_style"),
+        ).as_dict()
+    except InstructionCompilationError as exc:
+        raise HTTPException(422, str(exc)) from exc
     await agent_versions.store(agent, label="Active configuration", version_id=revision_id(agent))
     draft = await agent_versions.store(candidate, label=body.label)
     await write_audit_log(
@@ -1641,6 +1664,18 @@ async def publish_agent_version(
         ).as_dict()
     except InstructionCompilationError as exc:
         raise HTTPException(422, str(exc)) from exc
+    from app.modules.agents.quality import require_promotion
+    from app.modules.agents.releases import capture_manifest, get_manifest, load_runtime_manifest
+
+    manifest = await get_manifest(agent_id, user["username"], version_id=version_id)
+    if agent.get("release_manifest_id") or manifest:
+        manifest = manifest or await capture_manifest({**agent, **fields}, version_id, user)
+        await load_runtime_manifest({**agent, "release_manifest_id": manifest["id"]})
+        await require_promotion(agent_id, manifest, body.quality_run_id, user)
+        await agent_service.build_loop_inputs(
+            {**agent, **fields, "release_manifest_id": manifest["id"]}
+        )
+        fields["release_manifest_id"] = manifest["id"]
     # A restore is a new publication, so a stale editor cannot win an A -> B -> A race.
     updated = await agent_repository.update_agent(
         agent_id,
@@ -1866,6 +1901,10 @@ async def update_message_feedback(
         thread_id, user_name=user["username"]
     ):
         await _propose_verified_queries(agent, agent_id, thread_id, message_id, user)
+    if body.feedback == "dislike":
+        from app.modules.agents.quality import feedback_proposal
+
+        await feedback_proposal(agent_id, message_id, user, {})
     await write_audit_log(
         event_type="ASSISTANT",
         user_name=user["username"],
@@ -2133,8 +2172,12 @@ async def agent_improvement_suggestions(
     agent = await _require_owned_agent(agent_id, user)
     disliked = await db.execute_system(
         "SELECT content, steps FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
-        "WHERE agent_id = %s AND feedback = 'dislike' ORDER BY created_at DESC LIMIT 200",
-        [agent_id],
+        "WHERE agent_id = %s AND user_name=%s AND feedback = 'dislike' "
+        "AND get_json_string(CAST(security_context AS VARCHAR),'$.active_role')=%s "
+        "AND get_json_int(CAST(security_context AS VARCHAR),'$.security_context_version')=%s "
+        "ORDER BY created_at DESC LIMIT 200",
+        [agent_id, user["username"], session_security(user).active_role,
+         session_security(user).security_context_version],
     )
     events = []
     for _content, raw_steps in disliked.get("rows") or []:
@@ -2154,8 +2197,10 @@ async def agent_improvement_suggestions(
             "SELECT semantic_model_id, model_fingerprint, metric_names, dimension_names, "
             "time_grain, succeeded FROM NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE "
             "WHERE semantic_model_id IN (" + ", ".join(["%s"] * len(view_ids)) + ") "
+            "AND owner_name=%s AND active_role=%s AND security_context_version=%s "
             "ORDER BY created_at DESC LIMIT 2000",
-            view_ids,
+            [*view_ids, user["username"], session_security(user).active_role,
+             session_security(user).security_context_version],
         )
         for model_id, fingerprint, metrics, dimensions, grain, succeeded in rows.get("rows") or []:
             usage.append({
@@ -2337,10 +2382,15 @@ async def send_agent_message(
         thread_id, user_name=user_name)
     if agent_id in SMART_AGENT_IDS:
         if attachments:
-            raise HTTPException(status_code=422, detail="Smart does not yet support attachments")
+            from app.core.config import settings
+
+            if not settings.STUDIO_BUSINESS_WORKFLOW_ENABLED:
+                raise HTTPException(422, "Smart attachment resources are unavailable")
         from app.modules.assistant.skills import contains_credential_shape
 
-        if not body.content.strip() or contains_credential_shape(body.content):
+        if (not body.content.strip() and not attachments) or contains_credential_shape(
+            body.content
+        ):
             raise HTTPException(status_code=422, detail="Invalid Smart message")
         async with _auto_admission(thread_id, user_name) as assert_owned:
             thread_row = await _require_agent_thread(thread_id, agent_id, user_name)
@@ -2352,6 +2402,7 @@ async def send_agent_message(
                 user_name=user_name,
                 role="user",
                 content=body.content,
+                attachments=attachments,
                 security_context=stamp,
                 agent_id=agent_id,
                 learning_enabled=learning_enabled,
@@ -2367,12 +2418,31 @@ async def send_agent_message(
                 role_name=security.active_role,
                 session_id=user["session_id"],
                 security_version=int(user.get("security_context_version") or 1),
-                objective=body.content,
+                objective=body.content or "Review the attached files.",
                 provider_id=body.provider_id,
                 model=body.model,
                 user_message_id=user_message["message_id"],
+                work_intent=body.work_intent,
+                new_mission=body.new_mission,
             )
             await assert_owned()
+        from app.modules.agents.mission import mission_service
+        from app.modules.agents.mission_schema import WorkIntent
+        from app.modules.agents.resource_delegation import resource_delegation
+
+        if attachments:
+            await resource_delegation.register_root(root, user)
+        mission = await mission_service.for_turn(
+            thread_id,
+            user,
+            operation_id=root["run_id"],
+            objective=body.content or "Review attached files",
+            work_intent=WorkIntent(body.work_intent) if body.work_intent else None,
+            explicit=body.work_intent is not None,
+            new_mission=body.new_mission,
+        )
+        if mission:
+            await mission_service.attach_run(mission.mission_id, root["run_id"], user)
         return StreamingResponse(
             _stream_auto_events(root["run_id"], -1),
             media_type=events.SSE_MEDIA_TYPE,
@@ -2454,6 +2524,8 @@ async def send_agent_message(
         agent_id=agent_id,
         thread_id=thread_id,
         role_name=security.active_role,
+        session_id=security.session_id,
+        security_version=security.security_context_version,
     )
 
     await assistant_repository.append_message(
@@ -2525,6 +2597,32 @@ async def send_agent_message(
         run_id=run_id,
     )
 
+    async def business_turn_hook(plan, current_context):
+        from app.modules.agents.mission import mission_service
+        from app.modules.agents.mission_schema import WorkIntent
+
+        mission = await mission_service.for_turn(
+            thread_id, user, operation_id=run_id, objective=body.content or "Review attached files",
+            work_intent=WorkIntent(body.work_intent) if body.work_intent else plan.work_intent,
+            public_work_steps=plan.public_work_steps, explicit=body.work_intent is not None,
+            new_mission=body.new_mission,
+        )
+        if mission:
+            mission = await mission_service.attach_run(mission.mission_id, run_id, user)
+            return mission.model_dump(mode="json")
+        return None
+
+    async def business_cancelled():
+        from app.modules.agents.mission import mission_service
+
+        return bool(context.mission_id) and await mission_service.cancellation_requested(
+            context.mission_id, user
+        )
+
+    context.business_cancelled = business_cancelled
+    context.business_turn_hook = business_turn_hook
+    context.requested_work_intent = body.work_intent
+    context.start_new_mission = body.new_mission
     # The agent's own budget replaces the loop default; the loop still caps it.
     # A per-agent context token budget (NOVA-124) curates the transcript so a
     # long conversation cannot overflow the model window; ``None`` uses the
@@ -2665,6 +2763,12 @@ async def send_agent_message(
             if batch:
                 await run_journal.append_batch(run_id, list(batch))
                 batch.clear()
+                if context.mission_id:
+                    from app.modules.agents.mission import mission_service
+
+                    update = await mission_service.stream_update(run_id, user)
+                    if update:
+                        queue_frame(update)
 
         try:
             async for frame in generate():

@@ -93,7 +93,9 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENTS (
     created_at                 DATETIME NOT NULL,
     updated_at                 DATETIME NOT NULL,
     resource_bindings          JSON,
-    config_revision            VARCHAR(64)
+    config_revision            VARCHAR(64),
+    budget_profile             VARCHAR(16),
+    release_manifest_id        VARCHAR(64)
 ) PRIMARY KEY(agent_id)
 DISTRIBUTED BY HASH(agent_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -113,6 +115,7 @@ AGENT_INTELLIGENCE_COLUMNS = (
     ("compiled_instructions", "JSON"),
     ("harness_mode", "VARCHAR(16)"),
     ("budget_profile", "VARCHAR(16)"),
+    ("release_manifest_id", "VARCHAR(64)"),
 )
 
 #: One row per semantic model. ``definition`` is the *parsed* Ossie metadata
@@ -173,13 +176,14 @@ _AGENT_COLUMNS = (
     "budget_seconds, budget_tokens, tool_not_accessible, default_tools, "
     "default_skills, discoverable_skills, compiled_instructions, harness_mode, "
     "policy, semantic_model_id, semantic_model_ids, semantic_view_ids, visibility, "
-    "created_at, updated_at, resource_bindings, config_revision, budget_profile"
+    "created_at, updated_at, resource_bindings, config_revision, "
+    "budget_profile, release_manifest_id"
 )
 _AGENT_COLUMN_COUNT = len(_AGENT_COLUMNS.split(", "))
 
 
 def _full_row(row: list[Any] | tuple[Any, ...]) -> bool:
-    return len(row) == _AGENT_COLUMN_COUNT
+    return len(row) in {_AGENT_COLUMN_COUNT, _AGENT_COLUMN_COUNT - 1}
 
 _SEMANTIC_COLUMNS = (
     "semantic_model_id, owner_name, name, description, database_name, "
@@ -315,7 +319,10 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE (
     execution_latency_ms BIGINT,
     scan_bytes BIGINT,
     succeeded BOOLEAN NOT NULL,
-    created_at DATETIME NOT NULL
+    created_at DATETIME NOT NULL,
+    active_role VARCHAR(128),
+    security_context_version BIGINT,
+    semantic_version BIGINT
 ) PRIMARY KEY(usage_id)
 DISTRIBUTED BY HASH(usage_id) BUCKETS 4
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -394,6 +401,7 @@ def _agent_row(row: list[Any]) -> dict:
     if len(row) == 29:
         row = [*row, None, None]
     # ``budget_profile`` is the newest column; rows read before it exist have 31.
+    release_manifest_id = row[32] if len(row) > 32 else None
     budget_profile = row[31] if len(row) > 31 else None
     row = list(row[:31])
     (
@@ -463,6 +471,7 @@ def _agent_row(row: list[Any]) -> dict:
         "updated_at": _iso(updated_at),
         "resource_bindings": _as_json(resource_bindings) or {},
         "config_revision": config_revision,
+        "release_manifest_id": release_manifest_id,
     }
 
 
@@ -620,6 +629,24 @@ class AgentRepository:
         from app.modules.agents.versions import VERSIONS_DDL
 
         await db.execute_system(VERSIONS_DDL)
+        from app.modules.agents.quality import QUALITY_DDL
+        from app.modules.agents.releases import RELEASES_DDL
+
+        for ddl in (RELEASES_DDL, *QUALITY_DDL):
+            await db.execute_system(ddl)
+        for column, column_type in (
+            ("active_role", "VARCHAR(128)"),
+            ("security_context_version", "BIGINT"),
+            ("semantic_version", "BIGINT"),
+        ):
+            try:
+                await db.execute_system(
+                    f"ALTER TABLE NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE "
+                    f"ADD COLUMN {column} {column_type}"
+                )
+            except Exception as exc:  # noqa: BLE001 - additive migration
+                if "already exists" not in str(exc).lower() and "duplicate" not in str(exc).lower():
+                    raise
 
     async def backfill_semantic_view_ids(self) -> int:
         """Persist legacy agent bindings after Semantic View IDs have been imported.
@@ -838,6 +865,7 @@ class AgentRepository:
             "budget_profile",
             "policy",
             "visibility",
+            "release_manifest_id",
         ):
             if column in fields:
                 assignments.append(f"{column} = %s")
@@ -862,6 +890,16 @@ class AgentRepository:
             prior = await self.get_agent(agent_id, owner_name=owner_name)
             if prior is None:
                 return None
+            from app.modules.agents.releases import RUNTIME_FIELDS
+
+            if (
+                prior.get("release_manifest_id")
+                and RUNTIME_FIELDS & fields.keys()
+                and not fields.get("release_manifest_id")
+            ):
+                from fastapi import HTTPException
+
+                raise HTTPException(409, "Runtime changes require an evaluated draft publication")
             if check_revision and prior.get("config_revision") != expected_revision:
                 from fastapi import HTTPException
 
@@ -1051,6 +1089,31 @@ class AgentRepository:
             for row in result["rows"]
         ]
 
+    async def list_semantic_usage(
+        self, *, owner_name: str, active_role: str, security_context_version: int,
+        semantic_model_id: str, model_fingerprint: str, semantic_version: int,
+        limit: int = 2000,
+    ) -> list[dict]:
+        columns = (
+            "owner_name", "active_role", "security_context_version", "semantic_model_id",
+            "model_fingerprint", "semantic_version", "metric_names", "dimension_names",
+            "filter_shape", "time_grain", "succeeded", "execution_latency_ms",
+        )
+        result = await db.execute_system(
+            "SELECT " + ", ".join(columns) + " FROM NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE "
+            "WHERE owner_name=%s AND active_role=%s AND security_context_version=%s "
+            "AND semantic_model_id=%s AND model_fingerprint=%s AND semantic_version=%s "
+            "ORDER BY created_at DESC,usage_id DESC LIMIT %s",
+            [owner_name, active_role, security_context_version, semantic_model_id,
+             model_fingerprint, semantic_version, min(max(limit, 1), 2000)],
+        )
+        rows = [dict(zip(columns, row, strict=True)) for row in result["rows"]]
+        for row in rows:
+            row["metrics"] = _as_json(row.pop("metric_names"))
+            row["dimensions"] = _as_json(row.pop("dimension_names"))
+            row["filter_shape"] = _as_json(row["filter_shape"])
+        return rows
+
     async def record_semantic_usage(
         self,
         *,
@@ -1064,13 +1127,19 @@ class AgentRepository:
         execution_latency_ms: int | None,
         succeeded: bool,
         verified_query_id: str | None = None,
+        active_role: str | None = None,
+        security_context_version: int | None = None,
+        semantic_version: int | None = None,
     ) -> None:
         """Persist redacted workload shape for feedback and MV recommendations."""
         await db.execute_system(
             "INSERT INTO NOVA_SYSTEM.AUDIT_SEMANTIC_QUERY_USAGE ("
             "usage_id, owner_name, semantic_model_id, model_fingerprint, metric_names, "
             "dimension_names, filter_shape, time_grain, execution_latency_ms, scan_bytes, "
-            "succeeded, created_at) VALUES (" + ", ".join(["%s"] * 12) + ")",
+            "succeeded, created_at, active_role, security_context_version, "
+            "semantic_version) VALUES ("
+            + ", ".join(["%s"] * 15)
+            + ")",
             [
                 str(uuid4()),
                 owner_name,
@@ -1084,6 +1153,9 @@ class AgentRepository:
                 None,
                 succeeded,
                 _now(),
+                active_role,
+                security_context_version,
+                semantic_version,
             ],
         )
         if verified_query_id:

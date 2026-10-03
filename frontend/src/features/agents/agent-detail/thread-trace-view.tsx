@@ -780,11 +780,15 @@ function SemanticDetail({
           <dd className="text-right">
             {stringValue(model?.ossie_version) || "—"}
           </dd>
-          <dt className="text-muted-foreground">Confidence</dt>
+          <dt className="text-muted-foreground">Legacy planner score</dt>
           <dd className="text-right tabular-nums">
-            {numberValue(detail.confidence) ?? "—"}
+            {numberValue(detail.confidence) ?? "Not recorded"}
           </dd>
         </dl>
+        <p className="mt-3 text-xs text-muted-foreground">
+          A legacy planner score is not a probability that the answer or SQL is
+          correct.
+        </p>
       </Panel>
       <Panel title="Tables">
         {datasets.length ? (

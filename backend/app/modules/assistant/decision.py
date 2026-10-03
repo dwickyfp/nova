@@ -17,6 +17,11 @@ from app.modules.ai_ml.decision_settings import (
     registered_model,
 )
 from app.modules.ai_ml.service import ai_service
+from app.modules.assistant.measurements import (
+    observe_http_dispatches,
+    provider_response,
+    provider_started,
+)
 
 MAX_CANDIDATES = 64
 MAX_REQUEST_BYTES = 60_000
@@ -81,12 +86,14 @@ class DecisionSession:
         self.time_remaining: Callable[[], float] = lambda: TOTAL_SECONDS
 
     async def _post(self, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        provider_started(extra=payload)
         model, provider = await registered_model(self.settings.decision_model_id or "", "decision")
         key = await ai_service.get_provider_api_key(provider["id"])
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         # The registered URL is the complete inference endpoint, including its path/query.
         async with (
             guarded_async_client(timeout=timeout) as client,
+            observe_http_dispatches(client),
             client.stream(
                 "POST",
                 provider["endpoint"],
@@ -104,6 +111,7 @@ class DecisionSession:
         value = json.loads(body)
         if not isinstance(value, dict):
             raise ValueError("Invalid decision response")
+        provider_response(value, decision=True)
         return value
 
     def accepted(self, choice: Choice) -> bool:
@@ -361,6 +369,5 @@ async def rank_agents(
             -scores.get(item.agent_id, 1),
         ),
     )
-
 
 

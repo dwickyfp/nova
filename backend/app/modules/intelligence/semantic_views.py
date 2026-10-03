@@ -379,6 +379,34 @@ class SemanticViewService:
             "database_name": view["database_name"],
         }
 
+    async def get_version_for_agent(
+        self, view_id: str, version: int, expected_fingerprint: str, user: dict,
+        *, agent_id: str | None = None,
+    ) -> dict:
+        view = await self._get(view_id)
+        if (
+            not view
+            or view["status"] != "ACTIVE"
+            or not await self._private_agent_access(view, user, agent_id)
+        ):
+            raise HTTPException(404, "Pinned Semantic View is unavailable or unauthorized")
+        row = await self._version(view_id, version)
+        if not row or row["status"] not in {"ACTIVE", "DEPRECATED"}:
+            raise HTTPException(409, "Pinned semantic version is unavailable")
+        ir = SemanticModelIR.from_ossie(row["definition"])
+        if row["fingerprint"] != expected_fingerprint or ir.fingerprint != expected_fingerprint:
+            raise HTTPException(409, "Pinned semantic definition has drifted")
+        if (
+            not ir.datasets
+            or not await self._source_access(row["definition"], user)
+            or not await self._entity_access(ir, user)
+        ):
+            raise HTTPException(404, "Pinned Semantic View is unavailable or unauthorized")
+        return {"id": view_id, "semantic_model_id": view_id, "name": view["name"],
+                "owner_name": view["owner_name"], "visibility": view.get("visibility") or "PUBLIC",
+                "status": row["status"], "version": version, "definition": row["definition"],
+                "fingerprint": expected_fingerprint, "database_name": view["database_name"]}
+
     async def list_active_for_agent(self, user: dict, *, agent_id: str | None = None) -> list[dict]:
         result = await db.execute_system(
             "SELECT id FROM NOVA_SYSTEM.CONFIG_SEMANTIC_VIEWS "
@@ -937,9 +965,18 @@ class SemanticViewService:
         await self._audit("DROP", view["name"], user)
 
     async def query(
-        self, view_id: str, body: SemanticViewQuery, user: dict, *, agent_id: str | None = None
+        self, view_id: str, body: SemanticViewQuery, user: dict, *, agent_id: str | None = None,
+        expected_fingerprint: str | None = None,
     ) -> dict:
-        if agent_id:
+        if expected_fingerprint is not None:
+            if not agent_id or body.version is None:
+                raise HTTPException(409, "Pinned semantic execution requires an agent and version")
+            await self.get_version_for_agent(
+                view_id, body.version, expected_fingerprint, user, agent_id=agent_id
+            )
+            view = await self._get(view_id)
+            assert view is not None
+        elif agent_id:
             if not await self.get_active_for_agent(view_id, user, agent_id=agent_id):
                 raise HTTPException(status_code=404, detail="Semantic View not found")
             view = await self._get(view_id)
@@ -1035,6 +1072,7 @@ class SemanticViewService:
             "columns": result.columns,
             "rows": result.rows,
             "query_id": getattr(result, "query_id", None),
+            "truncated": result.truncated,
         }
 
     @staticmethod

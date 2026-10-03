@@ -302,6 +302,8 @@ class HarnessRepository:
         provider_id: str | None = None,
         model: str | None = None,
         user_message_id: str | None = None,
+        work_intent: str | None = None,
+        new_mission: bool = False,
     ) -> dict[str, Any]:
         from dataclasses import asdict
 
@@ -334,6 +336,8 @@ class HarnessRepository:
                 "provider_id": provider_id,
                 "model": model,
                 "user_message_id": user_message_id,
+                "work_intent": work_intent,
+                "new_mission": new_mission,
             },
             checkpoint={"phase": "plan"},
         )
@@ -349,6 +353,7 @@ class HarnessRepository:
         agent_name: str = "",
         agent_path: str | None = None,
         context_mode: str = "fresh",
+        resource_refs: list[str] | None = None,
     ) -> dict[str, Any]:
         if parent["status"] in TERMINAL:
             raise ValueError("A finished turn cannot spawn an agent")
@@ -369,6 +374,7 @@ class HarnessRepository:
                 or existing["agent_id"] != agent_id
                 or existing["objective"] != objective[:4000]
                 or existing["payload"].get("context", "") != context[:8000]
+                or existing["payload"].get("resource_refs", []) != (resource_refs or [])
             ):
                 raise ValueError("Spawn operation id collision")
             return existing
@@ -390,6 +396,7 @@ class HarnessRepository:
                 "parent_agent_session_id": participant_id(parent),
                 "agent_path": agent_path or participant_path(parent).child(run_id).value,
                 "context_mode": context_mode, "turn_number": 1,
+                "resource_refs": resource_refs or [],
             },
             checkpoint={"phase": "execute"},
         )
@@ -398,6 +405,7 @@ class HarnessRepository:
         self, recipient: dict, *, turn_id: str, objective: str, turn_number: int,
         trigger_turn_id: str, blocked: bool,
         trigger_message_id: str | None = None,
+        resource_refs: list[str] | None = None,
     ) -> dict:
         return await self._create(
             **{key: recipient[key] for key in (
@@ -412,6 +420,7 @@ class HarnessRepository:
                 "trigger_message_id": trigger_message_id,
                 "previous_turn_id": recipient["run_id"], "delivery_mode": "TRIGGER_TURN",
                 "context": (recipient.get("result_summary") or "")[:8000],
+                "resource_refs": resource_refs or [],
             },
             checkpoint={"phase": "execute"},
         )

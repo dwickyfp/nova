@@ -69,6 +69,8 @@ class AgentView(BaseModel):
     updated_at: datetime
     resource_bindings: ResourceBindings = Field(default_factory=ResourceBindings)
     config_revision: str | None = None
+    release_manifest_id: str | None = None
+    evaluation_status: str = "unevaluated"
 
 
 class AgentListResponse(BaseModel):

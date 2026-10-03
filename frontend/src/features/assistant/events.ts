@@ -22,9 +22,24 @@ export function parseAssistantEvent(
   } catch {
     return null;
   }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const record = payload as Record<string, unknown>;
   const parsed = (() => {
     switch (eventName) {
+      case "mission_updated": {
+        const mission = record.mission;
+        if (!mission || typeof mission !== "object" || Array.isArray(mission)) return null;
+        const value = mission as Record<string, unknown>;
+        return typeof value.mission_id === "string" && typeof value.thread_id === "string" &&
+          Number.isInteger(value.revision)
+          ? { type: "mission_updated", mission: value } : null;
+      }
+      case "evidence_health":
+        return typeof record.tool_call_id === "string" && record.payload &&
+          typeof record.payload === "object" && !Array.isArray(record.payload)
+          ? { type: "evidence_health", tool_call_id: record.tool_call_id,
+              tool_name: typeof record.tool_name === "string" ? record.tool_name : undefined,
+              payload: record.payload } : null;
       case "role_changed":
         return typeof record.active_role === "string" &&
           typeof record.security_context_version === "number"

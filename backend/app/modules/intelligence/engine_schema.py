@@ -12,6 +12,9 @@ ENGINE_TABLES = {
     "decisions": "CONFIG_INTELLIGENCE_DECISIONS",
     "events": "CONFIG_DECISION_EVENTS",
     "outcomes": "CONFIG_DECISION_OUTCOMES",
+    "actions": "CONFIG_INTELLIGENCE_ACTIONS",
+    "action_events": "CONFIG_INTELLIGENCE_ACTION_EVENTS",
+    "comparisons": "CONFIG_INTELLIGENCE_COMPARISONS",
 }
 
 ENGINE_DDL = tuple(

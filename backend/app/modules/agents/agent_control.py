@@ -105,6 +105,17 @@ class AgentControl:
         self.on_wait = on_wait
         self.enforce_lease = enforce_lease
 
+    async def _reject_resource_copy(self, *contents: str) -> None:
+        from app.modules.agents.resource_delegation import reference_checkpoint, resource_delegation
+
+        if not resource_delegation.enabled():
+            return
+        attachments, refs = await resource_delegation.load(self.caller, self.user)
+        if reference_checkpoint(
+            {"contents": list(contents)}, prompt="", attachments=attachments, refs=refs
+        ) != {"contents": list(contents)}:
+            raise ValueError("Delegate attachment references instead of copying their bodies")
+
     async def _tree(self) -> list[dict]:
         if (
             self.user.get("username") != self.caller["owner_name"]
@@ -244,8 +255,13 @@ class AgentControl:
         operation_id: str,
         context_mode: str = "parent_summary",
         context: str = "",
+        resource_refs: list[str] | None = None,
     ) -> dict:
+        from app.modules.agents.resource_delegation import normalize_refs, resource_delegation
+
+        refs = normalize_refs(resource_refs)
         await self._tree()
+        await self._reject_resource_copy(objective, context)
         # Authorization is independent of ranking: a valid specialist may rank below the preview.
         candidates = await authorized_candidates(self.user)
         candidate = next((item for item in candidates if item.agent_id == agent), None)
@@ -265,13 +281,24 @@ class AgentControl:
                 uuid5(NAMESPACE_URL, f"nova:spawn:{self.caller['run_id']}:{operation_id}")
             )
             existing = next((row for row in tree if row["run_id"] == expected), None)
+            if refs:
+                available = {
+                    r.resource_id for r in await resource_delegation.available(
+                        self.caller, self.user
+                    )
+                }
+                if not set(refs) <= available:
+                    raise ValueError("Attachment is unavailable to this participant")
             if existing:
                 if (
                     existing["agent_id"] != agent
                     or existing["objective"] != objective[:4000]
                     or participant_path(existing) != path
+                    or existing.get("payload", {}).get("resource_refs", []) != refs
                 ):
                     raise ValueError("Spawn operation id collision")
+                if refs:
+                    await resource_delegation.grant(self.caller, existing, refs, self.user)
                 return next(
                     item for item in session_views(tree) if item["agent_session_id"] == expected
                 )
@@ -279,6 +306,7 @@ class AgentControl:
                 raise ValueError("Task path already exists; use followup_task to reuse it")
             self._check_budget(tree, spawn=True)
             inherited = self._bounded_context(self.caller, tree, context_mode, context)
+            await self._reject_resource_copy(inherited)
             await owned()
             child = await self.repository.spawn(
                 parent=self.caller,
@@ -289,7 +317,10 @@ class AgentControl:
                 agent_name=candidate.name,
                 agent_path=path.value,
                 context_mode=context_mode,
+                **({"resource_refs": refs} if refs else {}),
             )
+            if refs:
+                await resource_delegation.grant(self.caller, child, refs, self.user)
             return session_views([child])[0]
 
     async def send_message(
@@ -302,6 +333,7 @@ class AgentControl:
         correlation_id: str | None = None,
         reply_to: str | None = None,
     ) -> dict:
+        await self._reject_resource_copy(content)
         async with self.repository.admission_lock(self.root_id, self.caller["owner_name"]) as owned:
             recipient, tree = await self._target(target)
             if tree[0]["status"] in TERMINAL or any(
@@ -323,7 +355,14 @@ class AgentControl:
             )
         return {"message_id": message_id, "delivery_mode": "QUEUE_ONLY"}
 
-    async def followup_task(self, *, target: str, task: str, operation_id: str) -> dict:
+    async def followup_task(
+        self, *, target: str, task: str, operation_id: str,
+        resource_refs: list[str] | None = None,
+    ) -> dict:
+        from app.modules.agents.resource_delegation import normalize_refs, resource_delegation
+
+        refs = normalize_refs(resource_refs)
+        await self._reject_resource_copy(task)
         async with self.repository.admission_lock(self.root_id, self.caller["owner_name"]) as owned:
             recipient, tree = await self._target(target)
             if not recipient["depth"] or any(
@@ -338,8 +377,12 @@ class AgentControl:
             )
             existing = next((row for row in tree if row["run_id"] == turn_id), None)
             if existing:
-                if participant_id(existing) != session_id or existing["objective"] != task:
+                if (participant_id(existing) != session_id or existing["objective"] != task
+                        or existing.get("payload", {}).get("resource_refs", []) != refs):
                     raise ValueError("Follow-up operation id collision")
+                await owned()
+                if refs:
+                    await resource_delegation.grant(self.caller, existing, refs, self.user)
                 return {
                     "agent_session_id": session_id,
                     "turn_id": turn_id,
@@ -362,6 +405,8 @@ class AgentControl:
                 for row in tree
             )
             await owned()
+            if refs:
+                await resource_delegation.grant(self.caller, recipient, refs, self.user)
             trigger_id = await self.repository.send(
                 sender=self.caller,
                 recipient={**recipient, "run_id": session_id},
@@ -379,6 +424,7 @@ class AgentControl:
                 trigger_message_id=trigger_id,
                 blocked=any(row["status"] not in TERMINAL for row in history)
                 or active_count >= limits.max_concurrent_agents,
+                **({"resource_refs": refs} if refs else {}),
             )
             return {
                 "agent_session_id": session_id,

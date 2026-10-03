@@ -549,6 +549,22 @@ class AssistantRepository:
             for row in rows
         ]
 
+    async def attachment_message(
+        self, thread_id: str, message_id: str, *, user_name: str, security_context: dict
+    ) -> dict | None:
+        """Read one caller-owned attachment source; never return it in public projections."""
+        result = await db.execute_system(
+            "SELECT role,security_context,attachments FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
+            "WHERE thread_id=%s AND message_id=%s AND user_name=%s",
+            [thread_id, message_id, user_name],
+        )
+        if not result["rows"]:
+            return None
+        row = result["rows"][0]
+        if len(row) != 3 or row[0] != "user" or _security_or_none(row[1]) != security_context:
+            return None
+        return {"message_id": message_id, "attachments": _steps_or_empty(row[2])}
+
     async def set_feedback(
         self, thread_id: str, message_id: str, feedback: str | None, *, user_name: str
     ) -> bool:

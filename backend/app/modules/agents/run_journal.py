@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS NOVA_SYSTEM.CONFIG_AGENT_RUNS (
     status VARCHAR(32) NOT NULL,
     last_sequence BIGINT NOT NULL,
     started_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
+    updated_at DATETIME NOT NULL,
+    session_id VARCHAR(64),
+    security_version INT
 ) PRIMARY KEY(run_id)
 DISTRIBUTED BY HASH(run_id) BUCKETS 1
 PROPERTIES("replication_num"="1", "enable_persistent_index"="true")
@@ -52,18 +54,29 @@ class AgentRunJournal:
     async def ensure_schema(self) -> None:
         await db.execute_system(RUNS_DDL)
         await db.execute_system(EVENTS_DDL)
+        from app.common.nova_system import _column_exists
+
+        for column, kind in (("session_id", "VARCHAR(64)"), ("security_version", "INT")):
+            if not await _column_exists("CONFIG_AGENT_RUNS", column):
+                await db.execute_system(
+                    f"ALTER TABLE NOVA_SYSTEM.CONFIG_AGENT_RUNS ADD COLUMN {column} {kind}"
+                )
 
     async def start(
         self, *, run_id: str, owner_name: str, agent_id: str,
-        thread_id: str, role_name: str,
+        thread_id: str, role_name: str, session_id: str | None = None,
+        security_version: int | None = None,
     ) -> None:
         now = _now()
         await db.execute_system(
             "INSERT INTO NOVA_SYSTEM.CONFIG_AGENT_RUNS "
             "(run_id, owner_name, agent_id, thread_id, role_name, status, "
-            "last_sequence, started_at, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, 'running', -1, %s, %s)",
-            [run_id, owner_name, agent_id, thread_id, role_name, now, now],
+            "last_sequence, started_at, updated_at, session_id, security_version) "
+            "VALUES (%s, %s, %s, %s, %s, 'running', -1, %s, %s, %s, %s)",
+            [
+                run_id, owner_name, agent_id, thread_id, role_name, now, now,
+                session_id, security_version,
+            ],
         )
 
     async def append(self, run_id: str, frame: str) -> int:

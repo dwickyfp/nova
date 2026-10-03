@@ -19,15 +19,20 @@ R = TypeVar("R", bound=Record)
 
 
 @asynccontextmanager
-async def metadata_lock(key: str):
+async def metadata_lock(key: str, *, timeout_seconds: int = 20):
     client = session_store._redis
     if client is None:
         raise HTTPException(status_code=503, detail="Metadata coordination is unavailable")
-    lock = LeaderLock(client, key=f"nova:intelligence:write:{fingerprint(key)}", ttl_seconds=30)
+    if not 1 <= timeout_seconds <= 120:
+        raise ValueError("Metadata coordination deadline must be within 1..120 seconds")
+    lock = LeaderLock(
+        client, key=f"nova:intelligence:write:{fingerprint(key)}",
+        ttl_seconds=timeout_seconds + 10,
+    )
     if not await lock.acquire():
         raise HTTPException(status_code=409, detail="This record is being updated; retry")
     try:
-        async with asyncio.timeout(20):
+        async with asyncio.timeout(timeout_seconds):
             yield lock
     finally:
         await lock.release()
@@ -119,7 +124,7 @@ class IntelligenceRepository:
         return model.model_validate(_decode(result["rows"][0][0])) if result["rows"] else None
 
     async def related(self, kind: str, decision_id: str, scope: Scope, model: type[R]) -> list[R]:
-        if kind not in {"events", "outcomes"}:
+        if kind not in {"events", "outcomes", "actions", "action_events"}:
             raise ValueError("Unsupported lineage relation")
         result = await db.execute_system(
             "SELECT payload,branches FROM (SELECT payload,ROW_NUMBER() OVER "
@@ -138,6 +143,17 @@ class IntelligenceRepository:
                 status_code=409, detail="Concurrent lineage revisions require reconciliation"
             )
         return [model.model_validate(_decode(row[0])) for row in result["rows"]]
+
+    async def action_for_review(self, record_id: str, model: type[R]) -> R | None:
+        # Only the review service uses this lookup, then authorizes the linked
+        # decision and the reviewer's role before returning any record data.
+        result = await db.execute_system(
+            f"SELECT payload,revision FROM {self._table('actions')} WHERE id=%s "
+            "ORDER BY revision DESC LIMIT 2",
+            [record_id],
+        )
+        self._check_fork(result["rows"])
+        return model.model_validate(_decode(result["rows"][0][0])) if result["rows"] else None
 
     async def page(
         self,

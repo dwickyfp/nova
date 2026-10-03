@@ -17,6 +17,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { agentVersionsApi, type Agent, type AgentCreateInput } from "../api";
+import { useAuthStore } from "@/stores/auth-store";
+import { qualityApi, type QualityRun } from "../quality-api";
+import { QualityRunResults, ReleaseDependencies } from "./quality-results";
 
 const labels: Record<string, string> = {
   name: "Name",
@@ -75,43 +78,125 @@ export function AgentVersionHistory({
   hasUnsavedEdits?: boolean;
   onClose?: () => void;
 }) {
+  const epoch = useAuthStore((state) => state.securityEpoch);
+  return (
+    <VersionHistoryWorkspace
+      key={`${epoch}:${agent.agent_id}`}
+      agent={agent}
+      requestedVersion={requestedVersion}
+      hasUnsavedEdits={hasUnsavedEdits}
+      onClose={onClose}
+      epoch={epoch}
+    />
+  );
+}
+
+function VersionHistoryWorkspace({
+  agent,
+  requestedVersion,
+  hasUnsavedEdits,
+  onClose,
+  epoch,
+}: {
+  agent: Agent;
+  requestedVersion?: string | null;
+  hasUnsavedEdits: boolean;
+  onClose?: () => void;
+  epoch: number;
+}) {
   const client = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
+  const [evaluation, setEvaluation] = useState<QualityRun | null>(null);
   useEffect(() => {
     if (requestedVersion) {
       setSelected(requestedVersion);
       setOpen(true);
       setOffset(0);
+      setEvaluation(null);
     }
   }, [requestedVersion]);
   const history = useQuery({
-    queryKey: ["agent-versions", agent.agent_id, offset],
+    queryKey: ["agent-versions", epoch, agent.agent_id, offset],
     queryFn: () => agentVersionsApi.list(agent.agent_id, offset),
     enabled: menuOpen || open,
   });
   const version = useQuery({
-    queryKey: ["agent-version", agent.agent_id, selected],
+    queryKey: ["agent-version", epoch, agent.agent_id, selected],
     queryFn: () => agentVersionsApi.get(agent.agent_id, selected!),
     enabled: open && !!selected,
   });
   const changes = version.data
     ? configurationDiff(agent, version.data.configuration)
     : [];
+  const manifestKey = [
+    "agent-quality",
+    epoch,
+    agent.agent_id,
+    "manifest",
+    selected,
+  ];
+  const manifest = useQuery({
+    queryKey: manifestKey,
+    queryFn: ({ signal }) =>
+      qualityApi.manifest(agent.agent_id, selected!, signal),
+    enabled: open && !!selected,
+    retry: false,
+    gcTime: 0,
+  });
+  const manifestData =
+    manifest.data?.manifest ?? version.data?.release_manifest ?? null;
+  const manifested =
+    !!agent.release_manifest_id ||
+    !!version.data?.release_manifest_id ||
+    !!manifestData ||
+    !!evaluation;
+  const result = useQuery({
+    queryKey: ["agent-quality", epoch, agent.agent_id, "run", evaluation?.id],
+    queryFn: ({ signal }) =>
+      qualityApi.run(agent.agent_id, evaluation!.id, signal),
+    enabled: !!evaluation && open,
+    initialData: evaluation ?? undefined,
+    gcTime: 0,
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? 2000 : false,
+  });
+  const evaluated =
+    result.data?.version_id === selected && result.data.promotion_eligible;
+  const evaluate = useMutation({
+    mutationFn: async () => {
+      const pinned = await qualityApi.pinManifest(agent.agent_id, selected!);
+      client.setQueryData(manifestKey, {
+        manifest: pinned,
+        status: "unevaluated",
+      });
+      return qualityApi.evaluate(agent.agent_id, selected!);
+    },
+    onSuccess: setEvaluation,
+  });
   const publish = useMutation({
     mutationFn: () =>
-      agentVersionsApi.publish(
-        agent.agent_id,
-        selected!,
-        agent.config_revision ?? null,
-      ),
+      manifested
+        ? (qualityApi.publish(
+            agent.agent_id,
+            selected!,
+            agent.config_revision ?? null,
+            result.data!.id,
+          ) as Promise<Agent>)
+        : agentVersionsApi.publish(
+            agent.agent_id,
+            selected!,
+            agent.config_revision ?? null,
+          ),
     onSuccess: (updated) => {
+      if (useAuthStore.getState().securityEpoch !== epoch) return;
       client.setQueryData(["agents", "detail", agent.agent_id], updated);
       client.invalidateQueries({ queryKey: ["agents"] });
       client.invalidateQueries({
-        queryKey: ["agent-versions", agent.agent_id],
+        queryKey: ["agent-versions", epoch, agent.agent_id],
       });
       toast.success("Agent version published");
       changeOpen(false);
@@ -121,13 +206,16 @@ export function AgentVersionHistory({
     setOpen(value);
     if (!value) {
       publish.reset();
+      evaluate.reset();
       onClose?.();
     }
   };
   const inspect = (id: string) => {
     setSelected(id);
+    setEvaluation(null);
     setOpen(true);
     publish.reset();
+    evaluate.reset();
   };
   return (
     <>
@@ -265,6 +353,23 @@ export function AgentVersionHistory({
                 </div>
               ) : (
                 <>
+                  {manifested && (
+                    <div className="mb-6 space-y-4">
+                      <ReleaseDependencies manifest={manifestData} />
+                      {result.data && <QualityRunResults run={result.data} />}
+                      {manifest.isError && (
+                        <p role="alert" className="text-sm text-destructive">
+                          Release manifest could not be read.{" "}
+                          <Button
+                            variant="link"
+                            onClick={() => void manifest.refetch()}
+                          >
+                            Retry manifest
+                          </Button>
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <p className="mb-4 text-sm">
                     {changes.length
                       ? `${changes.length} changed field${changes.length === 1 ? "" : "s"}`
@@ -299,10 +404,15 @@ export function AgentVersionHistory({
           </div>
           <div className="shrink-0 space-y-2 border-t p-4">
             <p className="text-xs text-muted-foreground">
-              History stores agent settings and resource references. Shared
-              resource contents and global Decision settings keep their current
-              values.
+              {manifested
+                ? "This release pins dependency versions. Current permissions and consent still apply. Evaluate the selected version before publishing."
+                : "Legacy history stores settings and resource references. Dependencies remain unevaluated and use their current values."}
             </p>
+            {evaluate.isError && (
+              <p role="alert" className="text-sm text-destructive">
+                {evaluate.error.message}
+              </p>
+            )}
             {hasUnsavedEdits ? (
               <p role="status" className="text-sm">
                 Save a draft or discard your unsaved edits before publishing.
@@ -332,6 +442,24 @@ export function AgentVersionHistory({
               >
                 Close
               </Button>
+              {manifested && (
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={
+                    hasUnsavedEdits ||
+                    !selected ||
+                    !version.data ||
+                    evaluate.isPending ||
+                    publish.isPending
+                  }
+                  onClick={() => evaluate.mutate()}
+                >
+                  {evaluate.isPending
+                    ? "Evaluating…"
+                    : "Evaluate selected version"}
+                </Button>
+              )}
               <Button
                 className="min-h-11"
                 disabled={
@@ -339,7 +467,11 @@ export function AgentVersionHistory({
                   !selected ||
                   !version.data ||
                   version.isError ||
+                  manifest.isPending ||
                   publish.isPending ||
+                  evaluate.isPending ||
+                  (manifested &&
+                    (!evaluated || manifest.isError || result.isError)) ||
                   changes.length === 0
                 }
                 onClick={() => publish.mutate()}

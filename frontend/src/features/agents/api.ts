@@ -10,6 +10,8 @@ import { historyQuery } from "@/features/assistant/thread-client";
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
 
 export type Agent = {
+  release_manifest_id?: string | null;
+  release_status?: string;
   resource_bindings?: ResourceBindings;
   config_revision?: string | null;
   agent_id: string;
@@ -52,6 +54,9 @@ export type ResourceBindings = {
   feature_groups: string[];
 };
 export type AgentVersion = {
+  release_manifest?: import("./quality-api").ReleaseManifest | null;
+  release_manifest_id?: string | null;
+  release_status?: string;
   version_id: string;
   label: string;
   created_at: string;
@@ -272,9 +277,9 @@ export const agentsApi = {
   interruptSmartAgent: (rootRunId: string, target: string) => api.post(
     `/agents/smart/runs/${encodeURIComponent(rootRunId)}/participants/${encodeURIComponent(target)}/interrupt`, {},
   ),
-  followupSmartAgent: (rootRunId: string, target: string, content: string, operationId: string) => api.post(
+  followupSmartAgent: (rootRunId: string, target: string, content: string, operationId: string, resourceRefs?: string[]) => api.post(
     `/agents/smart/runs/${encodeURIComponent(rootRunId)}/participants/${encodeURIComponent(target)}/followup`,
-    { content, operation_id: operationId },
+    { content, operation_id: operationId, resource_refs: resourceRefs },
   ),
   get: (id: string) => api.get<Agent>(`/agents/${encodeURIComponent(id)}`),
   create: (body: AgentCreateInput) => api.post<Agent>("/agents", body),
@@ -367,6 +372,8 @@ export type StreamAgentTurnOptions = {
   model?: string | null;
   providerId?: string | null;
   attachments?: { name: string; content: string; media_type: string }[];
+  workIntent?: "ANSWER" | "ANALYZE" | "INVESTIGATE" | "PLAN" | "RESEARCH" | "ACT";
+  newMission?: boolean;
   onAccepted?: () => void;
   onRunId?: (runId: string) => void;
 };
@@ -381,7 +388,7 @@ export async function streamAgentTurn(
   agentId: string,
   threadId: string,
   content: string,
-  { signal, onEvent, role, model, providerId, attachments, onAccepted, onRunId }: StreamAgentTurnOptions,
+  { signal, onEvent, role, model, providerId, attachments, workIntent, newMission, onAccepted, onRunId }: StreamAgentTurnOptions,
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/messages`,
@@ -391,7 +398,8 @@ export async function streamAgentTurn(
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       }),
-      body: JSON.stringify({ content, role, model, provider_id: providerId, attachments }),
+      body: JSON.stringify({ content, role, model, provider_id: providerId, attachments,
+        work_intent: workIntent, new_mission: newMission }),
       signal,
     },
   );

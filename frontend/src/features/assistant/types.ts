@@ -82,6 +82,13 @@ export type ContentPosition = {
 };
 
 export type AssistantEvent = (
+  | { type: "mission_updated"; mission: Record<string, unknown> }
+  | {
+      type: "evidence_health";
+      tool_call_id: string;
+      tool_name?: string;
+      payload: unknown;
+    }
   | {
       type: "role_changed";
       active_role: string;

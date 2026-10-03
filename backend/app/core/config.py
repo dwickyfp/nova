@@ -51,6 +51,11 @@ class Settings(BaseSettings):
 
     QUERY_AUTOPILOT_LOCAL_LOG_FIXTURES: dict[str, list[Path]] = {}
 
+    STUDIO_BUSINESS_WORKFLOW_ENABLED: bool = False
+    STUDIO_ACTIONS_ENABLED: bool = False
+    STUDIO_QUALITY_ENABLED: bool = False
+    STUDIO_ANALYSIS_WORKSPACE_ENABLED: bool = False
+
     SMART_MAX_AGENT_DEPTH: int = 4
     SMART_MAX_CONCURRENT_AGENTS: int = 8
     SMART_MAX_TOTAL_AGENT_SESSIONS: int = 32

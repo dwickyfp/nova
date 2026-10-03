@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import re
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from html import escape
 
@@ -425,6 +426,7 @@ class AgentMemoryRepository:
         outcome: dict | None = None,
         source_scope: Scope | None = None,
         observed_at: datetime | None = None,
+        finalize_outcome: Callable[[str, int], Awaitable[dict]] | None = None,
     ) -> str:
         if source_scope and (source_scope.principal, source_scope.active_role) != (
             user_name,
@@ -437,6 +439,8 @@ class AgentMemoryRepository:
             raise ValueError("Only a supported declarative statement can become a memory")
         if _sensitive(fact) or _sensitive(source_quote):
             raise ValueError("Memory cannot contain credentials")
+        if finalize_outcome and not outcome:
+            raise ValueError("Outcome finalization requires an outcome reference")
         memory_id = existing_id or fingerprint([user_name, agent_id, role_name, fact_key])
         async with metadata_lock(f"memory:{memory_id}"):
             original = await self.get(
@@ -450,6 +454,38 @@ class AgentMemoryRepository:
                 await self._append_revision(legacy, user_name, agent_id, role_name)
                 revisions = [legacy]
             latest = revisions[0] if revisions else None
+            if finalize_outcome:
+                if latest and (
+                    latest.state == KnowledgeState.SUPERSEDED
+                    or latest.definition.get("outcome_id") != outcome["id"]
+                    or latest.semantic is None
+                    or latest.semantic.model_dump() != outcome["semantic"]
+                ):
+                    raise HTTPException(status_code=409, detail="Outcome knowledge needs review")
+                reuse = bool(
+                    latest
+                    and latest.fact == fact
+                    and latest.definition.get("outcome_revision") == outcome["revision"]
+                    and latest.semantic
+                    and latest.semantic.model_dump() == outcome["semantic"]
+                    and outcome.get("learning_ref")
+                    == {"kind": "knowledge", "id": memory_id, "revision": latest.revision}
+                )
+                knowledge_revision = (
+                    latest.revision if reuse else latest.revision + 1 if latest else 1
+                )
+                # Allocate under the memory lease, then persist the Outcome link
+                # before exposing its Knowledge. A retry reuses a written journal
+                # revision even when its compatibility projection is still absent.
+                finalized = await finalize_outcome(memory_id, knowledge_revision)
+                if (
+                    finalized["id"] != outcome["id"]
+                    or finalized["semantic"] != outcome["semantic"]
+                    or finalized["revision"] < outcome["revision"]
+                ):
+                    raise HTTPException(status_code=409, detail="Outcome learning source changed")
+                outcome = finalized
+                source_message_id = f"{outcome['id']}:{outcome['revision']}"
             integrity_hash = fingerprint(
                 [memory_id, source_thread_id, source_message_id, source_quote, fact]
             )
@@ -552,15 +588,17 @@ class AgentMemoryRepository:
                         default=None,
                     ),
                 )
-                if outcome and not latest:
+                if outcome and (not latest or finalize_outcome):
                     revision.definition = {
+                        **revision.definition,
                         "outcome_id": outcome["id"],
                         "outcome_revision": outcome["revision"],
                     }
                     from app.modules.intelligence.contracts import SemanticRef
 
                     revision.semantic = SemanticRef.model_validate(outcome["semantic"])
-                    revision.authority = "observed_outcome"
+                    if not latest:
+                        revision.authority = "observed_outcome"
                 await self._append_revision(revision, user_name, agent_id, role_name)
             # The journal precedes the compatibility projection. Retrying repairs
             # a process crash between these writes without another logical fact.

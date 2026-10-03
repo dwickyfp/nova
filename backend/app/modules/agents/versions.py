@@ -36,6 +36,7 @@ class AgentDraftRequest(BaseModel):
 
 
 class AgentPublishRequest(BaseModel):
+    quality_run_id: str | None = Field(default=None, max_length=64)
     expected_revision: str | None = Field(default=None, max_length=64)
 
 

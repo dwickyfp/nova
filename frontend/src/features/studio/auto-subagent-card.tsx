@@ -9,6 +9,7 @@ import { latestParticipants } from "./smart-agent-tree";
 
 type SelectedChild = { rootRunId: string; childRunId: string };
 type CardProps = {
+  embedded?: boolean;
   runs: AutoRun[];
   agents: Agent[];
   loading: boolean;
@@ -292,9 +293,10 @@ export function AutoSubagentPanel({ selected, runs, agents, onClose, onRefreshTr
     </aside>;
 }
 
-export function AutoSubagentCard({ runs, agents, loading, error, retry, onSelectChild }: CardProps) {
+export function AutoSubagentCard({ runs, agents, loading, error, retry, onSelectChild, embedded = false }: CardProps) {
   const root = runs.find((run) => run.depth === 0), children = latestParticipants(runs).filter((run) => run.depth > 0);
   if (!root && !loading && !error) return null;
   const body = <Card root={root} children={children} agents={agents} loading={loading} error={error} retry={retry} onSelectChild={onSelectChild} />;
+  if (embedded) return <div className="flex min-h-0 min-w-0 flex-col">{body}</div>;
   return <><div className="absolute right-4 top-4 z-20 hidden h-1/3 min-h-0 w-72 flex-col xl:flex">{body}</div><div className="flex max-h-1/3 min-h-0 shrink-0 flex-col overflow-hidden px-4 pt-3 sm:px-6 xl:hidden"><div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">{body}</div></div></>;
 }

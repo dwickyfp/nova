@@ -10,12 +10,13 @@ from uuid import NAMESPACE_URL, uuid5
 from fastapi import APIRouter, HTTPException
 from pydantic import Field
 
+from app.core.config import settings
 from app.modules.agents.rule_proposals import rule_proposal_repository
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.runtime import validate_semantic_model_ir
 from app.modules.agents.semantic.serialize import to_ossie_document
 from app.modules.assistant.security import session_security
-from app.modules.intelligence.contracts import Contract, SemanticRef, fingerprint
+from app.modules.intelligence.contracts import Contract, Scope, SemanticRef, fingerprint
 from app.modules.intelligence.engine_repository import metadata_lock
 from app.modules.intelligence.responses import IntelligenceResponse, IntelligenceRoute
 from app.modules.intelligence.semantic_views import (
@@ -42,6 +43,7 @@ class AutopilotProposal(Contract):
     agent_id: str = Field(min_length=1, max_length=64)
     base: SemanticRef
     changes: list[SemanticChange] = Field(min_length=1, max_length=30)
+    usage_digest: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 class AutopilotDiscovery(Contract):
@@ -247,6 +249,38 @@ async def discover(body: AutopilotDiscovery, user: CurrentUser):
     }
 
 
+@router.get("/{view_id}/autopilot/usage")
+async def usage_observations(view_id: str, agent_id: str, user: CurrentUser):
+    if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
+        raise HTTPException(status_code=404, detail="Usage learning is unavailable")
+    from app.modules.agents.router import _require_agent
+    from app.modules.agents.semantic.access import bound_view_ids
+    from app.modules.agents.semantic.usage_learning import load_scoped_usage
+
+    agent = await _require_agent(agent_id, user)
+    if view_id not in bound_view_ids(agent):
+        raise HTTPException(status_code=404, detail="Semantic View unavailable")
+    view = await semantic_view_service._owned(view_id, user)
+    if not view.get("active_version"):
+        raise HTTPException(status_code=409, detail="Publish a Semantic View before usage learning")
+    _, base = await semantic_view_service._readable_version(view_id, view["active_version"], user)
+    return await load_scoped_usage(
+        Scope.from_user(user),
+        SemanticRef(view_id=view_id, version=base["version"], fingerprint=base["fingerprint"]),
+        base["definition"],
+    )
+
+
+@router.post("/{view_id}/autopilot/usage/context")
+async def project_usage(view_id: str, body: SemanticRef, user: CurrentUser):
+    from app.modules.intelligence.context_graph import project_usage_context
+
+    if body.view_id != view_id:
+        raise HTTPException(status_code=422, detail="Use the same Semantic View in this request")
+    await semantic_view_service._owned(view_id, user)
+    return await project_usage_context(body, user)
+
+
 @router.post("/{view_id}/autopilot/proposals", status_code=201)
 async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
     from app.modules.agents.router import _require_agent
@@ -267,15 +301,35 @@ async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not await semantic_view_service._source_access(candidate, user):
         raise HTTPException(status_code=404, detail="A proposed source is unavailable")
-    role = session_security(user).active_role
+    scope = Scope.from_user(user)
+    role = scope.active_role
+    usage = None
+    if body.usage_digest:
+        if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
+            raise HTTPException(status_code=404, detail="Usage learning is unavailable")
+        from app.modules.agents.semantic.usage_learning import load_scoped_usage
+
+        usage = await load_scoped_usage(scope, body.base, base["definition"])
+        if usage["digest"] != body.usage_digest:
+            raise HTTPException(
+                status_code=409, detail="Usage changed; review the current observations"
+            )
+        if not usage["patterns"]:
+            raise HTTPException(status_code=422, detail="No governed usage supports this proposal")
+    request = body.model_dump(
+        mode="json", exclude={"operation_id", "usage_digest"} if usage else {"usage_digest"},
+    )
+    request_digest = fingerprint(request)
     proposal_id = str(
-        uuid5(NAMESPACE_URL, fingerprint([user["username"], role, body.operation_id]))
+        uuid5(NAMESPACE_URL, fingerprint([
+            user["username"], role,
+            [scope.security_context_version, request_digest] if usage else body.operation_id,
+        ]))
     )
     async with metadata_lock(f"proposal:{proposal_id}"):
         existing = await rule_proposal_repository.get(
             proposal_id, owner_name=user["username"], role_name=role
         )
-        request_digest = fingerprint(body.model_dump(mode="json"))
         if existing:
             if (existing.get("details") or {}).get("request_digest") != request_digest:
                 raise HTTPException(status_code=409, detail="Operation inputs changed")
@@ -299,6 +353,7 @@ async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
                     "base": body.base.model_dump(),
                     "changes": [item.model_dump() for item in body.changes],
                     "candidate_definition": candidate,
+                    **({"usage_evidence": usage} if usage else {}),
                 },
             }
         )
@@ -313,6 +368,9 @@ async def _proposal(view_id: str, proposal_id: str, user: dict) -> tuple[dict, d
     )
     if not row or row["semantic_model_id"] != view_id or row.get("proposal_kind") != "autopilot":
         raise HTTPException(status_code=404, detail="Proposal unavailable")
+    usage = row["details"].get("usage_evidence")
+    if usage and usage.get("scope") != Scope.from_user(user).model_dump(exclude={"session_id"}):
+        raise HTTPException(status_code=404, detail="Proposal unavailable in this security context")
     base = row["details"]["base"]
     await semantic_view_service._readable_version(view_id, base["version"], user)
     if not await semantic_view_service._source_access(row["details"]["candidate_definition"], user):

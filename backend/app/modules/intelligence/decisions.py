@@ -6,7 +6,7 @@ import math
 from typing import Literal
 
 from fastapi import HTTPException
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.modules.access_control.business_policy import (
     evaluate_business_policy,
@@ -23,13 +23,31 @@ from app.modules.intelligence.contracts import (
     utc_now,
 )
 from app.modules.intelligence.engine import CycleBudget, intelligence_service
+from app.modules.intelligence.scenarios import normalize_scenario, scenario_definition
 from app.modules.ml_engine.decision_lab import SimulationInput, run_simulation
 
 
 class OptionInput(Contract):
     id: str = Field(min_length=1, max_length=128)
     description: str = Field(min_length=1, max_length=2000)
-    simulation: SimulationInput
+    simulation: SimulationInput | None = None
+    scenario_kind: str = Field(default="unit-economics", max_length=64)
+    scenario_version: int = Field(default=1, ge=1)
+    parameters: dict[str, float | str | bool] | None = Field(default=None, max_length=32)
+
+    @model_validator(mode="after")
+    def registered_inputs(self):
+        if (self.simulation is None) == (self.parameters is None):
+            raise ValueError("Provide simulation or scenario parameters")
+        scenario_definition(self.scenario_kind, self.scenario_version)
+        if self.parameters is not None:
+            self.simulation = normalize_scenario(
+                self.scenario_kind,
+                self.scenario_version,
+                self.parameters,
+            )
+        self.parameters = None
+        return self
 
 
 class DecisionCreate(Contract):
@@ -54,6 +72,16 @@ class DecisionReceipt(Contract):
     id: str
     revision: int
     status: Literal["cancelled", "superseded"]
+
+
+def decision_request_digest(body: DecisionCreate) -> str:
+    payload = body.model_dump(mode="json")
+    for option in payload["options"]:
+        option.pop("parameters", None)
+        if option["scenario_kind"] == "unit-economics" and option["scenario_version"] == 1:
+            option.pop("scenario_kind")
+            option.pop("scenario_version")
+    return fingerprint(payload)
 
 
 async def close_owned_decision(
@@ -100,7 +128,34 @@ async def close_owned_decision(
 
 
 def decision_digest(decision: Decision) -> str:
-    return fingerprint(decision.model_dump(mode="json", exclude={"created_at", "updated_at"}))
+    payload = decision.model_dump(mode="json", exclude={"created_at", "updated_at"})
+    # Legacy event and approval proofs omitted the implicit built-in scenario.
+    for option in payload["options"]:
+        if option.get("scenario_kind") == "unit-economics" and option.get("scenario_version") == 1:
+            option.pop("scenario_kind")
+            option.pop("scenario_version")
+    for evidence in payload["evidence"]:
+        if evidence.get("evidence_health") is None:
+            evidence.pop("evidence_health", None)
+    return fingerprint(payload)
+
+
+async def current_decision_policy(decision: Decision):
+    option = next(
+        (item for item in decision.options if item.id == decision.selected_option_id), None
+    )
+    if option is None:
+        raise HTTPException(status_code=422, detail="Select an available option")
+    return evaluate_business_policy(
+        option,
+        await read_business_policy(),
+        {
+            "decision_id": decision.id,
+            "semantic": decision.semantic.model_dump(),
+            "outcome_window": decision.outcome_window.model_dump(mode="json"),
+            "evidence": [item.digest for item in decision.evidence],
+        },
+    )
 
 
 async def _write_decision(decision, user, *, expected_revision, event):
@@ -132,7 +187,7 @@ async def create_decision(body: DecisionCreate, user: dict) -> Decision:
     record_id = fingerprint([scope.principal, scope.active_role, body.operation_id])
     prior = await service.repository.get("decisions", record_id, scope, Decision)
     if prior:
-        if prior.request_digest != fingerprint(body.model_dump(mode="json")):
+        if prior.request_digest != decision_request_digest(body):
             raise HTTPException(status_code=409, detail="The operation identifier was already used")
         await service.authorize_record(prior, user, budget)
         return prior
@@ -191,6 +246,8 @@ async def create_decision(body: DecisionCreate, user: dict) -> Decision:
         options.append(
             DecisionOption(
                 id=item.id,
+                scenario_kind=item.scenario_kind,
+                scenario_version=item.scenario_version,
                 description=item.description,
                 action_type=item.simulation.action_type,
                 assumptions=item.simulation.model_dump(),
@@ -222,8 +279,8 @@ async def create_decision(body: DecisionCreate, user: dict) -> Decision:
         options=options,
         evidence=investigation.evidence,
         last_operation_id=body.operation_id,
-        request_digest=fingerprint(body.model_dump(mode="json")),
-        last_operation_digest=fingerprint(body.model_dump(mode="json")),
+        request_digest=decision_request_digest(body),
+        last_operation_digest=decision_request_digest(body),
     )
     return await _write_decision(decision, user, expected_revision=0, event="created")
 

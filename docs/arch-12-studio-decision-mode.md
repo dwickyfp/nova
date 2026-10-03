@@ -82,7 +82,13 @@ does not guarantee that the selected model will complete a task successfully.
 
 ## Configuration
 
-AI Providers → **Decision** exposes an enable switch plus decision, light-workload and heavy-workload model selectors. Save applies changes to new turns. Disabling remains possible even if a previously selected model has been deleted. There is no new database or migration: a JSON settings value lives in the existing StarRocks primary-key preferences table under `__system__ / studio_decision_mode`.
+Manifested agents pin routing settings and resolved model contracts as described
+in [governed Studio releases](arch-15-governed-studio.md#release-manifests-and-promotion).
+Global selection changes require a new evaluated draft to change a pinned
+release's routing. Observable model drift fails explicitly; external behavior
+remains mutable and authorization remains live.
+
+AI Providers → **Decision** exposes an enable switch plus decision, light-workload and heavy-workload model selectors. Save applies changes to new turns for consumers without a pinned release. Disabling remains possible even if a previously selected model has been deleted. Decision settings need no separate migration: a JSON value lives in the existing StarRocks primary-key preferences table under `__system__ / studio_decision_mode`.
 
 `GET /api/v1/ai/decision-settings` requires authentication. `PUT` requires an existing admin role and writes an audit entry. The default is disabled. Tests override configuration locally; live benchmark commands never enable production mode or replace saved choices.
 

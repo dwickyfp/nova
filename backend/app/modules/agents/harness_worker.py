@@ -32,13 +32,20 @@ from app.modules.agents.harness_repository import TERMINAL, HarnessRepository, h
 from app.modules.agents.harness_tools import RequestSpecialistTool, SendAgentMessageTool
 from app.modules.agents.identity import SMART_AGENT_ID, participant_id
 from app.modules.agents.memory import memory_prompt, memory_repository, select_relevant_memories
+from app.modules.agents.mission import mission_service
 from app.modules.agents.repository import agent_repository
+from app.modules.agents.resource_delegation import (
+    reference_checkpoint,
+    resource_delegation,
+    restore_resource_checkpoint,
+)
 from app.modules.agents.semantic.access import bound_view_ids
 from app.modules.agents.service import agent_service
 from app.modules.assistant.answer_contract import (
     check_numeric_answer,
     finalize_verified_answer,
 )
+from app.modules.assistant.attachments import attachment_prompt
 from app.modules.assistant.context import ContextManager
 from app.modules.assistant.events import _json_default
 from app.modules.assistant.provider import assistant_provider
@@ -132,6 +139,9 @@ def _table_evidence(payload: dict[str, Any]) -> dict[str, Any] | None:
         "rows": safe_rows,
         "truncated": truncated,
         "row_count": len(rows),
+        **{key: payload[key] for key in (
+            "evidence_id", "artifact_id", "tool_call_id", "content_id"
+        ) if isinstance(payload.get(key), str) and len(payload[key]) <= 128},
     }
 
 
@@ -900,6 +910,29 @@ class AgentHarnessWorker:
         except Exception as exc:
             logger.warning("Could not load specialist memory: %s", type(exc).__name__)
         smart = root["agent_id"] == SMART_AGENT_ID
+        attachments: list[dict] = []
+        resource_refs: list[str] = []
+        if smart and resource_delegation.enabled():
+            if is_root:
+                await resource_delegation.register_root(child, user)
+            elif child.get("payload", {}).get("resource_refs"):
+                if not child.get("payload", {}).get("previous_turn_id"):
+                    parent = await self.repository.get(child["parent_run_id"])
+                    if parent is None:
+                        raise AuthenticationUnavailable("Attachment delegator is unavailable")
+                    await resource_delegation.grant(
+                        parent, child, child["payload"]["resource_refs"], user
+                    )
+                granted = {
+                    item.resource_id for item in await resource_delegation.available(child, user)
+                }
+                if not set(child["payload"]["resource_refs"]) <= granted:
+                    raise AuthenticationUnavailable("Attachment follow-up grants changed")
+            attachments, resource_refs = await resource_delegation.load(child, user)
+            if resource_refs:
+                system_prompt += (
+                    "\n\nAvailable attachment resource references: " + json.dumps(resource_refs)
+                )
         if smart:
             def mark_waiting(waiting: bool) -> None:
                 if waiting:
@@ -946,7 +979,37 @@ class AgentHarnessWorker:
             model_provider_id=agent.get("model_provider_id"),
             model_name=agent.get("model_name"),
             run_id=child["run_id"],
+            attachments=attachments,
         )
+        async def business_cancelled():
+            await self._assert_running(child)
+            if context.mission_id:
+                return await mission_service.cancellation_requested(context.mission_id, user)
+            return False
+
+        context.business_cancelled = business_cancelled
+        if is_root:
+            async def business_turn(turn_plan, loop_context):
+                mission = await mission_service.for_turn(
+                    child["thread_id"], user, operation_id=child["run_id"],
+                    objective=child["objective"][:4000],
+                    work_intent=getattr(loop_context, "requested_work_intent", None)
+                    or turn_plan.work_intent,
+                    public_work_steps=turn_plan.public_work_steps,
+                    explicit=bool(getattr(loop_context, "requested_work_intent", None)),
+                    new_mission=bool(getattr(loop_context, "start_new_mission", False)),
+                )
+                if mission is None:
+                    return None
+                mission = await mission_service.attach_run(
+                    mission.mission_id, child["run_id"], user
+                )
+                loop_context.mission_id = mission.mission_id
+                return mission.model_dump(mode="json")
+
+            context.business_turn_hook = business_turn
+            context.requested_work_intent = child.get("payload", {}).get("work_intent")
+            context.start_new_mission = bool(child.get("payload", {}).get("new_mission"))
         step_limit = 32 if smart else 12
         time_limit = min(float(seconds), 600.0 if is_root else 300.0)
         participant_token_limit = MAX_ROOT_TOKENS if is_root else MAX_CHILD_TOKENS
@@ -981,6 +1044,9 @@ class AgentHarnessWorker:
         mailbox_id = participant_id(child) if smart else child["run_id"]
 
         async def save_state(state: dict) -> None:
+            state = reference_checkpoint(
+                state, prompt=prompt, attachments=attachments, refs=resource_refs
+            )
             serialized = json.dumps(state, default=_json_default)
             if contains_credential_shape(serialized) or is_credential_value(serialized):
                 raise ValueError("Sensitive content cannot be checkpointed")
@@ -1002,6 +1068,13 @@ class AgentHarnessWorker:
             if int((context.usage or {}).get("total_tokens") or 0) >= participant_token_limit:
                 raise BudgetExceeded("Participant token budget exhausted")
             current = await self._user_for(child)
+            if getattr(context, "mission_id", None) and (
+                await mission_service.cancellation_requested(context.mission_id, current)
+            ):
+                raise RunCancelled("Mission cancellation requested")
+            if resource_refs:
+                # Grants and message scope remain live on every established checkpoint.
+                await resource_delegation.load(child, current)
             if smart:
                 current_tree = await self.repository.tree(
                     root["run_id"], owner_name=child["owner_name"], role_name=child["role_name"]
@@ -1082,17 +1155,26 @@ class AgentHarnessWorker:
         activity_omitted = False
         async for frame in loop.run(
             thread=thread,
-            user_content=prompt,
+            user_content=attachment_prompt(prompt, attachments),
             context=context,
             resolve_consent=deny_unapproved,
             provider_id=agent.get("model_provider_id"),
             model=agent.get("model_name"),
             on_checkpoint=checkpoint,
-            resume_state=child.get("checkpoint", {}).get("loop") if smart else None,
+            resume_state=restore_resource_checkpoint(
+                child.get("checkpoint", {}).get("loop"), attachments, resource_refs
+            ) if smart else None,
             save_state=save_state if smart else None,
             before_final=before_final if smart else None,
             cancelled=cancelled.is_set,
         ):
+            if attachments:
+                payload = reference_checkpoint(
+                    _frame_payload(frame), prompt=prompt,
+                    attachments=attachments, refs=resource_refs
+                )
+                frame = (frame.split("data: ", 1)[0] + "data: "
+                         + json.dumps(payload, default=_json_default) + "\n\n")
             if frame.startswith("event: text_delta"):
                 parts.append(str(_frame_payload(frame).get("text") or ""))
             elif frame.startswith("event: table"):
@@ -1138,6 +1220,10 @@ class AgentHarnessWorker:
                 {"event_type": "omitted", "reason": "activity_limit"},
             )
         answer = "".join(parts).strip()
+        if attachments:
+            answer = reference_checkpoint(
+                {"answer": answer}, prompt=prompt, attachments=attachments, refs=resource_refs
+            )["answer"]
         if evidence_tables and not smart:
             result_table = _render_evidence_tables(evidence_tables)
             omitted_note = (
@@ -1180,13 +1266,13 @@ class AgentHarnessWorker:
             to_status=status,
             lease_owner=child["lease_owner"],
             generation=child["generation"],
-            checkpoint={
+            checkpoint=reference_checkpoint({
                 **((latest_child or {}).get("checkpoint") or {}),
                 "evidence_tables": evidence_tables,
                 "verified_evidence": context.verified_evidence or {},
                 "evidence_tables_omitted": omitted_tables,
                 "needs_data": bool((context.route or {}).get("needs_data")),
-            },
+            }, prompt=prompt, attachments=attachments, refs=resource_refs),
             summary=answer or None,
             error_class=None if status == "completed" else finish_reason[:64],
             prompt_tokens=int((context.usage or {}).get("prompt_tokens") or 0),

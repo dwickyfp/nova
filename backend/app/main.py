@@ -156,6 +156,11 @@ async def lifespan(app: FastAPI):
         from app.modules.agents.run_journal import run_journal
 
         await agent_repository.ensure_schema()
+        from app.modules.agents.mission import mission_service
+        from app.modules.agents.resource_delegation import resource_delegation
+
+        await mission_service.ensure_schema()
+        await resource_delegation.ensure_schema()
         from app.modules.agents.capabilities import capability_repository
 
         await capability_repository.ensure_schema()
@@ -363,6 +368,20 @@ def create_app() -> FastAPI:
     # "/mcp-servers", "/studio/...") that the agent router's dynamic
     # "/{agent_id}" would otherwise capture. FastAPI matches in declaration
     # order, so the literal routes must come first.
+    from app.modules.agents.mission_router import router as mission_router
+    from app.modules.agents.quality_router import router as quality_router
+    from app.modules.assistant.analysis_workspace import router as analysis_workspace_router
+    from app.modules.intelligence.action_router import router as action_router
+
+    app.include_router(mission_router, prefix=f"{prefix}/agents", tags=["studio-missions"])
+    app.include_router(
+        analysis_workspace_router, prefix=f"{prefix}/agents", tags=["analytical-workspace"]
+    )
+    app.include_router(
+        action_router, prefix=f"{prefix}/intelligence", tags=["intelligence-actions"]
+    )
+
+    app.include_router(quality_router, prefix=f"{prefix}/agents", tags=["agent-quality"])
     app.include_router(studio_router, prefix=f"{prefix}/agents", tags=["agents"])
     app.include_router(agents_router, prefix=f"{prefix}/agents", tags=["agents"])
     app.include_router(knowledge_router, prefix=f"{prefix}/agents", tags=["agent-knowledge"])

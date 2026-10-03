@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { parseAssistantEvent, readSseFrames } from "./events";
 
 describe("parseAssistantEvent", () => {
+  it("preserves workflow projections and evidence without accepting malformed envelopes", () => {
+    const mission = { mission_id: "m1", thread_id: "t1", revision: 2 };
+    expect(parseAssistantEvent("mission_updated", JSON.stringify({ mission, run_id: "r1", sequence: 4 })))
+      .toEqual({ type: "mission_updated", mission, run_id: "r1", sequence: 4 });
+    expect(parseAssistantEvent("mission_updated", '{"mission":{"mission_id":"m1"}}')).toBeNull();
+    expect(parseAssistantEvent("evidence_health", JSON.stringify({ tool_call_id: "c1", tool_name: "semantic_query", payload: { label: "limited" } })))
+      .toEqual({ type: "evidence_health", tool_call_id: "c1", tool_name: "semantic_query", payload: { label: "limited" } });
+    expect(parseAssistantEvent("evidence_health", '{"tool_call_id":"c1"}')).toBeNull();
+    expect(parseAssistantEvent("ping", "null")).toBeNull();
+    expect(parseAssistantEvent("ping", "[]")).toBeNull();
+  });
   it("parses role changes and requires their security version", () => {
     expect(
       parseAssistantEvent(
