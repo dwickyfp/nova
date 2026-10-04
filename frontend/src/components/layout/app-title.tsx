@@ -1,3 +1,4 @@
+import { Logo } from '@/assets/logo'
 import { Link } from '@tanstack/react-router'
 import {
   SidebarMenu,
@@ -19,11 +20,8 @@ export function AppTitle() {
         >
           <Link to='/' onClick={() => setOpenMobile(false)}>
             <span className='flex size-10 shrink-0 items-center justify-center p-0.5 group-data-[collapsible=icon]:size-8'>
-              <img
-                src='/images/nova-mark.svg'
-                alt=''
+              <Logo sizes='40px'
                 className='size-full'
-                aria-hidden='true'
               />
             </span>
             <span className='grid min-w-0 flex-1 gap-1 text-start leading-tight group-data-[collapsible=icon]:hidden'>
