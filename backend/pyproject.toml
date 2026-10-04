@@ -1,7 +1,7 @@
 [project]
 name = "nova"
 version = "0.1.0"
-description = "Snowflake-grade management console for StarRocks"
+description = "Enterprise Intelligence OS for governed data, AI agents, decisions, actions, and learning."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

@@ -69,7 +69,7 @@ Prompt: `Classify the following text into ONE of these categories: [<categories>
 Two-to-three sentence summary.
 
 ```sql
-SELECT AI_SUMMARIZE('Nova is a management console for StarRocks. It adds a stage dialect, ML functions, and an LLM layer.');
+SELECT AI_SUMMARIZE('Nova is an Enterprise Intelligence OS. It connects governed data, business meaning, agents, decisions, actions, and learning.');
 ```
 
 Prompt: `Summarize the following text concisely in 2-3 sentences:\n\n`.

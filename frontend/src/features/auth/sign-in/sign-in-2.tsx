@@ -17,7 +17,7 @@ export function SignIn2() {
             <div className='leading-tight'>
               <h1 className='text-lg font-bold tracking-tight'>Nova</h1>
               <p className='text-xs font-medium text-muted-foreground'>
-                Data warehouse + AI platform
+                Enterprise Intelligence OS
               </p>
             </div>
             </div>
