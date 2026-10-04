@@ -81,6 +81,17 @@
   --code-type: #6b46c1;
   --code-attr: #c9662e;
 
+  /* Navigation chrome only; --sidebar remains an opaque layout surface. */
+  --sidebar-navigation-tint: rgb(248 250 252 / 88%);
+  --sidebar-navigation-fallback: #f4f6f8;
+  --sidebar-navigation-ambient: linear-gradient(160deg, #e9edf2, #f1eeeb);
+  --sidebar-navigation-edge: #d8dee6;
+  --sidebar-navigation-shadow: inset -1px 0 0 var(--sidebar-navigation-edge), 2px 0 8px rgb(15 23 42 / 4%);
+  --sidebar-navigation-hover: #e9edf2;
+  --sidebar-navigation-selected: #dce2e9;
+  --sidebar-navigation-muted-foreground: #566172;
+  --sidebar-navigation-ring: var(--primary);
+
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
@@ -92,6 +103,16 @@
 }
 
 .dark {
+  --sidebar-navigation-tint: rgb(17 22 29 / 90%);
+  --sidebar-navigation-fallback: #141a22;
+  --sidebar-navigation-ambient: linear-gradient(160deg, #26313e, #302925);
+  --sidebar-navigation-edge: #303a47;
+  --sidebar-navigation-shadow: inset -1px 0 0 var(--sidebar-navigation-edge), 2px 0 8px rgb(0 0 0 / 12%);
+  --sidebar-navigation-hover: #222b36;
+  --sidebar-navigation-selected: #303c4b;
+  --sidebar-navigation-muted-foreground: #a9b4c4;
+  --sidebar-navigation-ring: var(--ring);
+
   --background: #0b0f14;
   --foreground: #f7f8fa;
   --card: #11161d;
@@ -218,6 +239,7 @@
   --color-chart-tone-4: var(--chart-tone-4);
   --color-chart-tone-5: var(--chart-tone-5);
   --color-chart-tone-6: var(--chart-tone-6);
+  --color-sidebar-navigation-muted-foreground: var(--sidebar-navigation-muted-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

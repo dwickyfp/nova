@@ -19,7 +19,7 @@ export function AppSidebar() {
   const user = useAuthStore((state) => state.auth.user);
 
   return (
-    <Sidebar collapsible={collapsible} variant={variant}>
+    <Sidebar material="navigation" collapsible={collapsible} variant={variant}>
       <SidebarHeader>
         <AppTitle />
       </SidebarHeader>
@@ -27,7 +27,7 @@ export function AppSidebar() {
         {sidebarData.navGroups.map((props, index) => (
           <Fragment key={props.title}>
             {index > 0 && (
-              <SidebarSeparator className="hidden w-8 self-center bg-sidebar-border/70 group-data-[collapsible=icon]:block" />
+              <SidebarSeparator className="hidden w-8 self-center bg-sidebar-border group-data-[collapsible=icon]:block" />
             )}
             <NavGroup {...props} />
           </Fragment>

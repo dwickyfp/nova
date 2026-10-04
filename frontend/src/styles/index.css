@@ -6,20 +6,145 @@
 @custom-variant dark (&:is(.dark *));
 @source inline("font-plex font-system");
 
-.studio-sidebar {
-  --foreground: #27272a;
-  --muted: #f4f4f5;
-  --muted-foreground: #62626a;
-  --accent: #e9e9ec;
-  --accent-foreground: #18181b;
+/* A navigation shell owns exactly one filtered layer. Negative stacking keeps
+   positioned rails and focus rings above it without restyling its children. */
+.sidebar-navigation-material {
+  isolation: isolate;
+  background: transparent;
+  color: var(--sidebar-foreground);
+  box-shadow: var(--sidebar-navigation-shadow);
+  --sidebar-accent: var(--sidebar-navigation-hover);
+  --sidebar-accent-foreground: var(--sidebar-foreground);
+  --sidebar-border: var(--sidebar-navigation-edge);
+  --sidebar-ring: var(--sidebar-navigation-ring);
 }
 
-.dark .studio-sidebar {
-  --foreground: #e4e4e7;
-  --muted: #18181b;
-  --muted-foreground: #a1a1aa;
-  --accent: #303034;
-  --accent-foreground: #fafafa;
+.sidebar-navigation-material::before,
+.sidebar-navigation-material::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+}
+
+.sidebar-navigation-material::before {
+  z-index: -2;
+  background: var(--sidebar-navigation-ambient);
+}
+
+.sidebar-navigation-material::after {
+  z-index: -1;
+  background: var(--sidebar-navigation-fallback);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar-navigation-material::after {
+    background: var(--sidebar-navigation-tint);
+    -webkit-backdrop-filter: blur(12px) saturate(1.08);
+    backdrop-filter: blur(12px) saturate(1.08);
+  }
+}
+
+.sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand]):hover,
+.sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand]):active,
+.sidebar-navigation-material .sidebar-navigation-item[data-state="open"],
+.sidebar-navigation-material .sidebar-navigation-item:has([data-state="open"]) {
+  background: var(--sidebar-navigation-hover);
+  color: var(--sidebar-foreground);
+}
+
+.sidebar-navigation-material .sidebar-navigation-item[data-active="true"],
+.sidebar-navigation-material .sidebar-navigation-item[aria-current] {
+  background: var(--sidebar-navigation-selected);
+  color: var(--sidebar-foreground);
+}
+
+/* Full-opacity focus avoids losing contrast on selected navigation plates. */
+.sidebar-navigation-material :is(.sidebar-navigation-item, button, a, input):focus-visible {
+  outline: 2px solid var(--sidebar-ring);
+  outline-offset: 2px;
+}
+
+/* A Sheet animates opacity/transform, creating a backdrop root. Filter the
+   drawer itself so its backdrop is the workspace rather than its own children. */
+.sidebar-navigation-material[data-mobile="true"],
+[data-mobile-navigation="true"] .sidebar-navigation-material {
+  background: var(--sidebar-navigation-fallback);
+  transition-property: width, transform, opacity;
+}
+.sidebar-navigation-material[data-mobile="true"]::before,
+.sidebar-navigation-material[data-mobile="true"]::after,
+[data-mobile-navigation="true"] .sidebar-navigation-material::before,
+[data-mobile-navigation="true"] .sidebar-navigation-material::after {
+  display: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar-navigation-material[data-mobile="true"],
+  [data-mobile-navigation="true"] .sidebar-navigation-material {
+    background: var(--sidebar-navigation-tint);
+    -webkit-backdrop-filter: blur(12px) saturate(1.08);
+    backdrop-filter: blur(12px) saturate(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-navigation-material[data-mobile="true"],
+  [data-mobile-navigation="true"] .sidebar-navigation-material {
+    animation: none;
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar-navigation-material[data-mobile="true"],
+  [data-mobile-navigation="true"] .sidebar-navigation-material {
+    background: var(--sidebar-navigation-fallback);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .sidebar-navigation-material::before {
+    display: none;
+  }
+  .sidebar-navigation-material::after {
+    background: var(--sidebar-navigation-fallback);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .sidebar-navigation-material {
+    --sidebar-foreground: CanvasText;
+    --sidebar-ring: Highlight;
+    --sidebar-navigation-edge: ButtonBorder;
+    --sidebar-navigation-hover: ButtonFace;
+    --sidebar-navigation-selected: Highlight;
+    box-shadow: none;
+  }
+  .sidebar-navigation-material[data-mobile="true"],
+  [data-mobile-navigation="true"] .sidebar-navigation-material {
+    background: Canvas;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .sidebar-navigation-material::before {
+    display: none;
+  }
+  .sidebar-navigation-material::after {
+    background: Canvas;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .sidebar-navigation-material .sidebar-navigation-item[data-active="true"],
+  .sidebar-navigation-material .sidebar-navigation-item[aria-current],
+  .sidebar-navigation-material .sidebar-navigation-item[data-active="true"] *,
+  .sidebar-navigation-material .sidebar-navigation-item[aria-current] * {
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
 }
 
 @layer base {

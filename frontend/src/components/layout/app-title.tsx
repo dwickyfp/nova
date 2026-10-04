@@ -12,6 +12,7 @@ export function AppTitle() {
     <SidebarMenu>
       <SidebarMenuItem>
         <SidebarMenuButton
+          data-sidebar-brand=''
           size='lg'
           className='h-14 gap-3 px-1 transition-none hover:bg-transparent hover:text-sidebar-foreground active:bg-transparent active:text-sidebar-foreground'
           asChild
@@ -29,7 +30,7 @@ export function AppTitle() {
               <span className='truncate text-lg font-medium leading-none text-primary'>
                 nova
               </span>
-              <span className='truncate text-[11px] font-medium leading-none text-muted-foreground'>
+              <span className='truncate text-[11px] font-medium leading-none text-sidebar-navigation-muted-foreground'>
                 Data warehouse + AI
               </span>
             </span>

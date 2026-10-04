@@ -81,6 +81,48 @@ tidak boleh dipakai lagi. Nilai yang sudah ada sebelumnya tersebar di 33
 kemunculan `bg-card/*` dan 22 kemunculan `border-border/*`; penggantinya adalah
 `--surface-*`. Migrasi dilakukan per grup refactor, bukan serentak.
 
+### Nova Glass Navigation
+
+**Glass is a navigation material, not a content surface.** Material ini hanya
+untuk sidebar global dan sidebar Studio, termasuk rail ikon dan drawer mobile.
+Workspace, transcript, editor, tabel, kartu, inspector, dialog, dan popover tetap
+memakai permukaan solid yang sudah ada. Material bukan tingkat `--surface-4`.
+
+`--sidebar` tetap opak untuk layout dan konsumen lama. Sidebar global memilih
+`material="navigation"`; Studio memakai `sidebar-navigation-material` tanpa
+menggabungkan implementasi navigasi kedua produk.
+
+| Token | Arti |
+|---|---|
+| `--sidebar-navigation-tint` | Lapisan transparan di atas underlay atau backdrop drawer |
+| `--sidebar-navigation-fallback` | Latar opak saat blur tidak tersedia atau transparansi dikurangi |
+| `--sidebar-navigation-ambient` | Variasi netral statis, terbatas pada area sidebar desktop |
+| `--sidebar-navigation-edge` | Hairline dan separator navigasi |
+| `--sidebar-navigation-shadow` | Kedalaman lateral ringan pada shell |
+| `--sidebar-navigation-hover` | Plate interaksi netral |
+| `--sidebar-navigation-selected` | Plate netral lebih kuat untuk pilihan aktif |
+| `--sidebar-navigation-muted-foreground` | Teks sekunder yang lolos AA di atas plate navigasi |
+| `--sidebar-navigation-ring` | Fokus merah bata dengan kontras terhadap plate navigasi |
+
+Tema terang memakai tint mendekati putih; tema gelap memakai graphite. Warna,
+alpha, dan shadow hanya didefinisikan di `theme.css`. Foreground dan ring fokus
+mengikuti token Nova; teks sekunder memakai token navigasi yang lolos AA.
+Merah bata tetap untuk identitas dan penanda aktif, bukan
+latar seluruh sidebar.
+
+Shell memiliki satu lapisan backdrop blur statis; header, baris, history, dan
+footer tidak memiliki blur sendiri. `sidebar-navigation-item` berbagi hover dan
+selection di dalam shell saja. Menu yang dirender melalui portal tetap solid.
+Drawer mobile memfilter shell agar animasi Sheet tidak membatasi backdrop;
+lapisan internal dinonaktifkan. Blur dan tint tidak dianimasikan.
+Lebar, radius, kepadatan, dan perilaku navigasi tidak berubah.
+
+Fallback opak berlaku sebelum pemeriksaan `@supports`. Dukungan standar dan
+WebKit mengaktifkan blur; `prefers-reduced-transparency` mematikannya kembali.
+Forced colors memakai warna sistem dan pilihan aktif yang tetap terbaca.
+Kontras teks dan fokus harus diperiksa di kedua tema, termasuk fallback dan
+plate terpilih; keterbacaan tidak boleh bergantung pada blur.
+
 ### 2.4 Grafik
 
 `--chart-1` sampai `--chart-9` dan `--chart-tone-1` sampai `--chart-tone-6`

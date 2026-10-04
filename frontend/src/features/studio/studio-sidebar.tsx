@@ -47,14 +47,7 @@ const NAV: {
   { id: "capabilities", label: "Capabilities", icon: LayoutGrid },
 ];
 
-/**
- * Studio's own left rail. Standalone: it is not Nova's sidebar and shares no
- * styling with it, so Studio reads as its own product.
- *
- * The rail collapses to an icon strip from the header control, the same gesture
- * Nova's main sidebar uses, so Studio feels like one product with the console
- * while keeping its own chrome.
- */
+/** Studio owns its navigation; its material is shared with the Console rail. */
 export function StudioSidebar({
   view,
   onView,
@@ -103,7 +96,7 @@ export function StudioSidebar({
     <aside
       data-state={open ? "expanded" : "collapsed"}
       className={cn(
-        "studio-sidebar flex h-full shrink-0 flex-col overflow-hidden border-r bg-muted/20 text-foreground transition-[width] duration-200 ease-out motion-reduce:transition-none",
+        "studio-sidebar sidebar-navigation-material relative flex h-full shrink-0 flex-col overflow-hidden border-r border-sidebar-border text-foreground transition-[width] duration-200 ease-out motion-reduce:transition-none",
         open ? "w-64" : "w-14",
       )}
     >
@@ -134,7 +127,7 @@ export function StudioSidebar({
             <Button
               variant="ghost"
               size="icon"
-              className="ms-auto size-7 text-muted-foreground"
+              className="sidebar-navigation-item ms-auto size-7 text-sidebar-navigation-muted-foreground"
               onClick={onToggle}
               aria-label="Collapse sidebar"
             >
@@ -192,22 +185,22 @@ export function StudioSidebar({
               "What was total revenue?" you meant. */}
           <div className="pb-3">
             <div className="flex items-center px-1 pb-1">
-              <span className="text-xs font-medium text-muted-foreground">
+              <span className="text-xs font-medium text-sidebar-navigation-muted-foreground">
                 History
               </span>
             </div>
             {threadsError ? (
-              <div role="alert" className="px-1 py-2 text-xs text-muted-foreground">
+              <div role="alert" className="px-1 py-2 text-xs text-sidebar-navigation-muted-foreground">
                 Could not load conversations.
                 {onRetryThreads ? <Button variant="link" size="sm" className="h-auto px-1 text-xs" onClick={onRetryThreads}>Retry history</Button> : null}
               </div>
             ) : null}
             {threadsLoading ? (
-              <p className="px-1 py-2 text-xs text-muted-foreground">
+              <p className="px-1 py-2 text-xs text-sidebar-navigation-muted-foreground">
                 Loading conversations
               </p>
             ) : threads.length === 0 && !threadsError && !hasMoreThreads ? (
-              <p className="px-1 py-2 text-xs text-muted-foreground">
+              <p className="px-1 py-2 text-xs text-sidebar-navigation-muted-foreground">
                 No conversations yet. Ask something and it will appear here.
               </p>
             ) : (
@@ -277,13 +270,12 @@ function SidebarNavButton({
     <button
       type="button"
       onClick={onClick}
+      aria-label={open ? undefined : label}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center rounded-sm text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        "sidebar-navigation-item flex items-center rounded-sm text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
         open ? "w-full gap-2 px-3 py-2" : "size-9 justify-center",
-        active
-          ? "bg-accent text-accent-foreground"
-          : "text-foreground hover:bg-accent/50",
+        "text-sidebar-foreground",
       )}
     >
       <Icon aria-hidden="true" className="size-4 shrink-0" />
@@ -374,9 +366,9 @@ function ThreadRow({
 
   return (
     <li
+      data-active={active}
       className={cn(
-        "group/thread flex min-w-0 items-center rounded-sm transition-colors hover:bg-accent/50 has-[[data-state=open]]:bg-accent/50",
-        active ? "bg-accent text-accent-foreground" : "text-foreground",
+        "sidebar-navigation-item group/thread flex min-w-0 items-center rounded-sm text-sidebar-foreground transition-colors",
       )}
     >
       <Tooltip
@@ -405,7 +397,7 @@ function ThreadRow({
             <span className="w-full truncate leading-tight">{label}</span>
             {timestamp ? (
               <span
-                className="text-[11px] leading-none text-muted-foreground"
+                className="text-[11px] leading-none text-sidebar-navigation-muted-foreground"
               >
                 {timestamp}
               </span>
@@ -436,7 +428,7 @@ function ThreadRow({
               variant="ghost"
               size="icon"
               className={cn(
-                "me-1 size-7 shrink-0 text-muted-foreground hover:bg-background hover:text-foreground data-[state=open]:bg-background data-[state=open]:opacity-100",
+                "sidebar-navigation-item me-1 size-7 shrink-0 text-sidebar-navigation-muted-foreground data-[state=open]:opacity-100",
                 "opacity-100 [@media(hover:hover)]:opacity-0",
                 "[@media(hover:hover)]:group-hover/thread:opacity-100",
                 "[@media(hover:hover)]:group-focus-within/thread:opacity-100",
