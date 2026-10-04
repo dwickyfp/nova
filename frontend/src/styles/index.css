@@ -52,6 +52,12 @@
   background-attachment: fixed;
 }
 
+/* Sidebar and inset frame are one continuous plane; the workspace panel's own
+   border is the only edge between navigation and content. */
+[data-material="navigation"][data-variant="inset"] .sidebar-navigation-material::after {
+  box-shadow: none;
+}
+
 /* The workspace pane is the same backdrop under a thicker tint. It is a
    static composite over an opaque --background, never a filtered layer, so
    data surfaces inside it keep their measured contrast. */

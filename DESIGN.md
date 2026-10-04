@@ -107,7 +107,7 @@ memakai `backdrop-filter`; material bukan tingkat `--surface-4`.
 | `--sidebar-navigation-tint-opacity` | Alpha tint chrome; 62% terang, 46% gelap |
 | `--sidebar-navigation-fallback` | Latar opak saat blur tidak tersedia atau transparansi dikurangi |
 | `--sidebar-navigation-edge` | Hairline transparan; juga `--inset-border` di tema gelap |
-| `--sidebar-navigation-shadow` | Hairline pada sisi yang berbatasan dengan workspace |
+| `--sidebar-navigation-shadow` | Hairline pada sisi yang berbatasan dengan workspace; tidak dipakai pada Console inset, tempat sidebar menyatu dengan frame |
 | `--sidebar-navigation-hover` | Plate interaksi transparan |
 | `--sidebar-navigation-selected` | Plate transparan lebih kuat untuk pilihan aktif |
 | `--sidebar-navigation-muted-foreground` | Teks sekunder yang lolos AA di atas plate navigasi |

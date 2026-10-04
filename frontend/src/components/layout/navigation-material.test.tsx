@@ -166,6 +166,7 @@ function expectNavigationFrame() {
   }
   expect(style.backdropFilter).toBe("none");
   expect(style.filter).toBe("none");
+  expect(getComputedStyle(materialShell(), "::after").boxShadow).toBe("none");
   const inset = document.querySelector('[data-slot="sidebar-inset"]')!;
   const pane = getComputedStyle(inset);
   expect(pane.backgroundImage).toContain(ambient.backgroundImage);
