@@ -210,10 +210,15 @@ describe("Studio navigation material integration", () => {
     });
   }
 
-  it.each([320, 600])(
-    "keeps the mobile drawer readable and closes on history, Escape, and scrim at %ipx",
-    async (width) => {
+  it.each(
+    ["light", "dark"].flatMap((theme) =>
+      [320, 600].map((width) => ({ theme, width })),
+    ),
+  )(
+    "keeps the mobile drawer readable and closes on history, Escape, and scrim in $theme at $width px",
+    async ({ theme, width }) => {
       await page.viewport(width, 800);
+      setCookie("vite-ui-theme", theme);
       const { screen, router } = await renderStudio();
       await screen
         .getByRole("button", { name: "Expand sidebar", exact: true })
@@ -228,7 +233,8 @@ describe("Studio navigation material integration", () => {
       expect(getComputedStyle(shell.parentElement!).backgroundColor).toBe(
         "rgba(0, 0, 0, 0)",
       );
-      expect(getComputedStyle(shell, "::before").display).toBe("none");
+      expect(getComputedStyle(shell, "::before").display).not.toBe("none");
+      expect(getComputedStyle(shell, "::before").backdropFilter).toBe("none");
       await expect
         .element(
           screen.getByText("Revenue by category over the last twelve months", {
@@ -237,7 +243,7 @@ describe("Studio navigation material integration", () => {
         )
         .toBeVisible();
       await page.screenshot({
-        path: `../../../coverage/navigation/studio-mobile-${width}.png`,
+        path: `../../../coverage/navigation/studio-mobile-${theme}-${width}.png`,
       });
       await screen
         .getByRole("button", { name: /^Revenue by category/ })

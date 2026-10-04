@@ -82,11 +82,12 @@
   --code-attr: #c9662e;
 
   /* Navigation chrome only; --sidebar remains an opaque layout surface. */
-  --sidebar-navigation-tint: rgb(248 250 252 / 88%);
+  --sidebar-navigation-tint-opacity: 64%;
+  --sidebar-navigation-tint: rgb(248 250 252 / var(--sidebar-navigation-tint-opacity));
   --sidebar-navigation-fallback: #f4f6f8;
-  --sidebar-navigation-ambient: linear-gradient(160deg, #e9edf2, #f1eeeb);
-  --sidebar-navigation-edge: #d8dee6;
-  --sidebar-navigation-shadow: inset -1px 0 0 var(--sidebar-navigation-edge), 2px 0 8px rgb(15 23 42 / 4%);
+  --sidebar-navigation-ambient: linear-gradient(145deg, #c3cfd2 0%, #e4e8e8 38%, #cfc8bc 72%, #e6e9eb 100%);
+  --sidebar-navigation-edge: rgb(90 105 116 / 22%);
+  --sidebar-navigation-shadow: inset 1px 1px 0 rgb(255 255 255 / 80%), inset -1px -1px 0 var(--sidebar-navigation-edge), 3px 0 16px rgb(15 23 42 / 7%);
   --sidebar-navigation-hover: #e9edf2;
   --sidebar-navigation-selected: #dce2e9;
   --sidebar-navigation-muted-foreground: #566172;
@@ -103,15 +104,16 @@
 }
 
 .dark {
-  --sidebar-navigation-tint: rgb(17 22 29 / 90%);
+  --sidebar-navigation-tint-opacity: 48%;
+  --sidebar-navigation-tint: rgb(17 22 29 / var(--sidebar-navigation-tint-opacity));
   --sidebar-navigation-fallback: #141a22;
-  --sidebar-navigation-ambient: linear-gradient(160deg, #26313e, #302925);
-  --sidebar-navigation-edge: #303a47;
-  --sidebar-navigation-shadow: inset -1px 0 0 var(--sidebar-navigation-edge), 2px 0 8px rgb(0 0 0 / 12%);
-  --sidebar-navigation-hover: #222b36;
-  --sidebar-navigation-selected: #303c4b;
-  --sidebar-navigation-muted-foreground: #a9b4c4;
-  --sidebar-navigation-ring: var(--ring);
+  --sidebar-navigation-ambient: linear-gradient(145deg, #596666 0%, #242a2c 38%, #45413a 72%, #282e32 100%);
+  --sidebar-navigation-edge: rgb(224 233 239 / 18%);
+  --sidebar-navigation-shadow: inset 1px 1px 0 rgb(240 248 255 / 15%), inset -1px -1px 0 rgb(224 233 239 / 8%), 3px 0 16px rgb(0 0 0 / 20%);
+  --sidebar-navigation-hover: #394144;
+  --sidebar-navigation-selected: #465052;
+  --sidebar-navigation-muted-foreground: #c0c9d2;
+  --sidebar-navigation-ring: var(--accent-foreground);
 
   --background: #0b0f14;
   --foreground: #f7f8fa;

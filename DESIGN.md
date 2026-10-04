@@ -95,10 +95,11 @@ menggabungkan implementasi navigasi kedua produk.
 | Token | Arti |
 |---|---|
 | `--sidebar-navigation-tint` | Lapisan transparan di atas underlay atau backdrop drawer |
+| `--sidebar-navigation-tint-opacity` | Alpha tint, diatur per tema |
 | `--sidebar-navigation-fallback` | Latar opak saat blur tidak tersedia atau transparansi dikurangi |
-| `--sidebar-navigation-ambient` | Variasi netral statis, terbatas pada area sidebar desktop |
+| `--sidebar-navigation-ambient` | Variasi netral statis, terbatas pada area sidebar |
 | `--sidebar-navigation-edge` | Hairline dan separator navigasi |
-| `--sidebar-navigation-shadow` | Kedalaman lateral ringan pada shell |
+| `--sidebar-navigation-shadow` | Pantulan tipis pada tepi dan kedalaman lateral shell |
 | `--sidebar-navigation-hover` | Plate interaksi netral |
 | `--sidebar-navigation-selected` | Plate netral lebih kuat untuk pilihan aktif |
 | `--sidebar-navigation-muted-foreground` | Teks sekunder yang lolos AA di atas plate navigasi |
@@ -107,6 +108,9 @@ menggabungkan implementasi navigasi kedua produk.
 Tema terang memakai tint mendekati putih; tema gelap memakai graphite. Warna,
 alpha, dan shadow hanya didefinisikan di `theme.css`. Foreground dan ring fokus
 mengikuti token Nova; teks sekunder memakai token navigasi yang lolos AA.
+Tint terang 64% dan gelap 48% membiarkan variasi netral underlay terbaca sebagai
+kaca buram. Underlay menyediakan kedalaman saat backdrop aplikasi sendiri solid;
+pantulan tipis berada di atas tint agar tidak tertutup lapisan dekoratif.
 Merah bata tetap untuk identitas dan penanda aktif, bukan
 latar seluruh sidebar.
 
@@ -114,14 +118,17 @@ Shell memiliki satu lapisan backdrop blur statis; header, baris, history, dan
 footer tidak memiliki blur sendiri. `sidebar-navigation-item` berbagi hover dan
 selection di dalam shell saja. Menu yang dirender melalui portal tetap solid.
 Drawer mobile memfilter shell agar animasi Sheet tidak membatasi backdrop;
-lapisan internal dinonaktifkan. Blur dan tint tidak dianimasikan.
+lapisan tint internal dinonaktifkan, sementara underlay netral tetap statis dan
+tidak memiliki filter. Underlay drawer memakai campuran tint yang sama pada
+opacity 90% untuk menjaga kontras saat konten di belakang berubah.
+Blur dan tint tidak dianimasikan.
 Lebar, radius, kepadatan, dan perilaku navigasi tidak berubah.
 
 Fallback opak berlaku sebelum pemeriksaan `@supports`. Dukungan standar dan
 WebKit mengaktifkan blur; `prefers-reduced-transparency` mematikannya kembali.
 Forced colors memakai warna sistem dan pilihan aktif yang tetap terbaca.
-Kontras teks dan fokus harus diperiksa di kedua tema, termasuk fallback dan
-plate terpilih; keterbacaan tidak boleh bergantung pada blur.
+Kontras teks dan fokus harus diperiksa di kedua tema, termasuk underlay,
+fallback, dan plate terpilih; keterbacaan tidak boleh bergantung pada blur.
 
 ### 2.4 Grafik
 

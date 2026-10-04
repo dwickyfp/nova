@@ -89,6 +89,21 @@ function contrastRatio(foreground: string, background: string) {
   return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
 }
 
+function compositeColor(foreground: string, background: string) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = background;
+  context.fillRect(0, 0, 1, 1);
+  context.fillStyle = foreground;
+  context.fillRect(0, 0, 1, 1);
+  const channels = Array.from(context.getImageData(0, 0, 1, 1).data).slice(
+    0,
+    3,
+  );
+  return `rgb(${channels.join(" ")})`;
+}
+
 function materialShell() {
   return document.querySelector<HTMLElement>(".sidebar-navigation-material")!;
 }
@@ -199,7 +214,14 @@ describe("Nova navigation material", () => {
         "--sidebar-navigation-muted-foreground",
       );
       const ring = getComputedStyle(shell).getPropertyValue("--sidebar-ring");
+      const ambientColors = getComputedStyle(
+        shell,
+        "::before",
+      ).backgroundImage.match(/rgba?\([^)]+\)/g)!;
       for (const background of [
+        ...ambientColors.map((color) =>
+          compositeColor(tint.backgroundColor, color),
+        ),
         selectedBackground,
         getComputedStyle(shell).getPropertyValue("--sidebar-navigation-hover"),
         getComputedStyle(shell).getPropertyValue(
@@ -301,10 +323,15 @@ describe("Nova navigation material", () => {
     expectSolidContent();
   });
 
-  it.each([320, 600])(
-    "opens a glass mobile Sheet and closes on navigation at %ipx",
-    async (width) => {
+  it.each(
+    ["light", "dark"].flatMap((theme) =>
+      [320, 600].map((width) => ({ theme, width })),
+    ),
+  )(
+    "opens a glass mobile Sheet and closes on navigation in $theme at $width px",
+    async ({ theme, width }) => {
       await page.viewport(width, 800);
+      setCookie("vite-ui-theme", theme);
       const router = consoleRouter();
       const screen = await render(<RouterProvider router={router} />);
       await screen
@@ -314,14 +341,15 @@ describe("Nova navigation material", () => {
       await expect.element(screen.getByRole("dialog")).toBeVisible();
       const shell = materialShell();
       expect(shell.dataset.mobile).toBe("true");
-      expect(getComputedStyle(shell, "::before").display).toBe("none");
+      expect(getComputedStyle(shell, "::before").display).not.toBe("none");
+      expect(getComputedStyle(shell, "::before").backdropFilter).toBe("none");
       expect(getComputedStyle(shell).backdropFilter).toContain("blur(12px)");
       expect(getComputedStyle(shell, "::after").display).toBe("none");
       await expect
         .poll(() => Math.round(shell.getBoundingClientRect().left))
         .toBe(0);
       await page.screenshot({
-        path: `../../../coverage/navigation/console-mobile-${width}.png`,
+        path: `../../../coverage/navigation/console-mobile-${theme}-${width}.png`,
       });
       screen.getByRole("dialog").element().focus();
       await userEvent.keyboard("{Escape}");
@@ -386,6 +414,7 @@ describe("Nova navigation material", () => {
       expect(getComputedStyle(shell).backdropFilter).toBe("none");
       expect(getComputedStyle(shell).backgroundColor).not.toContain("rgba");
       expect(getComputedStyle(shell, "::after").display).toBe("none");
+      expect(getComputedStyle(shell, "::before").display).toBe("none");
       expectSolidContent();
     },
   );
