@@ -229,6 +229,72 @@ class ResourceDelegation:
             result.append(metadata)
         return sorted(result, key=lambda item: item.resource_id)
 
+    async def reauthorize_for_mission(
+        self, mission_id: str, root_run_id: str, user: dict
+    ) -> list[str]:
+        from app.modules.agents.harness_repository import harness_repository
+        from app.modules.agents.mission import mission_service, require_thread
+        from app.modules.intelligence.actions import action_service
+
+        current = workflow_scope(user)
+        await action_service.revalidate(user)
+        mission = await mission_service._get_owner(mission_id, current)
+        await require_thread(mission.thread_id, user)
+        binding = mission.run_bindings.get(root_run_id)
+        root = await harness_repository.get(root_run_id)
+        if (
+            binding is None
+            or root_run_id not in mission.run_ids
+            or root is None
+            or root.get("root_run_id") not in {None, root_run_id}
+            or root.get("thread_id") != mission.thread_id
+            or [
+                root.get(key)
+                for key in ("owner_name", "role_name", "session_id", "security_version")
+            ]
+            != scope_params(binding)
+        ):
+            raise ValueError("Mission attachment binding is unavailable")
+        if not self.enabled():
+            raise ValueError("Mission attachment authorization is unavailable")
+        grants = await db.execute_system(
+            "SELECT resource_id FROM NOVA_SYSTEM.CONFIG_STUDIO_RESOURCE_GRANTS "
+            f"WHERE participant_id=%s AND {SCOPE_SQL} AND thread_id=%s AND root_run_id=%s LIMIT 4",
+            [participant_id(root), *scope_params(binding), mission.thread_id, root_run_id],
+        )
+        refs = normalize_refs([row[0] for row in grants["rows"]])
+        total_bytes = 0
+        text_bytes = 0
+        for ref in refs:
+            metadata = await self._metadata(ref, root, binding)
+            if metadata is None:
+                raise ValueError("Mission attachment grant has no source")
+            source = await assistant_repository.attachment_message(
+                mission.thread_id,
+                metadata.message_id,
+                user_name=current.principal,
+                security_context=binding.model_dump(mode="json"),
+            )
+            if source is None or metadata.attachment_index >= len(source["attachments"]):
+                raise ValueError("Mission attachment source is unavailable")
+            item = source["attachments"][metadata.attachment_index]
+            if (
+                not isinstance(item, dict)
+                or not isinstance(item.get("content"), str)
+                or _digest(item) != metadata.digest
+                or any(
+                    item.get(key) != getattr(metadata, key)
+                    for key in ("name", "media_type", "size_bytes")
+                )
+            ):
+                raise ValueError("Mission attachment source changed after delegation")
+            total_bytes += item["size_bytes"]
+            if not item["media_type"].startswith("image/"):
+                text_bytes += len(item["content"].encode())
+        if total_bytes > MAX_TOTAL_BYTES or text_bytes > MAX_TEXT_TOTAL_BYTES:
+            raise ValueError("Mission attachments exceed the input budget")
+        return refs
+
     async def _grant(
         self, metadata: ResourceMetadata, grantor: dict, recipient: dict, scope: Scope
     ) -> None:

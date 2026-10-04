@@ -2424,6 +2424,7 @@ async def send_agent_message(
                 user_message_id=user_message["message_id"],
                 work_intent=body.work_intent,
                 new_mission=body.new_mission,
+                continue_mission_id=getattr(body, "continue_mission_id", None),
             )
             await assert_owned()
         from app.modules.agents.mission import mission_service
@@ -2440,6 +2441,7 @@ async def send_agent_message(
             work_intent=WorkIntent(body.work_intent) if body.work_intent else None,
             explicit=body.work_intent is not None,
             new_mission=body.new_mission,
+            continue_mission_id=getattr(body, "continue_mission_id", None),
         )
         if mission:
             await mission_service.attach_run(mission.mission_id, root["run_id"], user)
@@ -2598,6 +2600,7 @@ async def send_agent_message(
     )
 
     async def business_turn_hook(plan, current_context):
+        from app.modules.agents.business_results import planner_target
         from app.modules.agents.mission import mission_service
         from app.modules.agents.mission_schema import WorkIntent
 
@@ -2606,9 +2609,21 @@ async def send_agent_message(
             work_intent=WorkIntent(body.work_intent) if body.work_intent else plan.work_intent,
             public_work_steps=plan.public_work_steps, explicit=body.work_intent is not None,
             new_mission=body.new_mission,
+            continue_mission_id=getattr(body, "continue_mission_id", None),
+            semantic_target=planner_target(plan, current_context),
+            screen_follow_up=bool(plan.intent_frame and (
+                plan.intent_frame.refers_to_screen or plan.intent_frame.refers_to_previous_answer
+            )),
+            continuation_sink=lambda choice: setattr(
+                current_context, "mission_continuation", choice.model_dump(mode="json")
+            ),
         )
         if mission:
             mission = await mission_service.attach_run(mission.mission_id, run_id, user)
+            if current_context.release_manifest:
+                mission = await mission_service.record_release(
+                    mission.mission_id, run_id, current_context.release_manifest, user,
+                )
             return mission.model_dump(mode="json")
         return None
 
@@ -2621,6 +2636,11 @@ async def send_agent_message(
 
     context.business_cancelled = business_cancelled
     context.business_turn_hook = business_turn_hook
+    from app.modules.agents.business_results import execution_clock, governed_result, pin_time
+
+    context.business_result_hook = governed_result
+    context.business_time_hook = pin_time
+    context.business_clock_hook = execution_clock
     context.requested_work_intent = body.work_intent
     context.start_new_mission = body.new_mission
     # The agent's own budget replaces the loop default; the loop still caps it.
@@ -2779,6 +2799,7 @@ async def send_agent_message(
                 if len(batch) >= 32 or frame.startswith(
                     (
                         "event: tool_call\n",
+                        "event: execution_time_context\n",
                         "event: tool_status\n",
                         "event: role_changed\n",
                         "event: error\n",

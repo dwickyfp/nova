@@ -12,6 +12,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.studio_capabilities import StudioRuntimeCapabilities
 from app.modules.assistant.schemas import utc_datetime
 
 StudioTheme = Literal["light", "dark", "system"]
@@ -64,6 +65,7 @@ class StudioCapabilities(BaseModel):
     skills: list[dict] = Field(default_factory=list)
     tools: list[dict] = Field(default_factory=list)
     connectors: list[dict] = Field(default_factory=list)
+    runtime: StudioRuntimeCapabilities | None = None
 
 
 # ── Query-backed artifacts ───────────────────────────────────

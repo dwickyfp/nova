@@ -136,6 +136,7 @@ async def get_studio_capabilities(user: dict = Depends(get_current_user)):
     await _seed_builtin_tools(owner)
     tools = await agent_repository.list_tools(owner_name=owner)
     return StudioCapabilities(
+        runtime=studio_service.runtime_capabilities(),
         agents=[
             {"name": a["name"], "description": a["description"], "agent_id": a["agent_id"]}
             for a in agents

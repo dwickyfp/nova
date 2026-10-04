@@ -304,6 +304,7 @@ class HarnessRepository:
         user_message_id: str | None = None,
         work_intent: str | None = None,
         new_mission: bool = False,
+        continue_mission_id: str | None = None,
     ) -> dict[str, Any]:
         from dataclasses import asdict
 
@@ -338,6 +339,7 @@ class HarnessRepository:
                 "user_message_id": user_message_id,
                 "work_intent": work_intent,
                 "new_mission": new_mission,
+                "continue_mission_id": continue_mission_id,
             },
             checkpoint={"phase": "plan"},
         )

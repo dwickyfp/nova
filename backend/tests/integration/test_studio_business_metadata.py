@@ -1,12 +1,18 @@
 """Real-engine persistence, scoped replay, and attachment-reference acceptance."""
 
+import json
+import secrets
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
 from app.core.config import settings
 from app.core.database import db
+from app.core.redis import session_store
+from app.main import create_app
 from app.modules.agents.harness_repository import harness_repository
 from app.modules.agents.mission import MissionService
 from app.modules.agents.mission_schema import DeliverableCreate, MissionCreate, StageKind
@@ -19,6 +25,8 @@ from app.modules.assistant.analysis_workspace import (
 )
 from app.modules.assistant.repository import assistant_repository
 from app.modules.assistant.security import observation_context, session_security
+from app.modules.intelligence.contracts import Scope
+from tests.benchmark.business_intelligence.client import StudioClient
 from tests.integration.test_intelligence_metadata import intelligence_db as intelligence_db
 
 pytestmark = pytest.mark.engine
@@ -102,7 +110,11 @@ async def test_real_mission_projection_reconnect_and_deliverable(studio_metadata
         await service.get(mission.mission_id, {**user, "security_context_version": 2})
     assert error.value.status_code == 404
     again = await service.create(
-        thread_id, MissionCreate(objective="Follow up", operation_id="followup"), user
+        thread_id,
+        MissionCreate(
+            objective="Follow up", operation_id="followup", continue_mission_id=mission.mission_id
+        ),
+        user,
     )
     assert again.mission_id == mission.mission_id
 
@@ -160,6 +172,180 @@ async def test_real_resource_grants_are_durable_selective_and_scope_bound(studio
         await resources.load(child, {**user, "session_id": "another"})
     await ResourceDelegation().ensure_schema()
     assert await ResourceDelegation().load(child, user) == (loaded, refs)
+
+
+async def test_real_smart_resume_reauthorizes_original_attachment_in_new_login(studio_metadata):
+    fixture_user, thread_id = studio_metadata
+    principal = fixture_user["username"]
+    role = "RESUME_" + uuid4().hex[:16]
+    password = secrets.token_urlsafe(24)
+    await db.execute_system(f"CREATE ROLE `{role}`")
+    await db.execute_system(f"CREATE USER '{principal}' IDENTIFIED BY %s", [password])
+    await db.execute_system(f"GRANT `{role}` TO USER '{principal}'")
+    await db.execute_system(f"SET DEFAULT ROLE `{role}` TO '{principal}'")
+    service, resources = MissionService(), ResourceDelegation()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_app()), base_url="http://nova.test", timeout=120
+    ) as http:
+        client = StudioClient(http)
+        tokens = []
+        try:
+            identity = await client.login(principal, password, role)
+            tokens.append(http.headers["Authorization"])
+            user = {**await session_store.get(identity["session_id"]),
+                    "session_id": identity["session_id"]}
+            original_scope = Scope.from_user(user)
+            content = "Authorized original upload."
+            message = await assistant_repository.append_message(
+                thread_id, user_name=principal, role="user", content="Review the upload",
+                security_context=observation_context(session_security(user)),
+                attachments=[{"name": "brief.txt", "media_type": "text/plain",
+                              "content": content, "size_bytes": len(content.encode())}],
+            )
+            root = await harness_repository.create_root(
+                owner_name=principal, thread_id=thread_id, role_name=role,
+                session_id=user["session_id"],
+                security_version=original_scope.security_context_version,
+                objective="Review the upload", user_message_id=message["message_id"],
+            )
+            metadata = await resources.register_root(root, user)
+            mission = await service.create(thread_id, MissionCreate(
+                objective="Review the original upload", operation_id=root["run_id"],
+            ), user)
+            await service.attach_run(mission.mission_id, root["run_id"], user)
+            assert await harness_repository.claim(root["run_id"], "resume-acceptance")
+            claimed = await harness_repository.get(root["run_id"])
+            assert await harness_repository.transition(
+                root["run_id"], from_status="running", to_status="completed",
+                lease_owner=claimed["lease_owner"], generation=claimed["generation"],
+            )
+            prior = await service.get(mission.mission_id, user)
+            next_identity = await client.login(principal, password, role)
+            tokens.append(http.headers["Authorization"])
+            next_user = {**await session_store.get(next_identity["session_id"]),
+                         "session_id": next_identity["session_id"]}
+            summaries = await client.request(
+                "GET", f"agents/studio/threads/{thread_id}/missions/resumable"
+            )
+            assert [row["mission_id"] for row in summaries["missions"]] == [mission.mission_id]
+            request = {"expected_revision": prior.revision, "operation_id": "new-login-resume"}
+            path = f"agents/studio/missions/{mission.mission_id}/resume"
+            resumed = await client.request("POST", path, request)
+            assert resumed["scope"] == Scope.from_user(next_user).model_dump(mode="json")
+            assert resumed["run_bindings"][root["run_id"]] == original_scope.model_dump(mode="json")
+            assert resumed["current_binding"]["generation"] == 2
+            assert (await client.request("POST", path, request))["revision"] == resumed["revision"]
+            assert await resources.reauthorize_for_mission(
+                mission.mission_id, root["run_id"], next_user
+            ) == [metadata[0].resource_id]
+            historical = await harness_repository.get(root["run_id"])
+            assert historical["session_id"] == original_scope.session_id
+            with pytest.raises(ValueError, match="security context"):
+                await resources.load(historical, next_user)
+            old_read = await http.get(
+                f"/api/v1/agents/studio/missions/{mission.mission_id}",
+                headers={"Authorization": tokens[0]},
+            )
+            assert old_read.status_code == 404
+            old_replay = await http.post(
+                f"/api/v1/agents/studio/threads/{thread_id}/missions",
+                json={"objective": mission.objective, "operation_id": root["run_id"]},
+                headers={"Authorization": tokens[0]},
+            )
+            assert old_replay.status_code == 409
+            unchanged = await service.get(mission.mission_id, next_user, project=False)
+            assert unchanged.current_binding.generation == 2
+            assert unchanged.revision == resumed["revision"]
+            await db.execute_system(
+                "DELETE FROM NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES "
+                "WHERE message_id=%s AND thread_id=%s AND user_name=%s",
+                [message["message_id"], thread_id, principal],
+            )
+            refused = await http.post(f"/api/v1/{path}", json=request)
+            assert refused.status_code == 403
+            after = await service.get(mission.mission_id, next_user, project=False)
+            assert after.current_binding.generation == 2 and after.revision == resumed["revision"]
+        finally:
+            for token in tokens:
+                http.headers["Authorization"] = token
+                await client.request("POST", "auth/logout")
+            await db.execute_system(f"DROP USER '{principal}'")
+            await db.execute_system(f"DROP ROLE `{role}`")
+
+
+async def test_real_mission_resource_reauthorization_across_sessions_and_source_changes(
+    studio_metadata, monkeypatch
+):
+    from app.modules.intelligence.actions import action_service
+
+    user, thread_id = studio_metadata
+    text = "Uploaded planning context for the governed Mission."
+    attachment = {
+        "name": "planning.txt",
+        "media_type": "text/plain",
+        "content": text,
+        "size_bytes": len(text.encode()),
+    }
+    message = await assistant_repository.append_message(
+        thread_id,
+        user_name=user["username"],
+        role="user",
+        content="Review the upload",
+        attachments=[attachment],
+        security_context=observation_context(session_security(user)),
+    )
+    root = await harness_repository.create_root(
+        owner_name=user["username"],
+        thread_id=thread_id,
+        role_name=user["active_role"],
+        session_id=user["session_id"],
+        security_version=user["security_context_version"],
+        objective="Review the upload",
+        user_message_id=message["message_id"],
+    )
+    metadata = await ResourceDelegation().register_root(root, user)
+    service = MissionService()
+    mission = await service.create(
+        thread_id,
+        MissionCreate(objective=root["objective"], operation_id=root["run_id"]),
+        user,
+    )
+    mission = await service.attach_run(mission.mission_id, root["run_id"], user)
+    next_user = {
+        **user,
+        "session_id": "new-fixture-session",
+        "security_context_version": 2,
+    }
+    live_authorization = AsyncMock()
+    monkeypatch.setattr(action_service, "revalidate", live_authorization)
+    assert await ResourceDelegation().reauthorize_for_mission(
+        mission.mission_id, root["run_id"], next_user
+    ) == [metadata[0].resource_id]
+    live_authorization.assert_awaited_once_with(next_user)
+    with pytest.raises(ValueError, match="security context"):
+        await ResourceDelegation().load(root, next_user)
+    grants = await db.execute_system(
+        "SELECT session_id,security_version FROM NOVA_SYSTEM.CONFIG_STUDIO_RESOURCE_GRANTS "
+        "WHERE resource_id=%s AND owner_name=%s AND role_name=%s",
+        [metadata[0].resource_id, user["username"], user["active_role"]],
+    )
+    assert grants["rows"] == [[user["session_id"], user["security_context_version"]]]
+    unchanged = await service.get(mission.mission_id, user, project=False)
+    assert unchanged.run_bindings[root["run_id"]] == mission.scope
+    await db.execute_system(
+        "UPDATE NOVA_SYSTEM.CONFIG_ASSISTANT_MESSAGES SET attachments=%s "
+        "WHERE message_id=%s AND thread_id=%s AND user_name=%s",
+        [
+            json.dumps([{**attachment, "content": "changed uploaded context"}]),
+            message["message_id"],
+            thread_id,
+            user["username"],
+        ],
+    )
+    with pytest.raises(ValueError, match="changed after delegation"):
+        await ResourceDelegation().reauthorize_for_mission(
+            mission.mission_id, root["run_id"], next_user
+        )
 
 
 async def test_real_mission_attachment_fake_workspace_and_deliverable_journey(
@@ -242,7 +428,9 @@ async def test_real_mission_attachment_fake_workspace_and_deliverable_journey(
     assert result.status == "completed" and result.rows == [{"regions": 2}]
     current = await harness_repository.get(root["run_id"])
     assert (current["status"], current["lease_owner"], current["generation"]) == (
-        "running", claimed["lease_owner"], claimed["generation"]
+        "running",
+        claimed["lease_owner"],
+        claimed["generation"],
     )
     await harness_repository.event(
         root["run_id"],
@@ -254,13 +442,19 @@ async def test_real_mission_attachment_fake_workspace_and_deliverable_journey(
         },
     )
     assert not await harness_repository.transition(
-        root["run_id"], from_status="running", to_status="completed",
-        lease_owner=claimed["lease_owner"], generation=claimed["generation"] - 1,
+        root["run_id"],
+        from_status="running",
+        to_status="completed",
+        lease_owner=claimed["lease_owner"],
+        generation=claimed["generation"] - 1,
     )
     assert (await harness_repository.get(root["run_id"]))["status"] == "running"
     assert await harness_repository.transition(
-        root["run_id"], from_status="running", to_status="completed",
-        lease_owner=claimed["lease_owner"], generation=claimed["generation"],
+        root["run_id"],
+        from_status="running",
+        to_status="completed",
+        lease_owner=claimed["lease_owner"],
+        generation=claimed["generation"],
     )
     assert (await harness_repository.get(root["run_id"]))["status"] == "completed"
     projected = await MissionService().get(mission.mission_id, user)

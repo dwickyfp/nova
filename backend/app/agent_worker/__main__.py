@@ -1,4 +1,4 @@
-"""Run the durable Studio Auto worker: ``uv run python -m app.agent_worker``."""
+"""Run the durable Studio Smart worker: ``uv run python -m app.agent_worker``."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
+from app.core.studio_capabilities import log_studio_capabilities
 from app.modules.agents.capabilities import capability_repository
 from app.modules.agents.harness_repository import harness_repository
 from app.modules.agents.harness_worker import agent_harness_worker
@@ -20,6 +21,7 @@ from app.observability.metrics import start_metrics_server
 
 async def _run() -> None:
     require_configured_secrets()
+    log_studio_capabilities(logging.getLogger(__name__), "smart-worker")
     await db.init_system_pool()
     await session_store.init()
     stop = asyncio.Event()

@@ -12,6 +12,16 @@ from app.modules.agents.harness_repository import RUN_KEYS, HarnessRepository
 from app.modules.agents.harness_worker import _table_evidence
 
 
+def test_continuation_projection_preserves_public_reason_and_rejects_private_fields():
+    continuation = {"mode": "none", "reason": "lightweight_answer", "mission_id": None}
+    assert activity_from_frame(_frame("mission_continuation", {
+        "continuation": continuation,
+    })) == {"event_type": "mission_continuation", "continuation": continuation}
+    assert activity_from_frame(_frame("mission_continuation", {
+        "continuation": {**continuation, "private_reasoning": "hidden"},
+    })) is None
+
+
 def _frame(kind: str, payload: dict) -> str:
     return f"event: {kind}\ndata: {json.dumps(payload)}\n\n"
 

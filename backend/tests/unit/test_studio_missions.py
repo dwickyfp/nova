@@ -18,6 +18,7 @@ from app.modules.agents.mission_schema import (
     MISSION_DDLS,
     DeliverableCreate,
     MissionCreate,
+    MissionResume,
     ObjectRef,
     StageKind,
     WorkIntent,
@@ -39,22 +40,33 @@ class MissionIO:
         self.deliverables = {}
         self.runs = {}
         self.events = {}
+        self.resources = []
         self.statements = []
 
     @staticmethod
     def scoped(mission, params):
+        if len(params) == 2:
+            return [mission.scope.principal, mission.scope.active_role] == params
         return module.scope_params(mission.scope) == params
 
     async def execute(self, sql, params=None):
         self.statements.append((sql, params))
         if sql.lstrip().startswith("CREATE TABLE"):
             return {"affected": 0}
+        if "CONFIG_STUDIO_RESOURCES" in sql:
+            return {"rows": [[resource] for resource in self.resources]}
         if "CONFIG_STUDIO_MISSIONS" in sql:
             if sql.startswith("INSERT"):
                 item = module.Mission.model_validate_json(params[7])
                 self.missions[item.mission_id] = item
                 return {"affected": 1}
             if sql.startswith("UPDATE"):
+                if "session_id=%s,security_version=%s" in sql:
+                    item = self.missions[params[5]]
+                    if item.revision != params[6] or not self.scoped(item, params[7:]):
+                        return {"affected": 0}
+                    self.missions[params[5]] = module.Mission.model_validate_json(params[1])
+                    return {"affected": 1}
                 item = self.missions[params[3]]
                 if item.revision != params[4] or not self.scoped(item, params[5:]):
                     return {"affected": 0}
@@ -74,9 +86,17 @@ class MissionIO:
                 return {"affected": 1}
             if "deliverable_id=%s" in sql:
                 row = self.deliverables.get(params[0])
-                return {"rows": [[row[0], row[1]]] if row and row[2] == params[1:] else []}
+                return {
+                    "rows": [[row[0], row[1]]]
+                    if row and row[2][: len(params[1:])] == params[1:]
+                    else []
+                }
             return {
-                "rows": [[row[0]] for row in self.deliverables.values() if row[2] == params[1:]]
+                "rows": [
+                    [row[0]]
+                    for row in self.deliverables.values()
+                    if row[2][: len(params[1:])] == params[1:]
+                ]
             }
         if "CONFIG_AGENT_RUNS" in sql:
             row = self.runs.get(params[0])
@@ -150,16 +170,21 @@ def test_strict_planner_schema_declares_every_property_required():
     assert set(schema["required"]) == set(schema["properties"])
 
 
-async def test_mission_reuses_thread_until_explicit_new_and_detects_collision(mission_io):
+async def test_mission_creation_separates_objectives_and_explicitly_continues(mission_io):
     _, service = mission_io
     mission = await create(service)
     same = await service.create(
         "thread",
-        MissionCreate(objective="Follow up", operation_id="request-2", work_intent=WorkIntent.PLAN),
+        MissionCreate(
+            objective="Follow up",
+            operation_id="request-2",
+            work_intent=WorkIntent.PLAN,
+            continue_mission_id=mission.mission_id,
+        ),
         USER,
     )
     assert same.mission_id == mission.mission_id
-    assert (await create(service)).revision == 1
+    assert (await create(service)).revision == same.revision
     with pytest.raises(HTTPException) as error:
         await create(service, public_work_steps=[StageKind.SCENARIOS])
     assert error.value.status_code == 409
@@ -180,6 +205,72 @@ async def test_simple_answer_has_no_mission(mission_io):
         is None
     )
     assert not io.missions
+
+
+async def test_turn_continuation_sink_reports_selection_and_replays(mission_io):
+    io, service = mission_io
+    decisions = []
+    assert (
+        await service.for_turn(
+            "thread",
+            USER,
+            operation_id="simple",
+            objective="Hello",
+            work_intent=WorkIntent.ANSWER,
+            continuation_sink=decisions.append,
+        )
+        is None
+    )
+    assert decisions[-1] == module.ContinuationDecision(mode="none", reason="lightweight_answer")
+    assert not io.missions
+    mission = await service.for_turn(
+        "thread",
+        USER,
+        operation_id="root",
+        objective="Inspect revenue",
+        explicit=True,
+        new_mission=True,
+        continuation_sink=decisions.append,
+    )
+    assert (decisions[-1].mode, decisions[-1].reason) == ("new", "explicit_new")
+    continued = await service.for_turn(
+        "thread",
+        USER,
+        operation_id="follow-up",
+        objective="Inspect a region",
+        continue_mission_id=mission.mission_id,
+        continuation_sink=decisions.append,
+    )
+    assert continued.mission_id == mission.mission_id
+    assert decisions[-1] == module.ContinuationDecision(
+        mode="continue", reason="explicit_continue", mission_id=mission.mission_id
+    )
+    for operation, objective in (("root", "Inspect revenue"), ("follow-up", "Inspect a region")):
+        replay = await service.for_turn(
+            "thread",
+            USER,
+            operation_id=operation,
+            objective=objective,
+            new_mission=True,
+            continue_mission_id=mission.mission_id,
+            continuation_sink=decisions.append,
+        )
+        assert replay.mission_id == mission.mission_id
+        assert decisions[-1] == module.ContinuationDecision(
+            mode="continue", reason="replay", mission_id=mission.mission_id
+        )
+    assert len(decisions) == 5
+    with pytest.raises(HTTPException):
+        await service.for_turn(
+            "thread",
+            USER,
+            operation_id="conflict",
+            objective="Another objective",
+            new_mission=True,
+            continue_mission_id=mission.mission_id,
+            continuation_sink=decisions.append,
+        )
+    assert len(decisions) == 5
 
 
 @pytest.mark.parametrize(
@@ -499,11 +590,21 @@ async def test_cancelled_mission_requires_explicit_new_work(mission_io):
     cancelled = await service.cancel(mission.mission_id, 1, USER)
     assert cancelled.status == "cancelled"
     with pytest.raises(HTTPException) as error:
-        await service.for_turn("thread", USER, operation_id="later", objective="Follow up")
+        await service.for_turn(
+            "thread",
+            USER,
+            operation_id="later",
+            objective="Follow up",
+            continue_mission_id=mission.mission_id,
+        )
     assert error.value.status_code == 409
     with pytest.raises(HTTPException):
         await service.create(
-            "thread", MissionCreate(objective="Follow up", operation_id="later"), USER
+            "thread",
+            MissionCreate(
+                objective="Follow up", operation_id="later", continue_mission_id=mission.mission_id
+            ),
+            USER,
         )
     fresh = await service.for_turn(
         "thread", USER, operation_id="later", objective="Follow up", new_mission=True, explicit=True
@@ -577,7 +678,9 @@ async def test_canonical_links_validate_scope_and_revision_before_projection(
     assert linked.object_refs == [ref]
     assert linked.evidence_refs == ["semantic-1"]
     assert linked.stages[0].status == "completed"
-    reader.assert_awaited_once_with(ref, mission.scope)
+    reader.assert_awaited_once()
+    assert reader.await_args.args == (ref, mission.scope, USER)
+    assert reader.await_args.kwargs["budget"].mission_records == {}
     with pytest.raises(HTTPException) as error:
         await service.link(
             mission.mission_id,
@@ -670,8 +773,11 @@ async def test_canonical_evidence_and_simulations_complete_their_public_stages(m
     project_object(
         mission,
         ObjectRef(kind="decision", id="decision", revision=2),
-        {"status": "draft", "evidence": [{"id": "query"}],
-         "options": [{"id": "observe", "method": "unit-economics-v1"}]},
+        {
+            "status": "draft",
+            "evidence": [{"id": "query"}],
+            "options": [{"id": "observe", "method": "unit-economics-v1"}],
+        },
     )
     states = {stage.kind: stage.status for stage in mission.stages}
     assert states[StageKind.EVIDENCE] == "completed"
@@ -685,7 +791,787 @@ async def test_empty_canonical_inputs_do_not_complete_evidence_or_scenarios(miss
     _, service = mission_io
     mission = await create(service, public_work_steps=[StageKind.EVIDENCE, StageKind.SCENARIOS])
     project_object(
-        mission, ObjectRef(kind="decision", id="decision", revision=1),
+        mission,
+        ObjectRef(kind="decision", id="decision", revision=1),
         {"status": "draft", "evidence": [], "options": []},
     )
     assert all(stage.status == "planned" for stage in mission.stages[:2])
+
+
+SEMANTIC = {"view_id": "sales", "version": 1, "fingerprint": "sales-v1"}
+NEW_SESSION = {**USER, "session_id": "next-login", "security_context_version": 2}
+
+
+async def test_verified_anchor_continuation_and_different_target_precedence(mission_io):
+    _, service = mission_io
+    mission = await create(service)
+    anchored = await service.record_anchor(mission.mission_id, SEMANTIC, ["revenue"], USER)
+    assert await service.record_anchor(mission.mission_id, SEMANTIC, ["revenue"], USER) == anchored
+    regional = await service.for_turn(
+        "thread",
+        USER,
+        operation_id="regional",
+        objective="Regional follow-up",
+        work_intent=WorkIntent.INVESTIGATE,
+        semantic_target={"semantic": SEMANTIC, "metrics": ["revenue"]},
+        screen_follow_up=True,
+    )
+    assert regional.mission_id == mission.mission_id
+    assert regional.continuation.reason == "semantic_anchor"
+    separate = await service.for_turn(
+        "thread",
+        USER,
+        operation_id="separate",
+        objective="Inventory in Singapore",
+        work_intent=WorkIntent.INVESTIGATE,
+        screen_follow_up=True,
+        semantic_target={"semantic": {**SEMANTIC, "view_id": "inventory"}, "metrics": ["stock"]},
+    )
+    assert separate.mission_id != mission.mission_id
+    assert separate.continuation.reason == "different_semantic_target"
+
+
+async def test_ambiguous_followup_defaults_to_new_and_answers_stay_lightweight(mission_io):
+    _, service = mission_io
+    original = await create(service)
+    unrelated = await service.for_turn(
+        "thread",
+        USER,
+        operation_id="other",
+        objective="Plan headcount",
+        work_intent=WorkIntent.PLAN,
+    )
+    assert unrelated.mission_id != original.mission_id
+    assert unrelated.continuation.reason == "unrelated_or_ambiguous"
+    assert (
+        await service.for_turn(
+            "thread",
+            USER,
+            operation_id="greeting",
+            objective="Thanks",
+            work_intent=WorkIntent.ANSWER,
+        )
+        is None
+    )
+    assert (
+        await service.for_turn(
+            "thread",
+            USER,
+            operation_id="research",
+            objective="Explain margins",
+            work_intent=WorkIntent.RESEARCH,
+        )
+        is None
+    )
+
+
+async def test_completed_mission_requires_explicit_continue_and_replay_wins(mission_io):
+    io, service = mission_io
+    mission = await create(service)
+    io.missions[mission.mission_id].status = "completed"
+    replay = await service.for_turn(
+        "thread",
+        USER,
+        operation_id=mission.operation_id,
+        objective=mission.objective,
+        new_mission=True,
+        continue_mission_id=mission.mission_id,
+    )
+    assert replay.mission_id == mission.mission_id
+    continued = await service.for_turn(
+        "thread",
+        USER,
+        operation_id="continue",
+        objective="Inspect completed work",
+        continue_mission_id=mission.mission_id,
+    )
+    assert continued.mission_id == mission.mission_id
+    assert continued.continuation.reason == "explicit_continue"
+    with pytest.raises(HTTPException) as error:
+        await service.for_turn(
+            "thread",
+            USER,
+            operation_id="conflict",
+            objective="New",
+            new_mission=True,
+            continue_mission_id=mission.mission_id,
+        )
+    assert error.value.status_code == 422
+
+
+async def test_execution_context_is_pinned_before_dispatch_and_rejects_collision(mission_io):
+    io, service = mission_io
+    mission = await create(service)
+    add_run(io, mission)
+    mission = await service.attach_run(mission.mission_id, "direct", USER)
+    context = {
+        "execution_now": "2026-10-04T11:00:00Z",
+        "timezone": "Asia/Jakarta",
+        "semantic": SEMANTIC,
+        "plan_fingerprint": "a" * 64,
+        "current_window": {"start": "2026-10-01T00:00:00Z", "end": "2026-10-04T11:00:00Z"},
+        "baseline_window": {"start": "2026-09-01T00:00:00Z", "end": "2026-09-04T11:00:00Z"},
+        "warnings": [],
+    }
+    pinned = await service.record_execution_context(
+        mission.mission_id, "direct", "tool", context, USER
+    )
+    assert pinned == await service.record_execution_context(
+        mission.mission_id, "direct", "tool", context, USER
+    )
+    assert len(io.missions[mission.mission_id].execution_contexts) == 1
+    with pytest.raises(HTTPException) as collision:
+        await service.record_execution_context(
+            mission.mission_id,
+            "direct",
+            "tool",
+            {**context, "plan_fingerprint": "b" * 64},
+            USER,
+        )
+    assert collision.value.status_code == 409
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        await service.record_execution_context(
+            mission.mission_id,
+            "direct",
+            "other",
+            {**context, "filters": {"country": "private"}},
+            USER,
+        )
+
+
+async def test_secure_resume_retains_historical_bindings_and_fences_old_session(
+    mission_io, monkeypatch
+):
+    io, service = mission_io
+    mission = await create(service, public_work_steps=[StageKind.EVIDENCE])
+    add_run(io, mission, "old", status="completed", sequence=0)
+    io.events["old"] = [(0, 'event: table\ndata: {"evidence_id":"historical-query"}\n\n')]
+    mission = await service.attach_run(mission.mission_id, "old", USER)
+    from app.modules.intelligence.actions import action_service
+
+    monkeypatch.setattr(action_service, "revalidate", AsyncMock())
+    body = MissionResume(expected_revision=mission.revision, operation_id="resume")
+    resumed = await service.resume(mission.mission_id, body, NEW_SESSION)
+    assert resumed.scope == module.workflow_scope(NEW_SESSION)
+    assert resumed.current_binding.generation == 2
+    assert resumed.run_bindings["old"] == mission.scope
+    assert resumed.historical_bindings == [mission.scope]
+    assert await service.resume(mission.mission_id, body, NEW_SESSION) == resumed
+    projected = await service.get(mission.mission_id, NEW_SESSION)
+    assert projected.evidence_refs == ["historical-query"]
+    with pytest.raises(HTTPException) as old_session:
+        await service.attach_run(mission.mission_id, "old", USER)
+    assert old_session.value.status_code == 404
+    with pytest.raises(HTTPException):
+        await service.attach_run(mission.mission_id, "old", NEW_SESSION)
+
+
+@pytest.mark.parametrize("replay", ["create", "turn", "follow_up"])
+async def test_resume_fences_old_operation_replay_without_overwriting_binding(
+    mission_io, monkeypatch, replay
+):
+    io, service = mission_io
+    mission = await create(service)
+    mission.turn_operations["follow-up"] = module.fingerprint("Regional follow up")
+    io.missions[mission.mission_id] = mission
+    monkeypatch.setattr(service, "_reauthorize_resume", AsyncMock())
+    resumed = await service.resume(
+        mission.mission_id,
+        MissionResume(expected_revision=mission.revision, operation_id="resume"),
+        NEW_SESSION,
+    )
+    before = copy.deepcopy(io.missions)
+    statements = len(io.statements)
+    with pytest.raises(HTTPException, match="execution binding changed") as refused:
+        if replay == "create":
+            await create(service)
+        else:
+            await service.for_turn(
+                "thread",
+                USER,
+                operation_id="follow-up" if replay == "follow_up" else mission.operation_id,
+                objective="Regional follow up" if replay == "follow_up" else mission.objective,
+                work_intent=WorkIntent.ANSWER,
+            )
+    assert refused.value.status_code == 409
+    assert io.missions == before
+    assert not any(sql.startswith(("INSERT", "UPDATE")) for sql, _ in io.statements[statements:])
+    assert await service.create(
+        "thread",
+        MissionCreate(objective=mission.objective, operation_id=mission.operation_id),
+        NEW_SESSION,
+    ) == resumed
+
+
+async def test_resume_blocks_active_old_execution_and_revoked_semantic_access(
+    mission_io, monkeypatch
+):
+    io, service = mission_io
+    mission = await create(service)
+    add_run(io, mission)
+    mission = await service.attach_run(mission.mission_id, "direct", USER)
+    from app.modules.intelligence.actions import action_service
+    from app.modules.intelligence.engine import intelligence_service
+
+    monkeypatch.setattr(action_service, "revalidate", AsyncMock())
+    body = MissionResume(expected_revision=mission.revision, operation_id="resume")
+    with pytest.raises(HTTPException) as active:
+        await service.resume(mission.mission_id, body, NEW_SESSION)
+    assert active.value.status_code == 409
+    assert io.missions[mission.mission_id].scope == mission.scope
+    io.runs["direct"]["status"] = "completed"
+    mission = await service.record_anchor(mission.mission_id, SEMANTIC, ["revenue"], USER)
+    monkeypatch.setattr(
+        intelligence_service,
+        "authorize_semantic",
+        AsyncMock(side_effect=HTTPException(404, "Revoked")),
+    )
+    with pytest.raises(HTTPException) as revoked:
+        await service.resume(
+            mission.mission_id,
+            body.model_copy(update={"expected_revision": mission.revision}),
+            NEW_SESSION,
+        )
+    assert revoked.value.status_code == 404
+    assert io.missions[mission.mission_id].scope == mission.scope
+    assert module.write_audit_log.await_args.kwargs["status"] == "REFUSED"
+
+
+@pytest.mark.parametrize(
+    "change", [{"username": "bob"}, {"active_role": "other", "assigned_roles": ["other"]}]
+)
+async def test_resumable_summaries_and_resume_are_owner_role_scoped(mission_io, change):
+    _, service = mission_io
+    mission = await create(service)
+    summaries = await service.resumable("thread", NEW_SESSION)
+    assert summaries[0].resume_required
+    assert "scope" not in summaries[0].model_dump()
+    assert await service.resumable("thread", {**NEW_SESSION, **change}) == []
+    with pytest.raises(HTTPException) as denied:
+        await service.resume(
+            mission.mission_id,
+            MissionResume(expected_revision=1, operation_id="resume"),
+            {**NEW_SESSION, **change},
+        )
+    assert denied.value.status_code == 404
+
+
+async def test_legacy_mission_synthesizes_owner_current_and_history_bindings(mission_io):
+    io, service = mission_io
+    mission = await create(service)
+    add_run(io, mission)
+    mission = await service.attach_run(mission.mission_id, "direct", USER)
+    raw = mission.model_dump(mode="json")
+    for field in (
+        "owner_scope",
+        "current_binding",
+        "run_bindings",
+        "object_bindings",
+        "historical_bindings",
+    ):
+        raw.pop(field, None)
+    legacy = module.Mission.model_validate(raw)
+    assert legacy.owner_scope.principal == USER["username"]
+    assert legacy.current_binding.scope == mission.scope
+    assert legacy.run_bindings == {"direct": mission.scope}
+
+
+@pytest.mark.parametrize(
+    "kind,source_kind",
+    [
+        ("investigation_report", "investigation"),
+        ("scenario_comparison", "decision"),
+        ("outcome_report", "outcome"),
+    ],
+)
+async def test_deliverables_require_pinned_factual_sources_and_are_reproducible(
+    mission_io, monkeypatch, kind, source_kind
+):
+    io, service = mission_io
+    mission = await create(service)
+    io.missions[mission.mission_id].evidence_refs = ["query"]
+    body = DeliverableCreate(expected_revision=1, kind=kind, operation_id="report")
+    with pytest.raises(HTTPException) as absent:
+        await service.deliver(mission.mission_id, body, USER)
+    assert absent.value.detail["code"] == "deliverable_source_unavailable"
+    ref = ObjectRef(kind=source_kind, id="canonical", revision=2)
+    record = {
+        "status": "complete",
+        "semantic": SEMANTIC,
+        "evidence": [{"id": "query"}],
+        "title": "Recorded",
+        "hypotheses": [{"label": "Arithmetic decline", "causal_status": "arithmetic"}],
+        "options": [
+            {
+                "id": "option",
+                "description": "Recorded scenario",
+                "prediction": 12,
+                "method": "test",
+                "assumptions": {"sensitive": "private"},
+            }
+        ],
+        "actual": 11,
+        "predicted": 12,
+        "attribution": "observed_after",
+        "completeness": 1,
+    }
+    reader = AsyncMock(return_value=record)
+    monkeypatch.setattr(module, "canonical_payload", reader)
+    current_reader = AsyncMock(return_value=record)
+    monkeypatch.setattr(service, "canonical_read", current_reader)
+    from app.modules.intelligence.engine import intelligence_service
+
+    semantic_authorization = AsyncMock()
+    monkeypatch.setattr(intelligence_service, "authorize_semantic", semantic_authorization)
+    mission = await service.link(mission.mission_id, ref, 1, USER)
+    body = body.model_copy(update={"expected_revision": mission.revision})
+    document = await service.deliver(mission.mission_id, body, USER)
+    assert document.sources[1].revision == 2
+    assert document.sources[1].semantic.view_id == "sales"
+    assert "private" not in document.model_dump_json()
+    calls = reader.await_count
+    assert await service.deliver(mission.mission_id, body, USER) == document
+    assert reader.await_count == calls
+    current_reader.assert_awaited_once_with(mission.mission_id, ref, USER, budget=None)
+    semantic_authorization.assert_awaited_once()
+    current_reader.side_effect = HTTPException(403, "Revoked")
+    with pytest.raises(HTTPException) as revoked:
+        await service.deliver(mission.mission_id, body, USER)
+    assert revoked.value.status_code == 403
+
+
+async def test_smart_child_pins_context_under_root_mission(mission_io, monkeypatch):
+    io, service = mission_io
+    mission = await create(service)
+    add_run(io, mission, "root", agent="__smart__")
+    add_run(io, mission, "child", agent="finance")
+    mission = await service.attach_run(mission.mission_id, "root", USER)
+    monkeypatch.setattr(
+        module.harness_repository,
+        "get",
+        AsyncMock(
+            return_value={
+                "run_id": "child",
+                "root_run_id": "root",
+                "thread_id": "thread",
+                "owner_name": "alice",
+                "role_name": "analyst",
+                "session_id": "login",
+                "security_version": 1,
+            }
+        ),
+    )
+    pinned = await service.record_execution_context(
+        mission.mission_id,
+        "child",
+        "tool",
+        {
+            "execution_now": "2026-10-04T11:00:00Z",
+            "timezone": "Asia/Jakarta",
+            "semantic": SEMANTIC,
+            "plan_fingerprint": "a" * 64,
+        },
+        USER,
+    )
+    assert pinned.run_id == "child"
+    assert io.missions[mission.mission_id].run_ids == ["root"]
+
+
+async def test_missing_inputs_are_bounded_persisted_and_cleared_by_canonical_link(
+    mission_io, monkeypatch
+):
+    from app.modules.assistant.evidence_health import EvidenceFacts, assess_evidence
+
+    _, service = mission_io
+    mission = await create(service)
+    health = assess_evidence(
+        EvidenceFacts(execution_status="success", coverage="complete"),
+        assessed_at=module.utc_now(),
+    )
+    established = {
+        "health": health.model_dump(mode="json"),
+        "semantic": SEMANTIC,
+        "metrics": ["revenue"],
+        "validated_plan_fingerprint": "a" * 64,
+        "model_fingerprint": "sales-v1",
+    }
+    pending = await service.record_investigation_requirements(
+        mission.mission_id, ["comparison_windows"], established, USER
+    )
+    assert pending.investigation_requirements.required_inputs == ["comparison_windows"]
+    assert (
+        await service.record_investigation_requirements(
+            mission.mission_id, ["comparison_windows"], established, USER
+        )
+        == pending
+    )
+    monkeypatch.setattr(
+        module,
+        "canonical_payload",
+        AsyncMock(return_value={"status": "complete", "evidence": [{"id": "query"}]}),
+    )
+    linked = await service.link(
+        mission.mission_id,
+        ObjectRef(kind="investigation", id="inv", revision=1),
+        pending.revision,
+        USER,
+    )
+    assert linked.investigation_requirements is None
+
+
+async def test_canonical_reads_require_exact_mission_pin(mission_io, monkeypatch):
+    from app.modules.intelligence.engine import intelligence_service
+
+    _, service = mission_io
+    mission = await create(service)
+    monkeypatch.setattr(module, "canonical_payload", AsyncMock(return_value={"status": "complete"}))
+    reference = ObjectRef(kind="investigation", id="inv", revision=2)
+    mission = await service.link(mission.mission_id, reference, mission.revision, USER)
+    reader = AsyncMock(
+        return_value=SimpleNamespace(model_dump=lambda **kwargs: {"id": "inv", "revision": 2})
+    )
+    monkeypatch.setattr(intelligence_service, "get_for_mission", reader)
+    assert await service.canonical_read(mission.mission_id, reference, USER) == {
+        "id": "inv",
+        "revision": 2,
+    }
+    reader.assert_awaited_once_with(
+        "investigations", "inv", USER, mission_id=mission.mission_id, revision=2, budget=None
+    )
+    with pytest.raises(HTTPException):
+        await service.canonical_read(
+            mission.mission_id, reference.model_copy(update={"revision": 3}), USER
+        )
+
+
+async def test_population_target_and_standalone_same_metric_do_not_reuse_mission(mission_io):
+    _, service = mission_io
+    mission = await create(service)
+    original = "a" * 64
+    await service.record_anchor(
+        mission.mission_id, SEMANTIC, ["revenue"], USER, filter_population_fingerprint=original
+    )
+    followup = await service.for_turn(
+        "thread",
+        USER,
+        operation_id="regions",
+        objective="Regional breakdown",
+        work_intent=WorkIntent.INVESTIGATE,
+        screen_follow_up=True,
+        semantic_target={
+            "semantic": SEMANTIC,
+            "metrics": ["revenue"],
+            "filter_population_fingerprint": original,
+        },
+    )
+    assert followup.mission_id == mission.mission_id
+    standalone = await service.for_turn(
+        "thread",
+        USER,
+        operation_id="standalone",
+        objective="Separate revenue objective",
+        work_intent=WorkIntent.INVESTIGATE,
+        semantic_target={
+            "semantic": SEMANTIC,
+            "metrics": ["revenue"],
+            "filter_population_fingerprint": original,
+        },
+    )
+    assert standalone.mission_id != mission.mission_id
+    assert standalone.continuation.reason == "unrelated_or_ambiguous"
+    singapore = await service.for_turn(
+        "thread",
+        USER,
+        operation_id="singapore",
+        objective="Singapore revenue objective",
+        work_intent=WorkIntent.INVESTIGATE,
+        screen_follow_up=True,
+        semantic_target={
+            "semantic": SEMANTIC,
+            "metrics": ["revenue"],
+            "filter_population_fingerprint": "b" * 64,
+        },
+    )
+    assert singapore.mission_id != mission.mission_id
+    assert singapore.continuation.reason == "different_semantic_target"
+
+
+async def test_mission_agent_identity_is_sourced_from_authorized_thread(mission_io, monkeypatch):
+    _, service = mission_io
+    monkeypatch.setattr(module, "require_thread", AsyncMock(return_value={"agent_id": "finance"}))
+    mission = await create(service)
+    assert mission.agent_id == "finance"
+    from app.modules.intelligence.actions import action_service
+
+    monkeypatch.setattr(action_service, "revalidate", AsyncMock())
+    monkeypatch.setattr(
+        module, "require_thread", AsyncMock(return_value={"agent_id": "other-agent"})
+    )
+    with pytest.raises(HTTPException) as changed:
+        await service.resume(
+            mission.mission_id,
+            MissionResume(expected_revision=1, operation_id="resume"),
+            NEW_SESSION,
+        )
+    assert changed.value.status_code == 409
+
+
+async def test_resume_checks_latest_action_uncertainty_not_only_historical_pin(
+    mission_io, monkeypatch
+):
+    io, service = mission_io
+    mission = await create(service)
+    ref = ObjectRef(kind="action", id="action", revision=1)
+    io.missions[mission.mission_id].object_refs = [ref]
+    from app.modules.intelligence.actions import action_service
+    from app.modules.intelligence.engine import intelligence_service
+
+    monkeypatch.setattr(action_service, "revalidate", AsyncMock())
+    monkeypatch.setattr(
+        intelligence_service,
+        "get_for_mission",
+        AsyncMock(return_value=SimpleNamespace(status="awaiting_approval", scope=mission.scope)),
+    )
+    monkeypatch.setattr(
+        intelligence_service.repository,
+        "get",
+        AsyncMock(return_value=SimpleNamespace(status="verification_required")),
+    )
+    with pytest.raises(HTTPException) as uncertain:
+        await service.resume(
+            mission.mission_id,
+            MissionResume(expected_revision=1, operation_id="resume"),
+            NEW_SESSION,
+        )
+    assert uncertain.value.status_code == 409
+    assert io.missions[mission.mission_id].scope == mission.scope
+
+
+async def test_updating_object_pin_preserves_old_deliverable_reference(mission_io, monkeypatch):
+    _, service = mission_io
+    mission = await create(service)
+    monkeypatch.setattr(
+        module,
+        "canonical_payload",
+        AsyncMock(return_value={"status": "complete", "evidence": [{"id": "q1"}]}),
+    )
+    older = ObjectRef(kind="investigation", id="inv", revision=1)
+    mission = await service.link(mission.mission_id, older, mission.revision, USER)
+    newer = older.model_copy(update={"revision": 2})
+    mission = await service.link(mission.mission_id, newer, mission.revision, USER)
+    assert mission.object_refs == [newer]
+    assert mission.historical_object_refs == [older]
+    assert set(module.object_binding_key(ref) for ref in mission.pinned_objects) == {
+        "investigation:inv:1",
+        "investigation:inv:2",
+    }
+    assert mission.object_bindings["investigation:inv:1"] == mission.scope
+
+
+async def test_link_uses_exact_dependency_bindings_but_current_root_scope(mission_io, monkeypatch):
+    io, service = mission_io
+    mission = await create(service)
+    historical = ObjectRef(kind="decision", id="decision", revision=3)
+    old_scope = mission.scope.model_copy()
+    stored = io.missions[mission.mission_id]
+    stored.object_refs = [historical]
+    stored.object_bindings[module.object_binding_key(historical)] = old_scope
+    monkeypatch.setattr(service, "_reauthorize_resume", AsyncMock())
+    resumed = await service.resume(
+        mission.mission_id,
+        MissionResume(expected_revision=mission.revision, operation_id="resume"),
+        NEW_SESSION,
+    )
+    reader = AsyncMock(return_value={"status": "complete"})
+    monkeypatch.setattr(module, "canonical_payload", reader)
+    outcome = ObjectRef(kind="outcome", id="outcome", revision=1)
+    linked = await service.link(mission.mission_id, outcome, resumed.revision, NEW_SESSION)
+    assert reader.await_args.args == (outcome, resumed.scope, NEW_SESSION)
+    budget = reader.await_args.kwargs["budget"]
+    assert budget.mission_records == {("decisions", "decision"): 3}
+    assert budget.mission_record_bindings == {("decisions", "decision"): old_scope}
+    assert budget.mission_bindings == [old_scope]
+    assert linked.object_bindings[module.object_binding_key(outcome)] == resumed.scope
+    assert linked.object_bindings[module.object_binding_key(historical)] == old_scope
+
+
+async def test_deliverable_authorization_forwards_one_budget_to_all_sources(
+    mission_io, monkeypatch
+):
+    from app.modules.intelligence.engine import CycleBudget, intelligence_service
+
+    _, service = mission_io
+    mission = await create(service)
+    ref = ObjectRef(kind="decision", id="decision", revision=2)
+    document = module.MissionDeliverable(
+        deliverable_id="document",
+        mission_id=mission.mission_id,
+        mission_revision=mission.revision,
+        kind="decision_memo",
+        title="Recorded decision",
+        markdown="Recorded decision",
+        evidence_refs=[],
+        object_refs=[ref],
+        created_at=mission.created_at,
+        sources=[
+            module.DeliverableSource(
+                kind="decision",
+                id=ref.id,
+                revision=ref.revision,
+                fingerprint="a" * 64,
+                semantic=SEMANTIC,
+                facts={},
+            )
+        ],
+    )
+    reader = AsyncMock()
+    authorize = AsyncMock()
+    monkeypatch.setattr(service, "canonical_read", reader)
+    monkeypatch.setattr(intelligence_service, "authorize_semantic", authorize)
+    budget = CycleBudget()
+    await service._authorize_deliverable(mission.mission_id, document, USER, budget=budget)
+    reader.assert_awaited_once_with(mission.mission_id, ref, USER, budget=budget)
+    authorize.assert_awaited_once_with(document.sources[0].semantic, USER, budget=budget)
+
+
+@pytest.mark.parametrize("failure", ["active_child", "attachment", "revoked_participant"])
+async def test_smart_resume_reauthorizes_tree_and_root_attachment_without_payload_refs(
+    mission_io, monkeypatch, failure
+):
+    io, service = mission_io
+    mission = await create(service)
+    add_run(io, mission, "root", agent="__smart__", status="completed")
+    mission = await service.attach_run(mission.mission_id, "root", USER)
+    root = {
+        "run_id": "root",
+        "root_run_id": None,
+        "agent_id": "__smart__",
+        "owner_name": "alice",
+        "role_name": "analyst",
+        "session_id": "login",
+        "security_version": 1,
+        "thread_id": "thread",
+        "status": "completed",
+        "payload": {},
+    }
+    child = {**root, "run_id": "child", "root_run_id": "root"}
+    if failure == "active_child":
+        child["status"] = "running"
+    if failure == "revoked_participant":
+        child["agent_id"] = "finance"
+        monkeypatch.setattr(module.agent_repository, "get_agent", AsyncMock(return_value=None))
+        monkeypatch.setattr(
+            module.agent_repository, "get_shared_agent", AsyncMock(return_value=None)
+        )
+    monkeypatch.setattr(module.harness_repository, "tree", AsyncMock(return_value=[root, child]))
+    from app.modules.agents.resource_delegation import resource_delegation
+    from app.modules.intelligence.actions import action_service
+
+    monkeypatch.setattr(action_service, "revalidate", AsyncMock())
+    resource_read = AsyncMock(side_effect=ValueError("Attachment security context changed"))
+    monkeypatch.setattr(resource_delegation, "reauthorize_for_mission", resource_read)
+    if failure == "attachment":
+        io.resources = ["registered-root-resource"]
+    with pytest.raises(HTTPException) as refused:
+        await service.resume(
+            mission.mission_id,
+            MissionResume(expected_revision=mission.revision, operation_id="resume-smart"),
+            NEW_SESSION,
+        )
+    assert (
+        refused.value.status_code
+        == {"active_child": 409, "attachment": 403, "revoked_participant": 404}[failure]
+    )
+    assert io.missions[mission.mission_id].scope == mission.scope
+    if failure == "attachment":
+        resource_read.assert_awaited_once_with(mission.mission_id, "root", NEW_SESSION)
+    else:
+        resource_read.assert_not_awaited()
+
+
+async def test_completed_turn_preserves_unfinished_business_stages(mission_io):
+    io, service = mission_io
+    mission = await create(
+        service,
+        work_intent=WorkIntent.PLAN,
+        public_work_steps=[StageKind.EVIDENCE, StageKind.DECIDE, StageKind.EXECUTE],
+    )
+    add_run(io, mission, status="completed", sequence=1)
+    io.events["direct"] = [
+        (0, 'event: table\ndata: {"evidence_id":"query"}\n\n'),
+        (1, 'event: done\ndata: {"status":"complete"}\n\n'),
+    ]
+    await service.attach_run(mission.mission_id, "direct", USER)
+    projected = await service.get(mission.mission_id, USER)
+    assert projected.status == "blocked"
+    stages = {stage.kind: stage.status for stage in projected.stages}
+    assert stages == {
+        StageKind.EVIDENCE: "completed",
+        StageKind.DECIDE: "planned",
+        StageKind.EXECUTE: "planned",
+    }
+
+
+@pytest.mark.parametrize("uncertain", [False, True])
+async def test_resumed_mission_cancel_keeps_historical_action_read_only(
+    mission_io, monkeypatch, uncertain
+):
+    io, service = mission_io
+    mission = await create(service)
+    ref = ObjectRef(kind="action", id="historical-action", revision=1)
+    stored = io.missions[mission.mission_id]
+    stored.object_refs = [ref]
+    stored.object_bindings[module.object_binding_key(ref)] = stored.scope.model_copy()
+    stored.scope = module.workflow_scope(NEW_SESSION)
+    stored.current_binding.scope = stored.scope
+    monkeypatch.setattr(
+        service,
+        "canonical_read",
+        AsyncMock(return_value={"status": "verification_required" if uncertain else "approved"}),
+    )
+    from app.modules.intelligence.actions import action_service
+
+    cancel = AsyncMock()
+    monkeypatch.setattr(action_service, "cancel", cancel)
+    if uncertain:
+        with pytest.raises(HTTPException) as refused:
+            await service.cancel(mission.mission_id, stored.revision, NEW_SESSION)
+        assert refused.value.status_code == 409
+        assert not io.missions[mission.mission_id].cancellation_complete
+    else:
+        cancelled = await service.cancel(mission.mission_id, stored.revision, NEW_SESSION)
+        assert cancelled.status == "cancelled"
+    cancel.assert_not_awaited()
+
+
+async def test_oversized_deliverable_source_returns_bounded_error(mission_io, monkeypatch):
+    io, service = mission_io
+    mission = await create(service)
+    ref = ObjectRef(kind="investigation", id="investigation", revision=1)
+    stored = io.missions[mission.mission_id]
+    stored.object_refs = [ref]
+    stored.object_bindings[module.object_binding_key(ref)] = stored.scope.model_copy()
+    stored.evidence_refs = ["query"]
+    monkeypatch.setattr(
+        module,
+        "canonical_payload",
+        AsyncMock(
+            return_value={
+                "status": "complete",
+                "hypotheses": [{"label": "private" * 5000, "causal_status": "arithmetic"}],
+            }
+        ),
+    )
+    with pytest.raises(HTTPException) as refused:
+        await service.deliver(
+            mission.mission_id,
+            DeliverableCreate(
+                expected_revision=1, kind="investigation_report", operation_id="bounded"
+            ),
+            USER,
+        )
+    assert refused.value.status_code == 422
+    assert refused.value.detail == {"code": "deliverable_source_bound_exceeded"}
+    assert not io.deliverables

@@ -49,6 +49,7 @@ from app.modules.agents.semantic.planning import (
 from app.modules.agents.semantic.runtime import (
     VerifiedQuery,
 )
+from app.modules.agents.semantic.time_ranges import resolve_execution_time
 from app.modules.assistant.evidence_health import (
     EvidenceFacts,
     assess_evidence,
@@ -241,7 +242,18 @@ class SemanticQueryTool:
             errors = validate_plan(semantic_ir, plan)
             if errors:
                 raise SemanticPlanError("; ".join(errors))
-            compiled = self._compiler.compile(semantic_ir, plan)
+            time_context = None
+            if (getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False)
+                    and plan.time and plan.time.range):
+                execution_now = getattr(context, "execution_now", None) or datetime.now(UTC)
+                if callable(getattr(context, "business_clock_hook", None)):
+                    execution_now = await context.business_clock_hook(invocation, context)
+                time_context = resolve_execution_time(
+                    plan.time.range, plan.time.compare,
+                    now=execution_now,
+                    timezone=getattr(context, "execution_timezone", "Asia/Jakarta"),
+                )
+            compiled = self._compiler.compile(semantic_ir, plan, time_context=time_context)
         except AssistantProviderError as exc:
             generation_duration_ms = (time.perf_counter() - generation_started) * 1000
             trace = _semantic_trace(
@@ -296,6 +308,20 @@ class SemanticQueryTool:
             "turn_planner" if plan_from_turn else "model_planner"
         )
         confidence = 1.0 if verified_hit else 0.8
+
+        if time_context:
+            from app.modules.intelligence.contracts import fingerprint
+
+            pinned_context = {
+                "semantic_view_id": model_id, "semantic_version": semantic_model.get("version"),
+                "semantic_fingerprint": semantic_model.get("fingerprint"),
+                "validated_plan_fingerprint": fingerprint(plan.as_dict()),
+                "execution_time": time_context.as_dict(),
+            }
+            if callable(getattr(context, "business_time_hook", None)):
+                await context.business_time_hook(invocation, pinned_context, context)
+            if callable(getattr(context, "execution_time_sink", None)):
+                await context.execution_time_sink(pinned_context)
 
         safe_sql = _safe_sql_preview(sql)
         report_tool_progress(
@@ -382,6 +408,7 @@ class SemanticQueryTool:
             execution_duration_ms = (time.perf_counter() - execution_started) * 1000
             await _record_usage(
                 security, semantic_model, semantic_ir, plan, execution_duration_ms, succeeded=False,
+                context=context,
             )
             trace = _semantic_trace(
                 semantic_model,
@@ -409,6 +436,7 @@ class SemanticQueryTool:
         if failed is not None:
             await _record_usage(
                 security, semantic_model, semantic_ir, plan, execution_duration_ms, succeeded=False,
+                context=context,
             )
             trace = _semantic_trace(
                 semantic_model,
@@ -447,6 +475,7 @@ class SemanticQueryTool:
         )
         await _record_usage(
             security, semantic_model, semantic_ir, plan, execution_duration_ms, succeeded=True,
+            context=context,
         )
 
         if hasattr(context, "primary_query_done"):
@@ -530,7 +559,28 @@ class SemanticQueryTool:
                 "semantic_plan": plan.as_dict(),
             },
         )
-        return attach_evidence_health(outcome, health) if health else outcome
+        if health:
+            from app.modules.intelligence.evidence import (
+                execution_envelope,
+                investigation_seed,
+                semantic_population_fingerprint,
+            )
+
+            envelope = execution_envelope(
+                semantic_model, semantic_ir, plan, health, time_context,
+                evidence_id=invocation.tool_call_id,
+            )
+            seed, requirements = investigation_seed(envelope, semantic_ir, plan, time_context)
+            outcome.trace_detail["evidence_envelope"] = envelope.model_dump(mode="json")
+            if time_context:
+                outcome.trace_detail["execution_time_context"] = time_context.as_dict()
+            outcome = replace(outcome, business_result={
+                "envelope": envelope, "seed": seed, "required_inputs": requirements,
+                "population_fingerprint": semantic_population_fingerprint(plan),
+                "time_dimension": plan.time.dimension if plan.time else None,
+            })
+            return attach_evidence_health(outcome, health)
+        return outcome
 
     async def _resolve_model(self, context: Any, question: str) -> dict[str, Any] | None:
         from app.modules.agents.semantic.access import load_authorized_models
@@ -821,6 +871,10 @@ def _execution_facts(
 ) -> EvidenceFacts:
     truncated = preview_truncated or any(
         getattr(result, "truncated", None) is True or len(result.rows) > 50
+        or (plan.limit is not None and bool(
+            plan.dimensions or (plan.time and (plan.time.grain or plan.time.compare))
+        )
+            and len(result.rows) >= plan.limit)
         for result in results
     )
     coverage = (
@@ -850,9 +904,19 @@ def _execution_facts(
 
 async def _record_usage(
     security: SecurityContext, model: dict[str, Any], semantic_ir: SemanticModelIR,
-    plan: SemanticPlan, duration_ms: float, *, succeeded: bool,
+    plan: SemanticPlan, duration_ms: float, *, succeeded: bool, context: Any = None,
 ) -> None:
+    if _context_value(context, "learning_enabled") is False:
+        return
     try:
+        thread_id = _context_value(context, "thread_id")
+        if thread_id:
+            from app.modules.assistant.repository import assistant_repository
+
+            if not await assistant_repository.learning_enabled(
+                thread_id, user_name=security.principal,
+            ):
+                return
         await agent_repository.record_semantic_usage(
             owner_name=security.principal, active_role=security.active_role,
             security_context_version=security.security_context_version,

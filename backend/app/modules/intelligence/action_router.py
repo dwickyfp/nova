@@ -2,13 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.core.deps import get_current_user
 from app.modules.intelligence.action_contracts import (
     Action,
     ActionOperation,
     ActionPreview,
+    ActionRead,
     ActionReview,
 )
 from app.modules.intelligence.actions import action_service, supervised_action
@@ -23,9 +24,14 @@ async def preview_action(body: ActionPreview, user: CurrentUser):
     return await action_service.preview(body, user)
 
 
-@router.get("/actions/{action_id}", response_model=Action)
-async def read_action(action_id: str, user: CurrentUser):
-    return await action_service.get(action_id, user)
+@router.get("/actions/{action_id}", response_model=ActionRead)
+async def read_action(
+    action_id: str,
+    user: CurrentUser,
+    mission_id: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
+    revision: Annotated[int | None, Query(ge=1)] = None,
+):
+    return await action_service.read(action_id, user, mission_id=mission_id, revision=revision)
 
 
 @router.post("/actions/{action_id}/review")

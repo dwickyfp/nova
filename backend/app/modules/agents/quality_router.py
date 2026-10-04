@@ -24,14 +24,14 @@ async def owned_agent(agent_id: str, user: dict) -> dict:
     return agent
 
 
-async def audit(agent_id: str, user: dict, action: str) -> None:
+async def audit(agent_id: str, user: dict, action: str, *, status: str = "SUCCESS") -> None:
     await write_audit_log(
         event_type="AGENT",
         action=action,
         object_type="AGENT",
         object_name=agent_id,
         user_name=user["username"],
-        status="SUCCESS",
+        status=status,
         session_id=user.get("session_id"),
         active_role=user.get("active_role"),
     )
@@ -126,27 +126,15 @@ async def run_cases(agent_id: str, body: quality.RunRequest, user: CurrentUser):
 
 @router.get("/{agent_id}/quality/comparison")
 async def compare(agent_id: str, left: str, right: str, user: CurrentUser):
+    from app.modules.agents.doctor import compatible, score_index
+
     left_run, right_run = await get_run(agent_id, left, user), await get_run(agent_id, right, user)
 
     def scores(run):
-        return {
-            (
-                result["case_id"],
-                result["case_revision"],
-                score["scorer"],
-                score["scorer_version"],
-            ): score["status"]
-            for result in run["results"]
-            for score in result["scores"]
-        }
+        return {key: score["status"] for key, score in score_index(run).items()}
 
     before, after = scores(left_run), scores(right_run)
-    comparable = (
-        left_run.get("case_fingerprint") == right_run.get("case_fingerprint")
-        and left_run.get("gates", {}) == right_run.get("gates", {})
-        and left_run.get("scorer_set_version") == right_run.get("scorer_set_version")
-        and left_run["cases"] == right_run["cases"]
-    )
+    comparable = compatible(left_run, right_run)
     return {
         "left": left_run,
         "right": right_run,
@@ -161,7 +149,9 @@ async def compare(agent_id: str, left: str, right: str, user: CurrentUser):
                 "after": after.get(key),
                 "regression": comparable and before.get(key) == "pass" and after.get(key) != "pass",
             }
-            for key in sorted(set(before) | set(after))
+            for key in sorted(
+                set(before) | set(after), key=lambda item: tuple(str(part) for part in item)
+            )
             if before.get(key) != after.get(key)
         ],
     }
@@ -194,6 +184,7 @@ async def set_monitoring(agent_id: str, body: quality.MonitoringRequest, user: C
 
 @router.get("/{agent_id}/quality/doctor")
 async def doctor(agent_id: str, user: CurrentUser):
+    from app.modules.agents.doctor import report
     from app.modules.agents.releases import load_runtime_manifest
     from app.modules.agents.service import agent_service
 
@@ -247,15 +238,17 @@ async def doctor(agent_id: str, user: CurrentUser):
                             "detail": score["detail"],
                         }
                     )
-    return {"agent_id": agent_id, "diagnoses": diagnosis[:100], "review_required": True}
+    result = await report(agent, user, runs)
+    return {**result, "diagnoses": diagnosis[:100]}
 
 
 @router.post("/{agent_id}/quality/runs/{run_id}/analyze")
 async def analyze_run(agent_id: str, run_id: str, user: CurrentUser):
+    agent = await owned_agent(agent_id, user)
     run = await get_run(agent_id, run_id, user)
     if run["status"] == "running":
         raise HTTPException(409, "Wait for the evaluation to finish before analyzing")
-    proposal = await quality.feedback_proposal(agent_id, run_id, user, run)
+    proposal = await quality.feedback_proposal(agent_id, run_id, user, run, agent=agent)
     await audit(agent_id, user, "ANALYZE_QUALITY_RUN")
     return proposal
 
@@ -273,14 +266,13 @@ async def review_proposal(
     body: quality.ProposalReview,
     user: CurrentUser,
 ):
-    await owned_agent(agent_id, user)
-    found = await quality.records("proposals", agent_id, user, proposal_id)
-    if not found:
-        raise HTTPException(404, "Improvement proposal not found")
-    if found[0]["status"] != "proposed":
-        raise HTTPException(409, "Improvement proposal has already been reviewed")
-    record = await quality.save_record(
-        "proposals", {**found[0], "status": body.resolution}, user, body.expected_revision
-    )
+    from app.modules.agents.quality_application import review_and_apply
+
+    agent = await owned_agent(agent_id, user)
+    try:
+        record = await review_and_apply(agent, proposal_id, body, user)
+    except HTTPException:
+        await audit(agent_id, user, "REVIEW_IMPROVEMENT", status="REFUSED")
+        raise
     await audit(agent_id, user, "REVIEW_IMPROVEMENT")
     return record

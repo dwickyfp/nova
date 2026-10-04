@@ -16,6 +16,7 @@ from app.modules.agents.semantic.planning import (
     validate_plan,
 )
 from app.modules.agents.semantic.time_ranges import (
+    ExecutionTimeContext,
     comparison_bounds,
     range_predicates,
     resolve_time_range,
@@ -55,15 +56,23 @@ class _Core:
 
 
 class SemanticCompiler:
-    def compile(self, model: SemanticModelIR, plan: SemanticPlan) -> CompiledSemanticQuery:
+    def compile(
+        self, model: SemanticModelIR, plan: SemanticPlan, *,
+        time_context: ExecutionTimeContext | None = None,
+    ) -> CompiledSemanticQuery:
+        if time_context and (
+            plan.time is None or plan.time.range != time_context.range
+            or plan.time.compare != time_context.comparison
+        ):
+            raise SemanticPlanError("Execution time context does not match the validated plan.")
         errors = validate_plan(model, plan)
         if errors:
             raise SemanticPlanError("; ".join(errors))
         metrics = [metric for name in plan.metrics if (metric := model.metric(name))]
         if len({metric.base_dataset for metric in metrics if metric.base_dataset}) > 1:
-            core = self._drill_across(model, plan)
+            core = self._drill_across(model, plan, time_context=time_context)
         else:
-            core = self._single(model, plan)
+            core = self._single(model, plan, time_context=time_context)
         sql, columns = core.sql, list(core.columns)
         if plan.having or plan.transforms or plan.top_n_per_group:
             sql, columns = _wrap(sql, columns, plan)
@@ -86,11 +95,15 @@ class SemanticCompiler:
         return CompiledSemanticQuery(
             sql="\n".join(lines),
             model_fingerprint=model.fingerprint,
-            warnings=core.warnings,
+            warnings=tuple(dict.fromkeys((*core.warnings, *(time_context.warnings
+                                                        if time_context else ())))),
             relationship_path=core.relationships,
         )
 
-    def _drill_across(self, model: SemanticModelIR, plan: SemanticPlan) -> _Core:
+    def _drill_across(
+        self, model: SemanticModelIR, plan: SemanticPlan, *,
+        time_context: ExecutionTimeContext | None = None,
+    ) -> _Core:
         """Metrics of several fact datasets, each aggregated alone, joined on shared keys.
 
         Each fact is compiled as its own single-fact query at the requested grain,
@@ -183,7 +196,9 @@ class SemanticCompiler:
                 named_filters=tuple(named),
                 time=time,
             )
-            cores.append((f"f{index}", self._single(model, sub_plan, alias_map=alias_map), names))
+            cores.append((f"f{index}", self._single(
+                model, sub_plan, alias_map=alias_map, time_context=time_context
+            ), names))
 
         ctes = ",\n".join(f"{alias} AS (\n{core.sql}\n)" for alias, core, _names in cores)
         select = []
@@ -228,6 +243,7 @@ class SemanticCompiler:
         plan: SemanticPlan,
         *,
         alias_map: dict[str, str] | None = None,
+        time_context: ExecutionTimeContext | None = None,
     ) -> _Core:
         errors = validate_plan(model, plan)
         if errors:
@@ -301,7 +317,7 @@ class SemanticCompiler:
         group_parts: list[str] = []
         if plan.time and time_field is not None and plan.time.compare:
             comparison = _comparison_expression(
-                _qualified_expression(time_field), plan.time.range, plan.time.compare
+                _qualified_expression(time_field), plan.time.range, plan.time.compare, time_context
             )
             select_parts.append(f"{comparison} AS `comparison_period`")
             group_parts.append(comparison)
@@ -394,9 +410,11 @@ class SemanticCompiler:
         if plan.time and time_field is not None and plan.time.range:
             time_expression = _qualified_expression(time_field)
             filter_predicates.extend(
-                _comparison_predicates(time_expression, plan.time.range, plan.time.compare)
+                _comparison_predicates(
+                    time_expression, plan.time.range, plan.time.compare, time_context
+                )
                 if plan.time.compare
-                else _time_predicates(time_expression, plan.time.range)
+                else _time_predicates(time_expression, plan.time.range, time_context)
             )
 
         lines = [
@@ -640,22 +658,43 @@ def _safe_grain(value: str) -> str:
     return grain
 
 
-def _time_predicates(expression: str, range_value: str) -> list[str]:
+def _time_predicates(
+    expression: str, range_value: str, time_context: ExecutionTimeContext | None = None,
+) -> list[str]:
+    if time_context:
+        start, end = time_context.current.sql_bounds()
+        return [f"{expression} >= {start}", f"{expression} < {end}"]
     return range_predicates(expression, range_value)
 
 
-def _comparison_expression(expression: str, range_value: str | None, comparison: str | None) -> str:
-    current_start, _current_end, _prior_start, _prior_end = comparison_bounds(
-        range_value, comparison
-    )
+def _comparison_sql_bounds(time_context, range_value, comparison):
+    if time_context:
+        if time_context.range != range_value or time_context.comparison != comparison:
+            raise SemanticPlanError("Execution time context does not match the validated plan.")
+        if not time_context.baseline:
+            raise SemanticPlanError("Comparison has no pinned baseline.")
+        return (*time_context.current.sql_bounds(), *time_context.baseline.sql_bounds())
+    return comparison_bounds(range_value, comparison)
+
+
+def _comparison_expression(
+    expression: str, range_value: str | None, comparison: str | None,
+    time_context: ExecutionTimeContext | None = None,
+) -> str:
+    current_start, _current_end, _prior_start, _prior_end = _comparison_sql_bounds(
+        time_context, range_value, comparison)
     return (
         f"CASE WHEN {expression} >= {current_start} "
         "THEN 'current_period' ELSE 'previous_period' END"
     )
 
 
-def _comparison_predicates(expression: str, range_value: str, comparison: str | None) -> list[str]:
-    current_start, current_end, prior_start, prior_end = comparison_bounds(range_value, comparison)
+def _comparison_predicates(
+    expression: str, range_value: str, comparison: str | None,
+    time_context: ExecutionTimeContext | None = None,
+) -> list[str]:
+    current_start, current_end, prior_start, prior_end = _comparison_sql_bounds(
+        time_context, range_value, comparison)
     return [
         f"(({expression} >= {current_start} AND {expression} < {current_end}) OR "
         f"({expression} >= {prior_start} AND {expression} < {prior_end}))"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -101,10 +102,56 @@ async def test_default_executor_is_unavailable_even_when_feature_enabled(analysi
     workspace = AnalyticalWorkspace()
     assert workspace.capability().enabled
     assert not workspace.capability().available
+    assert workspace.capability().status == "BLOCKED_BY_INFRASTRUCTURE"
+    assert not workspace.capability().executor_available
     result = await workspace.execute(request(), USER)
     assert result.status == "unavailable"
+    assert result.blocker == "BLOCKED_BY_INFRASTRUCTURE"
     assert result.rows == [] and result.outputs == []
     resource_delegation.resource_delegation.load.assert_not_awaited()
+
+
+async def test_unavailable_http_execution_is_a_bounded_audited_refusal(
+    analysis_environment, monkeypatch
+):
+    workspace = AnalyticalWorkspace()
+    monkeypatch.setattr(module, "analytical_workspace", workspace)
+    body = request()
+    body.code = "raise RuntimeError('must never execute')"
+    response = await module.execute_analysis(body, USER)
+    assert response.status_code == 503
+    payload = json.loads(response.body)
+    assert payload["status"] == "unavailable"
+    assert payload["blocker"] == "BLOCKED_BY_INFRASTRUCTURE"
+    assert payload["rows"] == payload["outputs"] == []
+    assert "must never execute" not in response.body.decode()
+    assert workspace.active == {}
+    module.write_audit_log.assert_awaited_once()
+    assert module.write_audit_log.call_args.kwargs["status"] == "UNAVAILABLE"
+    harness_repository.get.assert_not_awaited()
+    resource_delegation.resource_delegation.load.assert_not_awaited()
+
+
+async def test_nonisolated_executor_is_never_used_as_a_fallback(analysis_environment):
+    fake = FakeExecutor()
+    fake.isolated = False
+    workspace = AnalyticalWorkspace(fake)
+    result = await workspace.execute(request(), USER)
+    assert result.status == "unavailable" and result.blocker == "BLOCKED_BY_INFRASTRUCTURE"
+    assert fake.calls == []
+
+
+async def test_tool_preserves_legacy_error_and_reports_infrastructure_blocker(
+    analysis_environment, monkeypatch
+):
+    monkeypatch.setattr(module, "analytical_workspace", AnalyticalWorkspace())
+    context = SimpleNamespace(user=USER, thread_id="thread", run_id="run")
+    outcome = await AnalyticalWorkspaceTool().run(
+        ToolInvocation("call", "analysis_workspace", request().model_dump()), context
+    )
+    assert not outcome.ok and not outcome.recoverable
+    assert outcome.error_class == "ANALYSIS_UNAVAILABLE" and outcome.data is None
+    assert outcome.metadata["blocker"] == "BLOCKED_BY_INFRASTRUCTURE"
 
 
 async def test_fake_executor_receives_only_selected_granted_inputs_and_caller_scope(
@@ -194,8 +241,14 @@ async def test_disabled_fake_executor_is_never_called(analysis_environment, monk
         module, "settings", SimpleNamespace(STUDIO_ANALYSIS_WORKSPACE_ENABLED=False)
     )
     fake = FakeExecutor()
-    result = await AnalyticalWorkspace(fake).execute(request(), USER)
+    workspace = AnalyticalWorkspace(fake)
+    capability = workspace.capability()
+    assert not capability.enabled and not capability.available
+    assert capability.status == "DISABLED"
+    assert capability.executor_available and capability.isolation == "isolated"
+    result = await workspace.execute(request(), USER)
     assert result.status == "unavailable"
+    assert result.blocker == "FEATURE_DISABLED"
     assert fake.calls == []
 
 

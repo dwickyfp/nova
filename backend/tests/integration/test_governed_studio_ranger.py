@@ -519,9 +519,19 @@ async def test_missions_resources_replay_and_role_version_boundaries(governed):
             {
                 "objective": "Continue investigation",
                 "operation_id": "mission-followup",
+                "continue_mission_id": mission["mission_id"],
             },
         )
     )["mission_id"] == mission["mission_id"]
+    separate = await client.request(
+        "POST",
+        f"agents/studio/threads/{thread_id}/missions",
+        {
+            "objective": "Investigate a separate Singapore revenue objective",
+            "operation_id": "mission-separate-objective",
+        },
+    )
+    assert separate["mission_id"] != mission["mission_id"]
     run_id = str(uuid4())
     await run_journal.start(
         run_id=run_id,
@@ -621,6 +631,93 @@ async def test_missions_resources_replay_and_role_version_boundaries(governed):
     ).status_code == 404
     with pytest.raises(ValueError):
         await resources.load(selected, await _user(client))
+
+
+async def test_automatic_investigation_resume_keeps_exact_pins_and_live_authorization(governed):
+    from app.modules.agents.business_results import governed_result
+    from app.modules.agents.semantic.plan_contract import validate_generated_plan
+    from app.modules.agents.semantic.planning import SemanticPlan, SemanticTime
+    from app.modules.agents.semantic.time_ranges import resolve_execution_time
+    from app.modules.intelligence.engine import intelligence_service
+
+    fixture = governed
+    client = fixture.primary
+    plan = SemanticPlan(metrics=("revenue",), time=SemanticTime(
+        "ordered_at", range="last_7_days", compare="previous_period",
+    ))
+    fixed = resolve_execution_time(
+        plan.time.range, plan.time.compare, now=fixture.end, timezone="Asia/Jakarta",
+    )
+    await db.execute_system(
+        f"INSERT INTO {fixture.database}.sales VALUES "
+        "(3001,'Jakarta',60,%s,1),(3002,'Jakarta',100,%s,1)",
+        [(window.end - timedelta(days=1)).replace(tzinfo=None)
+         for window in (fixed.current, fixed.baseline)],
+    )
+    mission = await client.request(
+        "POST", f"agents/studio/threads/{fixture.thread['thread_id']}/missions",
+        {"objective": "Investigate the authorized weekly revenue decline",
+         "operation_id": "automatic-resume", "work_intent": "INVESTIGATE"},
+    )
+    wire_plan = json.loads(json.dumps(plan.as_dict()))
+    validate_generated_plan(wire_plan)
+    context = LoopContext(
+        user_name=fixture.principal, user=fixture.user, role=fixture.role,
+        session_id=fixture.user["session_id"], thread_id=fixture.thread["thread_id"],
+        agent_id=fixture.agent["agent_id"], mission_id=mission["mission_id"],
+        semantic_view_ids=[fixture.semantic["view_id"]], execution_now=fixture.end,
+        primary_plan={"view": fixture.semantic["view_id"], "plan": wire_plan},
+    )
+    invocation = ToolInvocation(str(uuid4()), "semantic_query", {"question": "Weekly decline"})
+    outcome = await SemanticQueryTool().run(invocation, context)
+    assert outcome.ok and outcome.business_result["seed"]
+    seed = outcome.business_result["seed"]
+    original = await intelligence_service.automatic_investigation(
+        seed, fixture.user, mission_id=mission["mission_id"], agent_id=context.agent_id,
+    )
+    result = await governed_result(invocation, outcome, context)
+    assert result["status"] == "complete" and result["investigation"]["hypotheses"]
+    assert all(h["causal_status"] != "supported_effect"
+               for h in result["investigation"]["hypotheses"])
+    assert original["comparison"].id == result["comparison_id"]
+    assert original["investigation"].id == result["investigation"]["id"]
+    old_binding = original["investigation"].scope
+    monitor = await intelligence_service.get("monitors", original["comparison"].monitor_id,
+                                              fixture.user)
+    assert not monitor.enabled and monitor.count_column is None
+    prior = await client.request("GET", f"agents/studio/missions/{mission['mission_id']}")
+    await client.request("POST", "auth/switch-role", {"role": fixture.inactive})
+    await client.request("POST", "auth/switch-role", {"role": fixture.role})
+    current = await _user(client)
+    assert current["security_context_version"] != fixture.user["security_context_version"]
+    resumed = await client.request(
+        "POST", f"agents/studio/missions/{mission['mission_id']}/resume",
+        {"expected_revision": prior["revision"], "operation_id": "automatic-new-binding"},
+    )
+    recovered = await intelligence_service.automatic_investigation(
+        seed, current, mission_id=mission["mission_id"], agent_id=context.agent_id,
+    )
+    assert recovered["comparison"].id == original["comparison"].id
+    assert recovered["investigation"].id == original["investigation"].id
+    assert recovered["investigation"].scope == old_binding
+    assert recovered["investigation"].revision == original["investigation"].revision
+    ref = next(r for r in resumed["object_refs"] if r["kind"] == "investigation")
+    historical = await client.request(
+        "GET", f"agents/studio/missions/{mission['mission_id']}/objects/investigation/{ref['id']}"
+        f"?revision={ref['revision']}",
+    )
+    assert historical["scope"] == old_binding.model_dump(mode="json")
+    with pytest.raises(HTTPException):
+        await intelligence_service.automatic_investigation(
+            seed, fixture.user, mission_id=mission["mission_id"], agent_id=context.agent_id,
+        )
+    await access_control_service.revoke_role(
+        fixture.operator, role=fixture.role, username=fixture.principal,
+    )
+    with pytest.raises(HTTPException):
+        await intelligence_service.automatic_investigation(
+            seed, current, mission_id=mission["mission_id"], agent_id=context.agent_id,
+        )
 
 
 async def test_production_scoring_is_bound_scoped_and_cannot_replay_mutations(governed):

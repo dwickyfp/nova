@@ -17,11 +17,13 @@ from app.modules.intelligence.context_graph import (
     EdgeCreate,
     create_concept,
     create_edge,
+    project_canonical_context,
     project_decision,
     project_semantic_view,
     resolve_metric,
     traverse_context,
 )
+from app.modules.intelligence.context_sources import ContextSourceRef
 from app.modules.intelligence.contracts import (
     Contract,
     Monitor,
@@ -158,6 +160,8 @@ class MonitorUpdate(Contract):
 class MetricResolution(Contract):
     semantic: SemanticRef
     term: str = Field(min_length=1, max_length=256)
+    exact: bool = False
+    include_context: bool = False
 
 
 class SimulationRequest(Contract):
@@ -301,8 +305,11 @@ async def decision_operation(decision_id: str, body: DecisionOperation, user: Cu
 
 
 @router.get("/decisions/{decision_id}/lineage")
-async def decision_lineage(decision_id: str, user: CurrentUser):
-    return await intelligence_service.lineage(decision_id, user)
+async def decision_lineage(
+    decision_id: str, user: CurrentUser,
+    mission_id: str | None = Query(default=None, max_length=128),
+):
+    return await intelligence_service.lineage(decision_id, user, mission_id=mission_id)
 
 
 @router.post("/decisions/{decision_id}/context")
@@ -311,8 +318,11 @@ async def decision_context(decision_id: str, user: CurrentUser):
 
 
 @router.post("/decisions/{decision_id}/evaluate-outcome")
-async def evaluate_outcome(decision_id: str, user: CurrentUser):
-    return await intelligence_service.evaluate_outcome(decision_id, user)
+async def evaluate_outcome(
+    decision_id: str, user: CurrentUser,
+    mission_id: str | None = Query(default=None, max_length=128),
+):
+    return await intelligence_service.evaluate_outcome(decision_id, user, mission_id=mission_id)
 
 
 @router.get("/business-policy", response_model=BusinessPolicy)
@@ -386,8 +396,15 @@ async def decision_effectiveness(user: CurrentUser, after: str = Query(default="
 
 
 @router.get("/decisions/{decision_id}/policy")
-async def decision_policy_status(decision_id: str, user: CurrentUser):
-    decision = await intelligence_service.get("decisions", decision_id, user)
+async def decision_policy_status(
+    decision_id: str, user: CurrentUser,
+    mission_id: Annotated[str | None, Query(max_length=128)] = None,
+):
+    decision = (
+        await intelligence_service.get_for_mission(
+            "decisions", decision_id, user, mission_id=mission_id
+        ) if mission_id else await intelligence_service.get("decisions", decision_id, user)
+    )
     policy = await read_business_policy()
     return {
         "current": bool(decision.policy and decision.policy.policy_revision == policy.revision),
@@ -450,9 +467,17 @@ async def project_view(body: SemanticRef, user: CurrentUser):
     return await project_semantic_view(body, user)
 
 
+@router.post("/context/project-canonical")
+async def project_canonical(body: ContextSourceRef, user: CurrentUser):
+    return await project_canonical_context(body, user)
+
+
 @router.post("/context/resolve-metric")
 async def canonical_metric(body: MetricResolution, user: CurrentUser):
-    return await resolve_metric(body.semantic, body.term, user)
+    return await resolve_metric(
+        body.semantic, body.term, user, exact=body.exact,
+        include_context=body.include_context,
+    )
 
 
 @router.get("/context/{node_id}/graph")
