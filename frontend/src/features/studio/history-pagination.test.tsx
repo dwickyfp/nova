@@ -13,6 +13,9 @@ import { StudioChat } from "./studio-chat";
 import { workflowApi } from "./workflow-api";
 import "@/styles/index.css";
 
+const views: Awaited<ReturnType<typeof render>>[] = [];
+const clients: QueryClient[] = [];
+
 function contrast(element: HTMLElement): number {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1;
@@ -51,6 +54,8 @@ function contrast(element: HTMLElement): number {
 }
 
 afterEach(async () => {
+  for (const view of views.splice(0)) await view.unmount();
+  clients.splice(0).forEach((client) => client.clear());
   await cleanup();
   vi.restoreAllMocks();
   document.documentElement.classList.remove("dark");
@@ -106,12 +111,12 @@ it.each([
       messages: cursor ? older : newest,
       next_cursor: cursor ? null : "older-page",
     }));
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  clients.push(client);
   const view = await render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={client}>
       <div className="flex h-svh flex-col overflow-hidden">
         <header className="shrink-0 p-2">History test</header>
         <StudioChat
@@ -126,6 +131,7 @@ it.each([
       </div>
     </QueryClientProvider>,
   );
+  views.push(view);
   await expect
     .element(view.getByText("Answer across the page boundary", { exact: true }))
     .toBeInTheDocument();

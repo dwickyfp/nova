@@ -96,7 +96,7 @@ export function NavUser({ user }: NavUserProps) {
                 </Avatar>
                 <div className="grid flex-1 text-start text-sm leading-tight">
                   <span className="truncate font-semibold">{username}</span>
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span className="truncate text-xs text-sidebar-navigation-muted-foreground">
                     {activeRole}
                   </span>
                 </div>

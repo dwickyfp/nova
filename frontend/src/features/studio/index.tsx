@@ -259,9 +259,10 @@ function StudioAppContent() {
         />
       ) : null}
       <div
+        data-mobile-navigation={isMobile && mobileSidebarOpen}
         className={
           isMobile && mobileSidebarOpen
-            ? "absolute inset-y-0 left-0 z-40 bg-background"
+            ? "absolute inset-y-0 left-0 z-40"
             : "shrink-0"
         }
       >
@@ -312,7 +313,7 @@ function StudioAppContent() {
         />
       </div>
 
-      <main aria-label={view === "chat" ? "Nova Studio chat" : view} className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <main aria-label={view === "chat" ? "Nova Studio chat" : view} className="shell-pane flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         {agentsQuery.isError ? (
           <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
             <span>Specialists are temporarily unavailable. Smart can still try your question.</span>

@@ -94,7 +94,7 @@ export function StudioAccountMenu({
             type="button"
             aria-label={collapsed ? username : undefined}
             className={cn(
-              "flex items-center gap-2 rounded-md p-1.5 text-start transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent",
+              "sidebar-navigation-item flex items-center gap-2 rounded-md p-1.5 text-start transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
               collapsed ? "w-auto justify-center" : "w-full",
             )}
           >
@@ -107,11 +107,11 @@ export function StudioAccountMenu({
               <>
                 <div className="grid flex-1 text-start text-sm leading-tight">
                   <span className="truncate font-semibold">{username}</span>
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span className="truncate text-xs text-sidebar-navigation-muted-foreground">
                     {activeRole}
                   </span>
                 </div>
-                <ChevronsUpDown className="ms-auto size-4 text-muted-foreground" />
+                <ChevronsUpDown className="ms-auto size-4 text-sidebar-navigation-muted-foreground" />
               </>
             )}
           </button>
