@@ -9,7 +9,7 @@ import {
   type Decision,
   type News,
 } from "@/features/intelligence/lifecycle-api";
-import { StudioIntelligence } from "./studio-intelligence";
+import { DecisionDetail, StudioIntelligence } from "./studio-intelligence";
 import "@/styles/index.css";
 
 const ref = { view_id: "finance", version: 1, fingerprint: "pinned" };
@@ -115,13 +115,11 @@ it.each([
 );
 
 it("removes cached News when the principal changes, including same-role users", async () => {
-  useAuthStore
-    .getState()
-    .auth.setUser({
-      username: "alice",
-      activeRole: "ANALYST",
-      roles: ["ANALYST"],
-    });
+  useAuthStore.getState().auth.setUser({
+    username: "alice",
+    activeRole: "ANALYST",
+    roles: ["ANALYST"],
+  });
   const listing = vi
     .spyOn(intelligenceApi, "page")
     .mockResolvedValue({ items: [news], next_after: null });
@@ -130,13 +128,11 @@ it("removes cached News when the principal changes, including same-role users", 
     .element(screen.getByRole("button", { name: /Jakarta sales declined/ }))
     .toBeVisible();
   listing.mockRejectedValue(new ApiError(403, "Denied"));
-  useAuthStore
-    .getState()
-    .auth.setUser({
-      username: "bob",
-      activeRole: "ANALYST",
-      roles: ["ANALYST"],
-    });
+  useAuthStore.getState().auth.setUser({
+    username: "bob",
+    activeRole: "ANALYST",
+    roles: ["ANALYST"],
+  });
   await expect
     .element(screen.getByRole("button", { name: /Jakarta sales declined/ }))
     .not.toBeInTheDocument();
@@ -208,4 +204,201 @@ it("shows an empty News state without creating a schedule", async () => {
   await expect
     .element(screen.getByText("No material changes to review"))
     .toBeVisible();
+});
+
+it.each([
+  { width: 320, dark: true },
+  { width: 1280, dark: false },
+])(
+  "renders generic scenario effects and optional legacy profit at $width px",
+  async ({ width, dark }) => {
+    await page.viewport(width, 700);
+    document.documentElement.classList.toggle("dark", dark);
+    const generic: Decision = {
+      ...decision,
+      currency: null,
+      options: [
+        {
+          ...decision.options[0],
+          incremental_gross_profit: undefined,
+          effects: {
+            capacity_delta: 12,
+            feasible_capacity: true,
+            explanation: "Stated capacity assumption",
+          },
+        },
+      ],
+    };
+    vi.spyOn(intelligenceApi, "get").mockResolvedValue(generic);
+    vi.spyOn(intelligenceApi, "policy").mockResolvedValue({
+      current: true,
+      policy_revision: 1,
+      can_edit: false,
+      can_review: false,
+    });
+    vi.spyOn(intelligenceApi, "lineage").mockResolvedValue({
+      news,
+      investigation: { id: "investigation" } as never,
+      decision: generic,
+      evidence: [],
+      events: [],
+      outcomes: [],
+    });
+    const screen = await mount({ view: "decisions", item: generic.id });
+    await expect
+      .element(
+        screen.getByRole("heading", { name: "Additional scenario results" }),
+      )
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("capacity delta", { exact: true }))
+      .toBeVisible();
+    await expect.element(screen.getByText("12", { exact: true })).toBeVisible();
+    await expect
+      .element(screen.getByText("true", { exact: true }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("Stated capacity assumption", { exact: true }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText(/gross profit/))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByText(/Monetary estimates/))
+      .not.toBeInTheDocument();
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+  },
+);
+
+it("displays existing gross profit once when canonical effects include the legacy result", async () => {
+  vi.spyOn(intelligenceApi, "get").mockResolvedValue({
+    ...decision,
+    options: [
+      { ...decision.options[0], effects: { incremental_gross_profit: 20 } },
+    ],
+  });
+  vi.spyOn(intelligenceApi, "policy").mockResolvedValue({
+    current: true,
+    policy_revision: 1,
+    can_edit: false,
+    can_review: false,
+  });
+  vi.spyOn(intelligenceApi, "lineage").mockResolvedValue({
+    news,
+    investigation: { id: "investigation" } as never,
+    decision,
+    evidence: [],
+    events: [],
+    outcomes: [],
+  });
+  const screen = await mount({ view: "decisions", item: decision.id });
+  await expect
+    .element(screen.getByText("incremental gross profit", { exact: true }))
+    .toBeVisible();
+  expect(
+    Array.from(document.querySelectorAll("dt")).filter(
+      (item) => item.textContent === "incremental gross profit",
+    ),
+  ).toHaveLength(1);
+});
+
+it("passes explicit Mission context to a governed Decision operation", async () => {
+  vi.spyOn(intelligenceApi, "policy").mockResolvedValue({
+    current: true,
+    policy_revision: 1,
+    can_edit: false,
+    can_review: true,
+  });
+  vi.spyOn(intelligenceApi, "lineage").mockResolvedValue({
+    news,
+    investigation: { id: "investigation" } as never,
+    decision,
+    evidence: [],
+    events: [],
+    outcomes: [],
+  });
+  const operate = vi.spyOn(intelligenceApi, "operate").mockResolvedValue({
+    ...decision,
+    revision: 3,
+    status: "approved",
+  });
+  const screen = await render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false } },
+        })
+      }
+    >
+      <DecisionDetail
+        decision={decision}
+        refresh={vi.fn()}
+        epoch={1}
+        missionId="mission-resumed"
+      />
+    </QueryClientProvider>,
+  );
+  await screen.getByRole("button", { name: "Approve this revision" }).click();
+  expect(operate).toHaveBeenCalledWith(
+    decision,
+    "approve",
+    undefined,
+    "mission-resumed",
+  );
+  expect(intelligenceApi.lineage).toHaveBeenCalledWith(
+    decision.id,
+    "mission-resumed",
+  );
+  expect(intelligenceApi.policy).toHaveBeenCalledWith(
+    decision.id,
+    "mission-resumed",
+  );
+});
+
+it("forwards Mission context when observing the selected Decision outcome", async () => {
+  const selected = { ...decision, status: "approved" };
+  vi.spyOn(intelligenceApi, "policy").mockResolvedValue({
+    current: true,
+    policy_revision: 1,
+    can_edit: true,
+    can_review: false,
+  });
+  vi.spyOn(intelligenceApi, "lineage").mockResolvedValue({
+    news,
+    investigation: { id: "investigation" } as never,
+    decision: selected,
+    evidence: [],
+    events: [],
+    outcomes: [],
+  });
+  const outcome = vi.spyOn(intelligenceApi, "outcome").mockResolvedValue({
+    id: "outcome-1",
+    revision: 1,
+    created_at: window.end,
+    status: "pending",
+    semantic: ref,
+    evidence: [],
+    predicted: 90,
+    completeness: 0,
+    attribution: "unknown",
+    dimensions: {},
+  });
+  const screen = await render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false } },
+        })
+      }
+    >
+      <DecisionDetail
+        decision={selected}
+        refresh={vi.fn()}
+        epoch={1}
+        missionId="mission-resumed"
+      />
+    </QueryClientProvider>,
+  );
+  await screen.getByRole("button", { name: "Evaluate outcome" }).click();
+  expect(outcome).toHaveBeenCalledWith(decision.id, "mission-resumed");
 });

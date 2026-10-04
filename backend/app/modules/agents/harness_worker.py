@@ -988,6 +988,30 @@ class AgentHarnessWorker:
             return False
 
         context.business_cancelled = business_cancelled
+        from app.modules.agents.business_results import (
+            execution_clock,
+            governed_result,
+            pin_time,
+            planner_target,
+        )
+
+        context.business_result_hook = governed_result
+        context.business_time_hook = pin_time
+        context.business_clock_hook = execution_clock
+        if not is_root:
+            inherited = await mission_service.project_run(root["run_id"], user)
+            if inherited:
+                inherited = await mission_service.attach_run(
+                    inherited.mission_id, child["run_id"], user
+                )
+                context.mission_id = inherited.mission_id
+                async def inherited_business_turn(turn_plan, loop_context):
+                    mission = await mission_service.record_release(
+                        inherited.mission_id, child["run_id"], loop_context.release_manifest, user,
+                    )
+                    return mission.model_dump(mode="json")
+
+                context.business_turn_hook = inherited_business_turn
         if is_root:
             async def business_turn(turn_plan, loop_context):
                 mission = await mission_service.for_turn(
@@ -998,12 +1022,25 @@ class AgentHarnessWorker:
                     public_work_steps=turn_plan.public_work_steps,
                     explicit=bool(getattr(loop_context, "requested_work_intent", None)),
                     new_mission=bool(getattr(loop_context, "start_new_mission", False)),
+                    continue_mission_id=child.get("payload", {}).get("continue_mission_id"),
+                    semantic_target=planner_target(turn_plan, loop_context),
+                    screen_follow_up=bool(turn_plan.intent_frame and (
+                        turn_plan.intent_frame.refers_to_screen
+                        or turn_plan.intent_frame.refers_to_previous_answer
+                    )),
+                    continuation_sink=lambda choice: setattr(
+                        loop_context, "mission_continuation", choice.model_dump(mode="json")
+                    ),
                 )
                 if mission is None:
                     return None
                 mission = await mission_service.attach_run(
                     mission.mission_id, child["run_id"], user
                 )
+                if loop_context.release_manifest:
+                    mission = await mission_service.record_release(
+                        mission.mission_id, child["run_id"], loop_context.release_manifest, user,
+                    )
                 loop_context.mission_id = mission.mission_id
                 return mission.model_dump(mode="json")
 

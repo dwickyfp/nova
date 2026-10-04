@@ -19,6 +19,10 @@ import logging
 from typing import Any
 
 from app.core.database import db
+from app.core.studio_capabilities import (
+    StudioRuntimeCapabilities,
+    effective_studio_capabilities,
+)
 from app.modules.agents.studio_schemas import (
     StudioIdentity,
     StudioPreferences,
@@ -44,6 +48,14 @@ _BOOL_KEYS = {"extended_thinking"}
 
 class StudioService:
     """Identity resolution and preference storage for Nova Studio."""
+
+    @staticmethod
+    def runtime_capabilities() -> StudioRuntimeCapabilities:
+        from app.modules.assistant.analysis_workspace import analytical_workspace
+
+        return effective_studio_capabilities(
+            analysis_executor_isolated=analytical_workspace.executor.isolated
+        )
 
     async def identity(self, user: dict) -> StudioIdentity:
         """The caller's username, switchable roles, and warehouses."""

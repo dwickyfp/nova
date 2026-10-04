@@ -14,6 +14,7 @@ from pydantic import Field
 from app.common.audit import write_audit_log
 from app.core.config import settings
 from app.core.deps import get_current_user
+from app.core.studio_capabilities import CapabilityStatus, effective_studio_capabilities
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.intelligence.contracts import Contract, Scope
 from app.observability.metrics import studio_operation
@@ -59,6 +60,7 @@ class AnalysisResult(Contract):
         default_factory=list, max_length=1000
     )
     warnings: list[str] = Field(default_factory=list, max_length=10)
+    blocker: Literal["BLOCKED_BY_INFRASTRUCTURE", "FEATURE_DISABLED"] | None = None
 
 
 class AnalysisCapability(Contract):
@@ -66,6 +68,8 @@ class AnalysisCapability(Contract):
     available: bool
     isolation: Literal["unavailable", "isolated"]
     reason: str
+    status: CapabilityStatus = "DISABLED"
+    executor_available: bool = False
     bounds: AnalysisBounds = Field(default_factory=AnalysisBounds)
 
 
@@ -100,6 +104,7 @@ class UnavailableAnalysisExecutor:
             execution_id=execution_id,
             status="unavailable",
             summary="An isolated analytical workspace is not configured.",
+            blocker="BLOCKED_BY_INFRASTRUCTURE",
         )
 
     async def cancel(self, execution_id, scope) -> None:
@@ -128,14 +133,19 @@ class AnalyticalWorkspace:
         self.active: dict[str, ActiveAnalysis] = {}
 
     def capability(self) -> AnalysisCapability:
-        enabled = bool(getattr(settings, "STUDIO_ANALYSIS_WORKSPACE_ENABLED", False))
-        available = enabled and self.executor.isolated
+        capability = effective_studio_capabilities(
+            settings, analysis_executor_isolated=self.executor.isolated
+        ).analysis_workspace
         return AnalysisCapability(
-            enabled=enabled,
-            available=available,
-            isolation="isolated" if available else "unavailable",
+            enabled=capability.enabled,
+            available=capability.available,
+            isolation="isolated" if capability.executor_available else "unavailable",
+            status=capability.status,
+            executor_available=bool(capability.executor_available),
             reason="An isolated executor is configured."
-            if available
+            if capability.available
+            else "Analytical workspace execution is disabled."
+            if not capability.enabled
             else "An isolated analytical workspace is not configured.",
         )
 
@@ -151,8 +161,16 @@ class AnalyticalWorkspace:
         scope = workflow_scope(user)
         await require_thread(request.thread_id, user)
         execution_id = str(uuid4())
-        if not self.capability().available:
+        capability = self.capability()
+        if not capability.available:
             await self._audit(execution_id, scope, "UNAVAILABLE")
+            if not capability.enabled:
+                return AnalysisResult(
+                    execution_id=execution_id,
+                    status="unavailable",
+                    summary=capability.reason,
+                    blocker="FEATURE_DISABLED",
+                )
             return await UnavailableAnalysisExecutor().execute(
                 execution_id, request, scope, (), asyncio.Event()
             )
@@ -367,6 +385,7 @@ class AnalyticalWorkspaceTool:
             else f"ANALYSIS_{result.status.upper()}",
             recoverable=False,
             safe_detail=result.summary,
+            metadata={"analysis_status": result.status, "blocker": result.blocker},
         )
 
 

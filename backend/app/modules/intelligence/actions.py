@@ -26,10 +26,12 @@ from app.modules.intelligence.action_contracts import (
     ActionEvent,
     ActionOperation,
     ActionPreview,
+    ActionRead,
     ActionReview,
     ActionVerification,
-    MonitorPolicyInput,
+    action_adapter_contract,
 )
+from app.modules.intelligence.automation_action import AutomationActionAdapter
 from app.modules.intelligence.contracts import Scope, fingerprint, utc_now
 from app.modules.intelligence.engine_repository import metadata_lock
 from app.modules.intelligence.monitor_action import MonitorActionAdapter
@@ -49,6 +51,7 @@ class ActionService:
             if adapters is not None
             else {
                 "monitor-v1": MonitorActionAdapter(service),
+                "automation-v1": AutomationActionAdapter(service),
             }
         )
 
@@ -64,6 +67,30 @@ class ActionService:
     def repository(self):
         return self.service.repository
 
+    def _adapter(self, adapter_id: str):
+        adapter = self.adapters.get(adapter_id)
+        if adapter is None:
+            raise HTTPException(status_code=409, detail="Action adapter is unavailable")
+        return adapter
+
+    async def _owned_mission(self, mission_id: str, user: dict):
+        from app.modules.agents.mission import mission_service
+
+        mission = await mission_service.get(mission_id, user, project=False)
+        if mission.scope != Scope.from_user(user):
+            raise HTTPException(
+                status_code=409, detail="Resume this Mission before creating an action"
+            )
+        return mission
+
+    async def _read_decision(self, decision_id, user, *, mission_id=None, revision=None):
+        if mission_id is not None:
+            await self._owned_mission(mission_id, user)
+            return await self.service.get_for_mission(
+                "decisions", decision_id, user, mission_id=mission_id, revision=revision
+            )
+        return await self.service.get("decisions", decision_id, user)
+
     async def revalidate(self, user: dict) -> None:
         scope = Scope.from_user(user)
         session = await session_store.get(scope.session_id) if scope.session_id else None
@@ -72,11 +99,73 @@ class ActionService:
 
     async def get(self, action_id: str, user: dict) -> Action:
         await self.revalidate(user)
-        action = await self.service.get("actions", action_id, user)
+        candidate = await self.repository.get("actions", action_id, Scope.from_user(user), Action)
+        if candidate is not None and candidate.mission_id is not None:
+            from app.modules.intelligence.decisions import decision_digest
+
+            decision = await self._read_decision(
+                candidate.decision_id,
+                user,
+                mission_id=candidate.mission_id,
+                revision=candidate.decision_revision,
+            )
+            if decision_digest(decision) != candidate.decision_digest:
+                raise HTTPException(
+                    status_code=409, detail="Decision changed; preview a new action"
+                )
+            action = candidate
+        else:
+            action = await self.service.get("actions", action_id, user)
         if action.scope != Scope.from_user(user):
             raise HTTPException(status_code=404, detail="Action unavailable")
         await self._record_event(action)
         return action
+
+    async def read(
+        self,
+        action_id: str,
+        user: dict,
+        *,
+        mission_id: str | None = None,
+        revision: int | None = None,
+    ) -> ActionRead:
+        if mission_id is None:
+            if revision is not None:
+                raise HTTPException(
+                    status_code=422, detail="Historical Action reads require a Mission"
+                )
+            action = await self.get(action_id, user)
+            return ActionRead.model_validate(action.model_dump() | {"execution_current": True})
+        from app.modules.agents.mission import mission_service, require_thread
+
+        await self.revalidate(user)
+        scope = Scope.from_user(user)
+        mission = await mission_service._get_owner(mission_id, scope)
+        await require_thread(mission.thread_id, user)
+        pin = next(
+            (
+                ref
+                for ref in mission.object_refs
+                if ref.kind == "action"
+                and ref.id == action_id
+                and (revision is None or revision == ref.revision)
+            ),
+            None,
+        )
+        if pin is None:
+            raise HTTPException(status_code=404, detail="Mission Action reference unavailable")
+        candidate = await self.repository.get("actions", action_id, scope, Action)
+        if candidate is not None and candidate.scope == scope and mission.scope == scope:
+            action = await self.get(action_id, user)
+            execution_current = True
+        else:
+            action = await self.service.get_for_mission(
+                "actions", action_id, user, mission_id=mission_id, revision=pin.revision
+            )
+            execution_current = False
+        return ActionRead.model_validate(
+            action.model_dump() | {"execution_current": execution_current}
+        )
 
     async def _write(self, action: Action, user: dict, **updates) -> Action:
         await self._record_event(action)
@@ -114,9 +203,14 @@ class ActionService:
     async def _decision(self, action: Action, user: dict):
         from app.modules.intelligence.decisions import decision_digest
 
-        decision = await self.service.get("decisions", action.decision_id, user)
+        decision = await self._read_decision(
+            action.decision_id,
+            user,
+            mission_id=action.mission_id,
+            revision=action.decision_revision,
+        )
         if (
-            decision.scope != action.scope
+            (action.mission_id is None and decision.scope != action.scope)
             or decision.revision != action.decision_revision
             or decision_digest(decision) != action.decision_digest
         ):
@@ -144,7 +238,7 @@ class ActionService:
     async def _policy(action: Action):
         policy = await read_business_policy()
         evaluated = evaluate_business_policy(
-            MonitorPolicyInput(),
+            action_adapter_contract(action.adapter_id).policy_type(),
             policy,
             {
                 "action_id": action.id,
@@ -176,6 +270,10 @@ class ActionService:
         self, action: Action, user: dict, *, compensation=False
     ) -> None:
         await self.revalidate(user)
+        if action.mission_id is not None:
+            mission = await self._owned_mission(action.mission_id, user)
+            if mission.cancel_requested and not compensation:
+                raise HTTPException(status_code=409, detail="This Mission has been cancelled")
         await self._decision(action, user)
         policy, evaluated = await self._policy(action)
         if action.policy != evaluated or evaluated.decision == "DENY":
@@ -205,8 +303,11 @@ class ActionService:
                 != expected_scope
             ):
                 raise HTTPException(status_code=403, detail="Reviewer session or role changed")
+        adapter = self._adapter(action.adapter_id)
         if not compensation:
-            await self.adapters[action.adapter_id].preview(action.configuration, user)
+            await adapter.preview(action.configuration, user)
+        elif hasattr(adapter, "authorize"):
+            await adapter.authorize(action.configuration, user)
 
     async def _check_fence(self, action: Action, lease) -> None:
         if not await lease.renew():
@@ -219,9 +320,7 @@ class ActionService:
         ):
             raise HTTPException(status_code=409, detail="Action dispatch fence changed")
 
-    async def settle_consent(
-        self, action: Action, user: dict, *, denied: bool = False
-    ) -> Action:
+    async def settle_consent(self, action: Action, user: dict, *, denied: bool = False) -> Action:
         async with metadata_lock("action-dispatch:" + action.id, timeout_seconds=120) as lease:
             current = await self.repository.get("actions", action.id, action.scope, Action)
             if current is None:
@@ -258,8 +357,19 @@ class ActionService:
             if prior.request_digest != digest:
                 raise HTTPException(status_code=409, detail="Idempotency key inputs changed")
             return await self.get(identity, user)
-        decision = await self.service.get("decisions", body.decision_id, user)
-        if decision.scope != scope or decision.revision != body.expected_decision_revision:
+        decision = await self._read_decision(
+            body.decision_id,
+            user,
+            mission_id=body.mission_id,
+            revision=body.expected_decision_revision,
+        )
+        if body.mission_id is not None:
+            mission = await self._owned_mission(body.mission_id, user)
+            if mission.cancel_requested:
+                raise HTTPException(status_code=409, detail="This Mission has been cancelled")
+        if (
+            body.mission_id is None and decision.scope != scope
+        ) or decision.revision != body.expected_decision_revision:
             raise HTTPException(
                 status_code=409, detail="Review the current owned decision revision"
             )
@@ -272,12 +382,13 @@ class ActionService:
             or body.configuration.agent_id != decision.agent_id
         ):
             raise HTTPException(
-                status_code=422, detail="The monitor must use the decision's governed scope"
+                status_code=422, detail="The action must use the decision's governed scope"
             )
-        await self.adapters[body.adapter_id].preview(body.configuration, user)
+        contract = action_adapter_contract(body.adapter_id)
+        await self._adapter(body.adapter_id).preview(body.configuration, user)
         policy = await read_business_policy()
         evaluated = evaluate_business_policy(
-            MonitorPolicyInput(),
+            contract.policy_type(),
             policy,
             {
                 "action_id": identity,
@@ -295,9 +406,12 @@ class ActionService:
             semantic=decision.semantic,
             option_id=body.option_id,
             adapter_id=body.adapter_id,
+            action_type=contract.action_type,
+            expected_effect=contract.expected_effect,
             idempotency_key=body.idempotency_key,
             request_digest=digest,
             configuration=body.configuration,
+            mission_id=body.mission_id,
             policy=evaluated,
             last_actor=user["username"],
             status={
@@ -312,7 +426,13 @@ class ActionService:
                 raise HTTPException(status_code=409, detail="Idempotency key inputs changed")
             if prior is None:
                 await self.revalidate(user)
-                current = await self.repository.get("decisions", decision.id, scope, type(decision))
+                current = (
+                    await self._read_decision(
+                        decision.id, user, mission_id=body.mission_id, revision=decision.revision
+                    )
+                    if body.mission_id is not None
+                    else await self.repository.get("decisions", decision.id, scope, type(decision))
+                )
                 if current is None or decision_digest(current) != decision_digest(decision):
                     raise HTTPException(status_code=409, detail="Decision changed during preview")
                 if await read_business_policy() != policy:
@@ -479,7 +599,7 @@ class ActionService:
                     await self._check_fence(action, lease)
 
                 async with asyncio.timeout(60):
-                    adapter = self.adapters[action.adapter_id]
+                    adapter = self._adapter(action.adapter_id)
                     receipt = await (
                         adapter.compensate(action, user, guard=guard)
                         if compensate
@@ -524,7 +644,7 @@ class ActionService:
         await self._preconditions(action, user, compensation=compensated)
         try:
             async with asyncio.timeout(30):
-                verification = await self.adapters[action.adapter_id].verify(
+                verification = await self._adapter(action.adapter_id).verify(
                     action, user, compensated=compensated
                 )
         except HTTPException:
@@ -577,13 +697,10 @@ class ActionService:
             await self.revalidate(user)
             if action.status == "cancelled":
                 return action
-            pending_compensation = (
-                action.status == "awaiting_consent" and action.consent_compensate
-            )
+            pending_compensation = action.status == "awaiting_consent" and action.consent_compensate
             if (
-                (action.dispatch_attempts and not pending_compensation)
-                or action.revision != body.expected_revision
-            ):
+                action.dispatch_attempts and not pending_compensation
+            ) or action.revision != body.expected_revision:
                 raise HTTPException(
                     status_code=409, detail="Dispatched or changed actions require review"
                 )
@@ -617,9 +734,9 @@ class BusinessActionTool:
 
     def preview(self, invocation: ToolInvocation) -> str:
         verb = (
-            "Disable the monitor and its schedule"
+            "Disable the configuration created by this action"
             if invocation.arguments.get("compensate")
-            else "Create the monitor and its schedule"
+            else "Create the reviewed action configuration"
         )
         return (
             verb + " for the reviewed action " + str(invocation.arguments.get("action_id", ""))[:64]

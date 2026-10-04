@@ -147,18 +147,31 @@ class ContextNode(Record):
         "investigation",
         "policy",
         "domain",
+        "query_pattern",
+        "mission",
+        "action",
+        "deliverable",
+        "agent_release",
+        "dashboard",
+        "artifact",
+        "document",
+        "skill",
+        "tool",
     ]
     name: str = Field(min_length=1, max_length=256)
     reference_id: str = Field(min_length=1, max_length=128)
     reference_revision: int | None = Field(default=None, ge=1)
     reference_agent_id: str | None = Field(default=None, max_length=64)
+    reference_parent_id: str | None = Field(default=None, max_length=128)
+    reference_run_id: str | None = Field(default=None, max_length=64)
+    reference_fingerprint: str | None = Field(default=None, max_length=128)
     semantic: SemanticRef | None = None
     state: KnowledgeState = KnowledgeState.HYPOTHESIS
     authority: str | None = Field(default=None, max_length=128)
     evidence: list[EvidenceRef] = Field(default_factory=list, max_length=100)
     source_kind: Literal[
         "unknown", "user_statement", "published_semantic", "reviewed_rule",
-        "lifecycle_evidence", "usage",
+        "lifecycle_evidence", "usage", "agent_release", "studio_reference",
     ] = "unknown"
     authority_basis: dict[str, str | int | bool] = Field(default_factory=dict, max_length=8)
     validity: Literal["current", "historical", "unknown"] = "unknown"
@@ -185,7 +198,7 @@ class MetricObservation(Record):
     semantic: SemanticRef
     window: Window
     value: float | None
-    sample_count: int = Field(ge=0)
+    sample_count: int | None = Field(default=None, ge=0)
     completeness: float | None = Field(default=None, ge=0, le=1)
     evidence: list[EvidenceRef] = Field(min_length=1, max_length=100)
 
@@ -206,7 +219,7 @@ class MonitorConfiguration(Contract):
     semantic: SemanticRef
     plan: dict[str, Any]
     value_column: str = Field(min_length=1, max_length=128)
-    count_column: str = Field(min_length=1, max_length=128)
+    count_column: str | None = Field(default=None, min_length=1, max_length=128)
     completeness_column: str | None = Field(default=None, max_length=128)
     time_dimension: str = Field(min_length=1, max_length=128)
     driver_dimensions: list[str] = Field(default_factory=list, max_length=3)
@@ -224,6 +237,8 @@ class MonitorConfiguration(Contract):
 
     @model_validator(mode="after")
     def valid_timezone(self):
+        if self.enabled and self.count_column is None:
+            raise ValueError("Scheduled monitors require reviewed count semantics")
         try:
             ZoneInfo(self.timezone)
         except (KeyError, ValueError) as exc:
@@ -288,15 +303,19 @@ class DecisionOption(Contract):
     scenario_version: int = Field(default=1, ge=1)
     id: str = Field(min_length=1, max_length=128)
     description: str = Field(min_length=1, max_length=2000)
-    action_type: Literal[
-        "recommendation", "inventory_transfer", "campaign_budget", "rollback", "discount", "spend"
-    ]
-    assumptions: dict[str, float | str | bool]
+    action_type: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_\-]{0,63}$")
+    assumptions: dict[str, float | str | bool] = Field(max_length=32)
     prediction: float
     lower_bound: float | None = None
     upper_bound: float | None = None
     cost: float = Field(ge=0)
-    incremental_gross_profit: float
+    # Omitted defaults preserve historical approval and event proof payloads.
+    effects: dict[str, float | str | bool] = Field(
+        default_factory=dict, max_length=32, exclude_if=lambda value: not value
+    )
+    incremental_gross_profit: float | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     risk: Literal["low", "medium", "high"]
     feasible: bool
     method: str
@@ -318,10 +337,16 @@ class Decision(Record):
     thread_id: str | None = None
     learning_enabled: bool = True
     investigation_id: str
+    investigation_revision: int | None = Field(
+        default=None, ge=1, exclude_if=lambda value: value is None
+    )
+    mission_id: str | None = Field(
+        default=None, max_length=128, exclude_if=lambda value: value is None
+    )
     semantic: SemanticRef
     target_metric: str
     baseline: float
-    currency: str = Field(default="IDR", min_length=3, max_length=3)
+    currency: str | None = Field(default="IDR", min_length=3, max_length=3)
     outcome_window: Window
     options: list[DecisionOption] = Field(min_length=1, max_length=30)
     selected_option_id: str | None = None

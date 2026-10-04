@@ -1,31 +1,12 @@
-import { useCallback, useSyncExternalStore } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ContextInspector } from "@/features/intelligence/context-inspector";
+import type { ContextGraph } from "@/features/intelligence/context-api";
+import type { SemanticRef } from "@/features/intelligence/lifecycle-api";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { useAuthStore } from "@/stores/auth-store";
-
-type ContextGraph = {
-  nodes: {
-    id: string; name: string; source_kind?: string; authority_basis?: Record<string, string | number | boolean>;
-    validity?: string; freshness?: string; valid_from?: string | null; valid_until?: string | null;
-    usage_count?: number; aliases?: string[]; contradictions?: string[];
-  }[];
-  conflicts?: { kind: string; term: string; node_ids: string[]; resolved: boolean }[];
-};
-
-export function ContextPanel() {
-  const epoch = useAuthStore((state) => state.securityEpoch);
-  return <div className="space-y-5"><ContextInspector /><ContextAuthority key={epoch} epoch={epoch} /></div>;
+export function ContextPanel({ semantic, metric }: { semantic?: SemanticRef; metric?: string }) {
+  return <ContextInspector semantic={semantic} metric={metric} renderGraphFooter={(graph) => <ContextAuthority graph={graph} />} />;
 }
 
-function ContextAuthority({ epoch }: { epoch: number }) {
-  const client = useQueryClient();
-  const subscribe = useCallback((notify: () => void) => client.getQueryCache().subscribe(notify), [client]);
-  const snapshot = useCallback(() => {
-    const current = client.getQueryCache().findAll({ queryKey: ["context-graph", epoch] }).find((query) => query.isActive());
-    return current?.state.fetchStatus === "idle" && current.state.status === "success" ? current.state.data as ContextGraph : undefined;
-  }, [client, epoch]);
-  const graph = useSyncExternalStore(subscribe, snapshot, () => undefined);
+function ContextAuthority({ graph }: { graph: ContextGraph }) {
   if (!graph?.nodes?.length) return null;
   const conflicts = graph.conflicts?.filter((conflict) => !conflict.resolved) ?? [];
   return <section aria-label="Context authority and conflicts" className="min-w-0 space-y-4 border-t pt-4">

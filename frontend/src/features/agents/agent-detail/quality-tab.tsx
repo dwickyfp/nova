@@ -24,6 +24,8 @@ import {
 } from "../quality-api";
 import { QualityCaseEditor } from "./quality-case-editor";
 import { QualityProposalDraft } from "./quality-proposal-draft";
+import { QualityProposalReview } from "./quality-proposal-review";
+import { AgentDoctor, DoctorFindings } from "./quality-doctor";
 import {
   QualityRunComparison,
   QualityRunResults,
@@ -719,6 +721,11 @@ function QualityWorkspace({
         )}
       </section>
       <QualityMonitoringSettings agentId={agentId} epoch={epoch} />
+      <AgentDoctor
+        agentId={agentId}
+        epoch={epoch}
+        onInspectTrace={onInspectTrace}
+      />
     </div>
   );
 }
@@ -889,17 +896,23 @@ function ProposalList({ agentId, epoch }: { agentId: string; epoch: number }) {
     mutationFn: ({
       id,
       resolution,
+      options,
     }: {
       id: string;
       resolution: "accepted" | "rejected";
+      options?: { patch_id?: string; regression_case_ids?: string[] };
     }) =>
       qualityApi.review(
         agentId,
         query.data!.items.find((item) => item.id === id)!,
         resolution,
+        options,
       ),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: key });
+      void client.invalidateQueries({
+        queryKey: ["agent-versions", epoch, agentId],
+      });
     },
   });
   return (
@@ -956,42 +969,37 @@ function ProposalList({ agentId, epoch }: { agentId: string; epoch: number }) {
                   {change.target}: {change.description}
                 </p>
               ))}
-              {["pending", "proposed"].includes(item.status) && (
-                <div className="flex flex-wrap gap-2">
+              {item.doctor && <DoctorFindings report={item.doctor} />}
+              {(["pending", "proposed"].includes(item.status) ||
+                item.application?.status === "pending") && (
+                <QualityProposalReview
+                  key={`${item.id}:${item.revision}`}
+                  proposal={item}
+                  busy={review.isPending}
+                  onReview={(resolution, options) =>
+                    review.mutate({ id: item.id, resolution, options })
+                  }
+                />
+              )}
+              {item.status === "accepted" &&
+                item.application?.status !== "pending" && (
                   <Button
                     variant="outline"
                     className="min-h-11"
-                    disabled={review.isPending}
-                    onClick={() =>
-                      review.mutate({ id: item.id, resolution: "rejected" })
-                    }
+                    onClick={() => setDraftProposalId(item.id)}
                   >
-                    Reject proposal
+                    {item.application?.version_id
+                      ? "Review applied draft"
+                      : item.application?.proposal_id
+                        ? "Review Semantic proposal"
+                        : "Prepare configuration draft"}
                   </Button>
-                  <Button
-                    className="min-h-11"
-                    disabled={review.isPending}
-                    onClick={() =>
-                      review.mutate({ id: item.id, resolution: "accepted" })
-                    }
-                  >
-                    Accept for draft
-                  </Button>
-                </div>
-              )}
-              {item.status === "accepted" && (
-                <Button
-                  variant="outline"
-                  className="min-h-11"
-                  onClick={() => setDraftProposalId(item.id)}
-                >
-                  Prepare configuration draft
-                </Button>
-              )}
+                )}
               {draftProposalId === item.id && (
                 <QualityProposalDraft
                   agentId={agentId}
                   epoch={epoch}
+                  proposal={item}
                   onClose={() => setDraftProposalId(null)}
                 />
               )}

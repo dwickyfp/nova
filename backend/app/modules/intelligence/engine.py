@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -68,28 +69,53 @@ class ChatInvestigationRequest(Contract):
     configuration: MonitorConfiguration
     current_window: Window | None = None
     baseline_window: Window | None = None
+    calendar_timezone: str | None = Field(default=None, max_length=128)
 
     @model_validator(mode="after")
     def complete_windows(self):
         if self.configuration.enabled:
             raise ValueError("Chat investigations require a disabled comparison monitor")
+        if self.calendar_timezone and self.calendar_timezone != self.configuration.timezone:
+            raise ValueError("Calendar comparison must use the monitor timezone")
         if (
             self.current_window
             and self.baseline_window
             and (
-                self.current_window.end - self.current_window.start
-                != self.baseline_window.end - self.baseline_window.start
+                self._span(self.current_window) != self._span(self.baseline_window)
                 or self.baseline_window.end > self.current_window.start
             )
         ):
             raise ValueError("Use equal length, nonoverlapping comparison windows")
         return self
 
+    def _span(self, window: Window) -> timedelta:
+        if self.calendar_timezone:
+            try:
+                zone = ZoneInfo(self.calendar_timezone)
+            except (KeyError, ValueError) as exc:
+                raise ValueError("Use a named IANA timezone") from exc
+            return (window.end.astimezone(zone).replace(tzinfo=None)
+                    - window.start.astimezone(zone).replace(tzinfo=None))
+        return window.end - window.start
+
 
 class ChatComparison(Record):
     request_digest: str
     semantic: SemanticRef
     monitor_id: str
+    monitor_revision: int | None = Field(default=None, ge=1, exclude_if=lambda value: value is None)
+    configuration: MonitorConfiguration | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    automatic_mission_id: str | None = Field(
+        default=None, max_length=128, exclude_if=lambda value: value is None
+    )
+    automatic_operation_id: str | None = Field(
+        default=None, max_length=128, exclude_if=lambda value: value is None
+    )
+    investigation_revision: int | None = Field(
+        default=None, ge=1, exclude_if=lambda value: value is None
+    )
     current_window: Window
     baseline_window: Window
     status: str = "pending"
@@ -97,6 +123,7 @@ class ChatComparison(Record):
     observation_ids: list[str] = Field(default_factory=list, max_length=2)
     news_id: str | None = None
     investigation_id: str | None = None
+    calendar_timezone: str | None = None
 
 
 MODELS["comparisons"] = ChatComparison
@@ -111,6 +138,9 @@ class CycleBudget:
     checked_evidence: set[str] = field(default_factory=set)
     query_results: dict[str, tuple[dict, EvidenceRef]] = field(default_factory=dict)
     semantic_authorizations: dict[str, dict] = field(default_factory=dict)
+    mission_bindings: list[Scope] = field(default_factory=list)
+    mission_records: dict[tuple[str, str], int | None] = field(default_factory=dict)
+    mission_record_bindings: dict[tuple[str, str], Scope] = field(default_factory=dict)
 
     def __post_init__(self):
         self.started = monotonic()
@@ -251,7 +281,8 @@ class IntelligenceService:
             record.scope.active_role,
             record.scope.security_context_version,
         ) == (scope.principal, scope.active_role, scope.security_context_version)
-        if not same_scope and (
+        mission_authorized = any(record.scope == binding for binding in budget.mission_bindings)
+        if not same_scope and not mission_authorized and (
             not isinstance(record, Decision)
             or not await self._decision_grant(record.id, user, record.scope.principal)
         ):
@@ -279,12 +310,27 @@ class IntelligenceService:
         if isinstance(record, ContextEdge):
             for node_id in (record.source, record.target):
                 await self.get("nodes", node_id, user, budget=budget)
-        if isinstance(record, ContextNode) and record.kind in {
-            "decision",
-            "outcome",
-            "news",
-            "investigation",
-        }:
+        if isinstance(record, ContextNode) and (
+            record.kind in {
+                "mission", "action", "deliverable", "agent_release", "dashboard", "artifact",
+                "document", "agent", "skill", "tool",
+            } or (
+                record.kind in {"decision", "outcome", "news", "investigation", "policy"}
+                and record.reference_parent_id is not None
+            )
+        ):
+            from app.modules.intelligence.context_sources import authorize_context_reference
+
+            await authorize_context_reference(record, user, budget)
+        if (
+            isinstance(record, ContextNode) and record.reference_parent_id is None
+            and record.kind in {
+                "decision",
+                "outcome",
+                "news",
+                "investigation",
+            }
+        ):
             kind = {
                 "decision": "decisions",
                 "outcome": "outcomes",
@@ -321,10 +367,15 @@ class IntelligenceService:
         if isinstance(record, DecisionEvent):
             await self.get("decisions", record.decision_id, user, budget=budget)
         if isinstance(record, Action):
-            await self.get("decisions", record.decision_id, user, budget=budget)
+            if mission_authorized:
+                budget.mission_records[("decisions", record.decision_id)] = record.decision_revision
+            await self.get("decisions", record.decision_id, user, budget=budget,
+                           revision=record.decision_revision if mission_authorized else None)
         if isinstance(record, ActionEvent):
             await self.get("actions", record.action_id, user, budget=budget)
         if isinstance(record, Outcome):
+            if mission_authorized:
+                budget.mission_records[("decisions", record.decision_id)] = record.decision_revision
             # Outcome errors and impact also derive from the prediction and
             # baseline, whose authorization can change independently of actuals.
             decision = await self.get(
@@ -367,9 +418,27 @@ class IntelligenceService:
         budget: CycleBudget | None = None,
         revision: int | None = None,
     ) -> Record:
+        budget = budget or CycleBudget()
         record = await self.repository.get(
             kind, record_id, Scope.from_user(user), MODELS[kind], revision=revision
         )
+        if record is None and (kind, record_id) in budget.mission_records:
+            pinned = budget.mission_records[(kind, record_id)]
+            if revision is not None and pinned != revision:
+                raise HTTPException(status_code=404, detail="Mission revision unavailable")
+            pinned_binding = budget.mission_record_bindings.get((kind, record_id))
+            bindings = [pinned_binding] if pinned_binding else budget.mission_bindings
+            for binding in bindings:
+                record = await self.repository.get(
+                    kind, record_id, binding, MODELS[kind], revision=pinned,
+                )
+                if record is not None:
+                    if record.scope != binding:
+                        raise HTTPException(status_code=404, detail="Mission binding unavailable")
+                    break
+        pinned_binding = budget.mission_record_bindings.get((kind, record_id))
+        if record is not None and pinned_binding is not None and record.scope != pinned_binding:
+            raise HTTPException(status_code=404, detail="Mission binding unavailable")
         if record is None and kind == "decisions":
             grant = await self._decision_grant(record_id, user)
             if grant:
@@ -382,8 +451,75 @@ class IntelligenceService:
                     )
         if record is None:
             raise HTTPException(status_code=404, detail="Record unavailable")
-        await self.authorize_record(record, user, budget or CycleBudget())
+        await self.authorize_record(record, user, budget)
         return record
+
+    async def get_for_mission(
+        self, kind: str, record_id: str, user: dict, *, mission_id: str,
+        revision: int | None = None, budget: CycleBudget | None = None,
+    ) -> Record:
+        """Read an immutable Mission pin against current caller authorization."""
+        from app.modules.agents.mission import (
+            mission_service,
+            require_thread,
+            require_workflow,
+            workflow_scope,
+        )
+        from app.modules.agents.mission_schema import object_binding_key
+
+        canonical = {"investigations": "investigation", "decisions": "decision",
+                     "actions": "action", "outcomes": "outcome"}
+        if kind not in canonical or (revision is not None and revision < 1):
+            raise HTTPException(status_code=404, detail="Mission record unavailable")
+        require_workflow()
+        scope = workflow_scope(user)
+        mission = await mission_service._get_owner(mission_id, scope)
+        await require_thread(mission.thread_id, user)
+        pins = [ref for ref in (mission.pinned_objects if revision is not None
+                                else mission.object_refs)
+                if ref.kind == canonical[kind] and ref.id == record_id
+                and (revision is None or ref.revision == revision)]
+        if len(pins) != 1:
+            raise HTTPException(status_code=404, detail="Mission record unavailable")
+        revision = pins[0].revision
+        budget = budget or CycleBudget()
+        bindings = [mission.scope, *mission.run_bindings.values(),
+                    *mission.object_bindings.values()]
+        for binding in bindings:
+            if (binding.principal, binding.active_role) != (scope.principal, scope.active_role):
+                raise HTTPException(status_code=404, detail="Mission owner scope changed")
+            if binding not in budget.mission_bindings:
+                budget.mission_bindings.append(binding)
+        for ref in mission.object_refs:
+            table = next(table for table, name in canonical.items() if name == ref.kind)
+            budget.mission_records[(table, ref.id)] = ref.revision
+            budget.mission_record_bindings[(table, ref.id)] = mission.object_bindings.get(
+                object_binding_key(ref), mission.scope
+            )
+        pin = pins[0]
+        budget.mission_records[(kind, record_id)] = pin.revision
+        budget.mission_record_bindings[(kind, record_id)] = mission.object_bindings.get(
+            object_binding_key(pin), mission.scope
+        )
+        return await self.get(kind, record_id, user, budget=budget, revision=revision)
+
+    async def mission_investigation_context(
+        self, mission_id: str, investigation_id: str, revision: int, user: dict,
+    ) -> dict:
+        budget = CycleBudget()
+        investigation = await self.get_for_mission(
+            "investigations", investigation_id, user, mission_id=mission_id,
+            revision=revision, budget=budget,
+        )
+        budget.mission_records[("news", investigation.news_id)] = investigation.news_revision
+        budget.mission_record_bindings[("news", investigation.news_id)] = investigation.scope
+        news = await self.get("news", investigation.news_id, user, budget=budget,
+                              revision=investigation.news_revision)
+        budget.mission_records[("monitors", news.monitor_id)] = news.monitor_revision
+        budget.mission_record_bindings[("monitors", news.monitor_id)] = news.scope
+        monitor = await self.get("monitors", news.monitor_id, user, budget=budget,
+                                 revision=news.monitor_revision)
+        return {"investigation": investigation, "news": news, "monitor": monitor}
 
     @staticmethod
     async def _decision_grant(record_id, user, owner=None):
@@ -450,7 +586,8 @@ class IntelligenceService:
             raise HTTPException(status_code=422, detail="Include the data completeness metric")
         if (
             monitor.value_column not in plan.metrics
-            or monitor.count_column not in plan.metrics
+            or (monitor.count_column is not None and monitor.count_column not in plan.metrics)
+            or (monitor.enabled and monitor.count_column is None)
             or plan.dimensions
             or plan.time
             or plan.having
@@ -498,29 +635,40 @@ class IntelligenceService:
         return saved
 
     async def observe(
-        self, monitor: Monitor, window: Window, user: dict, budget: CycleBudget
+        self, monitor: Monitor, window: Window, user: dict, budget: CycleBudget, *, _mission=None,
     ) -> MetricObservation:
+        async with self._automatic_fence(_mission, user):
+            pass
         result, evidence = await self.query(
             monitor.semantic, window_plan(monitor, window), user, budget
         )
         if len(result["rows"]) != 1:
             raise HTTPException(status_code=422, detail="Monitor needs exactly one aggregate row")
         row = dict(zip(result["columns"], result["rows"][0], strict=True))
-        value, count = row.get(monitor.value_column), row.get(monitor.count_column)
-        if count is None or Decimal(str(count)) != int(count) or count < 0:
+        value = row.get(monitor.value_column)
+        count = row.get(monitor.count_column) if monitor.count_column else None
+        if monitor.count_column and (
+            count is None or Decimal(str(count)) != int(count) or count < 0
+        ):
             raise HTTPException(status_code=422, detail="The observation is incomplete")
-        if value is None and count > 0:
+        if value is None and count is not None and count > 0:
             raise HTTPException(status_code=422, detail="The observation is incomplete")
         evidence.window_start, evidence.window_end = window.start, window.end
+        execution_scope = Scope.from_user(user)
+        identity = [monitor.id, monitor.revision, window.model_dump(), evidence.digest]
+        if monitor.scope.model_dump(exclude={"session_id"}) != execution_scope.model_dump(
+            exclude={"session_id"}
+        ):
+            identity.append(execution_scope.model_dump(exclude={"session_id"}))
         observation = MetricObservation(
-            id=fingerprint([monitor.id, monitor.revision, window.model_dump(), evidence.digest]),
-            scope=Scope.from_user(user),
+            id=fingerprint(identity),
+            scope=execution_scope,
             monitor_id=monitor.id,
             monitor_revision=monitor.revision,
             semantic=monitor.semantic,
             window=window,
             value=float(value) if value is not None else None,
-            sample_count=int(count),
+            sample_count=int(count) if count is not None else None,
             completeness=row.get(monitor.completeness_column)
             if monitor.completeness_column
             else None,
@@ -529,13 +677,17 @@ class IntelligenceService:
         prior = await self.repository.get(
             "observations", observation.id, Scope.from_user(user), MetricObservation
         )
-        return prior or await self.repository.save("observations", observation)
+        return prior or await self._save_automatic("observations", observation, user, _mission)
 
     async def run_monitor(
         self, monitor_id: str, window: Window, user: dict, budget: CycleBudget | None = None
     ) -> dict:
         budget = budget or CycleBudget()
         monitor = await self.get("monitors", monitor_id, user, budget=budget)
+        if monitor.count_column is None:
+            raise HTTPException(
+                status_code=422, detail="Scheduled monitoring needs reviewed counts"
+            )
         await self.authorize_semantic(monitor.semantic, user, active=True, budget=budget)
         if window.end > utc_now() or window.end - window.start != timedelta(
             hours=monitor.window_hours
@@ -650,21 +802,29 @@ class IntelligenceService:
         await self._audit("DETECT", news, user)
         return {"observation_id": current.id, "detection": detection, "news_id": news.id}
 
-    async def investigate(self, news_id: str, user: dict) -> Investigation:
-        budget = CycleBudget()
+    async def investigate(
+        self, news_id: str, user: dict, *, arithmetic_only: bool = False,
+        budget: CycleBudget | None = None, _mission=None,
+    ) -> Investigation:
+        budget = budget or CycleBudget()
         budget.consume("investigations")
         news = await self.get("news", news_id, user, budget=budget)
         monitor = await self.get(
             "monitors", news.monitor_id, user, budget=budget, revision=news.monitor_revision
         )
-        await self.authorize_semantic(news.semantic, user, active=True, budget=budget)
+        historical = budget.mission_record_bindings.get(("news", news.id)) == news.scope
+        record_scope = news.scope if historical else Scope.from_user(user)
+        await self.authorize_semantic(news.semantic, user, active=not historical, budget=budget)
         if monitor.semantic != news.semantic:
             raise HTTPException(status_code=409, detail="Monitor changed; revalidate the incident")
-        if news.confidence.label == "insufficient":
-            return await self.incomplete_investigation(news, user)
+        arithmetic_only = (arithmetic_only and monitor.count_column is None
+                           and not monitor.enabled
+                           and news.confidence.method == "explicit-window-comparison-v1")
+        if news.confidence.label == "insufficient" and not arithmetic_only:
+            return await self.incomplete_investigation(news, user, budget=budget, _mission=_mission)
         prior = (
             await self.repository.get(
-                "investigations", news.investigation_id, Scope.from_user(user), Investigation
+                "investigations", news.investigation_id, record_scope, Investigation
             )
             if news.investigation_id
             else None
@@ -759,17 +919,28 @@ class IntelligenceService:
                     ],
                     "residual": str(dimension_residual),
                     "reconciled": explained + dimension_residual == Decimal(str(news.change)),
-                    "baseline": "matched-weekday-median-windows",
+                    "baseline": "fixed-window-difference" if len(news.baseline_windows) == 1
+                    else "matched-weekday-median-windows",
                 }
             )
             if len(monitor.driver_dimensions) == 1:
                 residual = dimension_residual
+        if not hypotheses:
+            hypotheses.append(Hypothesis(
+                id=fingerprint([news.id, "total-change"]), label="Total metric change",
+                contribution=news.change, causal_status="arithmetic",
+                confidence=Confidence(dimension="causal", method="window-difference-v1",
+                                      label="insufficient"),
+                evidence_ids=[entry.id for entry in news.evidence],
+                next_test="Select a governed driver dimension to decompose the change.",
+            ))
         timeline = [{"at": news.window.end.isoformat(), "kind": "detection", "reference": news.id}]
         for related_id in monitor.related_monitor_ids:
             related = await self.get("monitors", related_id, user, budget=budget)
             observed = await self.observe(related, news.window, user, budget)
             baseline = await self.observe(related, previous, user, budget)
-            if min(observed.sample_count, baseline.sample_count) < related.minimum_samples:
+            if (observed.sample_count is None or baseline.sample_count is None
+                    or min(observed.sample_count, baseline.sample_count) < related.minimum_samples):
                 continue
             evidence.extend([*baseline.evidence, *observed.evidence])
             hypotheses.append(
@@ -869,7 +1040,7 @@ class IntelligenceService:
                     "investigation-v2",
                 ]
             ),
-            scope=Scope.from_user(user),
+            scope=record_scope,
             news_id=news.id,
             news_revision=news.revision,
             semantic=news.semantic,
@@ -882,20 +1053,26 @@ class IntelligenceService:
             timeline=timeline,
         )
         existing = await self.repository.get(
-            "investigations", investigation.id, Scope.from_user(user), Investigation
+            "investigations", investigation.id, record_scope, Investigation
         )
-        saved = existing or await self.repository.save("investigations", investigation)
+        saved = existing or await self._save_automatic(
+            "investigations", investigation, user, _mission,
+        )
         updated = news.model_copy(update={"investigation_id": saved.id, "status": "investigating"})
-        await self.repository.save("news", updated, expected_revision=news.revision)
+        await self._save_automatic("news", updated, user, _mission,
+                                   expected_revision=news.revision)
         await self._audit("INVESTIGATE", saved, user)
         return saved
 
-    async def incomplete_investigation(self, news: NewsItem, user: dict) -> Investigation:
+    async def incomplete_investigation(
+        self, news: NewsItem, user: dict, *, budget: CycleBudget | None = None, _mission=None,
+    ) -> Investigation:
         identity = fingerprint([news.id, "insufficient-comparison"])
-        scope = Scope.from_user(user)
+        scope = (news.scope if budget and budget.mission_record_bindings.get(("news", news.id))
+                 == news.scope else Scope.from_user(user))
         investigation = await self.repository.get("investigations", identity, scope, Investigation)
         if investigation is None:
-            investigation = await self.repository.save(
+            investigation = await self._save_automatic(
                 "investigations",
                 Investigation(
                     id=identity,
@@ -908,11 +1085,12 @@ class IntelligenceService:
                     method="explicit-window-comparison-v1",
                     status="insufficient",
                 ),
+                user, _mission,
             )
         else:
-            await self.authorize_record(investigation, user, CycleBudget())
+            await self.authorize_record(investigation, user, budget or CycleBudget())
         if news.investigation_id != investigation.id:
-            await self.repository.save(
+            await self._save_automatic(
                 "news",
                 news.model_copy(
                     update={
@@ -920,19 +1098,142 @@ class IntelligenceService:
                         "status": "investigating",
                     }
                 ),
+                user, _mission,
                 expected_revision=news.revision,
             )
         await self._audit("INCOMPLETE_INVESTIGATION", investigation, user)
         return investigation
 
-    async def initiate_investigation(self, body: ChatInvestigationRequest, user: dict) -> dict:
+    @asynccontextmanager
+    async def _automatic_fence(self, mission, user):
+        if mission is None:
+            yield
+            return
+        from app.modules.agents.harness_repository import harness_repository
+        from app.modules.agents.mission import mission_service
+
+        async with harness_repository.admission_lock(
+            mission.thread_id, mission.scope.principal,
+        ) as owned:
+            current = await mission_service.get(mission.mission_id, user, project=False)
+            if (current.current_binding != mission.current_binding
+                    or current.scope != Scope.from_user(user)
+                    or current.cancel_requested or current.status == "cancelled"):
+                raise HTTPException(status_code=409, detail="Mission execution binding changed")
+            await owned()
+            yield
+
+    async def _save_automatic(self, kind, record, user, mission, *, expected_revision=0):
+        async with self._automatic_fence(mission, user):
+            return await self.repository.save(kind, record, expected_revision=expected_revision)
+
+    async def _automatic_comparison_budget(
+        self, comparison: ChatComparison, mission, operation_id: str, user: dict,
+    ) -> tuple[CycleBudget, Monitor | None]:
+        """Grant only dependencies of a durable internal Mission/seed operation."""
+        async with self._automatic_fence(mission, user):
+            pass
+        bindings = [mission.scope, *mission.historical_bindings, *mission.run_bindings.values(),
+                    *mission.object_bindings.values()]
+        if (comparison.scope not in bindings
+                or comparison.automatic_mission_id != mission.mission_id
+                or comparison.automatic_operation_id != operation_id
+                or comparison.id != fingerprint([
+                    comparison.scope.model_dump(exclude={"session_id"}), operation_id,
+                    "chat-comparison-v1",
+                ]) or comparison.configuration is None):
+            raise HTTPException(status_code=409, detail="Automatic comparison proof unavailable")
+        body = ChatInvestigationRequest(
+            operation_id=operation_id, configuration=comparison.configuration,
+            current_window=comparison.current_window, baseline_window=comparison.baseline_window,
+            calendar_timezone=comparison.calendar_timezone,
+        )
+        if comparison.request_digest != fingerprint(body.model_dump(
+            mode="json", exclude={"calendar_timezone"} if body.calendar_timezone is None else set(),
+        )) or comparison.semantic != body.configuration.semantic:
+            raise HTTPException(status_code=409, detail="Automatic comparison proof changed")
+        budget = CycleBudget()
+        budget.mission_bindings.append(comparison.scope)
+
+        def pin(kind, record):
+            budget.mission_records[(kind, record.id)] = record.revision
+            budget.mission_record_bindings[(kind, record.id)] = record.scope
+            if record.scope not in budget.mission_bindings:
+                budget.mission_bindings.append(record.scope)
+
+        monitor = await self.repository.get(
+            "monitors", comparison.monitor_id, comparison.scope, Monitor,
+            revision=comparison.monitor_revision,
+        )
+        if monitor is None:
+            if comparison.monitor_revision is not None or comparison.monitor_id != fingerprint([
+                comparison.id, "comparison-monitor",
+            ]):
+                raise HTTPException(status_code=409, detail="Pinned comparison monitor unavailable")
+        else:
+            fields = set(MonitorConfiguration.model_fields) - {"enabled"}
+            if (monitor.scope.model_dump(exclude={"session_id"})
+                    != comparison.scope.model_dump(exclude={"session_id"})
+                    or monitor.model_dump(mode="json", include=fields)
+                    != body.configuration.model_dump(mode="json", include=fields)):
+                raise HTTPException(status_code=409, detail="Pinned comparison monitor changed")
+            pin("monitors", monitor)
+            await self.authorize_record(monitor, user, budget)
+        news_id = fingerprint([comparison.id, "comparison-news"])
+        if comparison.news_id not in {None, news_id}:
+            raise HTTPException(status_code=409, detail="Comparison News linkage changed")
+        news = await self.repository.get("news", news_id, comparison.scope, NewsItem)
+        if news is not None:
+            if (monitor is None or news.scope != comparison.scope
+                    or news.semantic != comparison.semantic or news.monitor_id != monitor.id
+                    or news.monitor_revision != monitor.revision
+                    or news.window != comparison.current_window
+                    or news.baseline_windows != [comparison.baseline_window]):
+                raise HTTPException(status_code=409, detail="Comparison News lineage changed")
+            pin("news", news)
+            await self.authorize_record(news, user, budget)
+        elif comparison.news_id is not None or comparison.investigation_id is not None:
+            raise HTTPException(status_code=409, detail="Comparison News unavailable")
+        if comparison.investigation_id:
+            if comparison.investigation_revision is None or news is None:
+                raise HTTPException(
+                    status_code=409, detail="Comparison Investigation pin unavailable",
+                )
+            investigation = await self.repository.get(
+                "investigations", comparison.investigation_id, comparison.scope, Investigation,
+                revision=comparison.investigation_revision,
+            )
+            if (investigation is None or investigation.scope != comparison.scope
+                    or investigation.news_id != news.id
+                    or investigation.semantic != comparison.semantic):
+                raise HTTPException(
+                    status_code=409, detail="Comparison Investigation lineage changed",
+                )
+            original_news = await self.repository.get(
+                "news", news.id, news.scope, NewsItem, revision=investigation.news_revision,
+            )
+            if (original_news is None or original_news.revision != investigation.news_revision
+                    or original_news.scope != news.scope
+                    or original_news.semantic != news.semantic
+                    or original_news.monitor_id != monitor.id
+                    or original_news.monitor_revision != monitor.revision):
+                raise HTTPException(status_code=409, detail="Comparison News revision unavailable")
+            await self.authorize_record(original_news, user, budget)
+            pin("investigations", investigation)
+        return budget, monitor
+
+    async def initiate_investigation(
+        self, body: ChatInvestigationRequest, user: dict, *,
+        comparison_monitor: Monitor | None = None, _mission=None,
+        _comparison: ChatComparison | None = None,
+    ) -> dict:
         from app.core.config import settings
         from app.modules.agents.router import _require_agent
 
         if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
             raise HTTPException(status_code=503, detail="Studio business workflow is disabled")
         await _require_agent(body.configuration.agent_id, user)
-        await self.authorize_semantic(body.configuration.semantic, user, active=True)
+        await self.authorize_semantic(body.configuration.semantic, user, active=_comparison is None)
         if not body.current_window or not body.baseline_window:
             return {
                 "status": "clarification",
@@ -952,12 +1253,29 @@ class IntelligenceService:
             raise HTTPException(
                 status_code=422, detail="Use complete historical comparison windows"
             )
-        scope = Scope.from_user(user)
+        scope = _comparison.scope if _comparison else Scope.from_user(user)
         identity = fingerprint(
             [scope.model_dump(exclude={"session_id"}), body.operation_id, "chat-comparison-v1"]
         )
-        digest = fingerprint(body.model_dump(mode="json"))
-        monitor_id = fingerprint([identity, "comparison-monitor"])
+        digest = fingerprint(body.model_dump(
+            mode="json", exclude={"calendar_timezone"} if body.calendar_timezone is None else set()
+        ))
+        monitor_id = comparison_monitor.id if comparison_monitor else fingerprint(
+            [identity, "comparison-monitor"]
+        )
+        budget = CycleBudget()
+        if _comparison:
+            budget, comparison_monitor = await self._automatic_comparison_budget(
+                _comparison, _mission, body.operation_id, user,
+            )
+        if comparison_monitor:
+            await self.authorize_record(comparison_monitor, user, budget)
+            fields = set(MonitorConfiguration.model_fields) - {"enabled"}
+            if (
+                comparison_monitor.model_dump(mode="json", include=fields)
+                != body.configuration.model_dump(mode="json", include=fields)
+            ):
+                raise HTTPException(status_code=409, detail="Comparison monitor changed")
         # Persist the operation digest before collecting data. Canonical writes
         # keep their own revision checks; slow queries must not hold this lease.
         async with metadata_lock("chat-comparison:" + identity):
@@ -965,7 +1283,7 @@ class IntelligenceService:
             if comparison and comparison.request_digest != digest:
                 raise HTTPException(status_code=409, detail="Comparison operation inputs changed")
             if comparison is None:
-                comparison = await self.repository.save(
+                comparison = await self._save_automatic(
                     "comparisons",
                     ChatComparison(
                         id=identity,
@@ -973,32 +1291,69 @@ class IntelligenceService:
                         request_digest=digest,
                         semantic=body.configuration.semantic,
                         monitor_id=monitor_id,
+                        monitor_revision=(
+                            comparison_monitor.revision if comparison_monitor else None
+                        ),
+                        configuration=body.configuration,
                         current_window=body.current_window,
                         baseline_window=body.baseline_window,
+                        calendar_timezone=body.calendar_timezone,
+                        automatic_mission_id=_mission.mission_id if _mission else None,
+                        automatic_operation_id=body.operation_id if _mission else None,
                     ),
+                    user, _mission,
                 )
         if comparison.status != "pending":
-            investigation = (
-                await self.get("investigations", comparison.investigation_id, user)
-                if comparison.investigation_id
-                else None
-            )
+            investigation = None
+            if comparison.investigation_id:
+                pinned = _mission and any(
+                    ref.kind == "investigation" and ref.id == comparison.investigation_id
+                    and ref.revision == comparison.investigation_revision
+                    for ref in _mission.pinned_objects
+                )
+                investigation = await self.get_for_mission(
+                    "investigations", comparison.investigation_id, user,
+                    mission_id=_mission.mission_id, budget=budget,
+                    revision=comparison.investigation_revision,
+                ) if pinned else await self.get(
+                    "investigations", comparison.investigation_id, user, budget=budget,
+                    revision=comparison.investigation_revision,
+                )
+            async with self._automatic_fence(_mission, user):
+                pass
             return {
                 "status": comparison.status,
                 "reason": comparison.reason,
                 "comparison": comparison,
                 "investigation": investigation,
             }
-        prior_monitor = await self.repository.get("monitors", monitor_id, scope, Monitor)
-        monitor = prior_monitor or await self.register_monitor(
-            Monitor(id=monitor_id, scope=scope, **body.configuration.model_dump()), user,
+        prior_monitor = await self.repository.get(
+            "monitors", monitor_id, scope, Monitor, revision=comparison.monitor_revision
         )
-        budget = CycleBudget()
-        before = await self.observe(monitor, body.baseline_window, user, budget)
-        after = await self.observe(monitor, body.current_window, user, budget)
+        monitor = comparison_monitor or prior_monitor
+        if monitor is None:
+            monitor = Monitor(id=monitor_id, scope=scope, **body.configuration.model_dump())
+            await self.validate_monitor(monitor, user)
+            monitor = await self._save_automatic("monitors", monitor, user, _mission)
+            await self._audit("REGISTER", monitor, user)
+        if comparison.monitor_revision is None:
+            comparison = await self._save_automatic(
+                "comparisons",
+                comparison.model_copy(update={"monitor_revision": monitor.revision}),
+                user, _mission,
+                expected_revision=comparison.revision,
+            )
+        if _mission:
+            budget, _ = await self._automatic_comparison_budget(
+                comparison, _mission, body.operation_id, user,
+            )
+        async with self._automatic_fence(_mission, user):
+            pass
+        before = await self.observe(monitor, body.baseline_window, user, budget, _mission=_mission)
+        after = await self.observe(monitor, body.current_window, user, budget, _mission=_mission)
         ids = [before.id, after.id]
         if before.value is None or after.value is None:
-            saved = await self.repository.save(
+            saved = await self._save_automatic(
                 "comparisons",
                 comparison.model_copy(
                     update={
@@ -1007,6 +1362,7 @@ class IntelligenceService:
                         "observation_ids": ids,
                     }
                 ),
+                user, _mission,
                 expected_revision=comparison.revision,
             )
             await self._audit("INCOMPLETE_COMPARISON", saved, user)
@@ -1016,16 +1372,17 @@ class IntelligenceService:
                 "comparison": saved,
                 "investigation": None,
             }
-        insufficient = min(
+        unknown_count = before.sample_count is None or after.sample_count is None
+        insufficient = (not unknown_count and min(
             before.sample_count, after.sample_count
-        ) < monitor.minimum_samples or any(
+        ) < monitor.minimum_samples) or any(
             row.completeness is not None and row.completeness < 1 for row in (before, after)
         )
         evidence = [*before.evidence, *after.evidence]
         news_id = fingerprint([identity, "comparison-news"])
         news = await self.repository.get("news", news_id, scope, NewsItem)
         if news is None:
-            news = await self.repository.save(
+            news = await self._save_automatic(
                 "news",
                 NewsItem(
                     id=news_id,
@@ -1047,19 +1404,27 @@ class IntelligenceService:
                     confidence=Confidence(
                         dimension="detection",
                         method="explicit-window-comparison-v1",
-                        label="insufficient" if insufficient else "medium",
+                        label="insufficient" if insufficient or unknown_count else "medium",
                         evidence_ids=[item.id for item in evidence],
                     ),
                     evidence=evidence,
                     baseline_windows=[body.baseline_window],
                 ),
+                user, _mission,
             )
             await self._audit("COMPARE", news, user)
+        if _mission:
+            budget.mission_records[("news", news.id)] = news.revision
+            budget.mission_record_bindings[("news", news.id)] = news.scope
         if insufficient:
-            investigation = await self.incomplete_investigation(news, user)
+            investigation = await self.incomplete_investigation(
+                news, user, budget=budget, _mission=_mission,
+            )
         else:
-            investigation = await self.investigate(news.id, user)
-        saved = await self.repository.save(
+            investigation = await self.investigate(
+                news.id, user, arithmetic_only=unknown_count, budget=budget, _mission=_mission,
+            )
+        saved = await self._save_automatic(
             "comparisons",
             comparison.model_copy(
                 update={
@@ -1068,8 +1433,10 @@ class IntelligenceService:
                     "observation_ids": ids,
                     "news_id": news.id,
                     "investigation_id": investigation.id,
+                    "investigation_revision": investigation.revision,
                 }
             ),
+            user, _mission,
             expected_revision=comparison.revision,
         )
         return {
@@ -1079,11 +1446,127 @@ class IntelligenceService:
             "investigation": investigation,
         }
 
-    async def lineage(self, decision_id: str, user: dict) -> dict:
+    async def automatic_investigation(self, seed, user: dict, *, mission_id: str,
+                                     agent_id: str) -> dict:
+        from dataclasses import replace
+
+        from app.modules.agents.mission import mission_service
+
+        plan = replace(seed.plan, metrics=(seed.target_metric,), dimensions=(), time=None,
+                       order_by=(), limit=None)
+        scope, budget = Scope.from_user(user), CycleBudget()
+        fixed = seed.execution_time
+        operation_id = fingerprint([
+            mission_id, seed.semantic.model_dump(), seed.target_metric,
+            fixed.current.as_dict(), fixed.baseline.as_dict(), seed.plan_fingerprint,
+        ])
+        mission = await mission_service.get(mission_id, user, project=False)
+        if mission.agent_id not in {None, agent_id} or mission.cancel_requested:
+            raise HTTPException(status_code=409, detail="Mission cannot accept this comparison")
+        scopes = {}
+        for binding in [mission.scope, *mission.historical_bindings, *mission.run_bindings.values(),
+                        *mission.object_bindings.values()]:
+            scopes.setdefault(fingerprint(binding.model_dump(exclude={"session_id"})), binding)
+        if len(scopes) > 100:
+            raise HTTPException(status_code=409, detail="Mission comparison recovery bound reached")
+        matches = {}
+        for binding in scopes.values():
+            identity = fingerprint([
+                binding.model_dump(exclude={"session_id"}), operation_id, "chat-comparison-v1",
+            ])
+            found = await self.repository.get("comparisons", identity, binding, ChatComparison)
+            if found is not None:
+                matches[found.id] = found
+        if len(matches) > 1:
+            raise HTTPException(
+                status_code=409, detail="Duplicate comparison requires reconciliation",
+            )
+        existing = next(iter(matches.values()), None)
+        if existing:
+            configuration = existing.configuration
+            if (configuration is None or configuration.semantic != seed.semantic
+                    or configuration.agent_id != agent_id
+                    or configuration.value_column != seed.target_metric
+                    or existing.current_window != Window(**fixed.current.as_dict())
+                    or existing.baseline_window != Window(**fixed.baseline.as_dict())
+                    or existing.calendar_timezone != fixed.timezone):
+                raise HTTPException(status_code=409, detail="Automatic comparison seed changed")
+            _, pinned_monitor = await self._automatic_comparison_budget(
+                existing, mission, operation_id, user,
+            )
+            return await self.initiate_investigation(ChatInvestigationRequest(
+                operation_id=operation_id, configuration=configuration,
+                current_window=Window(**fixed.current.as_dict()),
+                baseline_window=Window(**fixed.baseline.as_dict()),
+                calendar_timezone=fixed.timezone,
+            ), user, comparison_monitor=pinned_monitor, _mission=mission, _comparison=existing)
+        selected = None
+        rows = await self.repository.page("monitors", scope, Monitor, limit=101)
+        if len(rows) > 100:
+            return {"status": "clarification", "reason": "monitor_matching_bound",
+                    "required_inputs": ["comparison_monitor"]}
+        for monitor in rows:
+            candidate = SemanticPlan.from_dict(monitor.plan)
+            if (monitor.semantic != seed.semantic or monitor.agent_id != agent_id
+                    or monitor.value_column != seed.target_metric
+                    or monitor.time_dimension != seed.plan.time.dimension
+                    or monitor.timezone != seed.execution_time.timezone
+                    or tuple(monitor.driver_dimensions) != seed.driver_dimensions
+                    or candidate.filters != plan.filters
+                    or candidate.named_filters != plan.named_filters
+                    or candidate.dimensions or candidate.time or candidate.having
+                    or candidate.transforms or candidate.top_n_per_group
+                    or set(candidate.metrics) != {
+                        seed.target_metric, monitor.count_column, monitor.completeness_column,
+                    } - {None}):
+                continue
+            try:
+                await self.authorize_record(monitor, user, budget)
+                await self.validate_monitor(monitor, user)
+            except HTTPException as exc:
+                if exc.status_code in {403, 404, 409, 422}:
+                    continue
+                raise
+            selected = monitor
+            break
+        configuration = (
+            MonitorConfiguration.model_validate(selected.model_dump(
+                include=set(MonitorConfiguration.model_fields)
+            )).model_copy(update={"enabled": False}) if selected else MonitorConfiguration(
+                name="One-time " + seed.target_metric, agent_id=agent_id, semantic=seed.semantic,
+                plan=json.loads(json.dumps(plan.as_dict())),
+                value_column=seed.target_metric, count_column=None,
+                time_dimension=seed.plan.time.dimension,
+                driver_dimensions=list(seed.driver_dimensions),
+                timezone=seed.execution_time.timezone, enabled=False,
+            )
+        )
+        request = ChatInvestigationRequest(
+            operation_id=operation_id, configuration=configuration,
+            current_window=Window(**fixed.current.as_dict()),
+            baseline_window=Window(**fixed.baseline.as_dict()),
+            calendar_timezone=fixed.timezone,
+        )
+        return await self.initiate_investigation(
+            request, user, comparison_monitor=selected, _mission=mission,
+        )
+
+    async def lineage(self, decision_id: str, user: dict, *, mission_id: str | None = None) -> dict:
         budget = CycleBudget()
-        decision = await self.get("decisions", decision_id, user, budget=budget)
+        decision = (
+            await self.get_for_mission("decisions", decision_id, user,
+                                       mission_id=mission_id, budget=budget)
+            if mission_id else await self.get("decisions", decision_id, user, budget=budget)
+        )
 
         async def related_record(kind, record_id, revision=None):
+            if mission_id:
+                if kind == "investigations":
+                    return await self.get_for_mission(kind, record_id, user,
+                        mission_id=mission_id, revision=revision, budget=budget)
+                budget.mission_records[(kind, record_id)] = revision
+                budget.mission_record_bindings[(kind, record_id)] = investigation.scope
+                return await self.get(kind, record_id, user, budget=budget, revision=revision)
             record = await self.repository.get(
                 kind, record_id, decision.scope, MODELS[kind], revision=revision
             )
@@ -1094,18 +1577,34 @@ class IntelligenceService:
             )
             return record
 
-        investigation = await related_record("investigations", decision.investigation_id)
+        investigation = await related_record(
+            "investigations", decision.investigation_id, decision.investigation_revision
+        )
         news = await related_record("news", investigation.news_id, investigation.news_revision)
         events = await self.repository.related("events", decision.id, decision.scope, DecisionEvent)
         outcomes = await self.repository.related("outcomes", decision.id, decision.scope, Outcome)
         actions = await self.repository.related("actions", decision.id, decision.scope, Action)
+        if mission_id:
+            for binding in budget.mission_bindings:
+                for kind, model, records in (
+                    ("actions", Action, actions), ("outcomes", Outcome, outcomes),
+                ):
+                    records.extend(await self.repository.related(kind, decision.id, binding, model))
+            actions = list({(row.id, row.revision): row for row in actions}.values())
+            outcomes = list({(row.id, row.revision): row for row in outcomes}.values())
         for action in actions:
             await self.authorize_record(
-                action.model_copy(update={"scope": Scope.from_user(user)}), user, budget
+                action if mission_id else action.model_copy(
+                    update={"scope": Scope.from_user(user)}
+                ),
+                user, budget
             )
         for outcome in outcomes:
             await self.authorize_record(
-                outcome.model_copy(update={"scope": Scope.from_user(user)}), user, budget
+                outcome if mission_id else outcome.model_copy(
+                    update={"scope": Scope.from_user(user)}
+                ),
+                user, budget
             )
         committed_events = []
         for event in events:
@@ -1136,9 +1635,79 @@ class IntelligenceService:
             ),
         }
 
-    async def evaluate_outcome(self, decision_id: str, user: dict) -> Outcome:
+    async def evaluate_outcome(
+        self, decision_id: str, user: dict, *, mission_id: str | None = None,
+    ) -> Outcome:
+        from contextlib import AsyncExitStack, asynccontextmanager
+
+        from app.modules.intelligence.decisions import decision_digest
+
         budget = CycleBudget()
-        decision = await self.get("decisions", decision_id, user, budget=budget)
+        mission = None
+        execution_scope = Scope.from_user(user)
+        if mission_id:
+            from app.modules.agents.mission import mission_service
+
+            mission = await mission_service.get(mission_id, user, project=False)
+            execution_binding = mission.current_binding.model_copy(deep=True)
+            decision = await self.get_for_mission("decisions", decision_id, user,
+                                                 mission_id=mission_id, budget=budget)
+        else:
+            decision = await self.get("decisions", decision_id, user, budget=budget)
+
+        @asynccontextmanager
+        async def outcome_fence():
+            async with AsyncExitStack() as stack:
+                admitted = None
+                if mission is not None:
+                    from app.modules.agents.harness_repository import harness_repository
+                    from app.modules.agents.mission_schema import object_binding_key
+
+                    admitted = await stack.enter_async_context(
+                        harness_repository.admission_lock(
+                            mission.thread_id, execution_scope.principal
+                        )
+                    )
+                    current_mission = await mission_service.get(mission_id, user, project=False)
+                    if (
+                        current_mission.scope != execution_scope
+                        or current_mission.thread_id != mission.thread_id
+                        or current_mission.current_binding != execution_binding
+                        or current_mission.cancel_requested
+                        or current_mission.status == "cancelled"
+                    ):
+                        raise HTTPException(
+                            status_code=409, detail="Mission execution binding changed"
+                        )
+                    pin = next((ref for ref in current_mission.object_refs
+                                if ref.kind == "decision" and ref.id == decision.id), None)
+                    if (
+                        pin is None or pin.revision != decision.revision
+                        or current_mission.object_bindings.get(
+                            object_binding_key(pin), current_mission.scope
+                        ) != decision.scope
+                    ):
+                        raise HTTPException(
+                            status_code=409, detail="Mission Decision revision changed"
+                        )
+                await stack.enter_async_context(metadata_lock(f"decisions:{decision.id}"))
+                current_decision = await self.repository.get(
+                    "decisions", decision.id, decision.scope, Decision
+                )
+                if (
+                    current_decision is None or current_decision.scope != decision.scope
+                    or current_decision.revision != decision.revision
+                    or decision_digest(current_decision) != decision_digest(decision)
+                ):
+                    raise HTTPException(
+                        status_code=409, detail="Decision changed; refresh the Outcome"
+                    )
+                if admitted:
+                    await admitted()
+                yield admitted
+
+        async with outcome_fence():
+            pass
         if decision.scope.principal != user["username"]:
             raise HTTPException(
                 status_code=403,
@@ -1158,12 +1727,21 @@ class IntelligenceService:
         )
         if not option:
             raise HTTPException(status_code=409, detail="Decision has no selected option")
-        investigation = await self.get(
-            "investigations", decision.investigation_id, user, budget=budget
+        investigation = (
+            await self.get_for_mission("investigations", decision.investigation_id, user,
+                mission_id=mission_id, revision=decision.investigation_revision, budget=budget)
+            if mission_id else await self.get(
+                "investigations", decision.investigation_id, user, budget=budget)
         )
+        if mission_id:
+            budget.mission_records[("news", investigation.news_id)] = investigation.news_revision
+            budget.mission_record_bindings[("news", investigation.news_id)] = investigation.scope
         news = await self.get(
             "news", investigation.news_id, user, budget=budget, revision=investigation.news_revision
         )
+        if mission_id:
+            budget.mission_records[("monitors", news.monitor_id)] = news.monitor_revision
+            budget.mission_record_bindings[("monitors", news.monitor_id)] = news.scope
         monitor = await self.get(
             "monitors", news.monitor_id, user, budget=budget, revision=news.monitor_revision
         )
@@ -1175,13 +1753,22 @@ class IntelligenceService:
         actual, evidence, completeness = None, [], 0.0
         closed = decision.status in {"cancelled", "superseded"}
         if complete_window and not closed:
+            async with outcome_fence():
+                pass
             observed = await self.observe(monitor, decision.outcome_window, user, budget)
-            if observed.sample_count >= monitor.minimum_samples:
+            if (observed.sample_count is not None
+                    and observed.sample_count >= monitor.minimum_samples):
                 actual, evidence = observed.value, observed.evidence
                 completeness = observed.completeness or 0.0
         candidates = await self.repository.page(
             "decisions", Scope.from_user(user), Decision, limit=101
         )
+        if mission_id:
+            for binding in budget.mission_bindings:
+                candidates.extend(await self.repository.page(
+                    "decisions", binding, Decision, limit=101
+                ))
+            candidates = list({(row.id, row.revision): row for row in candidates}.values())
         overlapping, overlap_unknown = [], len(candidates) > 100
         for other in candidates[:100]:
             if (
@@ -1225,6 +1812,12 @@ class IntelligenceService:
             investigation.created_at - news.created_at
         ).total_seconds()
         actions = await self.repository.related("actions", decision.id, decision.scope, Action)
+        if mission_id:
+            for binding in budget.mission_bindings:
+                actions.extend(await self.repository.related(
+                    "actions", decision.id, binding, Action
+                ))
+            actions = list({(row.id, row.revision): row for row in actions}.values())
         verified_actions = []
         for action in actions:
             if (
@@ -1238,7 +1831,10 @@ class IntelligenceService:
         dimensions["verified_action_count"] = len(verified_actions)
         dimensions["action_business_effect_verified"] = None
         outcome = Outcome(
-            id=fingerprint([decision.id, decision.revision, "outcome-v1"]),
+            id=fingerprint([decision.id, decision.revision, "outcome-v1"] + (
+                [mission_id, Scope.from_user(user).model_dump(exclude={"session_id"})]
+                if mission_id else []
+            )),
             scope=Scope.from_user(user),
             decision_id=decision.id,
             decision_revision=decision.revision,
@@ -1261,15 +1857,18 @@ class IntelligenceService:
             learning_refs=[],
             dimensions=dimensions,
         )
-        prior = await self.repository.get("outcomes", outcome.id, Scope.from_user(user), Outcome)
-        if prior:
-            outcome.scope = prior.scope
-            ignored = {"learning_refs", "revision", "created_at", "updated_at"}
-            if prior.model_dump(exclude=ignored) == outcome.model_dump(exclude=ignored):
-                outcome.learning_refs = prior.learning_refs
-        saved = await self.repository.save(
-            "outcomes", outcome, expected_revision=prior.revision if prior else 0
-        )
+        async with outcome_fence() as admitted:
+            prior = await self.repository.get("outcomes", outcome.id, execution_scope, Outcome)
+            if prior:
+                outcome.scope = prior.scope
+                ignored = {"learning_refs", "revision", "created_at", "updated_at"}
+                if prior.model_dump(exclude=ignored) == outcome.model_dump(exclude=ignored):
+                    outcome.learning_refs = prior.learning_refs
+            if admitted:
+                await admitted()
+            saved = await self.repository.save(
+                "outcomes", outcome, expected_revision=prior.revision if prior else 0
+            )
         await self._audit("EVALUATE_OUTCOME", saved, user)
         if saved.status == "complete" and decision.learning_enabled:
             from app.modules.agents.memory import memory_repository
@@ -1285,17 +1884,20 @@ class IntelligenceService:
 
             async def finalize_learning(memory_id: str, knowledge_revision: int) -> dict:
                 nonlocal saved
-                saved = await self.repository.save(
-                    "outcomes",
-                    saved.model_copy(
-                        update={
-                            "learning_refs": [
-                                OutcomeLearningRef(id=memory_id, revision=knowledge_revision)
-                            ]
-                        }
-                    ),
-                    expected_revision=saved.revision,
-                )
+                async with outcome_fence() as admitted:
+                    if admitted:
+                        await admitted()
+                    saved = await self.repository.save(
+                        "outcomes",
+                        saved.model_copy(
+                            update={
+                                "learning_refs": [
+                                    OutcomeLearningRef(id=memory_id, revision=knowledge_revision)
+                                ]
+                            }
+                        ),
+                        expected_revision=saved.revision,
+                    )
                 return {
                     "id": saved.id,
                     "revision": saved.revision,
@@ -1306,6 +1908,8 @@ class IntelligenceService:
                 f"Prediction for {decision.target_metric} was {saved.predicted:g}; "
                 f"observed {saved.actual:g}. Attribution: {saved.attribution}."
             )
+            async with outcome_fence():
+                pass
             await memory_repository.upsert(
                 user_name=user["username"],
                 agent_id=decision.agent_id,

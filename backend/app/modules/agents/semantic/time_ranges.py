@@ -25,7 +25,8 @@ from __future__ import annotations
 import calendar
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.modules.agents.semantic.planning import SemanticPlanError
 
@@ -270,3 +271,129 @@ def _parse_date(value: str) -> date:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise SemanticPlanError("The time range has an invalid date.") from exc
+
+
+@dataclass(frozen=True)
+class ConcreteWindow:
+    start: datetime
+    end: datetime
+
+    def sql_bounds(self) -> tuple[str, str]:
+        return tuple("'" + bound.strftime("%Y-%m-%d %H:%M:%S.%f") + "'"
+                     for bound in (self.start, self.end))
+
+    def as_dict(self) -> dict[str, str]:
+        return {name: value.astimezone(UTC).isoformat()
+                for name, value in (("start", self.start), ("end", self.end))}
+
+
+@dataclass(frozen=True)
+class ExecutionTimeContext:
+    now: datetime
+    timezone: str
+    range: str
+    comparison: str | None
+    current: ConcreteWindow
+    baseline: ConcreteWindow | None = None
+    warnings: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict:
+        return {
+            "now": self.now.astimezone(UTC).isoformat(), "timezone": self.timezone,
+            "range": self.range, "comparison": self.comparison,
+            "current": self.current.as_dict(),
+            "baseline": self.baseline.as_dict() if self.baseline else None,
+            "current_duration_seconds": (self.current.end.astimezone(UTC)
+                                         - self.current.start.astimezone(UTC)).total_seconds(),
+            "baseline_duration_seconds": (self.baseline.end.astimezone(UTC)
+                                          - self.baseline.start.astimezone(UTC)).total_seconds()
+            if self.baseline else None,
+            "warnings": list(self.warnings),
+        }
+
+
+def _calendar_start(value: datetime, unit: str) -> datetime:
+    day = value.date()
+    if unit == "week":
+        day -= timedelta(days=day.weekday())
+    elif unit in {"month", "quarter", "year"}:
+        month = 1 if unit == "year" else (3 * ((day.month - 1) // 3) + 1
+                                        if unit == "quarter" else day.month)
+        day = date(day.year, month, 1)
+    return datetime.combine(day, datetime.min.time(), value.tzinfo)
+
+
+def _calendar_shift(value: datetime, interval: Interval, direction: int = -1) -> datetime:
+    if interval.unit in {"DAY", "WEEK"}:
+        return value + timedelta(days=direction * interval.amount
+                                 * (7 if interval.unit == "WEEK" else 1))
+    shifted = _add_months(value.date(), direction * interval.amount
+                         * (12 if interval.unit == "YEAR" else 1))
+    return value.replace(year=shifted.year, month=shifted.month, day=shifted.day)
+
+
+def resolve_execution_time(
+    value: str, comparison: str | None = None, *, now: datetime, timezone: str,
+) -> ExecutionTimeContext:
+    """Pin the existing range grammar to a caller-owned clock and local calendar."""
+    if now.tzinfo is None:
+        raise SemanticPlanError("The execution clock must include a timezone.")
+    try:
+        zone = ZoneInfo(timezone)
+    except (KeyError, ValueError) as exc:
+        raise SemanticPlanError("Use a named IANA timezone.") from exc
+    local = now.astimezone(zone)
+    symbolic = resolve_time_range(value)
+    token = _word_form(value)
+    if symbolic.start_date is not None:
+        start = datetime.combine(symbolic.start_date, datetime.min.time(), zone)
+        end = datetime.combine(symbolic.end_date, datetime.min.time(), zone)
+    elif token in _TODATE:
+        start, end = _calendar_start(local, _TODATE[token]), local
+    elif token.startswith("since_") or value.strip().endswith("+"):
+        day = (date(int(token.removeprefix("since_")), 1, 1)
+               if token.startswith("since_") else _parse_date(value.strip()[:-1]))
+        start, end = datetime.combine(day, datetime.min.time(), zone), local
+    else:
+        position, _, unit = token.partition("_")
+        if position in {"current", "previous"} and unit in UNITS:
+            boundary = _calendar_start(local, unit)
+            start, end = ((boundary, local) if position == "current"
+                          else (_calendar_shift(boundary, _UNIT_INTERVAL[unit]), boundary))
+        else:
+            # Validation above owns accepted spellings and scan bounds.
+            match = re.fullmatch(r"(?:last|past|previous)_(\d{1,4})_(" + "|".join(UNITS)
+                                 + r")s?", token)
+            assert match is not None
+            unit = match[2]
+            step = _UNIT_INTERVAL[unit]
+            end = _calendar_start(local, unit)
+            start = _calendar_shift(end, Interval(step.amount * int(match[1]), step.unit))
+    end = min(end, local)
+    if start >= end:
+        raise SemanticPlanError("The execution window has no elapsed observations.")
+    current, baseline, warnings = ConcreteWindow(start, end), None, []
+    if comparison:
+        kind = comparison.lower()
+        # Keep compatibility validation in the same grammar owner.
+        comparison_bounds(value, kind)
+        shift = _COMPARISONS[kind][0] or symbolic.period
+        assert shift is not None
+        prior_start = _calendar_shift(start, shift)
+        period_end = (_calendar_shift(start, symbolic.period, 1)
+                      if symbolic.period else end)
+        prior_end = _calendar_shift(period_end, shift)
+        current_span = end.replace(tzinfo=None) - start.replace(tzinfo=None)
+        available_span = prior_end.replace(tzinfo=None) - prior_start.replace(tzinfo=None)
+        shared_span = min(current_span, available_span)
+        if shared_span < current_span:
+            warnings.append("calendar_span_clamped")
+        current = ConcreteWindow(start, start + shared_span)
+        baseline = ConcreteWindow(prior_start, prior_start + shared_span)
+        if baseline.end > current.start:
+            raise SemanticPlanError("Comparison windows overlap; use nonoverlapping periods.")
+        if (current.end.astimezone(UTC) - current.start.astimezone(UTC)
+                != baseline.end.astimezone(UTC) - baseline.start.astimezone(UTC)):
+            warnings.append("dst_duration_difference")
+    return ExecutionTimeContext(local, timezone, value, comparison, current, baseline,
+                                tuple(warnings))

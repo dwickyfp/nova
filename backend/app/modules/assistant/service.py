@@ -148,6 +148,13 @@ class LoopContext:
     collaboration_tools: tuple[str, ...] = ()
     collaboration_root: bool = False
     business_turn_hook: Any = None
+    mission_continuation: dict | None = None
+    business_result_hook: Any = None
+    business_time_hook: Any = None
+    business_clock_hook: Any = None
+    execution_now: datetime | None = None
+    execution_timezone: str = "Asia/Jakarta"
+    execution_time_sink: Any = None
     mission_id: str | None = None
     requested_work_intent: str | None = None
     start_new_mission: bool = False
@@ -594,6 +601,8 @@ class AssistantLoop:
     ) -> AsyncIterator[str]:
         from app.core.config import settings
 
+        context.execution_now = context.execution_now or _now()
+
         context.quality_measurements = (
             _QualityMeasurements(
                 collaborative=bool(
@@ -908,6 +917,10 @@ class AssistantLoop:
             })
         if callable(context.business_turn_hook):
             mission = await context.business_turn_hook(turn_plan, context)
+            if context.mission_continuation:
+                yield events.format_sse("mission_continuation", {
+                    "continuation": context.mission_continuation,
+                })
             if mission:
                 context.mission_id = mission["mission_id"]
                 yield events.format_sse("mission_updated", {"mission": mission})
@@ -1884,6 +1897,12 @@ class AssistantLoop:
             # Wake on progress or completion; polling progress alone delays fast tools.
             progress_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
             context.tool_progress_sink = progress_queue.put_nowait
+            async def persist_execution_time(payload, queue=progress_queue):
+                acknowledged = asyncio.get_running_loop().create_future()
+                queue.put_nowait({"execution_time": payload, "ack": acknowledged})
+                await acknowledged
+
+            context.execution_time_sink = persist_execution_time
             _transition(context, TurnState.EXECUTING_TOOL)
             if invocation.tool_name in {"semantic_query", "semantic_view_query"}:
                 governed_attempted = True
@@ -1924,7 +1943,16 @@ class AssistantLoop:
                             return_when=asyncio.FIRST_COMPLETED,
                         )
                         if progress_task in ready:
-                            yield _tool_progress_frame(context, invocation, progress_task.result())
+                            progress = progress_task.result()
+                            if "execution_time" in progress:
+                                yield events.format_sse("execution_time_context", {
+                                    "tool_call_id": invocation.tool_call_id,
+                                    "payload": progress["execution_time"],
+                                })
+                                if not progress["ack"].done():
+                                    progress["ack"].set_result(True)
+                            else:
+                                yield _tool_progress_frame(context, invocation, progress)
                     finally:
                         if not progress_task.done():
                             progress_task.cancel()
@@ -1937,6 +1965,7 @@ class AssistantLoop:
                     yield _tool_progress_frame(context, invocation, progress_queue.get_nowait())
             finally:
                 context.tool_progress_sink = None
+                context.execution_time_sink = None
                 context.secure_input = None
                 if context.file_upload is not None:
                     context.file_upload[1].close()
@@ -1970,6 +1999,17 @@ class AssistantLoop:
                         "tool_name": invocation.tool_name,
                         "payload": health,
                     })
+                envelope = outcome.trace_detail.get("evidence_envelope")
+                if envelope:
+                    yield events.format_sse("evidence_envelope", {
+                        "tool_call_id": invocation.tool_call_id,
+                        "tool_name": invocation.tool_name, "payload": envelope,
+                    })
+                business = outcome.trace_detail.get("business_result")
+                if business:
+                    yield events.format_sse("business_result", business)
+                    if business.get("mission"):
+                        yield events.format_sse("mission_updated", {"mission": business["mission"]})
             # The observe phase is where the model reads a tool result back. For
             # a skill load there is nothing to observe; a query result is.
             if invocation.tool_name != "load_skill":
@@ -2327,6 +2367,12 @@ class AssistantLoop:
                     error="Pinned release resources changed or could not be authorized; "
                     "evaluate a new draft",
                 )
+        if outcome.ok and callable(context.business_result_hook) and outcome.business_result:
+            result = await context.business_result_hook(invocation, outcome, context)
+            if result:
+                outcome = replace(outcome, trace_detail={
+                    **(outcome.trace_detail or {}), "business_result": result,
+                })
         return outcome
 
     def _prefetch(
@@ -2344,7 +2390,9 @@ class AssistantLoop:
         call produces are eligible. The loop still validates, records, and
         orders each call when it reaches it; this only overlaps the waiting.
         """
-        if context.mission_id:
+        from app.core.config import settings
+
+        if context.mission_id or settings.STUDIO_BUSINESS_WORKFLOW_ENABLED:
             return None
         invocation = self._parse_tool_call(call)
         if invocation is None or invocation.tool_name not in PARALLEL_SAFE_TOOLS:

@@ -64,6 +64,7 @@ class ToolOutcome:
     recoverable: bool = False
     safe_detail: str | None = None
     repair_context: dict[str, Any] | None = None
+    business_result: Any = field(default=None, repr=False)
 
     def envelope(self, *, tool_name: str, evidence_id: str | None = None) -> dict[str, Any]:
         """Return the normalized result sent through a provider adapter."""

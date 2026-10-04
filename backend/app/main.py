@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.database import db
 from app.core.exceptions import register_exception_handlers
 from app.core.redis import session_store
+from app.core.studio_capabilities import log_studio_capabilities
 from app.modules.access_control.router import router as access_control_router
 from app.modules.agents.knowledge_router import router as knowledge_router
 
@@ -85,6 +86,7 @@ async def lifespan(app: FastAPI):
     # This runs before any connection is opened so a misconfigured deployment
     # dies at boot with a clear message instead of at first login.
     require_configured_secrets()
+    log_studio_capabilities(logger, "api")
 
     # Startup
     await db.init_system_pool()

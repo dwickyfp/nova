@@ -13,6 +13,7 @@ from pydantic import Field
 from app.core.config import settings
 from app.modules.agents.rule_proposals import rule_proposal_repository
 from app.modules.agents.semantic.ir import SemanticModelIR
+from app.modules.agents.semantic.learning_sources import LearningRequest, collect_observations
 from app.modules.agents.semantic.runtime import validate_semantic_model_ir
 from app.modules.agents.semantic.serialize import to_ossie_document
 from app.modules.assistant.security import session_security
@@ -44,6 +45,8 @@ class AutopilotProposal(Contract):
     base: SemanticRef
     changes: list[SemanticChange] = Field(min_length=1, max_length=30)
     usage_digest: str | None = Field(default=None, min_length=64, max_length=64)
+    learning: LearningRequest | None = None
+    learning_digest: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 class AutopilotDiscovery(Contract):
@@ -281,6 +284,15 @@ async def project_usage(view_id: str, body: SemanticRef, user: CurrentUser):
     return await project_usage_context(body, user)
 
 
+@router.post("/{view_id}/autopilot/observations")
+async def learning_observations(view_id: str, body: LearningRequest, user: CurrentUser):
+    if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
+        raise HTTPException(404, "Governed learning is unavailable")
+    if body.semantic.view_id != view_id:
+        raise HTTPException(422, "Use the selected Semantic View")
+    return await collect_observations(body, user)
+
+
 @router.post("/{view_id}/autopilot/proposals", status_code=201)
 async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
     from app.modules.agents.router import _require_agent
@@ -304,6 +316,19 @@ async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
     scope = Scope.from_user(user)
     role = scope.active_role
     usage = None
+    learning = None
+    if (body.learning is None) != (body.learning_digest is None):
+        raise HTTPException(422, "Review the exact learning observations before proposing")
+    if body.learning:
+        if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
+            raise HTTPException(404, "Governed learning is unavailable")
+        if body.learning.agent_id != body.agent_id or body.learning.semantic != body.base:
+            raise HTTPException(422, "Learning must use the proposal agent and semantic base")
+        learning = await collect_observations(body.learning, user)
+        if learning["digest"] != body.learning_digest:
+            raise HTTPException(409, "Learning evidence changed; review its current observations")
+        if not learning["observations"]:
+            raise HTTPException(422, "No authorized learning observations support this proposal")
     if body.usage_digest:
         if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
             raise HTTPException(status_code=404, detail="Usage learning is unavailable")
@@ -317,13 +342,17 @@ async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
         if not usage["patterns"]:
             raise HTTPException(status_code=422, detail="No governed usage supports this proposal")
     request = body.model_dump(
-        mode="json", exclude={"operation_id", "usage_digest"} if usage else {"usage_digest"},
+        mode="json", exclude=(
+            {"operation_id", "usage_digest", "learning", "learning_digest"}
+            if usage or learning else {"usage_digest", "learning", "learning_digest"}
+        ),
     )
     request_digest = fingerprint(request)
     proposal_id = str(
         uuid5(NAMESPACE_URL, fingerprint([
             user["username"], role,
-            [scope.security_context_version, request_digest] if usage else body.operation_id,
+            [scope.security_context_version, request_digest]
+            if usage or learning else body.operation_id,
         ]))
     )
     async with metadata_lock(f"proposal:{proposal_id}"):
@@ -354,6 +383,10 @@ async def propose(view_id: str, body: AutopilotProposal, user: CurrentUser):
                     "changes": [item.model_dump() for item in body.changes],
                     "candidate_definition": candidate,
                     **({"usage_evidence": usage} if usage else {}),
+                    **({
+                        "learning_evidence": learning,
+                        "learning_request": body.learning.model_dump(mode="json"),
+                    } if learning else {}),
                 },
             }
         )
@@ -371,6 +404,14 @@ async def _proposal(view_id: str, proposal_id: str, user: dict) -> tuple[dict, d
     usage = row["details"].get("usage_evidence")
     if usage and usage.get("scope") != Scope.from_user(user).model_dump(exclude={"session_id"}):
         raise HTTPException(status_code=404, detail="Proposal unavailable in this security context")
+    learning = row["details"].get("learning_evidence")
+    if learning:
+        if learning.get("scope") != Scope.from_user(user).model_dump(exclude={"session_id"}):
+            raise HTTPException(404, "Proposal unavailable in this security context")
+        request = LearningRequest.model_validate(row["details"]["learning_request"])
+        current = await collect_observations(request, user)
+        if not current["observations"] or current["digest"] != learning["digest"]:
+            raise HTTPException(409, "Proposal learning evidence changed; review it again")
     base = row["details"]["base"]
     await semantic_view_service._readable_version(view_id, base["version"], user)
     if not await semantic_view_service._source_access(row["details"]["candidate_definition"], user):

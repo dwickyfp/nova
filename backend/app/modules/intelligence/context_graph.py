@@ -10,6 +10,12 @@ from pydantic import Field
 
 from app.core.config import settings
 from app.modules.agents.semantic.ir import SemanticModelIR
+from app.modules.intelligence.context_sources import (
+    ContextSourceRef,
+    authorize_context_reference,
+    context_reference_id,
+    read_context_source,
+)
 from app.modules.intelligence.contracts import (
     ContextEdge,
     ContextNode,
@@ -82,7 +88,9 @@ async def create_edge(body: EdgeCreate, user: dict) -> ContextEdge:
 
 async def project_semantic_view(ref: SemanticRef, user: dict) -> dict:
     service, scope = intelligence_service, Scope.from_user(user)
-    row = await service.authorize_semantic(ref, user, active=True)
+    row = await service.authorize_semantic(ref, user)
+    if row.get("status") not in {"ACTIVE", "DEPRECATED", "SUPERSEDED"}:
+        raise HTTPException(status_code=404, detail="Published semantic context unavailable")
     model = SemanticModelIR.from_ossie(row["definition"])
     nodes, edges = [], []
 
@@ -203,15 +211,22 @@ async def traverse_context(node_id: str, user: dict, *, depth: int = 2, limit: i
     return {"nodes": list(nodes.values()), "edges": list(edges.values()), "bounded": True}
 
 
-async def resolve_metric(ref: SemanticRef, term: str, user: dict) -> dict:
-    row = await intelligence_service.authorize_semantic(ref, user, active=True)
+async def resolve_metric(
+    ref: SemanticRef, term: str, user: dict, *, exact: bool = False,
+    include_context: bool = False,
+) -> dict:
+    row = await intelligence_service.authorize_semantic(ref, user)
+    if include_context and row.get("status") not in {"ACTIVE", "DEPRECATED", "SUPERSEDED"}:
+        raise HTTPException(status_code=404, detail="Published semantic context unavailable")
     model = SemanticModelIR.from_ossie(row["definition"])
     candidates = [
         metric
         for metric in model.metrics
         if metric.visibility == "public"
-        and term.strip().casefold()
-        in {metric.name.casefold(), *(name.casefold() for name in metric.synonyms)}
+        and (
+            metric.name == term if exact else term.strip().casefold()
+            in {metric.name.casefold(), *(name.casefold() for name in metric.synonyms)}
+        )
     ]
     definitions = {item["name"]: item for item in row["definition"].get("metrics", [])}
     exact = [metric for metric in candidates if metric.name.casefold() == term.strip().casefold()]
@@ -232,7 +247,7 @@ async def resolve_metric(ref: SemanticRef, term: str, user: dict) -> dict:
         if len(canonical) == 1
         else (candidates[0] if len(candidates) == 1 else None)
     )
-    return {
+    result = {
         "status": "resolved"
         if selected is not None
         else ("ambiguous" if candidates else "unknown"),
@@ -253,6 +268,17 @@ async def resolve_metric(ref: SemanticRef, term: str, user: dict) -> dict:
             for metric in candidates
         ],
     }
+    if include_context:
+        result.update(node_id=None, selected_node=None, graph=None, semantic=ref)
+        if selected is not None:
+            await project_semantic_view(ref, user)
+            node_id = semantic_node_id(Scope.from_user(user), ref, "metric", selected.name)
+            graph = await traverse_context(node_id, user)
+            result.update(
+                node_id=node_id, graph=graph,
+                selected_node=next(node for node in graph["nodes"] if node.id == node_id),
+            )
+    return result
 
 
 async def project_decision(decision_id: str, user: dict) -> dict:
@@ -299,9 +325,30 @@ async def project_decision(decision_id: str, user: dict) -> dict:
     root = reference("decision", decision, decision.title)
     link(news, investigation, "investigated_by")
     link(investigation, root, "informs")
+    actions = {}
+    for action in lineage.get("actions", []):
+        pinned = ContextSourceRef(
+            kind="action", id=action.id, revision=action.revision,
+            fingerprint=fingerprint(action.model_dump(mode="json")),
+        )
+        record = ContextNode(
+            id=context_reference_id(scope, pinned), scope=scope, kind="action",
+            name=f"Action: {action.status}", reference_id=action.id,
+            reference_revision=action.revision, reference_fingerprint=pinned.fingerprint,
+            semantic=action.semantic, state=KnowledgeState.INFERRED,
+            source_kind="lifecycle_evidence", authority="recorded_lifecycle_evidence",
+            authority_basis={"method": "authorized-canonical-source-v1", "kind": "action"},
+            validity="historical",
+        )
+        records.append(record)
+        actions[action.id] = record.id
+        link(root, record.id, "executed_by")
     for outcome in lineage["outcomes"]:
         target = reference("outcome", outcome, f"Outcome: {outcome.status}")
         link(root, target, "evaluated_by")
+        for action_id in outcome.action_ids:
+            if action_id in actions:
+                link(actions[action_id], target, "observed_in")
     if len(records) > 100:
         raise HTTPException(status_code=422, detail="Decision context exceeds its object budget")
     for kind, items in (("nodes", records), ("edges", edges)):
@@ -311,6 +358,108 @@ async def project_decision(decision_id: str, user: dict) -> dict:
                 await service.repository.save(kind, record)
     await service._audit("PROJECT_CONTEXT", decision, user)
     return {"root_id": root, "nodes": len(records), "edges": len(edges)}
+
+
+async def project_canonical_context(ref: ContextSourceRef, user: dict) -> dict:
+    if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
+        raise HTTPException(404, "Lifecycle Context is unavailable")
+    scope, budget = Scope.from_user(user), CycleBudget()
+    nodes, edges = {}, {}
+
+    async def add(source_ref):
+        source = await read_context_source(source_ref, user, budget)
+        pinned = source_ref.model_copy(update={"fingerprint": source["fingerprint"]})
+        record = ContextNode(
+            id=context_reference_id(scope, pinned), scope=scope, kind=pinned.kind,
+            name=source["name"], reference_id=pinned.id, reference_revision=pinned.revision,
+            reference_agent_id=pinned.agent_id, reference_parent_id=pinned.parent_id,
+            reference_run_id=pinned.run_id, reference_fingerprint=pinned.fingerprint,
+            semantic=source["semantic"], state=KnowledgeState.INFERRED,
+            source_kind=source["source_kind"], authority=source["authority"],
+            authority_basis={"method": "authorized-canonical-source-v1", "kind": pinned.kind},
+            validity="historical" if pinned.kind not in {"dashboard", "artifact", "agent"}
+            else "current",
+        )
+        nodes[record.id] = record
+        return record.id, source["value"]
+
+    def link(source, target, relationship):
+        edge = ContextEdge(
+            id=fingerprint([source, target, relationship]), scope=scope,
+            source=source, target=target, relationship=relationship,
+            state=KnowledgeState.INFERRED,
+        )
+        edges[edge.id] = edge
+
+    async def semantic_link(parent, pin):
+        row = await intelligence_service.authorize_semantic(pin, user, budget=budget)
+        if row.get("status") not in {"ACTIVE", "DEPRECATED", "SUPERSEDED"}:
+            raise HTTPException(404, "Published semantic Context unavailable")
+        model = SemanticModelIR.from_ossie(row["definition"])
+        target = semantic_node_id(scope, pin, "semantic_view", model.name)
+        nodes[target] = ContextNode(
+            id=target, scope=scope, kind="semantic_view", name=model.name,
+            reference_id=pin.view_id, semantic=pin, state=KnowledgeState.VERIFIED,
+            authority="published_semantic_definition", **_semantic_authority(pin, row, {}),
+        )
+        link(parent, target, "uses_semantic_version")
+
+    root, value = await add(ref)
+    if ref.kind == "mission":
+        for anchor in value.get("semantic_anchors", [])[:16]:
+            await semantic_link(root, SemanticRef.model_validate(anchor["semantic"]))
+        for pin in value.get("release_pins", [])[:10]:
+            child, release = await add(ContextSourceRef(
+                kind="agent_release", id=pin["manifest_id"], agent_id=pin["agent_id"],
+                run_id=pin["run_id"], fingerprint=pin["fingerprint"], parent_id=ref.id,
+            ))
+            link(root, child, "executed_with")
+            for semantic in release["dependencies"].get("semantic_views", [])[:16]:
+                await semantic_link(child, SemanticRef.model_validate(semantic))
+        for obj in value.get("object_refs", [])[:30]:
+            child, record = await add(ContextSourceRef(
+                kind=obj["kind"], id=obj["id"], revision=obj["revision"], parent_id=ref.id,
+            ))
+            link(root, child, "has_lifecycle_object")
+            if record.get("semantic"):
+                await semantic_link(child, SemanticRef.model_validate(record["semantic"]))
+        from app.modules.agents.mission import mission_service
+
+        for deliverable in (await mission_service.deliverables(ref.id, user, budget=budget))[:10]:
+            child, _ = await add(ContextSourceRef(
+                kind="deliverable", id=deliverable.deliverable_id,
+                parent_id=ref.id, revision=deliverable.mission_revision,
+            ))
+            link(root, child, "produced")
+        if len(value.get("object_refs", [])) > 30:
+            raise HTTPException(422, "Mission Context exceeds its projection budget")
+    elif ref.kind == "agent_release":
+        child, _ = await add(ContextSourceRef(kind="agent", id=ref.agent_id))
+        link(child, root, "has_release")
+        for pin in value["dependencies"].get("semantic_views", [])[:16]:
+            await semantic_link(root, SemanticRef.model_validate(pin))
+        for kind in ("skill", "tool"):
+            for dependency in value["dependencies"].get(f"{kind}s", [])[:10]:
+                child, _ = await add(ContextSourceRef(
+                    kind=kind, id=dependency["name"], parent_id=ref.id, agent_id=ref.agent_id,
+                ))
+                link(root, child, "pins_dependency")
+        if value["dependencies"].get("policy_fingerprint"):
+            child, _ = await add(ContextSourceRef(
+                kind="policy", id="agent_policy", parent_id=ref.id, agent_id=ref.agent_id,
+            ))
+            link(root, child, "pins_policy")
+    elif value.get("semantic"):
+        await semantic_link(root, SemanticRef.model_validate(value["semantic"]))
+    if len(nodes) > 100 or len(edges) > 100:
+        raise HTTPException(422, "Lifecycle Context exceeds its projection budget")
+    for kind, records in (("nodes", nodes.values()), ("edges", edges.values())):
+        for record in records:
+            prior = await intelligence_service.repository.get(kind, record.id, scope, type(record))
+            if prior is None:
+                await intelligence_service.repository.save(kind, record)
+    await intelligence_service._audit("PROJECT_CONTEXT", nodes[root], user)
+    return {"root_id": root, "nodes": len(nodes), "edges": len(edges), "bounded": True}
 
 
 def _claim_fingerprint(definition: dict) -> str:
@@ -353,13 +502,16 @@ async def derive_authority(
         "aliases": [], "claim_fingerprint": None, "contradictions": [],
         "state": KnowledgeState.HYPOTHESIS, "valid_from": None, "valid_until": None,
     }
-    if node.semantic and node.kind in {"metric", "dataset", "field", "semantic_view"}:
+    if node.semantic and node.kind in {
+        "metric", "dataset", "field", "semantic_view", "query_pattern",
+    }:
         ref = node.semantic
         row = await intelligence_service.authorize_semantic(ref, user, budget=budget)
         definition = row["definition"]
         model = SemanticModelIR.from_ossie(definition)
         if (
             row.get("status") in {"ACTIVE", "DEPRECATED", "SUPERSEDED"}
+            and node.kind != "query_pattern"
             and node.id == semantic_node_id(node.scope, ref, node.kind, node.name)
         ):
             item = None
@@ -425,6 +577,24 @@ async def derive_authority(
                 state=source.state, validity="historical",
                 claim_fingerprint=fingerprint([source.fact, source.definition]),
             )
+    elif node.kind in {
+        "mission", "action", "deliverable", "agent_release", "dashboard", "artifact",
+        "document", "agent",
+        "skill", "tool",
+    } or (node.kind == "policy" and node.reference_parent_id):
+        source = await authorize_context_reference(node, user, budget)
+        update.update(
+            source_kind=source["source_kind"], authority=source["authority"],
+            authority_basis={"method": "authorized-canonical-source-v1", "kind": node.kind},
+            state=KnowledgeState.INFERRED, validity="historical",
+        )
+    elif node.kind in {"decision", "outcome", "news", "investigation"} and node.reference_parent_id:
+        await authorize_context_reference(node, user, budget)
+        update.update(
+            source_kind="lifecycle_evidence", authority="recorded_lifecycle_evidence",
+            authority_basis={"method": "authorized-mission-canonical-source-v1"},
+            state=KnowledgeState.INFERRED, validity="historical",
+        )
     elif node.kind in {"decision", "outcome", "news", "investigation"}:
         kind = {
             "decision": "decisions", "outcome": "outcomes",
@@ -453,7 +623,8 @@ async def derive_authority(
 def authority_precedence(node: ContextNode) -> tuple[int, int]:
     return (
         {"published_semantic": 4, "reviewed_rule": 3, "lifecycle_evidence": 2,
-         "user_statement": 1, "usage": 0, "unknown": -1}[node.source_kind],
+         "agent_release": 2, "studio_reference": 1, "user_statement": 1,
+         "usage": 0, "unknown": -1}[node.source_kind],
         int(node.authority_basis.get("designation") == "canonical"),
     )
 
@@ -502,7 +673,7 @@ async def project_usage_context(ref: SemanticRef, user: dict) -> dict:
     ids = []
     for pattern in summary["patterns"][:100]:
         node = ContextNode(
-            id=usage_node_id(scope, ref, pattern["pattern_id"]), scope=scope, kind="metric",
+            id=usage_node_id(scope, ref, pattern["pattern_id"]), scope=scope, kind="query_pattern",
             name=", ".join(pattern["metrics"])[:256], reference_id=pattern["pattern_id"],
             semantic=ref, state=KnowledgeState.INFERRED, authority="usage_observation",
             source_kind="usage", authority_basis={

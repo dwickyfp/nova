@@ -7,7 +7,12 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import HTTPException
 
-from app.modules.intelligence.action_contracts import Action, ActionReceipt, ActionVerification
+from app.modules.intelligence.action_contracts import (
+    Action,
+    ActionReceipt,
+    ActionVerification,
+    action_adapter_contract,
+)
 from app.modules.intelligence.contracts import Monitor, Scope, fingerprint, utc_now
 from app.modules.intelligence.schedules import configure_schedule, require_execution_binding
 from app.modules.task_orchestration.internal_handlers import InternalTaskConfiguration
@@ -17,6 +22,7 @@ from app.modules.task_orchestration.repository import task_orchestration_reposit
 class MonitorActionAdapter:
     id = "monitor-v1"
     idempotency_mode = "nova_guarded"
+    contract = action_adapter_contract(id)
 
     def __init__(self, service=None, tasks=task_orchestration_repository):
         self._service, self.tasks = service, tasks
@@ -78,9 +84,10 @@ class MonitorActionAdapter:
     async def preview(self, configuration, user: dict) -> None:
         from app.modules.agents.router import _require_agent
 
-        if not configuration.enabled:
+        if not configuration.enabled or not configuration.count_column:
             raise HTTPException(
-                status_code=422, detail="Monitor actions require an enabled schedule"
+                status_code=422,
+                detail="Monitor actions require an enabled schedule and reviewed count semantics",
             )
         await _require_agent(configuration.agent_id, user)
         await require_execution_binding(user)
@@ -90,6 +97,10 @@ class MonitorActionAdapter:
     async def execute(
         self, action: Action, user: dict, *, guard: Callable[[], Awaitable[None]] | None = None
     ) -> ActionReceipt:
+        if not action.configuration.count_column:
+            raise HTTPException(
+                status_code=422, detail="Scheduled monitors require reviewed count semantics"
+            )
         monitor = self.monitor(action, user)
         if guard:
             await guard()
@@ -182,9 +193,7 @@ class MonitorActionAdapter:
                 status_code=409, detail="Monitor changed; review before compensation"
             )
         task = await self.schedule(monitor)
-        if task is not None and not self.schedule_matches(
-            action, task, enabled=monitor.enabled
-        ):
+        if task is not None and not self.schedule_matches(action, task, enabled=monitor.enabled):
             raise HTTPException(status_code=409, detail="Schedule changed; review compensation")
         if guard:
             await guard()

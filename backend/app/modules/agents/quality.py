@@ -99,6 +99,14 @@ class MonitoringRequest(Contract):
 class ProposalReview(Contract):
     expected_revision: int = Field(ge=1)
     resolution: Literal["accepted", "rejected"]
+    patch_id: str | None = Field(default=None, max_length=64)
+    regression_case_ids: list[str] = Field(default_factory=list, max_length=32)
+
+    @model_validator(mode="after")
+    def distinct_cases(self):
+        if len(set(self.regression_case_ids)) != len(self.regression_case_ids):
+            raise ValueError("Select each regression case once")
+        return self
 
 
 async def records(
@@ -451,7 +459,7 @@ async def _evaluate(
     if cancelled:
         raise asyncio.CancelledError
     if saved["status"] != "passed":
-        await feedback_proposal(agent["agent_id"], saved["id"], user, saved)
+        await feedback_proposal(agent["agent_id"], saved["id"], user, saved, agent=agent)
     return saved
 
 
@@ -555,13 +563,37 @@ async def configure_monitoring(agent_id: str, body: MonitoringRequest, user: dic
         )
 
 
-async def feedback_proposal(agent_id: str, message_id: str, user: dict, trace: dict) -> dict:
+async def feedback_proposal(
+    agent_id: str, message_id: str, user: dict, trace: dict, *, agent: dict | None = None
+) -> dict:
     identifier = fingerprint(
         [agent_id, message_id, Scope.from_user(user).model_dump(exclude={"session_id"})]
     )
     async with metadata_lock(f"agent-quality:proposals:{identifier}") as lock:
         existing = await records("proposals", agent_id, user, identifier)
         if existing:
+            if (
+                agent is not None
+                and existing[0]["status"] == "proposed"
+                and not existing[0].get("patches")
+            ):
+                from app.modules.agents.doctor import report
+
+                diagnosis = await report(
+                    agent, user, await records("runs", agent_id, user), current_run=trace
+                )
+                return await _save_record_locked(
+                    "proposals",
+                    {
+                        **existing[0],
+                        "doctor": diagnosis,
+                        "patches": diagnosis["patches"],
+                        "regression_candidates": diagnosis["regression_candidates"],
+                    },
+                    user,
+                    existing[0]["revision"],
+                    lock,
+                )
             return existing[0]
         failures = sorted(
             {
@@ -584,6 +616,13 @@ async def feedback_proposal(agent_id: str, message_id: str, user: dict, trace: d
             for score in [*result.get("scores", []), *result.get("budget_scores", [])]
             if score["status"] != "pass"
         ][:100]
+        diagnosis = {}
+        if agent is not None:
+            from app.modules.agents.doctor import report
+
+            diagnosis = await report(
+                agent, user, await records("runs", agent_id, user), current_run=trace
+            )
         return await _save_record_locked(
             "proposals",
             {
@@ -595,6 +634,15 @@ async def feedback_proposal(agent_id: str, message_id: str, user: dict, trace: d
                 "observations": observations,
                 "run_id": trace.get("id"),
                 "hypothesis": True,
+                **(
+                    {
+                        "doctor": diagnosis,
+                        "patches": diagnosis["patches"],
+                        "regression_candidates": diagnosis["regression_candidates"],
+                    }
+                    if diagnosis
+                    else {}
+                ),
                 "suggestion": (
                     "Review the evidence and add a regression case before changing the release."
                 ),

@@ -15,6 +15,7 @@ import { ResourcePanel } from "./resource-panel";
 import { ContextPanel } from "./context-panel";
 import type { TranscriptTurn } from "./studio-transcript";
 import { workflowApi } from "./workflow-api";
+import type { SemanticRef } from "@/features/intelligence/lifecycle-api";
 
 const NARROW = "(max-width: 1199px)";
 function useNarrowWorkflow() {
@@ -46,6 +47,7 @@ export function WorkflowRail({ threadId, turns, streaming, agents, runs, runLoad
 function ScopedRail({ threadId, turns, streaming, agents, runs, runLoading, runError, retryRuns, onSelectChild, onAvailable, mobileOpen, onMobileOpenChange, epoch }: Parameters<typeof WorkflowRail>[0] & { epoch: number }) {
   const narrow = useNarrowWorkflow();
   const [tab, setTab] = useState("activity");
+  const [contextSelection, setContextSelection] = useState<{ semantic: SemanticRef; metric: string }>();
   const [showAgents, setShowAgents] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const operation = useRef<{ signature: string; id: string } | null>(null);
@@ -114,8 +116,8 @@ function ScopedRail({ threadId, turns, streaming, agents, runs, runLoading, runE
           {showAgents && <ResourcePanel threadId={threadId} runs={runs} />}
         </div> : null}
       </TabsContent>
-      <TabsContent value="evidence"><EvidencePanel evidence={evidence} sqlPreviews={previews} /></TabsContent>
-      <TabsContent value="context"><ContextPanel /></TabsContent>
+      <TabsContent value="evidence"><EvidencePanel evidence={evidence} sqlPreviews={previews} onSelectContext={(semantic, metric) => { setContextSelection({ semantic, metric }); setTab("context"); }} /></TabsContent>
+      <TabsContent value="context"><ContextPanel semantic={contextSelection?.semantic} metric={contextSelection?.metric} /></TabsContent>
     </div>
   </Tabs>;
   return narrow ? <>

@@ -28,6 +28,7 @@ from app.common.secret_keys import require_configured_secrets
 from app.core.config import settings
 from app.core.database import db
 from app.core.redis import session_store
+from app.core.studio_capabilities import log_studio_capabilities
 from app.modules.agents.automations import AutomationRunner, AutomationWorker
 from app.modules.migration.job_worker import MigrationJobWorker
 from app.modules.migration.repository import migration_repo
@@ -74,6 +75,7 @@ def build_automation_worker(client: aioredis.Redis) -> AutomationWorker:
 async def _run() -> None:
     # Validate configured secrets and the worker account before connecting.
     require_configured_secrets()
+    log_studio_capabilities(logger, "task-worker")
     # Validate before opening the system pool or consuming any graph runs.
     if not settings.WORKER_IMPERSONATION_USER or not settings.WORKER_IMPERSONATION_PASSWORD:
         raise RuntimeError("worker impersonation credentials must be configured")

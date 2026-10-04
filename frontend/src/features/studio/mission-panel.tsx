@@ -40,6 +40,7 @@ export function MissionPanel({ mission, onRefresh }: { mission: Mission; onRefre
         <StatusBadge tone={statusTone(mission.status)}>{mission.status}</StatusBadge>
       </div>
       <p className="text-xs text-muted-foreground">Recorded work · revision {mission.revision}</p>
+      {mission.continuation && <p className="text-xs text-muted-foreground">{mission.continuation.mode === "continue" ? "Continuing mission" : "New mission"} · {mission.continuation.reason.split("_").join(" ")}</p>}
     </div>
     {mission.stages.length ? <ol className="space-y-2" aria-label="Mission stages">
       {mission.stages.map((stage) => <li key={stage.kind} className="flex min-w-0 items-start justify-between gap-2 border-b border-border py-2">
@@ -52,12 +53,14 @@ export function MissionPanel({ mission, onRefresh }: { mission: Mission; onRefre
       onClick={() => cancel.mutate()}
     >{cancel.isPending ? "Requesting cancellation…" : "Cancel mission"}</Button>}
     {mission.status === "cancelling" && <p role="status" className="text-xs text-muted-foreground">Cancellation requested. Waiting for the current execution to stop.</p>}
-    <InvestigationStart mission={mission} refresh={onRefresh} />
+    {mission.investigation_requirements && <InvestigationStart mission={mission} refresh={onRefresh} />}
     <section aria-label="Mission deliverables" className="space-y-3">
       <h3 className="text-sm font-medium">Deliverables</h3>
       <div className="flex flex-wrap gap-2">
-        {(["decision_memo", "action_plan"] as const).map((kind) => <Button key={kind} variant="outline" className="min-h-11 whitespace-normal" disabled={generate.isPending || !mission.evidence_refs.length}
-          onClick={() => generate.mutate(kind)}>{generate.isPending && generate.variables === kind ? "Generating…" : kind === "decision_memo" ? "Generate decision memo" : "Generate action plan"}</Button>)}
+        {(["analysis_summary", "investigation_report", "scenario_comparison", "decision_memo", "action_plan", "outcome_report"] as const).filter((kind) =>
+          !["investigation_report", "scenario_comparison", "outcome_report"].includes(kind) || mission.object_refs.some((ref) => ref.kind === ({ investigation_report: "investigation", scenario_comparison: "decision", outcome_report: "outcome" } as Record<string, string>)[kind])
+        ).map((kind) => <Button key={kind} variant="outline" className="min-h-11 whitespace-normal" disabled={generate.isPending || !mission.evidence_refs.length}
+          onClick={() => generate.mutate(kind)}>{generate.isPending && generate.variables === kind ? "Generating…" : `Generate ${kind.split("_").join(" ")}`}</Button>)}
       </div>
       {!mission.evidence_refs.length && <p className="text-xs text-muted-foreground">Record evidence before generating a deliverable.</p>}
       {error && <p role="alert" className="break-words text-xs text-destructive">{error.message}</p>}
@@ -72,6 +75,7 @@ export function MissionPanel({ mission, onRefresh }: { mission: Mission; onRefre
           <ul className="mt-2 space-y-1 break-all text-xs text-muted-foreground">
             {document.evidence_refs.map((id) => <li key={id}>Evidence: {id}</li>)}
             {document.object_refs.map((ref) => <li key={`${ref.kind}:${ref.id}`}>{ref.kind}: {ref.id} · revision {ref.revision}</li>)}
+            {document.sources?.map((source) => <li key={`${source.kind}:${source.id}:${source.revision}`}>{source.kind}: {source.id} · revision {source.revision} · fingerprint {source.fingerprint}{source.semantic ? ` · Semantic View ${source.semantic.view_id} v${source.semantic.version}` : ""}</li>)}
           </ul>
         </details>
       </article>}

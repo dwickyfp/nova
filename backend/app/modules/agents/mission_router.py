@@ -17,6 +17,8 @@ from app.modules.agents.mission_schema import (
     MissionDeliverable,
     MissionLink,
     MissionOperation,
+    MissionResume,
+    ObjectRef,
 )
 from app.modules.agents.resource_delegation import ResourceGrantRequest, resource_delegation
 from app.modules.intelligence.contracts import Contract
@@ -33,11 +35,57 @@ async def list_missions(thread_id: str, user: Annotated[dict, Depends(get_curren
     return {"missions": await mission_service.list(thread_id, user)}
 
 
+@router.get("/threads/{thread_id}/missions/resumable")
+async def resumable_missions(thread_id: str, user: Annotated[dict, Depends(get_current_user)]):
+    return {"missions": await mission_service.resumable(thread_id, user)}
+
+
+@router.post("/missions/{mission_id}/resume", response_model=Mission)
+async def resume_mission(
+    mission_id: str,
+    body: MissionResume,
+    user: Annotated[dict, Depends(get_current_user)],
+):
+    return await mission_service.resume(mission_id, body, user)
+
+
+@router.get("/missions/{mission_id}/objects/{kind}/{object_id}")
+async def read_mission_object(
+    mission_id: str,
+    kind: str,
+    object_id: str,
+    revision: int,
+    user: Annotated[dict, Depends(get_current_user)],
+):
+    if kind not in {"investigation", "decision", "action", "outcome"}:
+        raise HTTPException(status_code=404, detail="Mission canonical reference not found")
+    return await mission_service.canonical_read(
+        mission_id,
+        ObjectRef(kind=kind, id=object_id, revision=revision),
+        user,
+    )
+
+
 @router.post("/threads/{thread_id}/missions", response_model=Mission)
 async def create_mission(
     thread_id: str, body: MissionCreate, user: Annotated[dict, Depends(get_current_user)]
 ):
     return await mission_service.create(thread_id, body, user)
+
+
+@router.get("/missions/{mission_id}/objects/investigation/{investigation_id}/context")
+async def mission_investigation_context(
+    mission_id: str,
+    investigation_id: str,
+    revision: int,
+    user: Annotated[dict, Depends(get_current_user)],
+):
+    return await mission_service.investigation_context(
+        mission_id,
+        investigation_id,
+        revision,
+        user,
+    )
 
 
 @router.get("/missions/{mission_id}", response_model=Mission)

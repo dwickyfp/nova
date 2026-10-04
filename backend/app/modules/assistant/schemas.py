@@ -160,16 +160,19 @@ class AttachmentInput(BaseModel):
 
 
 class AgentMessageRequest(MessageRequest):
-    work_intent: Literal[
-        "ANSWER", "ANALYZE", "INVESTIGATE", "PLAN", "RESEARCH", "ACT"
-    ] | None = None
+    work_intent: Literal["ANSWER", "ANALYZE", "INVESTIGATE", "PLAN", "RESEARCH", "ACT"] | None = (
+        None
+    )
     new_mission: bool = False
+    continue_mission_id: str | None = Field(default=None, min_length=1, max_length=64)
     content: str = Field(default="", max_length=32_000)
     attachments: list[AttachmentInput] = Field(default_factory=list, max_length=3)
     _prepared_attachments: list[dict] = PrivateAttr(default_factory=list)
 
     @model_validator(mode="after")
     def validate_turn(self) -> AgentMessageRequest:
+        if self.new_mission and self.continue_mission_id:
+            raise ValueError("New and continue Mission controls conflict")
         if not self.content.strip() and not self.attachments:
             raise ValueError("Write a message or attach a file.")
         self._prepared_attachments = validate_attachments(

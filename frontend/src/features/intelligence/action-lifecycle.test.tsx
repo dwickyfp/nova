@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ActionLifecycle } from "./action-lifecycle";
-import { MonitorActionPreview } from "./action-preview";
+import {
+  AutomationActionPreview,
+  MonitorActionPreview,
+} from "./action-preview";
 import type { BusinessAction, Decision } from "./lifecycle-api";
 import "@/styles/index.css";
 
-const action: BusinessAction = {
+const action: Extract<BusinessAction, { adapter_id: "monitor-v1" }> = {
   id: "action-1",
   revision: 1,
   decision_id: "decision-1",
@@ -65,6 +68,220 @@ afterEach(async () => {
 });
 
 describe("governed action lifecycle", () => {
+  it("reads an exact Mission Action pin and keeps historical consent inactive", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      json({
+        ...action,
+        status: "awaiting_consent",
+        consent_call_id: "old-consent",
+        execution_current: false,
+      }),
+    );
+    const screen = await setup(
+      <ActionLifecycle
+        actionId="action-1"
+        threadId="thread-1"
+        missionId="mission-1"
+        revision={3}
+        canReview
+      />,
+    );
+    await expect.element(screen.getByText(/Historical Action/)).toBeVisible();
+    await expect
+      .element(
+        screen.getByRole("button", { name: "Allow this operation once" }),
+      )
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: "Cancel before dispatch" }))
+      .not.toBeInTheDocument();
+    expect(fetch.mock.calls[0][0]).toContain("mission_id=mission-1&revision=3");
+  });
+  it("switches action type by keyboard and reviews edited report configuration", async () => {
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((_input, init) => {
+        const body = init?.body ? JSON.parse(init.body as string) : null;
+        return json({
+          ...action,
+          adapter_id: "automation-v1",
+          configuration: body?.configuration ?? {
+            agent_id: "sales",
+            semantic: action.configuration.semantic,
+            title: "Revenue by region",
+            prompt: "Report weekly revenue by region.",
+            schedule_kind: "cron",
+            schedule_expr: "0 9 * * 1",
+          },
+        });
+      });
+    const screen = await setup(
+      <MonitorActionPreview
+        decision={
+          {
+            id: action.decision_id,
+            revision: 3,
+            selected_option_id: "option-1",
+            title: "Revenue",
+          } as Decision
+        }
+        configuration={action.configuration}
+        threadId="thread-1"
+        missionId="mission-1"
+      />,
+    );
+    await screen.getByRole("radio", { name: "Metric monitor" }).click();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect
+      .element(screen.getByRole("radio", { name: "Scheduled Studio report" }))
+      .toHaveFocus();
+    await userEvent.keyboard(" ");
+    await expect
+      .element(screen.getByRole("radio", { name: "Scheduled Studio report" }))
+      .toBeChecked();
+    await screen.getByLabelText("Report title").fill("Revenue by region");
+    await screen
+      .getByLabelText("Question for each report")
+      .fill("Report weekly revenue by region.");
+    await screen.getByLabelText("Cron schedule").fill("0 9 * * 1");
+    await screen
+      .getByRole("button", { name: "Preview automation action" })
+      .click();
+    await expect
+      .element(
+        screen.getByRole("heading", { name: "Governed automation action" }),
+      )
+      .toBeVisible();
+    const submitted = fetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/preview"),
+    );
+    expect(JSON.parse(submitted![1]!.body as string)).toMatchObject({
+      adapter_id: "automation-v1",
+      mission_id: "mission-1",
+      configuration: {
+        title: "Revenue by region",
+        prompt: "Report weekly revenue by region.",
+        schedule_expr: "0 9 * * 1",
+        delivery: "studio",
+      },
+    });
+  });
+  it("renders automation configuration and readback without claiming business improvement", async () => {
+    const automation: BusinessAction = {
+      ...action,
+      adapter_id: "automation-v1",
+      compensation_receipt: null,
+      status: "verification_required",
+      dispatch_attempts: 1,
+      expected_effect: "Create a scheduled agent report in Studio",
+      configuration: {
+        agent_id: "sales",
+        semantic: action.configuration.semantic,
+        title: "Weekly revenue report",
+        prompt: "Summarize governed revenue for last week.",
+        schedule_kind: "cron",
+        schedule_expr: "0 8 * * 1",
+        timezone: "Asia/Jakarta",
+        enabled: true,
+        delivery: "studio",
+      },
+      receipt: {
+        automation_id: "automation-1",
+        configuration_digest: "a".repeat(64),
+        schedule_enabled: true,
+        delivery: "studio",
+      },
+    };
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => json(automation));
+    const screen = await setup(
+      <ActionLifecycle actionId="action-1" threadId="thread-1" />,
+    );
+    await expect
+      .element(
+        screen.getByRole("heading", { name: "Governed automation action" }),
+      )
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("Weekly revenue report", { exact: true }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("Reports arrive in Studio history."))
+      .toBeVisible();
+    await expect
+      .element(
+        screen.getByText(
+          /Business effects require a separate observation window/,
+        ),
+      )
+      .toBeVisible();
+    await expect
+      .element(
+        screen.getByRole("button", { name: "Request execution consent" }),
+      )
+      .not.toBeInTheDocument();
+    await screen.getByRole("button", { name: "Verify by readback" }).click();
+    expect(
+      fetch.mock.calls.some(([url]) => String(url).endsWith("/verify")),
+    ).toBe(true);
+    await page.viewport(320, 800);
+    for (const theme of ["", "dark"]) {
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+    }
+  });
+
+  it("previews an automation using the selected Decision and current Mission", async () => {
+    const configuration = {
+      agent_id: "sales",
+      semantic: action.configuration.semantic,
+      title: "Weekly revenue report",
+      prompt: "Summarize governed revenue.",
+      schedule_kind: "cron" as const,
+      schedule_expr: "0 8 * * 1",
+    };
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      json({
+        ...action,
+        adapter_id: "automation-v1",
+        configuration,
+      }),
+    );
+    const screen = await setup(
+      <AutomationActionPreview
+        decision={
+          {
+            id: action.decision_id,
+            revision: 3,
+            selected_option_id: "option-1",
+          } as Decision
+        }
+        configuration={configuration}
+        threadId="thread-1"
+        missionId="mission-1"
+      />,
+    );
+    await screen
+      .getByRole("button", { name: "Preview automation action" })
+      .click();
+    await expect
+      .element(
+        screen.getByRole("heading", { name: "Governed automation action" }),
+      )
+      .toBeVisible();
+    const submitted = fetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/preview"),
+    );
+    expect(JSON.parse(submitted![1]!.body as string)).toMatchObject({
+      adapter_id: "automation-v1",
+      configuration,
+      decision_id: action.decision_id,
+      expected_decision_revision: 3,
+      option_id: "option-1",
+      mission_id: "mission-1",
+    });
+  });
   it("keeps a pending execution request open while independently resolving tool consent", async () => {
     let current = action;
     let finish: ((value: Response) => void) | undefined;
@@ -216,7 +433,7 @@ describe("governed action lifecycle", () => {
       task_id: "task-1",
       schedule_enabled: true,
     };
-    let current: BusinessAction = {
+    let current: Extract<BusinessAction, { adapter_id: "monitor-v1" }> = {
       ...action,
       revision: 2,
       status: "compensation_required",

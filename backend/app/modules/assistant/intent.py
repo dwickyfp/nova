@@ -49,6 +49,7 @@ class IntentFrame:
     threshold: Threshold | None = None
     #: The request points at something on screen ("this query", "この結果").
     refers_to_screen: bool = False
+    refers_to_previous_answer: bool = False
     #: The user compares items or groups against each other ("compare the channels").
     compares_groups: bool = False
 
@@ -78,6 +79,7 @@ class IntentFrame:
             per_group_dimension=dimension if isinstance(dimension, str) and dimension else None,
             threshold=_threshold(value.get("threshold")),
             refers_to_screen=bool(value.get("refers_to_screen")),
+            refers_to_previous_answer=bool(value.get("refers_to_previous_answer")),
             compares_groups=bool(value.get("compares_groups")),
         )
 
@@ -138,17 +140,22 @@ def intent_frame_schema() -> dict[str, Any]:
                 ],
             },
             "refers_to_screen": {"type": "boolean"},
+            "refers_to_previous_answer": {"type": "boolean"},
             "compares_groups": {"type": "boolean"},
         },
         "required": [
             "language", "range", "compare", "grain", "asks_series", "top_n", "order",
             "per_group_dimension", "threshold", "refers_to_screen", "compares_groups",
+            "refers_to_previous_answer",
         ],
         "additionalProperties": False,
     }
 
 
 INTENT_FRAME_RULES = (
+    "refers_to_previous_answer: true when the user refines the existing question or "
+    "previous query, including a changed breakdown or period. A separate standalone "
+    "business objective is false. Explicit Mission controls retain precedence. "
     "intent_frame records what the user asked, independent of their language. "
     "language: the BCP-47 tag of the user's language (en, id, ja, es, ar, ...). "
     "range and compare: the period the user named, in the time.range grammar; null when "

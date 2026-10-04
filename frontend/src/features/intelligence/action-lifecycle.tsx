@@ -8,6 +8,8 @@ import { actionApi, type BusinessAction } from "./lifecycle-api";
 type Props = {
   actionId: string;
   threadId: string;
+  missionId?: string;
+  revision?: number;
   canReview?: boolean;
   onChanged?: (action: BusinessAction) => void;
 };
@@ -16,7 +18,7 @@ export function ActionLifecycle(props: Props) {
   const epoch = useAuthStore((state) => state.securityEpoch);
   return (
     <ActionWorkspace
-      key={`${epoch}:${props.actionId}`}
+      key={`${epoch}:${props.actionId}:${props.missionId ?? ""}`}
       {...props}
       epoch={epoch}
     />
@@ -26,26 +28,37 @@ export function ActionLifecycle(props: Props) {
 function ActionWorkspace({
   actionId,
   threadId,
+  missionId,
+  revision,
   canReview = false,
   onChanged,
   epoch,
 }: Props & { epoch: number }) {
   const client = useQueryClient();
-  const key = ["intelligence", epoch, "action", actionId];
+  const key = [
+    "intelligence",
+    epoch,
+    "action",
+    actionId,
+    missionId ?? "",
+    revision ?? null,
+  ];
   const [compensationConfirmed, setCompensationConfirmed] = useState(false);
   const [requestActive, setRequestActive] = useState(false);
   const operationIds = useRef(new Map<string, string>());
   const query = useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => actionApi.get(actionId, signal),
+    queryFn: ({ signal }) =>
+      actionApi.get(actionId, signal, missionId, revision),
     retry: false,
     staleTime: 0,
     gcTime: 0,
     refetchInterval: (query) =>
-      requestActive ||
-      ["awaiting_consent", "executing", "compensating"].includes(
-        query.state.data?.status ?? "",
-      )
+      query.state.data?.execution_current !== false &&
+      (requestActive ||
+        ["awaiting_consent", "executing", "compensating"].includes(
+          query.state.data?.status ?? "",
+        ))
         ? 500
         : false,
   });
@@ -115,9 +128,12 @@ function ActionWorkspace({
       </div>
     );
   const action = query.data;
+  const executionCurrent = action.execution_current !== false;
+  const automation = action.adapter_id === "automation-v1";
   const busy = operate.isPending || review.isPending || consent.isPending;
   const error = operate.error ?? review.error ?? consent.error;
   const canDispatch =
+    executionCurrent &&
     ["approved", "dispatch_ready"].includes(action.status) &&
     action.policy.decision !== "DENY";
   return (
@@ -126,7 +142,9 @@ function ActionWorkspace({
       className="min-w-0 space-y-5 rounded-md border p-4"
     >
       <div>
-        <h3 className="text-base font-medium">Governed monitor action</h3>
+        <h3 className="text-base font-medium">
+          Governed {automation ? "automation" : "monitor"} action
+        </h3>
         <p role="status" className="mt-1 text-sm">
           {action.status.replace(/_/g, " ")}
         </p>
@@ -134,6 +152,13 @@ function ActionWorkspace({
           {action.expected_effect}
         </p>
       </div>
+      {!executionCurrent && (
+        <p className="text-sm text-muted-foreground">
+          Historical Action · this execution binding belongs to an earlier
+          session. Review its recorded configuration and receipts; create a new
+          Action in the resumed Mission to execute with current consent.
+        </p>
+      )}
       <dl className="grid min-w-0 gap-4 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-muted-foreground">Business policy</dt>
@@ -156,11 +181,13 @@ function ActionWorkspace({
         <div>
           <dt className="text-muted-foreground">Tool consent</dt>
           <dd>
-            {action.status === "awaiting_consent"
-              ? "Awaiting explicit consent for this operation"
-              : action.dispatch_attempts
-                ? "Dispatch was attempted after consent"
-                : "Requested separately before execution"}
+            {!executionCurrent
+              ? "Historical consent does not authorize this session"
+              : action.status === "awaiting_consent"
+                ? "Awaiting explicit consent for this operation"
+                : action.dispatch_attempts
+                  ? "Dispatch was attempted after consent"
+                  : "Requested separately before execution"}
           </dd>
         </div>
         <div>
@@ -169,18 +196,36 @@ function ActionWorkspace({
         </div>
       </dl>
       <div className="space-y-1 text-sm">
-        <p className="font-medium">Monitor preview</p>
-        <p className="break-words">
-          {action.configuration.name} · {action.configuration.value_column}
-        </p>
-        <p className="text-muted-foreground">
-          {action.configuration.enabled
-            ? `Schedule every ${action.configuration.cadence_minutes ?? 15} minutes`
-            : "Schedule disabled"}{" "}
-          · {action.configuration.timezone ?? "Asia/Jakarta"}
-        </p>
+        {action.adapter_id === "automation-v1" ? (
+          <>
+            <p className="font-medium">Automation preview</p>
+            <p className="break-words">{action.configuration.title}</p>
+            <p className="break-words text-muted-foreground">
+              {action.configuration.prompt}
+            </p>
+            <p className="break-words text-muted-foreground">
+              {action.configuration.schedule_kind} ·{" "}
+              {action.configuration.schedule_expr} ·{" "}
+              {action.configuration.timezone ?? "Asia/Jakarta"}
+            </p>
+            <p>Reports arrive in Studio history.</p>
+          </>
+        ) : (
+          <>
+            <p className="font-medium">Monitor preview</p>
+            <p className="break-words">
+              {action.configuration.name} · {action.configuration.value_column}
+            </p>
+            <p className="text-muted-foreground">
+              {action.configuration.enabled
+                ? `Schedule every ${action.configuration.cadence_minutes ?? 15} minutes`
+                : "Schedule disabled"}{" "}
+              · {action.configuration.timezone ?? "Asia/Jakarta"}
+            </p>
+          </>
+        )}
       </div>
-      {action.status === "awaiting_approval" && (
+      {executionCurrent && action.status === "awaiting_approval" && (
         <div className="space-y-2">
           {canReview ? (
             <div className="flex flex-wrap gap-2">
@@ -208,31 +253,33 @@ function ActionWorkspace({
           )}
         </div>
       )}
-      {action.status === "awaiting_consent" && action.consent_call_id && (
-        <div className="space-y-3 border-t pt-4">
-          <p className="text-sm">
-            Allow this specific operation on the reviewed monitor? Consent
-            covers this call only.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              className="min-h-11"
-              disabled={consent.isPending}
-              onClick={() => consent.mutate("deny")}
-            >
-              Deny tool consent
-            </Button>
-            <Button
-              className="min-h-11"
-              disabled={consent.isPending}
-              onClick={() => consent.mutate("approve")}
-            >
-              Allow this operation once
-            </Button>
+      {executionCurrent &&
+        action.status === "awaiting_consent" &&
+        action.consent_call_id && (
+          <div className="space-y-3 border-t pt-4">
+            <p className="text-sm">
+              Allow this specific operation on the reviewed monitor? Consent
+              covers this call only.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                className="min-h-11"
+                disabled={consent.isPending}
+                onClick={() => consent.mutate("deny")}
+              >
+                Deny tool consent
+              </Button>
+              <Button
+                className="min-h-11"
+                disabled={consent.isPending}
+                onClick={() => consent.mutate("approve")}
+              >
+                Allow this operation once
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       {canDispatch && (
         <Button
           className="min-h-11"
@@ -247,22 +294,23 @@ function ActionWorkspace({
             : "Request execution consent"}
         </Button>
       )}
-      {[
-        "verification_required",
-        "failed",
-        "verified",
-        "compensation_required",
-        "compensated",
-      ].includes(action.status) && (
-        <Button
-          variant="outline"
-          className="min-h-11"
-          disabled={busy || !threadId}
-          onClick={() => operate.mutate("verify")}
-        >
-          Verify by readback
-        </Button>
-      )}
+      {executionCurrent &&
+        [
+          "verification_required",
+          "failed",
+          "verified",
+          "compensation_required",
+          "compensated",
+        ].includes(action.status) && (
+          <Button
+            variant="outline"
+            className="min-h-11"
+            disabled={busy || !threadId}
+            onClick={() => operate.mutate("verify")}
+          >
+            Verify by readback
+          </Button>
+        )}
       {action.status === "verification_required" && (
         <p className="text-sm text-warning-strong">
           Dispatch outcome is uncertain. Readback verification is required
@@ -283,67 +331,70 @@ function ActionWorkspace({
       )}
       {action.receipt && (
         <p className="break-all text-sm text-muted-foreground">
-          Monitor {action.receipt.monitor_id} · revision{" "}
-          {action.receipt.monitor_revision} · schedule{" "}
-          {action.receipt.schedule_enabled ? "enabled" : "disabled"}
+          {receiptDescription(action.receipt)}
         </p>
       )}
       {action.compensation_receipt && (
         <div className="space-y-1 text-sm">
           <h4 className="font-medium">Compensation readback</h4>
           <p className="break-all text-muted-foreground">
-            Monitor {action.compensation_receipt.monitor_id} · revision{" "}
-            {action.compensation_receipt.monitor_revision} · schedule{" "}
-            {action.compensation_receipt.schedule_enabled ? "enabled" : "disabled"}
+            {receiptDescription(action.compensation_receipt)}
           </p>
         </div>
       )}
-      {(action.status === "verified" ||
-        (action.status === "compensation_required" &&
-          !action.compensation_attempts)) && (
-        <div className="space-y-3 border-t pt-4">
-          <p className="text-sm">
-            Compensation disables the created monitor and its schedule. It
-            requires current authorization and new tool consent.
-          </p>
-          {compensationConfirmed ? (
-            <div className="flex flex-wrap gap-2">
+      {executionCurrent &&
+        (action.status === "verified" ||
+          (action.status === "compensation_required" &&
+            !action.compensation_attempts)) && (
+          <div className="space-y-3 border-t pt-4">
+            <p className="text-sm">
+              Compensation disables{" "}
+              {automation
+                ? "the created automation"
+                : "the created monitor and its schedule"}
+              . It requires current authorization and new tool consent.
+            </p>
+            {compensationConfirmed ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={busy}
+                  onClick={() => setCompensationConfirmed(false)}
+                >
+                  Keep {automation ? "automation" : "monitor"} active
+                </Button>
+                <Button
+                  className="min-h-11"
+                  disabled={busy || !threadId}
+                  onClick={() => {
+                    operate.mutate("compensate");
+                    void query.refetch();
+                  }}
+                >
+                  Request compensation consent
+                </Button>
+              </div>
+            ) : (
               <Button
                 variant="outline"
                 className="min-h-11"
                 disabled={busy}
-                onClick={() => setCompensationConfirmed(false)}
+                onClick={() => setCompensationConfirmed(true)}
               >
-                Keep monitor active
+                Prepare compensation
               </Button>
-              <Button
-                className="min-h-11"
-                disabled={busy || !threadId}
-                onClick={() => {
-                  operate.mutate("compensate");
-                  void query.refetch();
-                }}
-              >
-                Request compensation consent
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              className="min-h-11"
-              disabled={busy}
-              onClick={() => setCompensationConfirmed(true)}
-            >
-              Prepare compensation
-            </Button>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
       {action.status === "compensation_required" &&
         !!action.compensation_attempts && (
           <p className="text-sm text-warning-strong">
             Compensation was attempted and its outcome is uncertain. Verify the
-            monitor and schedule by readback.
+            {automation
+              ? "automation configuration"
+              : "monitor and schedule"}{" "}
+            by readback.
           </p>
         )}
       {action.compensation && (
@@ -353,21 +404,22 @@ function ActionWorkspace({
           {action.compensation.reason.replace(/_/g, " ")}
         </p>
       )}
-      {[
-        "awaiting_approval",
-        "approved",
-        "dispatch_ready",
-        "awaiting_consent",
-      ].includes(action.status) && (
-        <Button
-          variant="outline"
-          className="min-h-11"
-          disabled={review.isPending || !threadId}
-          onClick={() => operate.mutate("cancel")}
-        >
-          Cancel before dispatch
-        </Button>
-      )}
+      {executionCurrent &&
+        [
+          "awaiting_approval",
+          "approved",
+          "dispatch_ready",
+          "awaiting_consent",
+        ].includes(action.status) && (
+          <Button
+            variant="outline"
+            className="min-h-11"
+            disabled={review.isPending || !threadId}
+            onClick={() => operate.mutate("cancel")}
+          >
+            Cancel before dispatch
+          </Button>
+        )}
       {error && (
         <div role="alert" className="space-y-2">
           <p className="text-sm text-destructive">{error.message}</p>
@@ -391,9 +443,21 @@ function ActionWorkspace({
         </p>
       )}
       <p className="text-xs text-muted-foreground">
-        Verification confirms monitoring setup. Business effects require a
-        separate observation window and outcome evidence.
+        Verification confirms{" "}
+        {automation ? "automation configuration" : "monitoring setup"}. Business
+        effects require a separate observation window and outcome evidence.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Scheduled operations require the active published semantic version. If
+        it has changed, refresh the governed evidence and review a new Decision
+        and Action. Recorded receipts remain available for historical review.
       </p>
     </section>
   );
+}
+
+function receiptDescription(receipt: NonNullable<BusinessAction["receipt"]>) {
+  return "automation_id" in receipt
+    ? `Automation ${receipt.automation_id} · schedule ${receipt.schedule_enabled ? "enabled" : "disabled"} · Studio delivery`
+    : `Monitor ${receipt.monitor_id} · revision ${receipt.monitor_revision} · schedule ${receipt.schedule_enabled ? "enabled" : "disabled"}`;
 }

@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DecisionCompose } from "./decision-compose";
 import { legacyUnitEconomics } from "./scenario-schema";
+import { capacityScenario } from "./scenario-fixtures.test-support";
 import type { Investigation, News } from "./lifecycle-api";
 import "@/styles/index.css";
 
@@ -46,7 +47,7 @@ afterEach(async () => {
 });
 
 describe("registered scenario decision composition", () => {
-  it("uses registered controls and keeps the existing decision wire format and retry identity", async () => {
+  it("uses registered controls and preserves retry identity with canonical scenario parameters", async () => {
     const onCreated = vi.fn();
     let first = true;
     const fetch = vi
@@ -91,7 +92,9 @@ describe("registered scenario decision composition", () => {
       .filter(([, init]) => init?.method === "POST")
       .map(([, init]) => JSON.parse(init!.body as string));
     expect(requests[0]).toEqual(requests[1]);
-    expect(requests[0].options[0].simulation).toMatchObject({
+    expect(requests[0].options[0].scenario_kind).toBe("unit-economics");
+    expect(requests[0].options[0].scenario_version).toBe(1);
+    expect(requests[0].options[0].parameters).toMatchObject({
       baseline_units: 10,
       price: 2,
       action_type: "inventory_transfer",
@@ -124,6 +127,49 @@ describe("registered scenario decision composition", () => {
     await expect
       .element(screen.getByRole("button", { name: "Save decision options" }))
       .not.toBeInTheDocument();
+  });
+  it("persists a second adapter through generic fields without currency or profit assumptions", async () => {
+    const onCreated = vi.fn();
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((_, init) =>
+        init?.method === "POST"
+          ? json({ id: "capacity-decision" })
+          : json({ items: [capacityScenario] }),
+      );
+    const screen = await setup(onCreated);
+    await screen.getByText("Prepare a decision", { exact: true }).click();
+    for (const [label, value] of [
+      ["Decision title", "Add order capacity"],
+      ["Outcome period starts", "2026-10-03T09:00"],
+      ["Observed order capacity *", "20"],
+      ["Additional order capacity *", "10"],
+      ["Description", "Increase capacity"],
+    ])
+      await screen.getByLabelText(label, { exact: true }).fill(value);
+    await expect
+      .element(screen.getByLabelText("Published metric currency"))
+      .not.toBeInTheDocument();
+    await screen.getByRole("button", { name: "Save decision options" }).click();
+    await vi.waitFor(() =>
+      expect(onCreated).toHaveBeenCalledWith("capacity-decision"),
+    );
+    const [, init] = fetch.mock.calls.find(
+      ([, request]) => request?.method === "POST",
+    )!;
+    const body = JSON.parse(init!.body as string);
+    expect(body.currency).toBeUndefined();
+    expect(body.options[0]).toMatchObject({
+      scenario_kind: "capacity",
+      scenario_version: 1,
+      parameters: {
+        action_type: "capacity_upgrade",
+        baseline: 20,
+        additional_capacity: 10,
+        action_cost: 0,
+      },
+    });
+    expect(body.options[0].simulation).toBeUndefined();
   });
   it("distinguishes permission errors from supported legacy fallback", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(() =>

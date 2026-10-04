@@ -3,10 +3,10 @@ import type { AgentMessage } from "@/features/agents/api";
 import type { RailStep } from "./thought-turn";
 import type { AnswerFeedback } from "./answer-footer";
 import type { SentAttachment } from "./studio-attachments";
-import { evidenceHealthFromTrace, readEvidenceHealth, type ToolEvidence } from "./evidence-health";
+import { evidenceHealthFromTrace, evidenceEnvelopeFromTrace, readEvidenceEnvelope, readEvidenceHealth, type ToolEvidence } from "./evidence-health";
 
 export type StudioAssistantEvent = AssistantEvent | {
-  type: "evidence_health";
+  type: "evidence_health" | "evidence_envelope";
   tool_call_id: string;
   tool_name?: string;
   payload: unknown;
@@ -182,6 +182,7 @@ export function replayThread(messages: AgentMessage[]): TranscriptTurn[] {
             toolCallId: step.tool_call_id || `${step.name}-${open.steps.length}`,
             toolName: step.name,
             health,
+            envelope: evidenceEnvelopeFromTrace(step) ?? undefined,
           }];
           open.steps.push({
             id: step.tool_call_id || `${step.name}-${open.steps.length}`,
@@ -372,6 +373,14 @@ export function applyEvent(
   }
   return patchTurn(turns, turnId, (turn) => {
     switch (event.type) {
+      case "evidence_envelope": {
+        const envelope = readEvidenceEnvelope(event.payload);
+        if (!envelope) return turn;
+        return { ...turn, evidence: [
+          ...(turn.evidence ?? []).filter((item) => item.toolCallId !== event.tool_call_id),
+          { toolCallId: event.tool_call_id, toolName: event.tool_name ?? turn.steps.find((step) => step.id === event.tool_call_id)?.label ?? "Query", health: envelope.health, envelope },
+        ] };
+      }
       case "evidence_health": {
         const health = readEvidenceHealth(event.payload);
         if (!health) return turn;
