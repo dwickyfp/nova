@@ -202,3 +202,18 @@ def test_engine_plans_cannot_serialize_credentials():
     sql = "SELECT * FROM FILES('aws.s3.secret_key'='value')"
     with pytest.raises(ValueError, match="credentials"):
         EngineSqlPlan(sql, sql, PlanEffects())
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "INSERT INTO db.t (a,b) VALUES(1,2)",
+        "INSERT INTO db.t WITH LABEL l (a,b) VALUES(1,2)",
+        "INSERT INTO db.t (a,b) WITH LABEL l VALUES(1,2)",
+    ],
+)
+def test_insert_column_lists_preserve_transaction_intent(sql):
+    from app.sql_frontend.planning.transactions import transaction_intent
+
+    statement = ast_builders.build(parse_statement(sql))
+    intent = transaction_intent(statement, PlanningContext(database="db"))
+    assert intent.target == ("default_catalog", "db", "t")
+    assert intent.columns == ("a", "b")

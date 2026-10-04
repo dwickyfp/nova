@@ -13,10 +13,8 @@ them wrong if they were passed through:
   and ``SET @my_stage = 1`` would be rewritten into a ``FILES()`` call — a
   silent mutation of the user's statement, not an error. ``SET`` is a session
   concern, so the proxy tracks the assignments itself and never forwards them.
-* **The current database.** ``USE <db>`` and a ``database`` in the client
-  handshake are context, not queries. The proxy records the name and hands it
-  to ``QueryService`` as the ``database`` argument, which is the same channel
-  the HTTP API uses.
+* **The current database.** The executor validates ``USE <db>`` on the user's
+  engine connection before recording it as the context for subsequent queries.
 """
 
 from __future__ import annotations
@@ -24,6 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.common.sql_guard import strip_sql_comments
 from app.sql_frontend.session_functions import QueryCorrelationSession
 
 #: Role assignment, e.g. ``SET ROLE ACCOUNTADMIN`` / ``SET ROLE 'analyst'``.
@@ -47,35 +46,28 @@ _ASSIGNMENT = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-#: A single ``SET`` statement whose target is not a variable at all, e.g.
-#: ``SET NAMES utf8mb4`` and ``SET character_set_results = NULL``. These are
-#: pinned without a stored value because the client is describing its own
-#: encoder, and echoing the value back would be a lie about server state.
 _PINNED = re.compile(
     r"^\s*SET\s+(?:NAMES|CHARACTER\s+SET|CHARSET)\b",
     re.IGNORECASE,
 )
-
-#: Statements the proxy answers itself with an OK and no session effect. They
-#: are valid MySQL, carry no meaning for Nova's engine, and sending them on
-#: would bounce.
-_NOOP_PREFIXES = (
-    "SET AUTOCOMMIT",
-    "SET TRANSACTION",
-    "SET SESSION TRANSACTION",
-    "SET GLOBAL TRANSACTION",
-    "BEGIN",
-    "START TRANSACTION",
-    "COMMIT",
-    "ROLLBACK",
-    "SET sql_mode",
-    "SET SESSION sql_mode",
-    "SET time_zone",
-    "SET SESSION time_zone",
-    "SET foreign_key_checks",
+_UTF8_CHARSET = re.compile(
+    r"^\s*SET\s+(?:NAMES|CHARACTER\s+SET|CHARSET)\s+"
+    r"(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT|'(?:UTF8|UTF8MB3|UTF8MB4|DEFAULT)')\s*;?\s*$",
+    re.IGNORECASE,
 )
 
-_QUOTED_VALUE = re.compile(r"^'(?P<body>.*)'$|^\"(?P<body2>.*)\"$", re.DOTALL)
+_AUTOCOMMIT_ON = re.compile(
+    r"^\s*SET\s+(?:(?:SESSION|LOCAL)\s+|@@(?:(?:SESSION|LOCAL)\s*\.\s*)?)?"
+    r"AUTOCOMMIT\s*=\s*(?:1|ON|TRUE)\s*;?\s*$",
+    re.IGNORECASE,
+)
+_UNSUPPORTED_SESSION = re.compile(
+    r"^\s*(?:(?:BEGIN|COMMIT|ROLLBACK)\b|START\s+TRANSACTION\b|"
+    r"SET\s+(?:(?:SESSION|LOCAL|GLOBAL)\s+)?(?:TRANSACTION|AUTOCOMMIT|FOREIGN_KEY_CHECKS)\b)",
+    re.IGNORECASE,
+)
+
+_QUOTED_VALUE = re.compile(r"^'(?P<body>.*)'$|^\"(?P<body2>.*)\"$|^`(?P<body3>.*)`$", re.DOTALL)
 
 
 def _strip_quotes(value: str) -> str:
@@ -85,6 +77,8 @@ def _strip_quotes(value: str) -> str:
     body = match.group("body")
     if body is None:
         body = match.group("body2")
+    if body is None:
+        return match.group("body3").replace("``", "`")
     # MySQL doubles a quote to escape it inside a literal.
     return body.replace("''", "'").replace('""', '"')
 
@@ -135,11 +129,19 @@ class SessionState:
 class SetStatementResult:
     """Outcome of inspecting one statement for proxy-local handling."""
 
-    __slots__ = ("handled", "error")
+    __slots__ = ("handled", "error", "error_code", "assignment")
 
-    def __init__(self, handled: bool, error: str | None = None) -> None:
+    def __init__(
+        self,
+        handled: bool,
+        error: str | None = None,
+        error_code: int = 1064,
+        assignment: tuple[str, str] | None = None,
+    ) -> None:
         self.handled = handled
         self.error = error
+        self.error_code = error_code
+        self.assignment = assignment
 
 
 def handle_set_statement(statement: str, session: SessionState) -> SetStatementResult:
@@ -153,14 +155,29 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
     ``SET @x = 1`` is stored and later substituted back by
     :func:`substitute_user_variables`. ``SET ROLE`` updates the active role,
     which is the one session variable with real security weight: it is what the
-    engine receives as the role for subsequent queries. ``SET NAMES`` and the
-    transaction/no-op family are accepted and dropped.
+    engine receives as the role for subsequent queries. Charset and autocommit-on
+    commands are compatibility commands; other session settings reach the engine.
     """
-    text = statement.strip()
-    upper = text.upper()
+    text = strip_sql_comments(statement).strip()
 
     if _PINNED.match(text):
+        if _UTF8_CHARSET.fullmatch(text):
+            return SetStatementResult(True)
+        return SetStatementResult(
+            False,
+            "The Nova MySQL proxy supports UTF-8 client encodings without collation overrides",
+            error_code=1235,
+        )
+
+    if _AUTOCOMMIT_ON.fullmatch(text):
         return SetStatementResult(True)
+
+    if _UNSUPPORTED_SESSION.match(text):
+        return SetStatementResult(
+            False,
+            "Transactions and this session setting are not supported through the Nova MySQL proxy",
+            error_code=1235,
+        )
 
     role_match = _SET_ROLE.match(text)
     if role_match:
@@ -182,18 +199,27 @@ def handle_set_statement(statement: str, session: SessionState) -> SetStatementR
                 "SET GLOBAL is not supported through the Nova MySQL proxy",
             )
         name = assignment.group("name").lower()
-        # The *literal* value is stored, not the raw text: the client's own
-        # spelling may be an expression (``SET @x = 1 + 2``) the proxy cannot
-        # evaluate, and the engine never sees the SET. Storing the text and
-        # splicing it back is what the client expects of a session variable, and
-        # it keeps the value usable as a literal at every later call site.
+        if assignment.group("scope").startswith("@@"):
+            if name in {"autocommit", "foreign_key_checks"}:
+                return SetStatementResult(
+                    False,
+                    "This session setting is not supported through the Nova MySQL proxy",
+                    error_code=1235,
+                )
+            return SetStatementResult(False)
+        if not _LITERAL_VALUE.fullmatch(raw_value):
+            return SetStatementResult(True, assignment=(name, raw_value))
         session.user_variables[name] = _store_value(raw_value)
         return SetStatementResult(True)
 
-    if any(upper.startswith(prefix.upper()) for prefix in _NOOP_PREFIXES):
-        return SetStatementResult(True)
-
     return SetStatementResult(False)
+
+
+_LITERAL_VALUE = re.compile(
+    r"(?:[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?|NULL|TRUE|FALSE|"
+    r"'(?:[^'\\]|\\.|'')*'|\"(?:[^\"\\]|\\.|\"\")*\")",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def parse_role_statement(statement: str) -> str | None:

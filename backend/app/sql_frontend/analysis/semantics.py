@@ -151,6 +151,8 @@ def default_semantics() -> StatementSemanticsRegistry:
         _NATIVE_EFFECTS[context] = effects
     _NATIVE_EFFECTS.update(
         {
+            "CreateInternalFunctionStmtContext": PlanEffects(changes_schema=True),
+            "CreateUdfFunctionStmtContext": PlanEffects(changes_schema=True),
             "InsertStatementContext": PlanEffects(writes_data=True),
             "UpdateStatementContext": PlanEffects(
                 writes_data=True, updates_rows=True, reads_data=True

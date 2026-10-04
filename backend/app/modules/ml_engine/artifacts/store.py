@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import boto3
 from botocore.client import Config as BotoConfig
+from botocore.exceptions import ClientError
 
 from app.core.config import get_storage_connection, settings
 from app.modules.query.dialect.injector import resolve_storage_credentials
@@ -23,6 +24,7 @@ class ArtifactStore(Protocol):
     def put(self, key: str, payload: bytes) -> str: ...
     def get(self, uri: str) -> bytes: ...
     def delete(self, uri: str) -> None: ...
+    def exists(self, uri: str) -> bool: ...
     def copy(self, uri: str, key: str, checksum: str) -> str: ...
 
 
@@ -153,6 +155,18 @@ class ObjectArtifactStore:
             return
         self._client().delete_object(Bucket=self._connection().bucket, Key=key)
 
+    def exists(self, uri: str) -> bool:
+        connection_name, key = self._parse(uri)
+        if connection_name != self.connection_name:
+            return ObjectArtifactStore(connection_name).exists(uri)
+        try:
+            self._client().head_object(Bucket=self._connection().bucket, Key=key)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+                return False
+            raise
+        return True
+
     @classmethod
     def _parse(cls, uri: str) -> tuple[str, str]:
         prefix = f"{cls.scheme}://"
@@ -194,6 +208,9 @@ class MemoryArtifactStore:
 
     def delete(self, uri: str) -> None:
         self.objects.pop(uri, None)
+
+    def exists(self, uri: str) -> bool:
+        return uri in self.objects
 
     def copy(self, uri: str, key: str, checksum: str) -> str:
         payload = self.get(uri)

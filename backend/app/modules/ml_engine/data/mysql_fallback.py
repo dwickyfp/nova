@@ -37,6 +37,8 @@ class MySQLBatchDataSource:
 
                     await cursor.execute("SELECT CURRENT_ROLE()")
                     row = await cursor.fetchone()
+                    # SSCursor.fetchone() leaves the EOF packet unread before the next command.
+                    await cursor.fetchall()
                     if not row or _active_role_names(str(row[0])) != {security.role}:
                         raise PermissionError("ML connection did not confirm the active role")
             await cursor.execute(sql)

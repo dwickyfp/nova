@@ -175,7 +175,8 @@ async def list_files(
 ):
     """List files in a stage's storage path."""
     try:
-        stage_service._safe_relative_path(prefix, field="prefix")
+        if prefix:
+            stage_service._safe_relative_path(prefix, field="prefix")
     except StagePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:

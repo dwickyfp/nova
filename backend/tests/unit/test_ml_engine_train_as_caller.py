@@ -42,6 +42,7 @@ def _caller() -> dict:
         "session_id": "sess-1",
         "roles": ["analyst_role"],
         "active_role": "analyst_role",
+        "security_context_version": 7,
         "encrypted_password": "fernet-blob",
     }
 
@@ -83,6 +84,7 @@ class TestRouterForwardsCallerIdentity:
         assert calls[0]["password"] == CALLER_PASSWORD
         assert calls[0]["role"] == "analyst_role"
         assert calls[0]["created_by"] == "analyst"
+        assert calls[0]["security_context_version"] == 7
 
     def test_password_is_never_echoed_back(self, app_and_calls):
         app, _ = app_and_calls
@@ -161,6 +163,50 @@ async def test_mysql_fallback_executes_as_caller_and_sets_role(monkeypatch):
         "SELECT age, churned FROM customers",
     ]
     assert batches[0].num_rows == 2
+
+
+@pytest.mark.parametrize("active_role", ["analyst_role", "marketing,finance"])
+async def test_ranger_role_result_is_drained_before_streaming_caller_data(monkeypatch, active_role):
+    class RoleCursor(_RecordingCursor):
+        pending_role_result = False
+        role_drained = False
+
+        async def execute(self, sql, params=None):
+            assert not self.pending_role_result, "Unbuffered role result still owns the wire"
+            await super().execute(sql, params)
+            if sql == "SELECT CURRENT_ROLE()":
+                self.pending_role_result = True
+
+        async def fetchone(self):
+            assert self.pending_role_result
+            return (active_role,)
+
+        async def fetchall(self):
+            assert self.pending_role_result
+            self.pending_role_result = False
+            self.role_drained = True
+            return []
+
+    factory = _UserConnectionFactory()
+    factory.cursor = RoleCursor()
+    monkeypatch.setattr("app.modules.ml_engine.data.mysql_fallback.db.user_conn", factory)
+    monkeypatch.setattr("app.modules.ml_engine.data.mysql_fallback.settings.RANGER_ENABLED", True)
+    security = MLSecurityContext(
+        username="analyst", password=CALLER_PASSWORD, database="analytics", role="analyst_role"
+    )
+    source = MySQLBatchDataSource(batch_size=10)
+    if active_role == "analyst_role":
+        batches = [batch async for batch in source.stream(TRAIN_BODY["training_sql"], security)]
+        assert batches[0].num_rows == 2
+        assert factory.cursor.executed[-1] == TRAIN_BODY["training_sql"]
+    else:
+        with pytest.raises(PermissionError, match="did not confirm the active role"):
+            _ = [batch async for batch in source.stream(TRAIN_BODY["training_sql"], security)]
+        assert TRAIN_BODY["training_sql"] not in factory.cursor.executed
+    assert factory.cursor.role_drained
+    assert factory.opened == [
+        {"username": "analyst", "password": CALLER_PASSWORD, "database": "analytics"}
+    ]
 
 
 @pytest.mark.asyncio

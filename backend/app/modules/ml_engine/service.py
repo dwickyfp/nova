@@ -547,6 +547,7 @@ class MLEngineService:
         frequency: str | None = None,
         mode: str = "balanced",
         tenant: str = "default",
+        security_context_version: int = 1,
     ) -> dict[str, Any]:
         del created_by
         if as_system:
@@ -570,6 +571,7 @@ class MLEngineService:
                     database=database_name,
                     role=role,
                     tenant=tenant,
+                    security_context_version=security_context_version,
                 ),
                 mode=MLMode(mode),
                 persist=True,
@@ -792,6 +794,7 @@ class MLEngineService:
         max_rows: int | None = None,
         predictions: tuple | None = None,
         tenant: str = "default",
+        security_context_version: int = 1,
     ) -> tuple[dict[str, Any], pa.Table]:
         security = MLSecurityContext(
             username=username,
@@ -799,6 +802,7 @@ class MLEngineService:
             database=database_name,
             role=role,
             tenant=tenant,
+            security_context_version=security_context_version,
         )
         engine_sql = await self._prepare_user_sql(prediction_sql, security)
         budget = budget_for(MLMode.INTERACTIVE)
@@ -1244,6 +1248,16 @@ class MLEngineService:
             for version in detail["versions"]
             if version.get("artifact_uri")
         ]
+        for artifact_uri in artifact_uris:
+            try:
+                await asyncio.to_thread(self.artifact_store.delete, artifact_uri)
+                if await asyncio.to_thread(self.artifact_store.exists, artifact_uri):
+                    raise OSError("Artifact remains")
+            except Exception:
+                logger.warning("Model artifact cleanup failed for model %s", model_id)
+                raise OSError(
+                    "Model artifacts could not be removed; model metadata retained"
+                ) from None
         conn = await self.repository._connect()
         try:
             async with conn.cursor() as cursor:
@@ -1258,15 +1272,6 @@ class MLEngineService:
                 )
         finally:
             conn.close()
-        for artifact_uri in artifact_uris:
-            try:
-                await asyncio.to_thread(self.artifact_store.delete, artifact_uri)
-            except Exception:
-                logger.warning(
-                    "Unable to delete model artifact for model %s",
-                    model_id,
-                    exc_info=True,
-                )
         self.runtime.cache.invalidate()
         return {"model_id": model_id, "deleted": True, "message": "Model deleted"}
 

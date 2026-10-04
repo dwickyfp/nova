@@ -110,6 +110,7 @@ async def prepare_stage_sql(
     parsed: ParsedSQL | None = None,
     stage_configs_by_ref: dict[int, StorageConfig] | None = None,
     csv_params_by_ref: dict[int, dict[str, str]] | None = None,
+    csv_columns_by_ref: dict[int, list[str]] | None = None,
 ) -> PreparedSQL:
     """Translate ``@stage`` references and inject credentials into ``sql``.
 
@@ -166,6 +167,7 @@ async def prepare_stage_sql(
         credential_params_by_stage=credentials_by_stage,
         stage_configs_by_ref=stage_configs_by_ref,
         credential_params_by_ref=credentials_by_ref,
+        column_names_by_ref=csv_columns_by_ref,
     )
 
     return PreparedSQL(

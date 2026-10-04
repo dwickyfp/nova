@@ -40,6 +40,7 @@ class StageReference:
     start: int  # Inclusive offset in original_text
     end: int  # Exclusive offset in original_text
     access: str | None = None
+    has_alias: bool = False
 
 
 def _decimal_atom_parts(atom) -> list[str]:
@@ -210,7 +211,7 @@ def stage_reference_from_atom(atom, original_sql: str) -> StageReference:
 
     start = stage_ref.start.start
     end = stage_ref.stop.stop + 1
-    return _build_reference(
+    reference = _build_reference(
         full_match=original_sql[start:end],
         stage_name=stage_name,
         raw_parts=raw_parts,
@@ -218,6 +219,8 @@ def stage_reference_from_atom(atom, original_sql: str) -> StageReference:
         start=start,
         end=end,
     )
+    reference.has_alias = getattr(atom, "alias", None) is not None
+    return reference
 
 
 def _build_reference(

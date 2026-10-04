@@ -34,6 +34,7 @@ No example contains a real storage or user credential. Placeholders (`'K'`, `'S'
 | 09 | `09-guardrails-invariants.md` | The guard patterns, destructive confirmation, credential redaction, and the invariants every document must respect. |
 | 10 | `10-starrocks-reference-comparison.md` | *Owned by the research workstream* — maps each Nova query to its official StarRocks 4.1.4 equivalent. |
 | 11 | `11-query-catalog.md` | *Owned by the research workstream* — the full catalog of queries with sources and confidence. |
+| 12 | [12-functional-test-matrix.md](12-functional-test-matrix.md) | Python/MySQL functional matrix, inventories, strict results, fixtures, live prerequisites, and completion gates. |
 
 Documents `10` and `11` are produced by the StarRocks research workstream and referenced here rather than duplicated. Where a claim in `08` depends on them and they are not yet present, the claim is explicitly marked **unverified**.
 

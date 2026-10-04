@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -15,6 +16,28 @@ from app.modules.task_orchestration.execution import (
     NodeExecutionError,
     TaskSpec,
 )
+
+
+@pytest.mark.parametrize(
+    "privileges,allowed", [(["DELETE"], True), (["SELECT"], False), ([], False)]
+)
+async def test_ranger_stage_delete_uses_scoped_delete_privilege(monkeypatch, privileges, allowed):
+    from app.core.config import settings
+    from app.modules.access_control.service import access_control_service
+
+    monkeypatch.setattr(settings, "RANGER_ENABLED", True)
+    lookup = AsyncMock(return_value={"object_access": privileges})
+    monkeypatch.setattr(access_control_service, "effective_access", lookup)
+    kwargs = {"action": "delete", "username": "owner", "active_role": "loader"}
+    stage = {"database_name": "test_db", "schema_name": "public"}
+    if allowed:
+        await check_stage_access(stage, **kwargs)
+    else:
+        with pytest.raises(StageAccessDenied):
+            await check_stage_access(stage, **kwargs)
+    lookup.assert_awaited_once_with(
+        principal="owner", active_role="loader", resource="test_db.public"
+    )
 
 
 def _config(prefix: str = "db/bronze/stage") -> StorageConfig:
@@ -71,6 +94,14 @@ async def test_csv_properties_belong_only_to_their_reference() -> None:
         ("GRANT INSERT ON TABLE db.* TO ROLE loader", "write", True),
         ("GRANT SELECT ON TABLE db.* TO ROLE analyst", "write", False),
         ("GRANT ALL ON TABLE db.* TO ROLE admin", "delete", True),
+        (
+            "GRANT DELETE, DROP, INSERT, SELECT, ALTER, EXPORT, UPDATE, REFRESH "
+            "ON ALL TABLES IN ALL DATABASES TO USER 'nova_admin'@'%' WITH GRANT OPTION",
+            "delete", True,
+        ),
+        ("GRANT DELETE ON TABLE db.* TO ROLE maintainer", "delete", True),
+        ("GRANT DELETE ON TABLE other.* TO ROLE maintainer", "delete", False),
+        ("GRANT INSERT ON TABLE db.* TO ROLE loader", "delete", False),
         ("GRANT ALL ON DATABASE db TO ROLE admin", "read", False),
         ("GRANT SELECT ON TABLE other.* TO ROLE analyst", "read", False),
     ],
