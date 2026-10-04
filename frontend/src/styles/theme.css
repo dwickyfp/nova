@@ -21,9 +21,10 @@
   --border: oklch(0.929 0.013 255.508);
   --input: oklch(0.929 0.013 255.508);
   --ring: #e45a49;
-  --inset-border: #d8dee8;
+  --inset-border: rgb(255 255 255 / 80%);
   --inset-shadow:
-    0 1px 2px rgb(15 23 42 / 8%), 0 8px 24px rgb(15 23 42 / 6%);
+    0 0 0 1px rgb(15 23 42 / 5%), 0 1px 2px rgb(15 23 42 / 6%),
+    0 12px 32px rgb(15 23 42 / 10%);
   --warning: #e89b17;
   --info: #4f7ee8;
   --success: #14a89a;
@@ -86,22 +87,32 @@
      opacity, so both stay in one hue family. --sidebar and --background remain
      opaque for layout and legacy consumers. */
   --shell-backdrop:
-    radial-gradient(90% 70% at 0% 0%, #b7ccd6 0%, rgb(183 204 214 / 0%) 70%),
-    radial-gradient(80% 70% at 100% 100%, #e8dcc2 0%, rgb(232 220 194 / 0%) 70%),
-    radial-gradient(60% 60% at 0% 100%, #e6cfc4 0%, rgb(230 207 196 / 0%) 70%),
-    linear-gradient(160deg, #dfe6ec 0%, #eef1f4 100%);
+    radial-gradient(90% 70% at 0% 0%, #8fb4c4 0%, rgb(143 180 196 / 0%) 70%),
+    radial-gradient(80% 70% at 100% 100%, #ecd3a0 0%, rgb(236 211 160 / 0%) 70%),
+    radial-gradient(60% 60% at 0% 100%, #f0c4ae 0%, rgb(240 196 174 / 0%) 70%),
+    linear-gradient(160deg, #cfdbe4 0%, #e9edf1 100%);
   /* The light pane stays fully opaque: --primary and the -strong status tokens
      are measured as text on --background with no margin for a tint (B4). */
   --shell-pane-tint: rgb(255 255 255 / 100%);
-  --sidebar-navigation-tint-opacity: 62%;
+  --sidebar-navigation-tint-opacity: 45%;
   --sidebar-navigation-tint: rgb(255 255 255 / var(--sidebar-navigation-tint-opacity));
   --sidebar-navigation-fallback: #f4f6f8;
   --sidebar-navigation-edge: rgb(15 23 42 / 12%);
   --sidebar-navigation-shadow: inset -1px 0 0 var(--sidebar-navigation-edge);
-  --sidebar-navigation-hover: rgb(15 23 42 / 6%);
-  --sidebar-navigation-selected: rgb(15 23 42 / 11%);
-  --sidebar-navigation-muted-foreground: #4d5868;
-  --sidebar-navigation-ring: var(--primary);
+  /* Light glass lifts rows with white plates; darkening them reads as grey
+     paint over the backdrop instead of glass. */
+  --sidebar-navigation-hover: rgb(255 255 255 / 40%);
+  --sidebar-navigation-selected: rgb(255 255 255 / 68%);
+  --sidebar-navigation-selected-shadow:
+    0 1px 2px rgb(15 23 42 / 8%), inset 0 0 0 1px rgb(255 255 255 / 70%);
+  --sidebar-navigation-foreground: #1e293b;
+  --sidebar-navigation-muted-foreground: #485364;
+  --sidebar-navigation-ring: var(--accent-foreground);
+
+  /* Dark text on a light ground reads heavier than the same weight reversed,
+     so the light theme steps each weight down. */
+  --weight-medium: 450;
+  --weight-semibold: 550;
 
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
@@ -130,7 +141,11 @@
   --sidebar-navigation-hover: rgb(255 255 255 / 7%);
   --sidebar-navigation-selected: rgb(255 255 255 / 13%);
   --sidebar-navigation-muted-foreground: #cdd5dc;
+  --sidebar-navigation-selected-shadow: none;
+  --sidebar-navigation-foreground: var(--foreground);
   --sidebar-navigation-ring: var(--accent-foreground);
+  --weight-medium: 500;
+  --weight-semibold: 600;
 
   --background: #0b0f14;
   --foreground: #f7f8fa;
@@ -207,9 +222,12 @@
   --font-plex: 'IBM Plex Sans', var(--font-system);
   --font-sans: var(--font-inter);
   /* Weight scale: 400 body, 500 labels and controls, 600 headings and
-     emphasis. Nothing in the UI renders heavier than 600. */
-  --font-weight-heading: 600;
-  --font-weight-bold: 600;
+     emphasis in dark; light steps the upper two down (--weight-*). Nothing
+     in the UI renders heavier than 600. */
+  --font-weight-medium: var(--weight-medium);
+  --font-weight-semibold: var(--weight-semibold);
+  --font-weight-heading: var(--weight-semibold);
+  --font-weight-bold: var(--weight-semibold);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

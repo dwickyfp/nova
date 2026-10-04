@@ -12,6 +12,7 @@
   isolation: isolate;
   background: transparent;
   color: var(--sidebar-foreground);
+  --sidebar-foreground: var(--sidebar-navigation-foreground);
   --sidebar-accent: var(--sidebar-navigation-hover);
   --sidebar-accent-foreground: var(--sidebar-foreground);
   --sidebar-border: var(--sidebar-navigation-edge);
@@ -93,6 +94,7 @@
 .sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand])[data-active="true"],
 .sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand])[aria-current] {
   background: var(--sidebar-navigation-selected);
+  box-shadow: var(--sidebar-navigation-selected-shadow);
   color: var(--sidebar-foreground);
 }
 
