@@ -13,6 +13,8 @@
   background: transparent;
   color: var(--sidebar-foreground);
   --sidebar-foreground: var(--sidebar-navigation-foreground);
+  --weight-medium: var(--sidebar-navigation-weight-medium);
+  --weight-semibold: var(--sidebar-navigation-weight-semibold);
   --sidebar-accent: var(--sidebar-navigation-hover);
   --sidebar-accent-foreground: var(--sidebar-foreground);
   --sidebar-border: var(--sidebar-navigation-edge);

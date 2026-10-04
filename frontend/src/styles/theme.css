@@ -115,6 +115,10 @@
      so the light theme steps each weight down. */
   --weight-medium: 450;
   --weight-semibold: 550;
+  /* Text over the tinted chrome has less ground contrast to carry it and
+     still reads heavy at 450, so navigation steps down once more. */
+  --sidebar-navigation-weight-medium: 400;
+  --sidebar-navigation-weight-semibold: 500;
 
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
@@ -148,6 +152,8 @@
   --sidebar-navigation-ring: var(--accent-foreground);
   --weight-medium: 500;
   --weight-semibold: 600;
+  --sidebar-navigation-weight-medium: 500;
+  --sidebar-navigation-weight-semibold: 600;
 
   --background: #0b0f14;
   --foreground: #f7f8fa;
