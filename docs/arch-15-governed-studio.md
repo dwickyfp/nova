@@ -193,6 +193,19 @@ Intelligence read path admits only pinned records and their exact recorded
 scopes; general Intelligence scope checks remain in force. Continuing a Decision,
 Action, or Outcome uses the current binding while preserving historical proofs.
 
+Continue and New apply to one accepted message. The composer captures the routing
+choice before sending and resets it only on acceptance. A refusal before acceptance
+preserves the choice and draft; a disconnected accepted run reconnects through its
+existing event journal. Resume selects Continue for the next message under the
+same acceptance rule.
+
+HTTP, SSE, canonical-object reads, and legacy replay use public allowlist projections
+on the existing endpoints. Business revisions, stages, references, hypotheses,
+periods, and resumable summaries remain available. Persistence and admission still
+use internal contracts; execution bindings, scopes, operation digests, projection
+cursors, leases, and dispatch fences do not enter the public payload. Existing
+pagination tokens and journal event/sequence IDs retain their replay/access contracts.
+
 Resources reference the original user attachment message/index, digest, name,
 type, and size. Root access and child grants check principal, role, session,
 security version, thread, root run, and participant lineage. `spawn_agent` and
@@ -217,8 +230,9 @@ or authorize execution.
 deterministic assessment with schema version `1`, rule version
 `evidence-health-v1`, explicit assessment time, source facts, freshness, reasons,
 and unknown signals. Replay uses persisted time and rejects assessments that
-disagree with their facts. Legacy numeric confidence remains compatible and is
-not a correctness probability.
+disagree with their facts. Legacy numeric confidence is retained only in compatible
+trace/debug records and removed from live and reconstructed provider envelopes.
+It does not contribute to Evidence Health.
 
 Failed, unexecuted, or unknown execution, unresolved semantic ambiguity, or
 unsupported numbers produce insufficient evidence. Partial/truncated coverage,
@@ -237,6 +251,14 @@ credentials, and private reasoning are excluded. Evidence selection resolves
 Context by exact semantic identity and metric name, including an accessible
 historical published version and its bounded neighborhood. The displayed
 authority and conflicts belong to that selected graph.
+
+Workflow provenance is a separate server-owned transport object containing
+`mission_id`, `run_id`, and `root_run_id`. It survives traces, journal replay, and
+authorized Smart evidence import without changing semantic metric definitions or
+granting access. Evidence follows the selected Mission by default; All conversation
+evidence explicitly includes other Missions and legacy evidence. Run/tool-call
+pairs identify results. Changing Missions clears a Context selection unless that
+exact semantic identity and metric remain present; stale graph responses are ignored.
 
 [Context Graph](../backend/app/modules/intelligence/context_graph.py) derives
 authority from validated source records and exposes source kind, authority basis,
@@ -268,6 +290,11 @@ definition.
 Successful validated semantic execution can derive an `InvestigationSeed` for
 the existing comparison, News, and Investigation owners. Execution first persists
 a concrete timezone-aware time context; SQL and provenance use those same bounds.
+Direct, Smart, Nove, evaluations, and scheduled turns receive an explicit timezone
+from the existing `configured_timezone()` owner of `NOVA_TIMEZONE`. An explicit
+object timezone wins. Persisted execution contexts retain their original timezone
+and clock during retries; configuration changes do not reinterpret historical
+windows or change historical configuration digests.
 In-progress periods compare elapsed local calendar spans, clamped to a shared
 span across shorter months and leap boundaries. DST-related UTC duration
 differences remain explicit.
@@ -281,6 +308,25 @@ deduplicate creation, and retries repair interrupted comparison-to-Mission
 linkage. Unsafe or incomplete canonicalization returns structured missing-input
 requirements with established values prefilled.
 
+Only the current effective `INVESTIGATE` intent triggers automatic canonicalization;
+ordinary answers and analysis retain explicit Investigation tools. A typed business
+result hook separates its public event, provider observation, and trace metadata.
+The provider receives deterministic facts from the exact Investigation, News, and
+comparison revisions before continuing the same loop iteration. The observation
+is bounded to 16 KiB, ten hypotheses, and twenty canonical evidence references,
+with explicit truncation and limitations. Canonical values and contributions enter
+the existing numeric verifier and checkpoint; hypothesis claims retain canonical
+causal labels. Authorized specialist evidence can carry these facts into synthesis,
+while coordination prose remains untrusted.
+
+Mission work and active ordered hooks remain serial. Independent read-only calls
+retain overlap subject to existing consent, dependency, release, and budget checks;
+the global workflow flag alone does not serialize them. Trace and Quality records
+separate semantic-tool duration from canonicalization, analytical queries, and
+persistence. Created/reused/incomplete/skipped/failed status and actual query/cache
+counts describe the recorded operation, and replay adds no dispatch. Internal
+Intelligence queries do not become agent-selected tools.
+
 The code-owned [Scenario Registry](../backend/app/modules/intelligence/scenarios.py)
 owns typed adapters, context, execution, parameter validation, supported actions,
 target-metric policy, and currency requirements. `unit-economics` version `1`
@@ -291,6 +337,15 @@ legacy output. The schema renderer and persistence path work for every reviewed
 registered definition. Legacy `simulation` inputs remain supported and governed
 Decision context is derived server-side. Client prediction authority is rejected.
 Simulated changes depend on stated assumptions and retain unknown causal status.
+
+`GET /intelligence/scenarios` keeps the catalog response for context-free requests.
+An Investigation ID/revision and optional Mission ID produce authorized adapter
+compatibility, reason codes, required inputs, and resolved target/currency/unit.
+Discovery and Decision execution share that context. Adapter requirements and
+published metric metadata resolve currency/unit without a deployment currency
+default or FX guessing. Semantic values are read-only; manual currency entry is
+available only when the adapter explicitly permits it. Conflicts and unsupported
+non-additive metrics return structured requirements rather than an invented value.
 
 Actions and Action Events extend the Intelligence revision repository. The ledger
 records request/decision digests, operation identity, policy/approval references,

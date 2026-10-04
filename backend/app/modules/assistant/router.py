@@ -37,6 +37,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.core.database import configured_timezone
 from app.core.deps import get_current_user
 from app.modules.assistant import events
 from app.modules.assistant.app_context import NoveApplicationEvent
@@ -393,6 +394,7 @@ async def send_message(
         app_context = app_context.model_copy(update={"events": list(merged_events.values())[-12:]})
     context = LoopContext(
         user_name=user_name,
+        execution_timezone=configured_timezone(),
         database=body.database or (app_domain.database if app_domain else None),
         schema_name=body.schema_name or (app_domain.schema_name if app_domain else None),
         role=security.active_role,

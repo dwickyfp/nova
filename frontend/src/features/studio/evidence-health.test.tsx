@@ -3,7 +3,7 @@ import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import type { AgentMessage } from "@/features/agents/api";
 import { EvidencePanel } from "./evidence-panel";
-import { readEvidenceHealth, type EvidenceEnvelope, type EvidenceHealth } from "./evidence-health";
+import { evidenceIdentity, mergeToolEvidence, readEvidenceHealth, type EvidenceEnvelope, type EvidenceHealth } from "./evidence-health";
 import { applyEvent, replayThread, type TranscriptTurn } from "./studio-transcript";
 import "@/styles/index.css";
 
@@ -39,6 +39,38 @@ const provenance: EvidenceEnvelope = {
 afterEach(() => document.documentElement.classList.remove("dark"));
 
 describe("Evidence Health replay", () => {
+  it("preserves recorded provenance and SQL when a later persisted assessment has no envelope", () => {
+    const workflowProvenance = { mission_id: "a", run_id: "run-a", root_run_id: null };
+    const previous = { toolCallId: "same", toolName: "semantic_query", health: assessment, envelope: provenance, workflowProvenance, runId: "run-a", sqlPreview: "SELECT revenue" };
+    const next = { ...assessment, label: "moderate" as const };
+    const merged = mergeToolEvidence([previous], { toolCallId: "same", toolName: "semantic_query", runId: "run-a", health: next, envelope: undefined, workflowProvenance: undefined, sqlPreview: undefined });
+    expect(merged).toEqual([{ ...previous, health: next, envelope: { ...provenance, health: next } }]);
+    expect(previous.envelope.health).toEqual(assessment);
+  });
+  it("keeps identical tool-call IDs from different runs and preserves envelopes after health updates", () => {
+    const workflow = (mission_id: string, run_id: string) => ({ mission_id, run_id, root_run_id: "root" });
+    let live = [emptyTurn];
+    for (const [mission_id, run_id] of [["a", "run-a"], ["b", "run-b"]]) {
+      live = applyEvent(live, "u1", { type: "tool_call", run_id, payload: { tool_call_id: "same", tool_name: "semantic_query", sql_preview: `SELECT '${mission_id}'`, classification: "read_only", status: "done" } });
+      live = applyEvent(live, "u1", { type: "evidence_envelope", tool_call_id: "same", tool_name: "semantic_query", payload: provenance, run_id, workflow: workflow(mission_id, run_id) });
+      live = applyEvent(live, "u1", { type: "evidence_health", tool_call_id: "same", payload: assessment, run_id, workflow: workflow(mission_id, run_id) });
+    }
+    expect(live[0].evidence).toHaveLength(2);
+    expect(new Set(live[0].evidence?.map(evidenceIdentity)).size).toBe(2);
+    expect(live[0].evidence?.map((item) => item.sqlPreview)).toEqual(["SELECT 'a'", "SELECT 'b'"]);
+    expect(live[0].evidence?.every((item) => item.envelope?.semantic?.view_id === "sales")).toBe(true);
+    const steps = ["a", "b"].map((mission_id) => ({ kind: "tool", name: "semantic_query", tool_call_id: "same", status: "done", arguments: {}, preview: `SELECT '${mission_id}'`, workflow: workflow(mission_id, `run-${mission_id}`), trace_detail: { evidence_health: assessment, evidence_envelope: provenance } }));
+    const saved = replayThread([{ message_id: "u1", role: "user", content: "Revenue", created_at: "2026-10-03T09:00:00Z" }, { message_id: "answer", role: "assistant", content: "Recorded", created_at: "2026-10-03T10:00:00Z", steps }] as AgentMessage[]);
+    expect(saved[0].evidence).toEqual(live[0].evidence);
+  });
+  it("reads nested trace provenance and never infers Mission membership for legacy evidence", () => {
+    const workflow = { mission_id: "a", run_id: "run-a", root_run_id: null };
+    const saved = replayThread([{ message_id: "u1", role: "user", content: "Revenue", created_at: "2026-10-03T09:00:00Z" }, { message_id: "answer", role: "assistant", content: "Recorded", created_at: "2026-10-03T10:00:00Z", steps: [{ kind: "tool", name: "semantic_query", tool_call_id: "c1", status: "done", arguments: {}, trace_detail: { evidence_envelope: provenance, workflow } }] }] as AgentMessage[]);
+    expect(saved[0].evidence?.[0].workflowProvenance).toEqual(workflow);
+    const legacy = applyEvent([emptyTurn], "u1", { type: "evidence_health", tool_call_id: "legacy", run_id: "run-a", payload: assessment });
+    expect(legacy[0].evidence?.[0].workflowProvenance).toBeUndefined();
+    expect(legacy[0].evidence?.[0].runId).toBe("run-a");
+  });
   it("reconstructs exactly the live bounded provenance from persisted evidence", () => {
     const live = applyEvent([emptyTurn], "u1", { type: "evidence_envelope", tool_call_id: "c1", tool_name: "semantic_query", payload: provenance });
     const saved = replayThread([{ message_id: "u1", role: "user", content: "Revenue", created_at: "2026-10-03T09:00:00Z" },

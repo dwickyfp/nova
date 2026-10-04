@@ -231,9 +231,12 @@ async def test_real_smart_resume_reauthorizes_original_attachment_in_new_login(s
             request = {"expected_revision": prior.revision, "operation_id": "new-login-resume"}
             path = f"agents/studio/missions/{mission.mission_id}/resume"
             resumed = await client.request("POST", path, request)
-            assert resumed["scope"] == Scope.from_user(next_user).model_dump(mode="json")
-            assert resumed["run_bindings"][root["run_id"]] == original_scope.model_dump(mode="json")
-            assert resumed["current_binding"]["generation"] == 2
+            assert not {"scope", "run_bindings", "current_binding"} & resumed.keys()
+            internal = await service.get(mission.mission_id, next_user, project=False)
+            assert internal.scope == Scope.from_user(next_user)
+            assert internal.run_bindings[root["run_id"]] == original_scope
+            assert internal.current_binding.generation == 2
+            assert internal.revision == resumed["revision"]
             assert (await client.request("POST", path, request))["revision"] == resumed["revision"]
             assert await resources.reauthorize_for_mission(
                 mission.mission_id, root["run_id"], next_user

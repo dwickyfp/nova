@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ApiError } from "@/lib/api-client";
 import {
   agentsApi,
   studioApi,
@@ -99,7 +100,9 @@ it.each([
   vi.spyOn(studioApi, "settings").mockResolvedValue({
     preferences: {},
   } as never);
-  vi.spyOn(workflowApi, "list").mockResolvedValue({ missions: [] });
+  vi.spyOn(workflowApi, "list").mockRejectedValue(
+    new ApiError(404, "Workflow disabled"),
+  );
   vi.spyOn(workflowApi, "resumable").mockResolvedValue({ missions: [] });
   const getThread = vi
     .spyOn(agentsApi, "getThread")

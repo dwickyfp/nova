@@ -13,7 +13,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import Field, model_validator
 
-from app.core.database import db
+from app.core.database import configured_timezone, db
 from app.modules.agents.quality_scoring import (
     PERFORMANCE_SCORERS,
     Assertion,
@@ -361,6 +361,7 @@ async def _evaluate(
             for case in cases:
                 context = LoopContext(
                     user_name=user["username"],
+                    execution_timezone=configured_timezone(),
                     user=user,
                     role=user["active_role"],
                     session_id=user.get("session_id"),

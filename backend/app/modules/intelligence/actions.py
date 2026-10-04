@@ -345,14 +345,24 @@ class ActionService:
             )
 
     async def preview(self, body: ActionPreview, user: dict) -> Action:
+        from app.core.database import configured_timezone
         from app.modules.intelligence.decisions import decision_digest
 
         require_actions_enabled()
         await self.revalidate(user)
         scope = Scope.from_user(user)
         identity = fingerprint([scope.model_dump(exclude={"session_id"}), body.idempotency_key])
-        digest = fingerprint(body.model_dump(mode="json"))
+        timezone_omitted = "timezone" not in body.configuration.model_fields_set
         prior = await self.repository.get("actions", identity, scope, Action)
+        if timezone_omitted:
+            configuration = body.configuration.model_dump()
+            configuration["timezone"] = (
+                prior.configuration.timezone if prior is not None else configured_timezone()
+            )
+            body = body.model_copy(update={
+                "configuration": type(body.configuration).model_validate(configuration),
+            })
+        digest = fingerprint(body.model_dump(mode="json"))
         if prior:
             if prior.request_digest != digest:
                 raise HTTPException(status_code=409, detail="Idempotency key inputs changed")
@@ -422,8 +432,12 @@ class ActionService:
         )
         async with metadata_lock("action-preview:" + identity) as lease:
             prior = await self.repository.get("actions", identity, scope, Action)
-            if prior and prior.request_digest != digest:
-                raise HTTPException(status_code=409, detail="Idempotency key inputs changed")
+            if prior:
+                retry_payload = body.model_dump(mode="json")
+                if timezone_omitted:
+                    retry_payload["configuration"]["timezone"] = prior.configuration.timezone
+                if prior.request_digest != fingerprint(retry_payload):
+                    raise HTTPException(status_code=409, detail="Idempotency key inputs changed")
             if prior is None:
                 await self.revalidate(user)
                 current = (

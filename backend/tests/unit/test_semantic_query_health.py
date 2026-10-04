@@ -1,6 +1,7 @@
 """Semantic execution supplies health facts and keeps legacy confidence out of prose."""
 
 from copy import deepcopy
+from json import dumps
 
 import pytest
 
@@ -41,7 +42,9 @@ async def test_successful_published_execution_has_unknown_freshness_without_wate
     assert health["data_freshness"]["status"] == "unknown"
     assert health["facts"]["coverage"] == "complete"
     assert "confidence:" not in outcome.summary
-    assert outcome.data["confidence"] == 0.8
+    assert outcome.trace_detail["confidence"] == 0.8
+    assert "confidence" not in outcome.data
+    assert '"confidence"' not in dumps(outcome.envelope(tool_name="semantic_query"))
     provider.complete.assert_awaited_once()
     assert execute.await_args.kwargs["security_context_version"] == 7
 
@@ -84,13 +87,15 @@ async def test_clarification_and_execution_failure_never_claim_strong_evidence(m
     assert agent_repository.record_semantic_usage.await_args.kwargs["security_context_version"] == 7
 
 
-async def test_feature_disabled_retains_numeric_field_and_suppresses_new_assessment(monkeypatch):
+async def test_feature_disabled_retains_trace_confidence_and_suppresses_new_assessment(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False, raising=False)
     tool, _, _ = setup_tool(monkeypatch, _plan())
     outcome = await run(tool)
-    assert outcome.data["confidence"] == 0.8
+    assert outcome.trace_detail["confidence"] == 0.8
+    assert "confidence" not in outcome.data
+    assert '"confidence"' not in dumps(outcome.envelope(tool_name="semantic_query"))
     assert "evidence_health" not in outcome.data
     assert "confidence:" not in outcome.summary
 

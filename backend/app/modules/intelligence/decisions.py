@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import HTTPException
 from pydantic import Field, model_validator
@@ -16,6 +16,8 @@ from app.modules.intelligence.contracts import (
     Decision,
     DecisionEvent,
     DecisionOption,
+    Investigation,
+    NewsItem,
     Scope,
     Window,
     fingerprint,
@@ -27,9 +29,13 @@ from app.modules.intelligence.scenarios import (
     ScenarioScalar,
     execute_scenario,
     normalize_scenario,
+    scenario_compatibility,
     scenario_definition,
 )
 from app.modules.ml_engine.decision_lab import SimulationInput
+
+if TYPE_CHECKING:
+    from app.modules.agents.mission_schema import Mission
 
 
 class OptionInput(Contract):
@@ -72,7 +78,7 @@ class DecisionCreate(Contract):
     thread_id: str | None = Field(default=None, max_length=64)
     mission_id: str | None = Field(default=None, min_length=1, max_length=128)
     investigation_revision: int | None = Field(default=None, ge=1)
-    currency: str = Field(default="IDR", min_length=3, max_length=3)
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
 
 
 class DecisionOperation(Contract):
@@ -253,49 +259,72 @@ async def _write_decision(decision, user, *, expected_revision, event):
     return saved
 
 
-async def create_decision(body: DecisionCreate, user: dict) -> Decision:
-    service, budget = intelligence_service, CycleBudget()
-    scope = Scope.from_user(user)
-    record_id = fingerprint([scope.principal, scope.active_role, body.operation_id])
+async def _scenario_mission(
+    investigation_id: str,
+    user: dict,
+    *,
+    mission_id: str | None,
+    investigation_revision: int | None,
+    thread_id: str | None,
+) -> tuple[Mission | None, int | None]:
     mission = None
-    pin = None
-    if body.mission_id:
+    revision = investigation_revision
+    if mission_id:
         from app.modules.agents.mission import mission_service
 
-        mission = await mission_service.get(body.mission_id, user, project=False)
+        mission = await mission_service.get(mission_id, user, project=False)
         if mission.cancel_requested or mission.status == "cancelled":
             raise HTTPException(
                 status_code=409, detail="Cancelled Missions cannot create Decisions"
             )
-        if body.thread_id and mission.thread_id != body.thread_id:
+        if thread_id and mission.thread_id != thread_id:
             raise HTTPException(status_code=422, detail="Decision thread differs from its Mission")
         pin = next(
             (
                 ref
                 for ref in mission.object_refs
-                if ref.kind == "investigation" and ref.id == body.investigation_id
+                if ref.kind == "investigation" and ref.id == investigation_id
             ),
             None,
         )
         if pin is None or (
-            body.investigation_revision is not None and pin.revision != body.investigation_revision
+            investigation_revision is not None and pin.revision != investigation_revision
         ):
             raise HTTPException(
                 status_code=404, detail="Mission Investigation revision unavailable"
             )
-    prior = await service.repository.get("decisions", record_id, scope, Decision)
-    if prior:
-        if prior.request_digest != decision_request_digest(body):
-            raise HTTPException(status_code=409, detail="The operation identifier was already used")
-        await service.authorize_record(prior, user, budget)
-        return prior
+        revision = pin.revision
+    return mission, revision
+
+
+async def resolve_scenario_context(
+    investigation_id: str,
+    user: dict,
+    *,
+    investigation_revision: int | None = None,
+    mission_id: str | None = None,
+    thread_id: str | None = None,
+    currency: str | None = None,
+    outcome_window: Window | None = None,
+    budget: CycleBudget | None = None,
+    mission_context: tuple[Mission | None, int | None] | None = None,
+) -> tuple[ScenarioContext, Investigation, NewsItem]:
+    """Resolve exact canonical dependencies using the caller's current authorization."""
+    service, budget = intelligence_service, budget or CycleBudget()
+    mission, revision = mission_context or await _scenario_mission(
+        investigation_id,
+        user,
+        mission_id=mission_id,
+        investigation_revision=investigation_revision,
+        thread_id=thread_id,
+    )
     if mission:
         investigation = await service.get_for_mission(
             "investigations",
-            body.investigation_id,
+            investigation_id,
             user,
-            mission_id=body.mission_id,
-            revision=pin.revision,
+            mission_id=mission_id,
+            revision=revision,
             budget=budget,
         )
         budget.mission_records[("news", investigation.news_id)] = investigation.news_revision
@@ -303,10 +332,10 @@ async def create_decision(body: DecisionCreate, user: dict) -> Decision:
     else:
         investigation = await service.get(
             "investigations",
-            body.investigation_id,
+            investigation_id,
             user,
             budget=budget,
-            revision=body.investigation_revision,
+            revision=revision,
         )
     news = await service.get(
         "news", investigation.news_id, user, budget=budget, revision=investigation.news_revision
@@ -317,17 +346,15 @@ async def create_decision(body: DecisionCreate, user: dict) -> Decision:
     monitor = await service.get(
         "monitors", news.monitor_id, user, budget=budget, revision=news.monitor_revision
     )
-    learning_enabled = body.learning_enabled
-    thread_id = mission.thread_id if mission else body.thread_id
+    thread_id = mission.thread_id if mission else thread_id
     if thread_id:
         from app.modules.agents.router import _require_agent_thread
-        from app.modules.assistant.repository import assistant_repository
 
         await _require_agent_thread(thread_id, monitor.agent_id, user["username"])
-        if not await assistant_repository.learning_enabled(thread_id, user_name=user["username"]):
-            learning_enabled = False
+    if news.semantic != investigation.semantic or monitor.semantic != investigation.semantic:
+        raise HTTPException(status_code=409, detail="Investigation semantic lineage changed")
     definition = await service.authorize_semantic(
-        investigation.semantic, user, active=mission is None
+        investigation.semantic, user, active=mission is None, budget=budget
     )
     metric = next(
         (
@@ -342,26 +369,110 @@ async def create_decision(body: DecisionCreate, user: dict) -> Decision:
             status_code=422,
             detail="Decision target metric is unavailable in the published definition",
         )
+    context = ScenarioContext(
+        purpose="decision" if outcome_window else "discovery",
+        agent_id=monitor.agent_id,
+        thread_id=thread_id,
+        mission_id=mission_id,
+        investigation_id=investigation.id,
+        semantic=investigation.semantic,
+        target_metric=monitor.value_column,
+        baseline=news.after,
+        currency=currency if currency is not None else metric.get("currency"),
+        metric_currency=metric.get("currency"),
+        metric_unit=metric.get("unit"),
+        metric_additivity=metric.get("additivity"),
+        outcome_window=outcome_window,
+        evidence_ids=[item.id for item in investigation.evidence],
+        evidence_types=list(dict.fromkeys(item.source_type for item in investigation.evidence)),
+    )
+    return context, investigation, news
+
+
+async def discover_scenarios(
+    investigation_id: str,
+    investigation_revision: int,
+    user: dict,
+    *,
+    mission_id: str | None = None,
+) -> dict:
+    from app.modules.intelligence.scenarios import scenario_registry
+
+    context, _, _ = await resolve_scenario_context(
+        investigation_id,
+        user,
+        investigation_revision=investigation_revision,
+        mission_id=mission_id,
+    )
+    return scenario_registry.discover(context)
+
+
+def _matches_request(prior: Decision, body: DecisionCreate) -> bool:
+    if prior.request_digest == decision_request_digest(body):
+        return True
+    # Old requests hashed the implicit IDR field. This admits only an existing
+    # operation's historical hash; new context and persistence never use that default.
+    return "currency" not in body.model_fields_set and prior.request_digest == (
+        decision_request_digest(body.model_copy(update={"currency": "IDR"}))
+    )
+
+
+async def create_decision(body: DecisionCreate, user: dict) -> Decision:
+    service, budget = intelligence_service, CycleBudget()
+    scope = Scope.from_user(user)
+    record_id = fingerprint([scope.principal, scope.active_role, body.operation_id])
+    mission_context = await _scenario_mission(
+        body.investigation_id,
+        user,
+        mission_id=body.mission_id,
+        investigation_revision=body.investigation_revision,
+        thread_id=body.thread_id,
+    )
+    prior = await service.repository.get("decisions", record_id, scope, Decision)
+    if prior:
+        if not _matches_request(prior, body):
+            raise HTTPException(status_code=409, detail="The operation identifier was already used")
+        await service.authorize_record(prior, user, budget)
+        return prior
+    context, investigation, news = await resolve_scenario_context(
+        body.investigation_id,
+        user,
+        investigation_revision=body.investigation_revision,
+        mission_id=body.mission_id,
+        thread_id=body.thread_id,
+        currency=body.currency,
+        outcome_window=body.outcome_window,
+        budget=budget,
+        mission_context=mission_context,
+    )
+    learning_enabled = body.learning_enabled
+    if context.thread_id:
+        from app.modules.assistant.repository import assistant_repository
+
+        if not await assistant_repository.learning_enabled(
+            context.thread_id, user_name=user["username"]
+        ):
+            learning_enabled = False
     if body.outcome_window.start < utc_now():
         raise HTTPException(status_code=422, detail="Choose a future outcome window")
     if body.outcome_window.end - body.outcome_window.start != news.window.end - news.window.start:
         raise HTTPException(status_code=422, detail="Prediction and baseline periods must match")
     if len({option.id for option in body.options}) != len(body.options):
         raise HTTPException(status_code=422, detail="Option identifiers must be unique")
-    context = ScenarioContext(
-        purpose="decision",
-        agent_id=monitor.agent_id,
-        thread_id=thread_id,
-        mission_id=body.mission_id,
-        investigation_id=investigation.id,
-        semantic=investigation.semantic,
-        target_metric=monitor.value_column,
-        baseline=news.after,
-        currency=body.currency,
-        metric_currency=metric.get("currency"),
-        outcome_window=body.outcome_window,
-        evidence_ids=[item.id for item in investigation.evidence],
-    )
+    currencies = {
+        resolved.currency
+        for option in body.options
+        if (
+            resolved := scenario_compatibility(
+                option.scenario_kind, option.scenario_version, context
+            ).resolved
+        ).currency
+        is not None
+    }
+    if len(currencies) > 1:
+        raise HTTPException(
+            status_code=422, detail="Scenario currencies must agree; conversion is unavailable"
+        )
     options = []
     for item in body.options:
         budget.consume("items")
@@ -398,16 +509,18 @@ async def create_decision(body: DecisionCreate, user: dict) -> Decision:
         id=record_id,
         scope=scope,
         title=body.title,
-        agent_id=monitor.agent_id,
+        agent_id=context.agent_id,
         learning_enabled=learning_enabled,
-        thread_id=thread_id,
+        thread_id=context.thread_id,
         investigation_id=investigation.id,
-        investigation_revision=investigation.revision if mission else body.investigation_revision,
+        investigation_revision=(
+            investigation.revision if body.mission_id else body.investigation_revision
+        ),
         mission_id=body.mission_id,
         semantic=investigation.semantic,
-        target_metric=monitor.value_column,
+        target_metric=context.target_metric,
         baseline=news.after,
-        currency=context.metric_currency,
+        currency=next(iter(currencies), None),
         outcome_window=body.outcome_window,
         options=options,
         evidence=investigation.evidence,

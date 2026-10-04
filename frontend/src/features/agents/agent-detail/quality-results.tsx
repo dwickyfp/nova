@@ -4,6 +4,7 @@ import {
   qualityCountBudgets,
   type QualityGateStatus,
   type QualityRun,
+  type QualityResult,
   type QualityScore,
   type ReleaseManifest,
 } from "../quality-api";
@@ -15,6 +16,63 @@ const tone = (status: QualityScore["status"]) =>
     : status === "pass"
       ? "text-success-strong"
       : "text-muted-foreground";
+
+function ExecutionCost({ result }: { result: QualityResult }) {
+  const facts = result.trace?.facts;
+  const operations = facts?.business_canonicalization ?? [];
+  const semantic = facts?.semantic_tools ?? [];
+  if (!operations.length && !semantic.length) return null;
+  const duration = (value: number) =>
+    `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ms`;
+  return (
+    <section className="min-w-0 space-y-2" aria-label="Business execution cost">
+      <h5 className="text-sm font-medium">Business execution cost</h5>
+      <p className="text-xs text-muted-foreground">
+        Recorded execution. Replay does not execute these operations again.
+        Query and persistence time are included in canonicalization time.
+      </p>
+      {!!semantic.length && (
+        <p className="text-sm">
+          Semantic tools:{" "}
+          {duration(semantic.reduce((sum, item) => sum + item.duration_ms, 0))}
+        </p>
+      )}
+      {operations.map((operation, index) => (
+        <div key={index} className="min-w-0 space-y-1 text-sm">
+          <p>
+            Canonicalization {index + 1}:{" "}
+            {operation.business_canonicalization_status}
+          </p>
+          <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1">
+            <dt>Canonicalization</dt>
+            <dd>{duration(operation.business_canonicalization_duration_ms)}</dd>
+            <dt>Analytical queries</dt>
+            <dd>{duration(operation.query_duration_ms)}</dd>
+            <dt>Persistence</dt>
+            <dd>{duration(operation.persistence_duration_ms)}</dd>
+            <dt>Queries dispatched</dt>
+            <dd>{operation.automatic_investigation_query_count}</dd>
+            <dt>Comparison / driver queries</dt>
+            <dd>
+              {operation.comparison_query_count} /{" "}
+              {operation.driver_query_count}
+            </dd>
+            <dt>Cached queries reused</dt>
+            <dd>{operation.query_cache_reuse_count}</dd>
+          </dl>
+          <p className="text-muted-foreground">
+            Investigation:{" "}
+            {operation.canonical_investigation_created
+              ? "created"
+              : operation.canonical_investigation_reused
+                ? "reused"
+                : "none"}
+          </p>
+        </div>
+      ))}
+    </section>
+  );
+}
 
 function PromotionGateResults({ run }: { run: QualityRun }) {
   const groups = [
@@ -236,6 +294,7 @@ export function QualityRunResults({
                 scores={result.scores}
                 performanceRequired={run.gate_results?.performance?.required}
               />
+              <ExecutionCost result={result} />
               {!!result.budget_scores?.length && (
                 <section
                   className="space-y-2"

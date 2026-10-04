@@ -198,6 +198,11 @@ const messages: AgentMessage[] = [
         tool_call_id: "query-1",
         status: "done",
         arguments: {},
+        workflow: {
+          mission_id: mission.mission_id,
+          run_id: "run-1",
+          root_run_id: null,
+        },
         trace_detail: { evidence_health: health, evidence_envelope: envelope },
       },
     ],
@@ -329,6 +334,11 @@ describe("governed lifecycle browser surfaces", () => {
         tool_call_id: "query-1",
         tool_name: "semantic_query",
         payload: envelope,
+        workflow: {
+          mission_id: mission.mission_id,
+          run_id: "run-1",
+          root_run_id: null,
+        },
       });
       expect(replay[0].evidence).toEqual(live[0].evidence);
       const followup = vi.fn();
@@ -577,6 +587,21 @@ describe("governed lifecycle browser surfaces", () => {
       await viewport(theme, width);
       vi.spyOn(intelligenceApi, "scenarios").mockResolvedValue({
         items: [capacityScenario],
+        compatibility: [
+          {
+            scenario: capacityScenario,
+            compatible: true,
+            reason_codes: [],
+            required_inputs: [],
+            resolved: {
+              target_metric: "orders",
+              currency: null,
+              unit: "orders",
+              currency_readonly: false,
+              currency_input_allowed: false,
+            },
+          },
+        ],
       });
       const news = {
         id: "news-1",
@@ -805,6 +830,7 @@ describe("governed lifecycle browser surfaces", () => {
       let resolveAction!: (value: BusinessAction) => void;
       let resolveScenarios!: (value: {
         items: (typeof capacityScenario)[];
+        compatibility: [];
       }) => void;
       let resolveDoctor!: (value: DoctorReport) => void;
       vi.spyOn(actionApi, "get").mockReturnValue(
@@ -850,7 +876,7 @@ describe("governed lifecycle browser surfaces", () => {
       await expect
         .element(page.getByText("Loading release diagnosis…"))
         .toBeVisible();
-      resolveScenarios({ items: [] });
+      resolveScenarios({ items: [], compatibility: [] });
       resolveDoctor({
         schema_version: 2,
         known_good: null,
@@ -889,7 +915,11 @@ describe("governed lifecycle browser surfaces", () => {
         },
       });
       await expect
-        .element(page.getByText(/No scenario models are registered/))
+        .element(
+          page.getByText(
+            /No registered scenarios are compatible with this investigation/,
+          ),
+        )
         .toBeVisible();
       await expect
         .element(page.getByText("Current policy denies reporting"))

@@ -163,6 +163,60 @@ afterEach(async () => {
 });
 
 describe("Agent Quality", () => {
+  it("shows recorded canonicalization costs across narrow and desktop themes", async () => {
+    const measuredRun: QualityRun = {
+      ...run,
+      results: [
+        {
+          ...run.results[0],
+          trace: {
+            facts: {
+              semantic_tools: [{ tool: "semantic_query", duration_ms: 12 }],
+              business_canonicalization: [
+                {
+                  business_canonicalization_status: "created",
+                  business_canonicalization_duration_ms: 28,
+                  query_duration_ms: 20,
+                  persistence_duration_ms: 4,
+                  automatic_investigation_query_count: 4,
+                  comparison_query_count: 2,
+                  driver_query_count: 2,
+                  query_cache_reuse_count: 1,
+                  canonical_investigation_created: true,
+                  canonical_investigation_reused: false,
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const screen = await setup(<QualityRunResults run={measuredRun} />);
+    for (const theme of ["", "dark"]) {
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      for (const width of [320, 1280]) {
+        await page.viewport(width, 800);
+        await expect
+          .element(screen.getByText("Semantic tools: 12 ms"))
+          .toBeVisible();
+        await expect
+          .element(screen.getByText("Canonicalization 1: created"))
+          .toBeVisible();
+        await expect
+          .element(screen.getByText("Investigation: created"))
+          .toBeVisible();
+        const section = screen
+          .getByRole("region", { name: "Business execution cost" })
+          .element();
+        expect(section.scrollWidth).toBeLessThanOrEqual(
+          section.clientWidth + 1,
+        );
+        for (const text of section.querySelectorAll("p, dt, dd, h5")) {
+          expect(textContrast(text)).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
   it("sends selected behavioral gates and bounded performance limits with the evaluation", async () => {
     await page.viewport(1280, 800);
     const fetch = mock();

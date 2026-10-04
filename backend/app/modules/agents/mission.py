@@ -1521,12 +1521,15 @@ class MissionService:
     async def stream_update(
         self, run_id: str, user: dict, *, after_revision: int = 0
     ) -> str | None:
+        from app.modules.agents.public_projections import public_mission
+
         mission = await self.project_run(run_id, user)
         if mission is None or mission.revision <= after_revision:
             return None
         return (
             "event: mission_updated\ndata: "
-            + json.dumps({"mission": mission.model_dump(mode="json")}, separators=(",", ":"))
+            + json.dumps({"mission": public_mission(mission).model_dump(mode="json")},
+                         separators=(",", ":"))
             + "\n\n"
         )
 

@@ -34,6 +34,7 @@ const action: Extract<BusinessAction, { adapter_id: "monitor-v1" }> = {
     value_column: "revenue",
     count_column: "orders",
     time_dimension: "ordered_at",
+    timezone: "UTC",
     enabled: true,
     cadence_minutes: 15,
   },
