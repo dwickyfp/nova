@@ -4,7 +4,7 @@ import {
   parseAssistantEvent,
   readSseFrames,
 } from "@/features/assistant/events";
-import type { AssistantEvent } from "@/features/assistant/types";
+import type { AssistantEvent, WorkflowProvenance } from "@/features/assistant/types";
 import { historyQuery } from "@/features/assistant/thread-client";
 
 /** Agent Studio API client (Phase 12). Mirrors /api/v1/agents/*. */
@@ -875,6 +875,9 @@ export type TraceStep =
       kind: "tool";
       step_id?: string;
       tool_call_id?: string;
+      run_id?: string;
+      workflow?: WorkflowProvenance;
+      workflow_provenance?: WorkflowProvenance;
       name: string;
       preview: string;
       arguments: Record<string, string>;

@@ -524,7 +524,12 @@ export function StudioChat({
           attachments: pending.map(({ name, content: fileContent, mediaType }) => ({
             name, content: fileContent, media_type: mediaType,
           })),
-          onAccepted: () => { accepted = true; if (missionChoice.mode === "new") setMissionChoice({ mode: "automatic" }); },
+          onAccepted: () => {
+            accepted = true;
+            if (missionChoice.mode === "new" || missionChoice.mode === "continue") {
+              setMissionChoice((current) => current === missionChoice ? { mode: "automatic" } : current);
+            }
+          },
           onRunId: (runId) => {
             if (agent.agent_id === AUTO_AGENT_ID) {
               setActiveAutoRun({ runId, threadId: thread });

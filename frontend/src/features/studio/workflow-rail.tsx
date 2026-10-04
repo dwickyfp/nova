@@ -16,6 +16,17 @@ import { ContextPanel } from "./context-panel";
 import type { TranscriptTurn } from "./studio-transcript";
 import { workflowApi } from "./workflow-api";
 import type { SemanticRef } from "@/features/intelligence/lifecycle-api";
+import { mergeToolEvidence, type ToolEvidence } from "./evidence-health";
+
+type ContextSelection = { semantic: SemanticRef; metric: string };
+function contextOptions(evidence: ToolEvidence[]): ContextSelection[] {
+  return [...evidence].reverse().flatMap((item) => item.envelope?.semantic
+    ? item.envelope.metrics.map((metric) => ({ semantic: item.envelope!.semantic!, metric })) : []);
+}
+function sameContext(left: ContextSelection, right: ContextSelection) {
+  return left.metric === right.metric && left.semantic.view_id === right.semantic.view_id &&
+    left.semantic.version === right.semantic.version && left.semantic.fingerprint === right.semantic.fingerprint;
+}
 
 const NARROW = "(max-width: 1199px)";
 function useNarrowWorkflow() {
@@ -47,7 +58,7 @@ export function WorkflowRail({ threadId, turns, streaming, agents, runs, runLoad
 function ScopedRail({ threadId, turns, streaming, agents, runs, runLoading, runError, retryRuns, onSelectChild, onAvailable, mobileOpen, onMobileOpenChange, epoch }: Parameters<typeof WorkflowRail>[0] & { epoch: number }) {
   const narrow = useNarrowWorkflow();
   const [tab, setTab] = useState("activity");
-  const [contextSelection, setContextSelection] = useState<{ semantic: SemanticRef; metric: string }>();
+  const [contextSelection, setContextSelection] = useState<ContextSelection>();
   const [showAgents, setShowAgents] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const operation = useRef<{ signature: string; id: string } | null>(null);
@@ -68,7 +79,7 @@ function ScopedRail({ threadId, turns, streaming, agents, runs, runLoading, runE
     return () => onAvailable(false);
   }, [available, onAvailable]);
   const rows = missions.data?.missions ?? [];
-  const mission = rows.find((item) => item.mission_id === selectedId) ?? rows[0];
+  const mission = selectedId === "conversation" ? undefined : rows.find((item) => `mission:${item.mission_id}` === selectedId) ?? rows[0];
   const latestQuestion = [...turns].reverse().find((turn) => turn.question)?.question ?? "";
   const create = useMutation({
     mutationFn: () => {
@@ -77,17 +88,35 @@ function ScopedRail({ threadId, turns, streaming, agents, runs, runLoading, runE
       return workflowApi.create(threadId, { objective: latestQuestion, work_intent: "INVESTIGATE", operation_id: operation.current.id, new_mission: true });
     },
     onSuccess: (value) => {
-      setSelectedId(value.mission_id);
+      setSelectedId(`mission:${value.mission_id}`);
       void client.invalidateQueries({ queryKey });
     },
   });
   if (unavailable) return null;
   if (missions.isPending || (missions.isSuccess && !available)) return null;
-  const evidence = turns.flatMap((turn) => turn.evidence ?? []);
-  const previews = Object.fromEntries(turns.flatMap((turn) => turn.steps.filter((step) => step.preview).map((step) => [step.id, step.preview!]))) as Record<string, string>;
+  const allEvidence = turns.reduce<ToolEvidence[]>((items, turn) => (turn.evidence ?? []).reduce((current, item) => mergeToolEvidence(current, {
+    ...item,
+    turnId: turn.id,
+    sqlPreview: item.sqlPreview ?? (!item.runId && !item.workflowProvenance?.run_id ? turn.steps.find((step) => step.id === item.toolCallId)?.preview : undefined),
+  }), items), []);
+  const evidence = mission ? allEvidence.filter((item) => item.workflowProvenance?.mission_id === mission.mission_id) : allEvidence;
+  const candidates = contextOptions(evidence);
+  const selectedContext = contextSelection && candidates.find((candidate) => sameContext(candidate, contextSelection)) || candidates[0];
+  const scopeKey = mission ? `mission:${mission.mission_id}` : "conversation";
+  const selectScope = (value: string) => {
+    const nextEvidence = value === "conversation" ? allEvidence : allEvidence.filter((item) => `mission:${item.workflowProvenance?.mission_id}` === value);
+    setContextSelection((current) => current && contextOptions(nextEvidence).some((candidate) => sameContext(candidate, current)) ? current : undefined);
+    setSelectedId(value);
+  };
   const refresh = () => { void client.invalidateQueries({ queryKey }); };
   const content = <Tabs value={tab} onValueChange={setTab} className="min-h-0 min-w-0 flex-1 gap-0">
     <div className="shrink-0 border-b border-border p-3">
+      <label className="mb-3 block space-y-2 text-xs font-medium">Evidence and context scope
+        <select aria-label="Workflow mission" className="min-h-11 w-full min-w-0 rounded-md border border-input bg-card px-2 text-sm text-foreground focus-visible:outline focus-visible:outline-ring" value={scopeKey} onChange={(event) => selectScope(event.target.value)} disabled={!available}>
+          {rows.map((item) => <option key={item.mission_id} value={`mission:${item.mission_id}`}>{item.objective}</option>)}
+          <option value="conversation">All conversation evidence</option>
+        </select>
+      </label>
       <TabsList aria-label="Workflow details" className="h-11 w-full">
         <TabsTrigger value="activity" className="min-h-11">Activity</TabsTrigger>
         <TabsTrigger value="evidence" className="min-h-11">Evidence</TabsTrigger>
@@ -98,12 +127,10 @@ function ScopedRail({ threadId, turns, streaming, agents, runs, runLoading, runE
       <TabsContent value="activity" className="min-w-0 space-y-5">
         {missions.isPending ? <LoadingLines rows={3} /> : missions.isError ? <EmptyState variant="error" title="Unable to load activity" description={missions.error.message}
           action={<Button variant="outline" onClick={() => void missions.refetch()}>Retry</Button>} /> : <>
-          {rows.length > 1 && <label className="block space-y-2 text-xs font-medium">Mission
-            <select className="min-h-11 w-full min-w-0 rounded-md border bg-card px-2 text-sm" value={mission?.mission_id} onChange={(event) => setSelectedId(event.target.value)}>
-              {rows.map((item) => <option key={item.mission_id} value={item.mission_id}>{item.objective}</option>)}
-            </select>
-          </label>}
-          {mission ? <MissionPanel key={mission.mission_id} mission={mission} onRefresh={refresh} /> : <EmptyState
+          {mission ? <MissionPanel key={mission.mission_id} mission={mission} onRefresh={refresh} /> : rows.length ? <section className="space-y-2" aria-label="Conversation missions">
+            <p className="text-xs text-muted-foreground">Choose a mission to inspect its recorded activity.</p>
+            {rows.map((item) => <Button key={item.mission_id} variant="outline" className="min-h-11 w-full justify-start whitespace-normal text-left" onClick={() => selectScope(`mission:${item.mission_id}`)}>{item.objective}</Button>)}
+          </section> : <EmptyState
             title="This conversation has no mission"
             description="Simple answers stay in chat. Start a mission to record a multi-stage investigation."
             action={latestQuestion ? <Button variant="outline" className="min-h-11" disabled={create.isPending || streaming} onClick={() => create.mutate()}>{create.isPending ? "Starting…" : "Start investigation mission"}</Button> : undefined}
@@ -116,8 +143,8 @@ function ScopedRail({ threadId, turns, streaming, agents, runs, runLoading, runE
           {showAgents && <ResourcePanel threadId={threadId} runs={runs} />}
         </div> : null}
       </TabsContent>
-      <TabsContent value="evidence"><EvidencePanel evidence={evidence} sqlPreviews={previews} onSelectContext={(semantic, metric) => { setContextSelection({ semantic, metric }); setTab("context"); }} /></TabsContent>
-      <TabsContent value="context"><ContextPanel semantic={contextSelection?.semantic} metric={contextSelection?.metric} /></TabsContent>
+      <TabsContent value="evidence"><EvidencePanel evidence={evidence} scope={mission ? "mission" : "conversation"} missionNames={Object.fromEntries(rows.map((item) => [item.mission_id, item.objective]))} onSelectContext={(semantic, metric) => { setContextSelection({ semantic, metric }); setTab("context"); }} /></TabsContent>
+      <TabsContent value="context"><ContextPanel key={JSON.stringify([scopeKey, selectedContext?.semantic, selectedContext?.metric])} semantic={selectedContext?.semantic} metric={selectedContext?.metric} /></TabsContent>
     </div>
   </Tabs>;
   return narrow ? <>

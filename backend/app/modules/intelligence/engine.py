@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from contextlib import asynccontextmanager
+import math
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from time import monotonic
-from typing import TypeVar
+from typing import Literal, TypeVar, cast
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
@@ -19,6 +21,7 @@ from app.common.audit import write_audit_log
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import SemanticPlan
+from app.modules.assistant.measurements import MAX_COUNT
 from app.modules.intelligence.action_contracts import Action, ActionEvent
 from app.modules.intelligence.contracts import (
     Confidence,
@@ -129,6 +132,138 @@ class ChatComparison(Record):
 MODELS["comparisons"] = ChatComparison
 
 
+QueryPurpose = Literal["comparison", "driver", "other"]
+CanonicalizationStatus = Literal["created", "reused", "incomplete", "skipped", "failed"]
+MAX_DURATION_MS = MAX_COUNT * 1000
+
+
+class CanonicalizationMetrics(Contract):
+    version: Literal["1"] = "1"
+    scope: Literal["current_operation_attempt"] = "current_operation_attempt"
+    query_count_basis: Literal["semantic_execute_plan_attempts"] = "semantic_execute_plan_attempts"
+    business_canonicalization_status: CanonicalizationStatus = "skipped"
+    business_canonicalization_duration_ms: float = Field(default=0, ge=0, le=MAX_DURATION_MS)
+    automatic_investigation_query_count: int = Field(default=0, strict=True, ge=0, le=MAX_COUNT)
+    comparison_query_count: int = Field(default=0, strict=True, ge=0, le=MAX_COUNT)
+    driver_query_count: int = Field(default=0, strict=True, ge=0, le=MAX_COUNT)
+    other_query_count: int = Field(default=0, strict=True, ge=0, le=MAX_COUNT)
+    query_cache_reuse_count: int = Field(default=0, strict=True, ge=0, le=MAX_COUNT)
+    query_duration_ms: float = Field(default=0, ge=0, le=MAX_DURATION_MS)
+    persistence_duration_ms: float = Field(default=0, ge=0, le=MAX_DURATION_MS)
+    investigation_persistence_duration_ms: float = Field(default=0, ge=0, le=MAX_DURATION_MS)
+    canonical_investigation_created: bool = False
+    canonical_investigation_reused: bool = False
+    unavailable: list[Literal["counter_limit_exceeded", "duration_limit_exceeded"]] = Field(
+        default_factory=list, max_length=2,
+    )
+
+
+@dataclass
+class CanonicalizationCollector:
+    """One attempt's safe counters, shared by its existing Intelligence budgets."""
+
+    _metrics: CanonicalizationMetrics = field(default_factory=CanonicalizationMetrics, init=False)
+    _depth: int = field(default=0, init=False)
+    _started: float | None = field(default=None, init=False)
+    _closed: bool = field(default=False, init=False)
+
+    def _unavailable(self, reason: Literal["counter_limit_exceeded", "duration_limit_exceeded"]):
+        if reason not in self._metrics.unavailable:
+            self._metrics.unavailable.append(reason)
+
+    def record_query(self, purpose: QueryPurpose, *, cache_reuse: bool = False) -> None:
+        if purpose not in {"comparison", "driver", "other"}:
+            raise ValueError("Unknown canonicalization query purpose")
+        if self._closed:
+            return
+        names = (["query_cache_reuse_count"] if cache_reuse else
+                 ["automatic_investigation_query_count", f"{purpose}_query_count"])
+        for name in names:
+            value = getattr(self._metrics, name)
+            if value >= MAX_COUNT:
+                self._unavailable("counter_limit_exceeded")
+            else:
+                setattr(self._metrics, name, value + 1)
+
+    def record_duration(
+        self, kind: Literal["query", "persistence", "investigation_persistence"], started: float,
+        *, ended: float | None = None,
+    ) -> None:
+        if kind not in {"query", "persistence", "investigation_persistence"}:
+            raise ValueError("Unknown canonicalization duration")
+        if self._closed:
+            return
+        name = f"{kind}_duration_ms"
+        elapsed = (monotonic() if ended is None else ended) - started
+        value = getattr(self._metrics, name) + max(0, elapsed * 1000)
+        if not math.isfinite(value) or value > MAX_DURATION_MS:
+            self._unavailable("duration_limit_exceeded")
+            value = MAX_DURATION_MS
+        setattr(self._metrics, name, value)
+
+    def investigation(self, *, created: bool) -> None:
+        if not self._closed:
+            name = ("canonical_investigation_created" if created
+                    else "canonical_investigation_reused")
+            setattr(self._metrics, name, True)
+
+    def complete(self, status: CanonicalizationStatus) -> None:
+        if status not in {"created", "reused", "incomplete", "skipped", "failed"}:
+            raise ValueError("Unknown canonicalization status")
+        if not self._closed:
+            self._metrics.business_canonicalization_status = status
+
+    def result(self, result: dict) -> None:
+        if result.get("status") != "complete" or result.get("investigation") is None:
+            self.complete("incomplete")
+        elif self._metrics.canonical_investigation_created:
+            self.complete("created")
+        else:
+            self.complete("reused")
+
+    def snapshot(self) -> CanonicalizationMetrics:
+        metrics = self._metrics.model_copy(deep=True)
+        if self._started is not None and not self._closed:
+            duration = max(0, (monotonic() - self._started) * 1000)
+            if not math.isfinite(duration) or duration > MAX_DURATION_MS:
+                if "duration_limit_exceeded" not in metrics.unavailable:
+                    metrics.unavailable.append("duration_limit_exceeded")
+                duration = MAX_DURATION_MS
+            metrics.business_canonicalization_duration_ms = duration
+        return metrics
+
+    @contextmanager
+    def operation(self):
+        if self._closed:
+            raise ValueError("Canonicalization collector covers one operation attempt")
+        if self._depth == 0:
+            self._started = monotonic()
+            self.complete("failed")
+        self._depth += 1
+        token = _canonicalization.set(self)
+        try:
+            yield self
+        except BaseException:
+            self.complete("failed")
+            raise
+        finally:
+            _canonicalization.reset(token)
+            self._depth -= 1
+            if self._depth == 0:
+                self._metrics = self.snapshot()
+                self._closed = True
+
+
+_canonicalization: ContextVar[CanonicalizationCollector | None] = ContextVar(
+    "intelligence_canonicalization", default=None,
+)
+
+
+def current_canonicalization() -> CanonicalizationCollector | None:
+    collector = _canonicalization.get()
+    return collector if collector is not None and not collector._closed else None
+
+
 @dataclass
 class CycleBudget:
     queries: int = 0
@@ -141,6 +276,10 @@ class CycleBudget:
     mission_bindings: list[Scope] = field(default_factory=list)
     mission_records: dict[tuple[str, str], int | None] = field(default_factory=dict)
     mission_record_bindings: dict[tuple[str, str], Scope] = field(default_factory=dict)
+    canonicalization: CanonicalizationCollector | None = field(
+        default_factory=current_canonicalization, repr=False,
+    )
+    comparison_news: NewsItem | None = field(default=None, repr=False)
 
     def __post_init__(self):
         self.started = monotonic()
@@ -240,7 +379,8 @@ class IntelligenceService:
         return row
 
     async def query(
-        self, ref: SemanticRef, plan: SemanticPlan, user: dict, budget: CycleBudget
+        self, ref: SemanticRef, plan: SemanticPlan, user: dict, budget: CycleBudget, *,
+        purpose: QueryPurpose = "other",
     ) -> tuple[dict, EvidenceRef]:
         budget.consume("queries", 0)
         allowed_views = user.get("intelligence_allowed_views")
@@ -250,10 +390,19 @@ class IntelligenceService:
             [Scope.from_user(user).model_dump(), ref.model_dump(), plan.as_dict()]
         )
         if cache_key in budget.query_results:
+            if budget.canonicalization:
+                budget.canonicalization.record_query(purpose, cache_reuse=True)
             return budget.query_results[cache_key]
         budget.consume("queries")
-        async with asyncio.timeout(max(0.01, 120 - (monotonic() - budget.started))):
-            result = await self.semantic.execute_plan(ref.view_id, ref.version, plan, user)
+        started = monotonic()
+        if budget.canonicalization:
+            budget.canonicalization.record_query(purpose)
+        try:
+            async with asyncio.timeout(max(0.01, 120 - (monotonic() - budget.started))):
+                result = await self.semantic.execute_plan(ref.view_id, ref.version, plan, user)
+        finally:
+            if budget.canonicalization:
+                budget.canonicalization.record_duration("query", started)
         if result["model_fingerprint"] != ref.fingerprint:
             raise HTTPException(status_code=409, detail="Semantic definition changed")
         digest = table_digest(result)
@@ -640,7 +789,7 @@ class IntelligenceService:
         async with self._automatic_fence(_mission, user):
             pass
         result, evidence = await self.query(
-            monitor.semantic, window_plan(monitor, window), user, budget
+            monitor.semantic, window_plan(monitor, window), user, budget, purpose="comparison",
         )
         if len(result["rows"]) != 1:
             raise HTTPException(status_code=422, detail="Monitor needs exactly one aggregate row")
@@ -677,7 +826,9 @@ class IntelligenceService:
         prior = await self.repository.get(
             "observations", observation.id, Scope.from_user(user), MetricObservation
         )
-        return prior or await self._save_automatic("observations", observation, user, _mission)
+        return prior or await self._save_automatic(
+            "observations", observation, user, _mission, collector=budget.canonicalization,
+        )
 
     async def run_monitor(
         self, monitor_id: str, window: Window, user: dict, budget: CycleBudget | None = None
@@ -836,6 +987,8 @@ class IntelligenceService:
                 if exc.status_code != 409:
                     raise
             else:
+                if budget.canonicalization:
+                    budget.canonicalization.investigation(created=False)
                 return prior
         previous = (
             news.baseline_windows[0]
@@ -852,12 +1005,14 @@ class IntelligenceService:
             before_tables, before_evidence = [], []
             for baseline_window in news.baseline_windows or [previous]:
                 before, first = await self.query(
-                    news.semantic, window_plan(monitor, baseline_window, dimension), user, budget
+                    news.semantic, window_plan(monitor, baseline_window, dimension), user, budget,
+                    purpose="driver",
                 )
                 before_tables.append(before)
                 before_evidence.append(first)
             after, second = await self.query(
-                news.semantic, window_plan(monitor, news.window, dimension), user, budget
+                news.semantic, window_plan(monitor, news.window, dimension), user, budget,
+                purpose="driver",
             )
             if any(len(table["rows"]) >= 1000 for table in [*before_tables, after]):
                 raise HTTPException(
@@ -1056,11 +1211,14 @@ class IntelligenceService:
             "investigations", investigation.id, record_scope, Investigation
         )
         saved = existing or await self._save_automatic(
-            "investigations", investigation, user, _mission,
+            "investigations", investigation, user, _mission, collector=budget.canonicalization,
         )
+        if budget.canonicalization:
+            budget.canonicalization.investigation(created=existing is None)
         updated = news.model_copy(update={"investigation_id": saved.id, "status": "investigating"})
         await self._save_automatic("news", updated, user, _mission,
-                                   expected_revision=news.revision)
+                                   expected_revision=news.revision,
+                                   collector=budget.canonicalization)
         await self._audit("INVESTIGATE", saved, user)
         return saved
 
@@ -1086,9 +1244,14 @@ class IntelligenceService:
                     status="insufficient",
                 ),
                 user, _mission,
+                collector=budget.canonicalization if budget else None,
             )
+            if budget and budget.canonicalization:
+                budget.canonicalization.investigation(created=True)
         else:
             await self.authorize_record(investigation, user, budget or CycleBudget())
+            if budget and budget.canonicalization:
+                budget.canonicalization.investigation(created=False)
         if news.investigation_id != investigation.id:
             await self._save_automatic(
                 "news",
@@ -1100,6 +1263,7 @@ class IntelligenceService:
                 ),
                 user, _mission,
                 expected_revision=news.revision,
+                collector=budget.canonicalization if budget else None,
             )
         await self._audit("INCOMPLETE_INVESTIGATION", investigation, user)
         return investigation
@@ -1123,12 +1287,24 @@ class IntelligenceService:
             await owned()
             yield
 
-    async def _save_automatic(self, kind, record, user, mission, *, expected_revision=0):
+    async def _save_automatic(
+        self, kind, record, user, mission, *, expected_revision=0,
+        collector: CanonicalizationCollector | None = None,
+    ):
         async with self._automatic_fence(mission, user):
-            return await self.repository.save(kind, record, expected_revision=expected_revision)
+            started = monotonic()
+            try:
+                return await self.repository.save(kind, record, expected_revision=expected_revision)
+            finally:
+                if collector:
+                    ended = monotonic()
+                    collector.record_duration("persistence", started, ended=ended)
+                    if kind == "investigations":
+                        collector.record_duration("investigation_persistence", started, ended=ended)
 
     async def _automatic_comparison_budget(
         self, comparison: ChatComparison, mission, operation_id: str, user: dict,
+        *, collector: CanonicalizationCollector | None = None,
     ) -> tuple[CycleBudget, Monitor | None]:
         """Grant only dependencies of a durable internal Mission/seed operation."""
         async with self._automatic_fence(mission, user):
@@ -1152,7 +1328,7 @@ class IntelligenceService:
             mode="json", exclude={"calendar_timezone"} if body.calendar_timezone is None else set(),
         )) or comparison.semantic != body.configuration.semantic:
             raise HTTPException(status_code=409, detail="Automatic comparison proof changed")
-        budget = CycleBudget()
+        budget = CycleBudget(canonicalization=collector or current_canonicalization())
         budget.mission_bindings.append(comparison.scope)
 
         def pin(kind, record):
@@ -1219,13 +1395,57 @@ class IntelligenceService:
                     or original_news.monitor_revision != monitor.revision):
                 raise HTTPException(status_code=409, detail="Comparison News revision unavailable")
             await self.authorize_record(original_news, user, budget)
+            budget.comparison_news = original_news
             pin("investigations", investigation)
         return budget, monitor
+
+    async def _investigation_news(
+        self, investigation: Investigation, user: dict, budget: CycleBudget, *,
+        news: NewsItem | None = None,
+    ) -> NewsItem:
+        for candidate in (news, budget.comparison_news):
+            if (candidate is not None and candidate.id == investigation.news_id
+                    and candidate.revision == investigation.news_revision
+                    and candidate.semantic == investigation.semantic):
+                return candidate
+        if news and budget.mission_record_bindings.get(("news", news.id)) == news.scope:
+            original = await self.repository.get(
+                "news", investigation.news_id, news.scope, NewsItem,
+                revision=investigation.news_revision,
+            )
+            if (original is None or original.id != news.id or original.scope != news.scope
+                    or original.revision != investigation.news_revision
+                    or original.semantic != investigation.semantic
+                    or original.monitor_id != news.monitor_id
+                    or original.monitor_revision != news.monitor_revision):
+                raise HTTPException(status_code=409, detail="Comparison News revision unavailable")
+            await self.authorize_record(original, user, budget)
+            return original
+        return cast(NewsItem, await self.get(
+            "news", investigation.news_id, user, budget=budget,
+            revision=investigation.news_revision,
+        ))
 
     async def initiate_investigation(
         self, body: ChatInvestigationRequest, user: dict, *,
         comparison_monitor: Monitor | None = None, _mission=None,
         _comparison: ChatComparison | None = None,
+        canonicalization: CanonicalizationCollector | None = None,
+    ) -> dict:
+        collector = canonicalization or CanonicalizationCollector()
+        with collector.operation():
+            result = await self._initiate_investigation(
+                body, user, comparison_monitor=comparison_monitor, _mission=_mission,
+                _comparison=_comparison, collector=collector,
+            )
+            collector.result(result)
+        return {**result, "metrics": collector.snapshot().model_dump(mode="json")}
+
+    async def _initiate_investigation(
+        self, body: ChatInvestigationRequest, user: dict, *,
+        comparison_monitor: Monitor | None = None, _mission=None,
+        _comparison: ChatComparison | None = None,
+        collector: CanonicalizationCollector,
     ) -> dict:
         from app.core.config import settings
         from app.modules.agents.router import _require_agent
@@ -1248,6 +1468,7 @@ class IntelligenceService:
                 ],
                 "comparison": None,
                 "investigation": None,
+                "news": None,
             }
         if body.current_window.end > utc_now():
             raise HTTPException(
@@ -1263,10 +1484,10 @@ class IntelligenceService:
         monitor_id = comparison_monitor.id if comparison_monitor else fingerprint(
             [identity, "comparison-monitor"]
         )
-        budget = CycleBudget()
+        budget = CycleBudget(canonicalization=collector)
         if _comparison:
             budget, comparison_monitor = await self._automatic_comparison_budget(
-                _comparison, _mission, body.operation_id, user,
+                _comparison, _mission, body.operation_id, user, collector=collector,
             )
         if comparison_monitor:
             await self.authorize_record(comparison_monitor, user, budget)
@@ -1301,10 +1522,11 @@ class IntelligenceService:
                         automatic_mission_id=_mission.mission_id if _mission else None,
                         automatic_operation_id=body.operation_id if _mission else None,
                     ),
-                    user, _mission,
+                    user, _mission, collector=collector,
                 )
         if comparison.status != "pending":
             investigation = None
+            news = None
             if comparison.investigation_id:
                 pinned = _mission and any(
                     ref.kind == "investigation" and ref.id == comparison.investigation_id
@@ -1319,6 +1541,8 @@ class IntelligenceService:
                     "investigations", comparison.investigation_id, user, budget=budget,
                     revision=comparison.investigation_revision,
                 )
+                collector.investigation(created=False)
+                news = await self._investigation_news(investigation, user, budget)
             async with self._automatic_fence(_mission, user):
                 pass
             return {
@@ -1326,6 +1550,7 @@ class IntelligenceService:
                 "reason": comparison.reason,
                 "comparison": comparison,
                 "investigation": investigation,
+                "news": news,
             }
         prior_monitor = await self.repository.get(
             "monitors", monitor_id, scope, Monitor, revision=comparison.monitor_revision
@@ -1334,7 +1559,9 @@ class IntelligenceService:
         if monitor is None:
             monitor = Monitor(id=monitor_id, scope=scope, **body.configuration.model_dump())
             await self.validate_monitor(monitor, user)
-            monitor = await self._save_automatic("monitors", monitor, user, _mission)
+            monitor = await self._save_automatic(
+                "monitors", monitor, user, _mission, collector=collector,
+            )
             await self._audit("REGISTER", monitor, user)
         if comparison.monitor_revision is None:
             comparison = await self._save_automatic(
@@ -1342,10 +1569,11 @@ class IntelligenceService:
                 comparison.model_copy(update={"monitor_revision": monitor.revision}),
                 user, _mission,
                 expected_revision=comparison.revision,
+                collector=collector,
             )
         if _mission:
             budget, _ = await self._automatic_comparison_budget(
-                comparison, _mission, body.operation_id, user,
+                comparison, _mission, body.operation_id, user, collector=collector,
             )
         async with self._automatic_fence(_mission, user):
             pass
@@ -1364,6 +1592,7 @@ class IntelligenceService:
                 ),
                 user, _mission,
                 expected_revision=comparison.revision,
+                collector=collector,
             )
             await self._audit("INCOMPLETE_COMPARISON", saved, user)
             return {
@@ -1371,6 +1600,7 @@ class IntelligenceService:
                 "reason": saved.reason,
                 "comparison": saved,
                 "investigation": None,
+                "news": None,
             }
         unknown_count = before.sample_count is None or after.sample_count is None
         insufficient = (not unknown_count and min(
@@ -1411,6 +1641,7 @@ class IntelligenceService:
                     baseline_windows=[body.baseline_window],
                 ),
                 user, _mission,
+                collector=collector,
             )
             await self._audit("COMPARE", news, user)
         if _mission:
@@ -1424,6 +1655,7 @@ class IntelligenceService:
             investigation = await self.investigate(
                 news.id, user, arithmetic_only=unknown_count, budget=budget, _mission=_mission,
             )
+        news = await self._investigation_news(investigation, user, budget, news=news)
         saved = await self._save_automatic(
             "comparisons",
             comparison.model_copy(
@@ -1438,23 +1670,39 @@ class IntelligenceService:
             ),
             user, _mission,
             expected_revision=comparison.revision,
+            collector=collector,
         )
         return {
             "status": saved.status,
             "reason": saved.reason,
             "comparison": saved,
             "investigation": investigation,
+            "news": news,
         }
 
-    async def automatic_investigation(self, seed, user: dict, *, mission_id: str,
-                                     agent_id: str) -> dict:
+    async def automatic_investigation(
+        self, seed, user: dict, *, mission_id: str, agent_id: str,
+        canonicalization: CanonicalizationCollector | None = None,
+    ) -> dict:
+        collector = canonicalization or CanonicalizationCollector()
+        with collector.operation():
+            result = await self._automatic_investigation(
+                seed, user, mission_id=mission_id, agent_id=agent_id, collector=collector,
+            )
+            collector.result(result)
+        return {**result, "metrics": collector.snapshot().model_dump(mode="json")}
+
+    async def _automatic_investigation(
+        self, seed, user: dict, *, mission_id: str, agent_id: str,
+        collector: CanonicalizationCollector,
+    ) -> dict:
         from dataclasses import replace
 
         from app.modules.agents.mission import mission_service
 
         plan = replace(seed.plan, metrics=(seed.target_metric,), dimensions=(), time=None,
                        order_by=(), limit=None)
-        scope, budget = Scope.from_user(user), CycleBudget()
+        scope, budget = Scope.from_user(user), CycleBudget(canonicalization=collector)
         fixed = seed.execution_time
         operation_id = fingerprint([
             mission_id, seed.semantic.model_dump(), seed.target_metric,
@@ -1492,19 +1740,21 @@ class IntelligenceService:
                     or existing.calendar_timezone != fixed.timezone):
                 raise HTTPException(status_code=409, detail="Automatic comparison seed changed")
             _, pinned_monitor = await self._automatic_comparison_budget(
-                existing, mission, operation_id, user,
+                existing, mission, operation_id, user, collector=collector,
             )
             return await self.initiate_investigation(ChatInvestigationRequest(
                 operation_id=operation_id, configuration=configuration,
                 current_window=Window(**fixed.current.as_dict()),
                 baseline_window=Window(**fixed.baseline.as_dict()),
                 calendar_timezone=fixed.timezone,
-            ), user, comparison_monitor=pinned_monitor, _mission=mission, _comparison=existing)
+            ), user, comparison_monitor=pinned_monitor, _mission=mission, _comparison=existing,
+                canonicalization=collector)
         selected = None
         rows = await self.repository.page("monitors", scope, Monitor, limit=101)
         if len(rows) > 100:
             return {"status": "clarification", "reason": "monitor_matching_bound",
-                    "required_inputs": ["comparison_monitor"]}
+                    "required_inputs": ["comparison_monitor"],
+                    "comparison": None, "investigation": None, "news": None}
         for monitor in rows:
             candidate = SemanticPlan.from_dict(monitor.plan)
             if (monitor.semantic != seed.semantic or monitor.agent_id != agent_id
@@ -1549,6 +1799,7 @@ class IntelligenceService:
         )
         return await self.initiate_investigation(
             request, user, comparison_monitor=selected, _mission=mission,
+            canonicalization=collector,
         )
 
     async def lineage(self, decision_id: str, user: dict, *, mission_id: str | None = None) -> dict:

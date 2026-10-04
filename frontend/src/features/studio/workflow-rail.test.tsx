@@ -46,11 +46,11 @@ describe("Workflow rail", () => {
     render(<QueryClientProvider client={client()}><Host /></QueryClientProvider>);
     await page.getByRole("button", { name: "Open workflow details" }).click();
     await expect.element(page.getByRole("dialog")).toBeVisible();
-    await expect.element(page.getByText(mission.objective)).toBeVisible();
+    await expect.element(page.getByRole("heading", { name: mission.objective, exact: true })).toBeVisible();
     page.getByRole("tab", { name: "Activity", exact: true }).element().focus();
     await userEvent.keyboard("{ArrowRight}");
     await expect.element(page.getByRole("tab", { name: "Evidence", exact: true })).toHaveAttribute("aria-selected", "true");
-    await expect.element(page.getByText("Evidence has not been assessed")).toBeVisible();
+    await expect.element(page.getByText("No evidence recorded for this mission")).toBeVisible();
     await userEvent.keyboard("{ArrowRight}");
     await expect.element(page.getByLabelText("Find a business concept")).toBeVisible();
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);

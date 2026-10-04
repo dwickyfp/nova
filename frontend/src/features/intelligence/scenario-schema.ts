@@ -34,8 +34,47 @@ export type ScenarioDefinition = {
   target_metric?: string | null;
   target_metric_policy?: "named_metric" | "published_metric";
   currency_required?: boolean;
+  required_currency?: string;
+  required_unit?: string;
+  currency_input_allowed?: boolean;
+  required_evidence_types?: string[];
   constraints?: string[];
   simulation_adapter?: string;
+};
+
+export type ScenarioResolution = {
+  target_metric: string | null;
+  currency: string | null;
+  unit: string | null;
+  currency_readonly: boolean;
+  currency_input_allowed: boolean;
+};
+
+export const scenarioReasons = {
+  TARGET_METRIC_UNSUPPORTED: "This model does not support the target metric.",
+  METRIC_CURRENCY_REQUIRED: "The target metric needs a published currency.",
+  METRIC_CURRENCY_UNSUPPORTED:
+    "The model and target metric use different currencies.",
+  METRIC_UNIT_REQUIRED: "The target metric needs a published unit.",
+  METRIC_UNIT_UNSUPPORTED:
+    "This model does not support the target metric's unit.",
+  METRIC_ADDITIVITY_UNSUPPORTED:
+    "Unit economics requires an additive target metric.",
+  EVIDENCE_REQUIRED:
+    "The investigation needs the evidence required by this model.",
+} as const;
+
+export type ScenarioCompatibility = {
+  scenario: ScenarioDefinition;
+  compatible: boolean;
+  reason_codes: (keyof typeof scenarioReasons)[];
+  required_inputs: string[];
+  resolved: ScenarioResolution;
+};
+
+export type ScenarioDiscovery = {
+  items: ScenarioDefinition[];
+  compatibility?: ScenarioCompatibility[];
 };
 
 const propertyKeys = new Set([

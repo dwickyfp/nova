@@ -36,6 +36,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.common.audit import write_audit_log
+from app.core.database import configured_timezone
 from app.core.deps import get_current_user
 from app.modules.agents.access import has_verified_access
 from app.modules.agents.agent_control import AgentControl, session_views
@@ -359,12 +360,14 @@ def _thread_view(row: dict) -> ThreadView:
 
 
 def _message_view(row: dict) -> MessageView:
+    from app.modules.agents.public_projections import sanitize_workflow_payload
+
     return MessageView(
         message_id=row["message_id"],
         role=row["role"],
         content=row.get("content") or "",
         created_at=row["created_at"],
-        steps=row.get("steps") or [],
+        steps=sanitize_workflow_payload(row.get("steps") or []),
         prompt_tokens=row.get("prompt_tokens"),
         completion_tokens=row.get("completion_tokens"),
         total_tokens=row.get("total_tokens"),
@@ -464,6 +467,9 @@ def _text_from_frame(frame: str) -> str:
 
 
 def _auto_frame(kind: str, payload: dict) -> str:
+    from app.modules.agents.public_projections import sanitize_workflow_payload
+
+    payload = sanitize_workflow_payload(payload)
     return f"event: {kind}\ndata: {json.dumps(payload, default=str)}\n\n"
 
 
@@ -2148,6 +2154,7 @@ async def agent_readiness(agent_id: str, user: dict = Depends(get_current_user))
     agent = await _require_owned_agent(agent_id, user)
     context = LoopContext(
         user_name=user["username"], user=dict(user), agent_id=agent_id,
+        execution_timezone=configured_timezone(),
         agent_owner_name=agent.get("owner_name"), semantic_view_ids=bound_view_ids(agent),
     )
     try:
@@ -2301,6 +2308,8 @@ async def replay_agent_run(
         raise HTTPException(status_code=404, detail="Run not found in this role")
 
     async def replay() -> AsyncIterator[str]:
+        from app.modules.agents.public_projections import sanitize_workflow_sse
+
         cursor = after
         terminal_seen = False
         deadline = asyncio.get_running_loop().time() + 3690
@@ -2313,7 +2322,7 @@ async def replay_agent_run(
                 payload = json.loads(frame.split("data: ", 1)[1])
                 cursor = int(payload["sequence"])
                 terminal_seen = terminal_seen or frame.startswith(f"event: {events.EVENT_DONE}\n")
-                yield frame
+                yield sanitize_workflow_sse(frame)
             if (
                 state["status"] == "running"
                 and not frames
@@ -2577,6 +2586,7 @@ async def send_agent_message(
 
     context = LoopContext(
         user_name=user_name,
+        execution_timezone=configured_timezone(),
         database=await _resolve_database(agent, user),
         schema_name=agent.get("schema_name"),
         role=security.active_role,
@@ -2600,7 +2610,7 @@ async def send_agent_message(
     )
 
     async def business_turn_hook(plan, current_context):
-        from app.modules.agents.business_results import planner_target
+        from app.modules.agents.business_results import bind_business_hooks, planner_target
         from app.modules.agents.mission import mission_service
         from app.modules.agents.mission_schema import WorkIntent
 
@@ -2624,6 +2634,8 @@ async def send_agent_message(
                 mission = await mission_service.record_release(
                     mission.mission_id, run_id, current_context.release_manifest, user,
                 )
+            current_context.mission_id = mission.mission_id
+            bind_business_hooks(current_context)
             return mission.model_dump(mode="json")
         return None
 
@@ -2636,11 +2648,6 @@ async def send_agent_message(
 
     context.business_cancelled = business_cancelled
     context.business_turn_hook = business_turn_hook
-    from app.modules.agents.business_results import execution_clock, governed_result, pin_time
-
-    context.business_result_hook = governed_result
-    context.business_time_hook = pin_time
-    context.business_clock_hook = execution_clock
     context.requested_work_intent = body.work_intent
     context.start_new_mission = body.new_mission
     # The agent's own budget replaces the loop default; the loop still caps it.
@@ -2842,13 +2849,15 @@ async def send_agent_message(
     task.add_done_callback(_active_run_tasks.discard)
 
     async def stream() -> AsyncIterator[str]:
+        from app.modules.agents.public_projections import sanitize_workflow_sse
+
         nonlocal subscriber_connected
         try:
             while True:
                 frame = await stream_queue.get()
                 if frame is None:
                     return
-                yield frame
+                yield sanitize_workflow_sse(frame)
         finally:
             subscriber_connected = False
 

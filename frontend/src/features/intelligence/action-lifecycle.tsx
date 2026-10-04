@@ -206,7 +206,7 @@ function ActionWorkspace({
             <p className="break-words text-muted-foreground">
               {action.configuration.schedule_kind} ·{" "}
               {action.configuration.schedule_expr} ·{" "}
-              {action.configuration.timezone ?? "Asia/Jakarta"}
+              {action.configuration.timezone ?? "Timezone unavailable"}
             </p>
             <p>Reports arrive in Studio history.</p>
           </>
@@ -220,7 +220,7 @@ function ActionWorkspace({
               {action.configuration.enabled
                 ? `Schedule every ${action.configuration.cadence_minutes ?? 15} minutes`
                 : "Schedule disabled"}{" "}
-              · {action.configuration.timezone ?? "Asia/Jakarta"}
+              · {action.configuration.timezone ?? "Timezone unavailable"}
             </p>
           </>
         )}

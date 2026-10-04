@@ -42,17 +42,23 @@ def activity_from_frame(frame: str) -> dict[str, Any] | None:
         except ValidationError:
             return None
         return {"event_type": kind, "continuation": bounded.model_dump(mode="json")}
-    if kind == "evidence_envelope":
+    if kind in {"evidence_envelope", "evidence_health"}:
         from pydantic import ValidationError
 
+        from app.modules.assistant.evidence_health import EvidenceHealth
+        from app.modules.assistant.workflow_provenance import WorkflowProvenance
         from app.modules.intelligence.evidence import EvidenceEnvelope
 
         try:
-            bounded = EvidenceEnvelope.model_validate(payload.get("payload"))
+            model = EvidenceEnvelope if kind == "evidence_envelope" else EvidenceHealth
+            bounded = model.model_validate(payload.get("payload"))
+            workflow = (WorkflowProvenance.model_validate(payload["workflow"]).model_dump(
+                mode="json"
+            ) if payload.get("workflow") is not None else None)
         except ValidationError:
             return None
         return {"event_type": kind, **_fields(payload, {"tool_call_id": 128, "tool_name": 80}),
-                "payload": bounded.model_dump(mode="json")}
+                "payload": bounded.model_dump(mode="json"), "workflow": workflow}
     if kind == "execution_time_context":
         from pydantic import ValidationError
 

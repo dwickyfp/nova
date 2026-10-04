@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from app.core.database import configured_timezone
 from app.core.redis import session_store
 from app.modules.agents.access import has_verified_access
 from app.modules.agents.agent_control import AgentControl, CollaborationLimits
@@ -962,6 +963,7 @@ class AgentHarnessWorker:
         thread.consent.always_allow_read_only = agent.get("policy") == "auto_read_only"
         context = LoopContext(
             user_name=child["owner_name"],
+            execution_timezone=configured_timezone(),
             collaboration_tools=tuple(COLLABORATION_TOOLS) if smart else (),
             collaboration_root=is_root,
             database=agent.get("database_name"),
@@ -979,6 +981,7 @@ class AgentHarnessWorker:
             model_provider_id=agent.get("model_provider_id"),
             model_name=agent.get("model_name"),
             run_id=child["run_id"],
+            root_run_id=root["run_id"],
             attachments=attachments,
         )
         async def business_cancelled():
@@ -989,15 +992,10 @@ class AgentHarnessWorker:
 
         context.business_cancelled = business_cancelled
         from app.modules.agents.business_results import (
-            execution_clock,
-            governed_result,
-            pin_time,
+            bind_business_hooks,
             planner_target,
         )
 
-        context.business_result_hook = governed_result
-        context.business_time_hook = pin_time
-        context.business_clock_hook = execution_clock
         if not is_root:
             inherited = await mission_service.project_run(root["run_id"], user)
             if inherited:
@@ -1005,6 +1003,7 @@ class AgentHarnessWorker:
                     inherited.mission_id, child["run_id"], user
                 )
                 context.mission_id = inherited.mission_id
+                bind_business_hooks(context)
                 async def inherited_business_turn(turn_plan, loop_context):
                     mission = await mission_service.record_release(
                         inherited.mission_id, child["run_id"], loop_context.release_manifest, user,
@@ -1042,6 +1041,7 @@ class AgentHarnessWorker:
                         mission.mission_id, child["run_id"], loop_context.release_manifest, user,
                     )
                 loop_context.mission_id = mission.mission_id
+                bind_business_hooks(loop_context)
                 return mission.model_dump(mode="json")
 
             context.business_turn_hook = business_turn
