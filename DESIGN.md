@@ -85,6 +85,8 @@ kemunculan `bg-card/*` dan 22 kemunculan `border-border/*`; penggantinya adalah
 
 **Glass is a navigation material, not a content surface.** Material ini hanya
 untuk sidebar global dan sidebar Studio, termasuk rail ikon dan drawer mobile.
+Frame navigasi Console yang terlihat di atas, bawah, dan samping workspace
+inset memakai komposisi material yang sama dan menyambung dengan sidebar.
 Workspace, transcript, editor, tabel, kartu, inspector, dialog, dan popover tetap
 memakai permukaan solid yang sudah ada. Material bukan tingkat `--surface-4`.
 
@@ -103,7 +105,7 @@ primitive mempertahankan perilaku variant sebelumnya.
 | `--sidebar-navigation-tint` | Lapisan transparan di atas underlay atau backdrop drawer |
 | `--sidebar-navigation-tint-opacity` | Alpha tint, diatur per tema |
 | `--sidebar-navigation-fallback` | Latar opak saat blur tidak tersedia atau transparansi dikurangi |
-| `--sidebar-navigation-ambient` | Variasi netral statis, terbatas pada area sidebar |
+| `--sidebar-navigation-ambient` | Variasi netral statis pada sidebar dan frame navigasi inset |
 | `--sidebar-navigation-edge` | Hairline dan separator navigasi |
 | `--sidebar-navigation-shadow` | Hairline pada sisi yang berbatasan dengan workspace |
 | `--sidebar-navigation-hover` | Plate interaksi netral |
@@ -118,6 +120,12 @@ Tint terang 64% dan gelap 48% membiarkan variasi netral underlay terbaca sebagai
 kaca buram. Underlay menyediakan kedalaman saat backdrop aplikasi sendiri solid;
 header, menu, dan footer berada pada satu bidang kaca yang kontinu. Tidak ada
 bingkai di empat sisi atau permukaan kaca kedua di dalam sidebar.
+Pada Console inset, underlay sidebar dan frame memakai koordinat viewport yang
+sama agar warna tidak terputus pada batas kolom. Frame menggabungkan tint dan
+underlay sebagai latar statis tanpa filter tambahan. Panel `SidebarInset`,
+termasuk border, shadow, margin, ukuran, serta konten dan assistant di dalamnya,
+tetap opak. Provider dengan sidebar solid dan layout tanpa frame inset tetap
+memakai latar sebelumnya. Drawer mobile tidak mengaktifkan frame desktop.
 Merah bata tetap untuk identitas dan penanda aktif, bukan
 latar seluruh sidebar.
 

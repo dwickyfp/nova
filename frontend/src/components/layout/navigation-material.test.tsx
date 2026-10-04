@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import {
@@ -11,6 +12,7 @@ import {
 import { LayoutProvider } from "@/context/layout-provider";
 import { ThemeProvider } from "@/context/theme-provider";
 import { getCookie, setCookie } from "@/lib/cookies";
+import { api } from "@/lib/api-client";
 import { clearCookies } from "@/test-utils/cookies";
 import { useAuthStore } from "@/stores/auth-store";
 import {
@@ -22,6 +24,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
+import { AuthenticatedLayout } from "./authenticated-layout";
 import "@/styles/index.css";
 
 function consoleRouter() {
@@ -146,6 +149,27 @@ function expectSolidContent() {
   }
 }
 
+function expectNavigationFrame() {
+  const wrapper = document.querySelector('[data-slot="sidebar-wrapper"]')!;
+  const style = getComputedStyle(wrapper);
+  const ambient = getComputedStyle(materialShell(), "::before");
+  expect(style.backgroundImage).toContain(ambient.backgroundImage);
+  expect(style.backgroundImage).toContain(
+    getComputedStyle(materialShell(), "::after").backgroundColor,
+  );
+  for (const size of style.backgroundSize.split(", "))
+    expect(size).toBe(ambient.backgroundSize);
+  expect(style.backgroundAttachment).toBe("fixed, fixed");
+  expect(ambient.backgroundAttachment).toBe("fixed");
+  expect(style.backdropFilter).toBe("none");
+  expect(style.filter).toBe("none");
+  const inset = document.querySelector('[data-slot="sidebar-inset"]')!;
+  const bounds = inset.getBoundingClientRect();
+  expect(bounds.top).toBeGreaterThan(0);
+  expect(bounds.bottom).toBeLessThan(window.innerHeight);
+  expect(bounds.right).toBeLessThan(window.innerWidth);
+}
+
 const restoreRules: (() => void)[] = [];
 
 // Exercise the real cascade: turn off only the material capability rule, or
@@ -224,6 +248,7 @@ describe("Nova navigation material", () => {
       expect(getComputedStyle(shell).backgroundColor).toBe("rgba(0, 0, 0, 0)");
       expectFullDesktopPane();
       expectSolidContent();
+      expectNavigationFrame();
       for (const child of Array.from(shell.querySelectorAll("*")))
         expect(getComputedStyle(child).backdropFilter).toBe("none");
       const selected = screen.getByRole("link", {
@@ -285,17 +310,18 @@ describe("Nova navigation material", () => {
         )
         .toBeLessThan(64);
       expectFullDesktopPane();
+      expectNavigationFrame();
       expect(getComputedStyle(shell, "::after").backdropFilter).toBe(
         tint.backdropFilter,
       );
+      await page.screenshot({
+        path: `../../../coverage/navigation/console-${theme}-collapsed.png`,
+      });
       await userEvent.hover(selected);
       await expect
         .element(screen.getByRole("tooltip", { name: "Workspaces" }))
         .toBeVisible();
       await userEvent.unhover(selected);
-      await page.screenshot({
-        path: `../../../coverage/navigation/console-${theme}-collapsed.png`,
-      });
       await screen
         .getByRole("banner")
         .getByRole("button", { name: "Toggle Sidebar", exact: true })
@@ -345,6 +371,9 @@ describe("Nova navigation material", () => {
       .element(screen.getByText("navigation-test").first())
       .toBeVisible();
     const before = getComputedStyle(materialShell(), "::after").backgroundColor;
+    const frameBefore = getComputedStyle(
+      document.querySelector('[data-slot="sidebar-wrapper"]')!,
+    ).backgroundImage;
     await screen.getByRole("button", { name: /navigation-test/ }).click();
     await screen.getByRole("menuitem", { name: "Appearance" }).click();
     await page.getByRole("menuitem", { name: /^dark$/i }).click();
@@ -354,6 +383,11 @@ describe("Nova navigation material", () => {
     expect(
       getComputedStyle(materialShell(), "::after").backgroundColor,
     ).not.toBe(before);
+    expect(
+      getComputedStyle(document.querySelector('[data-slot="sidebar-wrapper"]')!)
+        .backgroundImage,
+    ).not.toBe(frameBefore);
+    expectNavigationFrame();
     expectSolidContent();
   });
 
@@ -396,6 +430,11 @@ describe("Nova navigation material", () => {
       await expect.poll(() => router.state.location.pathname).toBe("/");
       await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
       expectSolidContent();
+      expect(
+        getComputedStyle(
+          document.querySelector('[data-slot="sidebar-wrapper"]')!,
+        ).backgroundImage,
+      ).toBe("none");
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
     },
   );
@@ -416,6 +455,13 @@ describe("Nova navigation material", () => {
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(900);
       expectFullDesktopPane();
       expectSolidContent();
+      if (variant === "inset") expectNavigationFrame();
+      else
+        expect(
+          getComputedStyle(
+            document.querySelector('[data-slot="sidebar-wrapper"]')!,
+          ).backgroundImage,
+        ).toBe("none");
     },
   );
 
@@ -430,6 +476,11 @@ describe("Nova navigation material", () => {
       const style = getComputedStyle(materialShell(), "::after");
       expect(style.backdropFilter).toBe("none");
       expect(style.backgroundColor).not.toContain("rgba");
+      const frame = getComputedStyle(
+        document.querySelector('[data-slot="sidebar-wrapper"]')!,
+      );
+      expect(frame.backgroundImage).toBe("none");
+      expect(frame.backgroundColor).toBe(style.backgroundColor);
       expectSolidContent();
     },
   );
@@ -493,4 +544,133 @@ describe("Nova navigation material", () => {
       getComputedStyle(materialShell(), "::after").backdropFilter,
     ).toContain("blur(12px)");
   });
+
+  it("retains the opaque provider for a solid inset sidebar", async () => {
+    await render(
+      <SidebarProvider>
+        <Sidebar variant="inset">
+          <SidebarContent>Solid navigation</SidebarContent>
+        </Sidebar>
+        <SidebarInset>Solid workspace</SidebarInset>
+      </SidebarProvider>,
+    );
+    const wrapper = document.querySelector('[data-slot="sidebar-wrapper"]')!;
+    const inset = document.querySelector('[data-slot="sidebar-inset"]')!;
+    expect(getComputedStyle(wrapper).backgroundImage).toBe("none");
+    expect(getComputedStyle(wrapper).backgroundColor).toBe(
+      getComputedStyle(inset).backgroundColor,
+    );
+  });
+
+  it.each(["light", "dark"] as const)(
+    "keeps the frame continuous and workspace bounded with the assistant open in %s",
+    async (theme) => {
+      setCookie("vite-ui-theme", theme);
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      vi.spyOn(api, "get").mockImplementation(async (path) => {
+        if (path === "/workspaces/tree")
+          return {
+            root_name: "workspace",
+            entries: [],
+            open_tabs: [],
+            active_tab: null,
+            sidebar_collapsed: false,
+            assistant_collapsed: true,
+            defaults: { database: null, schema: null, role: "ANALYST" },
+          };
+        if (path.startsWith("/assistant/threads"))
+          return { threads: [], count: 0 };
+        throw new Error(`Unexpected navigation test request: ${path}`);
+      });
+      const root = createRootRoute({
+        component: () => (
+          <QueryClientProvider client={client}>
+            <ThemeProvider defaultTheme={theme}>
+              <AuthenticatedLayout>
+                <div
+                  data-layout="fixed"
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                >
+                  <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+                    <SidebarTrigger />
+                    Nova workspace
+                  </header>
+                  <main className="min-h-0 flex-1 overflow-auto bg-background p-4">
+                    <h1 className="text-lg font-medium">Workspaces</h1>
+                    <div className="rounded-lg border bg-card p-4">
+                      Solid data workspace
+                    </div>
+                    {Array.from({ length: 100 }, (_, index) => (
+                      <p key={index}>Workspace row {index + 1}</p>
+                    ))}
+                  </main>
+                </div>
+              </AuthenticatedLayout>
+            </ThemeProvider>
+          </QueryClientProvider>
+        ),
+      });
+      const router = createRouter({
+        routeTree: root,
+        history: createMemoryHistory(),
+      });
+      const screen = await render(<RouterProvider router={router} />);
+      try {
+        await screen.getByRole("button", { name: "Ask Nove" }).click();
+        await expect
+          .element(screen.getByRole("button", { name: "Close assistant" }))
+          .toBeVisible();
+        expectNavigationFrame();
+        expectSolidContent();
+        const panel = document.querySelector("#assistant-panel")!;
+        await expect
+          .poll(() =>
+            Math.round(panel.parentElement!.getBoundingClientRect().width),
+          )
+          .toBe(Math.round(panel.getBoundingClientRect().width));
+        expect(panel.getBoundingClientRect().right).toBeLessThanOrEqual(
+          document
+            .querySelector('[data-slot="sidebar-inset"]')!
+            .getBoundingClientRect().right,
+        );
+        expect(getComputedStyle(panel).backgroundColor).toBe(
+          getComputedStyle(
+            document.querySelector('[data-slot="sidebar-inset"]')!,
+          ).backgroundColor,
+        );
+        expect(getComputedStyle(panel).backdropFilter).toBe("none");
+        expect(panel.closest(".sidebar-navigation-material")).toBeNull();
+        expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
+          window.innerWidth,
+        );
+        expect(document.documentElement.scrollHeight).toBeLessThanOrEqual(
+          window.innerHeight,
+        );
+        const main = screen.getByRole("main").element();
+        main.scrollTop = 200;
+        expect(main.scrollTop).toBe(200);
+        const headerTop = screen
+          .getByRole("banner")
+          .element()
+          .getBoundingClientRect().top;
+        main.scrollTop = 300;
+        expect(
+          screen.getByRole("banner").element().getBoundingClientRect().top,
+        ).toBe(headerTop);
+        main.scrollTop = 0;
+        await userEvent.hover(
+          screen.getByRole("heading", { name: "Workspaces", exact: true }),
+        );
+        await page.screenshot({
+          path: `../../../coverage/navigation/console-${theme}-assistant.png`,
+        });
+      } finally {
+        await screen.unmount();
+        client.clear();
+        vi.restoreAllMocks();
+      }
+    },
+  );
 });

@@ -212,6 +212,7 @@ function Sidebar({
       data-state={state}
       data-collapsible={state === 'collapsed' ? collapsible : ''}
       data-variant={variant}
+      data-material={material}
       data-side={side}
       data-slot='sidebar'
     >
