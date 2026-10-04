@@ -104,12 +104,14 @@ memakai `backdrop-filter`; material bukan tingkat `--surface-4`.
 | `--shell-backdrop` | Lukisan latar shell: teal-slate di kiri atas, bata dan amber di bawah |
 | `--shell-pane-tint` | Tint workspace di atas backdrop; 100% di tema terang, 82% di tema gelap |
 | `--sidebar-navigation-tint` | Tint chrome di atas backdrop atau konten di belakang drawer |
-| `--sidebar-navigation-tint-opacity` | Alpha tint chrome; 62% terang, 46% gelap |
+| `--sidebar-navigation-tint-opacity` | Alpha tint chrome; 45% terang, 46% gelap |
 | `--sidebar-navigation-fallback` | Latar opak saat blur tidak tersedia atau transparansi dikurangi |
 | `--sidebar-navigation-edge` | Hairline transparan; juga `--inset-border` di tema gelap |
 | `--sidebar-navigation-shadow` | Hairline pada sisi yang berbatasan dengan workspace; tidak dipakai pada Console inset |
 | `--sidebar-navigation-hover` | Plate interaksi transparan |
 | `--sidebar-navigation-selected` | Plate transparan lebih kuat untuk pilihan aktif |
+| `--sidebar-navigation-selected-shadow` | Hairline dan bayangan halus plate aktif di tema terang; `none` di tema gelap |
+| `--sidebar-navigation-foreground` | Teks navigasi; slate di tema terang, `--foreground` di tema gelap |
 | `--sidebar-navigation-muted-foreground` | Teks sekunder yang lolos AA di atas plate navigasi |
 | `--sidebar-navigation-ring` | Fokus merah bata dengan kontras terhadap plate navigasi |
 
@@ -119,8 +121,10 @@ solid, jadi backdrop memakai teal-slate dan bata/amber dari palet Nova sendiri.
 Blur tidak menggantikan variasi itu.
 
 **Plate dan hairline transparan, bukan hex opak.** Hover, selected, dan edge
-adalah putih (gelap) atau slate (terang) ber-alpha, sehingga gradasi backdrop
-tetap terlihat di bawah baris aktif. Kontras diukur pada hasil kompositnya di
+adalah putih ber-alpha di kedua tema, sehingga gradasi backdrop tetap terlihat
+di bawah baris aktif. Di tema terang plate mengangkat baris (lebih terang dari
+sekitarnya, dengan hairline dan bayangan halus); plate gelap di atas backdrop
+terang terbaca sebagai cat abu-abu, bukan kaca. Edge tetap slate di tema terang. Kontras diukur pada hasil kompositnya di
 setiap stop backdrop, bukan pada warna plate itu sendiri.
 
 **Pane terang tetap 100%.** `--primary` (4.53:1) dan token `-strong` diukur
@@ -170,11 +174,16 @@ ke `--font-inter`; IBM Plex Sans dan font sistem tetap tersedia lewat
 
 | Peran | Ukuran | Bobot | Contoh |
 |---|---|---|---|
-| Judul halaman | `text-lg` | 600 | `PageHeader` |
-| Label navigasi, judul baris, kontrol | `text-sm` | 500 | Menu sidebar, judul riwayat Studio, tombol |
+| Judul halaman | `text-lg` | 600 gelap, 550 terang | `PageHeader` |
+| Label navigasi, judul baris, kontrol | `text-sm` | 500 gelap, 450 terang | Menu sidebar, judul riwayat Studio, tombol |
 | Body dan isi tabel | `text-sm` (14px) | 400 | Paragraf, sel |
 | Teks sekunder | `text-xs` (12px) | 400 | Timestamp, subjudul brand, label grup |
 
+- **Bobot dikoreksi per tema.** Teks gelap di atas latar terang terlihat lebih
+  tebal daripada bobot yang sama dalam keadaan terbalik. `--weight-medium` dan
+  `--weight-semibold` bernilai 450/550 di tema terang dan 500/600 di tema gelap;
+  `font-medium`, `font-semibold`, `font-bold`, dan `font-heading` membacanya.
+  Komponen tidak menulis angka bobot sendiri.
 - **Bobot maksimum 600.** `--font-weight-bold` dipetakan ke 600, jadi `font-bold`
   tidak pernah lebih berat dari `font-semibold`. Hierarki dibangun dari ukuran
   dan warna, bukan dari bobot ekstra.

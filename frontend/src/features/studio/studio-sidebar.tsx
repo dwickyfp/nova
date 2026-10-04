@@ -1,3 +1,4 @@
+import { Logo } from "@/assets/logo";
 import { useEffect, useRef, useState } from "react";
 import {
   LayoutGrid,
@@ -109,10 +110,7 @@ export function StudioSidebar({
         {open ? (
           <>
             <span className="flex size-9 shrink-0 items-center justify-center p-0.5">
-              <img
-                src="/images/nova-mark.svg"
-                alt=""
-                aria-hidden="true"
+              <Logo sizes="40px"
                 className="size-full"
               />
             </span>
@@ -143,10 +141,7 @@ export function StudioSidebar({
                 onClick={onToggle}
                 aria-label="Expand sidebar"
               >
-                <img
-                  src="/images/nova-mark.svg"
-                  alt=""
-                  aria-hidden="true"
+                <Logo sizes="40px"
                   className="size-full"
                 />
               </button>

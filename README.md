@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="frontend/public/images/nova-mark.svg" alt="Nova" width="96" />
+  <img src="frontend/public/images/nova-mark-256.png" alt="Nova" width="96" />
 
 # Nova
 
@@ -9,7 +9,7 @@ Nova brings SQL development, data operations, access control, machine learning,
 and agent workflows into one platform. Apache Ranger governs access to user
 data; StarRocks runs the queries.
 
-[Explore the app](#the-nova-app) · [Architecture](#architecture) · [Run locally](#run-locally) · [Documentation](#documentation)
+[Explore the app](#the-nova-app) · [Architecture](#architecture) · [Run locally](#run-locally) · [Documentation](#documentation) · [Brand assets](frontend/public/images/BRAND.md)
 </div>
 
 ## What Nova does

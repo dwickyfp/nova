@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { cleanup, render } from "vitest-browser-react";
+import { render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -56,7 +56,6 @@ function contrast(element: HTMLElement): number {
 afterEach(async () => {
   for (const view of views.splice(0)) await view.unmount();
   clients.splice(0).forEach((client) => client.clear());
-  await cleanup();
   vi.restoreAllMocks();
   document.documentElement.classList.remove("dark");
   await page.viewport(1280, 720);
@@ -104,6 +103,7 @@ it.each([
   vi.spyOn(workflowApi, "list").mockRejectedValue(
     new ApiError(404, "Workflow disabled"),
   );
+  vi.spyOn(workflowApi, "resumable").mockResolvedValue({ missions: [] });
   const getThread = vi
     .spyOn(agentsApi, "getThread")
     .mockImplementation(async (_agent, threadId, cursor) => ({
