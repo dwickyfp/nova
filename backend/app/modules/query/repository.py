@@ -16,16 +16,59 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Mapping
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
+from functools import partial
 
 import asyncmy
 import asyncmy.cursors
+from asyncmy.constants import FIELD_TYPE
+from asyncmy.converters import through
 
 from app.common.identifiers import check_identifier
 from app.common.sql_guard import redact_sql_credentials
 from app.core.config import settings
 from app.core.database import db
 from app.core.exceptions import StarRocksError
+
+
+def _convert_ascii(converter, value):
+    return converter(value.decode("ascii") if isinstance(value, bytes) else value)
+
+
+@contextmanager
+def _binary_result_mode(conn, enabled: bool):
+    if not enabled or not isinstance(conn, asyncmy.Connection):
+        yield False
+        return
+    unicode_mode, decoders = conn._use_unicode, conn._decoders
+    try:
+        # StarRocks geometry is opaque binary carried in a VARCHAR column.
+        conn._use_unicode = False
+        conn._decoders = {
+            code: partial(_convert_ascii, converter)
+            if converter is not None and converter is not through else converter
+            for code, converter in decoders.items()
+        }
+        yield True
+    finally:
+        conn._use_unicode, conn._decoders = unicode_mode, decoders
+
+
+def _decode_result_rows(cursor, raw_rows):
+    fields = cursor._result.fields
+    rows = []
+    for row in raw_rows:
+        values = list(row.values()) if isinstance(row, Mapping) else list(row)
+        for index, value in enumerate(values):
+            field = fields[index]
+            if isinstance(value, bytes) and (
+                field.charsetnr != 63 or field.type_code == FIELD_TYPE.JSON
+            ):
+                with suppress(UnicodeDecodeError):
+                    values[index] = value.decode("utf-8")
+        rows.append(values)
+    return rows
 
 
 @dataclass
@@ -89,6 +132,20 @@ class QueryResult:
         self.executed_sql = redact_sql_credentials(self.executed_sql)
         if self.error:
             self.error = redact_sql_credentials(self.error)
+        self.redact_metadata()
+
+    def redact_metadata(self) -> None:
+        if {"Signature", "Function Type", "Properties"}.issubset(self.columns):
+            index = self.columns.index("Properties")
+            self.rows = [
+                [
+                    redact_sql_credentials(value)
+                    if position == index and isinstance(value, str)
+                    else value
+                    for position, value in enumerate(row)
+                ]
+                for row in self.rows
+            ]
 
     @property
     def success(self) -> bool:
@@ -182,6 +239,7 @@ class QueryRepository:
                 max_rows=max_rows,
                 start=start,
                 session_prepared=session_prepared,
+                binary_results=True,
             )
         try:
             async with db.user_conn(
@@ -207,6 +265,7 @@ class QueryRepository:
         start: float,
         database: str | None = None,
         session_prepared: bool = False,
+        binary_results: bool = False,
     ) -> QueryResult:
         from app.modules.query_autopilot.telemetry import EXECUTION, collector
         from app.sql_frontend.session_functions import CORRELATION_SESSION, preserve_last_query_id
@@ -235,34 +294,38 @@ class QueryRepository:
                     identity.profile_enabled = False
 
             cursor_type = asyncmy.cursors.SSDictCursor if max_rows else asyncmy.cursors.DictCursor
-            async with conn.cursor(cursor_type) as cur:
-                if role and not session_prepared:
-                    await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
-                if database and not session_prepared:
-                    await conn.select_db(database)
-                submitted = time.monotonic()
-                await cur.execute(wire_sql)
-                fetched = time.monotonic()
-                result = QueryResult(executed_sql=sql)
-                if cur.description:
-                    result.columns = [
-                        labels.get(i, desc[0]) for i, desc in enumerate(cur.description)
-                    ]
-                    result.column_types = tuple(
-                        str((desc[1], desc[4], desc[5])) for desc in cur.description
-                    )
-                    raw_rows = (
-                        await cur.fetchmany(max_rows + 1) if max_rows else await cur.fetchall()
-                    )
-                    result.truncated = bool(max_rows and len(raw_rows) > max_rows)
-                    if max_rows:
-                        raw_rows = raw_rows[:max_rows]
-                    result.rows = [
-                        list(r.values()) if isinstance(r, Mapping) else list(r) for r in raw_rows
-                    ]
-                    result.row_count = len(result.rows)
-                else:
-                    result.affected_rows = cur.rowcount
+            with _binary_result_mode(conn, binary_results) as raw_text:
+                async with conn.cursor(cursor_type) as cur:
+                    if role and not session_prepared:
+                        await cur.execute(f"SET ROLE {check_identifier(role, field='role')}")
+                    if database and not session_prepared:
+                        await conn.select_db(database)
+                    submitted = time.monotonic()
+                    await cur.execute(wire_sql)
+                    fetched = time.monotonic()
+                    result = QueryResult(executed_sql=sql)
+                    if cur.description:
+                        result.columns = [
+                            labels.get(i, desc[0]) for i, desc in enumerate(cur.description)
+                        ]
+                        result.column_types = tuple(
+                            str((desc[1], desc[4], desc[5])) for desc in cur.description
+                        )
+                        raw_rows = (
+                            await cur.fetchmany(max_rows + 1) if max_rows else await cur.fetchall()
+                        )
+                        result.truncated = bool(max_rows and len(raw_rows) > max_rows)
+                        if max_rows:
+                            raw_rows = raw_rows[:max_rows]
+                        result.rows = (
+                            _decode_result_rows(cur, raw_rows) if raw_text else [
+                                list(r.values()) if isinstance(r, Mapping) else list(r)
+                                for r in raw_rows
+                            ]
+                        )
+                        result.row_count = len(result.rows)
+                    else:
+                        result.affected_rows = cur.rowcount
             result.fetch_ms = (time.monotonic() - fetched) * 1000
             # Closing an unbuffered cursor drains the wire before asking the same
             # authenticated session for its engine identity.
@@ -309,6 +372,7 @@ class QueryRepository:
                         session.instrumented = True
             elif session is not None:
                 session.instrumented = False
+            result.redact_metadata()
             return result
         except asyncio.CancelledError:
             conn.close()

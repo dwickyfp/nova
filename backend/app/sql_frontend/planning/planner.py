@@ -49,6 +49,7 @@ class NativePlanner:
                     ref.is_directory,
                     "write" if command == "stage_export" and index == 0 else "read",
                     (context.database, context.schema),
+                    ref.has_alias,
                 )
                 for index, ref in enumerate(stages.stage_refs)
             )

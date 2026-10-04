@@ -97,6 +97,7 @@ async def train_model(
             username=user["username"],
             password=password,
             role=user.get("active_role"),
+            security_context_version=user.get("security_context_version", 1),
             timestamp_column=req.timestamp_column,
             series_column=req.series_column,
             horizon=req.horizon,
@@ -335,6 +336,10 @@ async def delete_model(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=redact_for_output(str(exc))) from exc
+    except OSError:
+        raise HTTPException(
+            status_code=503, detail="Model artifacts could not be removed; retry deletion"
+        ) from None
 
 
 # ── Aliases ───────────────────────────────────────────────────

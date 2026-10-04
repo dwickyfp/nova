@@ -1,4 +1,5 @@
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -8,6 +9,7 @@ from app.modules.query.dialect.ml_model import (
 )
 from app.modules.query.repository import QueryResult
 from app.modules.query.service import QueryService
+from app.sql_frontend.errors import CapabilityUnsupportedError
 
 
 class TestCreateMLModelParser:
@@ -98,6 +100,33 @@ class TestCreateMLModelParser:
                 "CREATE ML_MODEL m TYPE = FORECAST TARGET = y "
                 "HORIZON = 0 AS SELECT y FROM t"
             )
+
+
+async def test_relayed_ml_training_refuses_before_decryption_or_training_and_is_audited(
+    monkeypatch,
+):
+    decrypt = AsyncMock(side_effect=AssertionError("relay has no reusable password"))
+    train = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr("app.modules.query.service.decrypt_password", decrypt)
+    monkeypatch.setattr("app.modules.query.service.write_audit_log", audit)
+    monkeypatch.setattr("app.modules.ml_engine.service.ml_engine_service.train_model", train)
+    with pytest.raises(CapabilityUnsupportedError, match="requires an API session"):
+        await QueryService().execute(
+            sql="CREATE ML_MODEL relay_model TYPE=REGRESSION TARGET=y AS SELECT 1 AS x,2 AS y",
+            username="analyst",
+            encrypted_password="",
+            database="analytics",
+            role="analyst_role",
+            connection=object(),
+        )
+    decrypt.assert_not_called()
+    train.assert_not_awaited()
+    assert any(
+        call.kwargs.get("status") == "ERROR" and call.kwargs.get("object_type") == "ml_model"
+        for call in audit.await_args_list
+    )
+
 
 
 @pytest.mark.asyncio

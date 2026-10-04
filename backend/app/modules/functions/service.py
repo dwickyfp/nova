@@ -1029,7 +1029,7 @@ class FunctionService:
             scope_prefix = "GLOBAL " if data.scope == "global" else ""
             sql = (
                 f"CREATE {scope_prefix}FUNCTION {qualified}({args_sql}) "
-                f"RETURNS {return_type} AS {data.body}"
+                f"RETURNS CAST(({data.body}) AS {return_type})"
             )
         elif data.function_type in ("java", "python"):
             props_sql = self._build_properties(data.properties)

@@ -21,7 +21,7 @@ _ROLE_GRANT = re.compile(r"^\s*GRANT\s+(.+?)\s+TO\s+ROLE\s+", re.IGNORECASE)
 def _grant_rows_allow(rows: list, database: str, schema: str, action: str) -> bool:
     wanted = {"read": {"SELECT", "INSERT", "ALL", "ALL PRIVILEGES"},
               "write": {"INSERT", "ALL", "ALL PRIVILEGES"},
-              "delete": {"ALL", "ALL PRIVILEGES"}}[action]
+              "delete": {"DELETE", "ALL", "ALL PRIVILEGES"}}[action]
     database = database.casefold()
     schema = schema.casefold()
     for row in rows:
@@ -68,7 +68,7 @@ async def check_stage_access(
         )
         allowed = {str(item).upper() for item in effective["object_access"]}
         required = {"read": {"SELECT", "INSERT", "ALL"},
-                    "write": {"INSERT", "ALL"}, "delete": {"ALL"}}[action]
+                    "write": {"INSERT", "ALL"}, "delete": {"DELETE", "ALL"}}[action]
         if not allowed & required:
             raise StageAccessDenied("Stage access denied")
         return

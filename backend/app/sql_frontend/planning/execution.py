@@ -100,6 +100,7 @@ class StageBinding:
     is_directory: bool = False
     access: str = "read"
     scope: tuple[str | None, str | None] = (None, None)
+    has_alias: bool = False
 
 
 @dataclass(frozen=True, slots=True)

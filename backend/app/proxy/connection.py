@@ -225,7 +225,7 @@ class ProxyConnection:
             await self._write_error(
                 ER_ACCESS_DENIED_ERROR,
                 "Authentication service unavailable",
-                sequence=2,
+                sequence=0,
             )
             return False
 

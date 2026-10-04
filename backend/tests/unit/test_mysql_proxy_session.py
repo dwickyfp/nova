@@ -127,6 +127,7 @@ class TestSetStatements:
         [
             ("SET ROLE ACCOUNTADMIN", "ACCOUNTADMIN"),
             ("SET ROLE 'analyst'", "analyst"),
+            ("SET ROLE `ACCOUNTADMIN`", "ACCOUNTADMIN"),
             ("set role accountadmin", "accountadmin"),
             ("USE ROLE finance", "finance"),
             ("SET ROLE DEFAULT", "DEFAULT"),
@@ -170,20 +171,51 @@ class TestSetStatements:
         "statement",
         [
             "SET autocommit = 1",
-            "SET sql_mode = 'STRICT_ALL_TABLES'",
-            "SET time_zone = '+07:00'",
-            "SET foreign_key_checks = 0",
-            "BEGIN",
-            "START TRANSACTION",
-            "COMMIT",
-            "ROLLBACK",
+            "SET @@session.autocommit = 1",
+            "SET SESSION autocommit = ON",
         ],
     )
-    def test_transaction_and_noop_family_is_consumed(self, statement):
+    def test_autocommit_on_compatibility(self, statement):
         session = SessionState()
         result = handle_set_statement(statement, session)
         assert result.handled is True
         assert result.error is None
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            "BEGIN",
+            "START TRANSACTION",
+            "COMMIT",
+            "ROLLBACK",
+            "SET AUTOCOMMIT=0",
+            "SET @@session.autocommit=0",
+            "SET TRANSACTION READ ONLY",
+            "SET foreign_key_checks=0",
+            "/* client */ BEGIN",
+            "SET SESSION AUTOCOMMIT=FALSE",
+        ],
+    )
+    def test_unsupported_session_effects_are_refused(self, statement):
+        result = handle_set_statement(statement, SessionState())
+        assert result.handled is False
+        assert result.error_code == 1235
+        assert "not supported" in result.error
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            "SET time_zone = '+07:00'",
+            "SET @@session.time_zone='+07:00'",
+            "SET sql_mode = 'STRICT_ALL_TABLES'",
+            "SET @@session.query_timeout=10",
+        ],
+    )
+    def test_engine_session_assignments_are_forwarded(self, statement):
+        session = SessionState()
+        result = handle_set_statement(statement, session)
+        assert not result.handled and result.error is None
+        assert not session.user_variables
 
     def test_set_global_is_refused_not_ignored(self):
         """A client that thinks it changed a global and did not is worse off.
@@ -682,3 +714,13 @@ class TestShowDatabasesDetection:
 
     def test_engine_internals_are_hidden(self):
         assert {"information_schema", "sys", "_statistics_"} <= HIDDEN_DATABASES
+
+
+@pytest.mark.parametrize(
+    "statement", ["SET NAMES latin1", "SET CHARSET ascii", "SET NAMES utf8mb4 COLLATE utf8mb4_bin"]
+)
+def test_unsupported_client_encoding_is_not_acknowledged(statement):
+    result = handle_set_statement(statement, SessionState())
+    assert not result.handled
+    assert result.error_code == 1235
+    assert "UTF-8" in result.error

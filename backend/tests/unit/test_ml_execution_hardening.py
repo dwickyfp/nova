@@ -582,6 +582,7 @@ async def test_multiple_predictions_execute_in_exact_projection_order():
     class Service(MLEngineService):
         async def _prepare_user_sql(self, sql, security, **kwargs):
             assert security.tenant == "tenant-A"
+            assert security.security_context_version == 7
             return sql
 
     sql = "SELECT ML_PREDICT('a', x) p1, id, ML_PREDICT('b', x) p2 FROM t"
@@ -600,6 +601,7 @@ async def test_multiple_predictions_execute_in_exact_projection_order():
             username="alice",
             password="password",
             tenant="tenant-A",
+            security_context_version=7,
         )
     finally:
         runtime.executor.close()

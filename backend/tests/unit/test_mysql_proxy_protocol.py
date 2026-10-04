@@ -15,6 +15,7 @@ produces a packet a real client rejects:
 """
 
 import struct
+from datetime import timedelta
 
 import pytest
 
@@ -379,6 +380,22 @@ class TestColumnDefinition:
 
 
 class TestTextRow:
+    @pytest.mark.parametrize(
+        ("duration", "text"),
+        [
+            (timedelta(), b"00:00:00"),
+            (timedelta(days=2, hours=3, minutes=4, seconds=5), b"51:04:05"),
+            (-timedelta(hours=25, minutes=2, seconds=3), b"-25:02:03"),
+            (-timedelta(microseconds=1), b"-00:00:00.000001"),
+            (timedelta(seconds=1, microseconds=234), b"00:00:01.000234"),
+        ],
+    )
+    def test_mysql_time_preserves_sign_total_hours_and_microseconds(self, duration, text):
+        payload = p.build_text_row(
+            [duration], [p.ColumnDefinition(name="t", type_code=p.TYPE_TIME)]
+        )
+        assert p.PacketReader(payload).read_length_encoded_bytes() == text
+
     def test_null_is_the_fb_marker(self):
         columns = [p.ColumnDefinition(name="a")]
         assert p.build_text_row([None], columns) == b"\xfb"

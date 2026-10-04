@@ -15,9 +15,8 @@ which owns exactly three responsibilities and delegates all of them:
   constructor, but this module is the last hop, so it re-runs
   ``redact_sql_credentials`` on anything it is about to place in a response.
 
-``SET`` and ``USE`` never arrive here. They are consumed in
-``app.proxy.session`` because the dialect parser would misread ``SET @x = 1``
-as a stage reference.
+User-variable assignments are consumed in ``app.proxy.session`` before parsing.
+System settings and database selection run on the authenticated engine connection.
 """
 
 from __future__ import annotations
@@ -25,6 +24,9 @@ from __future__ import annotations
 import datetime
 import decimal
 import logging
+import math
+from ast import literal_eval
+from copy import deepcopy
 from dataclasses import dataclass, field
 
 from app.common.sql_guard import redact_sql_credentials
@@ -96,11 +98,10 @@ class WireResult:
         return not self.columns and self.error is None
 
 
-def _column_definition(name: str, sample_values: list) -> ColumnDefinition:
-    """Describe a column using a sample of its values.
-
-    ``QueryResult`` carries column *names* and Python values, not StarRocks type
-    metadata, so the type is inferred from the first non-null value.
+def _column_definition(
+    name: str, sample_values: list, native_description: str | None = None
+) -> ColumnDefinition:
+    """Preserve engine type metadata, inferring types for Nova-generated results.
 
     The type code is **not** cosmetic, which an earlier revision of this
     docstring got wrong. Clients dispatch on it: ``pymysql``'s converters map a
@@ -110,11 +111,28 @@ def _column_definition(name: str, sample_values: list) -> ColumnDefinition:
     the temporal types, and ORMs such as SQLAlchemy and JDBC drivers map columns
     to model fields off this code.
 
-    The branches are ordered from most to least specific because several of
+    The fallback branches are ordered from most to least specific because several of
     these types are subclasses of each other — ``bool`` of ``int``,
     ``datetime`` of ``date`` — and testing the superclass first would collapse
     the narrower type.
     """
+    if native_description:
+        try:
+            type_code, length, scale = literal_eval(native_description)
+            if not isinstance(type_code, int) or not 0 <= type_code <= 255:
+                raise ValueError("Invalid MySQL type")
+            binary = type_code == TYPE_BLOB or any(
+                isinstance(value, (bytes, bytearray)) for value in sample_values
+            )
+            return ColumnDefinition(
+                name=name,
+                type_code=type_code,
+                charset=63 if binary else CHARSET_UTF8,
+                column_length=max(0, min(int(1024 if length is None else length), 2**32 - 1)),
+                decimals=max(0, min(int(scale or 0), 255)),
+            )
+        except (ValueError, TypeError, SyntaxError):
+            pass
     for value in sample_values:
         if value is None:
             continue
@@ -188,6 +206,32 @@ class ProxyQueryExecutor:
         if not statements:
             return WireResult(error="Empty query", error_code=1064)
 
+        if len(statements) > 1:
+            preview = deepcopy(self._session)
+            engine_seen = False
+            for statement in statements:
+                try:
+                    context_change = (
+                        parse_role_statement(statement) is not None
+                        or parse_use_statement(statement) is not None
+                    )
+                except ValueError as exc:
+                    return WireResult(error=str(exc), error_code=1064)
+                if context_change:
+                    return WireResult(
+                        error="Send database and role changes as separate MySQL commands",
+                        error_code=1235,
+                    )
+                inspected = handle_set_statement(statement, preview)
+                if inspected.error:
+                    return WireResult(error=inspected.error, error_code=inspected.error_code)
+                if inspected.handled and engine_seen:
+                    return WireResult(
+                        error="Session assignments after queries require separate MySQL commands",
+                        error_code=1235,
+                    )
+                engine_seen = engine_seen or not inspected.handled
+
         engine_statements: list[str] = []
         for statement in statements:
             try:
@@ -204,14 +248,25 @@ class ProxyQueryExecutor:
                     return activated
                 continue
 
-            use_result = self._handle_use(statement)
+            use_result = await self._handle_use(
+                statement, username=username, connection=connection, session_id=session_id
+            )
             if use_result is not None:
                 return use_result
 
             set_result = handle_set_statement(statement, self._session)
             if set_result.error:
-                return WireResult(error=set_result.error, error_code=1064)
+                return WireResult(error=set_result.error, error_code=set_result.error_code)
             if set_result.handled:
+                if set_result.assignment is not None:
+                    assigned = await self._assign_user_variable(
+                        *set_result.assignment,
+                        username=username,
+                        connection=connection,
+                        session_id=session_id,
+                    )
+                    if assigned.error:
+                        return assigned
                 continue
 
             # The read half of ``SET @x = …``. Substitution happens after the
@@ -265,6 +320,55 @@ class ProxyQueryExecutor:
 
         return self._to_wire(results)
 
+    async def _assign_user_variable(
+        self, name: str, expression: str, *, username: str, connection, session_id: str | None
+    ) -> WireResult:
+        expression = substitute_user_variables(expression, self._session).sql
+        token = CORRELATION_SESSION.set(self._session.correlation)
+        try:
+            results = await query_service.execute_statements(
+                source="mysql_proxy",
+                sql=f"SELECT ({expression}) AS nova_user_variable",
+                username=username,
+                encrypted_password="",
+                database=self._session.database,
+                role=self._session.active_role,
+                security_context_version=self._session.security_context_version,
+                max_rows=2,
+                session_id=session_id,
+                connection=connection,
+            )
+            result = self._to_wire(results)
+            if result.error:
+                return result
+            if len(result.rows) != 1 or len(result.rows[0]) != 1:
+                return WireResult(error="A user-variable assignment requires one scalar value")
+            value = result.rows[0][0]
+            if value is None:
+                literal = "NULL"
+            elif isinstance(value, (bytes, bytearray)):
+                literal = f"unhex('{bytes(value).hex()}')"
+            elif isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+                literal = "'" + value.isoformat() + "'"
+            elif isinstance(value, bool):
+                literal = "TRUE" if value else "FALSE"
+            elif isinstance(value, (int, float, decimal.Decimal)):
+                if (isinstance(value, float) and not math.isfinite(value)) or (
+                    isinstance(value, decimal.Decimal) and not value.is_finite()
+                ):
+                    return WireResult(error="Non-finite user-variable value", error_code=1235)
+                literal = str(value)
+            elif isinstance(value, str):
+                literal = "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
+            else:
+                return WireResult(error="Unsupported user-variable value type", error_code=1235)
+            self._session.user_variables[name] = literal
+            return WireResult()
+        except Exception as exc:
+            return WireResult(error=f"User-variable assignment failed: {type(exc).__name__}")
+        finally:
+            CORRELATION_SESSION.reset(token)
+
     async def _activate_role(self, requested: str, *, username: str, connection) -> WireResult:
         target = self._session.default_role if requested.upper() == "DEFAULT" else requested
         if not target:
@@ -283,12 +387,32 @@ class ProxyQueryExecutor:
         self._session.commit_role(active)
         return WireResult(ok_affected=0)
 
-    def _handle_use(self, statement: str) -> WireResult | None:
+    async def _handle_use(
+        self, statement: str, *, username: str, connection, session_id: str | None
+    ) -> WireResult | None:
         database = parse_use_statement(statement)
         if database is None:
             return None
+        try:
+            results = await query_service.execute_statements(
+                source="mysql_proxy",
+                sql=statement,
+                username=username,
+                encrypted_password="",
+                database=self._session.database,
+                role=self._session.active_role,
+                security_context_version=self._session.security_context_version,
+                max_rows=DEFAULT_MAX_ROWS,
+                session_id=session_id,
+                connection=connection,
+            )
+        except Exception as exc:
+            return WireResult(error=f"Database selection failed: {type(exc).__name__}")
+        result = self._to_wire(results)
+        if result.error:
+            return result
         self._session.set_database(database)
-        return WireResult(ok_affected=0)
+        return result
 
     async def _show_databases(self, *, username: str, connection) -> WireResult:
         """Answer ``SHOW DATABASES`` with Nova-internal databases filtered out.
@@ -348,7 +472,10 @@ class ProxyQueryExecutor:
 
         for result in results:
             if result.error:
-                return WireResult(error=self._safe_message(result.error), error_code=1064)
+                return WireResult(
+                    error=self._safe_message(result.error),
+                    error_code=1235 if result.error_code == "capability_unsupported" else 1064,
+                )
 
         last = results[-1]
         if last.columns:
@@ -356,6 +483,7 @@ class ProxyQueryExecutor:
                 _column_definition(
                     name,
                     [row[index] for row in last.rows[:20]] if last.rows else [],
+                    last.column_types[index] if index < len(last.column_types) else None,
                 )
                 for index, name in enumerate(last.columns)
             ]
