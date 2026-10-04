@@ -1,5 +1,9 @@
 import { api } from "@/lib/api-client";
-import type { ScenarioDefinition, ScenarioValue } from "./scenario-schema";
+import type {
+  ScenarioDefinition,
+  ScenarioDiscovery,
+  ScenarioValue,
+} from "./scenario-schema";
 
 export type SemanticRef = {
   view_id: string;
@@ -269,8 +273,35 @@ export const actionApi = {
     ),
 };
 export const intelligenceApi = {
-  scenarios: (signal?: AbortSignal) =>
-    api.get<{ items: ScenarioDefinition[] }>("/intelligence/scenarios", signal),
+  scenarios: (
+    signal?: AbortSignal,
+    context?: {
+      investigation_id: string;
+      investigation_revision: number;
+      mission_id?: string;
+    },
+  ) => {
+    const query = context
+      ? `?${new URLSearchParams({
+          investigation_id: context.investigation_id,
+          investigation_revision: String(context.investigation_revision),
+          ...(context.mission_id ? { mission_id: context.mission_id } : {}),
+        })}`
+      : "";
+    return api.get<ScenarioDiscovery>(
+      `/intelligence/scenarios${query}`,
+      signal,
+    );
+  },
+  executionTimezone: async (signal?: AbortSignal) => {
+    const capabilities = await api.get<{
+      runtime?: { execution_timezone?: string } | null;
+    }>("/agents/studio/capabilities", signal);
+    const timezone = capabilities.runtime?.execution_timezone;
+    if (typeof timezone !== "string" || !timezone.trim())
+      throw new Error("The configured timezone is unavailable.");
+    return timezone;
+  },
   simulateScenario: (
     definition: ScenarioDefinition,
     parameters: Record<string, ScenarioValue>,

@@ -5,6 +5,7 @@ Mission, semantic compilation, Investigation, Decision, Action readback, Outcome
 and reviewed proposal behavior run through their production owners.
 """
 
+import json
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import replace
@@ -116,6 +117,7 @@ class Journey:
         consent=True,
         previous_answer=False,
         finish_reason="stop",
+        save_state=None,
     ):
         selected = (
             ["semantic_query"] if view else (["execute_business_action"] if tool_call else [])
@@ -204,7 +206,8 @@ class Journey:
                 async for frame in AssistantLoop(
                     provider=provider, registry=registry, system_prompt="Use governed evidence."
                 ).run(
-                    thread=thread, user_content=prompt, context=context, resolve_consent=authorize
+                    thread=thread, user_content=prompt, context=context, resolve_consent=authorize,
+                    save_state=save_state,
                 )
             ]
         )
@@ -966,3 +969,113 @@ async def test_governed_lifecycle_survives_objective_separation_replay_and_next_
     assert next_outcome.scope == Scope.from_user(next_user)
     assert next_outcome.id != outcome.id
     await j.link(mission_id, "outcome", next_outcome, next_user)
+
+
+@pytest.mark.parametrize("wrong_contribution,wrong_causal_status", [
+    (False, False), (True, False), (False, True),
+])
+async def test_same_turn_provider_uses_canonical_hypotheses_after_final_verification(
+    journey, monkeypatch, wrong_contribution, wrong_causal_status,
+):
+    import sys
+
+    observations = []
+
+    class CanonicalProvider(ScriptedProvider):
+        async def stream(self, *, messages, **kwargs):
+            payloads = [json.loads(message["content"])
+                        for message in messages if message["role"] == "tool"]
+            payload = next(item for item in payloads if item.get("canonical_business_result"))
+            canonical = payload["canonical_business_result"]
+            observations.append(deepcopy(canonical))
+            assert canonical["revision"] >= 1 and canonical["news"]["revision"] >= 1
+            assert canonical["baseline_value"] == 100 and canonical["current_value"] == 60
+            assert canonical["delta"] == -40
+            hypothesis = canonical["hypotheses"][0]
+            assert hypothesis["causal_status"] == "arithmetic"
+            assert hypothesis["contribution"] == -40
+            assert hypothesis["contribution_pct"] == 1
+            encoded = json.dumps(canonical)
+            for forbidden in ("scope", "session_id", "security_context_version", "lease",
+                              "request_digest", "dispatch_fence", PRIVATE):
+                assert forbidden not in encoded
+            assert "confidence" not in payload["data"]
+            refs = canonical["numeric_evidence_refs"]
+            contribution = 999 if wrong_contribution else -40
+            text = (f"Revenue changed -40. The arithmetic hypothesis {hypothesis['label']} "
+                    f"contributes {contribution} and 100% of the movement. "
+                    "This decomposition does not establish a causal effect.")
+            causal_statement = ("The hypothesis establishes a supported causal effect."
+                                if wrong_causal_status else "The hypothesis is arithmetic.")
+            text += " " + causal_statement
+            claims = [
+                {"text": "-40", "value": -40, "kind": "cell",
+                 "evidence_id": refs["comparison"], "column": "delta"},
+                {"text": str(contribution), "value": contribution, "kind": "cell",
+                 "evidence_id": refs["hypotheses"], "column": "contribution",
+                 "row_label": hypothesis["label"]},
+                {"text": "100%", "value": 100, "kind": "cell",
+                 "evidence_id": refs["hypotheses"], "column": "contribution_pct",
+                 "row_label": hypothesis["label"]},
+                {"text": causal_statement, "kind": "hypothesis",
+                 "hypothesis_id": hypothesis["id"],
+                 "causal_status": "supported_effect" if wrong_causal_status else "arithmetic"},
+            ]
+            self.script = [text_frame(text + "<claims>" + json.dumps(claims) + "</claims>")]
+            async for frame in super().stream(messages=messages, **kwargs):
+                yield frame
+
+    monkeypatch.setattr(sys.modules[__name__], "ScriptedProvider", CanonicalProvider)
+    checkpoints = []
+
+    async def checkpoint(state):
+        checkpoints.append(deepcopy(state))
+
+    result, context = await journey.turn(
+        "canonical-answer", "Why did revenue fall against the previous period?",
+        journey.user, view="sales", save_state=checkpoint,
+    )
+    final_text = "".join(item["text"] for item in event_payloads(result, "text_delta"))
+    verification = next(step for step in context.steps if step["kind"] == "answer_verification")
+    assert observations and event_payloads(result, "business_result")[0]["investigation"]
+    assert "999" not in final_text
+    assert "establishes a supported causal effect" not in final_text
+    if not wrong_contribution and not wrong_causal_status:
+        assert verification["status"] == "accepted"
+        assert observations[0]["hypotheses"][0]["label"] in final_text
+        assert "-40" in final_text and "100%" in final_text and "arithmetic" in final_text
+    elif wrong_contribution:
+        assert verification["status"] == "unsupported_number"
+    else:
+        assert verification["status"] == "unsupported_hypothesis"
+        assert context.quality_facts["causal_consistency"]["accepted"] is False
+    assert journey.turns[-1][0].calls == 1
+    metric = context.quality_facts["business_canonicalization"][0]
+    assert metric["business_canonicalization_status"] == "created"
+    assert metric["comparison_query_count"] == 2 and metric["driver_query_count"] == 2
+    assert context.quality_facts["semantic_tools"][0]["duration_ms"] >= 0
+    if not wrong_contribution and not wrong_causal_status:
+        completed = next(state for state in reversed(checkpoints) if any(
+            message["role"] == "tool" for message in state["messages"]
+        ))
+        calls_before = len(journey.source.calls)
+        rows_before = set(journey.repo.rows)
+        registry = ToolRegistry()
+        registry.register(SemanticQueryTool())
+        resumed_context = replace(context, steps=None, quality_facts=None,
+                                  business_turn_hook=None)
+        provider = CanonicalProvider([text_frame("unused")], turn_plan={
+            "intent": "semantic_analytics", "tools": ["semantic_query"],
+            "required_tools": ["semantic_query"], "ml_task": None,
+            "work_intent": "INVESTIGATE",
+        })
+        resumed_frames = [frame async for frame in AssistantLoop(
+            provider=provider, registry=registry,
+        ).run(thread=journey.turns[-1][3],
+              user_content="Why did revenue fall against the previous period?",
+              context=resumed_context, resume_state=completed,
+              resolve_consent=AsyncMock(return_value=True))]
+        assert TurnResult(frames=resumed_frames).finish_reason == "stop"
+        assert observations[-1] == observations[0]
+        assert len(journey.source.calls) == calls_before and set(journey.repo.rows) == rows_before
+        assert resumed_context.quality_facts["business_canonicalization"] == [metric]

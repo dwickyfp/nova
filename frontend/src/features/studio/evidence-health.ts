@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { readWorkflowProvenance } from "@/features/assistant/events";
+import type { WorkflowProvenance } from "@/features/assistant/types";
 
 const reference = z.string().max(128).nullable();
 const timestamp = z.string().datetime({ offset: true });
@@ -43,7 +45,36 @@ export type ToolEvidence = {
   toolName: string;
   health: EvidenceHealth;
   envelope?: EvidenceEnvelope;
+  workflowProvenance?: WorkflowProvenance;
+  runId?: string;
+  turnId?: string;
+  sqlPreview?: string;
 };
+
+export function evidenceIdentity(item: Pick<ToolEvidence, "toolCallId" | "runId" | "turnId" | "workflowProvenance">): string {
+  return JSON.stringify([item.workflowProvenance?.run_id ?? item.runId ?? item.turnId ?? null, item.toolCallId]);
+}
+
+export function mergeToolEvidence(items: ToolEvidence[], incoming: ToolEvidence): ToolEvidence[] {
+  const key = evidenceIdentity(incoming);
+  const index = items.findIndex((item) => evidenceIdentity(item) === key);
+  if (index < 0) return [...items, incoming];
+  const previous = items[index];
+  const merged = { ...previous, ...incoming,
+    envelope: incoming.envelope ?? previous.envelope,
+    workflowProvenance: incoming.workflowProvenance ?? previous.workflowProvenance,
+    sqlPreview: incoming.sqlPreview ?? previous.sqlPreview,
+  };
+  if (merged.envelope) merged.envelope = { ...merged.envelope, health: merged.health };
+  return items.map((item, position) => position === index ? merged : item);
+}
+
+export function workflowProvenanceFromTrace(step: unknown): WorkflowProvenance | null {
+  if (!step || typeof step !== "object") return null;
+  const record = step as Record<string, unknown>;
+  const trace = record.trace_detail && typeof record.trace_detail === "object" ? record.trace_detail as Record<string, unknown> : undefined;
+  return readWorkflowProvenance(record.workflow ?? record.workflow_provenance ?? trace?.workflow ?? trace?.workflow_provenance);
+}
 
 const windowBounds = z.object({ start: timestamp, end: timestamp });
 const envelope = z.object({

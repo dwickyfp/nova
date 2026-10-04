@@ -179,10 +179,11 @@ async def test_randomized_analysis_uses_complete_assignment_cohort(studio_engine
         assert result["lower_bound"] == pytest.approx(10 - margin)
         assert result["upper_bound"] == pytest.approx(10 + margin)
         assert result["causal_status"] == "supported_effect" and result["run_id"]
-        assert (
-            result["evidence"][0]["scope"]["principal"]
-            == (await client.request("GET", "auth/me"))["username"]
-        )
+        assert "scope" not in result["evidence"][0]
+        assert "digest" not in result["evidence"][0]
+        assert query.await_args.args[2]["username"] == (
+            await client.request("GET", "auth/me")
+        )["username"]
         assert query.await_count == 1
         body["operation_id"] = uuid4().hex
         body["plan"]["having"] = [{"metric": "outcome", "operator": ">", "value": 10}]
@@ -257,9 +258,7 @@ async def test_bootstrap_and_review_use_production_api_with_restricted_identity(
     memory_id = memories["memories"][0]["memory_id"]
     evidence = await client.request("GET", f"agents/{finance}/memories/{memory_id}/evidence")
     source_ref = evidence["items"][0]["reference"]
-    assert source_ref["scope"] == Scope.from_user(user).model_dump(
-        mode="json", exclude={"session_id"}
-    )
+    assert not {"scope", "digest", "session_id"} & source_ref.keys()
     assert "session_id" not in json.dumps(evidence)
     assert identity["session_id"] not in json.dumps(evidence)
     assert source_ref["source_id"] == config.source_message_id

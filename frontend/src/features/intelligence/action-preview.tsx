@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuthStore } from "@/stores/auth-store";
 import {
   actionApi,
+  intelligenceApi,
   type BusinessAction,
   type ActionAdapterInput,
   type AutomationActionConfiguration,
@@ -34,6 +35,7 @@ export function MonitorActionPreview(
 function ChooseAction(
   props: PreviewProps & { configuration: MonitorConfiguration },
 ) {
+  const epoch = useAuthStore((state) => state.securityEpoch);
   const id = useId();
   const [adapter, setAdapter] = useState("monitor-v1");
   const [title, setTitle] = useState(
@@ -43,9 +45,17 @@ function ChooseAction(
     `Report ${props.configuration.value_column} from the governed Semantic View and describe changes with supporting evidence.`,
   );
   const [schedule, setSchedule] = useState("0 8 * * 1");
-  const [timezone, setTimezone] = useState(
-    props.configuration.timezone ?? "Asia/Jakarta",
-  );
+  const [timezone, setTimezone] = useState(props.configuration.timezone);
+  const configuredTimezone = useQuery({
+    queryKey: ["studio", epoch, "execution-timezone"],
+    queryFn: ({ signal }) => intelligenceApi.executionTimezone(signal),
+    enabled: props.configuration.timezone === undefined,
+    retry: false,
+    gcTime: 0,
+  });
+  const monitorTimezone =
+    props.configuration.timezone ?? configuredTimezone.data ?? "";
+  const reportTimezone = timezone ?? monitorTimezone;
   const [created, setCreated] = useState(false);
   const onCreated = (action: BusinessAction) => {
     setCreated(true);
@@ -55,7 +65,7 @@ function ChooseAction(
     title.trim().length > 0 &&
     prompt.trim().length >= 3 &&
     schedule.trim().length > 0 &&
-    timezone.trim().length > 0;
+    reportTimezone.trim().length > 0;
   return (
     <div className="min-w-0 space-y-4">
       {!created && (
@@ -122,7 +132,7 @@ function ChooseAction(
                   <Label htmlFor={`${id}-timezone`}>Timezone</Label>
                   <Input
                     id={`${id}-timezone`}
-                    value={timezone}
+                    value={reportTimezone}
                     onChange={(event) => setTimezone(event.target.value)}
                     maxLength={64}
                   />
@@ -130,6 +140,27 @@ function ChooseAction(
               </div>
             </div>
           )}
+          {props.configuration.timezone === undefined &&
+            (adapter === "monitor-v1" || timezone === undefined) &&
+            !monitorTimezone &&
+            (configuredTimezone.isError ? (
+              <div role="alert" className="space-y-2 text-sm">
+                <p className="text-destructive">
+                  {configuredTimezone.error.message}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void configuredTimezone.refetch()}
+                >
+                  Retry timezone
+                </Button>
+              </div>
+            ) : (
+              <p role="status" className="text-sm">
+                Loading configured timezone…
+              </p>
+            ))}
         </>
       )}
       {adapter === "automation-v1" ? (
@@ -146,7 +177,7 @@ function ChooseAction(
             prompt,
             schedule_kind: "cron",
             schedule_expr: schedule,
-            timezone,
+            timezone: reportTimezone,
             enabled: true,
             delivery: "studio",
           }}
@@ -156,6 +187,11 @@ function ChooseAction(
           key="monitor-v1"
           {...props}
           adapter_id="monitor-v1"
+          ready={Boolean(monitorTimezone.trim())}
+          configuration={{
+            ...props.configuration,
+            timezone: monitorTimezone,
+          }}
           onCreated={onCreated}
         />
       )}

@@ -81,6 +81,12 @@ export type ContentPosition = {
   content_id?: string;
 };
 
+export type WorkflowProvenance = {
+  mission_id: string | null;
+  run_id: string | null;
+  root_run_id: string | null;
+};
+
 export type AssistantEvent = (
   | { type: "mission_updated"; mission: Record<string, unknown> }
   | {
@@ -96,6 +102,8 @@ export type AssistantEvent = (
       tool_call_id: string;
       tool_name?: string;
       payload: unknown;
+      workflow?: WorkflowProvenance;
+      workflow_provenance?: WorkflowProvenance;
     }
   | {
       type: "role_changed";

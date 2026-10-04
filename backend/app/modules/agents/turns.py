@@ -13,6 +13,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.database import configured_timezone
+
 Consent = Callable[[Any, str], Awaitable[bool]]
 
 
@@ -38,6 +40,7 @@ async def run_agent_turn(
     thread_id: str,
     resolve_consent: Consent = read_only_consent,
     title: str = "",
+    execution_timezone: str | None = None,
 ) -> TurnOutput:
     from app.modules.agents.semantic.access import bound_view_ids
     from app.modules.agents.service import agent_service, loop_limits
@@ -50,6 +53,9 @@ async def run_agent_turn(
     limits = loop_limits(agent)
     context = LoopContext(
         user_name=user["username"],
+        execution_timezone=(
+            configured_timezone() if execution_timezone is None else execution_timezone
+        ),
         user=dict(user),
         thread_id=thread_id,
         agent_id=agent["agent_id"],

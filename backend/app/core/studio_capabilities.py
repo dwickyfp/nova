@@ -34,11 +34,14 @@ class StudioRuntimeCapabilities(BaseModel):
     actions: StudioFeatureCapability
     quality: StudioFeatureCapability
     analysis_workspace: StudioFeatureCapability
+    execution_timezone: str
 
 
 def effective_studio_capabilities(
     config: object | None = None, *, analysis_executor_isolated: bool = False
 ) -> StudioRuntimeCapabilities:
+    from app.core.database import configured_timezone
+
     if config is None:
         from app.core.config import settings
 
@@ -73,6 +76,7 @@ def effective_studio_capabilities(
         analysis_workspace=feature(
             STUDIO_FLAG_NAMES[3], executor=analysis_executor_isolated is True
         ),
+        execution_timezone=configured_timezone(),
     )
 
 

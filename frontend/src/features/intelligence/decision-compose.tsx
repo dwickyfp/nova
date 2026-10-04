@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import {
   intelligenceApi,
@@ -20,11 +20,12 @@ import {
 } from "./lifecycle-api";
 import { ScenarioFields } from "./scenario-fields";
 import {
-  legacyUnitEconomics,
   scenarioDefaults,
   scenarioParameters,
+  scenarioReasons,
   validateScenarioSchema,
   type ScenarioDefinition,
+  type ScenarioResolution,
 } from "./scenario-schema";
 
 type Props = {
@@ -44,7 +45,7 @@ export function DecisionCompose(props: Props) {
   const epoch = useAuthStore((state) => state.securityEpoch);
   return (
     <DecisionWorkspace
-      key={`${epoch}:${props.investigation.id}`}
+      key={`${epoch}:${props.investigation.id}:${props.investigation.revision}:${props.missionId ?? ""}`}
       {...props}
       epoch={epoch}
     />
@@ -55,20 +56,37 @@ function DecisionWorkspace({ epoch, ...props }: Props & { epoch: number }) {
   const [open, setOpen] = useState(false);
   const [definitionId, setDefinitionId] = useState("");
   const definitions = useQuery({
-    queryKey: ["intelligence", epoch, "scenarios"],
-    queryFn: ({ signal }) => intelligenceApi.scenarios(signal),
+    queryKey: [
+      "intelligence",
+      epoch,
+      "scenarios",
+      props.investigation.id,
+      props.investigation.revision,
+      props.missionId ?? null,
+    ],
+    queryFn: ({ signal }) =>
+      intelligenceApi.scenarios(signal, {
+        investigation_id: props.investigation.id,
+        investigation_revision: props.investigation.revision,
+        ...(props.missionId ? { mission_id: props.missionId } : {}),
+      }),
     enabled: open,
     retry: false,
     gcTime: 0,
   });
-  const legacy =
-    definitions.isError &&
-    definitions.error instanceof ApiError &&
-    [404, 503].includes(definitions.error.status);
-  const items = legacy
-    ? [legacyUnitEconomics]
-    : (definitions.data?.items ?? []);
+  const compatibility = definitions.data?.compatibility;
+  const items = (definitions.data?.items ?? []).filter((item) =>
+    compatibility?.some(
+      (result) =>
+        result.compatible &&
+        result.scenario.id === item.id &&
+        result.scenario.version === item.version,
+    ),
+  );
   const definition = items.find((item) => item.id === definitionId) ?? items[0];
+  const resolved = compatibility?.find(
+    (item) => item.scenario.id === definition?.id,
+  )?.resolved;
   const id = useId();
   return (
     <details
@@ -85,7 +103,7 @@ function DecisionWorkspace({ epoch, ...props }: Props & { epoch: number }) {
             <p role="status" className="text-sm">
               Loading registered scenarios…
             </p>
-          ) : definitions.isError && !legacy ? (
+          ) : definitions.isError ? (
             <div role="alert" className="space-y-2">
               <p className="text-sm text-destructive">
                 Registered scenarios could not be loaded:{" "}
@@ -99,10 +117,15 @@ function DecisionWorkspace({ epoch, ...props }: Props & { epoch: number }) {
                 Retry scenarios
               </Button>
             </div>
-          ) : !definition ? (
+          ) : !compatibility ? (
+            <p role="alert" className="text-sm text-destructive">
+              This deployment does not report scenario compatibility. Refresh
+              after Nova is updated.
+            </p>
+          ) : !definition || !resolved ? (
             <p className="text-sm text-muted-foreground">
-              No scenario models are registered. A registered model is required
-              to compare decision options.
+              No registered scenarios are compatible with this investigation.
+              Review the target metric and required evidence.
             </p>
           ) : (
             <>
@@ -126,17 +149,34 @@ function DecisionWorkspace({ epoch, ...props }: Props & { epoch: number }) {
                   </Select>
                 </div>
               )}
-              {legacy && (
-                <p className="text-sm text-muted-foreground">
-                  This deployment uses the existing unit-economics scenario.
-                </p>
-              )}
               <ScenarioDecisionForm
                 key={`${definition.id}:${definition.version}`}
                 {...props}
                 definition={definition}
+                resolved={resolved}
               />
             </>
+          )}
+          {compatibility?.some((item) => !item.compatible) && (
+            <ul
+              aria-label="Unavailable scenarios"
+              className="space-y-2 text-sm text-muted-foreground"
+            >
+              {compatibility
+                .filter((item) => !item.compatible)
+                .map((item) => (
+                  <li key={item.scenario.id}>
+                    {item.scenario.title}:{" "}
+                    {item.reason_codes
+                      .map(
+                        (reason) =>
+                          scenarioReasons[reason] ??
+                          "This model is unavailable for the investigation.",
+                      )
+                      .join(" ")}
+                  </li>
+                ))}
+            </ul>
           )}
         </div>
       )}
@@ -147,7 +187,7 @@ function DecisionWorkspace({ epoch, ...props }: Props & { epoch: number }) {
 function ScenarioDecisionForm({
   definition,
   ...props
-}: Props & { definition: ScenarioDefinition }) {
+}: Props & { definition: ScenarioDefinition; resolved: ScenarioResolution }) {
   let schemas;
   try {
     schemas = {
@@ -186,19 +226,22 @@ function DecisionForm({
   investigation,
   onCreated,
   definition,
+  resolved,
   sharedSchema,
   optionSchema,
   missionId,
   threadId,
 }: Props & {
   definition: ScenarioDefinition;
+  resolved: ScenarioResolution;
   sharedSchema: ScenarioDefinition["shared_input_schema"];
   optionSchema: ScenarioDefinition["input_schema"];
 }) {
+  const epoch = useAuthStore((state) => state.securityEpoch);
   const id = useId();
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
-  const [currency, setCurrency] = useState("IDR");
+  const [currency, setCurrency] = useState(resolved.currency ?? "");
   const [baseline, setBaseline] = useState(() =>
     scenarioDefaults(sharedSchema),
   );
@@ -229,10 +272,10 @@ function DecisionForm({
       const body = {
         title: title.trim(),
         investigation_id: investigation.id,
+        investigation_revision: investigation.revision,
         ...(missionId
           ? {
               mission_id: missionId,
-              investigation_revision: investigation.revision,
             }
           : {}),
         ...(threadId ? { thread_id: threadId } : {}),
@@ -260,7 +303,10 @@ function DecisionForm({
         operation_id: pendingOperation.current.id,
       });
     },
-    onSuccess: (decision) => onCreated(decision.id),
+    onSuccess: (decision) => {
+      if (useAuthStore.getState().securityEpoch === epoch)
+        onCreated(decision.id);
+    },
   });
   return (
     <form
@@ -274,6 +320,11 @@ function DecisionForm({
         {definition.description} The server validates these assumptions against
         the observed result ({news.after}) and published target metric. The
         outcome period uses the same duration as this incident.
+      </p>
+      <p className="break-words text-sm text-muted-foreground">
+        Target metric: {resolved.target_metric}. Unit:{" "}
+        {resolved.unit ?? "Unspecified"}.
+        {resolved.currency ? ` Currency: ${resolved.currency}.` : ""}
       </p>
       <div className="space-y-2">
         <Label htmlFor={`${id}-title`}>Decision title</Label>
@@ -311,6 +362,9 @@ function DecisionForm({
               maxLength={3}
               pattern="[A-Z]{3}"
               value={currency}
+              readOnly={
+                resolved.currency_readonly || !resolved.currency_input_allowed
+              }
               onChange={(event) =>
                 setCurrency(event.target.value.toUpperCase())
               }

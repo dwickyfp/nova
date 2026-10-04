@@ -2,6 +2,27 @@ import { describe, expect, it } from "vitest";
 import { parseAssistantEvent, readSseFrames } from "./events";
 
 describe("parseAssistantEvent", () => {
+  it("preserves bounded workflow provenance on both evidence event kinds", () => {
+    const workflow = { mission_id: "mission-a", run_id: "child-run", root_run_id: "root-run" };
+    for (const type of ["evidence_health", "evidence_envelope"]) {
+      const event = { tool_call_id: "same-call", payload: { schema_version: 1 }, workflow, run_id: "root-run", sequence: 7 };
+      expect(parseAssistantEvent(type, JSON.stringify(event))).toEqual({ ...event, type, tool_name: undefined });
+      expect(parseAssistantEvent(type, JSON.stringify({ ...event, workflow: { ...workflow, secret: "private" } })))
+        .toMatchObject({ workflow });
+      expect(JSON.stringify(parseAssistantEvent(type, JSON.stringify({ ...event, workflow: { ...workflow, secret: "private" } })))).not.toContain("private");
+      expect(parseAssistantEvent(type, JSON.stringify({ ...event, workflow: { mission_id: "forged" } }))).toBeNull();
+      expect(parseAssistantEvent(type, JSON.stringify({ ...event, workflow: { ...workflow, run_id: 3 } }))).toBeNull();
+      expect(parseAssistantEvent(type, JSON.stringify({ ...event, workflow: { mission_id: null, run_id: null, root_run_id: null } })))
+        .toMatchObject({ workflow: { mission_id: null, run_id: null, root_run_id: null } });
+    }
+    expect(parseAssistantEvent("evidence_envelope", JSON.stringify({ tool_call_id: "legacy", payload: {} }))).toMatchObject({ type: "evidence_envelope" });
+  });
+  it("normalizes the earlier provenance key and rejects malformed canonical workflow", () => {
+    const workflow = { mission_id: "mission-a", run_id: "run-a", root_run_id: null };
+    const event = { tool_call_id: "query", payload: {}, workflow_provenance: workflow };
+    expect(parseAssistantEvent("evidence_envelope", JSON.stringify(event))).toEqual({ type: "evidence_envelope", tool_call_id: "query", tool_name: undefined, payload: {}, workflow });
+    expect(parseAssistantEvent("evidence_envelope", JSON.stringify({ ...event, workflow: { mission_id: "invalid" } }))).toBeNull();
+  });
   it("preserves workflow projections and evidence without accepting malformed envelopes", () => {
     const mission = { mission_id: "m1", thread_id: "t1", revision: 2 };
     expect(parseAssistantEvent("mission_updated", JSON.stringify({ mission, run_id: "r1", sequence: 4 })))

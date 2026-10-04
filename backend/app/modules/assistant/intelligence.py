@@ -209,6 +209,7 @@ class EvidenceTracker:
             tool in {
                 "semantic_query", "semantic_view_query", "query_execute", "diagnose_change",
                 "compute_metrics", "analyze_documents",
+                "canonical_investigation",
             }
             and table
         ):
@@ -220,6 +221,51 @@ class EvidenceTracker:
             if len(self._tables) > 8:
                 self._tables.pop(next(iter(self._tables)))
         return evidence
+
+    def add_business_result(self, observation: dict, *, workflow: dict) -> dict:
+        """Register canonical numbers with the existing final-answer verifier."""
+        from copy import deepcopy
+
+        observation = deepcopy(observation)
+        if observation.get("kind") != "investigation":
+            return observation
+        identity = (observation.get("id"), observation.get("revision"))
+        prior = next((item.metadata.get("canonical_business_result") for item in self._items
+                      if item.tool == "canonical_investigation"
+                      and (item.metadata.get("canonical_business_result", {}).get("id"),
+                           item.metadata.get("canonical_business_result", {}).get("revision"))
+                      == identity), None)
+        if prior:
+            observation["numeric_evidence_refs"] = prior.get("numeric_evidence_refs", {})
+            return observation
+        common = {"workflow": workflow, "evidence_kind": "canonical"}
+        comparison = self.add(
+            "canonical_investigation", "Pinned Investigation comparison facts",
+            metadata=dict(common), table={
+                "columns": ["metric", "baseline_value", "current_value", "delta",
+                            "delta_pct", "residual"],
+                "rows": [[observation.get(name) for name in (
+                    "target_metric", "baseline_value", "current_value", "delta",
+                    "delta_pct", "residual",
+                )]],
+            },
+        )
+        refs = {"comparison": comparison.evidence_id}
+        hypotheses = observation.get("hypotheses") or []
+        if hypotheses:
+            facts = self.add(
+                "canonical_investigation", "Pinned Investigation hypothesis contributions",
+                metadata=dict(common), table={
+                    "columns": ["hypothesis", "contribution", "contribution_pct"],
+                    "rows": [[item.get(name) for name in (
+                        "label", "contribution", "contribution_pct",
+                    )] for item in hypotheses[:10]],
+                },
+            )
+            refs["hypotheses"] = facts.evidence_id
+        observation["numeric_evidence_refs"] = refs
+        comparison.metadata["canonical_business_result"] = observation
+        return observation
 
     @property
     def items(self) -> tuple[Evidence, ...]:
@@ -243,6 +289,7 @@ class EvidenceTracker:
             return
         source = participant.get("evidence") or {}
         tables = source.get("tables") or {}
+        imported = {}
         for item in source.get("items", [])[-8:]:
             table = tables.get(item["evidence_id"])
             source_key = f"{participant['current_turn_id']}:{item['evidence_id']}"
@@ -250,12 +297,22 @@ class EvidenceTracker:
                 e.metadata.get("source_key") == source_key for e in self._items
             ):
                 continue
-            self.add(
+            imported[item["evidence_id"]] = self.add(
                 item["tool"], item["summary"], table=table,
                 metadata={**item.get("metadata", {}), "source_key": source_key,
                           "source_turn_id": participant["current_turn_id"],
                           "source_agent_id": participant["agent_id"]},
             )
+        for item in imported.values():
+            canonical = item.metadata.get("canonical_business_result")
+            if not isinstance(canonical, dict):
+                continue
+            refs = {name: imported[identifier].evidence_id
+                    for name, identifier in canonical.get("numeric_evidence_refs", {}).items()
+                    if identifier in imported}
+            item.metadata["canonical_business_result"] = {
+                **canonical, "numeric_evidence_refs": refs,
+            }
 
     def composer_context(self) -> str:
         payload = [asdict(item) for item in self._items]

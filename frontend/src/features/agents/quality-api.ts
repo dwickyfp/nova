@@ -96,7 +96,24 @@ export type QualityResult = {
   trace?: {
     counts?: Partial<Record<QualityCount, number>>;
     duration_ms?: number;
+    facts?: {
+      semantic_tools?: { tool: string; duration_ms: number }[];
+      business_canonicalization?: CanonicalizationCost[];
+    };
   };
+};
+export type CanonicalizationCost = {
+  business_canonicalization_status:
+    "created" | "reused" | "incomplete" | "skipped" | "failed";
+  business_canonicalization_duration_ms: number;
+  query_duration_ms: number;
+  persistence_duration_ms: number;
+  automatic_investigation_query_count: number;
+  comparison_query_count: number;
+  driver_query_count: number;
+  query_cache_reuse_count: number;
+  canonical_investigation_created: boolean;
+  canonical_investigation_reused: boolean;
 };
 export type QualityRun = {
   cases?: QualityCase[];

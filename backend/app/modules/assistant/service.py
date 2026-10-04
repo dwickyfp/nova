@@ -34,10 +34,15 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from app.core.database import configured_timezone
 from app.modules.assistant import events
 from app.modules.assistant.answer_contract import CLAIMS_INSTRUCTION, split_claims
 from app.modules.assistant.app_context import NoveAppContext, resolve_app_references
 from app.modules.assistant.attachments import provider_user_content
+from app.modules.assistant.business_observation import (
+    BusinessResultHookResult,
+    provider_history_content,
+)
 from app.modules.assistant.consent import ConsentApproval
 from app.modules.assistant.context import (
     SUMMARY_INSTRUCTIONS,
@@ -78,6 +83,7 @@ from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.security import secured_thread, session_security
 from app.modules.assistant.state import AssistantThread
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry, requires_consent
+from app.modules.assistant.workflow_provenance import workflow_provenance
 
 logger = logging.getLogger(__name__)
 
@@ -153,9 +159,11 @@ class LoopContext:
     business_time_hook: Any = None
     business_clock_hook: Any = None
     execution_now: datetime | None = None
-    execution_timezone: str = "Asia/Jakarta"
+    execution_timezone: str = field(default_factory=configured_timezone)
     execution_time_sink: Any = None
     mission_id: str | None = None
+    root_run_id: str | None = None
+    effective_work_intent: str | None = None
     requested_work_intent: str | None = None
     start_new_mission: bool = False
     business_cancelled: Any = None
@@ -525,7 +533,9 @@ class AssistantLoop:
                         {
                             "role": "tool",
                             "tool_call_id": message.tool_call.tool_call_id,
-                            "content": message.content,
+                            "content": provider_history_content(
+                                message.content, tool_name=message.tool_call.tool_name,
+                            ),
                         }
                     )
                 else:
@@ -533,7 +543,7 @@ class AssistantLoop:
                         {
                             "role": "assistant",
                             "content": "<TOOL_RESULT_DATA>"
-                            + message.content
+                            + provider_history_content(message.content)
                             + "</TOOL_RESULT_DATA>",
                         }
                     )
@@ -915,6 +925,7 @@ class AssistantLoop:
                 "kind": "runtime_decision", "planner_fallback": turn_plan.route.intent.value,
                 "status": "done",
             })
+        context.effective_work_intent = context.requested_work_intent or turn_plan.work_intent
         if callable(context.business_turn_hook):
             mission = await context.business_turn_hook(turn_plan, context)
             if context.mission_continuation:
@@ -922,8 +933,12 @@ class AssistantLoop:
                     "continuation": context.mission_continuation,
                 })
             if mission:
+                from app.modules.agents.public_projections import public_mission
+
                 context.mission_id = mission["mission_id"]
-                yield events.format_sse("mission_updated", {"mission": mission})
+                yield events.format_sse("mission_updated", {
+                    "mission": public_mission(mission).model_dump(mode="json"),
+                })
         route = turn_plan.route
         context.route = route.as_dict()
         context.intent_frame = turn_plan.intent_frame
@@ -1074,7 +1089,9 @@ class AssistantLoop:
 
         first_iteration = 0
         if resume_state:
-            messages = resume_state["messages"]
+            messages = [{**message, "content": provider_history_content(message["content"])}
+                        if isinstance(message.get("content"), str) else message
+                        for message in resume_state["messages"]]
             seen_calls = resume_state.get("seen_calls", {})
             tool_uses = resume_state.get("tool_uses", {})
             context.usage = resume_state.get("usage")
@@ -1088,6 +1105,7 @@ class AssistantLoop:
             composing_final = bool(resume_state.get("composing_final"))
             clarification_requested = bool(resume_state.get("clarification_requested"))
             repairs = RepairBudget(resume_state.get("repairs"))
+            context.quality_facts.update(resume_state.get("quality_facts", {}))
             first_iteration = int(resume_state.get("iteration", 0))
 
         for _iteration in range(first_iteration, self._max_iterations):
@@ -1117,6 +1135,7 @@ class AssistantLoop:
                     "pending_artifacts": [asdict(item) for item in pending_artifacts],
                     "composing_final": composing_final, "repairs": repairs.used,
                     "clarification_requested": clarification_requested,
+                    "quality_facts": context.quality_facts,
                     "safe_to_resume": True,
                 })
             if cancelled() or (
@@ -1480,6 +1499,10 @@ class AssistantLoop:
                         compares_groups=bool(
                             getattr(context.intent_frame, "compares_groups", False)
                         ),
+                        canonical_observations=tuple(
+                            item.metadata["canonical_business_result"] for item in evidence.items
+                            if item.metadata.get("canonical_business_result")
+                        ),
                     )
                     answer_check = verified_answer.check
                     comparison_requested = verified_answer.comparison
@@ -1500,7 +1523,10 @@ class AssistantLoop:
                         context,
                         {
                             "kind": "answer_verification",
-                            "status": "accepted" if answer_check.accepted else "unsupported_number",
+                            "status": "accepted" if answer_check.accepted else (
+                                "unsupported_hypothesis" if answer_check.unsupported_hypotheses
+                                else "unsupported_number"
+                            ),
                             "claims_present": answer_claims is not None,
                             "language": language,
                             "claim_count": len(answer_check.claims),
@@ -1512,6 +1538,9 @@ class AssistantLoop:
                             # The literals themselves (already the user's own data) so a
                             # reviewer can see which numbers were removed and why.
                             "unsupported": list(answer_check.unsupported)[:10],
+                            "unsupported_hypothesis_count": len(
+                                answer_check.unsupported_hypotheses
+                            ),
                             "comparison_rendered": verified_answer.replaced,
                             "comparison_requested": comparison_requested,
                             "active_role": (
@@ -1525,12 +1554,17 @@ class AssistantLoop:
                         },
                     )
                     context.quality_facts["numeric_consistency"] = {
-                        "accepted": answer_check.accepted,
+                        "accepted": not answer_check.unsupported,
                         "unsupported_count": len(answer_check.unsupported),
                         "claims": [{"text": claim.text, "evidence_id": claim.evidence_id,
                                     "column": claim.column, "supported": bool(claim.evidence_id)}
                                    for claim in answer_check.claims],
                     }
+                    if any(claim.kind == "hypothesis" for claim in answer_claims or ()):
+                        context.quality_facts["causal_consistency"] = {
+                            "accepted": not answer_check.unsupported_hypotheses,
+                            "unsupported_count": len(answer_check.unsupported_hypotheses),
+                        }
                     answer_text = verified_answer.text
                 context.quality_facts["task_completeness"] = {
                     "completed": not denials and not missing_metrics,
@@ -1998,12 +2032,14 @@ class AssistantLoop:
                         "tool_call_id": invocation.tool_call_id,
                         "tool_name": invocation.tool_name,
                         "payload": health,
+                        "workflow": workflow_provenance(context),
                     })
                 envelope = outcome.trace_detail.get("evidence_envelope")
                 if envelope:
                     yield events.format_sse("evidence_envelope", {
                         "tool_call_id": invocation.tool_call_id,
                         "tool_name": invocation.tool_name, "payload": envelope,
+                        "workflow": workflow_provenance(context),
                     })
                 business = outcome.trace_detail.get("business_result")
                 if business:
@@ -2197,6 +2233,7 @@ class AssistantLoop:
                 else ""
             )
             evidence_metadata = dict(outcome.metadata or outcome.trace_detail or {})
+            evidence_metadata["workflow"] = workflow_provenance(context)
             if invocation.tool_name == "query_execute":
                 evidence_metadata["evidence_kind"] = sql_evidence_kind(
                     str(invocation.arguments.get("sql") or "")
@@ -2223,6 +2260,17 @@ class AssistantLoop:
                 metadata=evidence_metadata,
                 table=outcome.table,
             )
+            if outcome.business_hook_result and outcome.business_hook_result.provider_observation:
+                observation = evidence.add_business_result(
+                    outcome.business_hook_result.provider_observation,
+                    workflow=workflow_provenance(context),
+                )
+                hook_result = replace(outcome.business_hook_result,
+                                      provider_observation=observation)
+                outcome = replace(outcome, business_hook_result=hook_result,
+                                  trace_detail={**(outcome.trace_detail or {}),
+                                                "canonical_business_result": observation})
+                _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail)
             if invocation.tool_name in {"list_agents", "wait_agent"} and isinstance(
                 outcome.data, dict
             ):
@@ -2355,7 +2403,16 @@ class AssistantLoop:
                 error="Pinned release resources changed or could not be authorized; "
                 "evaluate a new draft",
             )
+        semantic_started = time.monotonic()
         outcome = await tool.run(invocation, context)
+        if invocation.tool_name in {"semantic_query", "semantic_view_query"}:
+            duration = round(min(86_400_000,
+                                 max(0, (time.monotonic() - semantic_started) * 1000)), 3)
+            outcome = replace(outcome, trace_detail={**(outcome.trace_detail or {}),
+                                                    "semantic_tool_duration_ms": duration})
+            observations = context.quality_facts.setdefault("semantic_tools", [])
+            if len(observations) < 64:
+                observations.append({"tool": invocation.tool_name, "duration_ms": duration})
         if outcome.error_class == "RELEASE_DRIFT":
             return outcome
         if context.release_manifest and invocation.tool_name in {"ai_search", "feature_lookup"}:
@@ -2370,9 +2427,21 @@ class AssistantLoop:
         if outcome.ok and callable(context.business_result_hook) and outcome.business_result:
             result = await context.business_result_hook(invocation, outcome, context)
             if result:
-                outcome = replace(outcome, trace_detail={
-                    **(outcome.trace_detail or {}), "business_result": result,
-                })
+                if not isinstance(result, BusinessResultHookResult):
+                    raise TypeError("Business hooks must return BusinessResultHookResult")
+                trace = {**(outcome.trace_detail or {}), **(result.trace_metadata or {})}
+                if result.public_event:
+                    trace["business_result"] = result.public_event
+                if result.provider_observation:
+                    trace["canonical_business_result"] = result.provider_observation
+                outcome = replace(outcome, business_hook_result=result, trace_detail=trace)
+                if trace.get("business_canonicalization"):
+                    observations = context.quality_facts.setdefault("business_canonicalization", [])
+                    if len(observations) < 64:
+                        observations.append(trace["business_canonicalization"])
+        if outcome.trace_detail:
+            outcome = replace(outcome, trace_detail={**outcome.trace_detail,
+                                                    "workflow": workflow_provenance(context)})
         return outcome
 
     def _prefetch(
@@ -2390,9 +2459,7 @@ class AssistantLoop:
         call produces are eligible. The loop still validates, records, and
         orders each call when it reaches it; this only overlaps the waiting.
         """
-        from app.core.config import settings
-
-        if context.mission_id or settings.STUDIO_BUSINESS_WORKFLOW_ENABLED:
+        if context.mission_id or callable(context.business_result_hook):
             return None
         invocation = self._parse_tool_call(call)
         if invocation is None or invocation.tool_name not in PARALLEL_SAFE_TOOLS:

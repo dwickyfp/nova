@@ -37,6 +37,7 @@ from typing import Any
 
 from app.common.sql_guard import redact_sql_credentials
 from app.core.config import settings
+from app.core.database import configured_timezone
 from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.semantic.compiler import SemanticCompiler
@@ -248,10 +249,12 @@ class SemanticQueryTool:
                 execution_now = getattr(context, "execution_now", None) or datetime.now(UTC)
                 if callable(getattr(context, "business_clock_hook", None)):
                     execution_now = await context.business_clock_hook(invocation, context)
+                execution_timezone = getattr(context, "execution_timezone", None)
                 time_context = resolve_execution_time(
                     plan.time.range, plan.time.compare,
                     now=execution_now,
-                    timezone=getattr(context, "execution_timezone", "Asia/Jakarta"),
+                    timezone=(configured_timezone() if execution_timezone is None
+                              else execution_timezone),
                 )
             compiled = self._compiler.compile(semantic_ir, plan, time_context=time_context)
         except AssistantProviderError as exc:
@@ -508,7 +511,6 @@ class SemanticQueryTool:
                 "semantic_plan": plan.as_dict(),
                 "sql": safe_sql,
                 "row_count": row_count,
-                "confidence": confidence,
             },
             evidence={
                 "source": "nova_semantic_view",

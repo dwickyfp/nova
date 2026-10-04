@@ -2,7 +2,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import type { SemanticRef } from "@/features/intelligence/lifecycle-api";
-import type { ToolEvidence } from "./evidence-health";
+import { evidenceIdentity, type ToolEvidence } from "./evidence-health";
 
 const readable = (value: string) => value.split("_").join(" ");
 const causal: Record<ToolEvidence["health"]["facts"]["causal_strength"], string> = {
@@ -12,24 +12,30 @@ const causal: Record<ToolEvidence["health"]["facts"]["causal_strength"], string>
   unknown: "Causal strength unknown",
 };
 
-export function EvidencePanel({ evidence, sqlPreviews = {}, onSelectContext }: {
+export function EvidencePanel({ evidence, sqlPreviews = {}, onSelectContext, missionNames = {}, scope = "conversation" }: {
   evidence: ToolEvidence[];
   sqlPreviews?: Record<string, string>;
   onSelectContext?: (semantic: SemanticRef, metric: string) => void;
+  missionNames?: Record<string, string>;
+  scope?: "mission" | "conversation";
 }) {
   if (!evidence.length) return <EmptyState
-    title="Evidence has not been assessed"
-    description="Run a governed investigation or query. Older answers may not include an evidence assessment."
+    title={scope === "mission" ? "No evidence recorded for this mission" : "Evidence has not been assessed"}
+    description={scope === "mission" ? "Run a governed query in this mission, or select All conversation evidence to inspect other turns." : "Run a governed investigation or query. Older answers may not include an evidence assessment."}
   />;
   return <section aria-label="Evidence assessments" className="min-w-0 space-y-4">
     <p className="text-xs text-muted-foreground">Evidence health reflects recorded execution and sources. Causal strength is assessed separately.</p>
-    {evidence.map(({ toolCallId, toolName, health, envelope }) => <article key={toolCallId} className="min-w-0 space-y-3 rounded-md border border-border bg-card p-3">
+    {evidence.map((item) => {
+      const { toolCallId, toolName, health, envelope, workflowProvenance } = item;
+      const preview = item.sqlPreview ?? sqlPreviews[evidenceIdentity(item)] ?? (!item.runId && !workflowProvenance?.run_id ? sqlPreviews[toolCallId] : undefined);
+      return <article key={evidenceIdentity(item)} className="min-w-0 space-y-3 rounded-md border border-border bg-card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="break-words text-sm font-medium">{readable(toolName)}</h3>
         <StatusBadge tone={health.label === "strong" ? "success" : health.label === "insufficient" ? "danger" : health.label === "limited" ? "warning" : "neutral"}>
           {health.label[0].toUpperCase() + health.label.slice(1)} evidence
         </StatusBadge>
       </div>
+      <p className="break-words text-xs text-muted-foreground">{workflowProvenance?.mission_id ? `Mission: ${missionNames[workflowProvenance.mission_id] ?? "Recorded mission"}` : workflowProvenance ? "Conversation evidence" : "Conversation evidence · Mission provenance was not recorded"}</p>
       <dl className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-2 text-xs">
         {[
           ["Definition", readable(health.facts.semantic_grounding)],
@@ -59,11 +65,11 @@ export function EvidencePanel({ evidence, sqlPreviews = {}, onSelectContext }: {
         {health.reasons.map((reason) => <li key={reason} className="break-words">{readable(reason)}</li>)}
       </ul>}
       {health.unknown_signals.length > 0 && <p className="break-words text-xs text-muted-foreground">Unknown: {health.unknown_signals.map(readable).join(", ")}</p>}
-      {sqlPreviews[toolCallId] && <details className="min-w-0 rounded border p-2">
+      {preview && <details className="min-w-0 rounded border p-2">
         <summary className="min-h-11 cursor-pointer content-center text-xs font-medium focus-visible:outline focus-visible:outline-ring">SQL details</summary>
-        <pre className="mt-2 max-w-full overflow-x-auto text-xs">{sqlPreviews[toolCallId]}</pre>
+        <pre className="mt-2 max-w-full overflow-x-auto text-xs">{preview}</pre>
       </details>}
       <p className="text-xs text-muted-foreground">Assessed {new Date(health.assessed_at).toLocaleString()} · {health.rule_version}</p>
-    </article>)}
+    </article>; })}
   </section>;
 }

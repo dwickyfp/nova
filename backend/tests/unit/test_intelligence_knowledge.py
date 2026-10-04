@@ -137,9 +137,9 @@ async def test_public_memory_evidence_keeps_provenance_without_auth_session(monk
     assert response.status_code == 200
     item = response.json()["items"][0]
     assert item["source_message_id"] == "source-message"
-    assert item["reference"]["scope"] == {
-        "principal": "alice", "active_role": "ANALYST", "security_context_version": 1,
-    }
+    assert not {"scope", "digest", "session_id"} & item["reference"].keys()
+    assert item["reference"]["source_id"] == "source-message"
+    assert item["reference"]["method"] == "user-statement-extraction-v1"
     assert "private-auth-session" not in response.text
     assert "session_id" not in response.text
     assert stored["reference"]["scope"]["session_id"] == "private-auth-session"

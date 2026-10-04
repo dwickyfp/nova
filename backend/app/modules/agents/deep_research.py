@@ -24,7 +24,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.common.audit import write_audit_log
-from app.core.database import db
+from app.core.database import configured_timezone, db
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +204,7 @@ async def run(run_id: str, agent: dict[str, Any], user: dict[str, Any], question
 
     cancelled = cancelled or asyncio.Event()
     context = LoopContext(user_name=user["username"], user=dict(user),
+                          execution_timezone=configured_timezone(),
                           agent_id=agent["agent_id"], semantic_view_ids=bound_view_ids(agent))
     try:
         models = await load_authorized_models(context)
