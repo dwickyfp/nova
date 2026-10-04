@@ -17,12 +17,26 @@ STUDIO_QUALITY_ENABLED=false
 STUDIO_ANALYSIS_WORKSPACE_ENABLED=false
 ```
 
-Configure each process through its existing environment. The engine Compose file
-does not currently forward these settings from `docker/.env`; adding an entry
-there alone does not activate it in the API/workers. Restart affected processes
-after environment changes. Production scoring also needs per-agent opt-in and
+The engine Compose app profile forwards these settings from `docker/.env` to
+the API and task worker, with false defaults. `dev.sh` resolves the existing
+backend settings once and forwards the same booleans to its API, scheduler,
+task worker, and Smart worker. A separately launched Smart worker must receive
+the same settings through its process environment or backend `.env`; the Compose
+app profile does not create that process. Restart affected processes after
+environment changes. Production scoring also needs per-agent opt-in and
 an authorized role execution binding. Keep analytical execution disabled while
 no isolated executor exists, including after other workflow gates pass.
+
+API, task-worker, and Smart-worker startup logs contain a credential-free Studio
+capability snapshot. Studio's Capabilities → Business workflow view reads the
+same additive `runtime` contract from `/api/v1/agents/studio/capabilities`.
+`enabled` describes the rollout flag; `available` describes whether that feature
+can operate with its configured infrastructure. These fields do not promise
+caller permission or replace policy and consent checks. Analysis additionally
+reports `executor_available`. If its flag is true but no isolated executor is
+configured, status is `BLOCKED_BY_INFRASTRUCTURE`, and execution returns HTTP
+`503`, an unavailable result with that blocker, and no output. This is the
+selected production state until isolated infrastructure passes acceptance.
 
 Use stable signing/encryption keys shared by API/workers, existing managed
 storage, and the patched FE/Ranger path for governed data. Start the existing
@@ -62,6 +76,13 @@ message `security_context` where absent. Mission/resource and Intelligence
 initializers create their tables. Preserve existing rows/nulls: legacy agents
 remain unevaluated, and unknown-scope historical usage cannot receive guessed
 permissions for learning.
+
+Lifecycle closure adds no tables or columns. Mission owner/current/historical
+bindings, exact canonical pins, continuation anchors, execution time contexts,
+deliverable snapshots, and proposal application references evolve existing JSON
+payloads. Legacy Mission fields are synthesized from their original scope on
+read. Existing session/security columns remain execution metadata; historical
+canonical object scopes and proof digests remain immutable.
 
 For a configured operator environment, run this from `backend/` before enabling
 workflow traffic. It uses the existing control-plane connection and initializers
@@ -136,6 +157,55 @@ mutations. Review missing evidence and Doctor hypotheses before accepting an
 improvement. Accepting a proposal is not runtime publication. Like feedback
 continues to suggest verified queries through existing review.
 
+Doctor requires compatible frozen datasets, case revisions, scorer versions,
+and gates before naming a known-good and first bad evaluated release. Missing
+compatible evidence appears as a requirement. Review a concrete patch and its
+base before application. Accepted patches create an agent draft or a Semantic
+proposal through their current owners; retry the same operation to recover the
+same application. A stale base requires a fresh review. Evaluation, promotion
+gates, and human publication still apply.
+
+## Mission continuation, resume, and evidence
+
+Studio keeps chat primary with Activity, Evidence, and Context beside it.
+Continue/new controls express intent explicitly. Replay resolves its original
+Mission before continuation policy. Successful semantic anchors and canonical
+references can continue active work; a different semantic target or population,
+unrelated request, or ambiguous objective starts separate work. Cancelled work
+cannot continue and completed work needs explicit continuation.
+
+Use the resumable summary and explicit resume operation for a new session.
+Resume checks the expected revision and stable operation identity under existing
+admission fencing. The current owner and role must still access the thread,
+agent, pinned releases, semantic versions, canonical records, and original
+uploaded resources. An active old binding or uncertain mutation must be
+reconciled first. Resume preserves historical run bindings and approval proofs;
+new execution uses current credentials, policy checks, and fresh consent.
+Refusals are audited without exposing credential material.
+
+Automatic Investigation follows a successful, complete, validated semantic
+execution with safe canonical inputs. It uses the persisted concrete SQL window
+and baseline, never a later wall clock. In-progress periods share an elapsed
+local calendar span, including month/leap clamping; DST duration differences
+remain explicit. An exactly matching authorized Monitor is reused, otherwise a
+disabled one-time comparison has unknown sample count. This allows arithmetic
+decomposition with reduced statistical confidence. Scheduled Monitors still
+need reviewed count semantics.
+
+“Complete investigation setup” appears only for structured missing inputs,
+with established semantic identity, windows, and timezone prefilled. Do not
+substitute guessed filters or counts. Retry with the same operation identity
+after interrupted creation; linkage recovery reuses the canonical comparison
+and Investigation. Evidence replay uses the same bounded envelope as live SSE.
+Context selection resolves the exact published semantic version and metric.
+
+Deliverables freeze authorized factual source snapshots and exact revisions.
+Report generation does not rerun business analysis. Unavailable, changed, or
+oversized sources fail with bounded errors. Forecast content requires a pinned
+canonical forecast artifact. Learning sources respect current authorization and
+opt-out, and remain review proposals; frequent usage cannot confer verified
+authority.
+
 ## Action and resource recovery
 
 Reload current revisions before reviewer approval, execution, verification, or
@@ -144,6 +214,13 @@ is recorded separately as `compensation_receipt`. Decision approval, Action
 approval, and per-call allow-once consent
 serve separate checks. Smart participants cannot execute business actions. The
 monitor schedule requires an authorized role execution binding.
+
+Both `monitor-v1` and `automation-v1` require the active published Semantic View
+version for scheduled operations, including verification and compensation.
+Mission-authorized historical reads can still display a pinned published version
+after replacement. A stale scheduled Action returns `409`; refresh governed
+evidence and review a new Decision and Action against the active version. Do not
+rewrite historical scope, receipts, or consent to bypass this refusal.
 
 | Observed state | Operator response |
 | --- | --- |
@@ -159,10 +236,17 @@ caused improvement. Compensation disables this setup through another consented
 operation. Outcome evaluation still needs a valid observation window, complete
 evidence, and existing attribution guards.
 
+`automation-v1` uses the existing Studio automation owner with a stable creation
+identity and current authorized binding. Its initial delivery target is Studio.
+Creation, configuration readback, and consented disable compensation establish
+an operational effect. They carry the same dispatch fencing and uncertain
+mutation recovery rules as monitoring; external delivery is excluded.
+
 Resource failures require checking session/role/security version, original
 message/digest, participant lineage, and explicit grants. Do not copy bodies into
-coordination messages or widen sibling access. Mission reconnect/follow-up reuses
-identity/cursors; explicit `new_mission` starts separate work.
+coordination messages or widen sibling access. Historical source checks are
+narrowly authorized by the Mission's original run binding; a new run needs new
+grants and current consent.
 
 ## Acceptance commands
 
@@ -215,6 +299,20 @@ Use a dedicated Compose project and preserve other checkouts' containers/volumes
 From `backend/`, export endpoints before Compose, seed, and pytest. Required
 SQL/Redis/storage ports are `45930`, `45379`, and `45900`; auxiliary bindings also
 avoid defaults.
+
+The remediation acceptance setup provisions both stacks independently:
+
+| Stack | FE / Redis / storage host ports | Engine |
+| --- | --- | --- |
+| Stock integration | `45930` / `45379` / `45900` | StarRocks `4.1.4`, test FE heap `2048` MiB |
+| Governed acceptance | `47930` / `47379` / `47900` | Patched StarRocks `4.1.4`, including the task active-role patch |
+
+Both use unique containers and volumes. Provisioning and patch verification do
+not establish a passing runtime gate; record test results against the final
+source/configuration after all implementation changes. Acceptance Compose files
+and credentials remain untracked. The analytical sandbox has its separate
+`BLOCKED_BY_INFRASTRUCTURE` status; these engine stacks do not supply isolation
+for Python analysis.
 
 ```bash
 export COMPOSE_PROJECT_NAME=nova-governed-studio-l3
@@ -285,10 +383,17 @@ docker compose -f docker-compose.test.yml down
 
 Use a separate initialized, disposable patched-FE/Ranger installation with the
 current patch/image pins, policy bridge/bootstrap, `NOVA_SYSTEM`, Redis, and
-authorized task execution. The governed Compose file has fixed container names
-and additional host ports; changing its project name alone does not isolate a
-second stack. Use an isolated Docker context/VM or an operator-prepared isolated
-configuration. Follow [Ranger setup](29-ranger-access-control.md#operations) and
+authorized task execution. The governed Compose file has fixed container names,
+explicit volume names, and additional host ports; changing its project name
+alone does not isolate a second stack. Use an isolated Docker context/VM or an
+untracked full Compose configuration prepared from the governed file. Give every
+container, named volume, and network a unique acceptance prefix, remap every
+published host port, and preserve the relative bind/build paths through Compose's
+`--project-directory`. Keep both the Ranger role-context patches and the task
+active-role patch. The local remediation FE artifact is tagged
+`task-role-20260926`; its engine/source pin remains `4.1.4` at the commit in the
+[patch README](../patches/starrocks/README.md). Follow
+[Ranger setup](29-ranger-access-control.md#operations) and
 the [patch guide](../patches/starrocks/AGENTS.md). The stock L3 FE cannot satisfy
 this gate.
 
@@ -298,12 +403,62 @@ Patch application check, from the repository root:
 ./patches/starrocks/verify.sh
 ```
 
-With the isolated governed `app` profile running, the existing role/proxy/filter/
-mask/root guard check is:
+For reproducible isolation on the same Docker host, set
+`NOVA_GOVERNED_COMPOSE_FILE` to that untracked full configuration and
+`NOVA_GOVERNED_ACCEPTANCE_ENV` to its untracked Compose environment. Use
+`NOVA_GOVERNED_PROJECT` as the prefix of every explicit container/volume/network
+name. Configure the host test environment to use FE `47930`, Redis `47379`, and
+storage `47900`, with distinct auxiliary ports. From the repository root, check
+isolation without printing the interpolated configuration or credentials:
 
 ```bash
-docker compose --env-file docker/.env \
-  -f docker/docker-compose-engine.yml exec nova-backend \
+: "${NOVA_GOVERNED_COMPOSE_FILE:?set the isolated full Compose configuration}"
+: "${NOVA_GOVERNED_ACCEPTANCE_ENV:?set the isolated Compose environment}"
+export NOVA_GOVERNED_PROJECT="${NOVA_GOVERNED_PROJECT:-nova-studio-ranger-acceptance}"
+uv run --directory backend python - <<'PY'
+import json
+import os
+import subprocess
+from pathlib import Path
+
+prefix = os.environ["NOVA_GOVERNED_PROJECT"]
+command = [
+    "docker", "compose", "--project-directory", str(Path.cwd().parent / "docker"),
+    "--project-name", prefix, "--env-file", os.environ["NOVA_GOVERNED_ACCEPTANCE_ENV"],
+    "-f", os.environ["NOVA_GOVERNED_COMPOSE_FILE"], "--profile", "app", "config",
+]
+result = subprocess.run(command + ["--format", "json"], check=True, capture_output=True)
+config = json.loads(result.stdout)
+for service in config["services"].values():
+    assert service["container_name"].startswith((prefix + "-", prefix + "_")), "shared container name"
+    for port in service.get("ports", []):
+        assert int(port["published"]) not in {
+            8000, 4406, 6080, 8983, 9000, 9001, 6379, 8030, 9020, 9408, 8040, 9050
+        }, "shared host port"
+for section in ("volumes", "networks"):
+    for value in config.get(section, {}).values():
+        assert not value.get("external"), "external acceptance resource"
+        assert value["name"].startswith((prefix + "-", prefix + "_")), "shared resource name"
+print("Isolated governed configuration checked; runtime acceptance remains required.")
+PY
+docker compose --project-directory "$PWD/docker" \
+  --project-name "$NOVA_GOVERNED_PROJECT" \
+  --env-file "$NOVA_GOVERNED_ACCEPTANCE_ENV" \
+  -f "$NOVA_GOVERNED_COMPOSE_FILE" --profile app config --quiet
+docker compose --project-directory "$PWD/docker" \
+  --project-name "$NOVA_GOVERNED_PROJECT" \
+  --env-file "$NOVA_GOVERNED_ACCEPTANCE_ENV" \
+  -f "$NOVA_GOVERNED_COMPOSE_FILE" --profile app up -d --wait
+```
+
+With that isolated app profile running, the existing role/proxy/filter/mask/root
+guard check uses the same configuration:
+
+```bash
+docker compose --project-directory "$PWD/docker" \
+  --project-name "$NOVA_GOVERNED_PROJECT" \
+  --env-file "$NOVA_GOVERNED_ACCEPTANCE_ENV" \
+  -f "$NOVA_GOVERNED_COMPOSE_FILE" exec nova-backend \
   python scripts/verify_ranger_e2e.py
 ```
 

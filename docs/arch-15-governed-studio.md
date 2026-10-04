@@ -33,9 +33,19 @@ Mission projection and Evidence Health assessment make no model calls.
 | `STUDIO_ANALYSIS_WORKSPACE_ENABLED` | `false` | Allows an isolated analytical executor when one exists. The shipped executor remains unavailable even if this flag is enabled. |
 
 Per-agent production monitoring also defaults to disabled. Switches do not
-authorize data access, satisfy consent, or demonstrate acceptance. Configure each
-participating API/worker process explicitly; the engine Compose file does not
-currently forward these four variables from `docker/.env`.
+authorize data access, satisfy consent, or demonstrate acceptance. The engine
+Compose app profile forwards the four false-default variables to its API and
+task worker. `dev.sh` resolves their values from the existing backend settings
+and passes the same values to the API, scheduler, task worker, and Smart worker.
+Standalone processes use their existing environment and backend `.env`.
+
+The [effective-capability helper](../backend/app/core/studio_capabilities.py)
+reports bounded enabled/available states independently for each control. API,
+task-worker, and Smart-worker startup diagnostics use that same snapshot. The
+additive `runtime` field in Studio capabilities reports `DISABLED`, `AVAILABLE`,
+or `BLOCKED_BY_INFRASTRUCTURE`; analysis also reports executor availability.
+These deployment facts contain no credentials and do not replace current
+authorization, consent, or per-agent quality opt-in checks.
 
 ## Release manifests and promotion
 
@@ -137,9 +147,15 @@ labels suspected causes as hypotheses; it does not change the promotion gate.
 
 Like feedback retains the verified-query candidate path. Dislike/failure
 feedback creates reviewable diagnoses and regression suggestions. Agent Doctor
-distinguishes observed dependency drift from scorer-based suspected causes.
-Accepting a proposal does not publish a runtime change; the draft still needs
-evaluation and guarded publication.
+compares only evaluations with the same frozen cases and revisions, scorer
+versions, and gates. Its findings identify a known-good release, the first bad
+evaluated release, affected cases and traces, measured regressions, and changed
+dependencies. Authorized semantic inspection reports alias collisions and
+definition changes separately from explanations, which remain hypotheses.
+Reviewable regression cases and remediation patches enter the existing proposal
+workflow. Applying an accepted patch creates an agent draft or Semantic proposal;
+a stable operation identity recovers the same application on retry and stale
+bases fail closed. Evaluation and human publication remain required.
 
 ## Work Intent, Missions, and resources
 
@@ -151,10 +167,31 @@ thread and caller scope.
 
 A Mission projects existing run events and canonical object revisions into
 public stages. It stores run/object/evidence references, revision, projection
-cursors, and cancellation state. Retry, reconnect, and follow-up reuse identity
-unless `new_mission` is requested. Operation IDs with changed inputs conflict.
+cursors, and cancellation state. Continuation resolves replay identity before
+explicit new/continue controls, then considers successful governed semantic
+anchors, canonical references, and screen follow-ups. A different semantic
+target or filtered population starts separate work. Unrelated or ambiguous work
+defaults to a new Mission; lightweight answers can return `none`. The response
+includes a public reason code. Cancelled Missions cannot continue and completed
+Missions require explicit continuation. Smart children inherit the root Mission.
+Operation IDs with changed inputs conflict.
 Projection reads bounded journal pages; it neither dispatches tools nor invents
 stage completion from coordination prose. Cancellation uses existing run control.
+
+The Mission JSON preserves a durable owner scope, current execution binding,
+historical run bindings, exact canonical revision pins, and successful semantic
+anchors. Legacy records synthesize these fields from their original scope.
+Resumable summaries are scoped to the current owner and role. Revision-checked,
+idempotent resume uses existing admission fencing to reauthorize the thread,
+agent, semantic and canonical references, releases, and resources before binding
+new execution to current credentials. An old active session or uncertain mutation
+blocks resume until reconciliation. Historical approvals still face current
+policy and fresh consent. Successful and refused resumes are audited.
+
+Historical runs retain their recorded bindings. A narrow Mission-authorized
+Intelligence read path admits only pinned records and their exact recorded
+scopes; general Intelligence scope checks remain in force. Continuing a Decision,
+Action, or Outcome uses the current binding while preserving historical proofs.
 
 Resources reference the original user attachment message/index, digest, name,
 type, and size. Root access and child grants check principal, role, session,
@@ -166,9 +203,13 @@ Public lists, coordination events, and durable Smart checkpoints carry reference
 rather than raw bodies. Attachment content remains untrusted input.
 
 Mission deliverables use `CONFIG_STUDIO_DELIVERABLES` separately from query-backed
-chart/table artifacts. Decision memos and action plans reference authorized
-canonical objects and evidence. Saving a deliverable does not establish a new
-business fact or authorize execution.
+chart/table artifacts. Analysis summaries, Investigation reports, scenario
+comparisons, Outcome reports, Decision memos, and action plans freeze authorized
+factual source snapshots, exact revisions, and fingerprints. Reports use that
+pinned work without rerunning analysis. Missing or oversized sources produce
+bounded errors; operation collisions fail closed. Forecasts require a canonical
+forecast artifact. Saving a deliverable does not establish a new business fact
+or authorize execution.
 
 ## Evidence and context authority
 
@@ -188,12 +229,31 @@ and supported numbers. Unknown inputs remain visible. Causal strength is
 independent: `arithmetic`, `association`, `supported_effect`, or `unknown`.
 Strong evidence for a query does not establish a causal effect.
 
+The bounded `EvidenceEnvelope` composes this health record with published
+semantic identity, metrics, dimensions, exact comparison periods, timezone,
+filter shapes, warnings, and evidence references. The same envelope is persisted
+and streamed, so replay reconstructs the live evidence. Filter literals,
+credentials, and private reasoning are excluded. Evidence selection resolves
+Context by exact semantic identity and metric name, including an accessible
+historical published version and its bounded neighborhood. The displayed
+authority and conflicts belong to that selected graph.
+
 [Context Graph](../backend/app/modules/intelligence/context_graph.py) derives
 authority from validated source records and exposes source kind, authority basis,
 validity/freshness, usage, evidence, and contradictions. Published semantic
 definitions and reviewed rules outrank usage observations. Conflicting
 authoritative records remain visible. Saved text/popularity cannot assign their
 own authority.
+
+Canonical Mission, Action, deliverable, release, and query-pattern projections
+use their owning access contracts. Existing dashboards, artifacts, and documents
+remain subject to their actual contracts and do not gain reviewed authority by
+being referenced. Learning adapters normalize semantic usage, published verified
+queries, Mission deliverables, Decision/Outcome evidence, and Context query
+patterns into bounded observations. Current principal/role authorization and
+learning opt-out apply to every source. Frequency cannot promote an inferred
+concept to verified business truth; unrestricted SQL, sensitive literals, and
+private document bodies are excluded.
 
 [Scoped semantic usage](../backend/app/modules/agents/semantic/usage_learning.py)
 requires matching principal, role, security version, semantic identity/version,
@@ -205,22 +265,42 @@ definition.
 
 ## Investigations, scenarios, Actions, and Outcomes
 
-Chat investigation uses existing observation/News lineage. An operation creates
-a disabled one-off comparison monitor, gathers authorized observations for
-explicit current/baseline windows, and invokes the Investigation service. It
-creates no recurring schedule. Missing inputs need clarification; insufficient
-observations yield an incomplete result.
+Successful validated semantic execution can derive an `InvestigationSeed` for
+the existing comparison, News, and Investigation owners. Execution first persists
+a concrete timezone-aware time context; SQL and provenance use those same bounds.
+In-progress periods compare elapsed local calendar spans, clamped to a shared
+span across shorter months and leap boundaries. DST-related UTC duration
+differences remain explicit.
+
+Automatic Investigation prefers an exactly compatible authorized Monitor.
+Otherwise it creates a disabled one-time comparison with unknown sample count.
+Unknown count lowers statistical confidence while permitting valid arithmetic
+decomposition; scheduled Monitors still require reviewed count semantics.
+Mission, semantic identity, target, fixed windows, and validated plan fingerprint
+deduplicate creation, and retries repair interrupted comparison-to-Mission
+linkage. Unsafe or incomplete canonicalization returns structured missing-input
+requirements with established values prefilled.
 
 The code-owned [Scenario Registry](../backend/app/modules/intelligence/scenarios.py)
-registers `unit-economics` version `1` using the existing numerical executor. Its
-bounded schema describes shared/option inputs, units, and constraints. Legacy
-payloads remain supported. Simulated changes depend on stated assumptions and
-retain unknown causal status.
+owns typed adapters, context, execution, parameter validation, supported actions,
+target-metric policy, and currency requirements. `unit-economics` version `1`
+uses the existing numerical executor and owns revenue reconciliation, currency
+checks, and gross-profit calculation. Decision consumes canonical adapter results
+and stores additional scalar outcomes in `effects`; gross profit remains optional
+legacy output. The schema renderer and persistence path work for every reviewed
+registered definition. Legacy `simulation` inputs remain supported and governed
+Decision context is derived server-side. Client prediction authority is rejected.
+Simulated changes depend on stated assumptions and retain unknown causal status.
 
 Actions and Action Events extend the Intelligence revision repository. The ledger
 records request/decision digests, operation identity, policy/approval references,
 dispatch fence, attempt counts, receipts, verification, and compensation. The
-current production adapter is [monitor-v1](../backend/app/modules/intelligence/monitor_action.py).
+production adapters are [monitor-v1](../backend/app/modules/intelligence/monitor_action.py)
+and [automation-v1](../backend/app/modules/intelligence/automation_action.py).
+Registry-owned typed configuration, receipts, policy inputs, and verification
+preserve legacy request and approval digests. Automation uses the existing Studio
+automation owner, requires agent ownership and the current execution binding,
+and delivers internally to Studio. External delivery is excluded.
 
 Preview validates the selected Decision revision and governed monitor scope.
 Execution requires current policy, authorized reviewer approval, and separate
@@ -236,6 +316,9 @@ role, handler scope, cadence, and enabled state. It establishes that monitoring
 is configured. It does not establish that a business intervention occurred or
 caused a revenue change. Compensation is another supervised, consented operation
 that disables the monitor/schedule and verifies readback.
+Automation follows the same preview, stable creation identity, readback, and
+consented disable-compensation contracts. A verified configuration is an
+operational effect and does not establish causal business improvement.
 
 Preview performs evidence queries before its short publication lease, then
 rechecks the Decision digest, policy, session, and any concurrent preview.
@@ -265,6 +348,14 @@ provides capability, execution, cancellation, granted-resource inputs, and bound
 outputs. The default executor is `UnavailableAnalysisExecutor`; HTTP execution
 returns `503` with an explicit unavailable result. The existing thread-based ML
 executor does not provide sandbox isolation.
+
+When enabled without isolation, capability status and the execution result's
+`blocker` are `BLOCKED_BY_INFRASTRUCTURE`. A disabled workspace returns
+`FEATURE_DISABLED`; both refusals remain audited and return no rows or artifacts.
+The capability separates executor availability from the flag, so an isolated
+test adapter cannot become usable while disabled. Tool refusals retain the
+legacy `ANALYSIS_UNAVAILABLE` error code and carry the bounded blocker in metadata.
+No local code, subprocess, or thread executor substitutes for missing isolation.
 
 Default bounds are 30 seconds wall time, 256 MiB memory, 10 CPU seconds, 4 MiB
 input, 64 KiB output, 1,000 rows, and three artifacts. Requests prohibit network

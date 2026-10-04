@@ -142,6 +142,93 @@ export type QualityProposal = {
   hypothesis?: boolean;
   suggestion?: string;
   changes?: { target: string; description: string }[];
+  doctor?: DoctorReport;
+  patches?: RemediationPatch[];
+  regression_candidates?: RegressionCaseCandidate[];
+  review_inputs?: {
+    revision: number;
+    resolution: "accepted" | "rejected";
+    patch_id: string | null;
+    regression_case_ids: string[];
+  };
+  application?: {
+    operation_id: string;
+    status: "pending" | "applied";
+    kind: "agent_draft" | "semantic_proposal";
+    base_revision: string;
+    patch_id: string;
+    version_id?: string;
+    proposal_id?: string;
+    view_id?: string;
+    regression_cases?: { id: string; revision: number }[];
+  };
+};
+
+export type RemediationPatch = {
+  id: string;
+  kind: "restore_configuration" | "append_instruction" | "semantic_changes";
+  description: string;
+  hypothesis: boolean;
+  base_revision: string;
+  source_version_id?: string;
+  fields?: string[];
+  instruction?: string;
+  semantic?: { view_id: string; version: number; fingerprint: string };
+  changes?: { kind: string; name: string; synonyms?: string[] }[];
+};
+export type RegressionCaseCandidate = {
+  id: string;
+  run_id: string;
+  case_id: string;
+  case_revision: number;
+  scorers: string[];
+  review_required: boolean;
+};
+type EvaluatedReleaseRef = {
+  id: string;
+  version_id: string;
+  manifest_id: string;
+  manifest_fingerprint: string;
+  created_at: string;
+};
+export type DoctorReport = {
+  schema_version: number;
+  known_good: EvaluatedReleaseRef | null;
+  first_bad: EvaluatedReleaseRef | null;
+  current: EvaluatedReleaseRef | null;
+  regressions: {
+    case_id: string;
+    case_revision: number;
+    scorer: string;
+    scorer_version: string;
+    before: string;
+    after: string;
+    before_trace_id?: string | null;
+    after_trace_id?: string | null;
+    measurements: {
+      name: string;
+      before: number;
+      after: number;
+      delta: number;
+    }[];
+    hypothesis: boolean;
+  }[];
+  changed_dependencies: {
+    category: string;
+    fields?: string[];
+    hypothesis: boolean;
+  }[];
+  findings: {
+    category: string;
+    detail: string;
+    hypothesis: boolean;
+    semantic?: { view_id: string; version: number; fingerprint: string };
+    collisions?: { alias: string; metrics: string[] }[];
+    changes?: { metric: string; fields: string[] }[];
+  }[];
+  requirements: { code: string; detail: string }[];
+  patches: RemediationPatch[];
+  regression_candidates: RegressionCaseCandidate[];
 };
 
 const base = (id: string) => `/agents/${encodeURIComponent(id)}`;
@@ -214,13 +301,28 @@ export const qualityApi = {
     api.post<QualityProposal>(
       `${base(id)}/quality/runs/${encodeURIComponent(run)}/analyze`,
     ),
+  doctor: (id: string, signal?: AbortSignal) =>
+    api.get<DoctorReport>(`${base(id)}/quality/doctor`, signal),
   review: (
     id: string,
     proposal: QualityProposal,
     resolution: "accepted" | "rejected",
+    options?: { patch_id?: string; regression_case_ids?: string[] },
   ) =>
     api.post<QualityProposal>(
       `${base(id)}/quality/proposals/${encodeURIComponent(proposal.id)}/review`,
-      { expected_revision: proposal.revision, resolution },
+      {
+        expected_revision:
+          proposal.application?.status === "pending"
+            ? (proposal.review_inputs?.revision ?? proposal.revision)
+            : proposal.revision,
+        resolution,
+        ...(proposal.application?.status === "pending" && proposal.review_inputs
+          ? {
+              patch_id: proposal.review_inputs.patch_id,
+              regression_case_ids: proposal.review_inputs.regression_case_ids,
+            }
+          : (options ?? {})),
+      },
     ),
 };

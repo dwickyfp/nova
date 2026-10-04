@@ -6,7 +6,7 @@
 #   backend    FastAPI web + embedded MySQL proxy (port 8000, 4406)
 #   scheduler  nova-scheduler (cron/interval tick -> Redis Streams)
 #   worker     nova-worker (runs task graphs and migration jobs)
-#   agent-worker  Studio Auto coordinator and specialist runs
+#   agent-worker  Studio Smart coordinator and specialist runs
 #   frontend   Vite dev server (port 5173)
 #
 # Docker infrastructure (StarRocks, Ranger, MinIO, Redis) is NOT managed here.
@@ -317,6 +317,21 @@ BACKEND_ENV=(
   RANGER_PASSWORD="$RANGER_PASSWORD_VALUE"
   RANGER_TLS_VERIFY="$RANGER_TLS_VERIFY"
 )
+
+# Resolve only the rollout booleans; do not source the credential-bearing .env file.
+STUDIO_RUNTIME_ENV="$(
+  cd "$BACKEND_DIR"
+  uv run python - <<'PY'
+from app.core.config import settings
+from app.core.studio_capabilities import STUDIO_FLAG_NAMES
+
+for name in STUDIO_FLAG_NAMES:
+    print(f"{name}={str(getattr(settings, name)).lower()}")
+PY
+)"
+while IFS= read -r studio_flag; do
+  BACKEND_ENV+=("$studio_flag")
+done <<< "$STUDIO_RUNTIME_ENV"
 
 if ! (
   cd "$BACKEND_DIR"

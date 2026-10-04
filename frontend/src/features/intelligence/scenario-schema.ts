@@ -31,6 +31,9 @@ export type ScenarioDefinition = {
   input_schema: ScenarioSchema;
   shared_input_schema: ScenarioSchema;
   action_types?: string[];
+  target_metric?: string | null;
+  target_metric_policy?: "named_metric" | "published_metric";
+  currency_required?: boolean;
   constraints?: string[];
   simulation_adapter?: string;
 };
@@ -91,8 +94,7 @@ export function validateScenarioSchema(value: unknown): ScenarioSchema {
     throw new Error("Scenario fields are unavailable.");
   }
   const entries = Object.entries(schema.properties);
-  if (!entries.length || entries.length > 40)
-    throw new Error("Scenario field limit exceeded.");
+  if (entries.length > 40) throw new Error("Scenario field limit exceeded.");
   for (const [name, raw] of entries) {
     if (
       !/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(name) ||
@@ -243,6 +245,9 @@ export const legacyUnitEconomics: ScenarioDefinition = {
   title: "Unit economics",
   description:
     "Conditional revenue estimates based on unit and cost assumptions.",
+  target_metric: null,
+  target_metric_policy: "published_metric",
+  currency_required: true,
   input_schema: {
     type: "object",
     additionalProperties: false,

@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
@@ -7,54 +7,58 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingLines } from "@/components/ui/loading-overlay";
 import type { SemanticRef, Page } from "./lifecycle-api";
-
-type Node = {
-  id: string;
-  name: string;
-  kind: string;
-  reference_id: string;
-  state: string;
-  authority?: string;
-  semantic?: SemanticRef;
-};
-type Graph = {
-  nodes: Node[];
-  edges: { id: string; source: string; target: string; relationship: string }[];
-  bounded: boolean;
-};
+import { resolveContextMetric, type ContextGraph, type ContextNode } from "./context-api";
 
 export function ContextInspector({
   semantic,
+  metric,
   initialNodeId,
+  renderGraphFooter,
 }: {
   semantic?: SemanticRef;
+  metric?: string;
   initialNodeId?: string;
+  renderGraphFooter?: (graph: ContextGraph) => ReactNode;
 }) {
   const epoch = useAuthStore((s) => s.securityEpoch);
   return (
     <Inspector
-      key={`${epoch}:${semantic?.fingerprint ?? ""}:${initialNodeId ?? ""}`}
+      key={`${epoch}:${semantic?.view_id ?? ""}:${semantic?.version ?? ""}:${semantic?.fingerprint ?? ""}:${metric ?? ""}:${initialNodeId ?? ""}`}
       semantic={semantic}
+      metric={metric}
       epoch={epoch}
       initialNodeId={initialNodeId}
+      renderGraphFooter={renderGraphFooter}
     />
   );
 }
 
 function Inspector({
   semantic,
+  metric,
   epoch,
   initialNodeId,
+  renderGraphFooter,
 }: {
   semantic?: SemanticRef;
+  metric?: string;
   epoch: number;
   initialNodeId?: string;
+  renderGraphFooter?: (graph: ContextGraph) => ReactNode;
 }) {
   const id = useId();
   const [nodeId, setNodeId] = useState(initialNodeId ?? "");
   const [search, setSearch] = useState("");
   const [term, setTerm] = useState("");
   const [after, setAfter] = useState("");
+  const resolution = useQuery({
+    queryKey: ["context-resolution", epoch, semantic?.view_id, semantic?.version, semantic?.fingerprint, metric],
+    queryFn: () => resolveContextMetric(semantic!, metric!),
+    enabled: Boolean(semantic && metric),
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  });
   const project = useMutation({
     mutationFn: () =>
       api.post<{ root_id: string }>(
@@ -66,7 +70,7 @@ function Inspector({
   const graph = useQuery({
     queryKey: ["context-graph", epoch, nodeId],
     queryFn: () =>
-      api.get<Graph>(
+      api.get<ContextGraph>(
         `/intelligence/context/${encodeURIComponent(nodeId)}/graph?depth=2&limit=50`,
       ),
     enabled: Boolean(nodeId),
@@ -77,7 +81,7 @@ function Inspector({
   const results = useQuery({
     queryKey: ["context-search", epoch, term, after],
     queryFn: () =>
-      api.get<Page<Node>>(
+      api.get<Page<ContextNode>>(
         `/intelligence/context/search?term=${encodeURIComponent(term)}&after=${encodeURIComponent(after)}`,
       ),
     enabled: Boolean(term),
@@ -85,14 +89,18 @@ function Inspector({
     gcTime: 0,
     retry: false,
   });
-  const names = new Map(graph.data?.nodes.map((node) => [node.id, node.name]));
+  const selectedGraph = nodeId ? graph.data : resolution.data?.graph;
+  const graphFetching = nodeId ? graph.isFetching : resolution.isFetching;
+  const graphError = nodeId ? graph.isError : resolution.isError;
+  const names = new Map(selectedGraph?.nodes.map((node) => [node.id, node.name]));
   return (
     <section className="min-w-0 space-y-4" aria-label="Context Graph">
       <p className="text-sm text-muted-foreground">
         Inspect business knowledge, published definitions, and their source
         relationships. Results follow your current data access.
       </p>
-      {semantic && (
+      {semantic && metric && <p className="break-words text-xs text-muted-foreground">{metric} · Semantic version {semantic.version}</p>}
+      {semantic && !metric && (
         <Button
           variant="outline"
           disabled={project.isPending}
@@ -124,12 +132,13 @@ function Inspector({
           Search context
         </Button>
       </form>
-      {(project.isError || graph.isError || results.isError) && (
+      {(project.isError || graphError || results.isError) && (
         <p role="alert" className="text-sm text-destructive">
           Context is unavailable or its definition changed. Refresh the Semantic
           View and retry.
         </p>
       )}
+      {resolution.data && resolution.data.status !== "resolved" && !nodeId && <p role="status" className="text-sm">The selected metric is unavailable in this published version.</p>}
       {results.isFetching ? (
         <LoadingLines rows={2} />
       ) : (
@@ -163,19 +172,19 @@ function Inspector({
           </div>
         )
       )}
-      {graph.isFetching ? (
+      {graphFetching ? (
         <LoadingLines />
       ) : (
-        !graph.isError &&
-        graph.data && (
+        !graphError &&
+        selectedGraph && (
           <div className="space-y-4">
             <h4 className="font-medium">Concepts and citations</h4>
             <ul className="divide-y rounded-md border">
-              {graph.data.nodes.map((node) => (
+              {selectedGraph.nodes.map((node) => (
                 <li key={node.id} className="min-w-0 space-y-1 p-3">
                   <Button
                     variant="link"
-                    className="h-auto max-w-full whitespace-normal px-0 text-left"
+                    className="h-auto max-w-full whitespace-normal px-0 text-left text-foreground"
                     onClick={() => setNodeId(node.id)}
                   >
                     {node.name}
@@ -194,7 +203,7 @@ function Inspector({
             </ul>
             <h4 className="font-medium">Relationships</h4>
             <ul className="space-y-2 text-sm">
-              {graph.data.edges.map((edge) => (
+              {selectedGraph.edges.map((edge) => (
                 <li className="break-words" key={edge.id}>
                   {names.get(edge.source)} →{" "}
                   {edge.relationship.split("_").join(" ")} →{" "}
@@ -202,12 +211,13 @@ function Inspector({
                 </li>
               ))}
             </ul>
-            {graph.data.bounded && (
+            {selectedGraph.bounded && (
               <p className="text-sm text-muted-foreground">
                 This graph is limited by depth and size. Select a concept to
                 inspect its neighborhood.
               </p>
             )}
+            {renderGraphFooter?.(selectedGraph)}
           </div>
         )
       )}

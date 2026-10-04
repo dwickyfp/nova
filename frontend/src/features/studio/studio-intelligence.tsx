@@ -552,16 +552,28 @@ export function DecisionDetail({
   refresh,
   epoch,
   onOutcome,
+  missionId,
 }: {
   decision: Decision;
   refresh: () => void;
   epoch: number;
   onOutcome?: (outcome: Outcome) => void;
+  missionId?: string;
 }) {
   const client = useQueryClient();
   const policy = useQuery({
-    queryKey: ["intelligence", epoch, "policy", decision.id, decision.revision],
-    queryFn: () => intelligenceApi.policy(decision.id),
+    queryKey: [
+      "intelligence",
+      epoch,
+      "policy",
+      decision.id,
+      decision.revision,
+      missionId,
+    ],
+    queryFn: () =>
+      missionId
+        ? intelligenceApi.policy(decision.id, missionId)
+        : intelligenceApi.policy(decision.id),
     staleTime: 0,
     gcTime: 0,
     retry: false,
@@ -570,11 +582,16 @@ export function DecisionDetail({
     !policy.isFetching && !policy.isError ? policy.data : undefined;
   const operation = useMutation({
     mutationFn: ({ action, option }: { action: string; option?: string }) =>
-      intelligenceApi.operate(decision, action, option),
+      missionId
+        ? intelligenceApi.operate(decision, action, option, missionId)
+        : intelligenceApi.operate(decision, action, option),
     onSuccess: refresh,
   });
   const outcome = useMutation({
-    mutationFn: () => intelligenceApi.outcome(decision.id),
+    mutationFn: () =>
+      missionId
+        ? intelligenceApi.outcome(decision.id, missionId)
+        : intelligenceApi.outcome(decision.id),
     onSuccess: (value) => {
       onOutcome?.(value);
       client.invalidateQueries({
@@ -595,8 +612,12 @@ export function DecisionDetail({
       "lineage",
       decision.id,
       decision.revision,
+      missionId,
     ],
-    queryFn: () => intelligenceApi.lineage(decision.id),
+    queryFn: () =>
+      missionId
+        ? intelligenceApi.lineage(decision.id, missionId)
+        : intelligenceApi.lineage(decision.id),
     staleTime: 0,
     gcTime: 0,
     retry: false,
@@ -648,8 +669,10 @@ export function DecisionDetail({
         </p>
       )}
       <p className="text-xs text-muted-foreground">
-        Monetary estimates use {decision.currency}. Approval records a
-        recommendation for review.
+        {decision.currency
+          ? `Monetary estimates use ${decision.currency}. `
+          : ""}
+        Approval records a recommendation for review.
       </p>
       <h3 className="font-medium">Options and assumptions</h3>
       <div className="space-y-3">
@@ -677,15 +700,42 @@ export function DecisionDetail({
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">
-                  Cost / incremental gross profit
-                </dt>
-                <dd className="tabular-nums">
-                  {number(option.cost)} /{" "}
-                  {number(option.incremental_gross_profit)}
-                </dd>
+                <dt className="text-muted-foreground">Action cost</dt>
+                <dd className="tabular-nums">{number(option.cost)}</dd>
               </div>
             </dl>
+            {(Object.keys(option.effects ?? {}).length > 0 ||
+              option.incremental_gross_profit != null) && (
+              <div className="space-y-2">
+                <h5 className="text-sm font-medium">
+                  Additional scenario results
+                </h5>
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                  {Object.entries({
+                    ...(option.incremental_gross_profit != null
+                      ? {
+                          incremental_gross_profit:
+                            option.incremental_gross_profit,
+                        }
+                      : {}),
+                    ...option.effects,
+                  })
+                    .sort(([left], [right]) => left.localeCompare(right))
+                    .map(([label, value]) => (
+                      <div key={label} className="min-w-0">
+                        <dt className="text-muted-foreground">
+                          {label.split("_").join(" ")}
+                        </dt>
+                        <dd className="break-words tabular-nums">
+                          {typeof value === "number"
+                            ? number(value)
+                            : String(value)}
+                        </dd>
+                      </div>
+                    ))}
+                </dl>
+              </div>
+            )}
             <details>
               <summary className="cursor-pointer text-sm focus-visible:outline focus-visible:outline-ring">
                 Assumptions
@@ -702,7 +752,8 @@ export function DecisionDetail({
               </dl>
             </details>
             <p className="text-xs text-muted-foreground">
-              Method: {option.method}. Scenario demand changes are assumptions.
+              Method: {option.method}. These estimates are conditional on the
+              stated assumptions.
             </p>
             {permissions?.can_edit &&
               !["cancelled", "superseded", "evaluated"].includes(

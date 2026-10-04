@@ -42,7 +42,41 @@ export type ToolEvidence = {
   toolCallId: string;
   toolName: string;
   health: EvidenceHealth;
+  envelope?: EvidenceEnvelope;
 };
+
+const windowBounds = z.object({ start: timestamp, end: timestamp });
+const envelope = z.object({
+  schema_version: z.literal(1),
+  health,
+  semantic: z.object({ view_id: z.string().max(128), version: z.number().int().positive(), fingerprint: z.string().max(128) }).nullable(),
+  metrics: z.array(z.string().max(128)).max(32),
+  dimensions: z.array(z.string().max(128)).max(32),
+  current_window: windowBounds.nullable(),
+  baseline_window: windowBounds.nullable(),
+  timezone: z.string().max(128).nullable(),
+  filter_shape: z.array(z.object({ field: z.string().max(128), operator: z.string().max(32) })).max(32),
+  named_filters: z.array(z.string().max(128)).max(32),
+  warnings: z.array(z.string().max(256)).max(32),
+  evidence_refs: z.array(z.string().max(128)).max(100),
+  validated_plan_fingerprint: z.string().length(64),
+  model_fingerprint: z.string().max(128),
+});
+export type EvidenceEnvelope = z.infer<typeof envelope>;
+
+export function readEvidenceEnvelope(value: unknown): EvidenceEnvelope | null {
+  const result = envelope.safeParse(value);
+  return result.success ? result.data : null;
+}
+
+export function evidenceEnvelopeFromTrace(step: unknown): EvidenceEnvelope | null {
+  if (!step || typeof step !== "object") return null;
+  const record = step as Record<string, unknown>;
+  const trace = record.trace_detail;
+  return readEvidenceEnvelope(record.evidence_envelope) ??
+    (trace && typeof trace === "object"
+      ? readEvidenceEnvelope((trace as Record<string, unknown>).evidence_envelope) : null);
+}
 
 export function readEvidenceHealth(value: unknown): EvidenceHealth | null {
   const result = health.safeParse(value);

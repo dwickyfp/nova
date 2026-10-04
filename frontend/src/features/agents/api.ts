@@ -374,6 +374,7 @@ export type StreamAgentTurnOptions = {
   attachments?: { name: string; content: string; media_type: string }[];
   workIntent?: "ANSWER" | "ANALYZE" | "INVESTIGATE" | "PLAN" | "RESEARCH" | "ACT";
   newMission?: boolean;
+  continueMissionId?: string;
   onAccepted?: () => void;
   onRunId?: (runId: string) => void;
 };
@@ -388,7 +389,7 @@ export async function streamAgentTurn(
   agentId: string,
   threadId: string,
   content: string,
-  { signal, onEvent, role, model, providerId, attachments, workIntent, newMission, onAccepted, onRunId }: StreamAgentTurnOptions,
+  { signal, onEvent, role, model, providerId, attachments, workIntent, newMission, continueMissionId, onAccepted, onRunId }: StreamAgentTurnOptions,
 ): Promise<void> {
   const response = await fetch(
     `${apiBase()}/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/messages`,
@@ -399,7 +400,7 @@ export async function streamAgentTurn(
         Accept: "text/event-stream",
       }),
       body: JSON.stringify({ content, role, model, provider_id: providerId, attachments,
-        work_intent: workIntent, new_mission: newMission }),
+        work_intent: workIntent, new_mission: newMission, continue_mission_id: continueMissionId }),
       signal,
     },
   );
@@ -521,7 +522,23 @@ export type StudioSettings = {
   preferences: StudioPreferences;
 };
 
+export type StudioFeatureCapability = {
+  enabled: boolean;
+  available: boolean;
+  status: "DISABLED" | "AVAILABLE" | "BLOCKED_BY_INFRASTRUCTURE";
+  reason_code: "FEATURE_DISABLED" | "READY" | "ISOLATED_EXECUTOR_UNAVAILABLE";
+  executor_available?: boolean | null;
+};
+
+export type StudioRuntimeCapabilities = {
+  business_workflow: StudioFeatureCapability;
+  actions: StudioFeatureCapability;
+  quality: StudioFeatureCapability;
+  analysis_workspace: StudioFeatureCapability;
+};
+
 export type StudioCapabilities = {
+  runtime?: StudioRuntimeCapabilities | null;
   connectors: {
     server_id: string;
     name: string;

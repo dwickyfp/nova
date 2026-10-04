@@ -31,6 +31,7 @@ import { skillsApi, studioApi, type Skill } from "@/features/agents/api";
 import { SkillEditor } from "./skill-editor";
 import { skillDocument } from "./skill-document";
 import { SkillUpload } from "./skill-upload";
+import { StudioRuntimeCapabilitiesPanel } from "./studio-runtime-capabilities";
 
 export function StudioCapabilities({
   onCreateWithChat,
@@ -49,14 +50,15 @@ export function StudioCapabilities({
   const [uploadOpen, setUploadOpen] = useState(false);
   const queryClient = useQueryClient();
   const owner = useAuthStore((state) => state.auth.user?.username);
+  const securityEpoch = useAuthStore((state) => state.securityEpoch);
   const skills = useQuery({
     queryKey: ["studio", "skills", owner],
     queryFn: skillsApi.personal,
   });
   const caps = useQuery({
-    queryKey: ["studio", "capabilities", owner],
+    queryKey: ["studio", "capabilities", owner, securityEpoch],
     queryFn: studioApi.capabilities,
-    enabled: tab === "connectors",
+    enabled: tab !== "skills",
   });
   const remove = useMutation({
     mutationFn: (id: string) => skillsApi.remove(id),
@@ -84,16 +86,15 @@ export function StudioCapabilities({
     <>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <aside className="shrink-0 border-b bg-sidebar px-3 py-5 md:w-60 md:border-r md:border-b-0 md:py-8">
-          <h1 className="px-3 text-lg font-heading">
-            Capabilities
-          </h1>
+          <h1 className="px-3 text-lg font-heading">Capabilities</h1>
           <nav
             aria-label="Capability categories"
-            className="mt-5 flex gap-1 md:mt-7 md:flex-col"
+            className="mt-5 flex flex-wrap gap-1 md:mt-7 md:flex-col"
           >
             {[
               { id: "skills", label: "Skills" },
               { id: "connectors", label: "MCP Connectors" },
+              { id: "business", label: "Business workflow" },
             ].map((item) => (
               <Button
                 key={item.id}
@@ -121,11 +122,12 @@ export function StudioCapabilities({
             )}
           >
             <div>
-              <h2
-                id="capability-heading"
-                className="text-lg font-heading"
-              >
-                {tab === "skills" ? "Your skills" : "MCP Connectors"}
+              <h2 id="capability-heading" className="text-lg font-heading">
+                {tab === "skills"
+                  ? "Your skills"
+                  : tab === "business"
+                    ? "Business capabilities"
+                    : "MCP Connectors"}
               </h2>
               {tab === "connectors" ? (
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -133,35 +135,37 @@ export function StudioCapabilities({
                 </p>
               ) : null}
             </div>
-            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-              <div className="relative min-w-0 flex-1 sm:w-40">
-                <Search
-                  aria-hidden="true"
-                  className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                  aria-label={
-                    tab === "skills" ? "Search skills" : "Search connectors"
-                  }
-                  placeholder="Search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className="border-transparent bg-muted pl-9 shadow-none"
-                />
+            {tab !== "business" ? (
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                <div className="relative min-w-0 flex-1 sm:w-40">
+                  <Search
+                    aria-hidden="true"
+                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                  />
+                  <Input
+                    aria-label={
+                      tab === "skills" ? "Search skills" : "Search connectors"
+                    }
+                    placeholder="Search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    className="border-transparent bg-muted pl-9 shadow-none"
+                  />
+                </div>
+                {tab === "skills" ? (
+                  <SkillCreateMenu
+                    onChat={onCreateWithChat}
+                    onUpload={() => setUploadOpen(true)}
+                    creatingChat={creatingChat}
+                  >
+                    <Button variant="secondary" className="shadow-none">
+                      <Plus aria-hidden="true" className="size-4" />
+                      Create
+                    </Button>
+                  </SkillCreateMenu>
+                ) : null}
               </div>
-              {tab === "skills" ? (
-                <SkillCreateMenu
-                  onChat={onCreateWithChat}
-                  onUpload={() => setUploadOpen(true)}
-                  creatingChat={creatingChat}
-                >
-                  <Button variant="secondary" className="shadow-none">
-                    <Plus aria-hidden="true" className="size-4" />
-                    Create
-                  </Button>
-                </SkillCreateMenu>
-              ) : null}
-            </div>
+            ) : null}
           </div>
           {tab === "skills" ? (
             <section aria-labelledby="capability-heading">
@@ -246,6 +250,24 @@ export function StudioCapabilities({
                     </Button>
                   </SkillCreateMenu>
                 </div>
+              )}
+            </section>
+          ) : tab === "business" ? (
+            <section aria-labelledby="capability-heading">
+              {caps.isPending ? (
+                <p
+                  role="status"
+                  className="py-10 text-sm text-muted-foreground"
+                >
+                  Loading business capabilities…
+                </p>
+              ) : caps.isError ? (
+                <LoadError
+                  label="Business capabilities could not be loaded."
+                  retry={() => void caps.refetch()}
+                />
+              ) : (
+                <StudioRuntimeCapabilitiesPanel runtime={caps.data?.runtime} />
               )}
             </section>
           ) : (

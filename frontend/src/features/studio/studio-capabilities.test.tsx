@@ -32,6 +32,30 @@ const skill = {
   source: "user",
 };
 
+const readyCapability = {
+  enabled: true,
+  available: true,
+  status: "AVAILABLE",
+  reason_code: "READY",
+};
+const runtime = {
+  business_workflow: readyCapability,
+  actions: {
+    enabled: false,
+    available: false,
+    status: "DISABLED",
+    reason_code: "FEATURE_DISABLED",
+  },
+  quality: readyCapability,
+  analysis_workspace: {
+    enabled: true,
+    available: false,
+    status: "BLOCKED_BY_INFRASTRUCTURE",
+    reason_code: "ISOLATED_EXECUTOR_UNAVAILABLE",
+    executor_available: false,
+  },
+};
+
 function wrap(children: React.ReactNode) {
   return (
     <QueryClientProvider
@@ -68,6 +92,113 @@ describe("Studio personal capabilities", () => {
   });
   afterEach(() => {
     document.documentElement.classList.remove("dark");
+  });
+
+  it("distinguishes enabled flags from available business capabilities", async () => {
+    mocks.capabilities.mockResolvedValue({ connectors: [], runtime });
+    const screen = await render(
+      wrap(<StudioCapabilities onCreateWithChat={vi.fn()} />),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Business workflow" }),
+    );
+    await expect.element(screen.getByText("Mission workflow")).toBeVisible();
+    await expect
+      .element(screen.getByText("Unavailable", { exact: true }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("Disabled", { exact: true }))
+      .toBeVisible();
+    await expect
+      .element(screen.getByText("An isolated executor is not configured."))
+      .toBeVisible();
+    await expect
+      .element(screen.getByRole("textbox", { name: /Search/ }))
+      .not.toBeInTheDocument();
+    for (const theme of ["light", "dark"]) {
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      const tokens = getComputedStyle(document.documentElement);
+      for (const foreground of [
+        "--muted-foreground",
+        "--success-strong",
+        "--warning-strong",
+      ]) {
+        expect(
+          contrast(
+            tokens.getPropertyValue(foreground),
+            tokens.getPropertyValue("--background"),
+          ),
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+      for (const width of [375, 768, 1440]) {
+        await page.viewport(width, 900);
+        expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+        await expect
+          .element(screen.getByText("Analysis workspace", { exact: true }))
+          .toBeVisible();
+        if (width !== 768)
+          await page.screenshot({
+            path: `__screenshots__/nova-business-capabilities-${theme}-${width}.png`,
+          });
+      }
+    }
+    await userEvent.click(
+      screen.getByRole("button", { name: "Skills", exact: true }),
+    );
+    await userEvent.keyboard("{Tab}{Tab}{Enter}");
+    await expect
+      .element(screen.getByRole("button", { name: "Business workflow" }))
+      .toHaveFocus();
+    await expect
+      .element(screen.getByRole("heading", { name: "Business capabilities" }))
+      .toBeVisible();
+  });
+
+  it("shows business capability loading and handles older API responses", async () => {
+    let resolve!: (value: { connectors: [] }) => void;
+    mocks.capabilities.mockReturnValueOnce(
+      new Promise((ready) => {
+        resolve = ready;
+      }),
+    );
+    const screen = await render(
+      wrap(<StudioCapabilities onCreateWithChat={vi.fn()} />),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Business workflow" }),
+    );
+    await expect
+      .element(screen.getByRole("status"))
+      .toHaveTextContent("Loading business capabilities");
+    resolve({ connectors: [] });
+    await expect
+      .element(
+        screen.getByText(
+          /This deployment does not report business capability status/,
+        ),
+      )
+      .toBeVisible();
+  });
+
+  it("keeps refused capability reads bounded and allows retry", async () => {
+    mocks.capabilities.mockRejectedValueOnce(
+      new Error("403 private response detail"),
+    );
+    mocks.capabilities.mockResolvedValueOnce({ connectors: [], runtime });
+    const screen = await render(
+      wrap(<StudioCapabilities onCreateWithChat={vi.fn()} />),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Business workflow" }),
+    );
+    await expect
+      .element(screen.getByRole("alert"))
+      .toHaveTextContent("Business capabilities could not be loaded.");
+    await expect
+      .element(screen.getByText("private response detail"))
+      .not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await expect.element(screen.getByText("Mission workflow")).toBeVisible();
   });
 
   it("opens the create menu and dispatches chat creation", async () => {

@@ -1,19 +1,23 @@
 import { useId, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { agentsApi, agentVersionsApi, type Agent } from "../api";
 import { AgentVersionHistory } from "./version-history";
+import type { QualityProposal } from "../quality-api";
 
 export function QualityProposalDraft({
   agentId,
   epoch,
   onClose,
+  proposal,
 }: {
   agentId: string;
   epoch: number;
   onClose: () => void;
+  proposal?: QualityProposal;
 }) {
   const query = useQuery({
     queryKey: ["agent-quality", epoch, agentId, "draft-base"],
@@ -43,7 +47,44 @@ export function QualityProposalDraft({
         </Button>
       </div>
     );
-  return (
+  return proposal?.application?.status === "applied" ? (
+    <div className="space-y-3 text-sm">
+      <p>
+        The reviewed patch created{" "}
+        {proposal.application.kind === "agent_draft"
+          ? "a configuration draft"
+          : "a Semantic proposal"}
+        . Evaluation, promotion gates, and human publication remain required.
+      </p>
+      {proposal.application.version_id && (
+        <AgentVersionHistory
+          agent={query.data}
+          requestedVersion={proposal.application.version_id}
+        />
+      )}
+      {proposal.application.proposal_id && (
+        <div className="space-y-2">
+          <p className="break-words">
+            Proposal {proposal.application.proposal_id} in Semantic View{" "}
+            {proposal.application.view_id}.
+          </p>
+          {proposal.application.view_id && (
+            <Button asChild variant="outline" className="min-h-11">
+              <Link
+                to="/semantic-views/$viewId"
+                params={{ viewId: proposal.application.view_id }}
+              >
+                Open Semantic proposal review
+              </Link>
+            </Button>
+          )}
+        </div>
+      )}
+      <Button variant="outline" className="min-h-11" onClick={onClose}>
+        Close applied proposal
+      </Button>
+    </div>
+  ) : (
     <ProposalDraftForm
       key={query.data.config_revision}
       agent={query.data}

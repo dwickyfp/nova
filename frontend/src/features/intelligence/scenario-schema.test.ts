@@ -5,8 +5,35 @@ import {
   scenarioParameters,
   validateScenarioSchema,
 } from "./scenario-schema";
+import { capacityScenario } from "./scenario-fixtures.test-support";
 
 describe("bounded registered scenario schemas", () => {
+  it("supports a second reviewed adapter and empty shared fields", () => {
+    const shared = validateScenarioSchema(capacityScenario.shared_input_schema);
+    const option = validateScenarioSchema(capacityScenario.input_schema);
+    expect({
+      ...scenarioParameters(shared, { baseline: "20" }),
+      ...scenarioParameters(option, {
+        ...scenarioDefaults(option),
+        additional_capacity: "10",
+      }),
+    }).toEqual({
+      action_type: "capacity_upgrade",
+      baseline: 20,
+      additional_capacity: 10,
+      action_cost: 0,
+    });
+    expect(
+      scenarioParameters(
+        validateScenarioSchema({
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        }),
+        {},
+      ),
+    ).toEqual({});
+  });
   it("preserves legacy unit-economics parameters including zero and fractional discount", () => {
     const shared = validateScenarioSchema(
       legacyUnitEconomics.shared_input_schema,

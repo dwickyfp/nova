@@ -30,6 +30,8 @@ import {
 type Props = {
   news: News;
   investigation: Investigation;
+  missionId?: string;
+  threadId?: string;
   onCreated: (id: string) => void;
 };
 type Option = {
@@ -152,6 +154,14 @@ function ScenarioDecisionForm({
       shared: validateScenarioSchema(definition.shared_input_schema),
       option: validateScenarioSchema(definition.input_schema),
     };
+    const sharedNames = Object.keys(schemas.shared.properties);
+    const optionNames = Object.keys(schemas.option.properties);
+    if (
+      (!sharedNames.length && !optionNames.length) ||
+      sharedNames.length + optionNames.length > 32 ||
+      sharedNames.some((name) => optionNames.includes(name))
+    )
+      throw new Error("This scenario has inconsistent fields.");
   } catch (error) {
     return (
       <p role="alert" className="text-sm text-destructive">
@@ -161,13 +171,6 @@ function ScenarioDecisionForm({
       </p>
     );
   }
-  if (definition.scenario_kind !== "unit-economics")
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        This registered model can be simulated in Decision Lab. Decision option
-        persistence supports unit economics.
-      </p>
-    );
   return (
     <DecisionForm
       {...props}
@@ -185,6 +188,8 @@ function DecisionForm({
   definition,
   sharedSchema,
   optionSchema,
+  missionId,
+  threadId,
 }: Props & {
   definition: ScenarioDefinition;
   sharedSchema: ScenarioDefinition["shared_input_schema"];
@@ -224,7 +229,14 @@ function DecisionForm({
       const body = {
         title: title.trim(),
         investigation_id: investigation.id,
-        currency,
+        ...(missionId
+          ? {
+              mission_id: missionId,
+              investigation_revision: investigation.revision,
+            }
+          : {}),
+        ...(threadId ? { thread_id: threadId } : {}),
+        ...(definition.currency_required !== false ? { currency } : {}),
         outcome_window: {
           start: begins.toISOString(),
           end: new Date(begins.getTime() + duration).toISOString(),
@@ -232,7 +244,9 @@ function DecisionForm({
         options: options.map((option) => ({
           id: option.id,
           description: option.description.trim(),
-          simulation: {
+          scenario_kind: definition.scenario_kind,
+          scenario_version: definition.version,
+          parameters: {
             ...shared,
             ...scenarioParameters(optionSchema, option.values),
           },
@@ -257,9 +271,9 @@ function DecisionForm({
       }}
     >
       <p className="text-sm text-muted-foreground">
-        {definition.description} Baseline units × unit price must match the
-        observed result ({news.after}). The outcome period uses the same
-        duration as this incident.
+        {definition.description} The server validates these assumptions against
+        the observed result ({news.after}) and published target metric. The
+        outcome period uses the same duration as this incident.
       </p>
       <div className="space-y-2">
         <Label htmlFor={`${id}-title`}>Decision title</Label>
@@ -286,34 +300,40 @@ function DecisionForm({
             disabled={create.isPending}
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${id}-currency`}>Published metric currency</Label>
-          <Input
-            id={`${id}-currency`}
-            className="min-h-11"
-            required
-            minLength={3}
-            maxLength={3}
-            pattern="[A-Z]{3}"
-            value={currency}
-            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+        {definition.currency_required !== false && (
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-currency`}>Published metric currency</Label>
+            <Input
+              id={`${id}-currency`}
+              className="min-h-11"
+              required
+              minLength={3}
+              maxLength={3}
+              pattern="[A-Z]{3}"
+              value={currency}
+              onChange={(event) =>
+                setCurrency(event.target.value.toUpperCase())
+              }
+              disabled={create.isPending}
+            />
+          </div>
+        )}
+      </div>
+      {Object.keys(sharedSchema.properties).length > 0 && (
+        <fieldset className="min-w-0 space-y-3">
+          <legend className="mb-3 text-sm font-medium">
+            Shared {definition.title.toLowerCase()} assumptions
+          </legend>
+          <ScenarioFields
+            schema={sharedSchema}
+            values={baseline}
+            onChange={(key, value) =>
+              setBaseline((current) => ({ ...current, [key]: value }))
+            }
             disabled={create.isPending}
           />
-        </div>
-      </div>
-      <fieldset className="min-w-0 space-y-3">
-        <legend className="mb-3 text-sm font-medium">
-          Shared {definition.title.toLowerCase()} assumptions
-        </legend>
-        <ScenarioFields
-          schema={sharedSchema}
-          values={baseline}
-          onChange={(key, value) =>
-            setBaseline((current) => ({ ...current, [key]: value }))
-          }
-          disabled={create.isPending}
-        />
-      </fieldset>
+        </fieldset>
+      )}
       {options.map((option, index) => (
         <fieldset
           key={option.id}

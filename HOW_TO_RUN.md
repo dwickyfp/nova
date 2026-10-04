@@ -9,8 +9,9 @@ Panduan ini menjelaskan cara menjalankan seluruh environment development Nova:
 Untuk workflow Studio baru, baca [arsitektur governed Studio](docs/arch-15-governed-studio.md)
 dan [panduan migrasi/acceptance](docs/governed-studio-operations.md). Flag workflow,
 actions, production quality scoring, dan analytical workspace default `false`.
-Panduan acceptance menggunakan port test khusus `45930`/`45379`/`45900` dan
-memisahkan uji metadata dari gate patched-FE Ranger; perintahnya bukan laporan
+Panduan acceptance menggunakan port stock test `45930`/`45379`/`45900`,
+port governed test `47930`/`47379`/`47900`, serta container dan volume terpisah.
+Panduan ini memisahkan uji metadata dari gate patched-FE Ranger; perintahnya bukan laporan
 hasil uji.
 
 ## Prasyarat
@@ -618,9 +619,9 @@ menjalankan `nova-worker` bersama backend. Isi kredensial akun worker khusus
 aktif, `WORKER_IMPERSONATION_ROLE`) di `docker/.env` sebelum mengaktifkan profil
 tersebut. Jangan gunakan akun `root` atau `nova_admin`.
 
-### Terminal 6 — Studio Auto agent worker
+### Terminal 6 — Studio Smart agent worker
 
-Studio Auto requires a separate worker process. It claims queued runs from
+Studio Smart requires a separate worker process. It claims queued runs from
 `NOVA_SYSTEM`, checks the originating session and active role in Redis, and
 executes specialist runs independently of the API process.
 
@@ -628,6 +629,19 @@ executes specialist runs independently of the API process.
 cd /Users/dwickyferiansyahputra/Public/Research/nova/backend
 uv run python -m app.agent_worker
 ```
+
+The four Studio rollout controls default to `false` in `backend/.env.example`
+and `docker/.env.example`: `STUDIO_BUSINESS_WORKFLOW_ENABLED`,
+`STUDIO_ACTIONS_ENABLED`, `STUDIO_QUALITY_ENABLED`, and
+`STUDIO_ANALYSIS_WORKSPACE_ENABLED`. Keep them false until the
+[governed Studio acceptance gates](docs/governed-studio-operations.md) pass.
+Compose's app profile forwards them to the API and task worker; `dev.sh` passes
+the backend's effective settings to every existing host process, including Smart.
+Standalone workers read the same backend `.env` when launched from `backend/`.
+Check each process's safe Studio capability startup log and Studio's Business
+workflow capability view after changing flags. The shipped analytical executor
+remains unavailable: enabling its flag reports `BLOCKED_BY_INFRASTRUCTURE`
+and execution returns `503` until a reviewed isolated executor is configured.
 
 Kemudian buka:
 

@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import type { AgentMessage } from "@/features/agents/api";
 import { EvidencePanel } from "./evidence-panel";
-import { readEvidenceHealth, type EvidenceHealth } from "./evidence-health";
+import { readEvidenceHealth, type EvidenceEnvelope, type EvidenceHealth } from "./evidence-health";
 import { applyEvent, replayThread, type TranscriptTurn } from "./studio-transcript";
 import "@/styles/index.css";
 
@@ -27,9 +27,24 @@ const assessment: EvidenceHealth = {
 const emptyTurn: TranscriptTurn = { id: "u1", question: "Revenue", steps: [], answer: "", content: [],
   pendingConsent: null, blocks: { tables: [], charts: [], citations: [] }, state: "streaming" };
 
+const provenance: EvidenceEnvelope = {
+  schema_version: 1, health: assessment,
+  semantic: { view_id: "sales", version: 2, fingerprint: "fp" }, metrics: ["revenue"],
+  dimensions: ["region"], current_window: { start: "2026-10-01T00:00:00Z", end: "2026-10-03T10:00:00Z" },
+  baseline_window: { start: "2026-09-01T00:00:00Z", end: "2026-09-03T10:00:00Z" },
+  timezone: "Asia/Jakarta", filter_shape: [{ field: "region", operator: "=" }], named_filters: [],
+  warnings: [], evidence_refs: ["e1"], validated_plan_fingerprint: "a".repeat(64), model_fingerprint: "fp",
+};
+
 afterEach(() => document.documentElement.classList.remove("dark"));
 
 describe("Evidence Health replay", () => {
+  it("reconstructs exactly the live bounded provenance from persisted evidence", () => {
+    const live = applyEvent([emptyTurn], "u1", { type: "evidence_envelope", tool_call_id: "c1", tool_name: "semantic_query", payload: provenance });
+    const saved = replayThread([{ message_id: "u1", role: "user", content: "Revenue", created_at: "2026-10-03T09:00:00Z" },
+      { message_id: "a1", role: "assistant", content: "Revenue changed", created_at: "2026-10-03T10:00:00Z", steps: [{ kind: "tool", name: "semantic_query", tool_call_id: "c1", status: "done", arguments: {}, trace_detail: { evidence_health: assessment, evidence_envelope: provenance } }] }] as AgentMessage[]);
+    expect(saved[0].evidence).toEqual(live[0].evidence);
+  });
   it("preserves the recorded assessment and excludes fields outside the public contract", () => {
     const health = readEvidenceHealth({ ...assessment, internal_config: "private" });
     expect(health).toEqual(assessment);
@@ -58,6 +73,13 @@ describe("Evidence Health replay", () => {
 });
 
 describe("Evidence surface", () => {
+  it("selects exact semantic identity and metric for Context without displaying filter literals", async () => {
+    const select = vi.fn();
+    render(<EvidencePanel evidence={[{ toolCallId: "c1", toolName: "semantic_query", health: assessment, envelope: provenance }]} onSelectContext={select} />);
+    await page.getByRole("button", { name: "View revenue context" }).click();
+    expect(select).toHaveBeenCalledWith(provenance.semantic, "revenue");
+    await expect.element(page.getByText("Filters: region =")).toBeVisible();
+  });
   it("distinguishes absent evidence from a failing assessment", async () => {
     render(<EvidencePanel evidence={[]} />);
     await expect.element(page.getByText("Evidence has not been assessed")).toBeVisible();

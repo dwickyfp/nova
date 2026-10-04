@@ -66,12 +66,16 @@ export type Investigation = LifecycleRecord & {
   }[];
 };
 export type Decision = LifecycleRecord & {
+  mission_id?: string | null;
+  investigation_revision?: number | null;
   agent_id?: string;
   thread_id?: string | null;
   title: string;
-  currency: string;
+  currency: string | null;
   options: {
     id: string;
+    scenario_kind?: string;
+    scenario_version?: number;
     description: string;
     action_type: string;
     assumptions: Record<string, string | boolean | number>;
@@ -79,7 +83,8 @@ export type Decision = LifecycleRecord & {
     lower_bound?: number;
     upper_bound?: number;
     cost: number;
-    incremental_gross_profit: number;
+    effects?: Record<string, string | boolean | number>;
+    incremental_gross_profit?: number | null;
     risk: string;
     feasible: boolean;
     method: string;
@@ -105,7 +110,7 @@ export type MonitorConfiguration = {
   semantic: SemanticRef;
   plan: Record<string, unknown>;
   value_column: string;
-  count_column: string;
+  count_column?: string | null;
   time_dimension: string;
   completeness_column?: string | null;
   driver_dimensions?: string[];
@@ -120,14 +125,42 @@ export type MonitorConfiguration = {
   timezone?: string;
   enabled?: boolean;
 };
-export type BusinessAction = {
+export type AutomationActionConfiguration = {
+  agent_id: string;
+  semantic: SemanticRef;
+  title: string;
+  prompt: string;
+  schedule_kind: "cron" | "interval";
+  schedule_expr: string;
+  timezone?: string;
+  condition?: {
+    metric: string;
+    operator: ">" | ">=" | "<" | "<=" | "=" | "!=";
+    value: number;
+  } | null;
+  delivery?: "studio";
+  enabled?: true;
+};
+export type MonitorActionReceipt = {
+  monitor_id: string;
+  monitor_revision: number;
+  task_id?: string | null;
+  schedule_enabled: boolean;
+};
+export type AutomationActionReceipt = {
+  automation_id: string;
+  configuration_digest: string;
+  schedule_enabled: boolean;
+  delivery: "studio";
+};
+type BusinessActionState = {
   id: string;
   revision: number;
   decision_id: string;
   decision_revision: number;
   option_id: string;
-  adapter_id: string;
-  configuration: MonitorConfiguration;
+  mission_id?: string | null;
+  execution_current?: boolean;
   status:
     | "awaiting_approval"
     | "approved"
@@ -153,13 +186,6 @@ export type BusinessAction = {
   };
   approval?: { actor: string; active_role: string; approved_at: string } | null;
   consent_call_id?: string | null;
-  receipt?: {
-    monitor_id: string;
-    monitor_revision: number;
-    task_id?: string | null;
-    schedule_enabled: boolean;
-  } | null;
-  compensation_receipt?: BusinessAction["receipt"];
   verification?: {
     checked_at: string;
     complete: boolean;
@@ -172,13 +198,33 @@ export type BusinessAction = {
   } | null;
   error_code?: string | null;
 };
-export type ActionPreviewInput = {
+export type BusinessAction = BusinessActionState &
+  (
+    | {
+        adapter_id: "monitor-v1";
+        configuration: MonitorConfiguration;
+        receipt?: MonitorActionReceipt | null;
+        compensation_receipt?: MonitorActionReceipt | null;
+      }
+    | {
+        adapter_id: "automation-v1";
+        configuration: AutomationActionConfiguration;
+        receipt?: AutomationActionReceipt | null;
+        compensation_receipt?: AutomationActionReceipt | null;
+      }
+  );
+export type ActionAdapterInput =
+  | { adapter_id: "monitor-v1"; configuration: MonitorConfiguration }
+  | {
+      adapter_id: "automation-v1";
+      configuration: AutomationActionConfiguration;
+    };
+export type ActionPreviewInput = ActionAdapterInput & {
   idempotency_key: string;
   decision_id: string;
   expected_decision_revision: number;
   option_id: string;
-  adapter_id: "monitor-v1";
-  configuration: MonitorConfiguration;
+  mission_id?: string;
 };
 export type ActionOperation = {
   operation_id: string;
@@ -186,9 +232,14 @@ export type ActionOperation = {
   thread_id: string;
 };
 export const actionApi = {
-  get: (id: string, signal?: AbortSignal) =>
+  get: (
+    id: string,
+    signal?: AbortSignal,
+    mission_id?: string,
+    revision?: number,
+  ) =>
     api.get<BusinessAction>(
-      `/intelligence/actions/${encodeURIComponent(id)}`,
+      `/intelligence/actions/${encodeURIComponent(id)}${mission_id ? `?mission_id=${encodeURIComponent(mission_id)}${revision !== undefined ? `&revision=${revision}` : ""}` : ""}`,
       signal,
     ),
   preview: (body: ActionPreviewInput) =>
@@ -231,13 +282,15 @@ export const intelligenceApi = {
       parameters,
       operation_id,
     }),
-  policy: (id: string) =>
+  policy: (id: string, mission_id?: string) =>
     api.get<{
       current: boolean;
       policy_revision: number;
       can_review: boolean;
       can_edit: boolean;
-    }>(`/intelligence/decisions/${encodeURIComponent(id)}/policy`),
+    }>(
+      `/intelligence/decisions/${encodeURIComponent(id)}/policy${mission_id ? `?mission_id=${encodeURIComponent(mission_id)}` : ""}`,
+    ),
   page: <T>(kind: string, after = "") =>
     api.get<Page<T>>(
       `/intelligence/${kind}?after=${encodeURIComponent(after)}`,
@@ -248,21 +301,27 @@ export const intelligenceApi = {
     api.post<Investigation>(
       `/intelligence/news/${encodeURIComponent(id)}/investigate`,
     ),
-  operate: (decision: Decision, operation: string, option_id?: string) =>
+  operate: (
+    decision: Decision,
+    operation: string,
+    option_id?: string,
+    mission_id?: string,
+  ) =>
     api.post<Decision>(
       `/intelligence/decisions/${encodeURIComponent(decision.id)}/operations`,
       {
         operation,
         option_id,
+        ...(mission_id ? { mission_id } : {}),
         expected_revision: decision.revision,
         operation_id: crypto.randomUUID(),
       },
     ),
-  outcome: (id: string) =>
+  outcome: (id: string, mission_id?: string) =>
     api.post<Outcome>(
-      `/intelligence/decisions/${encodeURIComponent(id)}/evaluate-outcome`,
+      `/intelligence/decisions/${encodeURIComponent(id)}/evaluate-outcome${mission_id ? `?mission_id=${encodeURIComponent(mission_id)}` : ""}`,
     ),
-  lineage: (id: string) =>
+  lineage: (id: string, mission_id?: string) =>
     api.get<{
       news: News;
       investigation: Investigation;
@@ -275,5 +334,7 @@ export const intelligenceApi = {
         actor: string;
       }[];
       outcomes?: Outcome[];
-    }>(`/intelligence/decisions/${encodeURIComponent(id)}/lineage`),
+    }>(
+      `/intelligence/decisions/${encodeURIComponent(id)}/lineage${mission_id ? `?mission_id=${encodeURIComponent(mission_id)}` : ""}`,
+    ),
 };
