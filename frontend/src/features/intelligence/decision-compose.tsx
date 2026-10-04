@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useId, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,52 +10,197 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api } from "@/lib/api-client";
-import type { Decision, Investigation, News } from "./lifecycle-api";
+import { api, ApiError } from "@/lib/api-client";
+import { useAuthStore } from "@/stores/auth-store";
+import {
+  intelligenceApi,
+  type Decision,
+  type Investigation,
+  type News,
+} from "./lifecycle-api";
+import { ScenarioFields } from "./scenario-fields";
+import {
+  legacyUnitEconomics,
+  scenarioDefaults,
+  scenarioParameters,
+  validateScenarioSchema,
+  type ScenarioDefinition,
+} from "./scenario-schema";
 
-type Option = {
-  id: string;
-  description: string;
-  action_type: string;
-  change: string;
-  uncertainty: string;
-  cost: string;
-  discount: string;
-};
-const newOption = (): Option => ({
-  id: crypto.randomUUID(),
-  description: "",
-  action_type: "inventory_transfer",
-  change: "",
-  uncertainty: "",
-  cost: "",
-  discount: "0",
-});
-const fields = [
-  { key: "change", label: "Expected change in units" },
-  { key: "uncertainty", label: "Unit sensitivity, ±" },
-  { key: "cost", label: "Action cost" },
-  { key: "discount", label: "Discount fraction (0–1)" },
-] as const;
-
-export function DecisionCompose({
-  news,
-  investigation,
-  onCreated,
-}: {
+type Props = {
   news: News;
   investigation: Investigation;
   onCreated: (id: string) => void;
+};
+type Option = {
+  id: string;
+  description: string;
+  values: Record<string, string | boolean>;
+};
+
+export function DecisionCompose(props: Props) {
+  const epoch = useAuthStore((state) => state.securityEpoch);
+  return (
+    <DecisionWorkspace
+      key={`${epoch}:${props.investigation.id}`}
+      {...props}
+      epoch={epoch}
+    />
+  );
+}
+
+function DecisionWorkspace({ epoch, ...props }: Props & { epoch: number }) {
+  const [open, setOpen] = useState(false);
+  const [definitionId, setDefinitionId] = useState("");
+  const definitions = useQuery({
+    queryKey: ["intelligence", epoch, "scenarios"],
+    queryFn: ({ signal }) => intelligenceApi.scenarios(signal),
+    enabled: open,
+    retry: false,
+    gcTime: 0,
+  });
+  const legacy =
+    definitions.isError &&
+    definitions.error instanceof ApiError &&
+    [404, 503].includes(definitions.error.status);
+  const items = legacy
+    ? [legacyUnitEconomics]
+    : (definitions.data?.items ?? []);
+  const definition = items.find((item) => item.id === definitionId) ?? items[0];
+  const id = useId();
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="min-w-0 rounded-md border p-4"
+    >
+      <summary className="min-h-11 cursor-pointer font-medium focus-visible:outline focus-visible:outline-ring">
+        Prepare a decision
+      </summary>
+      {open && (
+        <div className="mt-4 min-w-0 space-y-4">
+          {definitions.isPending ? (
+            <p role="status" className="text-sm">
+              Loading registered scenarios…
+            </p>
+          ) : definitions.isError && !legacy ? (
+            <div role="alert" className="space-y-2">
+              <p className="text-sm text-destructive">
+                Registered scenarios could not be loaded:{" "}
+                {definitions.error.message}
+              </p>
+              <Button
+                variant="outline"
+                className="min-h-11"
+                onClick={() => void definitions.refetch()}
+              >
+                Retry scenarios
+              </Button>
+            </div>
+          ) : !definition ? (
+            <p className="text-sm text-muted-foreground">
+              No scenario models are registered. A registered model is required
+              to compare decision options.
+            </p>
+          ) : (
+            <>
+              {items.length > 1 && (
+                <div className="space-y-2">
+                  <Label htmlFor={`${id}-scenario`}>Registered scenario</Label>
+                  <Select value={definition.id} onValueChange={setDefinitionId}>
+                    <SelectTrigger
+                      id={`${id}-scenario`}
+                      className="min-h-11 w-full"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {items.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.title} · version {item.version}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {legacy && (
+                <p className="text-sm text-muted-foreground">
+                  This deployment uses the existing unit-economics scenario.
+                </p>
+              )}
+              <ScenarioDecisionForm
+                key={`${definition.id}:${definition.version}`}
+                {...props}
+                definition={definition}
+              />
+            </>
+          )}
+        </div>
+      )}
+    </details>
+  );
+}
+
+function ScenarioDecisionForm({
+  definition,
+  ...props
+}: Props & { definition: ScenarioDefinition }) {
+  let schemas;
+  try {
+    schemas = {
+      shared: validateScenarioSchema(definition.shared_input_schema),
+      option: validateScenarioSchema(definition.input_schema),
+    };
+  } catch (error) {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {error instanceof Error
+          ? error.message
+          : "This scenario cannot be rendered safely."}
+      </p>
+    );
+  }
+  if (definition.scenario_kind !== "unit-economics")
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        This registered model can be simulated in Decision Lab. Decision option
+        persistence supports unit economics.
+      </p>
+    );
+  return (
+    <DecisionForm
+      {...props}
+      definition={definition}
+      sharedSchema={schemas.shared}
+      optionSchema={schemas.option}
+    />
+  );
+}
+
+function DecisionForm({
+  news,
+  investigation,
+  onCreated,
+  definition,
+  sharedSchema,
+  optionSchema,
+}: Props & {
+  definition: ScenarioDefinition;
+  sharedSchema: ScenarioDefinition["shared_input_schema"];
+  optionSchema: ScenarioDefinition["input_schema"];
 }) {
+  const id = useId();
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
   const [currency, setCurrency] = useState("IDR");
-  const [baseline, setBaseline] = useState({
-    units: "",
-    price: "",
-    unitCost: "",
-    capacity: "",
-    budget: "",
+  const [baseline, setBaseline] = useState(() =>
+    scenarioDefaults(sharedSchema),
+  );
+  const newOption = (): Option => ({
+    id: crypto.randomUUID(),
+    description: "",
+    values: scenarioDefaults(optionSchema),
   });
   const [options, setOptions] = useState<Option[]>(() => [newOption()]);
   const pendingOperation = useRef<{ signature: string; id: string } | null>(
@@ -67,8 +212,17 @@ export function DecisionCompose({
       const duration =
         new Date(news.window.end).getTime() -
         new Date(news.window.start).getTime();
+      if (
+        !Number.isFinite(begins.getTime()) ||
+        !Number.isFinite(duration) ||
+        duration <= 0
+      )
+        throw new Error(
+          "Choose a valid outcome period. The observed comparison must have a positive duration.",
+        );
+      const shared = scenarioParameters(sharedSchema, baseline);
       const body = {
-        title,
+        title: title.trim(),
         investigation_id: investigation.id,
         currency,
         outcome_window: {
@@ -77,18 +231,10 @@ export function DecisionCompose({
         },
         options: options.map((option) => ({
           id: option.id,
-          description: option.description,
+          description: option.description.trim(),
           simulation: {
-            action_type: option.action_type,
-            baseline_units: Number(baseline.units),
-            price: Number(baseline.price),
-            unit_cost: Number(baseline.unitCost),
-            capacity: Number(baseline.capacity),
-            max_budget: Number(baseline.budget),
-            expected_unit_change: Number(option.change),
-            unit_change_uncertainty: Number(option.uncertainty),
-            action_cost: Number(option.cost),
-            discount: Number(option.discount),
+            ...shared,
+            ...scenarioParameters(optionSchema, option.values),
           },
         })),
       };
@@ -102,195 +248,157 @@ export function DecisionCompose({
     },
     onSuccess: (decision) => onCreated(decision.id),
   });
-  const setOption = (id: string, key: keyof Option, value: string) =>
-    setOptions((items) =>
-      items.map((item) => (item.id === id ? { ...item, [key]: value } : item)),
-    );
   return (
-    <details className="rounded-md border p-4">
-      <summary className="cursor-pointer font-medium focus-visible:outline focus-visible:outline-ring">
-        Prepare a decision
-      </summary>
-      <form
-        className="mt-4 space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          create.mutate();
-        }}
-      >
-        <p className="text-sm text-muted-foreground">
-          Compare conditional revenue scenarios. Baseline units × unit price
-          must match the observed result ({news.after}). The outcome period uses
-          the same duration as this incident.
-        </p>
+    <form
+      className="min-w-0 space-y-5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        create.mutate();
+      }}
+    >
+      <p className="text-sm text-muted-foreground">
+        {definition.description} Baseline units × unit price must match the
+        observed result ({news.after}). The outcome period uses the same
+        duration as this incident.
+      </p>
+      <div className="space-y-2">
+        <Label htmlFor={`${id}-title`}>Decision title</Label>
+        <Input
+          id={`${id}-title`}
+          className="min-h-11"
+          required
+          maxLength={256}
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          disabled={create.isPending}
+        />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="decision-title">Decision title</Label>
+          <Label htmlFor={`${id}-start`}>Outcome period starts</Label>
           <Input
-            id="decision-title"
+            id={`${id}-start`}
+            className="min-h-11"
+            type="datetime-local"
             required
-            maxLength={256}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            value={start}
+            onChange={(event) => setStart(event.target.value)}
+            disabled={create.isPending}
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor={`${id}-currency`}>Published metric currency</Label>
+          <Input
+            id={`${id}-currency`}
+            className="min-h-11"
+            required
+            minLength={3}
+            maxLength={3}
+            pattern="[A-Z]{3}"
+            value={currency}
+            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+            disabled={create.isPending}
+          />
+        </div>
+      </div>
+      <fieldset className="min-w-0 space-y-3">
+        <legend className="mb-3 text-sm font-medium">
+          Shared {definition.title.toLowerCase()} assumptions
+        </legend>
+        <ScenarioFields
+          schema={sharedSchema}
+          values={baseline}
+          onChange={(key, value) =>
+            setBaseline((current) => ({ ...current, [key]: value }))
+          }
+          disabled={create.isPending}
+        />
+      </fieldset>
+      {options.map((option, index) => (
+        <fieldset
+          key={option.id}
+          className="min-w-0 space-y-4 rounded-md border p-3"
+        >
+          <legend className="px-1 text-sm font-medium">
+            Option {index + 1}
+          </legend>
           <div className="space-y-2">
-            <Label htmlFor="outcome-start">Outcome period starts</Label>
+            <Label htmlFor={`${id}-description-${option.id}`}>
+              Description
+            </Label>
             <Input
-              id="outcome-start"
-              type="datetime-local"
+              id={`${id}-description-${option.id}`}
+              className="min-h-11"
+              value={option.description}
+              maxLength={2000}
               required
-              value={start}
-              onChange={(event) => setStart(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="decision-currency">Published metric currency</Label>
-            <Input
-              id="decision-currency"
-              required
-              minLength={3}
-              maxLength={3}
-              value={currency}
+              disabled={create.isPending}
               onChange={(event) =>
-                setCurrency(event.target.value.toUpperCase())
+                setOptions((items) =>
+                  items.map((item) =>
+                    item.id === option.id
+                      ? { ...item, description: event.target.value }
+                      : item,
+                  ),
+                )
               }
             />
           </div>
-        </div>
-        <fieldset className="grid gap-3 sm:grid-cols-2">
-          <legend className="mb-2 text-sm font-medium">
-            Shared unit economics
-          </legend>
-          {(
-            [
-              { key: "units", label: "Baseline units" },
-              { key: "price", label: "Unit price" },
-              { key: "unitCost", label: "Unit cost" },
-              { key: "capacity", label: "Capacity in the outcome period" },
-              { key: "budget", label: "Maximum action budget" },
-            ] as const
-          ).map(({ key, label }) => (
-            <div key={key} className="space-y-2">
-              <Label htmlFor={`economics-${key}`}>{label}</Label>
-              <Input
-                id={`economics-${key}`}
-                type="number"
-                min={0}
-                step="any"
-                required
-                value={baseline[key]}
-                onChange={(event) =>
-                  setBaseline((current) => ({
-                    ...current,
-                    [key]: event.target.value,
-                  }))
-                }
-              />
-            </div>
-          ))}
+          <ScenarioFields
+            schema={optionSchema}
+            values={option.values}
+            disabled={create.isPending}
+            onChange={(key, value) =>
+              setOptions((items) =>
+                items.map((item) =>
+                  item.id === option.id
+                    ? { ...item, values: { ...item.values, [key]: value } }
+                    : item,
+                ),
+              )
+            }
+          />
+          {options.length > 1 && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11"
+              disabled={create.isPending}
+              onClick={() =>
+                setOptions((items) =>
+                  items.filter((item) => item.id !== option.id),
+                )
+              }
+            >
+              Remove option {index + 1}
+            </Button>
+          )}
         </fieldset>
-        {options.map((option, index) => (
-          <fieldset key={option.id} className="space-y-3 rounded-md border p-3">
-            <legend className="px-1 text-sm font-medium">
-              Option {index + 1}
-            </legend>
-            <div className="space-y-2">
-              <Label htmlFor={`description-${option.id}`}>Description</Label>
-              <Input
-                id={`description-${option.id}`}
-                value={option.description}
-                maxLength={2000}
-                required
-                onChange={(event) =>
-                  setOption(option.id, "description", event.target.value)
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor={`action-${option.id}`}>Action to simulate</Label>
-              <Select
-                value={option.action_type}
-                onValueChange={(value) =>
-                  setOption(option.id, "action_type", value)
-                }
-              >
-                <SelectTrigger id={`action-${option.id}`} className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[
-                    ["inventory_transfer", "Inventory transfer"],
-                    ["campaign_budget", "Campaign budget"],
-                    ["rollback", "Service rollback"],
-                    ["discount", "Discount"],
-                    ["spend", "Spend"],
-                  ].map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {fields.map(({ key, label }) => (
-                <div key={key} className="space-y-2">
-                  <Label htmlFor={`${key}-${option.id}`}>{label}</Label>
-                  <Input
-                    id={`${key}-${option.id}`}
-                    type="number"
-                    step="any"
-                    min={key === "change" ? undefined : 0}
-                    max={key === "discount" ? 0.999 : undefined}
-                    required
-                    value={option[key]}
-                    onChange={(event) =>
-                      setOption(option.id, key, event.target.value)
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-            {options.length > 1 && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  setOptions((current) =>
-                    current.filter((item) => item.id !== option.id),
-                  )
-                }
-              >
-                Remove option {index + 1}
-              </Button>
-            )}
-          </fieldset>
-        ))}
-        <p className="text-xs text-muted-foreground">
-          Estimates depend on these assumptions. Saving options records a
-          recommendation for review; it does not execute the simulated business
-          action.
+      ))}
+      <p className="text-xs text-muted-foreground">
+        Estimates depend on these assumptions. Saving options records a
+        recommendation for review; execution requires its own approval and
+        consent.
+      </p>
+      {create.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {create.error.message}
         </p>
-        {create.isError && (
-          <p role="alert" className="text-sm text-destructive">
-            {create.error.message}
-          </p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={options.length >= 5 || create.isPending}
-            onClick={() => setOptions((current) => [...current, newOption()])}
-          >
-            Add option
-          </Button>
-          <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? "Computing options…" : "Save decision options"}
-          </Button>
-        </div>
-      </form>
-    </details>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11"
+          disabled={options.length >= 5 || create.isPending}
+          onClick={() => setOptions((items) => [...items, newOption()])}
+        >
+          Add option
+        </Button>
+        <Button type="submit" className="min-h-11" disabled={create.isPending}>
+          {create.isPending ? "Computing options…" : "Save decision options"}
+        </Button>
+      </div>
+    </form>
   );
 }

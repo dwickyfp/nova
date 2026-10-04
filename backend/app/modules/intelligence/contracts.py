@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.modules.assistant.evidence_health import EvidenceHealth
 from app.modules.assistant.security import session_security
 
 _CREDENTIAL_TOKEN = re.compile(
@@ -88,6 +89,7 @@ class EvidenceRef(Contract):
     window_start: datetime | None = None
     window_end: datetime | None = None
     semantic_plan: dict[str, Any] | None = None
+    evidence_health: EvidenceHealth | None = None
 
 
 class Confidence(Contract):
@@ -154,6 +156,19 @@ class ContextNode(Record):
     state: KnowledgeState = KnowledgeState.HYPOTHESIS
     authority: str | None = Field(default=None, max_length=128)
     evidence: list[EvidenceRef] = Field(default_factory=list, max_length=100)
+    source_kind: Literal[
+        "unknown", "user_statement", "published_semantic", "reviewed_rule",
+        "lifecycle_evidence", "usage",
+    ] = "unknown"
+    authority_basis: dict[str, str | int | bool] = Field(default_factory=dict, max_length=8)
+    validity: Literal["current", "historical", "unknown"] = "unknown"
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    freshness: Literal["fresh", "stale", "unknown"] = "unknown"
+    usage_count: int | None = Field(default=None, ge=0)
+    aliases: list[str] = Field(default_factory=list, max_length=32)
+    claim_fingerprint: str | None = Field(default=None, max_length=128)
+    contradictions: list[str] = Field(default_factory=list, max_length=100)
 
 
 class ContextEdge(Record):
@@ -269,6 +284,8 @@ class Investigation(Record):
 
 
 class DecisionOption(Contract):
+    scenario_kind: str = "unit-economics"
+    scenario_version: int = Field(default=1, ge=1)
     id: str = Field(min_length=1, max_length=128)
     description: str = Field(min_length=1, max_length=2000)
     action_type: Literal[
@@ -344,7 +361,15 @@ class DecisionEvent(Record):
     references: list[str] = Field(default_factory=list, max_length=100)
 
 
+class OutcomeLearningRef(Contract):
+    kind: Literal["knowledge"] = "knowledge"
+    id: str = Field(min_length=1, max_length=128)
+    revision: int = Field(ge=1)
+
+
 class Outcome(Record):
+    action_ids: list[str] = Field(default_factory=list, max_length=100)
+    learning_refs: list[OutcomeLearningRef] = Field(default_factory=list, max_length=100)
     decision_id: str
     decision_revision: int
     semantic: SemanticRef

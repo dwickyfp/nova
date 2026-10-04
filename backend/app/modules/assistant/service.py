@@ -63,6 +63,7 @@ from app.modules.assistant.intelligence import (
     state_step,
     validate_json_arguments,
 )
+from app.modules.assistant.measurements import AttemptMeasurements, measurement_scope
 from app.modules.assistant.messages import say
 from app.modules.assistant.planning import TurnPlan, plan_turn, refine_turn_plan
 from app.modules.assistant.provider import (
@@ -76,7 +77,7 @@ from app.modules.assistant.provider_capabilities import (
 from app.modules.assistant.schemas import ToolCallView
 from app.modules.assistant.security import secured_thread, session_security
 from app.modules.assistant.state import AssistantThread
-from app.modules.assistant.tools import ToolInvocation, ToolRegistry, requires_consent
+from app.modules.assistant.tools import ToolInvocation, ToolOutcome, ToolRegistry, requires_consent
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,11 @@ class LoopContext:
     user_name: str
     collaboration_tools: tuple[str, ...] = ()
     collaboration_root: bool = False
+    business_turn_hook: Any = None
+    mission_id: str | None = None
+    requested_work_intent: str | None = None
+    start_new_mission: bool = False
+    business_cancelled: Any = None
     verified_evidence: dict[str, Any] | None = None
     database: str | None = None
     schema_name: str | None = None
@@ -174,6 +180,10 @@ class LoopContext:
     authorized_semantic_datasets: dict[str, list[str]] | None = None
     authorized_semantic_models: list[dict[str, Any]] | None = None
     agent_scope: dict[str, Any] | None = None
+    release_manifest: dict[str, Any] | None = None
+    quality_facts: dict[str, Any] | None = None
+    quality_evaluation: bool = field(default=False, repr=False)
+    quality_measurements: _QualityMeasurements | None = field(default=None, repr=False)
     model_provider_id: str | None = None
     model_name: str | None = None
     #: The most recent tabular result in this turn, so ``data_to_chart`` can
@@ -582,6 +592,69 @@ class AssistantLoop:
         save_state: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         before_final: Callable[[], Awaitable[list[str]]] | None = None,
     ) -> AsyncIterator[str]:
+        from app.core.config import settings
+
+        context.quality_measurements = (
+            _QualityMeasurements(
+                collaborative=bool(
+                    context.collaboration_root or context.collaboration_tools
+                    or on_checkpoint or save_state or before_final
+                ),
+                resumed=resume_state is not None,
+            )
+            if (settings.STUDIO_QUALITY_ENABLED or context.quality_evaluation)
+            and context.agent_id else None
+        )
+        iterator = self._run(
+            thread=thread, user_content=user_content, context=context,
+            resolve_consent=resolve_consent, cancelled=cancelled, model=model,
+            provider_id=provider_id, on_checkpoint=on_checkpoint, resume_state=resume_state,
+            save_state=save_state, before_final=before_final,
+        )
+        finish_reason = "interrupted"
+        try:
+            while True:
+                # Bind only while driving the engine; callers consuming an SSE
+                # frame must not inherit this attempt's measurements.
+                with measurement_scope(context.quality_measurements):
+                    try:
+                        frame = await anext(iterator)
+                    except StopAsyncIteration:
+                        break
+                    if frame.startswith("event: done\n"):
+                        payload = json.loads(frame.split("data: ", 1)[1])
+                        finish_reason = payload.get("finish_reason", "error")
+                        _record_quality_observation(context, user_content, finish_reason)
+                yield frame
+        except Exception:
+            finish_reason = "error"
+            raise
+        finally:
+            with measurement_scope(context.quality_measurements):
+                try:
+                    await iterator.aclose()
+                    _record_quality_observation(context, user_content, finish_reason)
+                finally:
+                    if context.quality_measurements is not None:
+                        context.quality_measurements.active = False
+
+    async def _run(
+        self,
+        *,
+        thread: AssistantThread,
+        user_content: str,
+        context: LoopContext,
+        resolve_consent: Callable[
+            [ToolInvocation, str], Awaitable[bool | None | ConsentApproval]
+        ],
+        cancelled: Callable[[], bool] = lambda: False,
+        model: str | None = None,
+        provider_id: str | None = None,
+        on_checkpoint: Callable[[], Awaitable[list[str]]] | None = None,
+        resume_state: dict[str, Any] | None = None,
+        save_state: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        before_final: Callable[[], Awaitable[list[str]]] | None = None,
+    ) -> AsyncIterator[str]:
         """Drive one turn, yielding SSE frames.
 
         ``resolve_consent`` is awaited when a tool call is proposed; it returns
@@ -595,6 +668,21 @@ class AssistantLoop:
             security = session_security(context.user)
             context.role = security.active_role
             thread = secured_thread(thread, security)
+        context.release_manifest = context.release_manifest or getattr(
+            self._registry, "release_manifest", None
+        )
+        if context.release_manifest:
+            pinned = context.release_manifest["dependencies"]
+            await self._validate_release_resources(context)
+            context.semantic_view_ids = pinned["configuration"].get("semantic_view_ids") or []
+            model_record = pinned["models"][0]
+            provider_id, model = model_record["provider_id"], model_record["name"]
+            context.model_provider_id, context.model_name = provider_id, model
+        context.quality_facts = context.quality_facts or {}
+        measured_provider = (
+            _MeasuredProvider(self._provider, context.quality_measurements)
+            if context.quality_measurements is not None else self._provider
+        )
         context.run_id = context.run_id or str(uuid4())
         context.trace_started_at = time.perf_counter()
         context.user_question = context.routing_content or user_content
@@ -655,7 +743,12 @@ class AssistantLoop:
                 tool_name="invoke_client_capability",
                 arguments=fast_action,
             )
-            outcome = await fast_tool.run(invocation, context)
+            _measure_tool_dispatch(context)
+            outcome = await self._dispatch_tool(fast_tool, invocation, context)
+            if outcome.error_class == "RELEASE_DRIFT":
+                yield events.error("release_drift", outcome.error)
+                yield events.done(str(uuid4()), finish_reason="error")
+                return
             if outcome.ok:
                 context.route = {"intent": "ui_operation", "planner_tier": 0}
                 context.selected_tools = ["invoke_client_capability"]
@@ -691,7 +784,16 @@ class AssistantLoop:
         if context.agent_id or context.collaboration_root:
             from app.modules.assistant.decision import decision_session
 
-            context.decision = await decision_session()
+            if context.release_manifest:
+                from app.modules.ai_ml.decision_settings import DecisionSettings
+                from app.modules.assistant.decision import DecisionSession
+
+                routing = DecisionSettings.model_validate(
+                    context.release_manifest["dependencies"]["routing"]
+                )
+                context.decision = DecisionSession(routing) if routing.enabled else None
+            else:
+                context.decision = await decision_session()
         routed_model = None
         if context.decision is not None:
             context.decision.time_remaining = lambda: deadline - _budget_time()
@@ -742,7 +844,7 @@ class AssistantLoop:
 
         async def plan_with(selected_provider: Any) -> TurnPlan:
             return await plan_turn(
-                provider_client=self._provider,
+                provider_client=measured_provider,
                 provider=selected_provider,
                 registry=self._registry,
                 user_content=(
@@ -804,10 +906,19 @@ class AssistantLoop:
                 "kind": "runtime_decision", "planner_fallback": turn_plan.route.intent.value,
                 "status": "done",
             })
+        if callable(context.business_turn_hook):
+            mission = await context.business_turn_hook(turn_plan, context)
+            if mission:
+                context.mission_id = mission["mission_id"]
+                yield events.format_sse("mission_updated", {"mission": mission})
         route = turn_plan.route
         context.route = route.as_dict()
         context.intent_frame = turn_plan.intent_frame
         if route.needs_data:
+            from app.modules.assistant.messages import known
+
+            if not known(_turn_language(context)) and context.quality_measurements is not None:
+                context.quality_measurements.unavailable_provider("background_translation")
             _start_translation(_turn_language(context), self._provider, provider)
         if turn_plan.primary_plan is not None:
             context.primary_plan = {"plan": turn_plan.primary_plan, "view": turn_plan.primary_view}
@@ -876,6 +987,8 @@ class AssistantLoop:
             and self._dropped_lines
             and summary_cache.get(thread_key, self._dropped_lines) is None
         ):
+            if context.quality_measurements is not None:
+                context.quality_measurements.unavailable_provider("background_summary")
             _summarize_in_background(self._provider, provider, thread_key, self._dropped_lines)
         stats = context.context_stats or {}
         if stats.get("dropped_turns") or stats.get("cleared_tool_results"):
@@ -993,7 +1106,9 @@ class AssistantLoop:
                     "clarification_requested": clarification_requested,
                     "safe_to_resume": True,
                 })
-            if cancelled():
+            if cancelled() or (
+                callable(context.business_cancelled) and await context.business_cancelled()
+            ):
                 yield events.tool_status("", "cancelled")
                 yield events.done(str(uuid4()), finish_reason="cancelled")
                 return
@@ -1126,7 +1241,7 @@ class AssistantLoop:
                         yield events.done(str(uuid4()), finish_reason="context_overflow")
                         return
 
-                    async for kind, payload in self._provider.stream(**stream_kwargs):
+                    async for kind, payload in measured_provider.stream(**stream_kwargs):
                         if kind == "delta":
                             buffered_text.append(payload)
                         else:
@@ -1396,7 +1511,20 @@ class AssistantLoop:
                             "semantic_sources": semantic_sources,
                         },
                     )
+                    context.quality_facts["numeric_consistency"] = {
+                        "accepted": answer_check.accepted,
+                        "unsupported_count": len(answer_check.unsupported),
+                        "claims": [{"text": claim.text, "evidence_id": claim.evidence_id,
+                                    "column": claim.column, "supported": bool(claim.evidence_id)}
+                                   for claim in answer_check.claims],
+                    }
                     answer_text = verified_answer.text
+                context.quality_facts["task_completeness"] = {
+                    "completed": not denials and not missing_metrics,
+                    "required_capabilities": sorted(required_capabilities),
+                    "completed_capabilities": sorted(completed_capabilities),
+                    "missing_metrics": missing_metrics,
+                }
                 context.verified_evidence = evidence.snapshot()
                 for frame in _ordered_output_frames(
                     answer_text,
@@ -1647,7 +1775,9 @@ class AssistantLoop:
                 yield events.done(str(uuid4()), finish_reason="denied")
                 return
 
-            needs_prompt = requires_consent(tool) and not thread.consent.covers(classification)
+            from app.modules.assistant.tool_gate import needs_tool_consent, resolve_tool_consent
+
+            needs_prompt = needs_tool_consent(tool, classification, thread)
 
             # The call is announced on the stream either way. It carries the only
             # redacted SQL preview the panel gets, so a call auto-covered by a
@@ -1666,7 +1796,14 @@ class AssistantLoop:
                 consent_started = _budget_time()
                 try:
                     allowed = await asyncio.wait_for(
-                        resolve_consent(invocation, classification),
+                        resolve_tool_consent(
+                            tool,
+                            invocation,
+                            classification,
+                            thread,
+                            resolve_consent,
+                            timeout_seconds=CONSENT_TIMEOUT_SECONDS,
+                        ),
                         timeout=CONSENT_TIMEOUT_SECONDS,
                     )
                 except TimeoutError:
@@ -1686,6 +1823,9 @@ class AssistantLoop:
                 yield events.done(str(uuid4()), finish_reason="cancelled")
                 return
             if not allowed:
+                context.quality_facts["policy_compliance"] = {
+                    "consent_resolved": False, "denied": True, "classification": classification,
+                }
                 view.status = "denied"
                 yield events.tool_status(invocation.tool_call_id, "denied")
                 denials += 1
@@ -1714,6 +1854,21 @@ class AssistantLoop:
                 yield events.done(str(uuid4()), finish_reason="denied")
                 return
 
+            if cancelled() or (
+                callable(context.business_cancelled) and await context.business_cancelled()
+            ):
+                yield events.tool_status(invocation.tool_call_id, "cancelled")
+                yield events.done(str(uuid4()), finish_reason="cancelled")
+                return
+
+            context.quality_facts.setdefault("tool_arguments", {})[invocation.tool_name] = {
+                key: value for key, value in invocation.arguments.items()
+                if not any(secret in key.lower() for secret in _SECRET_ARGUMENT_KEYS)
+                and len(str(value)) <= 2000
+                and not _sensitive_quality_argument(value)
+            }
+            context.quality_facts["policy_compliance"] = {"consent_resolved": True,
+                                                          "classification": classification}
             yield events.tool_status(invocation.tool_call_id, "running")
             _record_step(
                 context,
@@ -1739,10 +1894,13 @@ class AssistantLoop:
             if prefetch is not None:
                 tool_task, prefetch_context = prefetch
             else:
-                tool_task = asyncio.create_task(tool.run(invocation, context))
+                _measure_tool_dispatch(context)
+                tool_task = asyncio.create_task(self._dispatch_tool(tool, invocation, context))
             try:
                 while not tool_task.done():
-                    if cancelled():
+                    if cancelled() or (
+                        callable(context.business_cancelled) and await context.business_cancelled()
+                    ):
                         tool_task.cancel()
                         _finish_tool_step(context, "cancelled", None)
                         yield events.tool_status(invocation.tool_call_id, "cancelled")
@@ -1788,8 +1946,30 @@ class AssistantLoop:
                     await asyncio.gather(tool_task, return_exceptions=True)
             if prefetch is not None and prefetch_context.last_result is not None:
                 context.last_result = prefetch_context.last_result
+            if outcome.error_class == "RELEASE_DRIFT":
+                for task, _ in prefetched.values():
+                    task.cancel()
+                await asyncio.gather(
+                    *(task for task, _ in prefetched.values()), return_exceptions=True,
+                )
+                yield events.tool_status(invocation.tool_call_id, "failed")
+                _finish_tool_step(context, "failed", outcome.error)
+                yield events.error("release_drift", outcome.error)
+                _transition(context, TurnState.FAILED)
+                yield events.done(str(uuid4()), finish_reason="error")
+                return
+            from app.modules.assistant.evidence_health import attach_execution_health
+
+            outcome = attach_execution_health(outcome, invocation.tool_name)
             if outcome.trace_detail:
                 _attach_tool_trace(context, invocation.tool_call_id, outcome.trace_detail)
+                health = outcome.trace_detail.get("evidence_health")
+                if health:
+                    yield events.format_sse("evidence_health", {
+                        "tool_call_id": invocation.tool_call_id,
+                        "tool_name": invocation.tool_name,
+                        "payload": health,
+                    })
             # The observe phase is where the model reads a tool result back. For
             # a skill load there is nothing to observe; a query result is.
             if invocation.tool_name != "load_skill":
@@ -1804,6 +1984,10 @@ class AssistantLoop:
                 # question back, and no other data path is tried.
                 yield events.tool_status(invocation.tool_call_id, "done")
                 _finish_tool_step(context, "done", None)
+                context.quality_facts["clarification_quality"] = {
+                    "requested": True, "reason": outcome.error_class,
+                    "missing_inputs": (outcome.repair_context or {}).get("missing_inputs", []),
+                }
                 clarification_requested = True
                 composing_final = True
                 messages.append(
@@ -2004,6 +2188,28 @@ class AssistantLoop:
             ):
                 for participant in outcome.data.get("agents", []):
                     evidence.import_results(participant)
+            context.quality_facts.setdefault("evidence", []).append(
+                {
+                    "id": evidence_item.evidence_id,
+                    "tool": invocation.tool_name,
+                    "health": (outcome.evidence or {}).get("health")
+                    or (outcome.metadata or {}).get("evidence_health")
+                    or {},
+                    "complete": (outcome.metadata or {})
+                    .get("evidence_health", {})
+                    .get("facts", {})
+                    .get("coverage")
+                    == "complete",
+                }
+            )
+            if invocation.tool_name == "semantic_query":
+                provenance = outcome.evidence or {}
+                context.quality_facts["semantic_selection"] = {
+                    "view_id": provenance.get("semantic_model_id"),
+                    "metrics": provenance.get("metrics") or [],
+                    "dimensions": provenance.get("dimensions") or [],
+                    "semantic_plan": (outcome.data or {}).get("semantic_plan") or {},
+                }
             _attach_tool_evidence(
                 context,
                 invocation.tool_call_id,
@@ -2081,6 +2287,48 @@ class AssistantLoop:
         )
         yield events.done(str(uuid4()), finish_reason="iteration_cap", usage=context.usage)
 
+    @staticmethod
+    async def _validate_release_resources(context: LoopContext) -> None:
+        if not context.release_manifest:
+            return
+        pinned = context.release_manifest["dependencies"]
+        if not pinned["resources"]:
+            return
+        from fastapi import HTTPException
+
+        from app.modules.agents.releases import resource_contracts
+
+        resources = await resource_contracts(pinned["configuration"], context.user or {})
+        if resources != pinned["resources"]:
+            raise HTTPException(
+                409, "Pinned resource definitions have drifted; evaluate a new draft"
+            )
+
+    async def _dispatch_tool(
+        self, tool: Any, invocation: ToolInvocation, context: LoopContext,
+    ) -> ToolOutcome:
+        try:
+            await self._validate_release_resources(context)
+        except Exception:
+            return ToolOutcome(
+                ok=False, summary="", error_class="RELEASE_DRIFT",
+                error="Pinned release resources changed or could not be authorized; "
+                "evaluate a new draft",
+            )
+        outcome = await tool.run(invocation, context)
+        if outcome.error_class == "RELEASE_DRIFT":
+            return outcome
+        if context.release_manifest and invocation.tool_name in {"ai_search", "feature_lookup"}:
+            try:
+                await self._validate_release_resources(context)
+            except Exception:
+                return ToolOutcome(
+                    ok=False, summary="", error_class="RELEASE_DRIFT",
+                    error="Pinned release resources changed or could not be authorized; "
+                    "evaluate a new draft",
+                )
+        return outcome
+
     def _prefetch(
         self,
         call: dict[str, Any],
@@ -2096,6 +2344,8 @@ class AssistantLoop:
         call produces are eligible. The loop still validates, records, and
         orders each call when it reaches it; this only overlaps the waiting.
         """
+        if context.mission_id:
+            return None
         invocation = self._parse_tool_call(call)
         if invocation is None or invocation.tool_name not in PARALLEL_SAFE_TOOLS:
             return None
@@ -2116,7 +2366,11 @@ class AssistantLoop:
             return None
         started.add(fingerprint)
         local = replace(context, tool_progress_sink=None, secure_input=None, file_upload=None)
-        return invocation.tool_call_id, asyncio.create_task(tool.run(invocation, local)), local
+        _measure_tool_dispatch(context)
+        return (
+            invocation.tool_call_id,
+            asyncio.create_task(self._dispatch_tool(tool, invocation, local)), local,
+        )
 
     @staticmethod
     def _call_fingerprint(invocation: ToolInvocation) -> str:
@@ -2917,6 +3171,14 @@ def _summarise_narration(text: str) -> str:
 _SECRET_ARGUMENT_KEYS = ("password", "token", "secret", "key", "credential")
 
 
+def _sensitive_quality_argument(value: Any) -> bool:
+    from app.modules.assistant.skills import contains_credential_shape
+    from app.modules.assistant.tools.redaction import redact_row
+
+    encoded = json.dumps(value, default=str)
+    return contains_credential_shape(encoded) or redact_row(["argument"], [encoded])[0] != encoded
+
+
 def _redacted_arguments(arguments: dict[str, Any]) -> dict[str, str]:
     """The model's tool arguments, with credential-shaped keys masked.
 
@@ -3274,3 +3536,106 @@ Writing style:
 - Stop after the last useful fact. Name the actual table, column, tool, or error.
 </NOVA_PLATFORM>
 """
+
+
+_QualityMeasurements = AttemptMeasurements
+
+class _MeasuredProvider:
+    """Observe existing planner/stream calls without changing retries or traces."""
+
+    def __init__(self, client: Any, measurements: _QualityMeasurements) -> None:
+        self._client = client
+        self._measurements = measurements
+        if callable(getattr(client, "plan_turn", None)):
+            measurements.unavailable_provider("custom_planner_unmeasured")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+    def _begin(self, kwargs: dict[str, Any], operation: str) -> bool:
+        native = (
+            type(self._client) is AssistantProviderClient
+            and getattr(getattr(self._client, operation, None), "__func__", None)
+            is getattr(AssistantProviderClient, operation)
+        )
+        if native:
+            return True
+        measured = self._measurements
+        measured.increment("provider_invocations")
+        measured.unavailable_provider("custom_transport_unmeasured")
+        extra = sum(
+            len(json.dumps(kwargs.get(key), separators=(",", ":"), default=str)) // 4
+            for key in ("tools", "response_format") if kwargs.get(key)
+        )
+        measured.estimated_peak_context_tokens = max(
+            measured.estimated_peak_context_tokens,
+            estimate_messages_tokens(kwargs.get("messages") or []) + extra,
+        )
+        return False
+
+    async def complete(self, **kwargs: Any) -> dict[str, Any]:
+        native = self._begin(kwargs, "complete")
+        received = False
+        try:
+            message = await self._client.complete(**kwargs)
+            if not native:
+                self._measurements.response(message)
+            received = True
+            return message
+        finally:
+            if not received and not native:
+                self._measurements.unavailable_provider("failed_dispatch_unmeasured")
+
+    async def stream(self, **kwargs: Any) -> AsyncIterator[tuple[str, Any]]:
+        native = self._begin(kwargs, "stream")
+        received = False
+        try:
+            async for kind, payload in self._client.stream(**kwargs):
+                if kind == "message":
+                    if not native:
+                        self._measurements.response(payload)
+                    received = True
+                yield kind, payload
+        finally:
+            if not received and not native:
+                self._measurements.unavailable_provider("failed_dispatch_unmeasured")
+
+
+def _measure_tool_dispatch(context: LoopContext) -> None:
+    measured = context.quality_measurements
+    if measured is not None:
+        measured.increment("tool_dispatches")
+        # Tools may call another provider or delegate through their own owner.
+        # No tool protocol currently proves that these measurements are complete.
+        measured.unavailable_provider("nested_tool_requests_unmeasured")
+
+
+def _record_quality_observation(
+    context: LoopContext, user_content: str, finish_reason: str
+) -> None:
+    from app.core.config import settings
+
+    if not (settings.STUDIO_QUALITY_ENABLED or context.quality_evaluation) or not context.agent_id:
+        return
+    if any(step.get("kind") == "quality_observation" for step in context.steps or []):
+        return
+    facts = dict(context.quality_facts or {})
+    if finish_reason != "stop":
+        facts["task_completeness"] = {**facts.get("task_completeness", {}), "completed": False}
+    facts["execution"] = {"finish_reason": finish_reason}
+    counts, measurement = (
+        context.quality_measurements.observation(context.decision)
+        if context.quality_measurements is not None
+        else ({}, {"unavailable": {"provider_calls": ["instrumentation_unavailable"]}})
+    )
+    _record_step(context, {
+        "kind": "quality_observation", "facts": facts,
+        "prompt_digest": hashlib.sha256(
+            json.dumps(user_content, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        "duration_ms": _trace_now_ms(context),
+        "counts": counts,
+        "measurement": measurement,
+        "manifest_id": context.release_manifest["id"] if context.release_manifest else None,
+        "version_id": context.release_manifest["version_id"] if context.release_manifest else None,
+    })

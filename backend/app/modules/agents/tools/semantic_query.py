@@ -32,9 +32,12 @@ import logging
 import re
 import time
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 from app.common.sql_guard import redact_sql_credentials
+from app.core.config import settings
+from app.modules.access_control.security_context import SecurityContext
 from app.modules.agents.repository import agent_repository
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
@@ -46,11 +49,17 @@ from app.modules.agents.semantic.planning import (
 from app.modules.agents.semantic.runtime import (
     VerifiedQuery,
 )
+from app.modules.assistant.evidence_health import (
+    EvidenceFacts,
+    assess_evidence,
+    attach_evidence_health,
+)
 from app.modules.assistant.provider import (
     AssistantProviderClient,
     AssistantProviderError,
 )
 from app.modules.assistant.schemas import ToolClassification
+from app.modules.assistant.security import session_security
 from app.modules.assistant.tools import (
     ToolInvocation,
     ToolOutcome,
@@ -122,6 +131,31 @@ class SemanticQueryTool:
         return f"semantic_query: {question}" if question else "semantic_query"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
+        outcome = await self._run(invocation, context)
+        if (
+            not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False)
+            or outcome.metadata.get("evidence_health")
+        ):
+            return outcome
+        trace = outcome.trace_detail or {}
+        view = trace.get("semantic_view") or {}
+        facts = EvidenceFacts(
+            semantic_grounding=trace.get("semantic_grounding", "unknown"),
+            semantic_view_id=view.get("id") or None,
+            semantic_version=view.get("version"),
+            semantic_fingerprint=view.get("fingerprint") or None,
+            execution_status=(
+                "failed" if outcome.error_class == "SEMANTIC_EXECUTION_ERROR" else "not_run"
+            ),
+            semantic_ambiguity=(
+                "unresolved" if outcome.error_class == "CLARIFICATION_REQUIRED" else "unknown"
+            ),
+        )
+        return attach_evidence_health(
+            outcome, assess_evidence(facts, assessed_at=datetime.now(UTC))
+        )
+
+    async def _run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         question = _question_from(invocation)
         if not question:
             return ToolOutcome(ok=False, summary="", error="No question was provided.")
@@ -328,6 +362,7 @@ class SemanticQueryTool:
             sql_preview=safe_sql,
         )
         execution_started = time.perf_counter()
+        security = session_security(user)
         try:
             results = await query_service.execute_statements(
                 sql=sql,
@@ -336,6 +371,7 @@ class SemanticQueryTool:
                 database=_context_value(context, "database"),
                 schema=_context_value(context, "schema_name"),
                 role=_active_role(context),
+                security_context_version=security.security_context_version,
                 max_rows=self.max_rows,
                 session_id=_context_value(context, "audit_session_id"),
                 confirm_destructive=False,
@@ -344,6 +380,9 @@ class SemanticQueryTool:
         except Exception as exc:  # noqa: BLE001 - surfaced as a tool failure
             logger.warning("semantic_query execution failed: %s", type(exc).__name__)
             execution_duration_ms = (time.perf_counter() - execution_started) * 1000
+            await _record_usage(
+                security, semantic_model, semantic_ir, plan, execution_duration_ms, succeeded=False,
+            )
             trace = _semantic_trace(
                 semantic_model,
                 question=question,
@@ -368,6 +407,9 @@ class SemanticQueryTool:
 
         failed = next((r for r in results if r.error), None)
         if failed is not None:
+            await _record_usage(
+                security, semantic_model, semantic_ir, plan, execution_duration_ms, succeeded=False,
+            )
             trace = _semantic_trace(
                 semantic_model,
                 question=question,
@@ -403,27 +445,26 @@ class SemanticQueryTool:
             text=f"Retrieved {row_count} row{'s' if row_count != 1 else ''}",
             sql_preview=safe_sql,
         )
-        try:
-            await agent_repository.record_semantic_usage(
-                owner_name=username,
-                semantic_model_id=str(semantic_model.get("semantic_model_id") or ""),
-                model_fingerprint=semantic_ir.fingerprint,
-                metrics=list(plan.metrics),
-                dimensions=list(plan.dimensions),
-                filter_shape=[
-                    {"field": item.field, "operator": item.operator} for item in plan.filters
-                ],
-                time_grain=plan.time.grain if plan.time else None,
-                execution_latency_ms=round(execution_duration_ms),
-                succeeded=True,
-                verified_query_id=None,
-            )
-        except Exception as exc:  # noqa: BLE001 - telemetry must not fail a query
-            logger.warning("semantic usage telemetry failed: %s", type(exc).__name__)
+        await _record_usage(
+            security, semantic_model, semantic_ir, plan, execution_duration_ms, succeeded=True,
+        )
 
         if hasattr(context, "primary_query_done"):
             context.primary_query_done = True
-        return ToolOutcome(
+        summary = _render(
+            question=question, sql=safe_sql, explanation=explanation,
+            confidence=confidence, results=results,
+        )
+        health = None
+        if getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
+            health = assess_evidence(
+                _execution_facts(
+                    semantic_model, results, plan_source, verified_hit, plan,
+                    preview_truncated=summary.endswith("… [truncated]"),
+                ),
+                assessed_at=datetime.now(UTC),
+            )
+        outcome = ToolOutcome(
             ok=True,
             summary=_render(
                 question=question,
@@ -431,6 +472,7 @@ class SemanticQueryTool:
                 explanation=explanation,
                 confidence=confidence,
                 results=results,
+                evidence_health=health.model_dump(mode="json") if health else None,
             ),
             table=table,
             data={
@@ -454,6 +496,7 @@ class SemanticQueryTool:
                 "warnings": list(compiled.warnings),
                 "period_from_user": period_note,
                 "verified_query_hit": verified_hit.verified_query_id if verified_hit else None,
+                **({"complete": health.facts.coverage == "complete"} if health else {}),
             },
             state_patch={
                 "semantic_plan": plan.as_dict(),
@@ -487,6 +530,7 @@ class SemanticQueryTool:
                 "semantic_plan": plan.as_dict(),
             },
         )
+        return attach_evidence_health(outcome, health) if health else outcome
 
     async def _resolve_model(self, context: Any, question: str) -> dict[str, Any] | None:
         from app.modules.agents.semantic.access import load_authorized_models
@@ -721,6 +765,7 @@ def _render(
     explanation: str,
     confidence: Any,
     results: list[Any],
+    evidence_health: dict | None = None,
 ) -> str:
     """The bounded text the model reads back: SQL, rows, and honesty markers."""
     from app.modules.assistant.tools.redaction import redact_rows
@@ -728,8 +773,10 @@ def _render(
     lines = [f"question: {question}", f"sql:\n{sql}"]
     if explanation:
         lines.append(f"explanation: {explanation}")
-    if isinstance(confidence, int | float):
-        lines.append(f"confidence: {confidence}")
+    if evidence_health:
+        lines.append(f"evidence: {evidence_health['label']}")
+        lines.append(f"freshness: {evidence_health['data_freshness']['status']}")
+        lines.append(f"causal status: {evidence_health['facts']['causal_strength']}")
     for result in results:
         columns = list(getattr(result, "columns", []) or [])
         rows = list(getattr(result, "rows", []) or [])
@@ -763,8 +810,64 @@ def _table_payload(results: list[Any], *, title: str = "") -> dict[str, Any] | N
             "title": title,
             "columns": columns,
             "rows": [list(r) for r in safe_rows[:200]],
+            "truncated": bool(getattr(result, "truncated", False)) or len(safe_rows) > 200,
         }
     return None
+
+
+def _execution_facts(
+    model: dict[str, Any], results: list[Any], plan_source: str, verified_hit: VerifiedQuery | None,
+    plan: SemanticPlan, *, preview_truncated: bool = False,
+) -> EvidenceFacts:
+    truncated = preview_truncated or any(
+        getattr(result, "truncated", None) is True or len(result.rows) > 50
+        for result in results
+    )
+    coverage = (
+        "truncated" if truncated else "complete"
+        if results and all(getattr(result, "truncated", None) is False for result in results)
+        else "unknown"
+    )
+    # Query execution has no source watermark contract yet. Unknown is retained
+    # until the data adapter supplies a validated watermark and freshness bound.
+    return EvidenceFacts(
+        semantic_grounding=(
+            "published" if model.get("status") in {"ACTIVE", "DEPRECATED"} else "unknown"
+        ),
+        semantic_view_id=str(model.get("id") or model.get("semantic_model_id") or "") or None,
+        semantic_version=model.get("version"),
+        semantic_fingerprint=model.get("fingerprint") or None,
+        plan_source=plan_source,
+        verified_query_hit=verified_hit is not None,
+        verified_query_id=verified_hit.verified_query_id if verified_hit else None,
+        execution_status="success" if results else "unknown",
+        coverage=coverage,
+        semantic_ambiguity="unresolved" if plan.unresolved_concepts else "none",
+        unsupported_numeric_claims=False,
+        causal_strength="unknown",
+    )
+
+
+async def _record_usage(
+    security: SecurityContext, model: dict[str, Any], semantic_ir: SemanticModelIR,
+    plan: SemanticPlan, duration_ms: float, *, succeeded: bool,
+) -> None:
+    try:
+        await agent_repository.record_semantic_usage(
+            owner_name=security.principal, active_role=security.active_role,
+            security_context_version=security.security_context_version,
+            semantic_version=model.get("version"),
+            semantic_model_id=str(model.get("semantic_model_id") or ""),
+            model_fingerprint=semantic_ir.fingerprint, metrics=list(plan.metrics),
+            dimensions=list(plan.dimensions),
+            filter_shape=[
+                {"field": item.field, "operator": item.operator} for item in plan.filters
+            ],
+            time_grain=plan.time.grain if plan.time else None,
+            execution_latency_ms=round(duration_ms), succeeded=succeeded, verified_query_id=None,
+        )
+    except Exception as exc:  # noqa: BLE001 - telemetry must not fail a query
+        logger.warning("semantic usage telemetry failed: %s", type(exc).__name__)
 
 
 def _preview_rows(columns: list[str], rows: list[list]) -> str:
@@ -843,6 +946,9 @@ def _semantic_trace(
         "metrics": metrics,
         "generated_sql": generated_sql,
         "confidence": confidence if isinstance(confidence, int | float) else None,
+        "semantic_grounding": (
+            "published" if model.get("status") in {"ACTIVE", "DEPRECATED"} else "unknown"
+        ),
         "validation_warnings": [],
         "generation_duration_ms": round(generation_duration_ms, 3),
         "execution_duration_ms": (

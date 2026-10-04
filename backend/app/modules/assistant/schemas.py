@@ -160,6 +160,10 @@ class AttachmentInput(BaseModel):
 
 
 class AgentMessageRequest(MessageRequest):
+    work_intent: Literal[
+        "ANSWER", "ANALYZE", "INVESTIGATE", "PLAN", "RESEARCH", "ACT"
+    ] | None = None
+    new_mission: bool = False
     content: str = Field(default="", max_length=32_000)
     attachments: list[AttachmentInput] = Field(default_factory=list, max_length=3)
     _prepared_attachments: list[dict] = PrivateAttr(default_factory=list)

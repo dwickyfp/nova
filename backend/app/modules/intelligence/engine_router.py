@@ -44,8 +44,9 @@ from app.modules.intelligence.decisions import (
     create_decision,
     operate_decision,
 )
-from app.modules.intelligence.engine import MODELS, intelligence_service
+from app.modules.intelligence.engine import MODELS, ChatInvestigationRequest, intelligence_service
 from app.modules.intelligence.responses import IntelligenceResponse, IntelligenceRoute
+from app.modules.intelligence.scenarios import ScenarioRequest, run_scenario, scenario_definitions
 from app.modules.ml_engine.decision_lab import SimulationInput, run_simulation
 
 router = APIRouter(default_response_class=IntelligenceResponse, route_class=IntelligenceRoute)
@@ -172,6 +173,22 @@ async def numerical_analysis(body: AnalysisRequest, user: CurrentUser):
 @router.post("/decision-lab/simulations")
 async def numerical_simulation(body: SimulationRequest, user: CurrentUser):
     return await run_simulation(body.parameters, user, operation_id=body.operation_id)
+
+
+@router.get("/scenarios")
+async def registered_scenarios(user: CurrentUser):
+    Scope.from_user(user)
+    return {"items": scenario_definitions()}
+
+
+@router.post("/decision-lab/scenarios")
+async def registered_simulation(body: ScenarioRequest, user: CurrentUser):
+    return await run_scenario(body, user)
+
+
+@router.post("/investigations/from-chat")
+async def chat_investigation(body: ChatInvestigationRequest, user: CurrentUser):
+    return await intelligence_service.initiate_investigation(body, user)
 
 
 @router.post("/decision-lab/optimize")

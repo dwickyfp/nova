@@ -20,6 +20,7 @@ import {
   type Evidence,
   type Investigation,
   type News,
+  type Outcome,
 } from "@/features/intelligence/lifecycle-api";
 import { DecisionCompose } from "@/features/intelligence/decision-compose";
 import {
@@ -546,14 +547,16 @@ function NewsDetail({
   );
 }
 
-function DecisionDetail({
+export function DecisionDetail({
   decision,
   refresh,
   epoch,
+  onOutcome,
 }: {
   decision: Decision;
   refresh: () => void;
   epoch: number;
+  onOutcome?: (outcome: Outcome) => void;
 }) {
   const client = useQueryClient();
   const policy = useQuery({
@@ -572,10 +575,12 @@ function DecisionDetail({
   });
   const outcome = useMutation({
     mutationFn: () => intelligenceApi.outcome(decision.id),
-    onSuccess: () =>
+    onSuccess: (value) => {
+      onOutcome?.(value);
       client.invalidateQueries({
         queryKey: ["intelligence", epoch, "lineage", decision.id],
-      }),
+      });
+    },
   });
   const context = useMutation({
     mutationFn: () =>

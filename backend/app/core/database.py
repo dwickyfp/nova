@@ -1,5 +1,6 @@
 """StarRocks connection factory — system pool + per-request user connections."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -8,8 +9,24 @@ import asyncmy
 import asyncmy.cursors
 
 from app.core.config import settings
+from app.modules.assistant.measurements import (
+    metadata_borrows_observed,
+    metadata_execution_scope,
+    metadata_reads_observed,
+    record_metadata_borrow,
+    record_metadata_read,
+    record_metadata_read_failure,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _discard_interrupted_connection(conn: asyncmy.Connection) -> None:
+    conn.close()
+    # asyncmy 0.2.11 close() clears the socket but leaves connected=True;
+    # Pool.release would otherwise queue a connection with no reader.
+    conn._connected = False
+
 
 #: Session timezone pinned on every connection when ``NOVA_TIMEZONE`` is unset.
 #: Matches ``init-nova.sql``'s ``SET GLOBAL time_zone``.
@@ -91,6 +108,7 @@ class StarRocksConnectionFactory:
             logger.warning("Could not set GLOBAL time_zone (advisory): %s", type(exc).__name__)
 
     @asynccontextmanager
+    @metadata_borrows_observed
     async def system_conn(self) -> AsyncGenerator[asyncmy.Connection, None]:
         """Get an admin connection from the system pool.
 
@@ -99,10 +117,25 @@ class StarRocksConnectionFactory:
                 async with conn.cursor() as cur:
                     await cur.execute("SHOW DATABASES")
         """
+        record_metadata_borrow()
         if not self._system_pool:
             raise RuntimeError("System pool not initialized. Call init_system_pool() first.")
-        async with self._system_pool.acquire() as conn:
-            yield conn
+        pool = self._system_pool
+        discarded = False
+        try:
+            async with pool.acquire() as conn:
+                try:
+                    yield conn
+                except (asyncio.CancelledError, TimeoutError):
+                    discarded = True
+                    _discard_interrupted_connection(conn)
+                    raise
+        finally:
+            if discarded:
+                # The pinned driver's disconnected-release path omits its
+                # wakeup, so notify after the connection leaves the used set.
+                async with pool.cond:
+                    pool.cond.notify()
 
     @asynccontextmanager
     async def user_conn(
@@ -134,6 +167,7 @@ class StarRocksConnectionFactory:
         finally:
             conn.close()
 
+    @metadata_reads_observed
     async def execute_system(
         self, sql: str, params: list | tuple | None = None
     ) -> dict:
@@ -143,20 +177,31 @@ class StarRocksConnectionFactory:
             {"columns": [...], "rows": [...], "row_count": N} for SELECT
             {"columns": [], "rows": [], "affected": N} for DDL/DML
         """
-        async with (
-            self.system_conn() as conn,
-            conn.cursor(asyncmy.cursors.DictCursor) as cur,
-        ):
-            await cur.execute(sql, params)
-            if cur.description:
-                columns = [desc[0] for desc in cur.description]
-                rows = await cur.fetchall()
-                return {
-                    "columns": columns,
-                    "rows": [list(r.values()) for r in rows],
-                    "row_count": len(rows),
-                }
-            return {"columns": [], "rows": [], "affected": cur.rowcount}
+        with metadata_execution_scope():
+            try:
+                async with (
+                    self.system_conn() as conn,
+                    conn.cursor(asyncmy.cursors.DictCursor) as cur,
+                ):
+                    try:
+                        await cur.execute(sql, params)
+                        if cur.description:
+                            record_metadata_read()
+                            columns = [desc[0] for desc in cur.description]
+                            rows = await cur.fetchall()
+                            return {
+                                "columns": columns,
+                                "rows": [list(r.values()) for r in rows],
+                                "row_count": len(rows),
+                            }
+                        return {"columns": [], "rows": [], "affected": cur.rowcount}
+                    except (asyncio.CancelledError, TimeoutError):
+                        # Close before cursor cleanup can wait on the cancelled result.
+                        _discard_interrupted_connection(conn)
+                        raise
+            except BaseException:
+                record_metadata_read_failure()
+                raise
 
 
 # Singleton — initialized in main.py lifespan

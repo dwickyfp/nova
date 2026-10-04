@@ -56,9 +56,31 @@ async def load_authorized_models(context: Any) -> list[dict[str, Any]]:
     if ids:
         records = []
         for view_id in ids:
-            record = await semantic_view_service.get_active_for_agent(
-                view_id, user, agent_id=getattr(context, "agent_id", None)
-            )
+            manifest = getattr(context, "release_manifest", None)
+            if manifest:
+                from fastapi import HTTPException
+
+                pin = next(
+                    (
+                        item
+                        for item in manifest["dependencies"]["semantic_views"]
+                        if item["view_id"] == view_id
+                    ),
+                    None,
+                )
+                if not pin:
+                    raise HTTPException(409, "Semantic binding is missing from the pinned release")
+                record = await semantic_view_service.get_version_for_agent(
+                    view_id,
+                    pin["version"],
+                    pin["fingerprint"],
+                    user,
+                    agent_id=getattr(context, "agent_id", None),
+                )
+            else:
+                record = await semantic_view_service.get_active_for_agent(
+                    view_id, user, agent_id=getattr(context, "agent_id", None)
+                )
             if record is not None:
                 records.append(record)
     elif getattr(context, "agent_id", None):

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@/styles/index.css";
 import { ThreadTraceView } from "./thread-trace-view";
@@ -168,7 +168,9 @@ const TRACE = {
   ],
 };
 
-afterEach(() => {
+afterEach(async () => {
+  await cleanup();
+  document.documentElement.classList.remove("dark");
   vi.restoreAllMocks();
 });
 
@@ -256,6 +258,32 @@ describe("ThreadTraceView", () => {
           .getByText("120 tokens", { exact: true }),
       )
       .toBeVisible();
+
+    await screen
+      .getByTestId("thread-pane-shell")
+      .getByText("Semantic Context", { exact: true })
+      .click();
+    const semanticDetail = screen.getByTestId("detail-pane-shell");
+    await expect
+      .element(semanticDetail.getByText("Legacy planner score", { exact: true }))
+      .toBeVisible();
+    await expect
+      .element(semanticDetail.getByText("0.98", { exact: true }))
+      .toBeVisible();
+    await expect
+      .element(
+        semanticDetail.getByText(
+          "A legacy planner score is not a probability that the answer or SQL is correct.",
+          { exact: true },
+        ),
+      )
+      .toBeVisible();
+    await expect
+      .element(semanticDetail.getByText("Confidence", { exact: true }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(semanticDetail.getByText("98%", { exact: true }))
+      .not.toBeInTheDocument();
 
     await screen
       .getByTestId("thread-pane-shell")
@@ -349,4 +377,75 @@ describe("ThreadTraceView", () => {
       .element(screen.getByRole("button", { name: "Collapse SQL Execution" }))
       .toBeInTheDocument();
   });
+
+  it.each([
+    { score: 0, displayed: "0", theme: "light", width: 1280 },
+    { score: undefined, displayed: "Not recorded", theme: "dark", width: 320 },
+  ])(
+    "keeps legacy score $displayed distinct from correctness at $width px in $theme mode",
+    async ({ score, displayed, theme, width }) => {
+      await page.viewport(width, 760);
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      const trace = structuredClone(TRACE);
+      const semanticStep = trace.turns[1].steps.find(
+        (step) => step.kind === "tool",
+      );
+      if (!semanticStep?.trace_detail)
+        throw new Error("Missing semantic fixture");
+      const recordedDetail: Record<string, unknown> = semanticStep.trace_detail;
+      if (score === undefined) delete recordedDetail.confidence;
+      else recordedDetail.confidence = score;
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify(trace), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      const screen = await render(
+        <QueryClientProvider client={client}>
+          <ThreadTraceView
+            agentId="agent-1"
+            threadId="thread-1"
+            onClose={() => {}}
+          />
+        </QueryClientProvider>,
+      );
+      await expect
+        .element(screen.getByRole("cell", { name: "Electronics" }))
+        .toBeInTheDocument();
+      if (width < 1024) {
+        await screen
+          .getByRole("button", { name: "Thread details", exact: true })
+          .click();
+      }
+      await screen
+        .getByTestId("thread-pane-shell")
+        .getByText("Semantic Context", { exact: true })
+        .click();
+      const detail = screen.getByTestId("detail-pane-shell");
+      await expect
+        .element(detail.getByText("Legacy planner score", { exact: true }))
+        .toBeVisible();
+      const scoreLabel = detail
+        .getByText("Legacy planner score", { exact: true })
+        .element();
+      expect(scoreLabel.nextElementSibling?.textContent).toBe(displayed);
+      await expect
+        .element(
+          detail.getByText(
+            "A legacy planner score is not a probability that the answer or SQL is correct.",
+            { exact: true },
+          ),
+        )
+        .toBeVisible();
+      await expect
+        .element(detail.getByText("Confidence", { exact: true }))
+        .not.toBeInTheDocument();
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      await page.screenshot();
+    },
+  );
 });

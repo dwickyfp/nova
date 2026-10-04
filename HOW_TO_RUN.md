@@ -6,6 +6,13 @@ Panduan ini menjelaskan cara menjalankan seluruh environment development Nova:
 - Backend FastAPI: port `8000`
 - Frontend React/Vite: port `5173`
 
+Untuk workflow Studio baru, baca [arsitektur governed Studio](docs/arch-15-governed-studio.md)
+dan [panduan migrasi/acceptance](docs/governed-studio-operations.md). Flag workflow,
+actions, production quality scoring, dan analytical workspace default `false`.
+Panduan acceptance menggunakan port test khusus `45930`/`45379`/`45900` dan
+memisahkan uji metadata dari gate patched-FE Ranger; perintahnya bukan laporan
+hasil uji.
+
 ## Prasyarat
 
 Pastikan software berikut sudah tersedia:

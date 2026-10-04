@@ -38,6 +38,12 @@ from app.common.ssrf_guard import (
 )
 from app.core.exceptions import NovaException
 from app.modules.ai_ml.service import ai_service
+from app.modules.assistant.measurements import (
+    current_measurements,
+    observe_http_dispatches,
+    provider_response,
+    provider_started,
+)
 from app.modules.assistant.provider_capabilities import (
     CONSERVATIVE_OPENAI_COMPATIBLE,
     ProviderCapabilities,
@@ -370,6 +376,7 @@ class AssistantProviderClient:
         redacted SQL, no credentials. This method does not redact — the caller
         owns context construction.
         """
+        provider_started(messages, {"tools": tools, "response_format": response_format})
         config = provider or await self.resolve()
         body = self._request_body(
             config,
@@ -383,12 +390,18 @@ class AssistantProviderClient:
         response: httpx.Response | None = None
         for attempt in range(self._max_attempts):
             try:
-                async with guarded_async_client(timeout=self._timeout) as client:
+                async with (
+                    guarded_async_client(timeout=self._timeout) as client,
+                    observe_http_dispatches(client),
+                ):
                     response = await client.post(
                         config.endpoint, headers=self._headers(config), json=body
                     )
             except BlockedEndpointError as exc:
                 # A redirect hop was refused by the guarded transport.
+                measured = current_measurements()
+                if measured is not None:
+                    measured.unavailable_provider("blocked_transport_unmeasured")
                 if exc.retryable and attempt + 1 < self._max_attempts:
                     await self._backoff(attempt)
                     continue
@@ -435,6 +448,7 @@ class AssistantProviderClient:
             # account for every provider call, not only the final response.
             if isinstance(payload.get("usage"), dict):
                 message["usage"] = payload["usage"]
+            provider_response(message)
             return message
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise AssistantProviderError(
@@ -460,6 +474,7 @@ class AssistantProviderClient:
         Raises ``AssistantProviderError`` for any transport or status failure;
         the caller maps that to an ``error`` frame.
         """
+        provider_started(messages, {"tools": tools})
         config = provider or await self.resolve()
         body = self._request_body(config, messages, tools, tool_choice=tool_choice)
         body["stream"] = True
@@ -477,6 +492,7 @@ class AssistantProviderClient:
             try:
                 async with (
                     guarded_async_client(timeout=self._timeout) as client,
+                    observe_http_dispatches(client),
                     client.stream(
                         "POST",
                         config.endpoint,
@@ -500,6 +516,9 @@ class AssistantProviderClient:
                             emitted_delta = True
                             yield ("delta", text)
             except BlockedEndpointError as exc:
+                measured = current_measurements()
+                if measured is not None:
+                    measured.unavailable_provider("blocked_transport_unmeasured")
                 if exc.retryable and not emitted_delta and attempt + 1 < self._max_attempts:
                     await self._backoff(attempt, response)
                     continue
@@ -519,7 +538,9 @@ class AssistantProviderClient:
                     f"AI provider request failed: {type(exc).__name__}"
                 ) from exc
 
-            yield ("message", accumulator.message())
+            message = accumulator.message()
+            provider_response(message)
+            yield ("message", message)
             return
 
 

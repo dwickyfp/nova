@@ -12,15 +12,18 @@ from typing import TypeVar
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
+from pydantic import Field, model_validator
 
 from app.common.audit import write_audit_log
 from app.modules.agents.semantic.compiler import SemanticCompiler
 from app.modules.agents.semantic.ir import SemanticModelIR
 from app.modules.agents.semantic.planning import SemanticPlan
+from app.modules.intelligence.action_contracts import Action, ActionEvent
 from app.modules.intelligence.contracts import (
     Confidence,
     ContextEdge,
     ContextNode,
+    Contract,
     Decision,
     DecisionEvent,
     EvidenceRef,
@@ -28,8 +31,10 @@ from app.modules.intelligence.contracts import (
     Investigation,
     MetricObservation,
     Monitor,
+    MonitorConfiguration,
     NewsItem,
     Outcome,
+    OutcomeLearningRef,
     Record,
     Scope,
     SemanticRef,
@@ -53,7 +58,48 @@ MODELS = {
     "decisions": Decision,
     "events": DecisionEvent,
     "outcomes": Outcome,
+    "actions": Action,
+    "action_events": ActionEvent,
 }
+
+
+class ChatInvestigationRequest(Contract):
+    operation_id: str = Field(min_length=8, max_length=128)
+    configuration: MonitorConfiguration
+    current_window: Window | None = None
+    baseline_window: Window | None = None
+
+    @model_validator(mode="after")
+    def complete_windows(self):
+        if self.configuration.enabled:
+            raise ValueError("Chat investigations require a disabled comparison monitor")
+        if (
+            self.current_window
+            and self.baseline_window
+            and (
+                self.current_window.end - self.current_window.start
+                != self.baseline_window.end - self.baseline_window.start
+                or self.baseline_window.end > self.current_window.start
+            )
+        ):
+            raise ValueError("Use equal length, nonoverlapping comparison windows")
+        return self
+
+
+class ChatComparison(Record):
+    request_digest: str
+    semantic: SemanticRef
+    monitor_id: str
+    current_window: Window
+    baseline_window: Window
+    status: str = "pending"
+    reason: str | None = None
+    observation_ids: list[str] = Field(default_factory=list, max_length=2)
+    news_id: str | None = None
+    investigation_id: str | None = None
+
+
+MODELS["comparisons"] = ChatComparison
 
 
 @dataclass
@@ -274,16 +320,26 @@ class IntelligenceService:
                 raise HTTPException(status_code=404, detail="Knowledge reference unavailable")
         if isinstance(record, DecisionEvent):
             await self.get("decisions", record.decision_id, user, budget=budget)
+        if isinstance(record, Action):
+            await self.get("decisions", record.decision_id, user, budget=budget)
+        if isinstance(record, ActionEvent):
+            await self.get("actions", record.action_id, user, budget=budget)
         if isinstance(record, Outcome):
             # Outcome errors and impact also derive from the prediction and
             # baseline, whose authorization can change independently of actuals.
-            await self.get(
+            decision = await self.get(
                 "decisions",
                 record.decision_id,
                 user,
                 budget=budget,
                 revision=record.decision_revision,
             )
+            for action_id in record.action_ids:
+                action = await self.get("actions", action_id, user, budget=budget)
+                if action.decision_id != record.decision_id or action.semantic != record.semantic:
+                    raise HTTPException(status_code=409, detail="Outcome action lineage changed")
+            if record.learning_refs:
+                await self._require_outcome_learning(record, decision.agent_id)
         if isinstance(record, Decision):
             from app.modules.intelligence.decisions import decision_digest
 
@@ -386,9 +442,7 @@ class IntelligenceService:
             "next_after": await write_cursor(position, cursor_kind, scope) if more else None,
         }
 
-    async def register_monitor(
-        self, monitor: Monitor, user: dict, *, expected_revision=0
-    ) -> Monitor:
+    async def validate_monitor(self, monitor: Monitor, user: dict) -> None:
         row = await self.authorize_semantic(monitor.semantic, user, active=True)
         ir = SemanticModelIR.from_ossie(row["definition"])
         plan = SemanticPlan.from_dict(monitor.plan)
@@ -433,6 +487,11 @@ class IntelligenceService:
                     status_code=422, detail="Timeline time dimension is unavailable"
                 )
             SemanticCompiler().compile(ir, event_plan)
+
+    async def register_monitor(
+        self, monitor: Monitor, user: dict, *, expected_revision=0
+    ) -> Monitor:
+        await self.validate_monitor(monitor, user)
         monitor.scope = Scope.from_user(user)
         saved = await self.repository.save("monitors", monitor, expected_revision=expected_revision)
         await self._audit("REGISTER", saved, user)
@@ -601,6 +660,8 @@ class IntelligenceService:
         await self.authorize_semantic(news.semantic, user, active=True, budget=budget)
         if monitor.semantic != news.semantic:
             raise HTTPException(status_code=409, detail="Monitor changed; revalidate the incident")
+        if news.confidence.label == "insufficient":
+            return await self.incomplete_investigation(news, user)
         prior = (
             await self.repository.get(
                 "investigations", news.investigation_id, Scope.from_user(user), Investigation
@@ -616,8 +677,13 @@ class IntelligenceService:
                     raise
             else:
                 return prior
-        previous = Window(
-            start=news.window.start - timedelta(weeks=1), end=news.window.end - timedelta(weeks=1)
+        previous = (
+            news.baseline_windows[0]
+            if len(news.baseline_windows) == 1
+            else Window(
+                start=news.window.start - timedelta(weeks=1),
+                end=news.window.end - timedelta(weeks=1),
+            )
         )
         evidence, hypotheses, decompositions = [], [], []
         residual = Decimal(str(news.change))
@@ -824,6 +890,195 @@ class IntelligenceService:
         await self._audit("INVESTIGATE", saved, user)
         return saved
 
+    async def incomplete_investigation(self, news: NewsItem, user: dict) -> Investigation:
+        identity = fingerprint([news.id, "insufficient-comparison"])
+        scope = Scope.from_user(user)
+        investigation = await self.repository.get("investigations", identity, scope, Investigation)
+        if investigation is None:
+            investigation = await self.repository.save(
+                "investigations",
+                Investigation(
+                    id=identity,
+                    scope=scope,
+                    news_id=news.id,
+                    news_revision=news.revision,
+                    semantic=news.semantic,
+                    evidence=news.evidence,
+                    residual=news.change,
+                    method="explicit-window-comparison-v1",
+                    status="insufficient",
+                ),
+            )
+        else:
+            await self.authorize_record(investigation, user, CycleBudget())
+        if news.investigation_id != investigation.id:
+            await self.repository.save(
+                "news",
+                news.model_copy(
+                    update={
+                        "investigation_id": investigation.id,
+                        "status": "investigating",
+                    }
+                ),
+                expected_revision=news.revision,
+            )
+        await self._audit("INCOMPLETE_INVESTIGATION", investigation, user)
+        return investigation
+
+    async def initiate_investigation(self, body: ChatInvestigationRequest, user: dict) -> dict:
+        from app.core.config import settings
+        from app.modules.agents.router import _require_agent
+
+        if not getattr(settings, "STUDIO_BUSINESS_WORKFLOW_ENABLED", False):
+            raise HTTPException(status_code=503, detail="Studio business workflow is disabled")
+        await _require_agent(body.configuration.agent_id, user)
+        await self.authorize_semantic(body.configuration.semantic, user, active=True)
+        if not body.current_window or not body.baseline_window:
+            return {
+                "status": "clarification",
+                "reason": "comparison_windows_required",
+                "required_inputs": [
+                    name
+                    for name, value in (
+                        ("current_window", body.current_window),
+                        ("baseline_window", body.baseline_window),
+                    )
+                    if value is None
+                ],
+                "comparison": None,
+                "investigation": None,
+            }
+        if body.current_window.end > utc_now():
+            raise HTTPException(
+                status_code=422, detail="Use complete historical comparison windows"
+            )
+        scope = Scope.from_user(user)
+        identity = fingerprint(
+            [scope.model_dump(exclude={"session_id"}), body.operation_id, "chat-comparison-v1"]
+        )
+        digest = fingerprint(body.model_dump(mode="json"))
+        monitor_id = fingerprint([identity, "comparison-monitor"])
+        # Persist the operation digest before collecting data. Canonical writes
+        # keep their own revision checks; slow queries must not hold this lease.
+        async with metadata_lock("chat-comparison:" + identity):
+            comparison = await self.repository.get("comparisons", identity, scope, ChatComparison)
+            if comparison and comparison.request_digest != digest:
+                raise HTTPException(status_code=409, detail="Comparison operation inputs changed")
+            if comparison is None:
+                comparison = await self.repository.save(
+                    "comparisons",
+                    ChatComparison(
+                        id=identity,
+                        scope=scope,
+                        request_digest=digest,
+                        semantic=body.configuration.semantic,
+                        monitor_id=monitor_id,
+                        current_window=body.current_window,
+                        baseline_window=body.baseline_window,
+                    ),
+                )
+        if comparison.status != "pending":
+            investigation = (
+                await self.get("investigations", comparison.investigation_id, user)
+                if comparison.investigation_id
+                else None
+            )
+            return {
+                "status": comparison.status,
+                "reason": comparison.reason,
+                "comparison": comparison,
+                "investigation": investigation,
+            }
+        prior_monitor = await self.repository.get("monitors", monitor_id, scope, Monitor)
+        monitor = prior_monitor or await self.register_monitor(
+            Monitor(id=monitor_id, scope=scope, **body.configuration.model_dump()), user,
+        )
+        budget = CycleBudget()
+        before = await self.observe(monitor, body.baseline_window, user, budget)
+        after = await self.observe(monitor, body.current_window, user, budget)
+        ids = [before.id, after.id]
+        if before.value is None or after.value is None:
+            saved = await self.repository.save(
+                "comparisons",
+                comparison.model_copy(
+                    update={
+                        "status": "insufficient",
+                        "reason": "missing_observations",
+                        "observation_ids": ids,
+                    }
+                ),
+                expected_revision=comparison.revision,
+            )
+            await self._audit("INCOMPLETE_COMPARISON", saved, user)
+            return {
+                "status": "insufficient",
+                "reason": saved.reason,
+                "comparison": saved,
+                "investigation": None,
+            }
+        insufficient = min(
+            before.sample_count, after.sample_count
+        ) < monitor.minimum_samples or any(
+            row.completeness is not None and row.completeness < 1 for row in (before, after)
+        )
+        evidence = [*before.evidence, *after.evidence]
+        news_id = fingerprint([identity, "comparison-news"])
+        news = await self.repository.get("news", news_id, scope, NewsItem)
+        if news is None:
+            news = await self.repository.save(
+                "news",
+                NewsItem(
+                    id=news_id,
+                    scope=scope,
+                    monitor_id=monitor.id,
+                    monitor_revision=monitor.revision,
+                    title=f"{monitor.name}: requested comparison"[:256],
+                    summary="Authorized window comparison. The cause has not been established.",
+                    semantic=monitor.semantic,
+                    window=body.current_window,
+                    before=before.value,
+                    after=after.value,
+                    change=after.value - before.value,
+                    relative_change=(after.value - before.value) / abs(before.value)
+                    if before.value
+                    else None,
+                    severity="info",
+                    dedup_key=news_id,
+                    confidence=Confidence(
+                        dimension="detection",
+                        method="explicit-window-comparison-v1",
+                        label="insufficient" if insufficient else "medium",
+                        evidence_ids=[item.id for item in evidence],
+                    ),
+                    evidence=evidence,
+                    baseline_windows=[body.baseline_window],
+                ),
+            )
+            await self._audit("COMPARE", news, user)
+        if insufficient:
+            investigation = await self.incomplete_investigation(news, user)
+        else:
+            investigation = await self.investigate(news.id, user)
+        saved = await self.repository.save(
+            "comparisons",
+            comparison.model_copy(
+                update={
+                    "status": investigation.status,
+                    "reason": "insufficient_observations" if insufficient else None,
+                    "observation_ids": ids,
+                    "news_id": news.id,
+                    "investigation_id": investigation.id,
+                }
+            ),
+            expected_revision=comparison.revision,
+        )
+        return {
+            "status": saved.status,
+            "reason": saved.reason,
+            "comparison": saved,
+            "investigation": investigation,
+        }
+
     async def lineage(self, decision_id: str, user: dict) -> dict:
         budget = CycleBudget()
         decision = await self.get("decisions", decision_id, user, budget=budget)
@@ -843,6 +1098,11 @@ class IntelligenceService:
         news = await related_record("news", investigation.news_id, investigation.news_revision)
         events = await self.repository.related("events", decision.id, decision.scope, DecisionEvent)
         outcomes = await self.repository.related("outcomes", decision.id, decision.scope, Outcome)
+        actions = await self.repository.related("actions", decision.id, decision.scope, Action)
+        for action in actions:
+            await self.authorize_record(
+                action.model_copy(update={"scope": Scope.from_user(user)}), user, budget
+            )
         for outcome in outcomes:
             await self.authorize_record(
                 outcome.model_copy(update={"scope": Scope.from_user(user)}), user, budget
@@ -864,6 +1124,7 @@ class IntelligenceService:
             "investigation": investigation,
             "news": news,
             "events": events,
+            "actions": actions,
             "outcomes": sorted(
                 outcomes, key=lambda row: (row.updated_at, row.revision, row.id), reverse=True
             ),
@@ -963,6 +1224,19 @@ class IntelligenceService:
         dimensions["time_to_insight_seconds"] = (
             investigation.created_at - news.created_at
         ).total_seconds()
+        actions = await self.repository.related("actions", decision.id, decision.scope, Action)
+        verified_actions = []
+        for action in actions:
+            if (
+                action.status == "verified"
+                and action.verification
+                and action.verification.complete
+                and action.semantic == decision.semantic
+            ):
+                await self.authorize_record(action, user, budget)
+                verified_actions.append(action)
+        dimensions["verified_action_count"] = len(verified_actions)
+        dimensions["action_business_effect_verified"] = None
         outcome = Outcome(
             id=fingerprint([decision.id, decision.revision, "outcome-v1"]),
             scope=Scope.from_user(user),
@@ -983,17 +1257,50 @@ class IntelligenceService:
             else ("missing_data" if complete_window else "pending"),
             overlapping_decisions=overlapping,
             evidence=evidence,
+            action_ids=[action.id for action in verified_actions],
+            learning_refs=[],
             dimensions=dimensions,
         )
         prior = await self.repository.get("outcomes", outcome.id, Scope.from_user(user), Outcome)
         if prior:
             outcome.scope = prior.scope
+            ignored = {"learning_refs", "revision", "created_at", "updated_at"}
+            if prior.model_dump(exclude=ignored) == outcome.model_dump(exclude=ignored):
+                outcome.learning_refs = prior.learning_refs
         saved = await self.repository.save(
             "outcomes", outcome, expected_revision=prior.revision if prior else 0
         )
         await self._audit("EVALUATE_OUTCOME", saved, user)
         if saved.status == "complete" and decision.learning_enabled:
             from app.modules.agents.memory import memory_repository
+
+            if saved.learning_refs:
+                try:
+                    await self._require_outcome_learning(saved, decision.agent_id)
+                except HTTPException as exc:
+                    if exc.status_code != 404:
+                        raise
+                else:
+                    return saved
+
+            async def finalize_learning(memory_id: str, knowledge_revision: int) -> dict:
+                nonlocal saved
+                saved = await self.repository.save(
+                    "outcomes",
+                    saved.model_copy(
+                        update={
+                            "learning_refs": [
+                                OutcomeLearningRef(id=memory_id, revision=knowledge_revision)
+                            ]
+                        }
+                    ),
+                    expected_revision=saved.revision,
+                )
+                return {
+                    "id": saved.id,
+                    "revision": saved.revision,
+                    "semantic": saved.semantic.model_dump(),
+                }
 
             fact = (
                 f"Prediction for {decision.target_metric} was {saved.predicted:g}; "
@@ -1013,11 +1320,42 @@ class IntelligenceService:
                     "id": saved.id,
                     "revision": saved.revision,
                     "semantic": saved.semantic.model_dump(),
+                    "learning_ref": saved.learning_refs[0].model_dump()
+                    if len(saved.learning_refs) == 1
+                    else None,
                 },
                 source_scope=Scope.from_user(user),
                 observed_at=saved.updated_at,
+                finalize_outcome=finalize_learning,
             )
+            await self._require_outcome_learning(saved, decision.agent_id)
         return saved
+
+    @staticmethod
+    async def _require_outcome_learning(record: Outcome, agent_id: str) -> None:
+        from app.modules.agents.memory import memory_repository
+
+        if record.status != "complete" or record.completeness != 1 or record.actual is None:
+            raise HTTPException(status_code=409, detail="Incomplete outcome cannot supply learning")
+        if not record.learning_refs:
+            raise HTTPException(status_code=404, detail="Outcome learning reference unavailable")
+        for reference in record.learning_refs:
+            revisions = await memory_repository.revisions(
+                reference.id,
+                user_name=record.scope.principal,
+                agent_id=agent_id,
+                role_name=record.scope.active_role,
+            )
+            pinned = next((row for row in revisions if row.revision == reference.revision), None)
+            if (
+                pinned is None
+                or pinned.semantic != record.semantic
+                or pinned.definition.get("outcome_id") != record.id
+                or pinned.definition.get("outcome_revision") != record.revision
+            ):
+                raise HTTPException(
+                    status_code=404, detail="Outcome learning reference unavailable"
+                )
 
 
 intelligence_service = IntelligenceService()

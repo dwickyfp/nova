@@ -19,7 +19,10 @@ services:
       - /bin/bash
       - -c
       - |
-        sed -i -E 's/-Xmx[0-9]+[mMgG]/-Xmx1024m/g' /opt/starrocks/fe/conf/fe.conf
+        case "$${NOVA_TEST_FE_HEAP_MB}" in
+          ''|0*|*[!0-9]*) echo 'NOVA_TEST_FE_HEAP_MB must be a positive integer' >&2; exit 1 ;;
+        esac
+        sed -i -E "s/-Xmx[0-9]+[mMgG]/-Xmx$${NOVA_TEST_FE_HEAP_MB}m/g" /opt/starrocks/fe/conf/fe.conf
         printf '\narrow_flight_port = 9408\n' >> /opt/starrocks/fe/conf/fe.conf
         /opt/starrocks/fe/bin/start_fe.sh --host_type IP --logconsole
     ports:
@@ -34,6 +37,7 @@ services:
       - "${NOVA_TEST_FE_HTTP_PORT:-28030}:8030"    # HTTP
       - "${NOVA_TEST_FE_ARROW_PORT:-29408}:9408"   # Arrow Flight SQL
     environment:
+      - NOVA_TEST_FE_HEAP_MB=${NOVA_TEST_FE_HEAP_MB:-1024}
       - FE_QUERY_PORT=9030
       - AWS_EC2_METADATA_DISABLED=true
       - JAVA_TOOL_OPTIONS=--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED

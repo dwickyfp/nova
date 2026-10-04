@@ -102,14 +102,32 @@ class AgentService:
             prompt = build_system_prompt({"name": "Nova Studio"}, actual_tools=[])
             return ToolRegistry(), prompt + "\n\n" + SKILL_AUTHORING_PROMPT, 60, 16000
 
+        from app.modules.agents.releases import assert_tool_contracts, load_runtime_manifest
+
+        manifest = await load_runtime_manifest(agent)
+        if manifest:
+            agent = {
+                **agent,
+                **manifest["dependencies"]["configuration"],
+                "compiled_instructions": manifest["dependencies"].get("compiled_instructions", {}),
+            }
         registry = build_registry(agent)
         await add_custom_tools(registry, agent)
         await add_mcp_tools(registry, agent)
 
         from app.modules.agents.tools.describe_agent import DescribeAgentTool
 
-        registry.register(DescribeAgentTool(registry, name=str(agent.get("name") or ""),
-                                            resources=agent.get("resource_bindings")))
+        registry.register(
+            DescribeAgentTool(
+                registry,
+                name=str(agent.get("name") or ""),
+                resources=agent.get("resource_bindings"),
+            )
+        )
+
+        if manifest:
+            assert_tool_contracts(manifest, registry)
+            registry.release_manifest = manifest
 
         requested_skills = [s for s in (agent.get("default_skills") or []) if s]
         discoverable_skills = [s for s in (agent.get("discoverable_skills") or []) if s]
@@ -176,6 +194,17 @@ class AgentService:
                 if name in registry.skill_definitions
             ]
 
+        if manifest:
+            dependencies = manifest["dependencies"]
+            registry.skill_definitions = {
+                item["name"]: SkillDefinition(**{**item, "triggers": tuple(item["triggers"])})
+                for item in dependencies["skills"]
+            }
+            requested_skills = dependencies["default_skills"]
+            discoverable_skills = dependencies["discoverable_skills"]
+            skill_bodies = [
+                registry.skill_definitions[name].prompt_body() for name in requested_skills
+            ]
         registry.default_skills = tuple(requested_skills)
         registry.discoverable_skills = tuple(discoverable_skills)
         if registry.get("load_skill") is not None:
@@ -188,6 +217,8 @@ class AgentService:
             skill_bodies=skill_bodies,
             actual_tools=registry.names(),
         )
+        if manifest:
+            system_prompt = manifest["dependencies"]["compiled_prompt"]
         budget = loop_limits(agent).time_budget_seconds
         token_budget = _clamp_token_budget(agent.get("budget_tokens"))
         return registry, system_prompt, budget, token_budget

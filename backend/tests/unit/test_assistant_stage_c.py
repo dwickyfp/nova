@@ -1222,3 +1222,38 @@ def test_tool_call_view_carries_the_classification():
 
 async def _deny() -> bool:
     return False
+
+
+async def test_mission_cancelled_during_consent_never_starts_mutation(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "STUDIO_QUALITY_ENABLED", True)
+    provider = FakeProvider([
+        {"role": "assistant", "content": "", "tool_calls": [_tool_call("cancel-after-consent")]},
+    ])
+    tool = RecordingTool("destructive")
+    registry = ToolRegistry()
+    registry.register(tool)
+    context = _context()
+    context.agent_id = "agent-1"
+    context.mission_id = "mission-1"
+    cancelled = False
+
+    async def mission_cancelled():
+        return cancelled
+
+    async def consent(invocation, classification):
+        nonlocal cancelled
+        cancelled = True
+        return True
+
+    context.business_cancelled = mission_cancelled
+    frames = await _collect(AssistantLoop(provider=provider, registry=registry).run(
+        thread=AssistantThread(thread_id="cancel", user_name="alice", title="Cancel"),
+        user_content="SELECT 1", context=context, resolve_consent=consent,
+    ))
+    assert tool.runs == 0
+    assert any(_frame_data(frame).get("finish_reason") == "cancelled" for frame in frames)
+    observation = next(step for step in context.steps if step["kind"] == "quality_observation")
+    assert observation["facts"]["task_completeness"]["completed"] is False
+    assert observation["facts"]["execution"]["finish_reason"] == "cancelled"

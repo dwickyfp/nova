@@ -38,6 +38,8 @@ KNOWN_TOOLS = frozenset(
         "compute_metrics",
         "schedule_automation",
         "ml_execute",
+        "execute_business_action",
+        "analysis_workspace",
     }
 )
 
@@ -58,6 +60,14 @@ def build_registry(agent: dict[str, Any]) -> ToolRegistry:
     selected = {t for t in (agent.get("default_tools") or []) if t in KNOWN_TOOLS}
     registry = ToolRegistry()
 
+    if "execute_business_action" in selected:
+        from app.modules.intelligence.actions import business_action_tool
+
+        registry.register(business_action_tool)
+    if "analysis_workspace" in selected:
+        from app.modules.assistant.analysis_workspace import analysis_workspace_tool
+
+        registry.register(analysis_workspace_tool)
     if "load_skill" in selected:
         from app.modules.assistant.tools.load_skill import load_skill_tool
 

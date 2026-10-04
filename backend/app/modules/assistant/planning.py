@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from app.modules.agents.mission_schema import StageKind, WorkIntent
 from app.modules.agents.tool_catalog import BUILTIN_TOOLS
 from app.modules.assistant.intelligence import TurnIntent, TurnRoute
 from app.modules.assistant.intent import INTENT_FRAME_RULES, IntentFrame, intent_frame_schema
@@ -26,6 +27,8 @@ class TurnPlan:
     #: The first governed query's SemanticPlan, unvalidated until the tool runs.
     primary_plan: dict[str, Any] | None = None
     primary_view: str | None = None
+    work_intent: WorkIntent | None = None
+    public_work_steps: tuple[StageKind, ...] = ()
 
 
 _DATA_INTENTS = frozenset(
@@ -51,6 +54,10 @@ _PLAN_SCHEMA = {
         "tools": {"type": "array", "items": {"type": "string"}},
         "required_tools": {"type": "array", "items": {"type": "string"}},
         "skills": {"type": "array", "items": {"type": "string"}},
+        "work_intent": {"type": ["string", "null"],
+                        "enum": [None, *[intent.value for intent in WorkIntent]]},
+        "public_work_steps": {"type": "array", "maxItems": 9, "uniqueItems": True,
+                              "items": {"type": "string", "enum": [s.value for s in StageKind]}},
         "ml_task": {
             "type": ["string", "null"],
             "enum": [
@@ -81,7 +88,8 @@ _PRIMARY_PLAN_RULES = (
 
 def _plan_schema(semantic_context: dict[str, Any] | None) -> dict[str, Any]:
     properties = {**_PLAN_SCHEMA["properties"], "intent_frame": intent_frame_schema()}
-    required = [*_PLAN_SCHEMA["required"], "intent_frame"]
+    # Strict provider schemas require every property; legacy validators accept omissions.
+    required = [*_PLAN_SCHEMA["required"], "intent_frame", "work_intent", "public_work_steps"]
     if semantic_context is not None:
         properties["primary_plan"] = {
             "anyOf": [semantic_context["plan_schema"], {"type": "null"}],
@@ -165,6 +173,16 @@ def validate_turn_plan(
     primary_plan = value.get("primary_plan")
     primary_view = value.get("primary_view")
     frame = value.get("intent_frame")
+    try:
+        work_intent = WorkIntent(value["work_intent"]) if value.get("work_intent") else None
+        steps = value.get("public_work_steps", [])
+        if not isinstance(steps, list) or len(steps) > 9 or len(set(steps)) != len(steps):
+            raise ValueError("Invalid public work steps")
+        public_work_steps = tuple(StageKind(step) for step in steps)
+    except (ValueError, TypeError) as exc:
+        raise TurnPlanningError(
+            "The provider returned invalid business work intent or stages."
+        ) from exc
     route = TurnRoute(
         intent=intent,
         needs_data=bool(required) and intent in _DATA_INTENTS,
@@ -185,6 +203,7 @@ def validate_turn_plan(
             else None
         ),
         primary_view=primary_view if isinstance(primary_view, str) and primary_view else None,
+        work_intent=work_intent, public_work_steps=public_work_steps,
     )
 
 
@@ -389,6 +408,15 @@ async def plan_turn(
     ]
     instructions = _STUDIO_INSTRUCTIONS if agent_scope is not None else _nove_instructions()
     instructions += "\n" + INTENT_FRAME_RULES
+    instructions += (
+        "\nAlso return work_intent (ANSWER, ANALYZE, INVESTIGATE, PLAN, RESEARCH, ACT; "
+        "null when unclear) and public_work_steps, a unique array of public stage identifiers: "
+        "investigate, evidence, scenarios, decide, approve, execute, verify, observe, improve. "
+        "Use ANSWER and an empty array for simple answers. Use several stages only "
+        "for requested multistage work. "
+        "These fields describe work; they never authorize tools or actions. "
+        "Do not include private reasoning or claim a planned stage is complete."
+    )
     schema = _plan_schema(semantic_context)
     if semantic_context is not None:
         instructions += "\n" + _PRIMARY_PLAN_RULES
@@ -511,6 +539,10 @@ async def refine_turn_plan(
             "intent": plan.route.intent.value,
             "tools": tools, "required_tools": list(required), "skills": skills,
             "ml_task": plan.route.ml_task,
+            "intent_frame": plan.intent_frame.as_dict() if plan.intent_frame else None,
+            "primary_plan": plan.primary_plan, "primary_view": plan.primary_view,
+            "work_intent": plan.work_intent.value if plan.work_intent else None,
+            "public_work_steps": [s.value for s in plan.public_work_steps],
         }, set(registry.names()), set(registry.discoverable_skills))
     except TurnPlanningError:
         return plan

@@ -24,16 +24,16 @@ def transaction_intent(statement: Statement, context: PlanningContext) -> Transa
         for name in [table_name(child.qualifiedName(), context.database)]
     )
     columns = None
-    named_columns = False
+    unproven_columns = False
     if kind == "insert":
-        for clause in node.insertLabelOrColumnAliases():
-            aliases = clause.columnAliasesOrByName()
-            if aliases is None:
-                continue
-            if aliases.columnAliases():
-                columns = tuple(identifier(item) for item in aliases.columnAliases().identifier())
-            else:
-                named_columns = True
+        mappings = [
+            mapping
+            for item in node.insertLabelOrColumnAliases()
+            if (mapping := item.columnAliasesOrByName()) is not None
+        ]
+        unproven_columns = len(mappings) > 1 or any(mapping.BY() for mapping in mappings)
+        if len(mappings) == 1 and (aliases := mappings[0].columnAliases()) is not None:
+            columns = tuple(identifier(item) for item in aliases.identifier())
     unsupported = {
         "CommonTableExpressionContext",
         "FilesContext",
@@ -52,7 +52,7 @@ def transaction_intent(statement: Statement, context: PlanningContext) -> Transa
         reads,
         columns,
         bool(target.database)
-        and not named_columns
+        and not unproven_columns
         and not unproven_relation
         and not any(type(child).__name__ in unsupported for child in nodes),
     )

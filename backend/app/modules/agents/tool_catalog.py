@@ -24,12 +24,23 @@ from app.modules.agents.tools.describe_agent import DESCRIPTION, PARAMETERS
 from app.modules.agents.tools.intelligence import context_graph_tool, decision_lab_tool
 from app.modules.agents.tools.schedule_automation import PARAMETERS as SCHEDULE_PARAMETERS
 from app.modules.agents.tools.schedule_automation import ScheduleAutomationTool
+from app.modules.assistant.analysis_workspace import analysis_workspace_tool
+from app.modules.intelligence.action_contracts import (
+    BUSINESS_ACTION_TOOL_DESCRIPTION,
+    BUSINESS_ACTION_TOOL_NAME,
+    BUSINESS_ACTION_TOOL_PARAMETERS,
+)
 
 COMPUTE_DESCRIPTION = ComputeMetricsTool.description
 SCHEDULE_DESCRIPTION = ScheduleAutomationTool.description
 
 #: name -> (description, input_schema)
+
 BUILTIN_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
+    BUSINESS_ACTION_TOOL_NAME: (BUSINESS_ACTION_TOOL_DESCRIPTION, BUSINESS_ACTION_TOOL_PARAMETERS),
+    analysis_workspace_tool.name: (
+        analysis_workspace_tool.description, analysis_workspace_tool.parameters,
+    ),
     "context_graph": (context_graph_tool.description, context_graph_tool.parameters),
     "decision_lab": (decision_lab_tool.description, decision_lab_tool.parameters),
     **COLLABORATION_TOOLS,

@@ -62,6 +62,13 @@ than running a second one. Studio also supports saved SQL artifacts, personal
 skills, dashboards, scoped agent memory, and explicitly selected MCP tools with
 per-call consent. Data tools retain the signed-in user's active role.
 
+The [governed Studio workflow](docs/arch-15-governed-studio.md) adds release
+manifests, quality cases, Missions, evidence health, and supervised monitor
+Actions. Its new workflow, action, production scoring, and analytical workspace
+controls default to disabled. See the [operator guide](docs/governed-studio-operations.md)
+for migration and acceptance gates; this documentation does not establish rollout
+completion.
+
 ## The Nova app
 
 The Studio chat image is a frontend preview using sample Sales Agent metadata
@@ -225,7 +232,7 @@ nova/
 | Product and local setup | [Overview](docs/01-overview.md), [run guide](HOW_TO_RUN.md)                                                                                                                                                                    |
 | SQL and stages          | [Frontend and planner](docs/arch-13-sql-frontend.md), [dialect architecture](docs/arch-01-sql-dialect-engine.md), [stage manager](docs/04-stage-manager.md), [storage layer](docs/arch-02-storage-provider-layer.md)                                                                 |
 | Security                | [Ranger authorization architecture](docs/arch-08-ranger-authorization.md), [access control runbook](docs/29-ranger-access-control.md)                                                                                          |
-| Studio and agents       | [Agentic harness](docs/benchmarks/nova-124-agentic-harness.md), [Studio memory](docs/benchmarks/nova-studio-agent-memory-2026-09-23.md), [Studio evidence harness](docs/benchmarks/nova-studio-evidence-harness-2026-09-23.md) |
+| Studio and agents       | [Smart collaboration](docs/arch-11-smart-collaboration.md), [governed workflow](docs/arch-15-governed-studio.md), [operations and acceptance](docs/governed-studio-operations.md), [Decision Mode](docs/arch-12-studio-decision-mode.md) |
 | Intelligence and ML     | [Intelligence foundation](docs/28-intelligence-foundation.md), [native ML runtime](docs/28-native-ml-runtime.md)                                                                                                               |
 | Tasks and state         | [Task manager](docs/08-task-manager.md), [NOVA_SYSTEM architecture](docs/arch-06-nova-system-database.md)                                                                                                                      |
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
@@ -133,6 +134,36 @@ AGENT_WORKER_POLL_ERRORS = Counter(
     "Studio Auto poll and claim failures by phase.",
     ("phase",),
 )
+
+STUDIO_WORKFLOW_OPERATIONS = Counter(
+    "nova_studio_workflow_operations_total",
+    "Governed Studio operations by bounded component, operation, and outcome.",
+    ("component", "operation", "status"),
+)
+STUDIO_WORKFLOW_DURATION = Histogram(
+    "nova_studio_workflow_duration_seconds",
+    "Governed Studio operation duration, excluding arguments and source content.",
+    ("component", "operation", "status"),
+    buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 30, 120, 300),
+)
+
+
+@contextmanager
+def studio_operation(component: str, operation: str):
+    if component not in {"release", "quality", "mission", "resource", "action", "workspace"}:
+        raise ValueError("Unknown Studio metric component")
+    if operation not in {"capture", "evaluate", "score", "project", "grant", "execute", "verify"}:
+        raise ValueError("Unknown Studio metric operation")
+    started = time.perf_counter()
+    status = "failed"
+    try:
+        yield
+        status = "completed"
+    finally:
+        STUDIO_WORKFLOW_OPERATIONS.labels(component, operation, status).inc()
+        STUDIO_WORKFLOW_DURATION.labels(component, operation, status).observe(
+            time.perf_counter() - started
+        )
 
 SEARCH_POLL_ERRORS = Counter(
     "nova_search_poll_errors_total", "AI Search build queue poll failures."

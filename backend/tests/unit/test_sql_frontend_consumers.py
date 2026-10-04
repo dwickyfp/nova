@@ -85,7 +85,9 @@ async def test_planned_ml_prediction_reaches_inference_with_the_caller_context(m
     connection = object() if relay else None
     if relay:
         monkeypatch.setattr(query_service, "_repo", repository)
-        state = SessionState(database="analytics", active_role="analyst")
+        state = SessionState(
+            database="analytics", active_role="analyst", security_context_version=9
+        )
         result = await ProxyQueryExecutor(state).execute(
             sql, username="alice", connection=connection
         )
@@ -102,8 +104,7 @@ async def test_planned_ml_prediction_reaches_inference_with_the_caller_context(m
     assert context["username"] == "alice" and context["role"] == "analyst"
     assert context["database_name"] == "analytics" and context["connection"] is connection
     assert context["password"] == ("" if relay else "caller-pw")
-    if not relay:
-        assert context["security_context_version"] == 9
+    assert context["security_context_version"] == 9
     assert "ML_PREDICT" not in context["prediction_sql"]
     repository.execute_as_user.assert_not_awaited()
     assert audit.await_args.kwargs["action"] == "ml_predict_batch"

@@ -16,7 +16,9 @@ from app.modules.intelligence.contracts import Contract, Scope, Window
 from app.modules.task_orchestration.credentials import CredentialUnavailable
 from app.modules.task_orchestration.execution import TaskSpec, _dict_cursor
 
-HANDLERS = frozenset({"intelligence.monitor", "intelligence.consolidate", "intelligence.outcome"})
+HANDLERS = frozenset(
+    {"intelligence.monitor", "intelligence.consolidate", "intelligence.outcome", "agents.quality"}
+)
 
 
 class InternalTaskConfiguration(Contract):
@@ -43,6 +45,10 @@ async def run_once(
     async with asyncio.timeout(120):
         if handler != "intelligence.consolidate" and not config.record_id:
             raise ValueError("Internal work has no target record")
+        if handler == "agents.quality":
+            from app.modules.agents.quality_monitoring import score_production
+
+            return await score_production(config.record_id, user)
         if handler == "intelligence.monitor":
             monitor = await intelligence_service.get("monitors", config.record_id, user)
             if not monitor.enabled:

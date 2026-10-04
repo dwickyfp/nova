@@ -80,6 +80,24 @@ class AISearchTool:
             )
         except (ValidationError, ValueError, TypeError):
             return ToolOutcome(ok=False, summary="", error="Invalid search request")
+        expected_version = None
+        manifest = getattr(context, "release_manifest", None)
+        if manifest is not None:
+            try:
+                pins = [
+                    pin for pin in manifest["dependencies"]["resources"]
+                    if pin["kind"] == "search_index" and pin["id"] == name
+                ]
+                if len(pins) != 1:
+                    raise ValueError("Exactly one release binding is required")
+                expected_version = pins[0]["version"]
+                if type(expected_version) is not int or expected_version < 1:
+                    raise ValueError("Release version is incomplete")
+            except (KeyError, TypeError, ValueError):
+                return ToolOutcome(
+                    ok=False, summary="", error="Search index does not match the pinned release",
+                    error_class="RELEASE_DRIFT",
+                )
         scoped_user = {
             **user,
             "active_role": getattr(context, "role", None)
@@ -92,6 +110,13 @@ class AISearchTool:
         except Exception as exc:
             logger.warning("ai_search failed: %s", type(exc).__name__)
             return ToolOutcome(ok=False, summary="", error="Search is unavailable or unauthorized")
+        if expected_version is not None and (
+            type(result.get("version")) is not int or result["version"] != expected_version
+        ):
+            return ToolOutcome(
+                ok=False, summary="", error="Search index does not match the pinned release",
+                error_class="RELEASE_DRIFT",
+            )
         hits = result["hits"][:10]
         redacted = redact_rows(["content"], [[hit["content"]] for hit in hits])
         safe = [

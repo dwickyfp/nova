@@ -42,6 +42,8 @@ def history(monkeypatch):
     rows = {}
 
     async def execute(sql, params=None):
+        if "CONFIG_AGENT_RELEASE_MANIFESTS" in sql:
+            return {"rows": []}
         if sql.startswith("INSERT"):
             version, agent, owner, config, label, created = params
             assert version not in rows
@@ -147,6 +149,8 @@ async def test_version_routes_write_audit_within_column_limits(monkeypatch, acti
     records = []
 
     async def execute(sql, params):
+        if "CONFIG_AGENT_RELEASE_MANIFESTS" in sql:
+            return {"rows": []}
         assert "INSERT INTO NOVA_SYSTEM.AUDIT_LOG" in sql
         columns = sql.split("(", 1)[1].split(")", 1)[0].replace("\n", "").split(",")
         columns = [column.strip() for column in columns if column.strip() != "event_time"]

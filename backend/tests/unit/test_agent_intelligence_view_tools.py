@@ -118,3 +118,30 @@ async def test_intelligence_view_tools_fail_closed_without_credentials():
         context,
     )
     assert not semantic.ok and not feature.ok
+
+
+async def test_manifest_pin_rejects_version_and_detected_result_drift(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    context = _context()
+    context.agent_id = "agent-1"
+    context.semantic_view_ids = ["view-1"]
+    context.release_manifest = {"dependencies": {"semantic_views": [
+        {"view_id": "view-1", "version": 2, "fingerprint": "pinned"},
+    ]}}
+    query = AsyncMock(return_value={
+        "version": 3, "model_fingerprint": "changed", "columns": ["revenue"], "rows": [[42]],
+    })
+    monkeypatch.setattr(semantic_view_service, "query", query)
+    invocation = ToolInvocation("pin", "semantic_view_query", {
+        "view_id": "view-1", "metrics": ["revenue"], "version": 3,
+    })
+    rejected = await semantic_view_query_tool.run(invocation, context)
+    assert not rejected.ok and rejected.error_class == "POLICY_VIOLATION"
+    query.assert_not_awaited()
+    invocation.arguments.pop("version")
+    drift = await semantic_view_query_tool.run(invocation, context)
+    assert not drift.ok and drift.error_class == "POLICY_VIOLATION"
+    assert query.await_args.args[1].version == 2
+    assert query.await_args.kwargs["expected_fingerprint"] == "pinned"
+    assert query.await_args.args[2]["session_id"] == "session-1"

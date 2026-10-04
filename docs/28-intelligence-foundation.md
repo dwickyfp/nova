@@ -12,11 +12,18 @@ AI Search owns a versioned managed embedding definition. A version pins the embe
 
 Semantic Views store versioned Ossie definitions. Validation compiles and executes verified queries through the caller's session, then compares active and candidate results without storing data rows in the validation report. Changed results require explicit acknowledgement before publish. Production queries use the active version unless a published version is pinned. Feature Views materialize timestamped columns in StarRocks; a Feature Group pins exact view versions. Point-in-time training data uses ASOF joins with label timestamps. Redis publication is optional; lookup falls back to governed offline data if Redis is unavailable.
 
-Semantic Views are also the single semantic object selected in Agent Studio. An agent stores `semantic_view_ids`; its natural-language `semantic_query` resolves only active View versions under the caller's current role and source privileges. Nove can query an active View without an Agent Studio binding. The older Agent Studio semantic-model tables are retained as migration input and for saved-binding compatibility, not for authoring a second semantic catalog.
+Semantic Views are also the single semantic object selected in Agent Studio. An agent stores `semantic_view_ids`; an unmanifested agent's natural-language `semantic_query` resolves active View versions under the caller's current role and source privileges. A manifested release resolves pinned published versions/fingerprints and keeps authorization live. See [governed Studio releases](arch-15-governed-studio.md#release-manifests-and-promotion). Nove can query an active View without an Agent Studio binding. The older Agent Studio semantic-model tables are retained as migration input and for saved-binding compatibility, not for authoring a second semantic catalog.
 
 Publishing a new View version changes the agent access fingerprint. Bound agents must verify access again before their next run, so a new source or formula is checked against the roles allowed to use that agent.
 
 ## Intelligence lifecycle
+
+The [governed Studio architecture](arch-15-governed-studio.md) extends this
+lifecycle with chat-originated comparisons, registered scenarios, an Action
+ledger, scoped context/usage, and Mission links. The first Action adapter creates
+and verifies a governed monitor/schedule. Verification establishes monitoring
+setup, not a business intervention or causal effect. New controls default to
+disabled; see [migration and acceptance](governed-studio-operations.md).
 
 The Intelligence Engine extends these owners with Context Graph references,
 semantic monitors, News, investigations, decisions and outcome evaluation.
@@ -108,7 +115,7 @@ Migrations are `backend/migrations/20260923_intelligence_entities.sql`, `2026092
 
 At startup, `semantic_migration.py` copies legacy Agent Studio definitions and verified queries into Semantic View versions with the original IDs. Imported Views are private to their owners; a shared agent can use one only when its role grant and bound View ID are verified, and every query still checks the caller's source access. The agent binding backfill fills `semantic_view_ids` only when it is SQL NULL, preserving an explicit empty list. An unsupported or invalid legacy Ossie definition remains a private, review-only draft with its original content visible; the owner must add a valid 0.1.1 version before validation and publication. Legacy authoring routes are deprecated so new edits go through versioned Semantic Views.
 
-Metadata and source access require the caller's identity and active role. Search rehydrates hits through that session. Feature and Semantic queries use the source relation under Ranger. Agent Studio's `semantic_query` answers natural-language questions against its bound active Views; `semantic_view_query` takes explicit metrics and dimensions. Both use the same View catalog. Nove can use the structured View tool directly. The assistant also exposes consent-gated `ai_search` and `feature_lookup`. Nove answers product questions from packaged, cited reference knowledge without executing these data tools. The bounded assistant evaluation suite covers explanation routing and the data tools.
+Metadata and source access require the caller's identity and active role. Search rehydrates hits through that session. Feature and Semantic queries use the source relation under Ranger. Agent Studio's `semantic_query` answers natural-language questions against bound active Views or a release's pinned published versions; `semantic_view_query` takes explicit metrics and dimensions. Both use the same View catalog. Nove can use the structured View tool directly. The assistant also exposes consent-gated `ai_search` and `feature_lookup`. Nove answers product questions from packaged, cited reference knowledge without executing these data tools. The bounded assistant evaluation suite covers explanation routing and the data tools.
 
 Operational checks: inspect Search index versions and sync state when a build fails; use the retry route after restoring provider availability. Check embedding model revision/dimensions before rebuilding. Keep the previous active version until evaluation passes. If Redis is down, offline Feature lookup remains available. Audit events are written to `NOVA_SYSTEM.AUDIT.LOG` for lifecycle and query operations.
 

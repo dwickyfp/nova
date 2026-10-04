@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
 
 from app.modules.agents.semantic.time_ranges import RANGE_GRAMMAR_HELP
+from app.modules.assistant.evidence_health import (
+    EvidenceFacts,
+    assess_evidence,
+    attach_evidence_health,
+    attach_execution_health,
+)
 from app.modules.assistant.schemas import ToolClassification
 from app.modules.assistant.tools import ToolInvocation, ToolOutcome
 from app.modules.assistant.tools.redaction import redact_rows
@@ -82,6 +89,9 @@ class SemanticViewQueryTool:
         return f"semantic_view_query: {str(invocation.arguments.get('view_id', ''))[:64]}"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
+        return attach_execution_health(await self._run(invocation, context), self.name)
+
+    async def _run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         user = _user(context)
         if user is None:
             return ToolOutcome(ok=False, summary="", error="User connection unavailable")
@@ -108,19 +118,68 @@ class SemanticViewQueryTool:
             )
         except (ValidationError, ValueError, TypeError):
             return ToolOutcome(ok=False, summary="", error="Invalid semantic query")
+        expected_fingerprint = None
+        manifest = getattr(context, "release_manifest", None)
+        if manifest is not None:
+            try:
+                if not getattr(context, "agent_id", None):
+                    raise ValueError("Pinned execution requires an agent")
+                pins = [
+                    pin for pin in manifest["dependencies"]["semantic_views"]
+                    if pin["view_id"] == view_id
+                ]
+                if len(pins) != 1:
+                    raise ValueError("Exactly one release binding is required")
+                pin = pins[0]
+                identity = EvidenceFacts(
+                    semantic_view_id=view_id, semantic_version=pin["version"],
+                    semantic_fingerprint=pin["fingerprint"],
+                )
+                if identity.semantic_fingerprint is None or identity.semantic_version is None:
+                    raise ValueError("Release binding is incomplete")
+                requested = invocation.arguments.get("version")
+                if requested is not None and (
+                    type(requested) is not int or requested != identity.semantic_version
+                ):
+                    raise ValueError("Requested version differs from the release")
+                request = request.model_copy(update={"version": identity.semantic_version})
+                expected_fingerprint = identity.semantic_fingerprint
+            except (KeyError, TypeError, ValueError):
+                return ToolOutcome(
+                    ok=False, summary="", error="Semantic View does not match the pinned release",
+                    error_class="POLICY_VIOLATION",
+                )
         try:
+            pin_options = (
+                {"expected_fingerprint": expected_fingerprint}
+                if expected_fingerprint is not None else {}
+            )
             result = await semantic_view_service.query(
-                view_id, request, user, agent_id=getattr(context, "agent_id", None)
+                view_id, request, user, agent_id=getattr(context, "agent_id", None), **pin_options,
             )
         except Exception as exc:
             logger.warning("semantic_view_query failed: %s", type(exc).__name__)
             return ToolOutcome(
                 ok=False, summary="", error="Semantic View unavailable or unauthorized"
             )
+        if expected_fingerprint is not None and (
+            result.get("version") != request.version
+            or result.get("model_fingerprint") != expected_fingerprint
+        ):
+            return ToolOutcome(
+                ok=False, summary="", error="Semantic View does not match the pinned release",
+                error_class="POLICY_VIOLATION",
+            )
         columns = result["columns"][:100]
-        rows = redact_rows(columns, result["rows"][:100])
+        rows = redact_rows(columns, [list(row)[:len(columns)] for row in result["rows"][:100]])
+        truncated = (
+            result.get("truncated") is True
+            or len(result["rows"]) > 100 or len(result["columns"]) > 100
+        )
         table = {"title": "Semantic View result", "columns": columns, "rows": rows}
-        return ToolOutcome(
+        if truncated:
+            table["truncated"] = True
+        outcome = ToolOutcome(
             ok=True,
             summary=f"{len(rows)} row(s) from Semantic View",
             table=table,
@@ -136,6 +195,28 @@ class SemanticViewQueryTool:
                 "version": result["version"],
             },
         )
+        from app.core.config import settings
+
+        if settings.STUDIO_BUSINESS_WORKFLOW_ENABLED:
+            try:
+                facts = EvidenceFacts(
+                    semantic_grounding="published", semantic_view_id=view_id,
+                    semantic_version=result["version"],
+                    semantic_fingerprint=result.get("model_fingerprint"),
+                    plan_source="compiled", verified_query_hit=False,
+                    execution_status="success",
+                    coverage=(
+                        "truncated" if truncated else "complete"
+                        if result.get("truncated") is False else "unknown"
+                    ),
+                    semantic_ambiguity="none", unsupported_numeric_claims=False,
+                )
+            except ValidationError:
+                return outcome
+            return attach_evidence_health(
+                outcome, assess_evidence(facts, assessed_at=datetime.now(UTC)),
+            )
+        return outcome
 
 
 class FeatureLookupTool:
@@ -167,6 +248,9 @@ class FeatureLookupTool:
         return f"feature_lookup: {str(invocation.arguments.get('group', ''))[:128]}"
 
     async def run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
+        return attach_execution_health(await self._run(invocation, context), self.name)
+
+    async def _run(self, invocation: ToolInvocation, context: Any) -> ToolOutcome:
         user = _user(context)
         if user is None:
             return ToolOutcome(ok=False, summary="", error="User connection unavailable")
@@ -191,11 +275,42 @@ class FeatureLookupTool:
             )
         except ValidationError:
             return ToolOutcome(ok=False, summary="", error="Invalid entity key")
+        expected_version = None
+        manifest = getattr(context, "release_manifest", None)
+        if manifest is not None:
+            try:
+                pins = [
+                    pin for pin in manifest["dependencies"]["resources"]
+                    if pin["kind"] == "feature_group" and pin["id"] == group
+                ]
+                if len(pins) != 1:
+                    raise ValueError("Exactly one release binding is required")
+                expected_version = pins[0]["version"]
+                if type(expected_version) is not int or expected_version < 1:
+                    raise ValueError("Release version is incomplete")
+                requested = invocation.arguments.get("version")
+                if requested is not None and (
+                    type(requested) is not int or requested != expected_version
+                ):
+                    raise ValueError("Requested version differs from the release")
+                request = request.model_copy(update={"version": expected_version})
+            except (KeyError, TypeError, ValueError):
+                return ToolOutcome(
+                    ok=False, summary="", error="Feature Group does not match the pinned release",
+                    error_class="RELEASE_DRIFT",
+                )
         try:
             result = await feature_store.lookup(group, request, user)
         except Exception as exc:
             logger.warning("feature_lookup failed: %s", type(exc).__name__)
             return ToolOutcome(ok=False, summary="", error="Features unavailable or unauthorized")
+        if expected_version is not None and (
+            type(result.get("version")) is not int or result["version"] != expected_version
+        ):
+            return ToolOutcome(
+                ok=False, summary="", error="Feature Group does not match the pinned release",
+                error_class="RELEASE_DRIFT",
+            )
         names = list(result["values"])[:100]
         values = redact_rows(names, [[result["values"][name] for name in names]])[0]
         safe = dict(zip(names, values, strict=True))
@@ -207,6 +322,7 @@ class FeatureLookupTool:
                 "version": result["version"],
                 "values": safe,
                 "as_of": result["as_of"],
+                **({"fields_truncated": True} if len(result["values"]) > 100 else {}),
             },
             evidence={"source": "nova_feature_store", "group": group, "version": result["version"]},
         )

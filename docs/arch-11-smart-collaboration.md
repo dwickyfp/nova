@@ -1,5 +1,10 @@
 # Architecture 11: Smart Collaboration
 
+The additive [governed Studio workflow](arch-15-governed-studio.md) documents
+release pins, Missions, Evidence Health, and selective attachment grants over
+these participants and journals. See its [operator guide](governed-studio-operations.md)
+for disabled defaults, migrations, and separate metadata/Ranger acceptance gates.
+
 > Smart and its specialists share one bounded assistant engine, durable mailboxes, and a reusable participant lifecycle.
 
 ## Architecture

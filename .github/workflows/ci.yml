@@ -172,6 +172,8 @@ jobs:
     name: Backend integration (L3, real engine)
     runs-on: ubuntu-latest
     needs: [backend-unit]
+    env:
+      NOVA_TEST_FE_HEAP_MB: "2048"
     steps:
       - uses: actions/checkout@v4
 

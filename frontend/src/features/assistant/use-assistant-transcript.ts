@@ -223,6 +223,9 @@ function applyEvent(
   event: AssistantEvent,
 ): TranscriptMessage[] {
   switch (event.type) {
+    case "mission_updated":
+    case "evidence_health":
+      return state;
     case "role_changed":
       return [];
     case "text_delta":
