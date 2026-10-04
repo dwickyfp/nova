@@ -81,69 +81,82 @@ tidak boleh dipakai lagi. Nilai yang sudah ada sebelumnya tersebar di 33
 kemunculan `bg-card/*` dan 22 kemunculan `border-border/*`; penggantinya adalah
 `--surface-*`. Migrasi dilakukan per grup refactor, bukan serentak.
 
-### Nova Glass Navigation
+### Nova Glass Shell
 
-**Glass is a navigation material, not a content surface.** Material ini hanya
-untuk sidebar global dan sidebar Studio, termasuk rail ikon dan drawer mobile.
-Frame navigasi Console yang terlihat di atas, bawah, dan samping workspace
-inset memakai komposisi material yang sama dan menyambung dengan sidebar.
-Workspace, transcript, editor, tabel, kartu, inspector, dialog, dan popover tetap
-memakai permukaan solid yang sudah ada. Material bukan tingkat `--surface-4`.
+**Satu backdrop, dua ketebalan tint.** Shell aplikasi punya satu lukisan latar
+(`--shell-backdrop`) yang dipasang pada koordinat viewport. Navigasi dan
+workspace sama-sama berdiri di atasnya dan sama-sama memakai warna tint
+`--background`; yang berbeda hanya opacity-nya. Karena itu sidebar dan konten
+selalu berada di satu keluarga hue, dan gradasi backdrop menyambung melewati
+batas kolom.
 
-`--sidebar` tetap opak untuk layout dan konsumen lama. Sidebar global memilih
-`material="navigation"`; Studio memakai `sidebar-navigation-material` tanpa
-menggabungkan implementasi navigasi kedua produk.
+| Lapisan | Dipakai oleh | Tint | Filter |
+|---|---|---|---|
+| Chrome (tipis) | Sidebar global, sidebar Studio, rail ikon, drawer mobile, frame inset Console | `--sidebar-navigation-tint` | Satu `backdrop-filter` pada shell |
+| Pane (tebal) | `SidebarInset` di bawah sidebar bermaterial navigasi, `<main>` Studio (`shell-pane`) | `--shell-pane-tint` | Tidak ada; komposit statis di atas `--background` opak |
+| Isi | Kartu, tabel, editor, transcript, inspector, dialog, popover, menu portal | `--card`, `--surface-*`, `--popover` | Tidak ada; tetap solid |
 
-Material mengisi seluruh kolom sidebar desktop sampai tepi viewport, termasuk
-padding layout di sekitar menu. Padding hanya mengatur posisi konten. Shell
-dalam transparan tanpa border, radius, atau shadow pembentuk card, termasuk
-saat variant layout memakai `inset` atau `floating`. Permukaan solid bawaan
-primitive mempertahankan perilaku variant sebelumnya.
+Glass berhenti di pane. Permukaan isi tidak pernah transparan dan tidak pernah
+memakai `backdrop-filter`; material bukan tingkat `--surface-4`.
 
 | Token | Arti |
 |---|---|
-| `--sidebar-navigation-tint` | Lapisan transparan di atas underlay atau backdrop drawer |
-| `--sidebar-navigation-tint-opacity` | Alpha tint, diatur per tema |
+| `--shell-backdrop` | Lukisan latar shell: teal-slate di kiri atas, bata dan amber di bawah |
+| `--shell-pane-tint` | Tint workspace di atas backdrop; 100% di tema terang, 82% di tema gelap |
+| `--sidebar-navigation-tint` | Tint chrome di atas backdrop atau konten di belakang drawer |
+| `--sidebar-navigation-tint-opacity` | Alpha tint chrome; 62% terang, 46% gelap |
 | `--sidebar-navigation-fallback` | Latar opak saat blur tidak tersedia atau transparansi dikurangi |
-| `--sidebar-navigation-ambient` | Variasi netral statis pada sidebar dan frame navigasi inset |
-| `--sidebar-navigation-edge` | Hairline dan separator navigasi |
+| `--sidebar-navigation-edge` | Hairline transparan; juga `--inset-border` di tema gelap |
 | `--sidebar-navigation-shadow` | Hairline pada sisi yang berbatasan dengan workspace |
-| `--sidebar-navigation-hover` | Plate interaksi netral |
-| `--sidebar-navigation-selected` | Plate netral lebih kuat untuk pilihan aktif |
+| `--sidebar-navigation-hover` | Plate interaksi transparan |
+| `--sidebar-navigation-selected` | Plate transparan lebih kuat untuk pilihan aktif |
 | `--sidebar-navigation-muted-foreground` | Teks sekunder yang lolos AA di atas plate navigasi |
 | `--sidebar-navigation-ring` | Fokus merah bata dengan kontras terhadap plate navigasi |
 
-Tema terang memakai tint mendekati putih; tema gelap memakai graphite. Warna,
-alpha, dan shadow hanya didefinisikan di `theme.css`. Foreground dan ring fokus
-mengikuti token Nova; teks sekunder memakai token navigasi yang lolos AA.
-Tint terang 64% dan gelap 48% membiarkan variasi netral underlay terbaca sebagai
-kaca buram. Underlay menyediakan kedalaman saat backdrop aplikasi sendiri solid;
-header, menu, dan footer berada pada satu bidang kaca yang kontinu. Tidak ada
-bingkai di empat sisi atau permukaan kaca kedua di dalam sidebar.
-Pada Console inset, underlay sidebar dan frame memakai koordinat viewport yang
-sama agar warna tidak terputus pada batas kolom. Frame menggabungkan tint dan
-underlay sebagai latar statis tanpa filter tambahan. Panel `SidebarInset`,
-termasuk border, shadow, margin, ukuran, serta konten dan assistant di dalamnya,
-tetap opak. Provider dengan sidebar solid dan layout tanpa frame inset tetap
-memakai latar sebelumnya. Drawer mobile tidak mengaktifkan frame desktop.
-Merah bata tetap untuk identitas dan penanda aktif, bukan
-latar seluruh sidebar.
+**Backdrop harus punya variasi hue.** Kaca hanya terbaca kalau ada sesuatu di
+belakangnya. Gradien abu-abu netral di bawah tint terlihat sama dengan warna
+solid, jadi backdrop memakai teal-slate dan bata/amber dari palet Nova sendiri.
+Blur tidak menggantikan variasi itu.
+
+**Plate dan hairline transparan, bukan hex opak.** Hover, selected, dan edge
+adalah putih (gelap) atau slate (terang) ber-alpha, sehingga gradasi backdrop
+tetap terlihat di bawah baris aktif. Kontras diukur pada hasil kompositnya di
+setiap stop backdrop, bukan pada warna plate itu sendiri.
+
+**Pane terang tetap 100%.** `--primary` (4.53:1) dan token `-strong` diukur
+sebagai teks di atas `--background` tanpa ruang untuk tint, jadi pane tema
+terang tidak tembus. Tema gelap punya margin (teks sekunder 7.1:1 pada stop
+paling terang) dan memakai 82%. Mengubah opacity pane berarti menghitung ulang
+B4 untuk semua token teks.
+
+`--sidebar` dan `--background` tetap opak untuk layout dan konsumen lama.
+Sidebar global memilih `material="navigation"`; Studio memakai
+`sidebar-navigation-material` dan `shell-pane` tanpa menggabungkan implementasi
+navigasi kedua produk. Halaman tidak boleh mengecat `bg-background` selebar
+pane, karena itu menutup backdrop; latar pane milik shell.
+
+Material chrome mengisi seluruh kolom sidebar desktop sampai tepi viewport,
+termasuk padding layout di sekitar menu. Shell dalam transparan tanpa border,
+radius, atau shadow pembentuk card, termasuk pada variant `inset` dan
+`floating`. Header, menu, dan footer berada pada satu bidang kaca yang kontinu;
+tidak ada permukaan kaca kedua di dalam sidebar. Frame inset Console
+menggabungkan tint chrome dan backdrop sebagai latar statis tanpa filter.
+Provider dengan sidebar solid memakai latar sebelumnya. Merah bata tetap untuk
+identitas dan penanda aktif, bukan latar seluruh sidebar.
 
 Shell memiliki satu lapisan backdrop blur statis; header, baris, history, dan
 footer tidak memiliki blur sendiri. `sidebar-navigation-item` berbagi hover dan
-selection di dalam shell saja. Menu yang dirender melalui portal tetap solid.
-Drawer mobile memfilter shell agar animasi Sheet tidak membatasi backdrop;
-lapisan tint internal dinonaktifkan, sementara underlay netral tetap statis dan
-tidak memiliki filter. Underlay drawer memakai campuran tint yang sama pada
-opacity 90% untuk menjaga kontras saat konten di belakang berubah.
-Blur dan tint tidak dianimasikan.
-Lebar, posisi kontrol, radius baris, kepadatan, dan perilaku navigasi tidak berubah.
+selection di dalam shell saja. Drawer mobile memfilter shell agar animasi Sheet
+tidak membatasi backdrop; lapisan tint internal dinonaktifkan dan underlay
+memakai campuran tint yang sama pada opacity 90%. Blur dan tint tidak
+dianimasikan. Lebar, posisi kontrol, radius baris, kepadatan, dan perilaku
+navigasi tidak berubah.
 
 Fallback opak berlaku sebelum pemeriksaan `@supports`. Dukungan standar dan
-WebKit mengaktifkan blur; `prefers-reduced-transparency` mematikannya kembali.
-Forced colors memakai warna sistem dan pilihan aktif yang tetap terbaca.
-Kontras teks dan fokus harus diperiksa di kedua tema, termasuk underlay,
-fallback, dan plate terpilih; keterbacaan tidak boleh bergantung pada blur.
+WebKit mengaktifkan blur; `prefers-reduced-transparency` mematikan blur dan
+gambar backdrop pada chrome, frame, dan pane. Forced colors memakai warna
+sistem dan pilihan aktif yang tetap terbaca. Keterbacaan tidak boleh bergantung
+pada blur.
 
 ### 2.4 Grafik
 

@@ -81,16 +81,26 @@
   --code-type: #6b46c1;
   --code-attr: #c9662e;
 
-  /* Navigation chrome only; --sidebar remains an opaque layout surface. */
-  --sidebar-navigation-tint-opacity: 64%;
-  --sidebar-navigation-tint: rgb(248 250 252 / var(--sidebar-navigation-tint-opacity));
+  /* Nova Glass Shell. One viewport-fixed backdrop sits behind the navigation
+     chrome and the workspace pane; each paints the same tint colour at its own
+     opacity, so both stay in one hue family. --sidebar and --background remain
+     opaque for layout and legacy consumers. */
+  --shell-backdrop:
+    radial-gradient(90% 70% at 0% 0%, #b7ccd6 0%, rgb(183 204 214 / 0%) 70%),
+    radial-gradient(80% 70% at 100% 100%, #e8dcc2 0%, rgb(232 220 194 / 0%) 70%),
+    radial-gradient(60% 60% at 0% 100%, #e6cfc4 0%, rgb(230 207 196 / 0%) 70%),
+    linear-gradient(160deg, #dfe6ec 0%, #eef1f4 100%);
+  /* The light pane stays fully opaque: --primary and the -strong status tokens
+     are measured as text on --background with no margin for a tint (B4). */
+  --shell-pane-tint: rgb(255 255 255 / 100%);
+  --sidebar-navigation-tint-opacity: 62%;
+  --sidebar-navigation-tint: rgb(255 255 255 / var(--sidebar-navigation-tint-opacity));
   --sidebar-navigation-fallback: #f4f6f8;
-  --sidebar-navigation-ambient: linear-gradient(145deg, #c3cfd2 0%, #e4e8e8 38%, #cfc8bc 72%, #e6e9eb 100%);
-  --sidebar-navigation-edge: rgb(90 105 116 / 22%);
+  --sidebar-navigation-edge: rgb(15 23 42 / 12%);
   --sidebar-navigation-shadow: inset -1px 0 0 var(--sidebar-navigation-edge);
-  --sidebar-navigation-hover: #e9edf2;
-  --sidebar-navigation-selected: #dce2e9;
-  --sidebar-navigation-muted-foreground: #566172;
+  --sidebar-navigation-hover: rgb(15 23 42 / 6%);
+  --sidebar-navigation-selected: rgb(15 23 42 / 11%);
+  --sidebar-navigation-muted-foreground: #4d5868;
   --sidebar-navigation-ring: var(--primary);
 
   --sidebar: var(--background);
@@ -104,15 +114,22 @@
 }
 
 .dark {
-  --sidebar-navigation-tint-opacity: 48%;
-  --sidebar-navigation-tint: rgb(17 22 29 / var(--sidebar-navigation-tint-opacity));
+  --shell-backdrop:
+    radial-gradient(90% 70% at 0% 0%, #2c5360 0%, rgb(44 83 96 / 0%) 70%),
+    radial-gradient(80% 70% at 100% 100%, #6a5330 0%, rgb(106 83 48 / 0%) 70%),
+    radial-gradient(60% 60% at 0% 100%, #5c3a2b 0%, rgb(92 58 43 / 0%) 70%),
+    linear-gradient(160deg, #1a2733 0%, #0d1217 100%);
+  /* Both tints are --background (#0b0f14) so chrome and pane differ only in
+     how much backdrop they let through. */
+  --shell-pane-tint: rgb(11 15 20 / 82%);
+  --sidebar-navigation-tint-opacity: 46%;
+  --sidebar-navigation-tint: rgb(11 15 20 / var(--sidebar-navigation-tint-opacity));
   --sidebar-navigation-fallback: #141a22;
-  --sidebar-navigation-ambient: linear-gradient(145deg, #596666 0%, #242a2c 38%, #45413a 72%, #282e32 100%);
-  --sidebar-navigation-edge: rgb(224 233 239 / 18%);
+  --sidebar-navigation-edge: rgb(255 255 255 / 12%);
   --sidebar-navigation-shadow: inset -1px 0 0 var(--sidebar-navigation-edge);
-  --sidebar-navigation-hover: #394144;
-  --sidebar-navigation-selected: #465052;
-  --sidebar-navigation-muted-foreground: #c0c9d2;
+  --sidebar-navigation-hover: rgb(255 255 255 / 7%);
+  --sidebar-navigation-selected: rgb(255 255 255 / 13%);
+  --sidebar-navigation-muted-foreground: #cdd5dc;
   --sidebar-navigation-ring: var(--accent-foreground);
 
   --background: #0b0f14;
@@ -134,7 +151,7 @@
   --border: #28313d;
   --input: #28313d;
   --ring: #e45a49;
-  --inset-border: #344151;
+  --inset-border: var(--sidebar-navigation-edge);
   --inset-shadow:
     0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px rgb(0 0 0 / 24%);
   --warning: #f0ad3d;

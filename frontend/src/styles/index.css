@@ -27,9 +27,14 @@
   pointer-events: none;
 }
 
+/* Viewport coordinates keep the backdrop continuous across the sidebar, the
+   inset frame, and the workspace pane. */
 .sidebar-navigation-material::before {
   z-index: -2;
-  background: var(--sidebar-navigation-ambient);
+  background: var(--shell-backdrop);
+  background-size: 100vw 100svh;
+  background-position: left top;
+  background-attachment: fixed;
 }
 
 .sidebar-navigation-material::after {
@@ -47,7 +52,12 @@
   background-attachment: fixed;
 }
 
-[data-slot="sidebar-wrapper"]:has(> [data-material="navigation"][data-variant="inset"]) .sidebar-navigation-material::before {
+/* The workspace pane is the same backdrop under a thicker tint. It is a
+   static composite over an opaque --background, never a filtered layer, so
+   data surfaces inside it keep their measured contrast. */
+[data-slot="sidebar-wrapper"]:has(> [data-material="navigation"]) > [data-slot="sidebar-inset"],
+.shell-pane {
+  background-image: linear-gradient(var(--shell-pane-tint), var(--shell-pane-tint)), var(--shell-backdrop);
   background-size: 100vw 100svh;
   background-position: left top;
   background-attachment: fixed;
@@ -60,7 +70,7 @@
     backdrop-filter: blur(12px) saturate(1.08);
   }
   [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"][data-variant="inset"]) {
-    background-image: linear-gradient(var(--sidebar-navigation-tint), var(--sidebar-navigation-tint)), var(--sidebar-navigation-ambient);
+    background-image: linear-gradient(var(--sidebar-navigation-tint), var(--sidebar-navigation-tint)), var(--shell-backdrop);
   }
 }
 
@@ -110,7 +120,7 @@
   .sidebar-navigation-material[data-mobile="true"]::before,
   [data-mobile-navigation="true"] .sidebar-navigation-material::before {
     display: block;
-    background: linear-gradient(var(--sidebar-navigation-tint), var(--sidebar-navigation-tint)), var(--sidebar-navigation-ambient);
+    background: linear-gradient(var(--sidebar-navigation-tint), var(--sidebar-navigation-tint)), var(--shell-backdrop);
     box-shadow: var(--sidebar-navigation-shadow);
     opacity: 0.9;
   }
@@ -125,7 +135,9 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"][data-variant="inset"]) {
+  [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"][data-variant="inset"]),
+  [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"]) > [data-slot="sidebar-inset"],
+  .shell-pane {
     background-image: none;
   }
   .sidebar-navigation-material[data-mobile="true"],
@@ -149,6 +161,10 @@
 @media (forced-colors: active) {
   [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"][data-variant="inset"]) {
     background: Canvas;
+  }
+  [data-slot="sidebar-wrapper"]:has(> [data-material="navigation"]) > [data-slot="sidebar-inset"],
+  .shell-pane {
+    background-image: none;
   }
   .sidebar-navigation-material {
     --sidebar-foreground: CanvasText;

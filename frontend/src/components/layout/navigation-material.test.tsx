@@ -157,13 +157,28 @@ function expectNavigationFrame() {
   expect(style.backgroundImage).toContain(
     getComputedStyle(materialShell(), "::after").backgroundColor,
   );
-  for (const size of style.backgroundSize.split(", "))
-    expect(size).toBe(ambient.backgroundSize);
-  expect(style.backgroundAttachment).toBe("fixed, fixed");
-  expect(ambient.backgroundAttachment).toBe("fixed");
+  const viewport = ambient.backgroundSize.split(", ")[0];
+  for (const layers of [style, ambient]) {
+    for (const size of layers.backgroundSize.split(", "))
+      expect(size).toBe(viewport);
+    for (const attachment of layers.backgroundAttachment.split(", "))
+      expect(attachment).toBe("fixed");
+  }
   expect(style.backdropFilter).toBe("none");
   expect(style.filter).toBe("none");
   const inset = document.querySelector('[data-slot="sidebar-inset"]')!;
+  const pane = getComputedStyle(inset);
+  expect(pane.backgroundImage).toContain(ambient.backgroundImage);
+  expect(pane.backgroundSize.split(", ")[0]).toBe(viewport);
+  expect(pane.backgroundAttachment.split(", ")[0]).toBe("fixed");
+  expect(pane.backdropFilter).toBe("none");
+  const paneTint = getComputedStyle(materialShell()).getPropertyValue(
+    "--shell-pane-tint",
+  );
+  for (const color of ambient.backgroundImage.match(/rgba?\([^)]+\)/g)!)
+    expect(
+      contrastRatio(pane.color, compositeColor(paneTint, color)),
+    ).toBeGreaterThanOrEqual(4.5);
   const bounds = inset.getBoundingClientRect();
   expect(bounds.top).toBeGreaterThan(0);
   expect(bounds.bottom).toBeLessThan(window.innerHeight);
@@ -268,16 +283,24 @@ describe("Nova navigation material", () => {
         shell,
         "::before",
       ).backgroundImage.match(/rgba?\([^)]+\)/g)!;
-      for (const background of [
+      const hover = getComputedStyle(shell).getPropertyValue(
+        "--sidebar-navigation-hover",
+      );
+      // Plates are translucent, so each is measured where it renders: over
+      // every tinted backdrop stop, and over the opaque fallback.
+      const chrome = [
         ...ambientColors.map((color) =>
           compositeColor(tint.backgroundColor, color),
         ),
-        selectedBackground,
-        getComputedStyle(shell).getPropertyValue("--sidebar-navigation-hover"),
         getComputedStyle(shell).getPropertyValue(
           "--sidebar-navigation-fallback",
         ),
-      ]) {
+      ];
+      for (const background of chrome.flatMap((color) => [
+        color,
+        compositeColor(hover, color),
+        compositeColor(selectedBackground, color),
+      ])) {
         expect(contrastRatio(foreground, background)).toBeGreaterThanOrEqual(
           4.5,
         );
