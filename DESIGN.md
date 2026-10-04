@@ -107,7 +107,7 @@ memakai `backdrop-filter`; material bukan tingkat `--surface-4`.
 | `--sidebar-navigation-tint-opacity` | Alpha tint chrome; 62% terang, 46% gelap |
 | `--sidebar-navigation-fallback` | Latar opak saat blur tidak tersedia atau transparansi dikurangi |
 | `--sidebar-navigation-edge` | Hairline transparan; juga `--inset-border` di tema gelap |
-| `--sidebar-navigation-shadow` | Hairline pada sisi yang berbatasan dengan workspace; tidak dipakai pada Console inset, tempat sidebar menyatu dengan frame |
+| `--sidebar-navigation-shadow` | Hairline pada sisi yang berbatasan dengan workspace; tidak dipakai pada Console inset |
 | `--sidebar-navigation-hover` | Plate interaksi transparan |
 | `--sidebar-navigation-selected` | Plate transparan lebih kuat untuk pilihan aktif |
 | `--sidebar-navigation-muted-foreground` | Teks sekunder yang lolos AA di atas plate navigasi |
@@ -144,8 +144,11 @@ menggabungkan tint chrome dan backdrop sebagai latar statis tanpa filter.
 Provider dengan sidebar solid memakai latar sebelumnya. Merah bata tetap untuk
 identitas dan penanda aktif, bukan latar seluruh sidebar.
 
-Shell memiliki satu lapisan backdrop blur statis; header, baris, history, dan
-footer tidak memiliki blur sendiri. `sidebar-navigation-item` berbagi hover dan
+Shell memiliki paling banyak satu lapisan backdrop blur statis; header, baris,
+history, dan footer tidak memiliki blur sendiri. Sidebar Console inset tidak
+mengecat lapisan sendiri: kolomnya bening di atas frame wrapper, sehingga
+navigasi dan frame adalah satu permukaan tanpa tepi yang harus disejajarkan.
+Brand di header sidebar tidak pernah mendapat plate hover atau selected. `sidebar-navigation-item` berbagi hover dan
 selection di dalam shell saja. Drawer mobile memfilter shell agar animasi Sheet
 tidak membatasi backdrop; lapisan tint internal dinonaktifkan dan underlay
 memakai campuran tint yang sama pada opacity 90%. Blur dan tint tidak

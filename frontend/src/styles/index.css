@@ -52,10 +52,12 @@
   background-attachment: fixed;
 }
 
-/* Sidebar and inset frame are one continuous plane; the workspace panel's own
-   border is the only edge between navigation and content. */
+/* In the inset layout the sidebar paints nothing of its own: it is a clear
+   column over the wrapper's frame, so navigation and frame are one surface
+   with no edge to line up. The workspace panel's border is the only divider. */
+[data-material="navigation"][data-variant="inset"] .sidebar-navigation-material::before,
 [data-material="navigation"][data-variant="inset"] .sidebar-navigation-material::after {
-  box-shadow: none;
+  display: none;
 }
 
 /* The workspace pane is the same backdrop under a thicker tint. It is a
@@ -88,8 +90,8 @@
   color: var(--sidebar-foreground);
 }
 
-.sidebar-navigation-material .sidebar-navigation-item[data-active="true"],
-.sidebar-navigation-material .sidebar-navigation-item[aria-current] {
+.sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand])[data-active="true"],
+.sidebar-navigation-material .sidebar-navigation-item:not([data-sidebar-brand])[aria-current] {
   background: var(--sidebar-navigation-selected);
   color: var(--sidebar-foreground);
 }

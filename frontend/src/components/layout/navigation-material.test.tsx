@@ -166,7 +166,6 @@ function expectNavigationFrame() {
   }
   expect(style.backdropFilter).toBe("none");
   expect(style.filter).toBe("none");
-  expect(getComputedStyle(materialShell(), "::after").boxShadow).toBe("none");
   const inset = document.querySelector('[data-slot="sidebar-inset"]')!;
   const pane = getComputedStyle(inset);
   expect(pane.backgroundImage).toContain(ambient.backgroundImage);
@@ -260,7 +259,9 @@ describe("Nova navigation material", () => {
         .toBeVisible();
       const shell = materialShell();
       const tint = getComputedStyle(shell, "::after");
-      expect(tint.backdropFilter).toContain("blur(12px)");
+      // Inset chrome paints nothing itself; the wrapper frame shows through.
+      expect(tint.display).toBe("none");
+      expect(getComputedStyle(shell, "::before").display).toBe("none");
       expect(getComputedStyle(shell).backgroundColor).toBe("rgba(0, 0, 0, 0)");
       expectFullDesktopPane();
       expectSolidContent();
