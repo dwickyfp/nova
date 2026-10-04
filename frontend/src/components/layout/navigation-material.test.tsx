@@ -108,6 +108,30 @@ function materialShell() {
   return document.querySelector<HTMLElement>(".sidebar-navigation-material")!;
 }
 
+function expectFullDesktopPane() {
+  const shell = materialShell();
+  const inner = shell.querySelector<HTMLElement>(
+    '[data-slot="sidebar-inner"]',
+  )!;
+  const bounds = shell.getBoundingClientRect();
+  expect(bounds.top).toBe(0);
+  expect(bounds.left).toBe(0);
+  expect(bounds.bottom).toBe(window.innerHeight);
+  expect(inner.getBoundingClientRect().top).toBeGreaterThanOrEqual(bounds.top);
+  const innerStyle = getComputedStyle(inner);
+  expect(innerStyle.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(innerStyle.borderTopWidth).toBe("0px");
+  expect(innerStyle.borderRadius).toBe("0px");
+  expect(innerStyle.boxShadow).toBe("none");
+  for (const pseudo of ["::before", "::after"]) {
+    const layer = getComputedStyle(shell, pseudo);
+    expect(layer.top).toBe("0px");
+    expect(layer.right).toBe("0px");
+    expect(layer.bottom).toBe("0px");
+    expect(layer.left).toBe("0px");
+  }
+}
+
 function expectSolidContent() {
   const inset = document.querySelector<HTMLElement>(
     '[data-slot="sidebar-inset"]',
@@ -198,6 +222,7 @@ describe("Nova navigation material", () => {
       const tint = getComputedStyle(shell, "::after");
       expect(tint.backdropFilter).toContain("blur(12px)");
       expect(getComputedStyle(shell).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+      expectFullDesktopPane();
       expectSolidContent();
       for (const child of Array.from(shell.querySelectorAll("*")))
         expect(getComputedStyle(child).backdropFilter).toBe("none");
@@ -234,6 +259,9 @@ describe("Nova navigation material", () => {
         expect(contrastRatio(muted, background)).toBeGreaterThanOrEqual(4.5);
         expect(contrastRatio(ring, background)).toBeGreaterThanOrEqual(3);
       }
+      await page.screenshot({
+        path: `../../../coverage/navigation/console-${theme}-expanded.png`,
+      });
       home.element().focus();
       await userEvent.keyboard("{Tab}{Shift>}{Tab}{/Shift}");
       await expect.element(home).toHaveFocus();
@@ -249,8 +277,14 @@ describe("Nova navigation material", () => {
         .click();
       await expect.poll(() => getCookie("sidebar_state")).toBe("false");
       await expect
-        .poll(() => shell.getBoundingClientRect().width)
+        .poll(
+          () =>
+            shell
+              .querySelector('[data-slot="sidebar-inner"]')!
+              .getBoundingClientRect().width,
+        )
         .toBeLessThan(64);
+      expectFullDesktopPane();
       expect(getComputedStyle(shell, "::after").backdropFilter).toBe(
         tint.backdropFilter,
       );
@@ -380,6 +414,7 @@ describe("Nova navigation material", () => {
         materialShell().getBoundingClientRect().right,
       );
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(900);
+      expectFullDesktopPane();
       expectSolidContent();
     },
   );
