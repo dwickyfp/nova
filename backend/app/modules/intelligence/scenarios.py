@@ -45,6 +45,16 @@ class ScenarioDefinition(Contract):
     target_metric: str | None = Field(default=None, min_length=1, max_length=128)
     target_metric_policy: Literal["named_metric", "published_metric"] = "named_metric"
     currency_required: bool = True
+    required_currency: str | None = Field(
+        default=None, pattern=r"^[A-Z]{3}$", exclude_if=lambda value: value is None
+    )
+    required_unit: str | None = Field(
+        default=None, min_length=1, max_length=128, exclude_if=lambda value: value is None
+    )
+    currency_input_allowed: bool = Field(default=False, exclude_if=lambda value: not value)
+    required_evidence_types: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
+        default_factory=list, max_length=32, exclude_if=lambda value: not value
+    )
     constraints: list[Annotated[str, Field(pattern=_ACTION)]] = Field(max_length=32)
     simulation_adapter: str = Field(min_length=1, max_length=128)
 
@@ -62,7 +72,7 @@ class ScenarioDefinition(Contract):
 class ScenarioContext(Contract):
     """Server-derived input authority; previews have no evidence authority."""
 
-    purpose: Literal["preview", "decision"] = "preview"
+    purpose: Literal["preview", "discovery", "decision"] = "preview"
     agent_id: str | None = Field(default=None, max_length=128)
     thread_id: str | None = Field(default=None, max_length=64)
     mission_id: str | None = Field(default=None, max_length=128)
@@ -72,8 +82,13 @@ class ScenarioContext(Contract):
     baseline: float | None = None
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     metric_currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    metric_unit: str | None = Field(default=None, min_length=1, max_length=128)
+    metric_additivity: str | None = Field(default=None, min_length=1, max_length=64)
     outcome_window: Window | None = None
     evidence_ids: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
+        default_factory=list, max_length=100
+    )
+    evidence_types: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
         default_factory=list, max_length=100
     )
 
@@ -90,6 +105,33 @@ class ScenarioContext(Contract):
         ):
             raise ValueError("Decision scenarios require canonical Investigation context")
         return self
+
+
+ScenarioReason = Literal[
+    "TARGET_METRIC_UNSUPPORTED",
+    "METRIC_CURRENCY_REQUIRED",
+    "METRIC_CURRENCY_UNSUPPORTED",
+    "METRIC_UNIT_REQUIRED",
+    "METRIC_UNIT_UNSUPPORTED",
+    "METRIC_ADDITIVITY_UNSUPPORTED",
+    "EVIDENCE_REQUIRED",
+]
+
+
+class ScenarioResolution(Contract):
+    target_metric: str | None
+    currency: str | None
+    unit: str | None
+    currency_readonly: bool
+    currency_input_allowed: bool
+
+
+class ScenarioCompatibility(Contract):
+    scenario: ScenarioDefinition
+    compatible: bool
+    reason_codes: list[ScenarioReason]
+    required_inputs: list[str]
+    resolved: ScenarioResolution
 
 
 class ScenarioExecution(Contract):
@@ -303,6 +345,87 @@ class ScenarioRegistry:
     def definitions(self) -> list[ScenarioDefinition]:
         return [value.model_copy(deep=True) for value in self._definitions.values()]
 
+    def compatibility(
+        self, kind: str, version: int, context: ScenarioContext
+    ) -> ScenarioCompatibility:
+        definition = self.definition(kind, version)
+        reasons: list[ScenarioReason] = []
+        if (
+            definition.target_metric_policy == "named_metric"
+            and context.target_metric != definition.target_metric
+        ):
+            reasons.append("TARGET_METRIC_UNSUPPORTED")
+        currency = definition.required_currency or context.metric_currency
+        if context.metric_currency and (
+            definition.required_currency
+            and definition.required_currency != context.metric_currency
+            or context.currency
+            and context.currency != context.metric_currency
+        ):
+            reasons.append("METRIC_CURRENCY_UNSUPPORTED")
+        if not currency and definition.currency_input_allowed:
+            currency = context.currency
+        if (
+            definition.currency_required
+            and not context.metric_currency
+            and not definition.currency_input_allowed
+        ):
+            reasons.append("METRIC_CURRENCY_REQUIRED")
+        if (
+            definition.required_currency
+            and context.currency
+            and (definition.required_currency != context.currency)
+            and "METRIC_CURRENCY_UNSUPPORTED" not in reasons
+        ):
+            reasons.append("METRIC_CURRENCY_UNSUPPORTED")
+        if definition.required_unit:
+            if not context.metric_unit:
+                reasons.append("METRIC_UNIT_REQUIRED")
+            elif definition.required_unit != context.metric_unit:
+                reasons.append("METRIC_UNIT_UNSUPPORTED")
+        if not context.evidence_ids or set(definition.required_evidence_types) - set(
+            context.evidence_types
+        ):
+            reasons.append("EVIDENCE_REQUIRED")
+        adapter = self._adapters[(kind, version)]
+        reviewed_check = getattr(adapter, "compatibility_reasons", None)
+        if reviewed_check:
+            reasons.extend(reason for reason in reviewed_check(context) if reason not in reasons)
+        required = [
+            *definition.shared_input_schema.get("required", []),
+            *definition.input_schema.get("required", []),
+        ]
+        if definition.currency_required and not currency:
+            required.append("currency")
+        if "METRIC_UNIT_REQUIRED" in reasons:
+            required.append("metric_unit")
+        if "EVIDENCE_REQUIRED" in reasons:
+            required.append("evidence")
+        return ScenarioCompatibility(
+            scenario=definition,
+            compatible=not reasons,
+            reason_codes=reasons,
+            required_inputs=required,
+            resolved=ScenarioResolution(
+                target_metric=definition.target_metric or context.target_metric,
+                currency=currency,
+                unit=definition.required_unit or context.metric_unit,
+                currency_readonly=bool(
+                    currency and (definition.required_currency or context.metric_currency)
+                ),
+                currency_input_allowed=definition.currency_input_allowed,
+            ),
+        )
+
+    def discover(self, context: ScenarioContext) -> dict:
+        results = [
+            self.compatibility(kind, version, context) for kind, version in self._definitions
+        ]
+        return {
+            "items": [result.scenario for result in results if result.compatible],
+            "compatibility": results,
+        }
+
     def normalize(
         self, kind: str, version: int, parameters: dict, context: ScenarioContext
     ) -> Contract:
@@ -322,19 +445,24 @@ class ScenarioRegistry:
         if value.model_dump()["action_type"] not in definition.action_types:
             raise ValueError("Scenario action is not supported")
         if context.purpose == "decision":
-            if (
-                definition.target_metric_policy == "named_metric"
-                and context.target_metric != definition.target_metric
-            ):
+            compatibility = self.compatibility(kind, version, context)
+            if "TARGET_METRIC_UNSUPPORTED" in compatibility.reason_codes:
                 raise HTTPException(
                     status_code=422, detail="Scenario does not support this target metric"
                 )
-            if definition.currency_required and (
-                not context.metric_currency or context.currency != context.metric_currency
-            ):
+            if any(reason.startswith("METRIC_CURRENCY") for reason in compatibility.reason_codes):
                 raise HTTPException(
                     status_code=422, detail="Scenario requires matching published metric currency"
                 )
+            if not compatibility.compatible:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Scenario context is unavailable: " + ", ".join(compatibility.reason_codes)
+                    ),
+                )
+            if definition.currency_required and not compatibility.resolved.currency:
+                raise HTTPException(status_code=422, detail="Scenario currency is required")
         return value
 
     async def execute(
@@ -353,6 +481,9 @@ class ScenarioRegistry:
             raise HTTPException(
                 status_code=422, detail="Scenario parameters do not match the registered schema"
             ) from None
+        if context.purpose == "decision":
+            resolved = self.compatibility(kind, version, context).resolved
+            context = context.model_copy(update={"currency": resolved.currency})
         output = await self._adapters[(kind, version)].simulate(
             value, context, user, operation_id=operation_id
         )
@@ -408,6 +539,14 @@ class UnitEconomicsScenarioAdapter:
     scenario_kind = "unit-economics"
     version = 1
     parameter_model = SimulationInput
+
+    def compatibility_reasons(self, context: ScenarioContext) -> list[ScenarioReason]:
+        # Legacy monetary definitions may omit unit, but an explicit unit cannot be reinterpreted.
+        if context.metric_unit not in {None, "currency", context.metric_currency}:
+            return ["METRIC_UNIT_UNSUPPORTED"]
+        if context.metric_additivity not in {None, "additive"}:
+            return ["METRIC_ADDITIVITY_UNSUPPORTED"]
+        return []
 
     def definition(self) -> ScenarioDefinition:
         return ScenarioDefinition(
@@ -496,6 +635,12 @@ def scenario_definition(kind: str, version: int) -> ScenarioDefinition:
 
 def scenario_definitions() -> list[ScenarioDefinition]:
     return scenario_registry.definitions()
+
+
+def scenario_compatibility(
+    kind: str, version: int, context: ScenarioContext
+) -> ScenarioCompatibility:
+    return scenario_registry.compatibility(kind, version, context)
 
 
 def normalize_scenario(

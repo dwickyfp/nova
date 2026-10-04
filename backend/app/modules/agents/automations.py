@@ -579,6 +579,7 @@ async def _run_turn(
         # A schedule was consented to for reading; it never writes.
         resolve_consent=read_only_consent,
         title=automation["title"],
+        execution_timezone=automation["timezone"],
     )
     return output.text, output.steps, output.tables
 

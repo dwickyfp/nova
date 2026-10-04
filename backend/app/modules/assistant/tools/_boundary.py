@@ -12,6 +12,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from app.modules.assistant.business_observation import (
+    BusinessResultHookResult,
+    provider_safe_payload,
+)
 from app.modules.assistant.consent import ConsentApproval
 from app.modules.assistant.schemas import ToolClassification
 
@@ -65,6 +69,7 @@ class ToolOutcome:
     safe_detail: str | None = None
     repair_context: dict[str, Any] | None = None
     business_result: Any = field(default=None, repr=False)
+    business_hook_result: BusinessResultHookResult | None = field(default=None, repr=False)
 
     def envelope(self, *, tool_name: str, evidence_id: str | None = None) -> dict[str, Any]:
         """Return the normalized result sent through a provider adapter."""
@@ -72,7 +77,7 @@ class ToolOutcome:
             evidence = dict(self.evidence or {})
             if evidence_id:
                 evidence["evidence_id"] = evidence_id
-            return {
+            payload = {
                 "ok": True,
                 "tool": self.tool or tool_name,
                 "data": self.data if self.data is not None else {"summary": self.summary},
@@ -82,6 +87,11 @@ class ToolOutcome:
                 "metadata": self.metadata,
                 "state_patch": self.state_patch,
             }
+            if self.business_hook_result and self.business_hook_result.provider_observation:
+                payload["canonical_business_result"] = (
+                    self.business_hook_result.provider_observation
+                )
+            return provider_safe_payload(payload, tool_name=tool_name)
         return {
             "ok": False,
             "tool": self.tool or tool_name,

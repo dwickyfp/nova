@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ApiError } from "@/lib/api-client";
 import {
   agentsApi,
   studioApi,
@@ -9,6 +10,7 @@ import {
   type AgentMessage,
 } from "@/features/agents/api";
 import { StudioChat } from "./studio-chat";
+import { workflowApi } from "./workflow-api";
 import "@/styles/index.css";
 
 function contrast(element: HTMLElement): number {
@@ -49,6 +51,7 @@ function contrast(element: HTMLElement): number {
 }
 
 afterEach(async () => {
+  await cleanup();
   vi.restoreAllMocks();
   document.documentElement.classList.remove("dark");
   await page.viewport(1280, 720);
@@ -93,6 +96,9 @@ it.each([
   vi.spyOn(studioApi, "settings").mockResolvedValue({
     preferences: {},
   } as never);
+  vi.spyOn(workflowApi, "list").mockRejectedValue(
+    new ApiError(404, "Workflow disabled"),
+  );
   const getThread = vi
     .spyOn(agentsApi, "getThread")
     .mockImplementation(async (_agent, threadId, cursor) => ({

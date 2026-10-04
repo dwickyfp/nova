@@ -45,7 +45,8 @@ _MONEY_IDENTIFIERS = frozenset({
     "revenue", "amount", "profit", "cost", "price", "spend", "value", "total", "sales",
 })
 
-CLAIM_KINDS = ("cell", "derived", "count", "question", "position", "date", "comparison")
+CLAIM_KINDS = ("cell", "derived", "count", "question", "position", "date", "comparison",
+               "hypothesis")
 
 CLAIMS_INSTRUCTION = (
     "After an answer that states numbers from data, add one final line: <claims> followed "
@@ -59,7 +60,12 @@ CLAIMS_INSTRUCTION = (
     "each comparison you state (\"A is higher than B\", \"A is the highest\") as "
     "{\"text\": the phrase exactly as written, \"kind\": \"comparison\", \"relation\": "
     "greater | less | max | min, \"labels\": [A] or [A, B], \"column\"}. The block is "
-    "removed before the user sees the answer."
+    "removed before the user sees the answer. For each statement about a canonical "
+    "Investigation hypothesis, also list {\"text\": the complete statement, "
+    "\"kind\": \"hypothesis\", \"hypothesis_id\": the canonical id, "
+    "\"causal_status\": its unchanged canonical arithmetic | association | "
+    "supported_effect | unknown label}. Arithmetic and association do not establish "
+    "a causal effect."
 )
 
 
@@ -74,6 +80,8 @@ class Claim:
     direction: str | None = None
     labels: tuple[str, ...] = ()
     relation: str | None = None
+    hypothesis_id: str | None = None
+    causal_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +96,7 @@ class AnswerCheck:
     accepted: bool
     claims: tuple[NumericClaim, ...]
     unsupported: tuple[str, ...]
+    unsupported_hypotheses: tuple[str, ...] = ()
 
 
 def split_claims(answer: str) -> tuple[str, tuple[Claim, ...] | None]:
@@ -124,6 +133,10 @@ def split_claims(answer: str) -> tuple[str, tuple[Claim, ...] | None]:
             if isinstance(labels, list) else (),
             relation=item.get("relation")
             if item.get("relation") in {"greater", "less", "max", "min"} else None,
+            hypothesis_id=_text(item.get("hypothesis_id")),
+            causal_status=item.get("causal_status")
+            if item.get("causal_status") in {"arithmetic", "association", "supported_effect",
+                                             "unknown"} else None,
         ))
     return text, tuple(claims)
 
@@ -504,7 +517,7 @@ def check_numeric_answer(
     # in answer order.
     by_text: dict[str, list[Claim]] = {}
     for item in claims or ():
-        if item.kind != "comparison":
+        if item.kind not in {"comparison", "hypothesis"}:
             by_text.setdefault(_key(item.text), []).append(item)
     question_values = {
         value * (token.scale or 1)
@@ -789,6 +802,7 @@ def finalize_verified_answer(
     claims: tuple[Claim, ...] | None = None,
     language: str = "en",
     compares_groups: bool = False,
+    canonical_observations: tuple[dict[str, Any], ...] = (),
 ) -> VerifiedAnswer:
     """The answer shown to the user: verified prose, annotated prose, or a rendering.
 
@@ -804,6 +818,24 @@ def finalize_verified_answer(
         answer, question=question, tables=tables, claims=claims, language=language
     )
     comparison = compares_groups and _has_label_and_measure(tables)
+    known_hypotheses = {
+        hypothesis.get("id"): hypothesis.get("causal_status")
+        for observation in canonical_observations
+        for hypothesis in observation.get("hypotheses", [])
+    }
+    unsupported_hypotheses = tuple(
+        claim.text for claim in claims or () if claim.kind == "hypothesis"
+        and (claim.hypothesis_id not in known_hypotheses
+             or known_hypotheses[claim.hypothesis_id] != claim.causal_status)
+    )
+    if unsupported_hypotheses:
+        replacement, _ = render_with_claims(
+            tables, language=language, include_table=not tables_shown
+        )
+        return VerifiedAnswer(replacement, AnswerCheck(
+            accepted=False, claims=check.claims,
+            unsupported=check.unsupported, unsupported_hypotheses=unsupported_hypotheses,
+        ), True, comparison)
     mistakes = check_comparisons(answer, tables, claims, language)
     if mistakes:
         # A wrong "higher than" or "highest" is replaced in place and corrected
@@ -1072,4 +1104,3 @@ def _sentences(
             high=f"{label_of(high)} ({cell(high, i)})", low=f"{label_of(low)} ({cell(low, i)})",
         ) + ".")
     return out
-

@@ -65,13 +65,19 @@ function Monitors({
   const [minimum, setMinimum] = useState("30");
   const [hours, setHours] = useState("24");
   const [cadence, setCadence] = useState("15");
-  const [timezone, setTimezone] = useState("Asia/Jakarta");
+  const [timezone, setTimezone] = useState<string | undefined>();
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const operation = useRef({ signature: "", id: "" });
   const config = { staleTime: 0, gcTime: 0, retry: false as const };
+  const runtimeTimezone = useQuery({
+    ...config,
+    queryKey: ["studio", epoch, "execution-timezone"],
+    queryFn: ({ signal }) => intelligenceApi.executionTimezone(signal),
+  });
+  const effectiveTimezone = timezone ?? runtimeTimezone.data ?? "";
   const agents = useQuery({
     ...config,
     queryKey: ["monitor-agents", epoch],
@@ -121,7 +127,7 @@ function Monitors({
   }
 
   async function create() {
-    if (!version) return;
+    if (!version || !effectiveTimezone) return;
     const configuration: Configuration = {
       name,
       agent_id: agentId,
@@ -149,7 +155,7 @@ function Monitors({
       window_hours: Number(hours),
       cooldown_hours: Number(hours),
       cadence_minutes: Number(cadence),
-      timezone,
+      timezone: effectiveTimezone,
       enabled,
     };
     const signature = JSON.stringify(configuration);
@@ -347,10 +353,21 @@ function Monitors({
             <Label htmlFor={`${id}-timezone`}>Business timezone</Label>
             <Input
               id={`${id}-timezone`}
-              value={timezone}
+              value={effectiveTimezone}
               onChange={(e) => setTimezone(e.target.value)}
               required
             />
+            {runtimeTimezone.isPending && timezone === undefined && (
+              <p role="status" className="text-sm text-muted-foreground">
+                Loading business timezone.
+              </p>
+            )}
+            {runtimeTimezone.isError && timezone === undefined && (
+              <p role="alert" className="text-sm text-destructive">
+                Business timezone could not be loaded. Enter the monitor
+                timezone explicitly.
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Checkbox
@@ -363,7 +380,13 @@ function Monitors({
           <Button
             type="submit"
             disabled={
-              busy || !version || !metric || !count || !time || !agentId
+              busy ||
+              !version ||
+              !metric ||
+              !count ||
+              !time ||
+              !agentId ||
+              !effectiveTimezone
             }
           >
             Save monitor

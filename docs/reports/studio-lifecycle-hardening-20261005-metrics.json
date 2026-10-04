@@ -1,0 +1,2650 @@
+{
+  "automatic_investigation_fixture": {
+    "after": {
+      "backend_root": "active backend",
+      "samples": [
+        {
+          "metrics": {
+            "automatic_investigation_query_count": 4,
+            "business_canonicalization_duration_ms": 13.226000010035932,
+            "business_canonicalization_status": "created",
+            "canonical_investigation_created": true,
+            "canonical_investigation_reused": false,
+            "comparison_query_count": 2,
+            "driver_query_count": 2,
+            "investigation_persistence_duration_ms": 0.23641600273549557,
+            "other_query_count": 0,
+            "persistence_duration_ms": 1.0419159079901874,
+            "query_cache_reuse_count": 2,
+            "query_count_basis": "semantic_execute_plan_attempts",
+            "query_duration_ms": 0.09987602243199944,
+            "scope": "current_operation_attempt",
+            "unavailable": [],
+            "version": "1"
+          },
+          "new_canonical_objects": 5,
+          "operation": "created",
+          "semantic_execute_plan_dispatches": 4,
+          "status": "complete"
+        },
+        {
+          "metrics": {
+            "automatic_investigation_query_count": 6,
+            "business_canonicalization_duration_ms": 5.2948750089854,
+            "business_canonicalization_status": "reused",
+            "canonical_investigation_created": false,
+            "canonical_investigation_reused": true,
+            "comparison_query_count": 0,
+            "driver_query_count": 0,
+            "investigation_persistence_duration_ms": 0.0,
+            "other_query_count": 6,
+            "persistence_duration_ms": 0.0,
+            "query_cache_reuse_count": 0,
+            "query_count_basis": "semantic_execute_plan_attempts",
+            "query_duration_ms": 0.07891509449109435,
+            "scope": "current_operation_attempt",
+            "unavailable": [],
+            "version": "1"
+          },
+          "new_canonical_objects": 0,
+          "operation": "reused",
+          "semantic_execute_plan_dispatches": 6,
+          "status": "complete"
+        }
+      ]
+    },
+    "before": {
+      "backend_root": "foundation backend",
+      "samples": [
+        {
+          "metrics": null,
+          "new_canonical_objects": 5,
+          "operation": "created",
+          "semantic_execute_plan_dispatches": 4,
+          "status": "complete"
+        },
+        {
+          "metrics": null,
+          "new_canonical_objects": 0,
+          "operation": "reused",
+          "semantic_execute_plan_dispatches": 6,
+          "status": "complete"
+        }
+      ]
+    }
+  },
+  "delivered_branch": "feat/studio-lifecycle-hardening",
+  "foundation_revision": "0cdde1987aa81ce823c0e18b72230b7208e82ac3",
+  "native_fixture": {
+    "after": {
+      "configured_count_budget_checks": {
+        "context_tokens": "fail",
+        "participants": "fail",
+        "provider_calls": "fail",
+        "total_tokens": "fail"
+      },
+      "counts_per_turn": {
+        "context_tokens": 20,
+        "metadata_reads": 0,
+        "participants": 1,
+        "provider_calls": 2,
+        "tool_calls": 0,
+        "total_tokens": 50
+      },
+      "estimated_peak_context_tokens": {
+        "max": 3473,
+        "min": 3473
+      },
+      "external_io": "none",
+      "fixture": "native AssistantLoop + httpx.MockTransport; configuration resolution stubbed",
+      "limitations": [
+        "Timing is local fixture overhead, not production or full business-journey latency.",
+        "No real provider, metadata catalog, database, policy, consent UI, or storage I/O.",
+        "Metadata reads are zero on this fixture path; no engine read latency was measured.",
+        "Token usage is fixture response data, not vendor billing or tokenization.",
+        "Projection measures pure public state reduction, not authorization or persistence.",
+        "No cross-process, historical, resumed, or complete Smart participant totals.",
+        "Wall-clock timing is reported and has no absolute noisy pass/fail threshold."
+      ],
+      "missing_count_budget_checks": {
+        "context_tokens": "unavailable",
+        "metadata_reads": "unavailable",
+        "participants": "unavailable",
+        "provider_calls": "unavailable",
+        "tool_calls": "unavailable",
+        "total_tokens": "unavailable"
+      },
+      "native_turn": {
+        "max_ms": 1.905375,
+        "min_ms": 0.682875,
+        "p50_ms": 0.799917,
+        "p95_ms": 1.2625419999999998,
+        "samples": 25
+      },
+      "percentile_method": "median; sorted p95 sample at round(0.95 * (n - 1))",
+      "pure_evidence_and_mission_projection": {
+        "added_provider_calls": 0,
+        "max_ms": 0.507709,
+        "min_ms": 0.240916,
+        "p50_ms": 0.253333,
+        "p95_ms": 0.28495800000000004,
+        "samples": 25
+      },
+      "schema_version": 1,
+      "scope": "current_loop_attempt",
+      "scoring": {
+        "case_result": {
+          "max_ms": 0.078375,
+          "min_ms": 0.069917,
+          "p50_ms": 0.071,
+          "p95_ms": 0.073666,
+          "samples": 25
+        },
+        "recorded_per_scorer_duration_sum": {
+          "max_ms": 0.04295801045373082,
+          "mean_ms": 0.041555080097168684,
+          "min_ms": 0.04070805152878165,
+          "samples": 25
+        },
+        "score_case": {
+          "max_ms": 0.024666,
+          "min_ms": 0.020917,
+          "p50_ms": 0.021625,
+          "p95_ms": 0.024,
+          "samples": 25
+        }
+      }
+    },
+    "before": {
+      "configured_count_budget_checks": {
+        "context_tokens": "fail",
+        "participants": "fail",
+        "provider_calls": "fail",
+        "total_tokens": "fail"
+      },
+      "counts_per_turn": {
+        "context_tokens": 20,
+        "metadata_reads": 0,
+        "participants": 1,
+        "provider_calls": 2,
+        "tool_calls": 0,
+        "total_tokens": 50
+      },
+      "estimated_peak_context_tokens": {
+        "max": 3473,
+        "min": 3473
+      },
+      "external_io": "none",
+      "fixture": "native AssistantLoop + httpx.MockTransport; configuration resolution stubbed",
+      "limitations": [
+        "Timing is local fixture overhead, not production or full business-journey latency.",
+        "No real provider, metadata catalog, database, policy, consent UI, or storage I/O.",
+        "Metadata reads are zero on this fixture path; no engine read latency was measured.",
+        "Token usage is fixture response data, not vendor billing or tokenization.",
+        "Projection measures pure public state reduction, not authorization or persistence.",
+        "No cross-process, historical, resumed, or complete Smart participant totals.",
+        "Wall-clock timing is reported and has no absolute noisy pass/fail threshold."
+      ],
+      "missing_count_budget_checks": {
+        "context_tokens": "unavailable",
+        "metadata_reads": "unavailable",
+        "participants": "unavailable",
+        "provider_calls": "unavailable",
+        "tool_calls": "unavailable",
+        "total_tokens": "unavailable"
+      },
+      "native_turn": {
+        "max_ms": 1.5595409999999998,
+        "min_ms": 0.697542,
+        "p50_ms": 0.837,
+        "p95_ms": 1.2405,
+        "samples": 25
+      },
+      "percentile_method": "median; sorted p95 sample at round(0.95 * (n - 1))",
+      "pure_evidence_and_mission_projection": {
+        "added_provider_calls": 0,
+        "max_ms": 0.891667,
+        "min_ms": 0.24525,
+        "p50_ms": 0.25025,
+        "p95_ms": 0.287125,
+        "samples": 25
+      },
+      "schema_version": 1,
+      "scope": "current_loop_attempt",
+      "scoring": {
+        "case_result": {
+          "max_ms": 0.079583,
+          "min_ms": 0.072083,
+          "p50_ms": 0.07325,
+          "p95_ms": 0.079541,
+          "samples": 25
+        },
+        "recorded_per_scorer_duration_sum": {
+          "max_ms": 0.04404096398502588,
+          "mean_ms": 0.042698278557509184,
+          "min_ms": 0.04174897912889719,
+          "samples": 25
+        },
+        "score_case": {
+          "max_ms": 0.024457999999999997,
+          "min_ms": 0.021542000000000002,
+          "p50_ms": 0.022167000000000003,
+          "p95_ms": 0.0235,
+          "samples": 25
+        }
+      }
+    }
+  },
+  "patched_ranger_journey": {
+    "after": {
+      "call_duration_samples_ms": [
+        125445.67808398278,
+        121335.10258398019,
+        122349.2683750228
+      ],
+      "collected_samples": 3,
+      "completed_call_samples": 3,
+      "contract": "tests/integration/test_governed_studio_ranger.py::test_actions_require_review_consent_verify_schedule_and_live_authorization",
+      "counts": {},
+      "errors": [],
+      "excluded_timing": [
+        "pytest collection",
+        "fixture setup",
+        "fixture teardown"
+      ],
+      "limitations": [
+        "Small sample smoke measurement; p95 is the maximum with fewer than 20 samples.",
+        "Shared host load and service contention confound timing; no absolute timing gate.",
+        "Nova API uses in-process HTTP ASGI; SQL and Ranger policy I/O use real services.",
+        "The unchanged contract tests policy, consent, Action, verification and Outcome.",
+        "Scripted semantic planning; seeded observations and advanced observation time.",
+        "No real inference vendor latency, business intervention effect, or causal proof.",
+        "Counts are unavailable; native fixture counts cannot establish journey totals.",
+        "Fixture setup and cleanup are excluded; this does not establish a production SLA."
+      ],
+      "measurement": {
+        "unavailable": {
+          "context_tokens": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "metadata_reads": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "participants": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "provider_calls": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "tool_calls": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "total_tokens": [
+            "complete_journey_count_scope_uninstrumented"
+          ]
+        }
+      },
+      "percentiles": "p50 median; p95 nearest rank ceil(0.95 * n), one-based",
+      "pytest_exit_code": 0,
+      "requested_samples": 3,
+      "schema_version": 1,
+      "scope": "controlled_patched_ranger_business_journey_pytest_call_phase",
+      "status": "passed",
+      "timing": {
+        "max_ms": 125445.67808398278,
+        "min_ms": 121335.10258398019,
+        "p50_ms": 122349.2683750228,
+        "p95_ms": 125445.67808398278,
+        "p95_sample_rank": 3,
+        "samples": 3
+      }
+    },
+    "before": {
+      "call_duration_samples_ms": [
+        128612.26500000339,
+        130759.14258300327,
+        172840.9714170266
+      ],
+      "collected_samples": 3,
+      "completed_call_samples": 3,
+      "contract": "tests/integration/test_governed_studio_ranger.py::test_actions_require_review_consent_verify_schedule_and_live_authorization",
+      "counts": {},
+      "errors": [],
+      "excluded_timing": [
+        "pytest collection",
+        "fixture setup",
+        "fixture teardown"
+      ],
+      "limitations": [
+        "Small sample smoke measurement; p95 is the maximum with fewer than 20 samples.",
+        "Shared host load and service contention confound timing; no absolute timing gate.",
+        "Nova API uses in-process HTTP ASGI; SQL and Ranger policy I/O use real services.",
+        "The unchanged contract tests policy, consent, Action, verification and Outcome.",
+        "Scripted semantic planning; seeded observations and advanced observation time.",
+        "No real inference vendor latency, business intervention effect, or causal proof.",
+        "Counts are unavailable; native fixture counts cannot establish journey totals.",
+        "Fixture setup and cleanup are excluded; this does not establish a production SLA."
+      ],
+      "measurement": {
+        "unavailable": {
+          "context_tokens": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "metadata_reads": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "participants": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "provider_calls": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "tool_calls": [
+            "complete_journey_count_scope_uninstrumented"
+          ],
+          "total_tokens": [
+            "complete_journey_count_scope_uninstrumented"
+          ]
+        }
+      },
+      "percentiles": "p50 median; p95 nearest rank ceil(0.95 * n), one-based",
+      "pytest_exit_code": 0,
+      "requested_samples": 3,
+      "schema_version": 1,
+      "scope": "controlled_patched_ranger_business_journey_pytest_call_phase",
+      "status": "passed",
+      "timing": {
+        "max_ms": 172840.9714170266,
+        "min_ms": 128612.26500000339,
+        "p50_ms": 130759.14258300327,
+        "p95_ms": 172840.9714170266,
+        "p95_sample_rank": 3,
+        "samples": 3
+      }
+    }
+  },
+  "prefetch_fixture": {
+    "after": {
+      "canonicalization_count_scope": "Awaited IntelligenceService.query entries; no SQL I/O",
+      "cases": [
+        {
+          "binding": "unbound",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 165.911375,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.381666,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.514167,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.19875,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.478083,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 22.478083,
+          "p95_ms": 165.911375,
+          "peak_concurrency": 2,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": true,
+            "barrier_timeouts": 0,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 0,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:b",
+              "start:a",
+              "finish:a",
+              "finish:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [],
+            "peak_concurrency": 2,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": false
+        },
+        {
+          "binding": "unbound",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.043542,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.264291,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.081625,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 23.668917,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.925166,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 22.264291,
+          "p95_ms": 23.668917,
+          "peak_concurrency": 2,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": true,
+            "barrier_timeouts": 0,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 0,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:b",
+              "start:a",
+              "finish:a",
+              "finish:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [],
+            "peak_concurrency": 2,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": true
+        },
+        {
+          "binding": "mission",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.630459,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.814416,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 42.764458,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.3645,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 45.004042,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 43.814416,
+          "p95_ms": 45.004042,
+          "peak_concurrency": 1,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": false,
+            "barrier_timeouts": 1,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 0,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:a",
+              "finish:a",
+              "start:b",
+              "finish:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [],
+            "peak_concurrency": 1,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": false
+        },
+        {
+          "binding": "mission",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.006625,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.09875,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 42.666333,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 46.419,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 46.80375,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 44.09875,
+          "p95_ms": 46.80375,
+          "peak_concurrency": 1,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": false,
+            "barrier_timeouts": 1,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 0,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:a",
+              "finish:a",
+              "start:b",
+              "finish:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [],
+            "peak_concurrency": 1,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": true
+        },
+        {
+          "binding": "ordered_hook",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 45.11775,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.316375,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.754917,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.795875,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.957917,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 44.316375,
+          "p95_ms": 45.11775,
+          "peak_concurrency": 1,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": false,
+            "barrier_timeouts": 1,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 2,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:a",
+              "finish:a",
+              "hook:a",
+              "start:b",
+              "finish:b",
+              "hook:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [
+              "a",
+              "b"
+            ],
+            "peak_concurrency": 1,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": false
+        },
+        {
+          "binding": "ordered_hook",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 45.977083,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.634083,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 45.674417,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.405,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.544209,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 44.634083,
+          "p95_ms": 45.977083,
+          "peak_concurrency": 1,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": false,
+            "barrier_timeouts": 1,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 2,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:a",
+              "finish:a",
+              "hook:a",
+              "start:b",
+              "finish:b",
+              "hook:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [
+              "a",
+              "b"
+            ],
+            "peak_concurrency": 1,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": true
+        }
+      ],
+      "fixture": "AssistantLoop + ScriptedProvider + read-only EvalTool semantic_query",
+      "limitations": [
+        "Synthetic 20 ms waits expose scheduling; local wall-clock estimates are noisy.",
+        "At most nine timed samples plus one structural probe per case; p95 is a small sample.",
+        "No warmup; the first timed turn includes loop-internal cold initialization.",
+        "No live provider, semantic compiler, StarRocks, Redis, storage or policy I/O.",
+        "Provider counts describe fixture method invocations, not HTTP requests or billing.",
+        "Mission is a scheduling marker; no Mission authorization or persistence runs.",
+        "Ordered hook returns None; only dispatch ordering is exercised.",
+        "Zero queries covers this fixture; no governed canonicalization cost is measured.",
+        "No full INVESTIGATE comparison/driver cost, delegation, recovery or process load.",
+        "Barrier and event order prove overlap; existing timing gates are unchanged."
+      ],
+      "percentile_method": "p50 median; p95 nearest rank ceil(0.95 * n)",
+      "provider_count_scope": "Scripted plan_turn plus stream/complete entries; resolve separate",
+      "report_script_sha256": "2ef6a2b6aa8f139c8d96ca29fd614439f4583383cefc3856381e7d8b51c4aacf",
+      "schema_version": 1,
+      "source_revision": "feat/studio-lifecycle-hardening-working-tree",
+      "sources": {
+        "backend_root": "active backend",
+        "sha256": {
+          "backend/app/modules/assistant/service.py": "c7bdfa7c1e5be1a2d39c423733af277c4fbae4bd2a73308d6d41e18019305865",
+          "backend/app/modules/intelligence/engine.py": "796d915b6020fc6dc9f114740811b7ba0b5e9d4c8d993c16aa8e0fe549512d0e",
+          "backend/tests/benchmark/harness.py": "182448884364cbcbd8e17ddb5dca1a90d8789443a55862eba5395ab60929bfc6",
+          "backend/tests/eval/harness.py": "f995a8d61991f7652025afd08833a02fe4df5cf01b77d6b76f7b23195c6037d5",
+          "backend/uv.lock": "7049c7e57b46e955e09569c5c60ab2b759e4990275251336307fb901f5e934bf"
+        }
+      },
+      "structural_evidence": {
+        "existing_eval": "backend/tests/eval/test_parallel_read_only_tools.py",
+        "method": "Two distinct calls rendezvous on asyncio.Event before either can finish",
+        "timeout_meaning": "A serialized case cannot rendezvous; it is released and recorded",
+        "timeout_ms": 20.0
+      },
+      "timing_scope": "Full loop.run drain, including lazy init; fixture setup/probe excluded",
+      "wait_ms": 20.0
+    },
+    "before": {
+      "canonicalization_count_scope": "Awaited IntelligenceService.query entries; no SQL I/O",
+      "cases": [
+        {
+          "binding": "unbound",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 133.506416,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.696917,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.340834,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.605334,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 21.895333,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "finish:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 22.605334,
+          "p95_ms": 133.506416,
+          "peak_concurrency": 2,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": true,
+            "barrier_timeouts": 0,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 0,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:b",
+              "start:a",
+              "finish:a",
+              "finish:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [],
+            "peak_concurrency": 2,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": false
+        },
+        {
+          "binding": "unbound",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.720083,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.591541,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.407167,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.713292,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.4395,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 43.720083,
+          "p95_ms": 44.713292,
+          "peak_concurrency": 1,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": false,
+            "barrier_timeouts": 1,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 0,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:a",
+              "finish:a",
+              "start:b",
+              "finish:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [],
+            "peak_concurrency": 1,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": true
+        },
+        {
+          "binding": "mission",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 42.905875,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.59975,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.787875,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.925708,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.494583,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 43.59975,
+          "p95_ms": 43.925708,
+          "peak_concurrency": 1,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": false,
+            "barrier_timeouts": 1,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 0,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:a",
+              "finish:a",
+              "start:b",
+              "finish:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [],
+            "peak_concurrency": 1,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": false
+        },
+        {
+          "binding": "mission",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 45.862167,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.484,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 42.153625,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.826083,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 0,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.057959,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "start:b",
+                "finish:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 43.826083,
+          "p95_ms": 45.862167,
+          "peak_concurrency": 1,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": false,
+            "barrier_timeouts": 1,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 0,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:a",
+              "finish:a",
+              "start:b",
+              "finish:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [],
+            "peak_concurrency": 1,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": true
+        },
+        {
+          "binding": "ordered_hook",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.939666,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "hook:b",
+                "finish:a",
+                "hook:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "b",
+                "a"
+              ],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.661958,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "hook:b",
+                "finish:a",
+                "hook:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "b",
+                "a"
+              ],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 22.11325,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "hook:b",
+                "finish:a",
+                "hook:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "b",
+                "a"
+              ],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 21.904791,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "hook:b",
+                "finish:a",
+                "hook:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "b",
+                "a"
+              ],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 21.97475,
+              "execution_order": [
+                "start:b",
+                "start:a",
+                "finish:b",
+                "hook:b",
+                "finish:a",
+                "hook:a"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "b",
+                "a"
+              ],
+              "peak_concurrency": 2,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 22.11325,
+          "p95_ms": 22.939666,
+          "peak_concurrency": 2,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": true,
+            "barrier_timeouts": 0,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 2,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:b",
+              "start:a",
+              "finish:a",
+              "hook:a",
+              "finish:b",
+              "hook:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [
+              "a",
+              "b"
+            ],
+            "peak_concurrency": 2,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": false
+        },
+        {
+          "binding": "ordered_hook",
+          "observations": [
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.361916,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.463958,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.991375,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 44.09675,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "barrier_rendezvous": null,
+              "barrier_timeouts": null,
+              "counts": {
+                "canonicalization_query_count": 0,
+                "hook_calls": 2,
+                "provider_action_calls": 2,
+                "provider_calls": 3,
+                "provider_planning_calls": 1,
+                "provider_resolution_calls": 1,
+                "tool_calls": 2
+              },
+              "elapsed_ms": 43.668167,
+              "execution_order": [
+                "start:a",
+                "finish:a",
+                "hook:a",
+                "start:b",
+                "finish:b",
+                "hook:b"
+              ],
+              "finish_reason": "stop",
+              "hook_order": [
+                "a",
+                "b"
+              ],
+              "peak_concurrency": 1,
+              "table_order": [
+                "a",
+                "b"
+              ]
+            }
+          ],
+          "p50_ms": 43.991375,
+          "p95_ms": 44.361916,
+          "peak_concurrency": 1,
+          "samples": 5,
+          "structural_probe": {
+            "barrier_rendezvous": false,
+            "barrier_timeouts": 1,
+            "counts": {
+              "canonicalization_query_count": 0,
+              "hook_calls": 2,
+              "provider_action_calls": 2,
+              "provider_calls": 3,
+              "provider_planning_calls": 1,
+              "provider_resolution_calls": 1,
+              "tool_calls": 2
+            },
+            "execution_order": [
+              "start:a",
+              "finish:a",
+              "hook:a",
+              "start:b",
+              "finish:b",
+              "hook:b"
+            ],
+            "finish_reason": "stop",
+            "hook_order": [
+              "a",
+              "b"
+            ],
+            "peak_concurrency": 1,
+            "table_order": [
+              "a",
+              "b"
+            ]
+          },
+          "workflow_enabled": true
+        }
+      ],
+      "fixture": "AssistantLoop + ScriptedProvider + read-only EvalTool semantic_query",
+      "limitations": [
+        "Synthetic 20 ms waits expose scheduling; local wall-clock estimates are noisy.",
+        "At most nine timed samples plus one structural probe per case; p95 is a small sample.",
+        "No warmup; the first timed turn includes loop-internal cold initialization.",
+        "No live provider, semantic compiler, StarRocks, Redis, storage or policy I/O.",
+        "Provider counts describe fixture method invocations, not HTTP requests or billing.",
+        "Mission is a scheduling marker; no Mission authorization or persistence runs.",
+        "Ordered hook returns None; only dispatch ordering is exercised.",
+        "Zero queries covers this fixture; no governed canonicalization cost is measured.",
+        "No full INVESTIGATE comparison/driver cost, delegation, recovery or process load.",
+        "Barrier and event order prove overlap; existing timing gates are unchanged."
+      ],
+      "percentile_method": "p50 median; p95 nearest rank ceil(0.95 * n)",
+      "provider_count_scope": "Scripted plan_turn plus stream/complete entries; resolve separate",
+      "report_script_sha256": "2ef6a2b6aa8f139c8d96ca29fd614439f4583383cefc3856381e7d8b51c4aacf",
+      "schema_version": 1,
+      "source_revision": "0cdde1987aa81ce823c0e18b72230b7208e82ac3",
+      "sources": {
+        "backend_root": "foundation backend",
+        "sha256": {
+          "backend/app/modules/assistant/service.py": "8936ac5523446f2c6a5b6c642d40f9a49b2ae9eacb769d9878d1b28cc6e56f23",
+          "backend/app/modules/intelligence/engine.py": "02b249c3da816bd83b542428c44d5e86eba20132ffe8dbd9e166c1de7801296e",
+          "backend/tests/benchmark/harness.py": "182448884364cbcbd8e17ddb5dca1a90d8789443a55862eba5395ab60929bfc6",
+          "backend/tests/eval/harness.py": "f995a8d61991f7652025afd08833a02fe4df5cf01b77d6b76f7b23195c6037d5",
+          "backend/uv.lock": "7049c7e57b46e955e09569c5c60ab2b759e4990275251336307fb901f5e934bf"
+        }
+      },
+      "structural_evidence": {
+        "existing_eval": "backend/tests/eval/test_parallel_read_only_tools.py",
+        "method": "Two distinct calls rendezvous on asyncio.Event before either can finish",
+        "timeout_meaning": "A serialized case cannot rendezvous; it is released and recorded",
+        "timeout_ms": 20.0
+      },
+      "timing_scope": "Full loop.run drain, including lazy init; fixture setup/probe excluded",
+      "wait_ms": 20.0
+    }
+  },
+  "schema_version": 1,
+  "source_path_policy": "Personal source roots replaced with foundation/active labels; byte hashes retained.",
+  "stock_query_round_trip": {
+    "after": {
+      "benchmark": "engine_query_execute_round_trip",
+      "iterations": 20,
+      "max_us": 448784.958,
+      "median_us": 204148.667,
+      "min_us": 183146.666,
+      "p95_us": 400422.25,
+      "statement": "SELECT 1 AS one"
+    },
+    "before": {
+      "benchmark": "engine_query_execute_round_trip",
+      "iterations": 20,
+      "max_us": 550015.0,
+      "median_us": 209909.625,
+      "min_us": 191089.834,
+      "p95_us": 445773.125,
+      "statement": "SELECT 1 AS one"
+    }
+  },
+  "timing_caveats": [
+    "Small local smoke samples; shared host load and cold initialization affect percentiles.",
+    "Patched-FE recovery for unchanged BDB disk reserve occurred between journey measurements.",
+    "No production SLA, inference vendor latency, or causal business improvement is established.",
+    "Native fixture counts cannot establish complete live-journey counts."
+  ]
+}

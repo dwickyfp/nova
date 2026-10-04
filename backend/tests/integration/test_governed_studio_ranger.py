@@ -666,6 +666,7 @@ async def test_automatic_investigation_resume_keeps_exact_pins_and_live_authoriz
         session_id=fixture.user["session_id"], thread_id=fixture.thread["thread_id"],
         agent_id=fixture.agent["agent_id"], mission_id=mission["mission_id"],
         semantic_view_ids=[fixture.semantic["view_id"]], execution_now=fixture.end,
+        execution_timezone=fixed.timezone, effective_work_intent="INVESTIGATE",
         primary_plan={"view": fixture.semantic["view_id"], "plan": wire_plan},
     )
     invocation = ToolInvocation(str(uuid4()), "semantic_query", {"question": "Weekly decline"})
@@ -675,7 +676,11 @@ async def test_automatic_investigation_resume_keeps_exact_pins_and_live_authoriz
     original = await intelligence_service.automatic_investigation(
         seed, fixture.user, mission_id=mission["mission_id"], agent_id=context.agent_id,
     )
-    result = await governed_result(invocation, outcome, context)
+    hook_result = await governed_result(invocation, outcome, context)
+    result = hook_result.public_event
+    assert result is not None and hook_result.provider_observation is not None
+    assert hook_result.provider_observation["id"] == original["investigation"].id
+    assert hook_result.provider_observation["revision"] == original["investigation"].revision
     assert result["status"] == "complete" and result["investigation"]["hypotheses"]
     assert all(h["causal_status"] != "supported_effect"
                for h in result["investigation"]["hypotheses"])
@@ -706,7 +711,9 @@ async def test_automatic_investigation_resume_keeps_exact_pins_and_live_authoriz
         "GET", f"agents/studio/missions/{mission['mission_id']}/objects/investigation/{ref['id']}"
         f"?revision={ref['revision']}",
     )
-    assert historical["scope"] == old_binding.model_dump(mode="json")
+    assert "scope" not in historical
+    assert historical["id"] == recovered["investigation"].id
+    assert historical["revision"] == recovered["investigation"].revision
     with pytest.raises(HTTPException):
         await intelligence_service.automatic_investigation(
             seed, fixture.user, mission_id=mission["mission_id"], agent_id=context.agent_id,

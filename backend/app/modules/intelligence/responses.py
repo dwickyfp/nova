@@ -9,11 +9,9 @@ from app.common.responses import SanitizingJSONResponse
 
 
 def public_evidence(value):
-    if isinstance(value, dict):
-        return {key: public_evidence(item) for key, item in value.items() if key != "session_id"}
-    if isinstance(value, (list, tuple)):
-        return [public_evidence(item) for item in value]
-    return value
+    from app.modules.agents.public_projections import sanitize_workflow_payload
+
+    return sanitize_workflow_payload(value)
 
 
 class IntelligenceResponse(SanitizingJSONResponse):

@@ -5,6 +5,7 @@ import type {
   ThinkingStatus,
   ToolCallStatus,
   ToolClassification,
+  WorkflowProvenance,
 } from "./types";
 
 /**
@@ -35,11 +36,17 @@ export function parseAssistantEvent(
           ? { type: "mission_updated", mission: value } : null;
       }
       case "evidence_health":
+      case "evidence_envelope": {
+        const workflow = record.workflow ?? record.workflow_provenance;
+        const provenance = readWorkflowProvenance(workflow);
+        if (workflow != null && !provenance) return null;
         return typeof record.tool_call_id === "string" && record.payload &&
           typeof record.payload === "object" && !Array.isArray(record.payload)
-          ? { type: "evidence_health", tool_call_id: record.tool_call_id,
+          ? { type: eventName, tool_call_id: record.tool_call_id,
               tool_name: typeof record.tool_name === "string" ? record.tool_name : undefined,
-              payload: record.payload } : null;
+              payload: record.payload,
+              ...(provenance ? { workflow: provenance } : {}) } : null;
+      }
       case "role_changed":
         return typeof record.active_role === "string" &&
           typeof record.security_context_version === "number"
@@ -167,6 +174,15 @@ export function parseAssistantEvent(
   })();
   if (!parsed) return null;
   return { ...parsed, ...eventMetadata(record) } as AssistantEvent;
+}
+
+export function readWorkflowProvenance(value: unknown): WorkflowProvenance | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const reference = (item: unknown): item is string | null => item === null ||
+    (typeof item === "string" && item.length > 0 && item.length <= 128);
+  if (!reference(record.mission_id) || !reference(record.run_id) || !reference(record.root_run_id)) return null;
+  return { mission_id: record.mission_id, run_id: record.run_id, root_run_id: record.root_run_id };
 }
 
 function eventMetadata(record: Record<string, unknown>): {

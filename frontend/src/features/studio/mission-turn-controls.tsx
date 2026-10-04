@@ -19,7 +19,7 @@ export function MissionTurnControls({ threadId, value, onChange, disabled }: {
   const current = useQuery({ queryKey: key, queryFn: ({ signal }) => workflowApi.list(threadId, signal), retry: false, staleTime: 0, gcTime: 0 });
   const summaries = useQuery({ queryKey: [...key, "resumable"], queryFn: ({ signal }) => workflowApi.resumable(threadId, signal), retry: false, staleTime: 0, gcTime: 0 });
   const rows = current.data?.missions.filter((mission) => !mission.cancel_requested) ?? [];
-  const selected = rows.find((mission) => mission.mission_id === value.missionId) ?? rows[0];
+  const selected = value.mode === "continue" ? rows.find((mission) => mission.mission_id === value.missionId) : rows[0];
   const resume = useMutation({
     mutationFn: (mission: ResumableMission) => {
       const signature = `${mission.mission_id}:${mission.revision}`;
@@ -34,6 +34,7 @@ export function MissionTurnControls({ threadId, value, onChange, disabled }: {
   });
   const historical = summaries.data?.missions.filter((mission) => mission.resume_required) ?? [];
   return <section aria-label="Mission turn controls" className="mx-auto mb-2 w-full max-w-3xl space-y-2">
+    <p aria-live="polite" className="break-words text-xs text-muted-foreground">Mission routing: {value.mode === "automatic" ? "Automatic" : value.mode === "new" ? "Start new mission (next message)" : `Continue: ${selected?.objective ?? "Selected mission unavailable"} (next message)`}</p>
     <div className="flex flex-wrap items-center gap-1" aria-label="Next message mission">
       <Button size="sm" variant={value.mode === "automatic" ? "secondary" : "ghost"} className="min-h-11" aria-pressed={value.mode === "automatic"} disabled={disabled} onClick={() => onChange({ mode: "automatic" })}>Automatic</Button>
       <Button size="sm" variant={value.mode === "continue" ? "secondary" : "ghost"} className="min-h-11" aria-pressed={value.mode === "continue"} disabled={disabled || !selected} onClick={() => selected && onChange({ mode: "continue", missionId: selected.mission_id })}>Continue mission</Button>
@@ -44,6 +45,8 @@ export function MissionTurnControls({ threadId, value, onChange, disabled }: {
         {rows.map((mission) => <option key={mission.mission_id} value={mission.mission_id}>{mission.objective}</option>)}
       </select>
     </label>}
+    {current.isPending && <p className="text-xs text-muted-foreground">Loading missions…</p>}
+    {current.isError && <p role="alert" className="text-xs text-destructive">Missions unavailable: {current.error.message}</p>}
     {historical.length > 0 && <div className="space-y-2 text-xs">
       <p className="text-muted-foreground">Resume previous work after checking current access. New execution requires current consent.</p>
       {historical.map((mission) => <div key={mission.mission_id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">

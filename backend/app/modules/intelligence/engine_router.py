@@ -28,7 +28,6 @@ from app.modules.intelligence.contracts import (
     Contract,
     Monitor,
     MonitorConfiguration,
-    Record,
     Scope,
     SemanticRef,
     Window,
@@ -44,16 +43,22 @@ from app.modules.intelligence.decisions import (
     DecisionCreate,
     DecisionOperation,
     create_decision,
+    discover_scenarios,
     operate_decision,
 )
 from app.modules.intelligence.engine import MODELS, ChatInvestigationRequest, intelligence_service
+from app.modules.intelligence.public_projections import (
+    PUBLIC_RECORD_MODELS,
+    PublicMonitor,
+    public_canonical_record,
+)
 from app.modules.intelligence.responses import IntelligenceResponse, IntelligenceRoute
 from app.modules.intelligence.scenarios import ScenarioRequest, run_scenario, scenario_definitions
 from app.modules.ml_engine.decision_lab import SimulationInput, run_simulation
 
 router = APIRouter(default_response_class=IntelligenceResponse, route_class=IntelligenceRoute)
 CurrentUser = Annotated[dict, Depends(get_current_user)]
-T = TypeVar("T", bound=Record)
+T = TypeVar("T", bound=Contract)
 
 
 class Page(Contract, Generic[T]):
@@ -180,8 +185,23 @@ async def numerical_simulation(body: SimulationRequest, user: CurrentUser):
 
 
 @router.get("/scenarios")
-async def registered_scenarios(user: CurrentUser):
+async def registered_scenarios(
+    user: CurrentUser,
+    investigation_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    investigation_revision: Annotated[int | None, Query(ge=1)] = None,
+    mission_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+):
     Scope.from_user(user)
+    if investigation_id is not None or investigation_revision is not None or mission_id is not None:
+        from fastapi import HTTPException
+
+        if investigation_id is None or investigation_revision is None:
+            raise HTTPException(
+                status_code=422, detail="Scenario discovery requires an Investigation and revision"
+            )
+        return await discover_scenarios(
+            investigation_id, investigation_revision, user, mission_id=mission_id
+        )
     return {"items": scenario_definitions()}
 
 
@@ -200,8 +220,9 @@ async def numerical_optimization(body: OptimizationRequest, user: CurrentUser):
     return await optimize_options(body, user)
 
 
-@router.post("/monitors", response_model=Monitor, status_code=201)
+@router.post("/monitors", response_model=PublicMonitor, status_code=201)
 async def create_monitor(body: MonitorCreate, user: CurrentUser):
+    from app.core.database import configured_timezone
     from app.modules.agents.router import _require_agent
 
     await _require_agent(body.configuration.agent_id, user)
@@ -210,10 +231,15 @@ async def create_monitor(body: MonitorCreate, user: CurrentUser):
     if body.configuration.enabled:
         await require_execution_binding(user)
     scope = Scope.from_user(user)
+    identity = fingerprint([scope.model_dump(exclude={"session_id"}), body.operation_id])
+    configuration = body.configuration.model_dump()
+    if "timezone" not in body.configuration.model_fields_set:
+        prior = await intelligence_service.repository.get("monitors", identity, scope, Monitor)
+        configuration["timezone"] = prior.timezone if prior is not None else configured_timezone()
     monitor = Monitor(
-        **body.configuration.model_dump(),
+        **configuration,
         scope=scope,
-        id=fingerprint([scope.model_dump(exclude={"session_id"}), body.operation_id]),
+        id=identity,
     )
     saved = await intelligence_service.register_monitor(monitor, user)
     await configure_schedule(
@@ -226,7 +252,7 @@ async def create_monitor(body: MonitorCreate, user: CurrentUser):
     return saved
 
 
-@router.put("/monitors/{monitor_id}", response_model=Monitor)
+@router.put("/monitors/{monitor_id}", response_model=PublicMonitor)
 async def update_monitor(monitor_id: str, body: MonitorUpdate, user: CurrentUser):
     from app.modules.agents.router import _require_agent
 
@@ -236,7 +262,10 @@ async def update_monitor(monitor_id: str, body: MonitorUpdate, user: CurrentUser
     if body.configuration.enabled:
         await require_execution_binding(user)
     original = await intelligence_service.get("monitors", monitor_id, user)
-    monitor = Monitor(**body.configuration.model_dump(), id=monitor_id, scope=original.scope)
+    configuration = body.configuration.model_dump()
+    if "timezone" not in body.configuration.model_fields_set:
+        configuration["timezone"] = original.timezone
+    monitor = Monitor(**configuration, id=monitor_id, scope=original.scope)
     saved = await intelligence_service.register_monitor(
         monitor, user, expected_revision=body.expected_revision
     )
@@ -448,7 +477,7 @@ async def add_concept(body: ConceptCreate, user: CurrentUser):
     return await create_concept(body, user)
 
 
-@router.get("/context/search", response_model=Page[MODELS["nodes"]])
+@router.get("/context/search", response_model=Page[PUBLIC_RECORD_MODELS["nodes"]])
 async def search_context(
     user: CurrentUser,
     term: str = Query(min_length=1, max_length=128),
@@ -491,28 +520,31 @@ async def inspect_graph(
 
 
 def _register_read_routes(kind, model):
+    public_model = PUBLIC_RECORD_MODELS.get(kind, model)
     async def listing(
         user: CurrentUser,
         after: str = Query(default="", max_length=128),
         limit: int = Query(default=20, ge=1, le=20),
     ):
-        return await intelligence_service.page(kind, user, after=after, limit=limit)
+        page = await intelligence_service.page(kind, user, after=after, limit=limit)
+        return {**page, "items": [public_canonical_record(kind, row) for row in page["items"]]}
 
     async def detail(record_id: str, user: CurrentUser):
-        return await intelligence_service.get(kind, record_id, user)
+        record = await intelligence_service.get(kind, record_id, user)
+        return public_canonical_record(kind, record)
 
     router.add_api_route(
         f"/{kind}",
         listing,
         methods=["GET"],
-        response_model=Page[model],
+        response_model=Page[public_model],
         name=f"list_intelligence_{kind}",
     )
     router.add_api_route(
         f"/{kind}/{{record_id}}",
         detail,
         methods=["GET"],
-        response_model=model,
+        response_model=public_model,
         name=f"get_intelligence_{kind}",
     )
 
